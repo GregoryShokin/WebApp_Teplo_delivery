@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +50,10 @@ from app.services.position_registry import admin_payroll_positions
 
 router = APIRouter()
 
+# Расчётный «сегодня» — по Москве (как весь payroll-контур), чтобы дефолтная дата и
+# отсечка «день выплаты» считались в тех же сутках, что дата выплаты, а не в UTC.
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
 ADVANCES_READ_ACCESS = (Depends(require_permission("payroll.advances.read")),)
 LOAN_ISSUE_ACCESS = (Depends(require_permission("payroll.loans.issue")),)
 
@@ -69,6 +74,7 @@ class AdvanceAvailabilityRead(BaseModel):
     already_advanced: float
     available: float
     note: str | None = None
+    payout_reached: bool = False
 
 
 class AdvanceRead(BaseModel):
@@ -149,6 +155,7 @@ def _availability_read(av: AdvanceAvailability) -> AdvanceAvailabilityRead:
         already_advanced=float(av.already_advanced),
         available=float(av.available),
         note=av.note,
+        payout_reached=av.payout_reached,
     )
 
 
@@ -168,10 +175,16 @@ async def get_advance_availability(
     employee_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     as_of: date | None = None,
+    apply_payout_gate: bool = True,
 ) -> AdvanceAvailabilityRead:
     employee = await _require_employee(session, employee_id)
+    # apply_payout_gate=false — для реконсиляции уже прошедших операций (дата операции
+    # в прошлом не должна «обнулять» исторический аванс отсечкой «день выплаты»).
     availability = await available_to_advance(
-        session, employee, as_of or datetime.now(UTC).date()
+        session,
+        employee,
+        as_of or datetime.now(_MOSCOW_TZ).date(),
+        apply_payout_gate=apply_payout_gate,
     )
     return _availability_read(availability)
 
@@ -256,7 +269,7 @@ async def post_advance(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> AdvanceRead:
     employee = await _require_employee(session, payload.employee_id)
-    today = datetime.now(UTC).date()
+    today = datetime.now(_MOSCOW_TZ).date()
     # Будущей датой нельзя никому; прошлой — только по отдельному праву backdate;
     # сегодняшней/без даты — по обычному праву выдачи (проверяется ниже по пайплайну).
     if payload.issued_on is not None and payload.issued_on > today:
