@@ -163,7 +163,12 @@ async def _find_duplicate_email_invoice(
     """Повтор того же счёта из почты: тот же контрагент + сумма + дата + номер (None==None).
 
     Ловит ситуацию «поставщик прислал тот же счёт повторным письмом» — байты PDF отличаются,
-    поэтому SHA-дедуп не срабатывает, а накладная по сути одна."""
+    поэтому SHA-дедуп не срабатывает, а накладная по сути одна.
+
+    Вторая фаза — кросс-канальная пара с ЭДО: тот же счёт (или его закрывающий УПД той же
+    поставки) уже материализован из СБИС под ДРУГИМ номером и датой, поэтому строгое
+    сравнение его не видит. Ловим по контрагенту+сумме в окне
+    ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``; из нескольких берём ближайший по дате."""
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
@@ -182,7 +187,46 @@ async def _find_duplicate_email_invoice(
     for c in candidates:
         if c.invoice_date == rec.invoice_date and (c.number or None) == want_number:
             return c
+    if rec.invoice_date is None:
+        return None
+    cross_channel = [
+        c
+        for c in candidates
+        if c.source == "sbis"
+        and c.invoice_date is not None
+        and abs((c.invoice_date - rec.invoice_date).days)
+        <= registry.CROSS_CHANNEL_DEDUP_WINDOW_DAYS
+    ]
+    if cross_channel:
+        return min(cross_channel, key=lambda c: abs((c.invoice_date - rec.invoice_date).days))
     return None
+
+
+def _enrich_duplicate_period(
+    invoice: SupplierInvoice,
+    *,
+    start: date | None,
+    end: date | None,
+    source: str | None,
+    confidence: float | Decimal | None = None,
+) -> bool:
+    """Письмо-дубль обогащает существующую накладную периодом услуги, если тот ещё не
+    известен — у СБИС-накладной период из названий ЭДО-документа мог не распознаться
+    (снимает period_required-блок отправки в банк). Заполненное не перетираем; невалидный
+    период молча пропускаем — связь дубля важнее обогащения. Возвращает True, если период
+    записан (вызывающий пересинхронизирует начисление)."""
+    if invoice.service_period_status != "missing" or start is None or end is None:
+        return False
+    try:
+        service_periods.validate_period(start, end)
+    except service_periods.ServicePeriodError:
+        return False
+    invoice.service_period_start = start
+    invoice.service_period_end = end
+    invoice.service_period_status = "ready"
+    invoice.service_period_source = source or "email_duplicate"
+    invoice.service_period_confidence = confidence
+    return True
 
 
 def _intake_amount(intake: EmailInvoiceIntake) -> Decimal | None:
@@ -255,6 +299,14 @@ async def materialize_from_intake(
     if dup is not None:
         intake.invoice_id = dup.id
         intake.status = "duplicate"
+        if period_status == "ready" and _enrich_duplicate_period(
+            dup,
+            start=period_start,
+            end=period_end,
+            source=rec_json.get("service_period_source") or "manual",
+            confidence=rec_json.get("service_period_confidence"),
+        ):
+            await service_periods.sync_invoice_accrual(session, dup)
         return intake.status
 
     invoice = SupplierInvoice(
@@ -585,9 +637,18 @@ async def process_attachment(
 
     dup = await _find_duplicate_email_invoice(session, cp_id, rec)
     if dup is not None:
-        # Повторное письмо с тем же счётом — привязываем к исходной, новую не создаём.
+        # Повторное письмо с тем же счётом (или счёт к уже пришедшему из ЭДО УПД той же
+        # поставки) — привязываем к исходной, новую не создаём.
         intake.invoice_id = dup.id
         intake.status = "duplicate"
+        if _enrich_duplicate_period(
+            dup,
+            start=rec.service_period_start,
+            end=rec.service_period_end,
+            source=rec.service_period_source,
+            confidence=rec.service_period_confidence,
+        ):
+            await service_periods.sync_invoice_accrual(session, dup)
         return intake.status
 
     invoice = SupplierInvoice(

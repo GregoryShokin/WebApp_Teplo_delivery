@@ -634,6 +634,260 @@ async def test_invoice_and_closing_upd_collapse_to_one_payable(
         assert all(d.invoice_id == invoices[0].id for d in docs)
 
 
+# --- Кросс-канальный дедуп «почта/ручной ввод ↔ СБИС» (окно ±7 дней, номера разные) ------
+
+
+async def test_sbis_doc_collapses_to_email_invoice_with_different_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Симптом сверки ДЗ/КЗ 17.07 («Назад в будущее»): счёт «0000-002629» пришёл письмом,
+    УПД «2653» — через СБИС. Номера и даты НЕ совпадают, но поставка одна — второй счёт
+    «к оплате» не создаём, СБИС-документ связываем с почтовой накладной."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        email_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="80455.00",
+            number="0000-002629",
+            source="email",
+            invoice_date=date(2026, 6, 30),
+        )
+        item = _registry_item(
+            number="2653", amount="80455.00", doc_date="02.07.2026", doc_type="ДокОтгрВх"
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.duplicates == 1
+        assert route_result.materialized == 0
+        assert doc.intake_status == "duplicate"
+        assert doc.invoice_id == email_invoice.id
+        count = await session.scalar(select(func.count()).select_from(SupplierInvoice))
+        assert count == 1  # второй счёт НЕ создан
+
+
+async def test_sbis_doc_collapses_to_manual_invoice_in_window(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Внесённый руками счёт тоже участвует в кросс-канальном окне (даже без номера)."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ДОКСИНБОКС", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        manual_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="15580.00",
+            number=None,
+            source="manual",
+            invoice_date=date(2026, 6, 28),
+        )
+        item = _registry_item(
+            number="УПД-77", amount="15580.00", doc_date="01.07.2026", doc_type="ДокОтгрВх"
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.duplicates == 1
+        assert doc.intake_status == "duplicate"
+        assert doc.invoice_id == manual_invoice.id
+
+
+async def test_monthly_invoices_outside_window_not_collapsed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Лема: 3 700 ₽/мес. Прошломесячный почтовый счёт НЕ должен съесть новый
+    СБИС-документ — окно ±7 дней уже месячного шага, оба счёта легитимны."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Лема", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            number="24001",
+            source="email",
+            invoice_date=date(2026, 5, 31),
+        )
+        item = _registry_item(
+            number="24234", amount="3700.00", doc_date="30.06.2026", doc_type="ДокОтгрВх"
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.duplicates == 0
+        assert route_result.materialized == 1
+        assert doc.intake_status == "materialized"
+        count = await session.scalar(select(func.count()).select_from(SupplierInvoice))
+        assert count == 2  # это два разных месячных счёта
+
+
+async def test_cross_channel_ignores_void_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вручную вычищенный дубль (void) не участвует в дедупе: к нему не привязываемся,
+    новый СБИС-документ материализуется своей накладной."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        void_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="80455.00",
+            number="0000-002629",
+            source="email",
+            invoice_date=date(2026, 6, 30),
+            payment_status="void",
+        )
+        item = _registry_item(
+            number="2653", amount="80455.00", doc_date="30.06.2026", doc_type="ДокОтгрВх"
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.materialized == 1
+        assert doc.intake_status == "materialized"
+        assert doc.invoice_id is not None
+        assert doc.invoice_id != void_invoice.id
+
+
+async def test_cross_channel_picks_nearest_by_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Два почтовых счёта одной суммы в окне — связываем с ближайшим по дате."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="80455.00",
+            number="A-1",
+            source="email",
+            invoice_date=date(2026, 6, 25),
+        )
+        nearest = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="80455.00",
+            number="A-2",
+            source="email",
+            invoice_date=date(2026, 7, 1),
+        )
+        item = _registry_item(
+            number="2653", amount="80455.00", doc_date="30.06.2026", doc_type="ДокОтгрВх"
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert doc.intake_status == "duplicate"
+        assert doc.invoice_id == nearest.id
+
+
+async def test_cross_channel_duplicate_enriches_period_and_vat(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Схлопнутый СБИС-документ обогащает почтовую накладную: период услуги из названий
+    ЭДО-документа (снимает period_required-блок банка) и НДС из формализованного УПД."""
+    from app.models import CounterpartyCollectionSource, SupplierExpenseAccrual
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Манго Телеком", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="sbis", value="231006560100"
+            )
+        )
+        email_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="12000.00",
+            number="0000-000777",
+            source="email",
+            invoice_date=date(2026, 7, 1),
+        )
+        email_invoice.service_period_status = "missing"
+        await session.flush()
+
+        item = _registry_item(
+            number="778", amount="12000.00", doc_date="03.07.2026", doc_type="ДокОтгрВх"
+        )
+        item["Документ"]["Название"] = "Услуги связи за июнь 2026"
+        item["Документ"]["Вложение"][0]["СуммаБезНДС"] = "10000.00"
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert doc.intake_status == "duplicate"
+        await session.refresh(email_invoice)
+        assert email_invoice.service_period_status == "ready"
+        assert email_invoice.service_period_start == date(2026, 6, 1)
+        assert email_invoice.service_period_end == date(2026, 6, 30)
+        assert email_invoice.vat_total == Decimal("2000.00")
+        accrual = (
+            await session.execute(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.invoice_id == email_invoice.id
+                )
+            )
+        ).scalar_one_or_none()
+        assert accrual is not None
+
+
 async def test_invoice_letter_routed_to_recognition(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

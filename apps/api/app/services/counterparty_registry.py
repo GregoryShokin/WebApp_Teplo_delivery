@@ -44,6 +44,12 @@ ARCHIVED_STATUS = "archived"
 ARCHIVED_STATUSES = frozenset({ARCHIVED_STATUS, "inactive"})
 
 OPEN_STATUSES = ("unpaid", "partially_paid")
+# Кросс-канальный дедуп «почта/ручной ввод ↔ СБИС»: счёт и его закрывающий УПД по одной
+# поставке приходят РАЗНЫМИ каналами с разными номерами и датами (пример: счёт
+# «0000-002629» письмом и УПД «2653» через ЭДО), поэтому строгий дедуп (сумма+дата+номер)
+# их не ловит — пару ловим по контрагенту+сумме в узком окне дат. Окно короче месяца,
+# чтобы две помесячные накладные с равной суммой (подписка) НЕ слились.
+CROSS_CHANNEL_DEDUP_WINDOW_DAYS = 7
 # Банк и налоговая — не поставщики, платёжных реквизитов у них не требуем. Роль при
 # создании выводится из типа ровно по этому же правилу (routes/counterparties.py).
 NON_SUPPLIER_TYPES = frozenset({"bank", "tax_authority"})
@@ -962,6 +968,20 @@ async def create_manual_invoice(
                 "Такой счёт уже есть (совпали контрагент, сумма, дата и номер) — "
                 "он пришёл почтой/ЭДО или был внесён ранее"
             )
+    # Кросс-канальное окно против ЭДО: счёт/закрывающий УПД той же поставки мог уже
+    # прийти через СБИС под ДРУГИМ номером — совпадения номера не ждём.
+    if invoice_date is not None:
+        for candidate in duplicate_candidates:
+            if (
+                candidate.source == "sbis"
+                and candidate.invoice_date is not None
+                and abs((candidate.invoice_date - invoice_date).days)
+                <= CROSS_CHANNEL_DEDUP_WINDOW_DAYS
+            ):
+                raise CounterpartyRegistryError(
+                    f"Похоже, этот счёт уже пришёл через СБИС: №{candidate.number or 'б/н'} "
+                    f"от {candidate.invoice_date.strftime('%d.%m.%Y')} на ту же сумму"
+                )
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
         source="manual",

@@ -9,8 +9,10 @@
   оператор не настроит карточку и не включит канал;
 - контрагент с каналом сбора 'sbis' и документ отгрузки (счёт/УПД/акт работ) →
   материализация в ``SupplierInvoice(source='sbis')`` с дедупом против почты и
-  ручного ввода (ИНН + сумма + дата + номер) и распознаванием периода услуги
-  из названий документа (regex-слой «Страницы на оплату»);
+  ручного ввода (строгий: ИНН + сумма + дата + номер; кросс-канальный: тот же
+  контрагент + сумма в окне ±7 дней — номера у каналов не совпадают) и
+  распознаванием периода услуги из названий документа (regex-слой «Страницы на
+  оплату»);
 - остальное → зеркало со сверкой против iiko-накладных:
   1. ``number_amount`` — номер поставщика (нормализованный) + точная сумма;
   2. ``amount_date`` — сумма + окно ±5 дней, только если кандидат ЕДИНСТВЕННЫЙ.
@@ -44,7 +46,10 @@ from app.models import (
 )
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
-from app.services.counterparty_registry import compute_invoice_due_date
+from app.services.counterparty_registry import (
+    CROSS_CHANNEL_DEDUP_WINDOW_DAYS,
+    compute_invoice_due_date,
+)
 from app.services.email_invoice_ingest import _guess_type, process_attachment
 from app.services.invoice_recognition import _extract_service_periods
 from app.services.mail.imap_client import FetchedAttachment
@@ -240,13 +245,6 @@ async def _resolve_or_create_counterparty(
     return counterparty
 
 
-# Счёт (СчетВх) и его закрывающий УПД (ДокОтгрВх) по одной поставке — это ОДНА обязанность,
-# но у них разные номера и даты, поэтому строгий дедуп их не ловит. Пару ловим по
-# контрагенту+сумме в узком окне дат — окно короче месяца, чтобы две помесячные накладные
-# одного типа с равной суммой (напр. подписка) НЕ слились.
-_SBIS_CROSS_TYPE_WINDOW_DAYS = 7
-
-
 async def _find_existing_invoice(
     session: AsyncSession, counterparty_id, doc: SbisDocument
 ) -> SupplierInvoice | None:
@@ -256,9 +254,11 @@ async def _find_existing_invoice(
     должен родить второй счёт. Зеркальный iiko-контур сюда не входит: у контрагентов
     с каналом 'sbis' производственных iiko-накладных нет по определению.
 
-    Дополнительно ловим пару «счёт ↔ закрывающий УПД» одной поставки: они приходят
-    РАЗНЫМИ типами СБИС-документов с разными номерами/датами, поэтому строгий дедуп их
-    пропустил бы — и по одной услуге встали бы две накладные «к оплате» (двойная оплата)."""
+    Дополнительно ловим пару «счёт ↔ закрывающий УПД» одной поставки. Внутри СБИС они
+    приходят РАЗНЫМИ типами документов, а между каналами (счёт письмом, УПД через ЭДО)
+    — с несовпадающими номерами и датами, поэтому строгий дедуп их пропустил бы — и по
+    одной услуге встали бы две накладные «к оплате» (двойная оплата). Пару ловим по
+    контрагенту+сумме в окне ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``."""
     if doc.amount is None:
         return None
     candidates = (
@@ -278,16 +278,30 @@ async def _find_existing_invoice(
             and normalize_number(candidate.number) == want_number
         ):
             return candidate
+    if doc.doc_date is None:
+        return None
     want_type = doc.doc_type or ""
-    if want_type in _MATERIALIZABLE_DOC_TYPES and doc.doc_date is not None:
+    if want_type in _MATERIALIZABLE_DOC_TYPES:
         for candidate in candidates:
             if candidate.source != "sbis" or candidate.invoice_date is None:
                 continue
             cand_type = (candidate.raw_payload or {}).get("doc_type") or ""
             if cand_type == want_type or cand_type not in _MATERIALIZABLE_DOC_TYPES:
                 continue  # только пара РАЗНЫХ материализуемых типов (счёт↔УПД)
-            if abs((candidate.invoice_date - doc.doc_date).days) <= _SBIS_CROSS_TYPE_WINDOW_DAYS:
+            if abs((candidate.invoice_date - doc.doc_date).days) <= CROSS_CHANNEL_DEDUP_WINDOW_DAYS:
                 return candidate
+    # Кросс-канальная пара: счёт уже пришёл письмом или внесён руками, а СБИС принёс
+    # тот же счёт/его закрывающий УПД под другим номером. Из нескольких кандидатов
+    # берём ближайший по дате.
+    cross_channel = [
+        candidate
+        for candidate in candidates
+        if candidate.source in ("email", "manual")
+        and candidate.invoice_date is not None
+        and abs((candidate.invoice_date - doc.doc_date).days) <= CROSS_CHANNEL_DEDUP_WINDOW_DAYS
+    ]
+    if cross_channel:
+        return min(cross_channel, key=lambda c: abs((c.invoice_date - doc.doc_date).days))
     return None
 
 
@@ -315,6 +329,30 @@ def _service_period_fields(doc: SbisDocument, *, required: bool) -> dict[str, An
     return {"service_period_status": "missing" if required else "not_required"}
 
 
+async def _enrich_duplicate_invoice(
+    session: AsyncSession, invoice: SupplierInvoice, doc: SbisDocument
+) -> None:
+    """Дубль из ЭДО обогащает существующую накладную тем, чего в ней нет; заполненное
+    не перетираем. Период услуги снимает блок отправки в банк (period_required-гейт),
+    НДС из формализованного документа точнее распознанного из PDF."""
+    if invoice.service_period_status == "missing":
+        period = _service_period_fields(doc, required=True)
+        if period.get("service_period_status") == "ready":
+            invoice.service_period_start = period["service_period_start"]
+            invoice.service_period_end = period["service_period_end"]
+            invoice.service_period_status = "ready"
+            invoice.service_period_source = period["service_period_source"]
+            invoice.service_period_confidence = period["service_period_confidence"]
+            await service_periods.sync_invoice_accrual(session, invoice)
+    if (
+        (invoice.vat_total or Decimal("0")) == 0
+        and doc.amount is not None
+        and doc.amount_wo_vat is not None
+        and doc.amount > doc.amount_wo_vat
+    ):
+        invoice.vat_total = doc.amount - doc.amount_wo_vat
+
+
 async def _materialize_document(
     session: AsyncSession,
     doc: SbisDocument,
@@ -340,6 +378,7 @@ async def _materialize_document(
         doc.invoice_id = duplicate.id
         doc.intake_status = "duplicate"
         result.duplicates += 1
+        await _enrich_duplicate_invoice(session, duplicate, doc)
         return
 
     # Профиль приходит из балк-кэша маршрутизации; одиночный SELECT — только для
