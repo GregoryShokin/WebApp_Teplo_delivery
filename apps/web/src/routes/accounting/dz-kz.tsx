@@ -193,8 +193,33 @@ function fmtDate(value: string | null): string {
   return date.format(new Date(`${value}T00:00:00`));
 }
 
+type StaffPayable = {
+  as_of: string;
+  total: number;
+  items: {
+    employee_id: string;
+    full_name: string;
+    position: string | null;
+    basis: string;
+    earned_to_date: number;
+    already_advanced: number;
+    payable: number;
+  }[];
+};
+
+const STAFF_BASIS_LABEL: Record<string, string> = {
+  okladnik: "оклад",
+  dishwasher: "смены",
+  production: "выработка",
+};
+
 async function getAccounting(view: View): Promise<AccountingList> {
   const response = await api.get<AccountingList>("/accounting/suppliers", { params: { view } });
+  return response.data;
+}
+
+async function getStaffPayable(): Promise<StaffPayable> {
+  const response = await api.get<StaffPayable>("/accounting/suppliers/staff-payable");
   return response.data;
 }
 
@@ -266,6 +291,19 @@ export function DzKzRoute() {
     queryFn: () => getAccounting("open"),
   });
   const balances = useQuery({ queryKey: ["accounting", "balances"], queryFn: getBalances });
+  // Долг сотрудникам — провизорный прогон калькулятора ЗП, тяжёлый: грузим отдельно и кэшируем.
+  const staff = useQuery({
+    queryKey: ["accounting", "staff-payable"],
+    queryFn: getStaffPayable,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const supplierPayable = balances.data?.payable_total;
+  const staffPayable = staff.data?.total;
+  const payableTotal =
+    supplierPayable == null && staffPayable == null
+      ? undefined
+      : (supplierPayable ?? 0) + (staffPayable ?? 0);
 
   const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
@@ -295,9 +333,13 @@ export function DzKzRoute() {
         />
         <Summary
           title="Кредиторская задолженность"
-          value={balances.data?.payable_total}
+          value={payableTotal}
           tone="rose"
-          hint="Неоплаченный остаток всех накладных и актов"
+          hint={
+            supplierPayable != null && staffPayable != null
+              ? `поставщики ${money.format(supplierPayable)} · сотрудники ${money.format(staffPayable)}`
+              : "Накладные и акты к оплате + заработанное сотрудниками"
+          }
         />
         <Summary title="Будущие расходы" value={accounting.data?.scheduled_total} tone="violet" />
         <Summary
@@ -318,7 +360,7 @@ export function DzKzRoute() {
       </Tabs>
 
       {section === "balances" ? (
-        <BalancesSection query={balances} onOpenRegister={openRegister} />
+        <BalancesSection query={balances} staffQuery={staff} onOpenRegister={openRegister} />
       ) : null}
       {section === "payments" || section === "documents" ? (
         <RegisterFiltersBar filters={filters} onChange={setFilters} />
@@ -390,11 +432,83 @@ function TableStatus({ colSpan, state }: { colSpan: number; state: "loading" | "
   );
 }
 
+function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPayable>> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border bg-background">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div>
+          <div className="font-medium">Сотрудники — заработано, не выплачено</div>
+          <div className="text-xs text-muted-foreground">
+            Заработанное за открытый период с учётом удержаний минус выданные авансы; гасится
+            выплатой ведомости
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-lg font-semibold tabular-nums text-rose-700">
+          {query.isLoading ? (
+            <Loader2 className="animate-spin" size={17} />
+          ) : query.isError ? (
+            <span className="text-sm font-normal text-red-600">
+              {apiErrorMessage(query.error, "не посчиталось")}
+            </span>
+          ) : (
+            money.format(query.data?.total ?? 0)
+          )}
+          <ArrowRight size={15} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        </div>
+      </button>
+      {open && query.data ? (
+        <div className="border-t">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Сотрудник</TableHead>
+                <TableHead>Основа</TableHead>
+                <TableHead className="text-right">Заработано</TableHead>
+                <TableHead className="text-right">Авансы</TableHead>
+                <TableHead className="text-right">К выплате</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {query.data.items.map((row) => (
+                <TableRow key={row.employee_id}>
+                  <TableCell>
+                    <div className="font-medium">{row.full_name}</div>
+                    <div className="text-xs text-muted-foreground">{row.position ?? "—"}</div>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {STAFF_BASIS_LABEL[row.basis] ?? row.basis}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money.format(row.earned_to_date)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money.format(row.already_advanced)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {money.format(row.payable)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function BalancesSection({
   query,
+  staffQuery,
   onOpenRegister,
 }: {
   query: ReturnType<typeof useQuery<BalanceList>>;
+  staffQuery: ReturnType<typeof useQuery<StaffPayable>>;
   onOpenRegister: (target: "payments" | "documents", cp: CounterpartyBalance | null) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -409,6 +523,7 @@ function BalancesSection({
 
   return (
     <div className="flex flex-col gap-3">
+      <StaffPayableCard query={staffQuery} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
           value={search}

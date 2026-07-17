@@ -19,6 +19,7 @@ from app.models import (
     Counterparty,
     CounterpartyPaymentDraft,
     DdsArticle,
+    Employee,
     InvoicePaymentAllocation,
     SupplierExpenseAccrual,
     SupplierInvoice,
@@ -26,6 +27,7 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as periods
+from app.services.payroll_advance_availability import available_to_advance
 
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
@@ -415,9 +417,40 @@ async def list_counterparty_balances(
         )
     ).all()
 
+    # Контрагенты с закрытыми расчётами (0/0) остаются в списке: владелец видит ВСЕХ,
+    # с кем есть документооборот, а не только должников.
+    activity_rows = (
+        await session.execute(
+            select(
+                SupplierInvoice.counterparty_id,
+                func.max(SupplierInvoice.invoice_date),
+            )
+            .where(
+                SupplierInvoice.payment_status != "void",
+                SupplierInvoice.direction == "payable",
+            )
+            .group_by(SupplierInvoice.counterparty_id)
+        )
+    ).all()
+    prepay_activity_rows = (
+        await session.execute(
+            select(
+                SupplierPrepayment.counterparty_id,
+                func.max(func.date(SupplierPrepayment.created_at)),
+            ).group_by(SupplierPrepayment.counterparty_id)
+        )
+    ).all()
+
     receivable_by_cp = {row[0]: (periods.money(row[1]), row[2], row[3]) for row in prepay_rows}
     payable_by_cp = {row[0]: (periods.money(row[1]), row[2], row[3]) for row in invoice_rows}
-    cp_ids = set(receivable_by_cp) | set(payable_by_cp)
+    activity_by_cp: dict[uuid.UUID, date] = {}
+    for cp_id, last_date in list(activity_rows) + list(prepay_activity_rows):
+        if last_date is None:
+            continue
+        current = activity_by_cp.get(cp_id)
+        activity_by_cp[cp_id] = max(current, last_date) if current else last_date
+
+    cp_ids = set(receivable_by_cp) | set(payable_by_cp) | set(activity_by_cp)
     if not cp_ids:
         return CounterpartyBalanceList(items=[], receivable_total=0, payable_total=0)
 
@@ -433,7 +466,9 @@ async def list_counterparty_balances(
     for cp_id, name, inn in counterparties:
         receivable, prepay_count, prepay_last = receivable_by_cp.get(cp_id, (Decimal("0"), 0, None))
         payable, invoice_count, invoice_last = payable_by_cp.get(cp_id, (Decimal("0"), 0, None))
-        last_activity = max(filter(None, (prepay_last, invoice_last)), default=None)
+        last_activity = max(
+            filter(None, (prepay_last, invoice_last, activity_by_cp.get(cp_id))), default=None
+        )
         items.append(
             CounterpartyBalance(
                 counterparty_id=cp_id,
@@ -447,7 +482,10 @@ async def list_counterparty_balances(
                 last_activity=last_activity,
             )
         )
-    items.sort(key=lambda item: max(item.receivable, item.payable), reverse=True)
+    items.sort(
+        key=lambda item: (max(item.receivable, item.payable), item.last_activity or date.min),
+        reverse=True,
+    )
     return CounterpartyBalanceList(
         items=items,
         receivable_total=sum(item.receivable for item in items),
@@ -771,3 +809,62 @@ async def list_document_register(
             row.remainder for row in items if row.payment_status in UNPAID_INVOICE_STATUSES
         ),
     )
+
+
+class StaffPayableRow(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    position: str | None = None
+    basis: str
+    earned_to_date: float
+    already_advanced: float
+    payable: float
+
+
+class StaffPayableList(BaseModel):
+    as_of: date
+    total: float
+    items: list[StaffPayableRow]
+
+
+@router.get("/staff-payable", response_model=StaffPayableList, dependencies=READ)
+async def list_staff_payable(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> StaffPayableList:
+    """Долг перед сотрудниками на сегодня: заработано за открытый период − выданные авансы.
+
+    Считает тем же механизмом, что «доступно к авансу» (earned-to-date: провизорный
+    прогон недельного калькулятора по загруженным явкам / оклад по дням / смены мойщиц —
+    депозиты, штрафы и удержания уже внутри netto). Это кредиторка, которая гасится
+    выплатой ведомости. Отдельная ручка: расчёт тяжёлый, дашборд грузит её асинхронно.
+    """
+    as_of = date.today()
+    employees = (
+        await session.scalars(
+            select(Employee)
+            .where(Employee.status.in_(("active", "dismissing")))
+            .order_by(Employee.full_name)
+        )
+    ).all()
+
+    items: list[StaffPayableRow] = []
+    total = Decimal("0.00")
+    for employee in employees:
+        availability = await available_to_advance(session, employee, as_of)
+        payable = periods.money(availability.available)
+        if payable <= 0:
+            continue
+        total += payable
+        items.append(
+            StaffPayableRow(
+                employee_id=employee.id,
+                full_name=employee.full_name,
+                position=employee.position,
+                basis=availability.basis,
+                earned_to_date=_float(availability.earned_to_date),
+                already_advanced=_float(availability.already_advanced),
+                payable=_float(payable),
+            )
+        )
+    items.sort(key=lambda row: row.payable, reverse=True)
+    return StaffPayableList(as_of=as_of, total=_float(total), items=items)
