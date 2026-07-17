@@ -30,7 +30,11 @@ from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
 from app.models import Account, Employee, SalaryAdvance, SalaryAdvanceBankDraft, Wallet
 from app.services.employee_effective_events import get_position_on_date
-from app.services.payroll_advance_availability import AdvanceAvailability, available_to_advance
+from app.services.payroll_advance_availability import (
+    AdvanceAvailability,
+    available_to_advance,
+    upcoming_payslips,
+)
 from app.services.payroll_advance_service import (
     ADVANCE_TK_WALLET_CODE,
     advance_payout_status,
@@ -75,6 +79,14 @@ class AdvanceAvailabilityRead(BaseModel):
     available: float
     note: str | None = None
     payout_reached: bool = False
+
+
+class UpcomingPayslipRead(BaseModel):
+    """Ближайшая ведомость — куда можно завести удержание займа «через ведомость»."""
+
+    period_start: date
+    period_end: date
+    payout_date: date
 
 
 class AdvanceRead(BaseModel):
@@ -187,6 +199,28 @@ async def get_advance_availability(
         apply_payout_gate=apply_payout_gate,
     )
     return _availability_read(availability)
+
+
+@router.get(
+    "/upcoming-payslips",
+    response_model=list[UpcomingPayslipRead],
+    dependencies=ADVANCES_READ_ACCESS,
+)
+async def get_upcoming_payslips(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    employee_id: uuid.UUID | None = None,
+    count: int = 2,
+) -> list[UpcomingPayslipRead]:
+    """Ближайшие ведомости — для выбора «с какой ЗП удерживать» при выдаче займа через
+    ведомость. Без `employee_id` — недельное расписание по умолчанию; с ним — под
+    пайплайн сотрудника (недельный/полумесячный)."""
+    employee = await _require_employee(session, employee_id) if employee_id is not None else None
+    rows = await upcoming_payslips(
+        session, employee, datetime.now(_MOSCOW_TZ).date(), count=max(1, min(count, 6))
+    )
+    return [
+        UpcomingPayslipRead(period_start=s, period_end=e, payout_date=p) for s, e, p in rows
+    ]
 
 
 @router.get("", response_model=list[AdvanceRead], dependencies=ADVANCES_READ_ACCESS)

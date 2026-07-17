@@ -4291,6 +4291,22 @@ export async function deletePayrollAdjustment(id: string): Promise<void> {
   await api.delete(`/payroll/adjustments/${id}`);
 }
 
+export type UpcomingPayslip = {
+  period_start: string;
+  period_end: string;
+  payout_date: string;
+};
+
+export async function getUpcomingPayslips(
+  employeeId?: string,
+  count = 2,
+): Promise<UpcomingPayslip[]> {
+  const response = await api.get<UpcomingPayslip[]>("/payroll/advances/upcoming-payslips", {
+    params: { employee_id: employeeId || undefined, count },
+  });
+  return response.data;
+}
+
 export async function getPayrollAdvanceAvailability(
   employeeId: string,
   asOf?: string,

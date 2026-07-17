@@ -301,6 +301,66 @@ async def _basis_earned(
     return await _production_earned(session, employee, as_of)
 
 
+def _upcoming_weekly_payslips(today: date, count: int) -> list[tuple[date, date, date]]:
+    from app.services.payroll_runner import current_week_bounds
+
+    start, _, _ = current_week_bounds(today)
+    out: list[tuple[date, date, date]] = []
+    for i in range(count + 2):
+        s, e, p = current_week_bounds(start + timedelta(days=7 * i))
+        if p >= today:
+            out.append((s, e, p))
+        if len(out) >= count:
+            break
+    return out[:count]
+
+
+def _upcoming_half_month_payslips(
+    today: date, count: int, *, mode: str | None
+) -> list[tuple[date, date, date]]:
+    if mode == PAYOUT_MODE_ON_DEMAND:
+        return []  # нет автоматических выплат — удерживать неоткуда
+    out: list[tuple[date, date, date]] = []
+    year, month = today.year, today.month
+    for _ in range(count + 3):
+        for start, end, payout in (_first_half(year, month), _second_half(year, month)):
+            if payout < today:
+                continue
+            # first_half платит только 15-го (payout.day==15), second_half — только 1-го.
+            if mode == PAYOUT_MODE_FIRST_HALF and payout.day != HALF_MONTH_SPLIT_DAY:
+                continue
+            if mode == PAYOUT_MODE_SECOND_HALF and payout.day == HALF_MONTH_SPLIT_DAY:
+                continue
+            out.append((start, end, payout))
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        if len(out) >= count:
+            break
+    out.sort(key=lambda item: item[2])
+    return out[:count]
+
+
+async def upcoming_payslips(
+    session: AsyncSession, employee: Employee | None, today: date, *, count: int = 2
+) -> list[tuple[date, date, date]]:
+    """Ближайшие `count` ведомостей (payout_date ≥ today), вычисленные по расписанию
+    (недельное / полумесячное с учётом режима окладника) — без опоры на строки периодов,
+    которых может ещё не быть. Возвращает (period_start, period_end, payout_date).
+
+    Без сотрудника — недельное расписание по умолчанию (основной контур «выплаты по
+    вторникам»); с сотрудником — под его пайплайн."""
+    if employee is None:
+        return _upcoming_weekly_payslips(today, count)
+    position = await get_position_on_date(session, employee.id, today)
+    position = position or employee.position or ""
+    if position in okladnik_positions():
+        modes = await _load_okladnik_payout_modes(session)
+        mode = _okladnik_payout_mode(modes, position)
+        return _upcoming_half_month_payslips(today, count, mode=mode)
+    if position in dishwasher_positions():
+        return _upcoming_half_month_payslips(today, count, mode=None)  # обе половины
+    return _upcoming_weekly_payslips(today, count)
+
+
 async def available_to_advance(
     session: AsyncSession,
     employee: Employee,

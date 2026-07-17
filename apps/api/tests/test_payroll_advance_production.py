@@ -234,6 +234,60 @@ def test_okladnik_payout_paid_end_respects_mode() -> None:
     assert _okladnik_payout_paid_end("second_half", date(2026, 1, 15)) is None
 
 
+def test_upcoming_payslips_schedule() -> None:
+    """Ближайшие ведомости считаются по расписанию, даже без строк периодов в БД."""
+    from app.services.payroll_advance_availability import (
+        _upcoming_half_month_payslips,
+        _upcoming_weekly_payslips,
+    )
+
+    # Недельные: 17.07 (пт) → ближайшая выплата вт 21.07 (нед. 14–20), затем 28.07.
+    weekly = _upcoming_weekly_payslips(date(2026, 7, 17), 2)
+    assert weekly == [
+        (date(2026, 7, 14), date(2026, 7, 20), date(2026, 7, 21)),
+        (date(2026, 7, 21), date(2026, 7, 27), date(2026, 7, 28)),
+    ]
+
+    # Полумесячные split: 17.07 → 2-я половина июля (выплата 01.08), затем 1-я августа (15.08).
+    split = _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode="split")
+    assert split == [
+        (date(2026, 7, 16), date(2026, 7, 31), date(2026, 8, 1)),
+        (date(2026, 8, 1), date(2026, 8, 15), date(2026, 8, 15)),
+    ]
+
+    # on_demand — выплат нет.
+    assert _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode="on_demand") == []
+
+
+def test_upcoming_weekly_payslips_from_schedule() -> None:
+    """Ближайшие недельные ведомости считаются по расписанию (без строк периодов)."""
+    from app.services.payroll_advance_availability import _upcoming_weekly_payslips
+
+    # 17.07.2026 — пятница; неделя вт→пн [14..20]→выплата 21; следующая [21..27]→28.
+    rows = _upcoming_weekly_payslips(date(2026, 7, 17), 2)
+    assert rows == [
+        (date(2026, 7, 14), date(2026, 7, 20), date(2026, 7, 21)),
+        (date(2026, 7, 21), date(2026, 7, 27), date(2026, 7, 28)),
+    ]
+
+
+def test_upcoming_half_month_payslips_by_mode() -> None:
+    """Ближайшие полумесячные ведомости — с учётом режима выплат окладника."""
+    from app.services.payroll_advance_availability import _upcoming_half_month_payslips
+
+    # split/мойщица (mode=None): [16..31 июл]→01.08, [01..15 авг]→15.08.
+    split = _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode=None)
+    assert [row[2] for row in split] == [date(2026, 8, 1), date(2026, 8, 15)]
+    # first_half — только 15-е.
+    first_half = _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode="first_half")
+    assert [row[2] for row in first_half] == [date(2026, 8, 15), date(2026, 9, 15)]
+    # second_half — только 1-е.
+    second_half = _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode="second_half")
+    assert [row[2] for row in second_half] == [date(2026, 8, 1), date(2026, 9, 1)]
+    # on_demand — выплат нет.
+    assert _upcoming_half_month_payslips(date(2026, 7, 17), 2, mode="on_demand") == []
+
+
 async def test_production_earned_no_attendance_returns_note(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
