@@ -199,6 +199,8 @@ export type UpdateInvoicePayload = {
   lines: LinePayload[];
   issued_at?: string;
   number?: string | null;
+  // Смена поставщика (только неоплаченная накладная). undefined → поставщик не меняется.
+  counterparty_id?: string;
 };
 
 export async function updateWarehouseInvoice(

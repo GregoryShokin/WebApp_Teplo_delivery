@@ -920,7 +920,7 @@ export function StaffLineRow({
   );
 }
 
-function CounterpartySearch({
+export function CounterpartySearch({
   items,
   value,
   onPick,
