@@ -41,6 +41,8 @@ const STATUS_LABELS: Record<string, string> = {
   recognized: "Распознан",
   needs_review: "Требует проверки",
   linked: "Готов к оплате",
+  // Закрывающий документ (УПД/акт): не платится напрямую, живёт в учёте ДЗ/КЗ.
+  closing: "Закрывающий (ДЗ/КЗ)",
   duplicate: "Дубль",
   failed: "Ошибка",
   ignored: "Не счёт",
@@ -49,6 +51,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_BADGE: Record<string, string> = {
   linked: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  closing: "border-violet-200 bg-violet-50 text-violet-700",
   needs_review: "border-amber-200 bg-amber-50 text-amber-700",
   duplicate: "border-sky-200 bg-sky-50 text-sky-700",
   ignored: "border-muted bg-muted text-muted-foreground",
@@ -69,6 +72,7 @@ const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "active", label: "Актуальные" },
   { value: "needs_review", label: "Требуют проверки" },
   { value: "linked", label: "Готовы к оплате" },
+  { value: "closing", label: "Закрывающие (ДЗ/КЗ)" },
   { value: "duplicate", label: "Дубли" },
   { value: "ignored", label: "Не счета" },
   { value: "excluded", label: "Исключённые" },

@@ -123,6 +123,9 @@ type DocumentRow = {
   number: string | null;
   invoice_date: string | null;
   source: string;
+  doc_kind: string;
+  // 'active' — документ в силе (в КЗ); 'pending' — будущий УПД, ждёт своей даты (правило 4).
+  activation_status: string;
   counterparty_id: string;
   counterparty_name: string;
   amount: number;
@@ -196,6 +199,7 @@ function fmtDate(value: string | null): string {
 type StaffPayable = {
   as_of: string;
   total: number;
+  receivable_total: number;
   items: {
     employee_id: string;
     full_name: string;
@@ -203,7 +207,10 @@ type StaffPayable = {
     basis: string;
     earned_to_date: number;
     already_advanced: number;
+    finalized_unpaid: number;
+    loans_outstanding: number;
     payable: number;
+    receivable: number;
   }[];
 };
 
@@ -304,6 +311,12 @@ export function DzKzRoute() {
     supplierPayable == null && staffPayable == null
       ? undefined
       : (supplierPayable ?? 0) + (staffPayable ?? 0);
+  const supplierReceivable = balances.data?.receivable_total;
+  const staffReceivable = staff.data?.receivable_total;
+  const receivableTotal =
+    supplierReceivable == null && staffReceivable == null
+      ? undefined
+      : (supplierReceivable ?? 0) + (staffReceivable ?? 0);
 
   const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
@@ -324,12 +337,19 @@ export function DzKzRoute() {
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Только чистые ДЗ/КЗ. Контур признания (будущие расходы, очередь распределения) —
+          детали на вкладке «Признание расходов», не headline-числа: те же предоплаты уже
+          посчитаны в дебиторке, отдельные плитки их дублировали (решение владельца 17.07). */}
+      <div className="grid gap-3 sm:grid-cols-2">
         <Summary
           title="Дебиторская задолженность"
-          value={balances.data?.receivable_total}
+          value={receivableTotal}
           tone="sky"
-          hint="Открытые предоплаты: нам должны закрыть документами или вернуть"
+          hint={
+            supplierReceivable != null && staffReceivable != null && staffReceivable > 0
+              ? `поставщики ${money.format(supplierReceivable)} · сотрудники ${money.format(staffReceivable)}`
+              : "Открытые предоплаты: нам должны закрыть документами или вернуть"
+          }
         />
         <Summary
           title="Кредиторская задолженность"
@@ -341,13 +361,6 @@ export function DzKzRoute() {
               : "Накладные и акты к оплате + заработанное сотрудниками"
           }
         />
-        <Summary title="Будущие расходы" value={accounting.data?.scheduled_total} tone="violet" />
-        <Summary
-          title="Нужно распределить"
-          value={accounting.data?.needs_review_total}
-          tone="amber"
-          hint="Предоплаты без периода услуги — очередь ручного разбора"
-        />
       </div>
 
       <Tabs value={section} onValueChange={(value) => setSection(value as Section)}>
@@ -355,7 +368,14 @@ export function DzKzRoute() {
           <TabsTrigger value="balances">Остатки</TabsTrigger>
           <TabsTrigger value="payments">Платежи</TabsTrigger>
           <TabsTrigger value="documents">УПД и накладные</TabsTrigger>
-          <TabsTrigger value="recognition">Признание расходов</TabsTrigger>
+          <TabsTrigger value="recognition">
+            Признание расходов
+            {(accounting.data?.needs_review_total ?? 0) > 0 ? (
+              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-xs text-amber-800">
+                {money.format(accounting.data?.needs_review_total ?? 0)}
+              </span>
+            ) : null}
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -442,13 +462,13 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
       >
         <div>
-          <div className="font-medium">Сотрудники — заработано, не выплачено</div>
+          <div className="font-medium">Сотрудники — баланс расчётов</div>
           <div className="text-xs text-muted-foreground">
-            Заработанное за открытый период с учётом удержаний минус выданные авансы; гасится
-            выплатой ведомости
+            Мы должны: заработанное за период минус авансы + невыплаченные остатки ведомостей.
+            Нам должны: займы и выдачи сверх заработанного; удержится будущими ведомостями
           </div>
         </div>
-        <div className="flex items-center gap-2 text-lg font-semibold tabular-nums text-rose-700">
+        <div className="flex items-center gap-3 text-lg font-semibold tabular-nums">
           {query.isLoading ? (
             <Loader2 className="animate-spin" size={17} />
           ) : query.isError ? (
@@ -456,7 +476,16 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
               {apiErrorMessage(query.error, "не посчиталось")}
             </span>
           ) : (
-            money.format(query.data?.total ?? 0)
+            <>
+              <span className="text-rose-700" title="Мы должны сотрудникам">
+                {money.format(query.data?.total ?? 0)}
+              </span>
+              {(query.data?.receivable_total ?? 0) > 0 ? (
+                <span className="text-sky-700" title="Сотрудники должны нам (займы, переавансы)">
+                  {money.format(query.data?.receivable_total ?? 0)}
+                </span>
+              ) : null}
+            </>
           )}
           <ArrowRight size={15} className={`transition-transform ${open ? "rotate-90" : ""}`} />
         </div>
@@ -470,7 +499,9 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                 <TableHead>Основа</TableHead>
                 <TableHead className="text-right">Заработано</TableHead>
                 <TableHead className="text-right">Авансы</TableHead>
-                <TableHead className="text-right">К выплате</TableHead>
+                <TableHead className="text-right">Хвост ведомостей</TableHead>
+                <TableHead className="text-right">Мы должны</TableHead>
+                <TableHead className="text-right">Нам должны</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -489,8 +520,21 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                   <TableCell className="text-right tabular-nums">
                     {money.format(row.already_advanced)}
                   </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {money.format(row.payable)}
+                  <TableCell className="text-right tabular-nums">
+                    {row.finalized_unpaid > 0 ? money.format(row.finalized_unpaid) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums text-rose-700">
+                    {row.payable > 0 ? money.format(row.payable) : "—"}
+                  </TableCell>
+                  <TableCell
+                    className="text-right font-semibold tabular-nums text-sky-700"
+                    title={
+                      row.loans_outstanding > 0
+                        ? `в т.ч. займы/старые авансы ${money.format(row.loans_outstanding)}`
+                        : undefined
+                    }
+                  >
+                    {row.receivable > 0 ? money.format(row.receivable) : "—"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -828,7 +872,16 @@ function DocumentsSection({ filters }: { filters: RegisterFilters }) {
                   <TableRow key={row.invoice_id}>
                     <TableCell className="whitespace-nowrap">{fmtDate(row.invoice_date)}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{row.number ? `№ ${row.number}` : "Без номера"}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">
+                          {row.number ? `№ ${row.number}` : "Без номера"}
+                        </span>
+                        {row.activation_status === "pending" ? (
+                          <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                            будущий · ждёт {fmtDate(row.invoice_date)}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {INVOICE_SOURCE_LABEL[row.source] ?? row.source}
                       </div>

@@ -329,3 +329,130 @@ def test_documents_register_shows_payment_breakdown(
     prepay_alloc = next(a for a in row["allocations"] if a["source_kind"] == "prepayment")
     assert prepay_alloc["prepayment_kind"] == "goods"
     assert payload["unpaid_total"] >= 100.0
+
+
+def test_staff_balance_finalized_tail_and_loan(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """КЗ сотрудника = невыплаченный остаток финализированной ведомости; ДЗ = непогашенный
+    заём. Легаси-заливка (is_imported_legacy) в долг не попадает."""
+    from datetime import UTC, datetime
+
+    from app.models import (
+        Employee,
+        PayrollLine,
+        PayrollPayment,
+        PayrollPeriod,
+        PayrollRun,
+        SalaryAdvance,
+    )
+
+    def make_line(run_id, employee_id, total):
+        return PayrollLine(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            employee_id=employee_id,
+            role="courier",
+            base_pay=Decimal(total),
+            premium=Decimal("0"),
+            percent_pay=Decimal("0"),
+            vacation_pay=Decimal("0"),
+            ndfl_withheld=Decimal("0"),
+            fund_accrual=Decimal("0"),
+            deduction=Decimal("0"),
+            total_payable=Decimal(total),
+            deposit_excluded_for_run=False,
+            deposit_exclusion_reason=None,
+            components={"days": [], "adjustments": {}},
+        )
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            employee = Employee(
+                id=uuid.uuid4(),
+                full_name="Дашборд Сотрудник Хвост",
+                iiko_id=f"iiko-{uuid.uuid4()}",
+                category="category_2",
+                status="active",
+                is_senior=False,
+                is_deputy_senior=False,
+            )
+            period = PayrollPeriod(
+                id=uuid.uuid4(),
+                period_type="week",
+                start_date=date(2026, 6, 2),
+                end_date=date(2026, 6, 8),
+                payroll_date=date(2026, 6, 9),
+                status="finalized",
+                finalized_at=datetime(2026, 6, 10, tzinfo=UTC),
+            )
+            run = PayrollRun(
+                id=uuid.uuid4(),
+                period_id=period.id,
+                started_at=datetime(2026, 6, 9, tzinfo=UTC),
+                finished_at=datetime(2026, 6, 9, 1, tzinfo=UTC),
+                status="finalized",
+                blocking_issues=[],
+                summary={},
+                is_imported_legacy=False,
+            )
+            legacy_period = PayrollPeriod(
+                id=uuid.uuid4(),
+                period_type="week",
+                start_date=date(2025, 6, 3),
+                end_date=date(2025, 6, 9),
+                payroll_date=date(2025, 6, 10),
+                status="finalized",
+                finalized_at=datetime(2025, 6, 11, tzinfo=UTC),
+            )
+            legacy_run = PayrollRun(
+                id=uuid.uuid4(),
+                period_id=legacy_period.id,
+                started_at=datetime(2025, 6, 10, tzinfo=UTC),
+                finished_at=datetime(2025, 6, 10, 1, tzinfo=UTC),
+                status="finalized",
+                blocking_issues=[],
+                summary={},
+                is_imported_legacy=True,
+            )
+            session.add_all([employee, period, run, legacy_period, legacy_run])
+            await session.flush()
+            session.add(make_line(run.id, employee.id, "5000.00"))
+            session.add(make_line(legacy_run.id, employee.id, "99999.00"))
+            session.add(
+                PayrollPayment(
+                    run_id=run.id,
+                    employee_id=employee.id,
+                    amount=Decimal("3000.00"),
+                    amount_cash=Decimal("0"),
+                    amount_account=Decimal("3000.00"),
+                    status="partially_paid",
+                )
+            )
+            session.add(
+                SalaryAdvance(
+                    employee_id=employee.id,
+                    role="courier",
+                    kind="loan",
+                    amount=Decimal("10000.00"),
+                    per_installment_amount=Decimal("2000.00"),
+                    installments_count=5,
+                    recovered_amount=Decimal("4000.00"),
+                    status="issued",
+                    issued_on=date(2026, 6, 5),
+                )
+            )
+            await session.commit()
+            return employee.id
+
+    employee_id = asyncio.run(seed())
+    response = client.get(f"{BASE}/staff-payable", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    payload = response.json()
+    row = next(item for item in payload["items"] if item["employee_id"] == str(employee_id))
+
+    assert row["finalized_unpaid"] == 2000.0  # 5000 начислено − 3000 выплачено; легаси мимо
+    assert row["payable"] >= 2000.0
+    assert row["loans_outstanding"] == 6000.0  # заём 10000 − погашено 4000
+    assert row["receivable"] == 6000.0
+    assert payload["receivable_total"] >= 6000.0

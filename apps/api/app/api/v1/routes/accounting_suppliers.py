@@ -21,6 +21,11 @@ from app.models import (
     DdsArticle,
     Employee,
     InvoicePaymentAllocation,
+    PayrollLine,
+    PayrollPayment,
+    PayrollPeriod,
+    PayrollRun,
+    SalaryAdvance,
     SupplierExpenseAccrual,
     SupplierInvoice,
     SupplierPrepayment,
@@ -170,6 +175,10 @@ async def list_supplier_accounting(
             .join(Counterparty, Counterparty.id == SupplierPrepayment.counterparty_id)
             .outerjoin(DdsArticle, DdsArticle.id == SupplierPrepayment.article_id)
             .where(SupplierPrepayment.status.in_(("open", "partially_settled")))
+            # ДЗ по оплаченному счёту (kind='prepaid_bill', единый чокпоинт канона) гасится
+            # закрывающим УПД (правило 2), а НЕ ручным распределением по периодам — из очереди
+            # «Признание расходов» её исключаем (в дебиторку /balances она входит отдельно).
+            .where(SupplierPrepayment.kind != "prepaid_bill")
             .order_by(SupplierPrepayment.created_at.desc())
         )
     ).all()
@@ -348,6 +357,9 @@ class DocumentRegisterRow(BaseModel):
     number: str | None = None
     invoice_date: date | None = None
     source: str
+    doc_kind: str
+    # 'active' — документ в силе (в КЗ); 'pending' — будущий УПД, ждёт своей даты (правило 4).
+    activation_status: str
     counterparty_id: uuid.UUID
     counterparty_name: str
     amount: float
@@ -412,13 +424,18 @@ async def list_counterparty_balances(
             .where(
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
                 SupplierInvoice.direction == "payable",
+                # Канон ДЗ/КЗ: кредиторка — это АКТИВНЫЕ закрывающие документы. Счета (bill) —
+                # не долг (очередь оплат), будущие УПД (activation='pending') ещё не в силе.
+                SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.activation_status == "active",
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
     ).all()
 
     # Контрагенты с закрытыми расчётами (0/0) остаются в списке: владелец видит ВСЕХ,
-    # с кем есть документооборот, а не только должников.
+    # с кем есть документооборот. Счета (bill) в баланс не входят и в этот список не тянут —
+    # они живут в очереди оплат; учитываем только закрывающие документы (в т.ч. будущие УПД).
     activity_rows = (
         await session.execute(
             select(
@@ -428,6 +445,7 @@ async def list_counterparty_balances(
             .where(
                 SupplierInvoice.payment_status != "void",
                 SupplierInvoice.direction == "payable",
+                SupplierInvoice.doc_kind == "closing",
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
@@ -599,7 +617,15 @@ async def list_payment_register(
     )
     prepayment_by_tx = {sp.cashflow_transaction_id: sp for sp in prepayments}
 
-    opening_filters = [SupplierPrepayment.cashflow_transaction_id.is_(None)]
+    # ДЗ по оплаченному счёту (kind='prepaid_bill') несёт cashflow_transaction_id=None ПО ЗАМЫСЛУ
+    # (денег не двигает — факт оплаты уже несёт аллокация счёта), поэтому без фильтра она попадала
+    # в реестр строкой «начальный остаток» ВТОРЫМ разом поверх самой проводки платежа: один платёж
+    # по счёту давал две строки и задвоенный итог периода. Настоящие опенинги (POST
+    # /prepayments/opening) остаются — у них другой kind.
+    opening_filters = [
+        SupplierPrepayment.cashflow_transaction_id.is_(None),
+        SupplierPrepayment.kind != "prepaid_bill",
+    ]
     if counterparty_id is not None:
         opening_filters.append(SupplierPrepayment.counterparty_id == counterparty_id)
     if date_from is not None:
@@ -719,10 +745,14 @@ async def list_document_register(
     date_to: Annotated[date | None, Query()] = None,
     counterparty_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> DocumentRegisterList:
-    """Реестр УПД/накладных: документ пришёл → чем оплачен (предоплата/банк/касса)."""
+    """Реестр УПД/накладных (закрывающие документы): пришёл → чем оплачен/погашен.
+
+    Счета (bill) сюда НЕ входят — они не документы взаиморасчётов, а очередь оплат
+    («Страница на оплату» / «Платежи»). Показываем и будущие УПД (activation='pending')."""
     filters = [
         SupplierInvoice.payment_status != "void",
         SupplierInvoice.direction == "payable",
+        SupplierInvoice.doc_kind == "closing",
     ]
     if date_from is not None:
         filters.append(SupplierInvoice.invoice_date >= date_from)
@@ -792,6 +822,8 @@ async def list_document_register(
                 number=invoice.number,
                 invoice_date=invoice.invoice_date,
                 source=invoice.source,
+                doc_kind=invoice.doc_kind,
+                activation_status=invoice.activation_status,
                 counterparty_id=invoice.counterparty_id,
                 counterparty_name=cp_name,
                 amount=_float(invoice.amount),
@@ -805,8 +837,11 @@ async def list_document_register(
     return DocumentRegisterList(
         items=items,
         total_amount=sum(row.amount for row in items),
+        # Будущие УПД (pending) в кредиторку ещё не входят — из unpaid_total их исключаем.
         unpaid_total=sum(
-            row.remainder for row in items if row.payment_status in UNPAID_INVOICE_STATUSES
+            row.remainder
+            for row in items
+            if row.payment_status in UNPAID_INVOICE_STATUSES and row.activation_status == "active"
         ),
     )
 
@@ -818,25 +853,83 @@ class StaffPayableRow(BaseModel):
     basis: str
     earned_to_date: float
     already_advanced: float
+    finalized_unpaid: float
+    loans_outstanding: float
     payable: float
+    receivable: float
 
 
 class StaffPayableList(BaseModel):
     as_of: date
     total: float
+    receivable_total: float
     items: list[StaffPayableRow]
+
+
+async def _finalized_unpaid_by_employee(session: AsyncSession) -> dict[uuid.UUID, Decimal]:
+    """Невыплаченные остатки ФИНАЛИЗИРОВАННЫХ ведомостей по сотрудникам.
+
+    Берётся последний прогон каждого финализированного периода; долг = начислено
+    (payroll_line.total_payable) − выплачено (payroll_payment.amount, бегущий итог).
+    Легаси-заливка (is_imported_legacy) исключена: та история выплачена вне системы,
+    иначе всплывают фантомные миллионы.
+    """
+    last_run = (
+        select(PayrollRun.id)
+        .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+        .where(
+            PayrollPeriod.status == "finalized",
+            PayrollRun.is_imported_legacy.is_(False),
+        )
+        .distinct(PayrollRun.period_id)
+        .order_by(PayrollRun.period_id, PayrollRun.started_at.desc())
+        .subquery()
+    )
+    accrued_rows = (
+        await session.execute(
+            select(
+                PayrollLine.employee_id,
+                func.sum(PayrollLine.total_payable),
+            )
+            .where(PayrollLine.run_id.in_(select(last_run.c.id)))
+            .group_by(PayrollLine.employee_id)
+        )
+    ).all()
+    paid_rows = (
+        await session.execute(
+            select(
+                PayrollPayment.employee_id,
+                func.sum(PayrollPayment.amount),
+            )
+            .where(
+                PayrollPayment.run_id.in_(select(last_run.c.id)),
+                PayrollPayment.status.in_(("paid", "partially_paid")),
+            )
+            .group_by(PayrollPayment.employee_id)
+        )
+    ).all()
+    paid_by_emp = {row[0]: periods.money(row[1]) for row in paid_rows}
+    debts: dict[uuid.UUID, Decimal] = {}
+    for employee_id, accrued in accrued_rows:
+        debt = periods.money(accrued) - paid_by_emp.get(employee_id, Decimal("0"))
+        if debt > 0:
+            debts[employee_id] = debt
+    return debts
 
 
 @router.get("/staff-payable", response_model=StaffPayableList, dependencies=READ)
 async def list_staff_payable(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> StaffPayableList:
-    """Долг перед сотрудниками на сегодня: заработано за открытый период − выданные авансы.
+    """Полный баланс с сотрудниками по канону: КЗ ← начисления, ДЗ ← выдачи сверх них.
 
-    Считает тем же механизмом, что «доступно к авансу» (earned-to-date: провизорный
-    прогон недельного калькулятора по загруженным явкам / оклад по дням / смены мойщиц —
-    депозиты, штрафы и удержания уже внутри netto). Это кредиторка, которая гасится
-    выплатой ведомости. Отдельная ручка: расчёт тяжёлый, дашборд грузит её асинхронно.
+    Кредиторка (мы должны) = заработанное за открытый период минус авансы периода
+    (механизм «доступно к авансу»: провизорный прогон калькулятора по явкам / оклад
+    по дням / смены — удержания уже в netto) ПЛЮС невыплаченные остатки финализированных
+    ведомостей. Дебиторка (нам должны) = выдано за период сверх заработанного ПЛЮС
+    непогашенные остатки займов/авансов, выданных ДО открытого периода (они удержатся
+    будущими ведомостями). Займы внутри периода уже учтены в «выдано» — не задваиваются.
+    Отдельная ручка: расчёт тяжёлый, дашборд грузит её асинхронно.
     """
     as_of = date.today()
     employees = (
@@ -847,24 +940,103 @@ async def list_staff_payable(
         )
     ).all()
 
+    finalized_unpaid = await _finalized_unpaid_by_employee(session)
+    outstanding_rows = (
+        await session.execute(
+            select(
+                SalaryAdvance.employee_id,
+                SalaryAdvance.issued_on,
+                SalaryAdvance.amount - SalaryAdvance.recovered_amount,
+            ).where(
+                SalaryAdvance.status == "issued",
+                SalaryAdvance.amount > SalaryAdvance.recovered_amount,
+            )
+        )
+    ).all()
+    outstanding_by_emp: dict[uuid.UUID, list[tuple[date, Decimal]]] = {}
+    for employee_id, issued_on, remainder in outstanding_rows:
+        outstanding_by_emp.setdefault(employee_id, []).append((issued_on, periods.money(remainder)))
+
+    # Границы ФИНАЛИЗИРОВАННЫХ ведомостных периодов: калькулятор доступного-к-авансу строит
+    # СИНТЕТИЧЕСКИЙ «текущий» период по календарю (не глядя в PayrollPeriod), поэтому в день
+    # финализации и после неё одни и те же деньги считались ДВАЖДЫ — как earned-to-date
+    # синтетического периода и как невыплаченный хвост той же финализированной ведомости.
+    finalized_bounds = {
+        (row[0], row[1])
+        for row in (
+            await session.execute(
+                select(PayrollPeriod.start_date, PayrollPeriod.end_date).where(
+                    PayrollPeriod.status == "finalized"
+                )
+            )
+        ).all()
+    }
+
     items: list[StaffPayableRow] = []
-    total = Decimal("0.00")
+    payable_total = Decimal("0.00")
+    receivable_total = Decimal("0.00")
     for employee in employees:
         availability = await available_to_advance(session, employee, as_of)
-        payable = periods.money(availability.available)
-        if payable <= 0:
+        earned = periods.money(availability.earned_to_date)
+        tail = finalized_unpaid.get(employee.id, Decimal("0"))
+        period_start = availability.period_start
+        # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail);
+        # синтетический earned обнуляем, а внутрипериодные авансы уводим в «старые»: ведомость
+        # их либо удержала (тогда их нет в outstanding), либо они выданы сверх рассчитанного —
+        # это переаванс (дебиторка), не вычет из несуществующего earned.
+        period_settled = (
+            period_start is not None
+            and availability.period_end is not None
+            and (period_start, availability.period_end) in finalized_bounds
+        )
+        if period_settled:
+            earned = Decimal("0.00")
+        # Обе половины формулы делят авансы/займы ЕДИНЫМ фильтром outstanding_by_emp
+        # (status='issued', непогашенный остаток). НЕ переиспользуем availability.already_advanced:
+        # там фильтр `status != 'cancelled'`, т.е. в «выданное» протекают awaiting_payout (деньги
+        # ещё НЕ выданы, банк-черновик/касса pending) и written_off (прощён) — они не живой долг и
+        # искажали бы КЗ вниз, а ДЗ вверх фантомом. Внутрипериодные авансы уменьшают КЗ (аванс под
+        # текущий заработок), выданные до периода — формируют ДЗ (займы-рассрочки, переавансы).
+        in_period_advanced = sum(
+            (
+                remainder
+                for issued_on, remainder in outstanding_by_emp.get(employee.id, [])
+                if not period_settled and period_start is not None and issued_on >= period_start
+            ),
+            Decimal("0.00"),
+        )
+        old_outstanding = sum(
+            (
+                remainder
+                for issued_on, remainder in outstanding_by_emp.get(employee.id, [])
+                if period_settled or period_start is None or issued_on < period_start
+            ),
+            Decimal("0.00"),
+        )
+        payable = _clamp_money(earned - in_period_advanced) + tail
+        receivable = _clamp_money(in_period_advanced - earned) + old_outstanding
+        if payable <= 0 and receivable <= 0:
             continue
-        total += payable
+        payable_total += payable
+        receivable_total += receivable
         items.append(
             StaffPayableRow(
                 employee_id=employee.id,
                 full_name=employee.full_name,
                 position=employee.position,
                 basis=availability.basis,
-                earned_to_date=_float(availability.earned_to_date),
-                already_advanced=_float(availability.already_advanced),
+                earned_to_date=_float(earned),
+                already_advanced=_float(in_period_advanced),
+                finalized_unpaid=_float(tail),
+                loans_outstanding=_float(old_outstanding),
                 payable=_float(payable),
+                receivable=_float(receivable),
             )
         )
-    items.sort(key=lambda row: row.payable, reverse=True)
-    return StaffPayableList(as_of=as_of, total=_float(total), items=items)
+    items.sort(key=lambda row: max(row.payable, row.receivable), reverse=True)
+    return StaffPayableList(
+        as_of=as_of,
+        total=_float(payable_total),
+        receivable_total=_float(receivable_total),
+        items=items,
+    )
