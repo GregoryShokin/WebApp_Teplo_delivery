@@ -545,7 +545,6 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       upsertShift(variables.scheduleId, variables.payload),
     onSuccess: async () => {
       toast.success("Смена сохранена");
-      setShiftDialog(null);
       await invalidateCurrentSchedule();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить смену")),
@@ -970,7 +969,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
     deleteShiftMutation.mutate(shift);
   }
 
-  function submitShiftDialog(allowNoneConfirmed = false) {
+  async function submitShiftDialog(allowNoneConfirmed = false) {
     if (!canEditSchedule || !currentSchedule || !shiftDialog || !shiftDialog.employeeId) {
       toast.error("Выберите сотрудника");
       return;
@@ -996,32 +995,41 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       toast.error("Выберите роль");
       return;
     }
-    saveShiftMutation.mutate({
-      scheduleId: currentSchedule.id,
-      payload: {
-        business_date: shiftDialog.businessDate,
-        employee_id: shiftDialog.employeeId,
-        payroll_role: payrollRole,
-        station_code: shiftDialog.stationCode,
-        planned_start_at: composeDateTime(shiftDialog.businessDate, shiftDialog.startTime),
-        planned_end_at: composeEndDateTime(
-          shiftDialog.businessDate,
-          shiftDialog.startTime,
-          shiftDialog.endTime,
-        ),
-        comment_private: shiftDialog.comment.trim() || null,
-      },
-    });
-    submitCashierAllowanceOverride(shiftDialog);
+    // Закрываем диалог только после того, как ОБА запроса (смена + надбавка) реально
+    // завершились — иначе один из них может остаться висеть в фоне после закрытия и
+    // заблокировать кнопку «Сохранить» в следующем открытом диалоге (см. isSaving выше).
+    try {
+      await saveShiftMutation.mutateAsync({
+        scheduleId: currentSchedule.id,
+        payload: {
+          business_date: shiftDialog.businessDate,
+          employee_id: shiftDialog.employeeId,
+          payroll_role: payrollRole,
+          station_code: shiftDialog.stationCode,
+          planned_start_at: composeDateTime(shiftDialog.businessDate, shiftDialog.startTime),
+          planned_end_at: composeEndDateTime(
+            shiftDialog.businessDate,
+            shiftDialog.startTime,
+            shiftDialog.endTime,
+          ),
+          comment_private: shiftDialog.comment.trim() || null,
+        },
+      });
+      await submitCashierAllowanceOverride(shiftDialog);
+      setShiftDialog(null);
+    } catch {
+      // Ошибка уже показана тостом в onError соответствующего мутейшена — оставляем
+      // диалог открытым, чтобы пользователь мог поправить и повторить сохранение.
+    }
   }
 
-  function submitCashierAllowanceOverride(state: ShiftDialogState) {
+  async function submitCashierAllowanceOverride(state: ShiftDialogState) {
     if (!canEditSchedule || !currentSchedule || !state.allowanceDirty || state.mode !== "edit") {
       return;
     }
     if (state.allowanceSelection === "auto") {
       if (state.allowanceOverrideId) {
-        removeCashierAllowanceOverrideMutation.mutate({
+        await removeCashierAllowanceOverrideMutation.mutateAsync({
           scheduleId: currentSchedule.id,
           overrideId: state.allowanceOverrideId,
         });
@@ -1035,7 +1043,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
         state.allowanceSelection === "none" ? null : state.allowanceRecipientEmployeeId,
       comment: state.allowanceComment.trim() || null,
     };
-    saveCashierAllowanceOverrideMutation.mutate({
+    await saveCashierAllowanceOverrideMutation.mutateAsync({
       scheduleId: currentSchedule.id,
       payload,
       overrideId: state.allowanceOverrideId,
@@ -1443,7 +1451,11 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             employees={roster}
             isAllowanceLoading={shiftDialogAllowanceLoading}
             isRemovingAllowance={removeCashierAllowanceOverrideMutation.isPending}
-            isSaving={saveShiftMutation.isPending || saveCashierAllowanceOverrideMutation.isPending}
+            isSaving={
+              saveShiftMutation.isPending ||
+              saveCashierAllowanceOverrideMutation.isPending ||
+              removeCashierAllowanceOverrideMutation.isPending
+            }
             onDelete={(shift) => setDeleteTarget(shift)}
             onRemoveAllowance={() => {
               if (currentSchedule && shiftDialog?.allowanceOverrideId) {
@@ -4138,7 +4150,7 @@ function ShiftDialog({
 
   return (
     <Dialog open={Boolean(state)} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent preventClose={isSaving}>
         <DialogHeader>
           <DialogTitle>
             {state?.mode === "edit"
