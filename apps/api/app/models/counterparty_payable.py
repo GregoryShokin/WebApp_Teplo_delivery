@@ -32,6 +32,7 @@ from app.models.enums import (
     invoice_allocation_source_enum,
     supplier_invoice_barter_role_enum,
     supplier_invoice_direction_enum,
+    supplier_invoice_doc_kind_enum,
 )
 
 # Draft status mirrors PayrollBankDraft (created → updated → paid / failed) so the
@@ -369,6 +370,27 @@ class SupplierInvoice(Base):
         nullable=False,
         default="payable",
         server_default="payable",
+    )
+    # Роль документа в взаиморасчётах (канон ДЗ/КЗ, владелец 2026-07-17). closing (УПД/акт/
+    # приходная/чек) — факт работ: гасит дебиторку / создаёт кредиторку, формирует КЗ дашборда.
+    # bill (счёт на оплату) — только основание для платежа: живёт в очереди оплат, в баланс
+    # ДЗ/КЗ НЕ входит. Дефолт 'closing' безопасен: незамеченный документ считается
+    # обязательством, а не молча пропадает из кредиторки.
+    doc_kind: Mapped[str] = mapped_column(
+        supplier_invoice_doc_kind_enum,
+        nullable=False,
+        default="closing",
+        server_default="closing",
+    )
+    # Отложенное вступление закрывающего документа в силу по ДАТЕ ДОКУМЕНТА (правило 4 канона):
+    # контрагент присылает УПД заранее (ЭкоЦентр — УПД июля датирован 31.07). Будущий closing
+    # ждёт в статусе 'pending' (в КЗ не входит, дебиторку не гасит) и активируется ночной джобой
+    # в свою дату → 'active' (гасит аванс / встаёт в КЗ). bill'ы всегда 'active' (вне контура).
+    activation_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="active",
+        server_default="active",
     )
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     number: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -789,6 +811,14 @@ class SupplierPrepayment(Base):
         ),
         Index("ix_supplier_prepayment_counterparty", "counterparty_id"),
         Index("ix_supplier_prepayment_status", "status"),
+        # Не более одной ДЗ на счёт (единый чокпоинт): частичный уникальный индекс — bill_invoice_id
+        # ставит только kind='prepaid_bill'. Служит и lookup-индексом.
+        Index(
+            "uq_supplier_prepayment_bill",
+            "bill_invoice_id",
+            unique=True,
+            postgresql_where=text("bill_invoice_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -814,6 +844,12 @@ class SupplierPrepayment(Base):
     )
     article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
+    )
+    # Исходный счёт (doc_kind='bill'), оплата которого завела эту ДЗ (kind='prepaid_bill'). Даёт
+    # идемпотентность единого чокпоинта: одна ДЗ на счёт, синхронизируется с его оплаченной суммой
+    # при каждом _recompute_status (reconcile_bill_prepayment). Для прочих предоплат NULL.
+    bill_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
     )
     # Исторические незакрытые авансы мигрируют со статусом missing: они остаются в дебиторке,
     # но попадают в отдельную очередь распределения периода, а не признаются автоматически.

@@ -37,6 +37,7 @@ from app.services import counterparty_registry as registry
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.counterparty_matching import _recompute_status
 from app.services.invoice_recognition import RecognizedInvoice, recognize
 from app.services.mail.imap_client import (
     FetchedAttachment,
@@ -56,6 +57,39 @@ SKIP_SENDER_SUBSTRINGS: tuple[str, ...] = ()
 def _guess_type(inn: str | None) -> str:
     # 12 цифр — ИП (individual), 10 — юрлицо (legal_entity). Как в counterparty_invoice_sync.
     return "individual" if inn and len(inn) == 12 else "legal_entity"
+
+
+def _doc_kind_from_recognition(document_kind: str | None) -> str | None:
+    """Роль документа в контуре ДЗ/КЗ по распознанному типу (канон владельца 17.07).
+
+    invoice → 'bill' (счёт на оплату: очередь оплат «Страница на оплату», в баланс ДЗ/КЗ не
+    входит); upd/act → 'closing' (закрывающий документ: гасит дебиторку / встаёт в кредиторку,
+    живёт в учёте ДЗ/КЗ); reconciliation/unknown/None → None (учёт не двигают: акт сверки —
+    мусор, неопознанный макет — на ручной разбор)."""
+    if document_kind == "invoice":
+        return "bill"
+    if document_kind in ("upd", "act"):
+        return "closing"
+    return None
+
+
+async def _resync_closing_after_edit(session: AsyncSession, inv: SupplierInvoice) -> None:
+    """Пересинхронизировать контур ДЗ/КЗ после правки полей документа пере-разбором.
+
+    Правки могли изменить сумму/дату уже ПРОВЕДЁННОГО документа: активация по дате (правило 4),
+    РОСТ суммы — дозачёт остатка (apply_closing_document), УСУШКА суммы — возврат избытка зачёта
+    предоплатам (иначе аванс «съеден» сверх документа, ДЗ занижена молча), уход даты в будущее —
+    полный возврат зачётов. В конце — статус по аллокациям (для счёта чокпоинт внутри)."""
+    if inv.doc_kind == "closing" and inv.draft_id is None:
+        was_active = inv.activation_status == "active"
+        await prepayments.apply_closing_document(session, inv)
+        if was_active and inv.activation_status == "pending":
+            # Дата ушла в будущее: до неё документ не гасит дебиторку — уже сделанные
+            # авансовые зачёты возвращаются предоплатам.
+            await prepayments.release_invoice_prepayment_allocations(session, inv)
+        else:
+            await prepayments.release_closing_prepayment_excess(session, inv)
+    await _recompute_status(session, inv)
 
 
 def _sender_email(from_addr: str | None) -> str | None:
@@ -158,27 +192,29 @@ def _confidence_decimal(value: float) -> Decimal:
 
 
 async def _find_duplicate_email_invoice(
-    session: AsyncSession, cp_id: uuid.UUID, rec: RecognizedInvoice
+    session: AsyncSession, cp_id: uuid.UUID, rec: RecognizedInvoice, *, doc_kind: str
 ) -> SupplierInvoice | None:
-    """Повтор того же счёта из почты: тот же контрагент + сумма + дата + номер (None==None).
+    """Повтор документа ОДНОЙ РОЛИ: тот же контрагент + сумма + дата + номер (None==None).
 
-    Ловит ситуацию «поставщик прислал тот же счёт повторным письмом» — байты PDF отличаются,
-    поэтому SHA-дедуп не срабатывает, а накладная по сути одна.
+    Ловит «поставщик прислал тот же счёт повторным письмом» — байты PDF отличаются, SHA-дедуп
+    не срабатывает, а документ по сути один.
 
-    Вторая фаза — кросс-канальная пара с ЭДО: тот же счёт (или его закрывающий УПД той же
-    поставки) уже материализован из СБИС под ДРУГИМ номером и датой, поэтому строгое
-    сравнение его не видит. Ловим по контрагенту+сумме в окне
-    ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``; из нескольких берём ближайший по дате."""
+    Вторая фаза — кросс-канальная пара с ЭДО: тот же счёт (или тот же УПД) уже материализован
+    из СБИС под ДРУГИМ номером и датой; ловим по контрагенту+сумме в окне
+    ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``. Дедупим ТОЛЬКО совпадения того же ``doc_kind``: по
+    канону счёт (bill) и его закрывающий УПД (closing) — разные документы и сосуществуют, их
+    схлопывать нельзя."""
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
                 # 'sbis' и 'manual' тоже: поставщик на ЭДО может продублировать счёт
                 # письмом, а внесённый вручную счёт — прийти почтой позже. Матрица
                 # дедупа обязана быть симметричной (sbis-сторона видит все три источника),
-                # иначе второй канал рождает второй счёт «к оплате» — двойная оплата.
+                # иначе второй канал рождает второй документ — двойной учёт.
                 SupplierInvoice.source.in_(("email", "sbis", "manual")),
                 SupplierInvoice.counterparty_id == cp_id,
                 SupplierInvoice.amount == rec.amount,
+                SupplierInvoice.doc_kind == doc_kind,
                 SupplierInvoice.payment_status != "void",
             )
         )
@@ -294,8 +330,11 @@ async def materialize_from_intake(
         period_status = "missing" if period_required else "not_required"
 
     intake.counterparty_id = cp_id
+    # Роль документа: счёт(bill)/УПД(closing). Оператор подтверждает неопознанный макет как счёт
+    # к оплате — поэтому None (reconciliation/unknown) трактуем как 'bill'.
+    doc_kind = _doc_kind_from_recognition(rec_json.get("document_kind")) or "bill"
     probe = RecognizedInvoice(amount=amount, invoice_number=number, invoice_date=inv_date)
-    dup = await _find_duplicate_email_invoice(session, cp_id, probe)
+    dup = await _find_duplicate_email_invoice(session, cp_id, probe, doc_kind=doc_kind)
     if dup is not None:
         intake.invoice_id = dup.id
         intake.status = "duplicate"
@@ -313,6 +352,7 @@ async def materialize_from_intake(
         counterparty_id=cp_id,
         source="email",
         direction="payable",
+        doc_kind=doc_kind,
         external_id=intake.attachment_sha256[:128],
         number=number,
         invoice_date=inv_date,
@@ -337,11 +377,16 @@ async def materialize_from_intake(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
-    # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
-    # канала прихода (почта/ЭДО/ручной) — иначе счёт встаёт «к оплате» и его оплатят повторно.
-    await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
     intake.invoice_id = invoice.id
-    intake.status = "linked"
+    if doc_kind == "closing":
+        # УПД/акт — «факт выполненных работ»: гасит дебиторку / встаёт в кредиторку (правило 2),
+        # будущей датой откладывается до своей даты (правило 4). В очереди оплат не участвует.
+        await prepayments.apply_closing_document(session, invoice)
+        intake.status = "closing"
+    else:
+        # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
+        # Оплата счёта из банка сама сформирует ДЗ / погасит КЗ (ensure_prepayment_from_bank_...).
+        intake.status = "linked"
     return intake.status
 
 
@@ -422,10 +467,10 @@ async def confirm_intake_with_review(
             session, cp_id, requisites=clean_req, verified=True, actor_user_id=actor_user_id
         )
 
-    # Повторный разбор уже-linked счёта (подтвердить/поправить реквизиты, чтобы открыть отправку):
+    # Повторный разбор уже материализованного intake (счёт=linked или закрывающий=closing):
     # накладную НЕ пересоздаём — иначе она стала бы «дублем» сама себе. Реквизиты применены выше;
     # синхронизируем правки полей с существующей накладной.
-    if intake.invoice_id is not None and intake.status == "linked":
+    if intake.invoice_id is not None and intake.status in ("linked", "closing"):
         inv = await session.get(SupplierInvoice, intake.invoice_id)
         if inv is not None:
             new_amount = _intake_amount(intake)
@@ -454,6 +499,7 @@ async def confirm_intake_with_review(
                 await service_periods.sync_invoice_accrual(session, inv)
             elif profile and profile.service_period_required:
                 inv.service_period_status = "missing"
+            await _resync_closing_after_edit(session, inv)
         return intake.status
 
     return await materialize_from_intake(session, intake, counterparty_id=cp_id)
@@ -473,6 +519,11 @@ async def exclude_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> N
         raise ValueError("Счёт уже отправлен в банк — исключение недоступно")
     if invoice is not None and invoice.payment_status not in ("paid", "void"):
         invoice.payment_status = "void"
+        if invoice.doc_kind == "closing":
+            # Аннулированный закрывающий не может продолжать «съедать» аванс: зачёты
+            # возвращаются предоплатам, иначе ДЗ занижена, пока документ в корзине
+            # («ДЗ следует за деньгами», а денег этот документ не двигал).
+            await prepayments.release_invoice_prepayment_allocations(session, invoice)
     intake.previous_status = intake.status
     intake.scheduled_send_date = None
     intake.status = "excluded"
@@ -486,6 +537,12 @@ async def restore_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> N
     invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
     if invoice is not None and invoice.payment_status == "void":
         invoice.payment_status = "unpaid"
+        # Статус — по фактическим оплатам (частично оплаченный счёт не должен вернуться
+        # «полностью неоплаченным»), затем закрывающий заново проводится по канону:
+        # активация правила 4 + пере-зачёт аванса, который вернуло исключение.
+        await _recompute_status(session, invoice)
+        if invoice.doc_kind == "closing":
+            await prepayments.apply_closing_document(session, invoice)
     intake.status = intake.previous_status or "needs_review"
     intake.previous_status = None
 
@@ -499,8 +556,11 @@ async def delete_intake_forever(session: AsyncSession, intake: EmailInvoiceIntak
     await session.delete(intake)
     await session.flush()
     if invoice is not None and invoice.draft_id is None and invoice.payment_status != "paid":
-        # Накладная почтового счёта живёт только на «Странице на оплату»; у исключённой нет
-        # оплат/черновика, поэтому удаляем её безопасно.
+        if invoice.doc_kind == "closing":
+            # Исключение уже вернуло авансовые зачёты; страховка для накладных, аннулированных
+            # до этого фикса: иначе каскад FK унесёт аллокации, а amount_settled финансировавшей
+            # предоплаты останется списанным навсегда (ДЗ занижена безвозвратно).
+            await prepayments.release_invoice_prepayment_allocations(session, invoice)
         await session.delete(invoice)
 
 
@@ -604,10 +664,11 @@ async def process_attachment(
     intake.engine = rec.engine
     intake.confidence = _confidence_decimal(rec.confidence)
 
-    # Закрывающие/сверочные документы (УПД, акт сверки, передаточный акт) и всё без суммы — это
-    # не счёт на оплату: фиксируем в журнале как ignored, не материализуем и не показываем в
-    # «Актуальных». Сам PDF остаётся — оператор при желании поднимет через фильтр «Все».
-    if rec.document_kind in ("upd", "reconciliation", "act") or rec.amount is None:
+    # Роль документа в контуре ДЗ/КЗ (канон 17.07): счёт → bill (очередь оплат), УПД/акт →
+    # closing (гасит дебиторку / встаёт в кредиторку). Акт сверки и всё без суммы учёт не двигают
+    # → ignored (PDF остаётся, оператор поднимет фильтром «Все»).
+    doc_kind = _doc_kind_from_recognition(rec.document_kind)
+    if rec.amount is None or rec.document_kind == "reconciliation":
         intake.status = "ignored"
         return intake.status
 
@@ -623,22 +684,28 @@ async def process_attachment(
         )
     period_required = bool(profile and profile.service_period_required)
 
-    # Авто-материализуем только уверенно опознанный счёт с известным контрагентом. Формат
-    # «unknown» (нет явного маркера счёта) — всегда оператору, чтобы не провести неведомый макет.
+    # Авто-материализуем только уверенно опознанный документ с известным контрагентом. Формат
+    # «unknown» (doc_kind is None) — всегда оператору, чтобы не провести неведомый макет. Период
+    # обязателен лишь для СЧЕТА (по нему пойдёт оплата с признанием); закрывающий УПД несёт
+    # период в своём тексте и period_required-гейт его не держит.
     if (
-        cp_id is None
-        or rec.document_kind != "invoice"
+        doc_kind is None
+        or cp_id is None
         or rec.confidence < settings.invoice_recognition_min_confidence
         or rec.service_period_ambiguous
-        or (period_required and not (rec.service_period_start and rec.service_period_end))
+        or (
+            doc_kind == "bill"
+            and period_required
+            and not (rec.service_period_start and rec.service_period_end)
+        )
     ):
         intake.status = "needs_review"
         return intake.status
 
-    dup = await _find_duplicate_email_invoice(session, cp_id, rec)
+    dup = await _find_duplicate_email_invoice(session, cp_id, rec, doc_kind=doc_kind)
     if dup is not None:
-        # Повторное письмо с тем же счётом (или счёт к уже пришедшему из ЭДО УПД той же
-        # поставки) — привязываем к исходной, новую не создаём.
+        # Повтор того же документа (тот же счёт/тот же УПД под другим номером из ЭДО) —
+        # привязываем к исходному, новый не создаём.
         intake.invoice_id = dup.id
         intake.status = "duplicate"
         if _enrich_duplicate_period(
@@ -655,6 +722,7 @@ async def process_attachment(
         counterparty_id=cp_id,
         source="email",
         direction="payable",
+        doc_kind=doc_kind,
         external_id=att.sha256[:128],
         number=rec.invoice_number,
         invoice_date=rec.invoice_date,
@@ -684,11 +752,15 @@ async def process_attachment(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
-    # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
-    # канала прихода (почта/ЭДО/ручной) — иначе счёт встаёт «к оплате» и его оплатят повторно.
-    await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
     intake.invoice_id = invoice.id
-    intake.status = "linked"
+    if doc_kind == "closing":
+        # УПД/акт — «факт выполненных работ»: гасит дебиторку / встаёт в кредиторку (правило 2),
+        # будущей датой откладывается до своей даты (правило 4). В очереди оплат не участвует.
+        await prepayments.apply_closing_document(session, invoice)
+        intake.status = "closing"
+    else:
+        # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
+        intake.status = "linked"
     return intake.status
 
 
@@ -710,6 +782,8 @@ async def poll_and_ingest(
         "fetched": 0,
         "skipped": 0,
         "linked": 0,
+        "closing": 0,
+        "duplicate": 0,
         "needs_review": 0,
         "ignored": 0,
         "failed": 0,

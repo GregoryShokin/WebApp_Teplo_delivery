@@ -34,6 +34,7 @@ from app.services.counterparty_matching import (
     _allocated_amount,
     _op_already_allocated,
     _recompute_status,
+    payment_allocated_amount,
 )
 
 # Acquirer / bank own INNs whose payments are card operations, not real payees.
@@ -117,6 +118,9 @@ async def suggest_invoice_matches(
         .where(SupplierInvoice.draft_id.is_(None))
         # Receivables (AR) are money owed to us — never matched to outgoing bank payments.
         .where(SupplierInvoice.direction == "payable")
+        # Правило 4 канона: будущий закрывающий (activation_status='pending') действует датой
+        # ДОКУМЕНТА — до неё он не обязательство и в кандидаты оплаты не попадает.
+        .where(SupplierInvoice.activation_status == "active")
     )
     if counterparty_id is not None:
         invoice_query = invoice_query.where(SupplierInvoice.counterparty_id == counterparty_id)
@@ -400,6 +404,10 @@ def assert_bank_matchable(
     карт-шум по-прежнему исключает, поэтому автопривязки карт нет ни при каком флаге."""
     if invoice.direction != "payable" or invoice.barter_role is not None:
         raise CounterpartyMatchError("Накладная не поддерживает банковский мэтч")
+    if invoice.activation_status != "active":
+        # Правило 4: будущий закрывающий ждёт своей даты — оплачивать его сейчас нельзя
+        # (правило 1 уже завело ДЗ на этот платёж; двойной учёт и оплата до вступления в силу).
+        raise CounterpartyMatchError("Документ ещё не вступил в силу (дата в будущем)")
     if operation.direction != "out" or operation.transfer_group_id is not None:
         raise CounterpartyMatchError("Операция не является исходящим платежом поставщику")
     if _is_card_noise(operation) and not allow_card:
@@ -431,11 +439,22 @@ async def confirm_invoice_match(
     remaining = _money(invoice.amount) - await _allocated_amount(session, invoice.id)
     if remaining <= 0:
         raise CounterpartyMatchError("Накладная уже оплачена")
+    # Свободный остаток САМОГО платежа, а не только сумма операции: часть денег могла уже уйти
+    # на гашение кредиторки правилом 1 — те зачёты помечены проводкой ДДС, а не операцией,
+    # поэтому проверка занятости по bank_operation_id их не видит (``_op_already_allocated``
+    # выше). Без этого потолка платёж 1000 ₽ закрывал документов на 1300 ₽.
+    free = _money(abs(operation.amount)) - await payment_allocated_amount(
+        session, bank_operation_id=operation.id
+    )
+    if free <= 0:
+        raise CounterpartyMatchError(
+            "Платёж уже полностью распределён по документам — свободного остатка нет"
+        )
     await _apply_bank_allocation(
         session,
         invoice=invoice,
         operation=operation,
-        amount=min(remaining, _money(abs(operation.amount))),
+        amount=min(remaining, free),
         actor_user_id=actor_user_id,
     )
     await _recompute_status(session, invoice)

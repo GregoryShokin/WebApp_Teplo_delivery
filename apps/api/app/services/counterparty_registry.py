@@ -949,8 +949,9 @@ async def create_manual_invoice(
             due_date = compute_invoice_due_date(
                 invoice_date, delay_days=terms[0], due_day_of_month=terms[1]
             )
-    # Дедуп как у почты/ЭДО (сумма+дата+номер): тот же счёт мог уже прийти другим
-    # каналом — второй раз «к оплате» вставать не должен (двойная оплата).
+    # Дедуп как у почты/ЭДО (сумма+дата+номер): тот же закрывающий документ мог уже прийти
+    # другим каналом — второй раз вставать не должен (двойной учёт). Ручной ввод в реестр =
+    # closing, поэтому дедупим только против closing (канон: счёт и УПД — разные роли).
     clean_number = (number or "").strip() or None
     duplicate_candidates = (
         await session.scalars(
@@ -958,6 +959,7 @@ async def create_manual_invoice(
                 SupplierInvoice.counterparty_id == counterparty_id,
                 SupplierInvoice.amount == _money(amount),
                 SupplierInvoice.payment_status != "void",
+                SupplierInvoice.doc_kind == "closing",
                 SupplierInvoice.source.in_(("email", "sbis", "manual")),
             )
         )
@@ -985,6 +987,9 @@ async def create_manual_invoice(
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
         source="manual",
+        # Ручной ввод в реестр — это оприходование поставки/услуги (закрывающий документ), а не
+        # счёт на оплату: он гасит дебиторку / встаёт в кредиторку.
+        doc_kind="closing",
         amount=_money(amount),
         vat_total=vat_total,
         vat_breakdown=clean_vat,
@@ -999,9 +1004,10 @@ async def create_manual_invoice(
     await session.flush()
     # Закрывающий документ поставщика с предоплатной моделью гасит дебиторку независимо от
     # канала (почта/ЭДО/ручной ввод) — иначе накладная встаёт «к оплате» и её оплатят повторно.
-    from app.services.supplier_prepayments import auto_settle_invoice_from_open_prepayments
+    # Будущей датой (правило 4) — отложится в 'pending' до своей даты.
+    from app.services.supplier_prepayments import apply_closing_document
 
-    await auto_settle_invoice_from_open_prepayments(session, invoice)
+    await apply_closing_document(session, invoice)
     await session.commit()
     await session.refresh(invoice)
     return invoice

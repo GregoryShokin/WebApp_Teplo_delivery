@@ -15,7 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -47,12 +47,75 @@ async def _allocated_amount(session: AsyncSession, invoice_id: uuid.UUID) -> Dec
     return _money(total)
 
 
+async def payment_allocated_amount(
+    session: AsyncSession,
+    *,
+    transaction_id: uuid.UUID | None = None,
+    bank_operation_id: uuid.UUID | None = None,
+) -> Decimal:
+    """«Бюджет платежа»: сколько денег ОДНОГО платёжного факта уже пристроено на документы.
+
+    Один платёж живёт под ДВУМЯ ключами — проводка ДДС (``cashflow_transaction_id``) и
+    банковская операция (``bank_operation_id``), — а CHECK ``ck_invoice_allocation_single_source``
+    запрещает аллокации нести оба сразу. Поэтому каждый счётчик по отдельности видит лишь свою
+    половину платежа: правило 1 метит зачёты кредиторки ПРОВОДКОЙ, банковская сверка метит оплату
+    счёта ОПЕРАЦИЕЙ, и друг друга они не видят. Отсюда росли задвоение дебиторки (одни деньги
+    дважды становились авансом) и перерасход платежа (1000 ₽ закрывали документов на 1300 ₽).
+
+    Здесь мост между ключами (``BankOperation.cashflow_transaction_id``) сшивается и сумма
+    считается по ОБОИМ — единственный честный ответ на вопрос «сколько из этого платежа уже
+    израсходовано». Аллокации ``source_kind='prepayment'`` не в счёт: их финансирует ранее
+    выданная предоплата, а не сам платёж.
+    """
+    tx_ids: set[uuid.UUID] = set()
+    op_ids: set[uuid.UUID] = set()
+    if transaction_id is not None:
+        tx_ids.add(transaction_id)
+        op_ids.update(
+            (
+                await session.scalars(
+                    select(BankOperation.id).where(
+                        BankOperation.cashflow_transaction_id == transaction_id
+                    )
+                )
+            ).all()
+        )
+    if bank_operation_id is not None:
+        op_ids.add(bank_operation_id)
+        operation = await session.get(BankOperation, bank_operation_id)
+        if operation is not None and operation.cashflow_transaction_id is not None:
+            tx_ids.add(operation.cashflow_transaction_id)
+    if not tx_ids and not op_ids:
+        return _money(0)
+
+    key_filters = []
+    if tx_ids:
+        key_filters.append(InvoicePaymentAllocation.cashflow_transaction_id.in_(tx_ids))
+    if op_ids:
+        key_filters.append(InvoicePaymentAllocation.bank_operation_id.in_(op_ids))
+    total = await session.scalar(
+        select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+            InvoicePaymentAllocation.source_kind != "prepayment",
+            or_(*key_filters),
+        )
+    )
+    return _money(total)
+
+
 async def _invoice_remaining(session: AsyncSession, invoice: SupplierInvoice) -> Decimal:
     return _money(invoice.amount) - await _allocated_amount(session, invoice.id)
 
 
 async def _recompute_status(session: AsyncSession, invoice: SupplierInvoice) -> None:
     if invoice.payment_status == "void":
+        # Статус аннулированного не трогаем, но ЧОКПОИНТ ниже обязан отработать: ДЗ по счёту
+        # следует за деньгами, а не за статусом. Деньги уходили и остались (аллокации живы) —
+        # ДЗ живёт (деньги у поставщика без закрывающего); оплату сняли — чокпоинт приберёт ДЗ.
+        # Ранний return ДО чокпоинта замораживал ДЗ аннулированного счёта навсегда.
+        if invoice.doc_kind == "bill":
+            from app.services.supplier_prepayments import reconcile_bill_prepayment
+
+            await reconcile_bill_prepayment(session, invoice)
         return
     allocated = await _allocated_amount(session, invoice.id)
     amount = _money(invoice.amount)
@@ -62,6 +125,14 @@ async def _recompute_status(session: AsyncSession, invoice: SupplierInvoice) -> 
         invoice.payment_status = "partially_paid"
     else:
         invoice.payment_status = "paid"
+    # Единый чокпоинт канона ДЗ/КЗ: оплата счёта (doc_kind='bill') — не долг, а предоплата (ДЗ).
+    # Здесь сходятся ВСЕ двери гашения накладной, поэтому дебиторку по счёту заводит/синхронизирует
+    # одно место (reconcile_bill_prepayment), а не каждая дверь. Ленивый импорт —
+    # supplier_prepayments импортирует этот модуль (цикл). Для закрывающих чокпоинт — ранний no-op.
+    if invoice.doc_kind == "bill":
+        from app.services.supplier_prepayments import reconcile_bill_prepayment
+
+        await reconcile_bill_prepayment(session, invoice)
 
 
 async def _op_already_allocated(session: AsyncSession, bank_operation_id: uuid.UUID) -> bool:

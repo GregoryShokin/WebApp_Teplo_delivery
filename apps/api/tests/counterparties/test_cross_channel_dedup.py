@@ -47,11 +47,12 @@ def _make_intake(recognition: dict) -> EmailInvoiceIntake:
     )
 
 
-async def test_email_ingest_links_to_existing_sbis_invoice(
+async def test_email_ingest_links_to_existing_sbis_bill(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """УПД уже материализован из СБИС, счёт приходит письмом позже с другим номером и
-    датой — письмо связывается с СБИС-накладной, второй счёт «к оплате» не создаётся."""
+    """Тот же СЧЁТ пришёл и через СБИС (СчетВх=bill), и письмом позже с другим номером/датой —
+    окно контрагент+сумма+РОЛЬ ±7 дней связывает их, второй счёт «к оплате» не создаётся.
+    Дедуп теперь по одной роли (канон): счёт дедупится со счётом, а не с закрывающим УПД."""
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Лема", inn=SUPPLIER_INN)
         sbis_invoice = await make_invoice(
@@ -60,6 +61,7 @@ async def test_email_ingest_links_to_existing_sbis_invoice(
             amount="80455.00",
             number="2653",
             source="sbis",
+            doc_kind="bill",
             invoice_date=date(2026, 6, 30),
         )
         intake = _make_intake(
@@ -67,6 +69,7 @@ async def test_email_ingest_links_to_existing_sbis_invoice(
                 "amount": "80455.00",
                 "invoice_number": "0000-002629",
                 "invoice_date": "2026-07-02",
+                "document_kind": "invoice",
             }
         )
         session.add(intake)
@@ -78,6 +81,40 @@ async def test_email_ingest_links_to_existing_sbis_invoice(
         assert status == "duplicate"
         assert intake.invoice_id == sbis_invoice.id
         assert await _invoice_count(session) == 1
+
+
+async def test_email_bill_and_sbis_closing_coexist(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Канон: счёт (bill) с почты и закрывающий УПД (closing) из СБИС той же поставки —
+    РАЗНЫЕ роли, дедуп их НЕ схлопывает. Оба живут: счёт в очереди оплат, УПД в балансе."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Лема", inn=SUPPLIER_INN)
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            number="УПД-24234",
+            source="sbis",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+        )
+        intake = _make_intake(
+            {
+                "amount": "3700.00",
+                "invoice_number": "СЧ-70221",
+                "invoice_date": "2026-07-02",
+                "document_kind": "invoice",
+            }
+        )
+        session.add(intake)
+        await session.flush()
+
+        status = await materialize_from_intake(session, intake, counterparty_id=cp.id)
+        await session.commit()
+
+        assert status == "linked"  # счёт не схлопнулся на УПД
+        assert await _invoice_count(session) == 2
 
 
 async def test_email_ingest_outside_window_creates_new_invoice(
@@ -93,6 +130,7 @@ async def test_email_ingest_outside_window_creates_new_invoice(
             amount="3700.00",
             number="24234",
             source="sbis",
+            doc_kind="bill",
             invoice_date=date(2026, 5, 31),
         )
         intake = _make_intake(
@@ -100,6 +138,7 @@ async def test_email_ingest_outside_window_creates_new_invoice(
                 "amount": "3700.00",
                 "invoice_number": "25001",
                 "invoice_date": "2026-06-30",
+                "document_kind": "invoice",
             }
         )
         session.add(intake)
@@ -127,9 +166,11 @@ async def test_email_duplicate_enriches_sbis_period(
             amount="15580.00",
             number="УПД-31",
             source="sbis",
+            doc_kind="closing",
             invoice_date=date(2026, 7, 1),
         )
         sbis_invoice.service_period_status = "missing"
+        # Тот же закрывающий УПД пришёл и письмом — период из PDF дозаполняет СБИС-накладную.
         intake = _make_intake(
             {
                 "amount": "15580.00",
@@ -138,6 +179,7 @@ async def test_email_duplicate_enriches_sbis_period(
                 "service_period_start": "2026-06-01",
                 "service_period_end": "2026-06-30",
                 "service_period_source": "regex",
+                "document_kind": "upd",
             }
         )
         session.add(intake)
@@ -198,7 +240,7 @@ async def test_email_window_ignores_void_and_ready_period_not_overwritten(
             service_period_start=date(2026, 5, 1),
             service_period_end=date(2026, 5, 31),
         )
-        dup = await _find_duplicate_email_invoice(session, cp.id, probe)
+        dup = await _find_duplicate_email_invoice(session, cp.id, probe, doc_kind="closing")
         assert dup is not None
         assert dup.id == live.id  # void-строка пропущена, взята живая
 
@@ -209,6 +251,7 @@ async def test_email_window_ignores_void_and_ready_period_not_overwritten(
                 "invoice_date": "2026-07-02",
                 "service_period_start": "2026-05-01",
                 "service_period_end": "2026-05-31",
+                "document_kind": "upd",
             }
         )
         session.add(intake)

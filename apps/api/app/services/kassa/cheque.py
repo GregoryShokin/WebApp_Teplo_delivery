@@ -564,6 +564,7 @@ async def create_cheque(
         counterparty_id=counterparty_id,
         source="kassa_cheque",
         direction="payable",
+        doc_kind="closing",  # чек Кассы — оплаченная покупка = приход = закрывающий
         number=number or await next_cheque_number(session),
         invoice_date=issued_at.date(),
         issued_at=issued_at,

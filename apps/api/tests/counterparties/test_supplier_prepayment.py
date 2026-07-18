@@ -133,29 +133,23 @@ async def test_opening_prepayment_no_cashflow_and_upd_settling_keeps_running_bal
         assert invoice.payment_status == "paid"  # УПД закрыт дебиторкой, к оплате не попал
 
 
-async def test_bank_debit_tops_up_prepayment_when_profile_flag_on(
+async def test_bank_debit_creates_prepayment_for_any_supplier(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Предоплатная модель по банк-фиду (кейс Манго): исходящее списание в пользу
-    контрагента с флагом → открытая предоплата, привязанная к транзакции (без новой
-    ДДС-проводки). Идемпотентно; без флага — ничего."""
+    """Канон универсален (владелец 17.07, «контрагентов не классифицируем»): свободный банк-платёж
+    ЛЮБОМУ поставщику (есть payable-профиль) без открытой КЗ создаёт предоплату — флаг
+    bank_payments_create_prepayment контур больше НЕ гейтит. Платёж контрагенту БЕЗ payable-профиля
+    (сотрудник/налоговая) предоплату не создаёт. Идемпотентно (без новой ДДС-проводки)."""
     from datetime import date as date_cls
 
     from cp_helpers import make_counterparty, make_wallet
     from sqlalchemy import func, select
 
-    from app.models import CashflowTransaction, CounterpartyPayableProfile
+    from app.models import CashflowTransaction, Counterparty
     from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
 
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Манго Телеком", inn="7709501144")
-        profile = (
-            await session.execute(
-                select(CounterpartyPayableProfile).where(
-                    CounterpartyPayableProfile.counterparty_id == cp.id
-                )
-            )
-        ).scalar_one()
         wallet = await make_wallet(session, name="T-Bank", wallet_type="bank")
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
@@ -170,11 +164,7 @@ async def test_bank_debit_tops_up_prepayment_when_profile_flag_on(
         session.add(transaction)
         await session.flush()
 
-        # Флаг выключен — предоплата не создаётся.
-        assert await ensure_prepayment_from_bank_transaction(session, transaction) is None
-
-        profile.bank_payments_create_prepayment = True
-        await session.flush()
+        # Флаг ВЫКЛЮЧЕН, но контрагент — поставщик (есть payable-профиль) → предоплата создаётся.
         prepayment = await ensure_prepayment_from_bank_transaction(session, transaction)
         assert prepayment is not None
         assert prepayment.amount == Decimal("4900.00")
@@ -184,10 +174,26 @@ async def test_bank_debit_tops_up_prepayment_when_profile_flag_on(
         # Повторный вызов (повторная классификация) — та же запись, не дубль.
         again = await ensure_prepayment_from_bank_transaction(session, transaction)
         assert again is not None and again.id == prepayment.id
-        count = await session.scalar(
-            select(func.count()).select_from(SupplierPrepayment)
-        )
+        count = await session.scalar(select(func.count()).select_from(SupplierPrepayment))
         assert count == 1
+
+        # Платёж контрагенту БЕЗ payable-профиля (не поставщик) — предоплаты нет.
+        non_supplier = Counterparty(name="Сотрудник", type="individual", status="active")
+        session.add(non_supplier)
+        await session.flush()
+        tx2 = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("3000.00"),
+            operation_date=date_cls(2026, 7, 16),
+            counterparty_id=non_supplier.id,
+            source_kind="bank_operation",
+            payment_purpose="Зарплата",
+            quality_status="auto",
+        )
+        session.add(tx2)
+        await session.flush()
+        assert await ensure_prepayment_from_bank_transaction(session, tx2) is None
 
 
 async def test_bank_debit_reclassified_to_other_counterparty_moves_prepayment(

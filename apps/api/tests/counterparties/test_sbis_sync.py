@@ -582,12 +582,13 @@ async def test_earmarked_goods_advance_not_auto_settled(
         assert prepayment.status == "open"
 
 
-async def test_invoice_and_closing_upd_collapse_to_one_payable(
+async def test_invoice_and_closing_upd_coexist_as_bill_and_closing(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Счёт (СчетВх) и его закрывающий УПД (ДокОтгрВх) одной поставки — ОДНА обязанность:
-    разные номера/даты, поэтому строгий дедуп их пропустил бы, и встали бы две накладные
-    «к оплате» (двойная оплата). Ловим пару по контрагенту+сумме в узком окне дат."""
+    """Канон ДЗ/КЗ (владелец 17.07): счёт (СчетВх) и его закрывающий УПД (ДокОтгрВх) одной
+    поставки — РАЗНЫЕ документы с разными ролями и СОСУЩЕСТВУЮТ: счёт → bill (очередь оплат,
+    вне баланса), УПД → closing (гасит дебиторку / встаёт в кредиторку). Кросс-типовой дедуп
+    счёт↔УПД снят — они больше не схлопываются в одну накладную."""
     from app.models import CounterpartyCollectionSource
 
     async with async_session_factory() as session:
@@ -624,14 +625,16 @@ async def test_invoice_and_closing_upd_collapse_to_one_payable(
                 select(SupplierInvoice).where(SupplierInvoice.counterparty_id == cp.id)
             )
         ).scalars().all()
-        assert len(invoices) == 1  # одна накладная на одну поставку, не две
+        assert len(invoices) == 2  # счёт и УПД — два разных документа, не схлопываются
+        by_kind = {inv.doc_kind: inv for inv in invoices}
+        assert by_kind["bill"].number == "СЧ-100"
+        assert by_kind["closing"].number == "УПД-312"
         docs = (
             await session.execute(select(SbisDocument).order_by(SbisDocument.doc_date))
         ).scalars().all()
         statuses = {d.doc_type: d.intake_status for d in docs}
         assert statuses["СчетВх"] == "materialized"
-        assert statuses["ДокОтгрВх"] == "duplicate"  # УПД схлопнулся на счёт
-        assert all(d.invoice_id == invoices[0].id for d in docs)
+        assert statuses["ДокОтгрВх"] == "materialized"  # оба материализованы
 
 
 # --- Кросс-канальный дедуп «почта/ручной ввод ↔ СБИС» (окно ±7 дней, номера разные) ------

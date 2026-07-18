@@ -685,6 +685,7 @@ async def _ingest_documents(
                 counterparty_id=counterparty_id,
                 source=IIKO_SOURCE,
                 direction=direction,
+                doc_kind="closing",  # iiko incomingInvoice — приход товара = закрывающий
                 external_id=external_id,
                 number=number,
                 invoice_date=invoice_date,
@@ -702,6 +703,15 @@ async def _ingest_documents(
             await _materialize_iiko_lines(session, created, doc, products, replace=True)
             if direction == "payable":
                 result.invoices_created += 1
+                # Правило 2 канона: закрывающий документ гасит открытую дебиторку контрагента
+                # зачётом (FIFO, целевые goods-авансы не трогает). Канал iiko раньше только
+                # ставил ярлык doc_kind='closing', но правило не запускал — ДЗ (аванс) и КЗ
+                # (приходная) висели параллельно на одну поставку. Бартер внутри — no-op
+                # (auto_settle его исключает); только при создании — пере-синк не трогает.
+                if created.barter_role is None:
+                    from app.services.supplier_prepayments import apply_closing_document
+
+                    await apply_closing_document(session, created)
             else:
                 result.receivables_created += 1
         else:

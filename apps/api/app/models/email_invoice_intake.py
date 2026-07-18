@@ -27,11 +27,13 @@ from app.db.base import Base
 #   new          — вложение скачано, ещё не распознано
 #   recognized   — распознано уверенно, но ещё не материализовано в накладную
 #   needs_review — распознано неуверенно / не сматчен контрагент → требует оператора
-#   linked       — создана SupplierInvoice(source='email'), привязана (invoice_id)
+#   linked       — создан СЧЁТ (bill) SupplierInvoice(source='email'), готов к оплате (invoice_id)
+#   closing      — создан ЗАКРЫВАЮЩИЙ документ (УПД/акт, doc_kind='closing'): гасит дебиторку /
+#                  встаёт в кредиторку, живёт в учёте ДЗ/КЗ, а НЕ в очереди оплат («В банк» нет)
 #   duplicate    — повтор уже существующей накладной (тот же ИНН+сумма+дата+номер); invoice_id
 #                  указывает на исходную, новую накладную НЕ создаём
 #   failed       — ошибка распознавания (см. error)
-#   ignored      — не счёт (нет суммы) / помечено как мусор
+#   ignored      — не двигает учёт (нет суммы / акт сверки) — помечено как мусор
 #   excluded     — оператор вручную исключил счёт из рабочего инбокса (отдельная корзина); из неё
 #                  можно вернуть (в previous_status) или удалить навсегда
 EMAIL_INTAKE_STATUSES = (
@@ -39,6 +41,7 @@ EMAIL_INTAKE_STATUSES = (
     "recognized",
     "needs_review",
     "linked",
+    "closing",
     "duplicate",
     "failed",
     "ignored",

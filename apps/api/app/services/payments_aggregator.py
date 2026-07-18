@@ -207,8 +207,10 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
 
     items: list[PaymentItem] = []
     for intake, cp_name, verified, pay_status, draft_id, article_id, inv_amount in rows:
-        # Скрытые/служебные записи журнала разбора не относятся к активным платежам.
-        if intake.status in ("ignored", "duplicate", "excluded"):
+        # Скрытые/служебные записи журнала разбора не относятся к активным платежам. Закрывающий
+        # документ (closing: УПД/акт) — не счёт к оплате: он гасит дебиторку / встаёт в кредиторку,
+        # живёт в учёте ДЗ/КЗ, а не в очереди оплат.
+        if intake.status in ("ignored", "duplicate", "excluded", "closing"):
             state = "cancelled"
         elif pay_status == "paid":
             state = "paid"

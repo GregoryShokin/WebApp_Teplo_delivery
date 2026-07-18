@@ -189,6 +189,11 @@ async def _load_open(
                     SupplierInvoice.payment_status == "unpaid",
                     SupplierInvoice.barter_settlement_id.is_(None),
                     SupplierInvoice.barter_role.is_(None),
+                    # Счёт (doc_kind='bill') — не долг: в бартер-зачёт не входит. Иначе бартер
+                    # пометил бы его paid прямым присвоением (в обход _recompute_status → ДЗ не
+                    # завелась бы, пришедший УПД повис бы фантомной КЗ), да и гасить реальную
+                    # дебиторку контрагента о «намерение оплаты» — двойной учёт.
+                    SupplierInvoice.doc_kind != "bill",
                 )
             )
         )

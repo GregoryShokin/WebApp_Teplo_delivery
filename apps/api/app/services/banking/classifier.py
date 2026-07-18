@@ -382,17 +382,23 @@ async def apply_operation_action(
         operation.classification_status = "classified"
         return
 
-    if action == "mark_internal_transfer":
-        if operation.cashflow_transaction_id is not None:
-            await _drop_untouched_bank_prepayments(session, {operation.cashflow_transaction_id})
-        operation.classification_status = "internal_transfer"
-        operation.cashflow_transaction_id = None
-        return
+    if action in ("mark_internal_transfer", "exclude"):
+        # Операция перестаёт быть платежом поставщику — из учёта уходят её деньги, значит
+        # уходит и всё, что они «оплачивали»: cash-зачёты проводки (внутри drop) И bank-аллокации
+        # сверки (ключ bank_operation_id — их drop по проводке не видит). Иначе накладная
+        # остаётся оплаченной несуществующими деньгами, а ДЗ оплаченного счёта — без рубля за ней.
+        from app.services.supplier_prepayments import unwind_operation_bank_allocations
 
-    if action == "exclude":
+        if not await unwind_operation_bank_allocations(session, operation.id):
+            raise ValueError(
+                "Операция оплачивает накладную, отправленную в банк-черновик — "
+                "сначала откатите черновик"
+            )
         if operation.cashflow_transaction_id is not None:
             await _drop_untouched_bank_prepayments(session, {operation.cashflow_transaction_id})
-        operation.classification_status = "excluded"
+        operation.classification_status = (
+            "internal_transfer" if action == "mark_internal_transfer" else "excluded"
+        )
         operation.cashflow_transaction_id = None
         return
 
@@ -660,6 +666,21 @@ async def _drop_untouched_bank_prepayments(
             dropped = True
     if dropped:
         await session.flush()
+    # Cash-зачёты кредиторки этих проводок (создаёт ensure_prepayment_from_bank_transaction по
+    # правилу 1 канона ДЗ/КЗ) снимаем ДО удаления самих проводок — иначе FK SET NULL осиротит
+    # аллокацию и закрывающая накладная навсегда останется «оплаченной» списанием, которого
+    # больше нет (кредиторка занижена, деньги «нарисованы»). Если зачёт заморожен (накладная в
+    # банк-черновике) — снять нельзя; блокируем реклассификацию/удаление, как гард EmployeePayout.
+    from app.services.supplier_prepayments import _unwind_transaction_kz_settlements
+
+    for transaction_id in transaction_ids:
+        if not await _unwind_transaction_kz_settlements(
+            session, transaction_id, include_bills=True
+        ):
+            raise ValueError(
+                "Платёж уже погасил кредиторку, отправленную в банк-черновик — "
+                "сначала откатите черновик"
+            )
 
 
 async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
@@ -884,6 +905,7 @@ async def apply_operation_split(
 
     await _clear_operation_cashflow(session, operation)
     created: list[UUID] = []
+    free_line_txns: list[CashflowTransaction] = []
     for article_id, amount, comment, invoice_id, employee_id in splits:
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
@@ -931,9 +953,10 @@ async def apply_operation_split(
         is_advance = advance_article_id is not None and article_id == advance_article_id
         is_payout = employee_id is not None and article_id in salary_article_ids
         if not is_advance and invoice_id is None and not is_payout:
-            from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
-
-            await ensure_prepayment_from_bank_transaction(session, transaction)
+            # Правило 1 (FIFO-гашение открытой КЗ / предоплата) откладываем на ПОСЛЕ цикла: иначе
+            # свободная строка погасила бы FIFO ту же накладную, которую ЯВНО гасит другая строка
+            # этого сплита (invoice_id-строка) → перерасход аллокации, порядкозависимо.
+            free_line_txns.append(transaction)
         # Зарплатная статья + сотрудник → леджер «выплачено» (EmployeePayout), привязанный к этой
         # проводке. Второй проводки НЕ создаём: денежный факт несёт строка выписки (баланс из
         # выписки). Режим оклада определяет kind: on_demand собственник → 'owner_salary'
@@ -960,6 +983,14 @@ async def apply_operation_split(
                 )
             )
             await session.flush()
+
+    # Свободные строки → правило 1 ПОСЛЕ всех явных аллокаций накладных этого сплита (FIFO
+    # гасит только реально открытый остаток, не перекрывая явно погашенные строкой invoice_id).
+    if free_line_txns:
+        from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+        for transaction in free_line_txns:
+            await ensure_prepayment_from_bank_transaction(session, transaction)
 
     # Пересчёт статуса всех затронутых накладных (новые гашения + откатанные прежние).
     for invoice_id in {*invoice_by_id, *reaffected_invoice_ids}:
@@ -1011,13 +1042,22 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
 
     # Снести прежние проводки, заведённые из этой операции (re-classify) — и обычный
     # сплит (``bank_operation``), и прошлый topup (``manual_bank_to_safe``).
-    prior = await session.scalars(
-        select(CashflowTransaction).where(
-            CashflowTransaction.source_id == operation.id,
-            CashflowTransaction.source_kind.in_(("bank_operation", SAFE_TOPUP_SOURCE_KIND)),
-        )
+    prior = list(
+        (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_id == operation.id,
+                    CashflowTransaction.source_kind.in_(
+                        ("bank_operation", SAFE_TOPUP_SOURCE_KIND)
+                    ),
+                )
+            )
+        ).all()
     )
-    for transaction in prior.all():
+    # Предоплаты и cash-зачёты кредиторки (правило 1) этих проводок снимаем ДО удаления —
+    # иначе FK SET NULL осиротит их (открытая дебиторка / «оплаченная» накладная-фантом).
+    await _drop_untouched_bank_prepayments(session, {t.id for t in prior})
+    for transaction in prior:
         await session.delete(transaction)
     operation.cashflow_transaction_id = None
     await session.flush()

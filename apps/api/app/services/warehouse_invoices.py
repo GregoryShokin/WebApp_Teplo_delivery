@@ -273,6 +273,7 @@ async def create_warehouse_invoice(
         counterparty_id=counterparty_id,
         source=source,
         direction=direction,
+        doc_kind="closing",  # складская приходная накладная = приход товара = закрывающий
         barter_role=barter_role,
         barter_return_status=barter_return_status,
         number=resolved_number,
@@ -353,6 +354,14 @@ async def create_warehouse_invoice(
     # Контроль ошибочных цен: помечаем накладную «подозрительной», если цена позиции сильно
     # отклонилась от скользящего среднего по товару → оплата/банк заблокированы до подтверждения.
     await apply_price_control(session, invoice, price_lines)
+    # Правило 2 канона: приходная — закрывающий документ, гасит открытую дебиторку контрагента
+    # (FIFO; целевые goods-авансы и бартер исключены внутри). Канал «склад» раньше только ставил
+    # ярлык doc_kind='closing' — аванс и приходная висели ДЗ/КЗ параллельно на одну поставку.
+    # Хук строго ПОСЛЕ финализации amount (зачёт считает от остатка накладной).
+    if invoice.direction == "payable" and invoice.barter_role is None:
+        from app.services.supplier_prepayments import apply_closing_document
+
+        await apply_closing_document(session, invoice, actor_user_id=actor_user_id)
     await session.commit()
     await session.refresh(invoice)
     return invoice
@@ -1129,6 +1138,7 @@ async def create_barter_return(
         counterparty_id=loan.counterparty_id,
         source="manual",
         direction="payable" if loan.direction == "receivable" else "receivable",
+        doc_kind="closing",  # бартерный возврат товара = закрывающий
         barter_role="return",
         barter_loan_id=loan.id,
         number=number or await next_invoice_number(session),

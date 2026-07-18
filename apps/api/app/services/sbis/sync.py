@@ -63,6 +63,14 @@ logger = logging.getLogger(__name__)
 _MATCHABLE_DOC_TYPES = {"ДокОтгрВх"}
 _MATERIALIZABLE_DOC_TYPES = {"ДокОтгрВх", "СчетВх"}
 _DATE_WINDOW_DAYS = 5
+# СБИС-тип документа → роль в контуре ДЗ/КЗ (канон владельца 17.07). СчетВх — счёт на оплату
+# (bill, вне баланса, очередь оплат); ДокОтгрВх (УПД/акт отгрузки) — закрывающий документ
+# (closing): гасит дебиторку / встаёт в кредиторку.
+_BILL_DOC_TYPES = {"СчетВх"}
+
+
+def _doc_kind_for(doc_type: str | None) -> str:
+    return "bill" if (doc_type or "") in _BILL_DOC_TYPES else "closing"
 
 
 @dataclass
@@ -248,25 +256,25 @@ async def _resolve_or_create_counterparty(
 async def _find_existing_invoice(
     session: AsyncSession, counterparty_id, doc: SbisDocument
 ) -> SupplierInvoice | None:
-    """Двусторонний дедуп с почтой/ручным вводом: сумма + дата + номер (None==None).
+    """Дедуп с почтой/ручным вводом документов ОДНОЙ РОЛИ (канон ДЗ/КЗ, владелец 17.07).
 
-    Поставщик может прислать тот же счёт и письмом, и через ЭДО — второй канал не
-    должен родить второй счёт. Зеркальный iiko-контур сюда не входит: у контрагентов
-    с каналом 'sbis' производственных iiko-накладных нет по определению.
-
-    Дополнительно ловим пару «счёт ↔ закрывающий УПД» одной поставки. Внутри СБИС они
-    приходят РАЗНЫМИ типами документов, а между каналами (счёт письмом, УПД через ЭДО)
-    — с несовпадающими номерами и датами, поэтому строгий дедуп их пропустил бы — и по
-    одной услуге встали бы две накладные «к оплате» (двойная оплата). Пару ловим по
-    контрагенту+сумме в окне ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``."""
+    Канон развёл роли: счёт (bill) и его закрывающий УПД (closing) — РАЗНЫЕ документы и
+    СОСУЩЕСТВУЮТ (счёт живёт в очереди оплат, УПД — в балансе ДЗ/КЗ). Поэтому пару «счёт↔УПД»
+    больше НЕ схлопываем; дедупим только совпадения ОДНОГО doc_kind:
+      • строгий — тот же документ (сумма + дата + номер), пришедший повторно;
+      • кросс-канальный — тот же счёт/УПД пришёл и письмом/руками, и через ЭДО под другим
+        номером: ловим по контрагенту + сумме + роли в окне ``CROSS_CHANNEL_DEDUP_WINDOW_DAYS``.
+    Зеркальный iiko-контур сюда не входит (у 'sbis'-контрагентов iiko-накладных нет)."""
     if doc.amount is None:
         return None
+    want_kind = _doc_kind_for(doc.doc_type)
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
                 SupplierInvoice.counterparty_id == counterparty_id,
                 SupplierInvoice.amount == doc.amount,
                 SupplierInvoice.payment_status != "void",
+                SupplierInvoice.doc_kind == want_kind,
                 SupplierInvoice.source.in_(("email", "manual", "sbis")),
             )
         )
@@ -280,19 +288,8 @@ async def _find_existing_invoice(
             return candidate
     if doc.doc_date is None:
         return None
-    want_type = doc.doc_type or ""
-    if want_type in _MATERIALIZABLE_DOC_TYPES:
-        for candidate in candidates:
-            if candidate.source != "sbis" or candidate.invoice_date is None:
-                continue
-            cand_type = (candidate.raw_payload or {}).get("doc_type") or ""
-            if cand_type == want_type or cand_type not in _MATERIALIZABLE_DOC_TYPES:
-                continue  # только пара РАЗНЫХ материализуемых типов (счёт↔УПД)
-            if abs((candidate.invoice_date - doc.doc_date).days) <= CROSS_CHANNEL_DEDUP_WINDOW_DAYS:
-                return candidate
-    # Кросс-канальная пара: счёт уже пришёл письмом или внесён руками, а СБИС принёс
-    # тот же счёт/его закрывающий УПД под другим номером. Из нескольких кандидатов
-    # берём ближайший по дате.
+    # Кросс-канальная пара ОДНОЙ роли: тот же документ уже пришёл письмом или внесён руками
+    # под другим номером. Из нескольких кандидатов берём ближайший по дате.
     cross_channel = [
         candidate
         for candidate in candidates
@@ -404,6 +401,7 @@ async def _materialize_document(
         counterparty_id=counterparty.id,
         source="sbis",
         direction="payable",
+        doc_kind=_doc_kind_for(doc.doc_type),  # СчетВх→bill, ДокОтгрВх(УПД/акт)→closing
         external_id=doc.sbis_doc_id,
         number=doc.number,
         invoice_date=doc.doc_date,
@@ -428,9 +426,9 @@ async def _materialize_document(
     session.add(invoice)
     await session.flush()
     await service_periods.sync_invoice_accrual(session, invoice)
-    # «Закрывающий документ»: если поставщик оплачен авансом, УПД гасит дебиторку
-    # и не попадает «к оплате» (решение владельца 2026-07-16).
-    settled = await prepayments.auto_settle_invoice_from_open_prepayments(session, invoice)
+    # Закрывающий документ (УПД/акт) гасит дебиторку / встаёт в кредиторку (правило 2); будущей
+    # датой откладывается до своей даты (правило 4). Счёт (bill) в баланс не входит — no-op.
+    settled = await prepayments.apply_closing_document(session, invoice)
     if settled > 0:
         result.settled_from_prepayments += 1
     doc.invoice_id = invoice.id
