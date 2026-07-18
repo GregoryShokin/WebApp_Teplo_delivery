@@ -733,21 +733,32 @@ class BarterSettlement(Base):
 class BarterReturnLine(Base):
     """One partial settlement of a barter loan — by product line and/or by amount.
 
-    A return invoice (``SupplierInvoice.barter_role == "return"``) closes part of a
-    specific loan: each row records how much of which loan line is being returned
-    (``quantity``) and the ruble amount (``amount``, always set). A loan is fully
-    ``returned`` once Σ amount equals its total; otherwise ``partially_returned``.
-    """
+    Товарное гашение: возвратная накладная (``barter_role == "return"``) закрывает часть
+    займа, строка несёт количество (``quantity``) и сумму по ИСХОДНОЙ цене займа. Денежное
+    гашение: строка ссылается на ДДС-проводку денег (``cashflow_transaction_id``), ``amount``
+    — фактические деньги (по ТЕКУЩЕЙ цене для нашего займа), а в зачёт долга идёт
+    qty × исходная цена (долг номинирован товаром). Статус займа считает
+    ``warehouse_invoices.sync_barter_loan_status`` по зачётной стоимости."""
 
     __tablename__ = "barter_return_line"
     __table_args__ = (
+        CheckConstraint(
+            "(return_invoice_id IS NOT NULL) OR (cashflow_transaction_id IS NOT NULL)",
+            name="ck_barter_return_has_source",
+        ),
         Index("ix_barter_return_loan", "loan_invoice_id"),
         Index("ix_barter_return_return", "return_invoice_id"),
+        Index("ix_barter_return_cashflow_tx", "cashflow_transaction_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    return_invoice_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("supplier_invoice.id", ondelete="CASCADE"), nullable=False
+    # Товарное гашение — возвратная накладная; денежное — ДДС-проводка (склад не двигается,
+    # накладной нет). Хотя бы один источник обязателен (CHECK).
+    return_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="CASCADE"), nullable=True
+    )
+    cashflow_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="RESTRICT"), nullable=True
     )
     loan_invoice_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("supplier_invoice.id", ondelete="RESTRICT"), nullable=False

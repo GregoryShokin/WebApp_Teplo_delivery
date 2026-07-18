@@ -994,6 +994,99 @@ async def _loan_returned_amount(session: AsyncSession, loan_id: uuid.UUID) -> De
     return _money(total)
 
 
+async def loan_settled_value(session: AsyncSession, loan: SupplierInvoice) -> Decimal:
+    """Погашенная часть займа В РУБЛЯХ ЗАЙМА — по ИСХОДНЫМ ценам выдачи.
+
+    Долг бартерного займа номинирован ТОВАРОМ (кг), рублёвая сумма займа — лишь его оценка по
+    ценам выдачи. Поэтому строка гашения с количеством засчитывается как qty × исходная цена
+    строки займа, сколько бы денег ни пришло фактически (гашение деньгами идёт по ТЕКУЩЕЙ
+    цене — вернули 1 кг моцареллы деньгами по 350 при выдаче по 300 → долг закрыт на 300,
+    деньги 350). Строка без товара (свободная сумма) — по фактической сумме. Для ПРИХОДНОГО
+    займа (мы должны) добавляются обычные денежные оплаты накладной (аллокации): «оплатить
+    как обычную поставку». Товарные возвраты по исходной цене дают qty × price == amount,
+    поэтому для них формула совпадает с прежней рублёвой."""
+    qty_rows = (
+        await session.execute(
+            select(
+                BarterReturnLine.loan_line_item_id,
+                BarterReturnLine.quantity,
+                BarterReturnLine.amount,
+                BarterReturnLine.return_invoice_id,
+                InvoiceLineItem.price,
+                InvoiceLineItem.quantity,
+                InvoiceLineItem.sum,
+            )
+            .join(InvoiceLineItem, InvoiceLineItem.id == BarterReturnLine.loan_line_item_id)
+            .where(
+                BarterReturnLine.loan_invoice_id == loan.id,
+                BarterReturnLine.loan_line_item_id.isnot(None),
+                BarterReturnLine.quantity.isnot(None),
+            )
+        )
+    ).all()
+    # Построчно, с замыканием «сумма строки — эталон»: товарный возврат несёт точную сумму,
+    # денежное гашение зачитывается как кг × исходная цена, а строка, погашенная по кг
+    # ЦЕЛИКОМ, зачитывается ровно своей суммой — иначе копеечный дрейф округлений
+    # (Σ округлений ≠ округление суммы) никогда не даст остатку дойти до нуля.
+    per_line: dict[uuid.UUID, dict[str, Decimal]] = {}
+    for line_id, qty, amount, return_invoice_id, price, line_qty, line_sum in qty_rows:
+        bucket = per_line.setdefault(
+            line_id,
+            {
+                "qty": Decimal("0"),
+                "credit": Decimal("0.00"),
+                "line_qty": _qty(line_qty),
+                "line_sum": _money(line_sum),
+            },
+        )
+        bucket["qty"] += _qty(qty)
+        bucket["credit"] += (
+            _money(amount) if return_invoice_id is not None else _money(_qty(qty) * _money(price))
+        )
+    settled = Decimal("0.00")
+    for bucket in per_line.values():
+        if _qty(bucket["qty"]) >= bucket["line_qty"]:
+            settled += bucket["line_sum"]
+        else:
+            settled += bucket["credit"]
+    free_money = await session.scalar(
+        select(func.coalesce(func.sum(BarterReturnLine.amount), 0)).where(
+            BarterReturnLine.loan_invoice_id == loan.id,
+            BarterReturnLine.loan_line_item_id.is_(None),
+        )
+    )
+    settled += _money(free_money)
+    if loan.direction == "payable":
+        allocated = await session.scalar(
+            select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+                InvoicePaymentAllocation.invoice_id == loan.id
+            )
+        )
+        settled += _money(allocated)
+    return settled
+
+
+async def sync_barter_loan_status(session: AsyncSession, loan: SupplierInvoice) -> Decimal:
+    """Пересчитать статус займа от зачётной стоимости гашений. Возвращает остаток.
+
+    ``returned`` (и ``payment_status='paid'``) — когда зачтено не меньше суммы займа;
+    иначе ``partially_returned`` при ненулевом зачёте. Единая точка для товарных возвратов,
+    денежных гашений и оплат приходного займа."""
+    settled = await loan_settled_value(session, loan)
+    remaining = _money(loan.amount) - settled
+    if remaining <= 0:
+        loan.barter_return_status = "returned"
+        loan.payment_status = "paid"
+    elif settled > 0:
+        # В т.ч. ОТКАТ из returned: сняли денежную аллокацию (исключили банк-операцию) —
+        # заём снова частично открыт, иначе долг занижен фантомно-закрытым займом.
+        loan.barter_return_status = "partially_returned"
+    else:
+        loan.barter_return_status = "open"
+    await session.flush()
+    return max(remaining, Decimal("0.00"))
+
+
 async def _loan_line_returned_qty(
     session: AsyncSession, loan_id: uuid.UUID
 ) -> dict[uuid.UUID, Decimal]:
@@ -1028,7 +1121,10 @@ async def list_open_loans(
         query = query.where(SupplierInvoice.counterparty_id == counterparty_id)
     out: list[dict[str, Any]] = []
     for loan, name in list(await session.execute(query)):
-        returned = await _loan_returned_amount(session, loan.id)
+        # Зачётная стоимость: qty-гашения по исходной цене + свободные суммы + (для приходного
+        # займа) денежные оплаты накладной — иначе оплаченный/гашёный деньгами заём висел бы
+        # открытым полной суммой.
+        returned = await loan_settled_value(session, loan)
         out.append(
             {
                 "id": str(loan.id),
@@ -1058,13 +1154,16 @@ async def get_loan_returnable(session: AsyncSession, loan_id: uuid.UUID) -> dict
         )
     ).all()
     returned_qty = await _loan_line_returned_qty(session, loan_id)
-    returned_total = await _loan_returned_amount(session, loan_id)
+    settled_total = await loan_settled_value(session, loan)
+    last_prices = await _last_purchase_prices(
+        session, [line.product_guid for line in lines if line.product_guid]
+    )
     return {
         "id": str(loan.id),
         "number": loan.number,
         "we_lend": loan.direction == "receivable",
         "amount": float(_money(loan.amount)),
-        "remaining": float(_money(loan.amount - returned_total)),
+        "remaining": float(max(_money(loan.amount) - settled_total, Decimal("0.00"))),
         "lines": [
             {
                 "id": str(line.id),
@@ -1075,10 +1174,116 @@ async def get_loan_returnable(session: AsyncSession, loan_id: uuid.UUID) -> dict
                 "remaining_qty": float(
                     _qty(line.quantity) - returned_qty.get(line.id, Decimal("0"))
                 ),
+                # Подсказка ТЕКУЩЕЙ цены для денежного гашения (решение владельца 18.07):
+                # последняя закупочная из приходных; вводит всё равно оператор.
+                "last_purchase_price": (
+                    float(last_prices[line.product_guid])
+                    if line.product_guid and line.product_guid in last_prices
+                    else None
+                ),
             }
             for line in lines
         ],
     }
+
+
+async def _last_purchase_prices(
+    session: AsyncSession, product_guids: list[str]
+) -> dict[str, Decimal]:
+    """Последняя закупочная цена по товарам — из строк ПРИХОДНЫХ накладных (не бартер),
+    свежайшая по дате документа. Подсказка оператору при денежном гашении займа."""
+    if not product_guids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                InvoiceLineItem.product_guid, InvoiceLineItem.price, SupplierInvoice.invoice_date
+            )
+            .join(SupplierInvoice, SupplierInvoice.id == InvoiceLineItem.invoice_id)
+            .where(
+                InvoiceLineItem.product_guid.in_(product_guids),
+                SupplierInvoice.direction == "payable",
+                SupplierInvoice.barter_role.is_(None),
+                SupplierInvoice.payment_status != "void",
+            )
+            .order_by(SupplierInvoice.invoice_date.desc().nulls_last())
+        )
+    ).all()
+    prices: dict[str, Decimal] = {}
+    for guid, price, _inv_date in rows:
+        if guid not in prices:
+            prices[guid] = _money(price)
+    return prices
+
+
+async def convert_invoice_to_barter_loan(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> SupplierInvoice:
+    """Признать унаследованную бартерную накладную ЯВНЫМ займом (модель владельца 18.07).
+
+    Старый поток тащил встречные поставки из iiko без роли (barter_role IS NULL) — их гашение
+    работало только хроно-зачётом равных сумм. Целевая модель: весь бартер — явные займы,
+    гасятся товаром/деньгами из карточки. Эта конвертация — мостик для уже приехавших строк:
+    приходная → заём «нам выдали», расходная → заём «мы выдали». После неё накладная уходит из
+    хроно-зачёта (его фильтр barter_role IS NULL) и получает штатное гашение.
+
+    Товарного движения и денег НЕ создаёт — только роль. Строки для возврата по позициям берём
+    существующие; у совсем старых накладных их нет — материализуем из JSONB-зеркала
+    (price = сумма/кол-во), иначе гашение по кг было бы невозможно."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise WarehouseInvoiceError("Накладная не найдена")
+    if invoice.barter_role is not None:
+        raise WarehouseInvoiceError("Накладная уже в бартерном леджере")
+    if invoice.payment_status not in ("unpaid", "partially_paid"):
+        raise WarehouseInvoiceError("Займом можно признать только неоплаченную накладную")
+    if invoice.barter_settlement_id is not None:
+        raise WarehouseInvoiceError("Накладная уже зачтена встречной — займом её не признать")
+    if invoice.draft_id is not None:
+        raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+
+    has_lines = (
+        await session.scalar(
+            select(func.count()).select_from(InvoiceLineItem).where(
+                InvoiceLineItem.invoice_id == invoice.id
+            )
+        )
+    ) or 0
+    if not has_lines:
+        created = 0
+        for index, item in enumerate(invoice.line_items or []):
+            quantity = _qty(item.get("quantity"))
+            amount = _money(item.get("amount"))
+            if quantity <= 0 or amount <= 0:
+                continue  # мусорная строка зеркала — в основание долга не годится
+            session.add(
+                InvoiceLineItem(
+                    invoice_id=invoice.id,
+                    product_guid=item.get("product_id"),
+                    name=item.get("name") or "Позиция",
+                    article=item.get("article"),
+                    quantity=quantity,
+                    price=_money(amount / quantity),
+                    sum=amount,
+                    sort_order=index,
+                )
+            )
+            created += 1
+        await session.flush()
+        # Считаем СОЗДАННЫЕ строки, а не длину зеркала: зеркало из одних мусорных строк дало
+        # бы заём без позиций — его нельзя было бы погасить по килограммам никогда.
+        has_lines = created
+    if not has_lines:
+        raise WarehouseInvoiceError(
+            "У накладной нет позиций — гашение по килограммам невозможно"
+        )
+
+    invoice.barter_role = "loan"
+    invoice.barter_return_status = "open"
+    await _ensure_barter_relationship(session, invoice.counterparty_id)
+    await session.commit()
+    await session.refresh(invoice)
+    return invoice
 
 
 async def create_barter_return(
@@ -1107,9 +1312,33 @@ async def create_barter_return(
             )
         ).all()
     }
-    returned_total = await _loan_returned_amount(session, loan_id)
     returned_qty = await _loan_line_returned_qty(session, loan_id)
-    loan_remaining = _money(loan.amount - returned_total)
+    # Уже зачтённое ПО СТРОКАМ в рублях займа: товарные возвраты — их фактические суммы,
+    # денежные qty-гашения — кг × исходная цена. Нужно для точного замыкания строки
+    # (см. «сумма строки — эталон» ниже).
+    line_credited: dict[uuid.UUID, Decimal] = {}
+    prior_rows = (
+        await session.scalars(
+            select(BarterReturnLine).where(
+                BarterReturnLine.loan_invoice_id == loan_id,
+                BarterReturnLine.loan_line_item_id.isnot(None),
+            )
+        )
+    ).all()
+    for prior in prior_rows:
+        line = loan_lines.get(prior.loan_line_item_id)
+        if line is None:
+            continue
+        credit = (
+            _money(prior.amount)
+            if prior.return_invoice_id is not None
+            else _money(_qty(prior.quantity) * _money(line.price))
+        )
+        line_credited[line.id] = line_credited.get(line.id, Decimal("0.00")) + credit
+    # Остаток — по зачётной стоимости (qty × исходная цена + свободные суммы + оплаты
+    # приходного займа), не по сырой Σ amount: денежные гашения по текущей цене несут
+    # amount ≠ qty × исходная цена и сломали бы рублёвую арифметику.
+    loan_remaining = _money(loan.amount) - await loan_settled_value(session, loan)
 
     # Сумма возврата ТОВАРОМ = кол-во × ИСХОДНАЯ цена займа: товар возвращается на склад
     # по той же стоимости, по которой ушёл, даже если рыночная цена изменилась. Возврат
@@ -1121,10 +1350,26 @@ async def create_barter_return(
             if r.quantity is None:
                 raise WarehouseInvoiceError(f"Укажите количество для «{line.name}»")
             qty = _qty(r.quantity)
+            if qty <= 0:
+                raise WarehouseInvoiceError(f"Количество по «{line.name}» должно быть > 0")
             already = returned_qty.get(line.id, Decimal("0"))
             if _qty(already + qty) > _qty(line.quantity):
                 raise WarehouseInvoiceError(f"Возврат по «{line.name}» превышает остаток")
-            resolved.append((line, qty, _money(qty * line.price)))
+            # Копим В СНИМКЕ: две строки запроса по одной позиции займа иначе прошли бы лимит
+            # каждая по отдельности и вернули бы больше выданного.
+            returned_qty[line.id] = _qty(already + qty)
+            # СУММА СТРОКИ — ЭТАЛОН (канон round-trip накладных): при возврате ПОСЛЕДНИХ кг
+            # строки закрываем ровно её рублёвый остаток (сумма − уже зачтённое), а не
+            # qty × округлённая цена — иначе копеечный дрейф (2.6 кг × 470.48 = 1223.25 при
+            # строке 1223.24) не даст закрыть заём никогда.
+            if _qty(already + qty) == _qty(line.quantity):
+                amount = max(
+                    _money(line.sum) - line_credited.get(line.id, Decimal("0.00")),
+                    Decimal("0.00"),
+                )
+            else:
+                amount = _money(qty * line.price)
+            resolved.append((line, qty, amount))
         else:
             resolved.append((None, None, _money(r.amount)))
 
@@ -1189,12 +1434,7 @@ async def create_barter_return(
             )
     ret.line_items = mirror
 
-    new_returned = _money(returned_total + new_total)
-    if new_returned >= _money(loan.amount):
-        loan.barter_return_status = "returned"
-        loan.payment_status = "paid"
-    else:
-        loan.barter_return_status = "partially_returned"
+    await sync_barter_loan_status(session, loan)
     await session.commit()
     await session.refresh(ret)
     return ret

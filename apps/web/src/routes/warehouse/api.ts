@@ -182,6 +182,7 @@ export async function syncProducts(): Promise<{
 export async function getWarehouseInvoices(params?: {
   status?: string;
   has_staff?: boolean;
+  counterparty_id?: string;
 }): Promise<WarehouseInvoiceSummary[]> {
   const response = await api.get<WarehouseInvoiceSummary[]>(`${BASE}/invoices`, { params });
   return response.data;
@@ -324,6 +325,8 @@ export type ReturnableLine = {
   price: number;
   quantity: number;
   remaining_qty: number;
+  /** Последняя закупочная — подсказка ТЕКУЩЕЙ цены для гашения деньгами. */
+  last_purchase_price: number | null;
 };
 
 export type LoanReturnable = {
@@ -342,6 +345,24 @@ export type ReturnPayload = {
   returns: Array<{ amount: number; loan_line_item_id?: string | null; quantity?: number | null }>;
 };
 
+export type BarterPartner = {
+  counterparty_id: string;
+  name: string;
+  inn: string | null;
+  we_are_owed: number;
+  we_owe: number;
+  net: number;
+  open_loans: number;
+  has_loans: boolean;
+  has_mutual: boolean;
+  last_activity: string | null;
+};
+
+export async function getBarterPartners(): Promise<BarterPartner[]> {
+  const response = await api.get<BarterPartner[]>(`${BASE}/barter/partners`);
+  return response.data;
+}
+
 export async function getOpenLoans(counterpartyId?: string): Promise<OpenLoan[]> {
   const response = await api.get<OpenLoan[]>(`${BASE}/loans`, {
     params: counterpartyId ? { counterparty_id: counterpartyId } : undefined,
@@ -356,6 +377,46 @@ export async function getLoanReturnable(loanId: string): Promise<LoanReturnable>
 
 export async function createBarterReturn(payload: ReturnPayload): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(`${BASE}/invoices/return`, payload);
+  return response.data;
+}
+
+export type MoneySettlePayload = {
+  operation_date: string;
+  wallet_id?: string | null;
+  bank_operation_id?: string | null;
+  /** Наш заём: кг × ТЕКУЩАЯ цена (ввод оператора). */
+  lines?: Array<{ loan_line_item_id: string; quantity: number; unit_price: number }> | null;
+  /** Их заём: сумма оплаты «как обычной поставки». */
+  amount?: number | null;
+};
+
+export type MoneySettleResult = {
+  loan_id: string;
+  remaining: number;
+  status: string;
+  money_received?: number;
+  credited?: number;
+  paid?: number;
+  cashflow_transaction_id?: string;
+};
+
+export async function markInvoiceAsLoan(
+  invoiceId: string,
+): Promise<{ id: string; barter_role: string }> {
+  const response = await api.post<{ id: string; barter_role: string }>(
+    `${BASE}/invoices/${invoiceId}/mark-loan`,
+  );
+  return response.data;
+}
+
+export async function settleLoanWithMoney(
+  loanId: string,
+  payload: MoneySettlePayload,
+): Promise<MoneySettleResult> {
+  const response = await api.post<MoneySettleResult>(
+    `${BASE}/loans/${loanId}/settle-money`,
+    payload,
+  );
   return response.data;
 }
 

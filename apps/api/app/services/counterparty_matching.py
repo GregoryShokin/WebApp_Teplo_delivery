@@ -133,6 +133,14 @@ async def _recompute_status(session: AsyncSession, invoice: SupplierInvoice) -> 
         from app.services.supplier_prepayments import reconcile_bill_prepayment
 
         await reconcile_bill_prepayment(session, invoice)
+    # Бартерный заём: статус гашения складывается из возвратов товаром (леджер BarterReturnLine)
+    # И денежных оплат (аллокации) — пересчёт по одним аллокациям рассинхронизировал бы их
+    # (снятие аллокации при исключении операции оставило бы barter_return_status='returned').
+    # Ленивый импорт — warehouse_invoices импортирует этот модуль (цикл).
+    if invoice.barter_role == "loan":
+        from app.services.warehouse_invoices import sync_barter_loan_status
+
+        await sync_barter_loan_status(session, invoice)
 
 
 async def _op_already_allocated(session: AsyncSession, bank_operation_id: uuid.UUID) -> bool:

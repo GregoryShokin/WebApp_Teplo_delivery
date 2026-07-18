@@ -27,10 +27,18 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BarterSettlement, SupplierInvoice
+from app.models import (
+    BarterReturnLine,
+    BarterSettlement,
+    Counterparty,
+    CounterpartyPayableProfile,
+    InvoiceLineItem,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+)
 
 # Max invoices a single batched return may cover (keeps subset enumeration cheap).
 MAX_SUBSET_SIZE = 5
@@ -469,6 +477,176 @@ async def _load_settlements(
             )
         )
     return views
+
+
+async def barter_partner_balances(session: AsyncSession) -> list[dict[str, Any]]:
+    """Вкладка «Бартер» уровня партнёров: каждый бартерный контрагент одной строкой с балансом.
+
+    «Нам должны» = остатки НАШИХ займов (receivable, по зачётной стоимости: qty-гашения ×
+    исходная цена + свободные суммы) + открытые неявные расходные поставки. «Мы должны» =
+    остатки ИХ займов (минус зачёты и денежные оплаты-аллокации) + открытые неявные приходы.
+    Партнёр = профиль relationship='barter' ИЛИ контрагент с явными займами; рассчитанные
+    (0/0) остаются в списке — владелец видит всех, с кем есть бартерная история."""
+    loan_rows = (
+        await session.execute(
+            select(SupplierInvoice).where(
+                SupplierInvoice.barter_role == "loan",
+                SupplierInvoice.payment_status != "void",
+                # Закрытый заём отсекаем СТАТУСОМ, не арифметикой: SQL-оценка зачёта не знает
+                # замыкания «сумма строки — эталон» и может дрейфовать на копейку.
+                SupplierInvoice.barter_return_status != "returned",
+            )
+        )
+    ).scalars().all()
+    profile_ids = set(
+        (
+            await session.scalars(
+                select(CounterpartyPayableProfile.counterparty_id).where(
+                    CounterpartyPayableProfile.relationship == "barter"
+                )
+            )
+        ).all()
+    )
+    partner_ids = profile_ids | {loan.counterparty_id for loan in loan_rows}
+    if not partner_ids:
+        return []
+
+    # Зачётная стоимость гашений по займам: qty × ИСХОДНАЯ цена строки займа (гашение деньгами
+    # несёт amount по текущей цене — в зачёт долга он не годится), свободные суммы — как есть.
+    credit_rows = (
+        await session.execute(
+            select(
+                BarterReturnLine.loan_invoice_id,
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                BarterReturnLine.quantity.isnot(None)
+                                & BarterReturnLine.loan_line_item_id.isnot(None),
+                                BarterReturnLine.quantity * InvoiceLineItem.price,
+                            ),
+                            else_=BarterReturnLine.amount,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .outerjoin(InvoiceLineItem, InvoiceLineItem.id == BarterReturnLine.loan_line_item_id)
+            .where(BarterReturnLine.loan_invoice_id.in_([loan.id for loan in loan_rows]))
+            .group_by(BarterReturnLine.loan_invoice_id)
+        )
+    ).all() if loan_rows else []
+    credited = {row[0]: _money(row[1]) for row in credit_rows}
+    alloc_rows = (
+        await session.execute(
+            select(
+                InvoicePaymentAllocation.invoice_id,
+                func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0),
+            )
+            .where(
+                InvoicePaymentAllocation.invoice_id.in_(
+                    [loan.id for loan in loan_rows if loan.direction == "payable"]
+                )
+            )
+            .group_by(InvoicePaymentAllocation.invoice_id)
+        )
+    ).all() if any(loan.direction == "payable" for loan in loan_rows) else []
+    allocated = {row[0]: _money(row[1]) for row in alloc_rows}
+
+    mutual_rows = (
+        await session.execute(
+            select(
+                SupplierInvoice.counterparty_id,
+                SupplierInvoice.direction,
+                func.coalesce(func.sum(SupplierInvoice.amount), 0),
+                func.count(SupplierInvoice.id),
+                func.max(SupplierInvoice.invoice_date),
+            )
+            .where(
+                SupplierInvoice.counterparty_id.in_(partner_ids),
+                SupplierInvoice.barter_role.is_(None),
+                SupplierInvoice.barter_settlement_id.is_(None),
+                SupplierInvoice.payment_status == "unpaid",
+                SupplierInvoice.doc_kind != "bill",
+            )
+            .group_by(SupplierInvoice.counterparty_id, SupplierInvoice.direction)
+        )
+    ).all()
+
+    out: dict[uuid.UUID, dict[str, Any]] = {
+        cp_id: {
+            "counterparty_id": cp_id,
+            "we_are_owed": Decimal("0.00"),
+            "we_owe": Decimal("0.00"),
+            "open_loans": 0,
+            "has_loans": False,
+            "has_mutual": False,
+            "last_activity": None,
+        }
+        for cp_id in partner_ids
+    }
+
+    def _touch(cp_id: uuid.UUID, day: date | None) -> None:
+        if day is None:
+            return
+        prev = out[cp_id]["last_activity"]
+        out[cp_id]["last_activity"] = day if prev is None or day > prev else prev
+
+    for loan in loan_rows:
+        row = out[loan.counterparty_id]
+        row["has_loans"] = True
+        _touch(loan.counterparty_id, loan.invoice_date)
+        settled = credited.get(loan.id, Decimal("0.00"))
+        if loan.direction == "payable":
+            settled += allocated.get(loan.id, Decimal("0.00"))
+        remaining = max(_money(loan.amount) - settled, Decimal("0.00"))
+        if remaining <= 0:
+            continue
+        row["open_loans"] += 1
+        if loan.direction == "receivable":
+            row["we_are_owed"] += remaining
+        else:
+            row["we_owe"] += remaining
+
+    for cp_id, direction, total, count, last_date in mutual_rows:
+        row = out[cp_id]
+        row["has_mutual"] = row["has_mutual"] or count > 0
+        _touch(cp_id, last_date)
+        if direction == "receivable":
+            row["we_are_owed"] += _money(total)
+        else:
+            row["we_owe"] += _money(total)
+
+    names = (
+        await session.execute(
+            select(Counterparty.id, Counterparty.name, Counterparty.inn).where(
+                Counterparty.id.in_(partner_ids)
+            )
+        )
+    ).all()
+    result = []
+    for cp_id, name, inn in names:
+        row = out[cp_id]
+        result.append(
+            {
+                "counterparty_id": str(cp_id),
+                "name": name,
+                "inn": inn,
+                "we_are_owed": float(row["we_are_owed"]),
+                "we_owe": float(row["we_owe"]),
+                "net": float(row["we_are_owed"] - row["we_owe"]),
+                "open_loans": row["open_loans"],
+                "has_loans": row["has_loans"],
+                "has_mutual": row["has_mutual"],
+                "last_activity": (
+                    row["last_activity"].isoformat() if row["last_activity"] else None
+                ),
+            }
+        )
+    result.sort(
+        key=lambda item: (max(item["we_are_owed"], item["we_owe"]), item["name"]), reverse=True
+    )
+    return result
 
 
 async def settled_roles(

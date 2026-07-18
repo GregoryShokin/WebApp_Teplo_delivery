@@ -13,6 +13,7 @@ import { getInvoices, syncInvoices } from "../counterparties/api";
 import { CounterpartyCard } from "../counterparties/CounterpartyCard";
 import { MetricCard, formatRub, isOverdue } from "../counterparties/shared";
 import { InboxTab } from "../counterparties/tabs/inbox";
+import { BarterPartnersTab } from "./BarterTab";
 import { syncProducts } from "./api";
 
 // Реестр контрагентов — на «Финансы → Контрагенты», реестр ЭДО (СБИС) — на «Финансы →
@@ -50,7 +51,11 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
     queryKey: ["cp", "invoices", "dashboard"],
     queryFn: () => getInvoices({ status: "unpaid,partially_paid" }),
   });
-  const invoices = dashboardQuery.data ?? [];
+  // Бартер в денежные плитки не входит: заём — ТОВАРНЫЙ долг, его остаток считается по
+  // зачётной стоимости (кг × цена выдачи) и живёт на вкладке «Бартер». Здесь его remaining —
+  // сумма минус аллокации, без товарных возвратов: плитка расходилась бы со вкладкой на
+  // зачтённый товар и завышала «К оплате».
+  const invoices = (dashboardQuery.data ?? []).filter((item) => item.barter_role === null);
   const toPay = invoices.reduce((sum, item) => sum + item.remaining, 0);
   const overdue = invoices
     .filter((item) => isOverdue(item.due_date, item.payment_status))
@@ -157,13 +162,9 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
         />
       ) : null}
       {effectiveTab === "barter" ? (
-        <InboxTab
-          kind="barter"
-          canOperate={canOperate}
-          canCreate={canCreateBarter}
-          canPay={canPayBarter}
-          onOpenCounterparty={setOpenId}
-        />
+        // Бартер — партнёры с балансом → карточка с накладными → окно гашения (решение
+        // владельца 18.07). Займы не платятся как обычные накладные — только гашение.
+        <BarterPartnersTab canOperate={canCreateBarter} />
       ) : null}
       <CounterpartyCard
         counterpartyId={openId}

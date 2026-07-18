@@ -1019,6 +1019,14 @@ async def void_invoice(session: AsyncSession, invoice_id: uuid.UUID) -> Supplier
         raise CounterpartyRegistryError("Накладная не найдена")
     if invoice.draft_id is not None:
         raise CounterpartyRegistryError("Накладная отправлена в банк — сначала отмените черновик")
+    if invoice.barter_role is not None:
+        # Бартерный леджер живёт своими правилами: возвратная накладная создаётся сразу
+        # 'paid' и без аллокаций, поэтому проверка ниже её пропустила бы — а строки
+        # BarterReturnLine остались бы, и заём числился бы погашенным несуществующим
+        # документом (симметрично гардам ensure_invoice_deletable и _apply_iiko_deletion).
+        raise CounterpartyRegistryError(
+            "Бартерная накладная аннулированию не подлежит — гашение ведётся в карточке партнёра"
+        )
     has_allocations = await session.scalar(
         select(InvoicePaymentAllocation.id)
         .where(InvoicePaymentAllocation.invoice_id == invoice_id)

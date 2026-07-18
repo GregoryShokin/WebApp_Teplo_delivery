@@ -33,7 +33,12 @@ from app.services.counterparty_bank_match import (
     confirm_invoice_match,
     suggest_invoice_matches_by_time,
 )
-from app.services.counterparty_matching import CounterpartyMatchError
+from app.services.counterparty_iiko_payment import (
+    IikoPaymentError,
+    mark_iiko_payment_settled_manually,
+    mirror_single_paid_iiko_invoice,
+)
+from app.services.counterparty_matching import CounterpartyMatchError, _allocated_amount
 from app.services.iiko_product_sync import sync_iiko_products
 from app.services.invoice_price_control import (
     PriceControlError,
@@ -50,12 +55,6 @@ from app.services.warehouse_invoice_push import (
     propagate_invoice_edit_to_iiko,
     push_invoice_to_iiko,
 )
-from app.services.counterparty_iiko_payment import (
-    IikoPaymentError,
-    mark_iiko_payment_settled_manually,
-    mirror_single_paid_iiko_invoice,
-)
-from app.services.counterparty_matching import _allocated_amount
 from app.services.warehouse_invoices import (
     LineInput,
     ReturnLineInput,
@@ -149,6 +148,27 @@ class ReturnCreate(BaseModel):
     issued_at: datetime
     number: str | None = None
     returns: list[ReturnLineCreate] = Field(min_length=1)
+
+
+class MoneySettleLine(BaseModel):
+    """Гашение нашего займа деньгами: кг строки займа × ТЕКУЩАЯ цена (ввод оператора)."""
+
+    loan_line_item_id: uuid.UUID
+    quantity: Decimal
+    unit_price: Decimal
+
+
+class MoneySettleRequest(BaseModel):
+    """Денежное гашение бартерного займа. Ровно один канал: кошелёк (нал) или банк-операция.
+
+    Наш заём (мы выдали): ``lines`` обязательны — контрагент платит кг × текущая цена.
+    Их заём (нам выдали): ``amount`` обязателен — платим «как обычную поставку»."""
+
+    operation_date: date
+    wallet_id: uuid.UUID | None = None
+    bank_operation_id: uuid.UUID | None = None
+    lines: list[MoneySettleLine] | None = None
+    amount: Decimal | None = None
 
 
 class MatchConfirmRequest(BaseModel):
@@ -340,9 +360,98 @@ async def post_return(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    # Возврат — тоже складское движение: уходит в iiko автоматом (модель владельца 18.07 —
+    # наша система узнаёт о возврате первой, iiko только зеркалит). Сбой не валит возврат.
+    with contextlib.suppress(WarehousePushError):
+        await push_invoice_to_iiko(session, ret.id)
     result = await get_warehouse_invoice(session, ret.id)
     assert result is not None
     return result
+
+
+@router.post("/invoices/{invoice_id}/mark-loan")
+async def post_mark_invoice_as_loan(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Признать унаследованную бартерную накладную явным займом — открывает штатное гашение."""
+    ensure_permission(actor, "invoices.barter.create")
+    from app.services.warehouse_invoices import convert_invoice_to_barter_loan
+
+    try:
+        invoice = await convert_invoice_to_barter_loan(session, invoice_id)
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return {"id": str(invoice.id), "barter_role": invoice.barter_role}
+
+
+@router.get("/barter/partners", dependencies=READ)
+async def list_barter_partners(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[dict[str, Any]]:
+    """Вкладка «Бартер»: партнёры одной строкой — нам должны / мы должны / нетто."""
+    from app.services.counterparty_barter_match import barter_partner_balances
+
+    return await barter_partner_balances(session)
+
+
+@router.post("/loans/{loan_id}/settle-money", status_code=status.HTTP_201_CREATED)
+async def post_loan_money_settlement(
+    loan_id: uuid.UUID,
+    payload: MoneySettleRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Денежное гашение бартерного займа: наш заём — контрагент платит кг × текущая цена;
+    их заём — мы платим по накладной. Канал: нал (кошелёк) или банк-операция."""
+    ensure_permission(actor, "invoices.barter.create")
+    from app.services.barter_loan_money import (
+        MoneyReturnLine,
+        pay_payable_loan_with_money,
+        settle_receivable_loan_with_money,
+    )
+
+    loan = await session.get(SupplierInvoice, loan_id)
+    if loan is None or loan.barter_role != "loan":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заём не найден")
+    try:
+        if loan.direction == "receivable":
+            if not payload.lines:
+                raise WarehouseInvoiceError("Укажите позиции: кг × текущая цена")
+            return await settle_receivable_loan_with_money(
+                session,
+                loan_id=loan_id,
+                operation_date=payload.operation_date,
+                lines=[
+                    MoneyReturnLine(
+                        loan_line_item_id=line.loan_line_item_id,
+                        quantity=line.quantity,
+                        unit_price=line.unit_price,
+                    )
+                    for line in payload.lines
+                ],
+                wallet_id=payload.wallet_id,
+                bank_operation_id=payload.bank_operation_id,
+                actor_user_id=actor.user_id,
+            )
+        if payload.amount is None:
+            raise WarehouseInvoiceError("Укажите сумму оплаты займа")
+        return await pay_payable_loan_with_money(
+            session,
+            loan_id=loan_id,
+            operation_date=payload.operation_date,
+            amount=payload.amount,
+            wallet_id=payload.wallet_id,
+            bank_operation_id=payload.bank_operation_id,
+            actor_user_id=actor.user_id,
+        )
+    except WarehouseInvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
 
 @router.get("/invoices", dependencies=READ)
@@ -683,13 +792,14 @@ async def post_invoice(
         ) from exc
     # Наша накладная (Касса ИЛИ Склад) уходит в iiko СРАЗУ при создании — ручное «Отправить в
     # iiko» больше не нужно ни на одном контуре: правка и удаление теперь пробрасываются в iiko
-    # (Cloud update/delete), «доводить документ до официального» вручную незачем. Бартер (loan)
-    # в iiko-документ не идёт. Пушим товарную часть; prepare_push сам пропустит накладную без
-    # товара (→ skipped). Сбой push не валит создание — статус фиксируется в iiko_push_status,
+    # (Cloud update/delete), «доводить документ до официального» вручную незачем. БАРТЕР ТОЖЕ
+    # (модель владельца 18.07): в iiko накладные не создаются вообще — все документы, включая
+    # займы и возвраты, рождаются у нас и уходят туда зеркалом (наша система узнаёт о движении
+    # ПЕРВОЙ). Пушим товарную часть; prepare_push сам пропустит накладную без товара
+    # (→ skipped). Сбой push не валит создание — статус фиксируется в iiko_push_status,
     # кнопка «Переотправить в iiko» в деталях остаётся для ретрая.
-    if payload.mode != "loan":
-        with contextlib.suppress(WarehousePushError):
-            await push_invoice_to_iiko(session, invoice.id)
+    with contextlib.suppress(WarehousePushError):
+        await push_invoice_to_iiko(session, invoice.id)
     if payload.mark_paid and payload.mode != "loan":
         # Документ уже отправлен выше → оплату проводим без повторного push (do_push=False).
         await _settle_paid_from_kassa(

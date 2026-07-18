@@ -595,7 +595,17 @@ async def _ingest_documents(
             # отправлена в банк, подтягиваем правки суммы/даты, сделанные в iiko: к iiko-сумме
             # (только товарные строки) прибавляем исключённые при пуше строки (персонал/расходные),
             # сохраняя payment_status, staff_amount, source и нормализованные позиции.
-            if own_pushed.payment_status == "unpaid" and own_pushed.draft_id is None:
+            # Бартерный леджер живёт своими правилами (симметрично гарду в
+            # _apply_iiko_deletion): сумма займа — основание товарного долга, а строки
+            # BarterReturnLine привязаны к позициям. Эта ветка меняет amount, но НЕ
+            # пересобирает InvoiceLineItem (ниже continue) — у займа amount разъехался бы с
+            # Σ строк, и remaining никогда не дошёл бы до нуля: все килограммы возвращены,
+            # а заём висит «частично возвращён» с незакрываемым остатком.
+            if (
+                own_pushed.barter_role is None
+                and own_pushed.payment_status == "unpaid"
+                and own_pushed.draft_id is None
+            ):
                 iiko_amount = _invoice_amount(doc)
                 if iiko_amount > 0:
                     new_amount = iiko_amount + await _excluded_push_line_sum(
@@ -732,9 +742,15 @@ async def _ingest_documents(
                 existing.line_items = line_items
             # Пока не оплачена — строки отражают iiko-версию (replace); у оплаченной состав
             # заморожен: только досоздаём, если строк ещё нет (старая синхронизация).
+            # Состав БАРТЕРНОЙ накладной заморожен так же, как у оплаченной: строки займа —
+            # основание долга (леджер BarterReturnLine ссылается на них через
+            # loan_line_item_id с ON DELETE SET NULL). Replace снёс бы строки и обнулил все
+            # гашения по килограммам — заём стал бы неоплатным, а возвращённое можно было бы
+            # вернуть повторно.
             await _materialize_iiko_lines(
                 session, existing, doc, products,
-                replace=existing.payment_status == "unpaid",
+                replace=existing.payment_status == "unpaid"
+                and existing.barter_role is None,
             )
             if direction == "payable":
                 result.invoices_updated += 1

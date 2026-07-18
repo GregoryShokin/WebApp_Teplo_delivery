@@ -17,42 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 BASE = "/api/v1/accounting/suppliers"
 
 
-@pytest.mark.skip(
-    reason="Открытый МЕТОДОЛОГИЧЕСКИЙ вопрос владельцу: бартерный заём — реальное обязательство, "
-    "но ни один контур гашения его не трогает (все фильтруют barter_role IS NULL), т.е. такая КЗ "
-    "в плитке может только расти. Либо гасить бартер, либо не показывать в КЗ — решает владелец."
-)
-async def test_barter_invoice_not_counted_as_payable(
-    client: TestClient,
-    async_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    """Заявка: бартерные накладные попадают в плитку КЗ, хотя ни один контур гашения их не
-    трогает (``_settle_open_kz_from_transaction`` и
-    ``_settle_counterparty_closing_from_prepayments``
-    фильтруют ``barter_role IS NULL``, а запрос плитки — нет). Такая КЗ неснижаема."""
-    async with async_session_factory() as session:
-        cp = await make_counterparty(session, name="Бартер-КЗ", inn="6155992001")
-        await make_invoice(
-            session,
-            counterparty_id=cp.id,
-            amount="5000.00",
-            doc_kind="closing",
-            barter_role="loan",
-            number="БАРТЕР-1",
-            invoice_date=date(2026, 7, 1),
-        )
-        await session.commit()
-        cp_id = str(cp.id)
-
-    headers = await admin_headers(async_session_factory)
-    response = client.get(f"{BASE}/balances", headers=headers)
-    assert response.status_code == 200
-    row = next((i for i in response.json()["items"] if i["counterparty_id"] == cp_id), None)
-    payable = Decimal(str(row["payable"])) if row else Decimal("0.00")
-    assert payable == Decimal("0.00"), (
-        f"Бартерный заём 5000 показан кредиторкой ({payable}) — у бартера свой нетто-контур, "
-        "и ни одна дверь гашения эту КЗ снизить не может"
-    )
+# Методологический вопрос по бартеру РЕШЁН владельцем 18.07: займы — реальные товарные долги,
+# живут в ОБЩИХ плитках ДЗ/КЗ по ОСТАТКУ (с учётом возвратов) и гасятся товаром/деньгами.
+# Плиточные тесты — в test_barter_money_settlement.py.
 
 
 async def test_paid_bill_shows_single_payment_row(

@@ -9,17 +9,19 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
+    BarterReturnLine,
     CashflowTransaction,
     Counterparty,
     CounterpartyPaymentDraft,
     DdsArticle,
     Employee,
+    InvoiceLineItem,
     InvoicePaymentAllocation,
     PayrollLine,
     PayrollPayment,
@@ -459,8 +461,78 @@ async def list_counterparty_balances(
         )
     ).all()
 
+    # Бартерные займы — товарные долги в ОБЩИХ плитках (решение владельца 18.07). Их заём нам
+    # (payable) уже входит в кредиторку инвойс-строками, но остаток там аллокационный — вычитаем
+    # ЗАЧЁТНУЮ стоимость возвратов (qty × исходная цена займа; свободные суммы — как есть),
+    # иначе частично возвращённый заём висит полной суммой. Наша выдача (receivable-заём) —
+    # дебиторка остатком. Денежные оплаты займов сидят в аллокациях и учтены самой плиткой.
+    return_credit = (
+        select(
+            BarterReturnLine.loan_invoice_id.label("loan_id"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            BarterReturnLine.quantity.isnot(None)
+                            & BarterReturnLine.loan_line_item_id.isnot(None),
+                            BarterReturnLine.quantity * InvoiceLineItem.price,
+                        ),
+                        else_=BarterReturnLine.amount,
+                    )
+                ),
+                0,
+            ).label("credited"),
+        )
+        .outerjoin(InvoiceLineItem, InvoiceLineItem.id == BarterReturnLine.loan_line_item_id)
+        .group_by(BarterReturnLine.loan_invoice_id)
+        .subquery()
+    )
+    barter_payable_credit_rows = (
+        await session.execute(
+            select(SupplierInvoice.counterparty_id, func.sum(return_credit.c.credited))
+            .join(return_credit, return_credit.c.loan_id == SupplierInvoice.id)
+            .where(
+                SupplierInvoice.direction == "payable",
+                SupplierInvoice.barter_role == "loan",
+                SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
+                SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.activation_status == "active",
+            )
+            .group_by(SupplierInvoice.counterparty_id)
+        )
+    ).all()
+    barter_receivable_rows = (
+        await session.execute(
+            select(
+                SupplierInvoice.counterparty_id,
+                func.sum(
+                    func.greatest(
+                        SupplierInvoice.amount - func.coalesce(return_credit.c.credited, 0), 0
+                    )
+                ),
+                func.max(SupplierInvoice.invoice_date),
+            )
+            .outerjoin(return_credit, return_credit.c.loan_id == SupplierInvoice.id)
+            .where(
+                SupplierInvoice.direction == "receivable",
+                SupplierInvoice.barter_role == "loan",
+                SupplierInvoice.payment_status != "void",
+                SupplierInvoice.barter_return_status != "returned",
+            )
+            .group_by(SupplierInvoice.counterparty_id)
+        )
+    ).all()
+
     receivable_by_cp = {row[0]: (periods.money(row[1]), row[2], row[3]) for row in prepay_rows}
     payable_by_cp = {row[0]: (periods.money(row[1]), row[2], row[3]) for row in invoice_rows}
+    for cp_id, credited in barter_payable_credit_rows:
+        if cp_id in payable_by_cp:
+            total, cnt, last = payable_by_cp[cp_id]
+            payable_by_cp[cp_id] = (max(total - periods.money(credited), Decimal("0")), cnt, last)
+    for cp_id, loan_remaining, loan_last in barter_receivable_rows:
+        total, cnt, prev_last = receivable_by_cp.get(cp_id, (Decimal("0"), 0, None))
+        best_last = max(filter(None, (prev_last, loan_last)), default=None)
+        receivable_by_cp[cp_id] = (total + periods.money(loan_remaining), cnt, best_last)
     activity_by_cp: dict[uuid.UUID, date] = {}
     for cp_id, last_date in list(activity_rows) + list(prepay_activity_rows):
         if last_date is None:

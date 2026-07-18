@@ -820,6 +820,13 @@ async def pay_invoice_from_wallet(
 
     requested = _money(amount)
     remaining = await _invoice_remaining(session, invoice)
+    if invoice.barter_role == "loan":
+        # Долг займа частично гасится ТОВАРОМ (леджер BarterReturnLine, не аллокации), поэтому
+        # остаток по аллокациям завышен: без этой поправки прямая дверь оплаты закрыла бы уже
+        # возвращённое вторично. Ленивый импорт — warehouse_invoices импортирует этот модуль.
+        from app.services.warehouse_invoices import loan_settled_value
+
+        remaining = _money(invoice.amount) - await loan_settled_value(session, invoice)
     if requested <= 0 or requested > remaining:
         raise CounterpartyPaymentError("Сумма оплаты вне допустимого остатка")
 

@@ -217,9 +217,16 @@ async def _cashflow_row_has_dependents(session: AsyncSession, transaction_id: UU
     дебиторка или выплата. Авто-строка правила ``set_article`` их не создаёт, но проверяем на
     всякий случай, чтобы поглотитель не снёс ручную/содержательную разметку.
     """
-    from app.models import EmployeePayout, InvoicePaymentAllocation
+    # BarterReturnLine — гашение бартерного займа деньгами (FK RESTRICT): без этой проверки
+    # снос «пустой» авто-строки упирался бы в констрейнт и падал 500-й вместо понятного отказа.
+    from app.models import BarterReturnLine, EmployeePayout, InvoicePaymentAllocation
 
-    for model in (InvoicePaymentAllocation, SupplierPrepayment, EmployeePayout):
+    for model in (
+        InvoicePaymentAllocation,
+        SupplierPrepayment,
+        EmployeePayout,
+        BarterReturnLine,
+    ):
         exists = await session.scalar(
             select(model.id).where(model.cashflow_transaction_id == transaction_id).limit(1)
         )

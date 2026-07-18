@@ -391,7 +391,11 @@ async def _apply_bank_allocation(
 
 
 def assert_bank_matchable(
-    invoice: SupplierInvoice, operation: BankOperation, *, allow_card: bool = False
+    invoice: SupplierInvoice,
+    operation: BankOperation,
+    *,
+    allow_card: bool = False,
+    allow_barter_loan: bool = False,
 ) -> None:
     """Guard shared by confirm + split: only a plain payable matches an OUTGOING supplier
     payment. Mirrors the suggestion-layer filters so a crafted POST (bypassing the picker)
@@ -401,8 +405,18 @@ def assert_bank_matchable(
     (``_is_card_noise``), когда местный закуп оплачен картой и оплату привязывают к накладной
     вручную. Остальные проверки (исходящая, не внутренний перевод, накладная payable/не-бартер)
     при этом сохраняются — allow_card их НЕ снимает. Авто-подбор (``suggest_invoice_matches*``)
-    карт-шум по-прежнему исключает, поэтому автопривязки карт нет ни при каком флаге."""
-    if invoice.direction != "payable" or invoice.barter_role is not None:
+    карт-шум по-прежнему исключает, поэтому автопривязки карт нет ни при каком флаге.
+
+    ``allow_barter_loan=True`` — единственная легальная банковская дверь для бартера: явное
+    гашение ИХ товарного займа деньгами (``barter_loan_money.pay_payable_loan_with_money``,
+    «оплатить как обычную поставку»). Пропускает только ПРИХОДНЫЙ заём (payable + role='loan');
+    возвраты и наши займы банковской оплате не подлежат. Авто-контуры флаг не передают —
+    случайный платёж поставщику заём по-прежнему не гасит."""
+    if invoice.direction != "payable":
+        raise CounterpartyMatchError("Накладная не поддерживает банковский мэтч")
+    if invoice.barter_role is not None and not (
+        allow_barter_loan and invoice.barter_role == "loan"
+    ):
         raise CounterpartyMatchError("Накладная не поддерживает банковский мэтч")
     if invoice.activation_status != "active":
         # Правило 4: будущий закрывающий ждёт своей даты — оплачивать его сейчас нельзя
@@ -422,6 +436,8 @@ async def confirm_invoice_match(
     enrich: bool,
     actor_user_id: uuid.UUID | None,
     allow_card: bool = False,
+    allow_barter_loan: bool = False,
+    amount: Decimal | None = None,
 ) -> dict[str, Any]:
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
@@ -432,7 +448,9 @@ async def confirm_invoice_match(
     # allow_card: оператор явно подтвердил ручную привязку карт-оплаты (получатель в банке —
     # эквайер, не поставщик). Даже так контрагента реквизитами эквайера не обогащаем — это
     # берёт на себя _enrich_counterparty (guard на карт-шум внутри).
-    assert_bank_matchable(invoice, operation, allow_card=allow_card)
+    assert_bank_matchable(
+        invoice, operation, allow_card=allow_card, allow_barter_loan=allow_barter_loan
+    )
     if await _op_already_allocated(session, operation.id):
         raise CounterpartyMatchError("Эта операция уже использована в сверке")
 
@@ -450,11 +468,20 @@ async def confirm_invoice_match(
         raise CounterpartyMatchError(
             "Платёж уже полностью распределён по документам — свободного остатка нет"
         )
+    # ``amount`` задаёт вызывающий, когда закрывает НЕ весь остаток накладной: у бартерного
+    # займа часть долга гасится товаром (леджер BarterReturnLine, не аллокации), поэтому
+    # ``remaining`` по аллокациям больше реального остатка — без явной суммы аллокация
+    # закрыла бы уже возвращённое товаром вторично.
+    allocation = min(remaining, free) if amount is None else _money(amount)
+    if allocation <= 0 or allocation > min(remaining, free):
+        raise CounterpartyMatchError(
+            f"Сумма {allocation} вне допустимого остатка (накладная {remaining}, платёж {free})"
+        )
     await _apply_bank_allocation(
         session,
         invoice=invoice,
         operation=operation,
-        amount=min(remaining, free),
+        amount=allocation,
         actor_user_id=actor_user_id,
     )
     await _recompute_status(session, invoice)
