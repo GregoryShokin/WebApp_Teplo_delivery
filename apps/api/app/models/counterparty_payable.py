@@ -692,6 +692,11 @@ class InvoicePaymentAllocation(Base):
     prepayment_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("supplier_prepayment.id", ondelete="SET NULL"), nullable=True
     )
+    # Взаимозачёт бартерных поставок (source_kind='barter'): долг закрыт товаром, денежного
+    # ключа нет. CASCADE — распуск зачёта снимает его аллокации, статус пересчитывается сам.
+    barter_settlement_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("barter_settlement.id", ondelete="CASCADE"), nullable=True
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True

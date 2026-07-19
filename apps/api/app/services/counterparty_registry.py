@@ -766,9 +766,10 @@ async def update_profile(
     if ledger_category_id is not _UNSET:
         profile.ledger_category_id = ledger_category_id
     if relationship is not _UNSET and relationship is not None:
-        # Явная смена типа в карточке закрепляет выбор: iiko-синхронизация больше не перебьёт
-        # его обратно в barter (см. _mark_relationship_barter). Сохранение без изменения типа
-        # (правили другие поля) замок не ставит — чтобы случайно не «залочить» авто-barter.
+        # Явная смена типа в карточке закрепляет выбор: оформление займа больше не перебьёт
+        # его обратно в barter (см. warehouse_invoices._ensure_barter_relationship; авто-пометка
+        # по расходной из iiko-синка снята 19.07.2026). Сохранение без изменения типа (правили
+        # другие поля) замок не ставит — чтобы случайно не «залочить» контрагента.
         if relationship != profile.relationship:
             profile.relationship_manual = True
             # Банковские реквизиты относятся только к официальному каналу оплаты — то же

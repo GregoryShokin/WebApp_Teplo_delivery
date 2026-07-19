@@ -466,9 +466,15 @@ async def test_deleted_in_iiko_removes_own_pushed_unpaid(
         assert [inv.source for inv in remaining] == ["kassa_cheque"]
 
 
-async def test_ingest_outgoing_creates_receivable_and_marks_barter(
+async def test_ingest_outgoing_creates_receivable_without_marking_barter(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Расходная накладная материализуется, но тип отношений НЕ меняет.
+
+    Авто-пометка «бартер» снята 19.07.2026 (решение владельца): расходная бывает и у обычного
+    поставщика — возврат некондиции, — а пометка утаскивала всю его денежную кредиторку на
+    вкладку «Бартер». Партнёрство назначается только вручную.
+    """
     async with async_session_factory() as session:
         result = await ingest_iiko_payables(
             session,
@@ -486,13 +492,13 @@ async def test_ingest_outgoing_creates_receivable_and_marks_barter(
         assert invoice.direction == "receivable"
         assert invoice.amount == Decimal("1000.00")
 
-        # An outgoing invoice ⇒ the counterparty is a barter partner.
+        # Расходная накладная больше НЕ делает контрагента бартерным партнёром.
         profile = await session.scalar(
             select(CounterpartyPayableProfile).where(
                 CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
             )
         )
-        assert profile.relationship == "barter"
+        assert profile is None or profile.relationship != "barter"
 
 
 async def test_reverse_sync_skips_our_own_pushed_manual_invoice(

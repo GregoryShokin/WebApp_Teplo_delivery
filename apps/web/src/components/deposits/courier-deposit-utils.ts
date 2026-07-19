@@ -4,6 +4,10 @@ import type {
   CourierDepositStatusFilter,
   CourierDepositTransactionType,
 } from "@/lib/api";
+import { todayIso } from "@/lib/date";
+
+// Историческое имя утилиты — за ним уже ходят депозиты курьеров и настройки ЗП.
+export { todayIso as todayKey };
 
 const moneyFormatter = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
@@ -63,9 +67,6 @@ export function formatDateTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
-export function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export function centsFromRubInput(value: string) {
   const normalized = value.replace(",", ".").trim();

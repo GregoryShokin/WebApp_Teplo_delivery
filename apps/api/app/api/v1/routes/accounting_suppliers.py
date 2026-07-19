@@ -885,9 +885,32 @@ async def list_document_register(
             alloc.invoice_id, Decimal("0")
         ) + periods.money(alloc.amount)
 
+    # Бартерный заём гасится ТОВАРОМ: возвраты живут в леджере BarterReturnLine, а не в
+    # аллокациях, поэтому «сумма − аллокации» показывала бы полный долг по уже возвращённому
+    # займу — реестр расходился с плиткой «Остатки» на той же странице. Берём ТОЧНУЮ зачётную
+    # стоимость (loan_settled_value: qty × исходная цена + замыкание «сумма строки — эталон»
+    # против копеечного дрейфа округлений), а не SQL-приближение плитки. Для payable-займа она
+    # УЖЕ включает денежные аллокации — поэтому paid к ней не добавляем, иначе двойной зачёт.
+    from app.services.warehouse_invoices import loan_settled_value
+
+    barter_settled: dict[uuid.UUID, Decimal] = {}
+    for invoice, _cp_name in rows:
+        if invoice.barter_role == "loan":
+            barter_settled[invoice.id] = await loan_settled_value(session, invoice)
+        elif invoice.barter_role == "return":
+            # Возвратная накладная создаётся сразу 'paid' и аллокаций не несёт (её движение —
+            # в леджере BarterReturnLine), иначе реестр рисует «Оплачено · остаток N».
+            # Взаимозачёт сюда НЕ входит: с миграции 0199 он пишет аллокацию source_kind='barter',
+            # и остаток по нему считается общим механизмом.
+            barter_settled[invoice.id] = periods.money(invoice.amount)
+
     items: list[DocumentRegisterRow] = []
     for invoice, cp_name in rows:
-        paid = paid_by_invoice.get(invoice.id, Decimal("0"))
+        paid = (
+            barter_settled[invoice.id]
+            if invoice.id in barter_settled
+            else paid_by_invoice.get(invoice.id, Decimal("0"))
+        )
         items.append(
             DocumentRegisterRow(
                 invoice_id=invoice.id,

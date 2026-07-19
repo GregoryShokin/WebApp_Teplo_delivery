@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { PaymentRow } from "./payments-api";
+import { todayIso } from "@/lib/date";
 
 const money = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -43,9 +44,6 @@ const money = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
 });
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 type RegisterRow = {
   employeeId: string;

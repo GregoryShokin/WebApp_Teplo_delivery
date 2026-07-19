@@ -48,6 +48,7 @@ from app.services.invoice_price_control import (
 )
 from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
+from app.services.kassa.payouts import kassa_today
 from app.services.warehouse_invoice_push import (
     WarehousePushError,
     book_correction_in_iiko,
@@ -658,16 +659,20 @@ async def _settle_paid_from_kassa(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Кошелёк ТК Черникова не найден",
         )
+    # Дата расхода — КАЛЕНДАРНЫЙ ДЕНЬ МСК (kassa_today), не date.today(): контейнер API живёт
+    # в UTC, и с 00:00 до 03:00 по Москве расход падал во ВЧЕРАШНИЙ, уже сверенный с iiko день.
     # «Траты на персонал» — отдельная статья ДДС: полную оплату разносим на производство/
     # персонал по статьям строк (build_staff_split_cash_parts). Без персонала (или доплата
     # уже частично оплаченной) — одна часть.
     staff_total = invoice.staff_amount or Decimal("0.00")
     if staff_total > 0 and invoice.payment_status == "unpaid":
         cash_parts = await build_staff_split_cash_parts(
-            session, invoice, wallet_id=wallet.id, operation_date=date.today()
+            session, invoice, wallet_id=wallet.id, operation_date=kassa_today()
         )
     else:
-        cash_parts = [CashPart(wallet_id=wallet.id, amount=amount, operation_date=date.today())]
+        cash_parts = [
+            CashPart(wallet_id=wallet.id, amount=amount, operation_date=kassa_today())
+        ]
     await pay_invoice_split(
         session,
         invoice_id=invoice.id,

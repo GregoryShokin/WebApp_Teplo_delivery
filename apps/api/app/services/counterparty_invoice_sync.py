@@ -446,25 +446,11 @@ async def _profile_due_terms(
 # --- ingest -------------------------------------------------------------------
 
 
-async def _mark_relationship_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
-    """A counterparty with an outgoing (receivable) invoice is a barter partner.
-
-    Не трогаем контрагентов с ручным замком типа отношений (``relationship_manual``): владелец
-    явно выбрал тип в карточке, и авто-классификация не должна перебивать его на каждом тике
-    синхронизации (иначе разовая/тестовая расходная накладная в 7-дневном окне бесконечно
-    возвращала «Бартер»)."""
-    profile = await session.scalar(
-        select(CounterpartyPayableProfile).where(
-            CounterpartyPayableProfile.counterparty_id == counterparty_id
-        )
-    )
-    if profile is None:
-        session.add(
-            CounterpartyPayableProfile(counterparty_id=counterparty_id, relationship="barter")
-        )
-        await session.flush()
-    elif not profile.relationship_manual and profile.relationship != "barter":
-        profile.relationship = "barter"
+# СНЯТО 19.07.2026 (решение владельца): авто-пометка ``relationship='barter'`` по расходной
+# накладной. Расходная бывает и у обычного поставщика (возврат некондиции) — пометка утаскивала
+# его денежную кредиторку на вкладку «Бартер» как товарный долг. Бартерный партнёр назначается
+# ТОЛЬКО вручную: карточка контрагента (``update_profile``) или оформление явного займа
+# (``warehouse_invoices._ensure_barter_relationship``). Тип отношений синк больше не меняет.
 
 
 async def _is_barter(session: AsyncSession, counterparty_id: uuid.UUID) -> bool:
@@ -667,10 +653,13 @@ async def _ingest_documents(
                 counterparty_id = await _resolve_counterparty(session, supplier, result=result)
         else:
             counterparty_id = existing.counterparty_id  # справочник не знает — привязку не трогаем
-        if direction == "receivable":
-            await _mark_relationship_barter(session, counterparty_id)
+        # Бартерное партнёрство НЕ выводится из расходной накладной (решение владельца
+        # 19.07.2026): расходная бывает и у обычного поставщика — возврат некондиции. Прежняя
+        # авто-пометка переводила такого поставщика в relationship='barter', и вся его ДЕНЕЖНАЯ
+        # кредиторка показывалась на вкладке «Бартер» товарным долгом. Партнёрство назначается
+        # только вручную (карточка контрагента) либо оформлением явного займа.
 
-        # Capture line items only for barter partners (receivable just marked above).
+        # Состав строк разбираем для бартерной активности: сама расходная или бартерный профиль.
         is_barter = direction == "receivable" or await _is_barter(session, counterparty_id)
         line_items = _parse_line_items(doc, name_by_id or {}) if is_barter else []
 
@@ -731,7 +720,11 @@ async def _ingest_documents(
             existing.invoice_date = invoice_date
             existing.counterparty_id = counterparty_id
             existing.direction = direction
-            if existing.payment_status == "unpaid":
+            # Сумма БАРТЕРНОГО займа заморожена так же, как его состав (см. replace ниже):
+            # loan_settled_value считает зачёт ПО СТРОКАМ, поэтому разъехавшийся amount делает
+            # заём либо неоплатным (все кг вернули — остаток висит вечно), либо фантомно
+            # закрытым при уменьшении суммы, и возврат товаром теряется.
+            if existing.payment_status == "unpaid" and existing.barter_role is None:
                 existing.amount = amount
                 existing.vat_total = vat_total
                 existing.vat_breakdown = vat_breakdown

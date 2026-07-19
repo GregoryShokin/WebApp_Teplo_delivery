@@ -29,10 +29,8 @@ import {
   type CounterpartyInvoice,
 } from "./api";
 import { formatRub } from "./shared";
+import { todayIso } from "@/lib/date";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 type PayMethod = "bank" | "cash";
 
@@ -102,7 +100,7 @@ export function BulkPayDialog({
 
   const cashMutation = useMutation({
     mutationFn: async () => {
-      const date = today();
+      const date = todayIso();
       const failed: string[] = [];
       let paid = 0;
       for (const [index, invoice] of payable.entries()) {

@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
+import { toIsoDate } from "@/lib/date";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -133,9 +135,8 @@ export function isoDateDaysAgo(days: number) {
   return toIsoDate(date);
 }
 
-export function toIsoDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
+// Реэкспорт ради обратной совместимости импортов: реализация — в @/lib/date (локальная зона).
+export { toIsoDate };
 
 export function toDateTimeLocalInput(date: Date) {
   const offset = date.getTimezoneOffset();

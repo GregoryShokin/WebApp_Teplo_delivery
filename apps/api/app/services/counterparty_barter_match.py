@@ -105,10 +105,12 @@ class BarterSuggestion:
     we_lent: bool  # who is the lender in this proposed netting (by chronology)
 
 
-def _ref(invoice: SupplierInvoice) -> _Ref:
+def _ref(invoice: SupplierInvoice, amount: Decimal | None = None) -> _Ref:
+    """``amount`` — сколько ещё можно зачесть. По умолчанию вся сумма накладной; для частично
+    оплаченной передаётся ОСТАТОК, иначе зачёт закрыл бы и уже оплаченную деньгами часть."""
     return _Ref(
         invoice=invoice,
-        amount=_money(invoice.amount),
+        amount=_money(invoice.amount) if amount is None else _money(amount),
         products=_products(invoice),
         date=invoice.invoice_date,
     )
@@ -194,7 +196,10 @@ async def _load_open(
             await session.execute(
                 select(SupplierInvoice).where(
                     SupplierInvoice.counterparty_id == counterparty_id,
-                    SupplierInvoice.payment_status == "unpaid",
+                    # Частично оплаченная встречная поставка тоже зачётопригодна — своим
+                    # ОСТАТКОМ (ниже). Иначе баланс партнёра показывает долг, который нечем
+                    # закрыть: шапка видит остаток, а список кандидатов — нет.
+                    SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")),
                     SupplierInvoice.barter_settlement_id.is_(None),
                     SupplierInvoice.barter_role.is_(None),
                     # Счёт (doc_kind='bill') — не долг: в бартер-зачёт не входит. Иначе бартер
@@ -208,8 +213,36 @@ async def _load_open(
         .scalars()
         .all()
     )
-    payables = [_ref(inv) for inv in rows if inv.direction == "payable"]
-    receivables = [_ref(inv) for inv in rows if inv.direction == "receivable"]
+    # Остаток к зачёту = сумма − уже полученные деньги (аллокации). Накладную, закрытую
+    # деньгами полностью, в кандидаты не берём: зачитывать нечего.
+    paid_by_invoice: dict[uuid.UUID, Decimal] = {}
+    if rows:
+        alloc_rows = (
+            await session.execute(
+                select(
+                    InvoicePaymentAllocation.invoice_id,
+                    func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0),
+                )
+                .where(InvoicePaymentAllocation.invoice_id.in_([inv.id for inv in rows]))
+                .group_by(InvoicePaymentAllocation.invoice_id)
+            )
+        ).all()
+        paid_by_invoice = {row[0]: _money(row[1]) for row in alloc_rows}
+
+    def _open_amount(invoice: SupplierInvoice) -> Decimal:
+        remaining = _money(invoice.amount) - paid_by_invoice.get(invoice.id, Decimal("0.00"))
+        return max(remaining, Decimal("0.00"))
+
+    payables = [
+        _ref(inv, _open_amount(inv))
+        for inv in rows
+        if inv.direction == "payable" and _open_amount(inv) > 0
+    ]
+    receivables = [
+        _ref(inv, _open_amount(inv))
+        for inv in rows
+        if inv.direction == "receivable" and _open_amount(inv) > 0
+    ]
     return payables, receivables
 
 
@@ -332,10 +365,27 @@ async def _create_settlement(
     )
     session.add(settlement)
     await session.flush()
+    # Зачёт — АЛЛОКАЦИЯ, а не прямое присвоение статуса: долг закрыт товаром, но закрыт он
+    # ровно на зачтённую сумму и ровно тем же механизмом, которым его считают все витрины.
+    # Прямое присвоение 'paid' делало зачёт невидимым для _recompute_status (снятие денежной
+    # оплаты роняло статус обратно в unpaid, оставляя зачёт сиротой), для FIFO правил 1/2
+    # (платёж гасил деньгами уже закрытый товаром долг) и для откатов.
+    from app.services.counterparty_matching import _recompute_status
+
     for ref in (*payables, *receivables):
         ref.invoice.barter_settlement_id = settlement.id
-        # Netted in kind → closed; drops out of inbox / registry / balance (status filters).
-        ref.invoice.payment_status = "paid"
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=ref.invoice.id,
+                source_kind="barter",
+                amount=ref.amount,
+                barter_settlement_id=settlement.id,
+                created_by_user_id=actor_user_id,
+            )
+        )
+    await session.flush()
+    for ref in (*payables, *receivables):
+        await _recompute_status(session, ref.invoice)
     await session.flush()
     return settlement
 
@@ -553,20 +603,40 @@ async def barter_partner_balances(session: AsyncSession) -> list[dict[str, Any]]
     ).all() if any(loan.direction == "payable" for loan in loan_rows) else []
     allocated = {row[0]: _money(row[1]) for row in alloc_rows}
 
+    # Взаимные поставки — ОСТАТКОМ, а не брутто: по неявной бартерной накладной могли пройти
+    # и деньги (частичная оплата). Отбор по одному лишь 'unpaid' ронял её целиком — первый же
+    # платёж переводит накладную в 'partially_paid', и долг исчезал со вкладки вместо того,
+    # чтобы уменьшиться на оплаченное.
+    mutual_paid = (
+        select(
+            InvoicePaymentAllocation.invoice_id.label("invoice_id"),
+            func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0).label("paid"),
+        )
+        .group_by(InvoicePaymentAllocation.invoice_id)
+        .subquery()
+    )
     mutual_rows = (
         await session.execute(
             select(
                 SupplierInvoice.counterparty_id,
                 SupplierInvoice.direction,
-                func.coalesce(func.sum(SupplierInvoice.amount), 0),
+                func.coalesce(
+                    func.sum(
+                        func.greatest(
+                            SupplierInvoice.amount - func.coalesce(mutual_paid.c.paid, 0), 0
+                        )
+                    ),
+                    0,
+                ),
                 func.count(SupplierInvoice.id),
                 func.max(SupplierInvoice.invoice_date),
             )
+            .outerjoin(mutual_paid, mutual_paid.c.invoice_id == SupplierInvoice.id)
             .where(
                 SupplierInvoice.counterparty_id.in_(partner_ids),
                 SupplierInvoice.barter_role.is_(None),
                 SupplierInvoice.barter_settlement_id.is_(None),
-                SupplierInvoice.payment_status == "unpaid",
+                SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")),
                 SupplierInvoice.doc_kind != "bill",
             )
             .group_by(SupplierInvoice.counterparty_id, SupplierInvoice.direction)

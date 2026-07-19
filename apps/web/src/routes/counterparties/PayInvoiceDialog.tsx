@@ -29,12 +29,10 @@ import {
   type CounterpartyInvoice,
 } from "./api";
 import { formatRub } from "./shared";
+import { todayIso } from "@/lib/date";
 
 const DEFAULT_ARTICLE = "default";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export function PayInvoiceDialog({
   invoice,
@@ -49,7 +47,7 @@ export function PayInvoiceDialog({
 
   const [amount, setAmount] = useState("");
   const [walletId, setWalletId] = useState("");
-  const [operationDate, setOperationDate] = useState(today());
+  const [operationDate, setOperationDate] = useState(todayIso());
   const [articleId, setArticleId] = useState<string>(DEFAULT_ARTICLE);
   const [comment, setComment] = useState("");
 
@@ -63,7 +61,7 @@ export function PayInvoiceDialog({
   useEffect(() => {
     setAmount(remaining ? String(remaining) : "");
     setWalletId("");
-    setOperationDate(today());
+    setOperationDate(todayIso());
     setArticleId(DEFAULT_ARTICLE);
     setComment("");
   }, [invoice, remaining]);

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { apiErrorMessage, getDdsArticles } from "@/lib/api";
+import { todayIso } from "@/lib/date";
 import { formatDate, formatRub } from "@/routes/counterparties/shared";
 
 import {
@@ -60,7 +61,7 @@ export function SendDialog({
 }) {
   const queryClient = useQueryClient();
   const req = useMemo(() => intake.requisites ?? {}, [intake.requisites]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
 
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
   const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");

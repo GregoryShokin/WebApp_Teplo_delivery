@@ -39,10 +39,8 @@ import {
   payInvoiceSplit,
   type MatchCandidate,
 } from "./api";
+import { todayIso } from "@/lib/date";
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const TIER_LABEL: Record<number, string> = {
   1: "точно по времени",
@@ -179,7 +177,7 @@ export function PayWarehouseInvoiceDialog({
             {
               wallet_id: row.wallet_id,
               amount: remaining,
-              operation_date: today(),
+              operation_date: todayIso(),
             },
           ],
           split_staff: true,
@@ -190,7 +188,7 @@ export function PayWarehouseInvoiceDialog({
       const cashParts = activeCashRows.map((row) => ({
         wallet_id: row.wallet_id,
         amount: Number(row.amount),
-        operation_date: today(),
+        operation_date: todayIso(),
       }));
       // Один банк-кандидат целиком, без налички, с обогащением → быстрый банк-мэтч
       // (он подтянет реквизиты контрагента; сплит этого не делает).
