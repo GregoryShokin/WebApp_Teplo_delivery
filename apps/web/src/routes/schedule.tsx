@@ -543,9 +543,14 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const saveShiftMutation = useMutation({
     mutationFn: (variables: { scheduleId: string; payload: ScheduledShiftUpsertPayload }) =>
       upsertShift(variables.scheduleId, variables.payload),
-    onSuccess: async () => {
+    // onSuccess НЕ async: submitShiftDialog ждёт mutateAsync(), чтобы решить, когда закрыть
+    // диалог, а mutateAsync резолвится только после onSuccess. Если тут await-ить
+    // инвалидацию (рефетч кучи активных запросов графика), диалог зависает в "сохранении"
+    // на всю цепочку рефетчей, а не на время самого запроса — инвалидация обязана быть
+    // fire-and-forget.
+    onSuccess: () => {
       toast.success("Смена сохранена");
-      await invalidateCurrentSchedule();
+      void invalidateCurrentSchedule();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить смену")),
   });
@@ -557,9 +562,9 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
       overrideId?: string | null;
     }) =>
       upsertCashierAllowanceOverride(variables.scheduleId, variables.payload, variables.overrideId),
-    onSuccess: async () => {
+    onSuccess: () => {
       toast.success("Выбор надбавки сохранён");
-      await invalidateCashierAllowance();
+      void invalidateCashierAllowance();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить выбор надбавки")),
   });
@@ -567,7 +572,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
   const removeCashierAllowanceOverrideMutation = useMutation({
     mutationFn: (variables: { scheduleId: string; overrideId: string }) =>
       deleteCashierAllowanceOverride(variables.scheduleId, variables.overrideId),
-    onSuccess: async () => {
+    onSuccess: () => {
       toast.success("Ручной выбор снят");
       setShiftDialog((current) =>
         current
@@ -581,7 +586,7 @@ export function ScheduleRoute({ activeTab, onNavigate, useStoredTab = false }: S
             }
           : current,
       );
-      await invalidateCashierAllowance();
+      void invalidateCashierAllowance();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось снять выбор надбавки")),
   });
