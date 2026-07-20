@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Eye } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateRangePopover } from "@/components/ui/date-range-popover";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -140,21 +140,17 @@ export function OperationsTab() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
-            <Label htmlFor="dds-ops-from">Дата с</Label>
-            <Input
-              id="dds-ops-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => updateFilter("from", event.target.value)}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="dds-ops-to">Дата по</Label>
-            <Input
-              id="dds-ops-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => updateFilter("to", event.target.value)}
+            <Label htmlFor="dds-ops-period">Период</Label>
+            <DateRangePopover
+              id="dds-ops-period"
+              // Запас ширины под подпись «20.06 – 20.07.2026» (иначе многоточие съедает год).
+              className="w-full min-w-[210px]"
+              from={dateFrom || null}
+              to={dateTo || null}
+              onChange={(from, to) => {
+                updateFilter("from", from ?? "");
+                updateFilter("to", to ?? "");
+              }}
             />
           </div>
           <div className="grid gap-2">

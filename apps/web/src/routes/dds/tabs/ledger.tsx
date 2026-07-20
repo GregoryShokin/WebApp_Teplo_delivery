@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
-import { Input } from "@/components/ui/input";
+import { DateRangePopover } from "@/components/ui/date-range-popover";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -238,25 +238,17 @@ export function LedgerTab() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
-            <Label htmlFor="dds-journal-from">Дата с</Label>
-            <Input
-              id="dds-journal-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => {
-                setDateFrom(event.target.value);
-                resetPage();
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="dds-journal-to">Дата по</Label>
-            <Input
-              id="dds-journal-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => {
-                setDateTo(event.target.value);
+            <Label htmlFor="dds-journal-period">Период</Label>
+            <DateRangePopover
+              id="dds-journal-period"
+              // Подпись «20.06 – 20.07.2026» шире, чем колонка фильтров: без запаса ширины
+              // line-clamp съедает год многоточием.
+              className="w-full min-w-[210px]"
+              from={dateFrom || null}
+              to={dateTo || null}
+              onChange={(from, to) => {
+                setDateFrom(from ?? "");
+                setDateTo(to ?? "");
                 resetPage();
               }}
             />
