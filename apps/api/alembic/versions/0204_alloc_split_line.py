@@ -31,8 +31,29 @@ CONSTRAINT = "ck_invoice_allocation_single_source"
 TABLE = "invoice_payment_allocation"
 
 
+# Имя CHECK в БД непредсказуемо: ``op.create_check_constraint`` прогоняет его через
+# naming_convention метаданных, поэтому исходное ``ck_invoice_allocation_single_source``
+# превращается в обрезанное ``ck_invoice_payment_allocation_ck_invoice_allocation_sin_<hash>``.
+# Дропаем по СОДЕРЖИМОМУ (единственный CHECK этой таблицы, где участвует prepayment_id) — иначе
+# шаг падает на любой базе, где предыдущая миграция уже переименовала констрейнт по конвенции.
+DROP_CURRENT_CHECK = f"""
+DO $$
+DECLARE target text;
+BEGIN
+    SELECT conname INTO target
+      FROM pg_constraint
+     WHERE conrelid = '{TABLE}'::regclass
+       AND contype = 'c'
+       AND pg_get_constraintdef(oid) LIKE '%prepayment_id%';
+    IF target IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE {TABLE} DROP CONSTRAINT %I', target);
+    END IF;
+END $$;
+"""
+
+
 def upgrade() -> None:
-    op.drop_constraint(CONSTRAINT, TABLE, type_="check")
+    op.execute(DROP_CURRENT_CHECK)
     op.create_check_constraint(
         CONSTRAINT,
         TABLE,
@@ -48,7 +69,7 @@ def downgrade() -> None:
         f"UPDATE {TABLE} SET cashflow_transaction_id = NULL "
         "WHERE bank_operation_id IS NOT NULL AND cashflow_transaction_id IS NOT NULL"
     )
-    op.drop_constraint(CONSTRAINT, TABLE, type_="check")
+    op.execute(DROP_CURRENT_CHECK)
     op.create_check_constraint(
         CONSTRAINT,
         TABLE,
