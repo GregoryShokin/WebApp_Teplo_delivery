@@ -500,8 +500,15 @@ export async function deleteRoutingRule(
   return response.data;
 }
 
-export async function createDraft(invoiceIds: string[]): Promise<PaymentDraft> {
-  const response = await api.post<PaymentDraft>(`${BASE}/drafts`, { invoice_ids: invoiceIds });
+export async function createDraft(
+  invoiceIds: string[],
+  // Банк-плательщик: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
+  channel?: "bank_draft" | "bank_draft_sber",
+): Promise<PaymentDraft> {
+  const response = await api.post<PaymentDraft>(`${BASE}/drafts`, {
+    invoice_ids: invoiceIds,
+    ...(channel ? { channel } : {}),
+  });
   return response.data;
 }
 

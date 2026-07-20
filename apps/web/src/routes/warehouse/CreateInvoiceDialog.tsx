@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, Trash2, Users, Warehouse } from "lucide-react";
+import {
+  Download,
+  LoaderCircle,
+  Plus,
+  Trash2,
+  Upload,
+  Users,
+  Warehouse,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -21,22 +29,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiErrorMessage, getDdsBankOperations, getDdsWallets } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { getRegistry, type RegistryItem } from "../counterparties/api";
 import { formatRub } from "../counterparties/shared";
 import { ProductSearch } from "./ProductSearch";
 import {
-  createBarterReturn,
   createWarehouseInvoice,
-  getLoanReturnable,
   getNextInvoiceNumber,
-  getOpenLoans,
   getProductPriceStats,
   getProducts,
   getStaffArticles,
-  settleLoanWithMoney,
   type StaffArticle,
   type WarehouseProduct,
 } from "./api";
@@ -91,18 +95,17 @@ export function CreateInvoiceDialog({
 }) {
   const [kind, setKind] = useState<"normal" | "barter">(barter ? "barter" : "normal");
   const [weLend, setWeLend] = useState(true);
-  const [barterAction, setBarterAction] = useState<"loan" | "return">("loan");
   const [counterpartyId, setCounterpartyId] = useState("");
   const [issuedAt, setIssuedAt] = useState("");
   const [number, setNumber] = useState("");
   const [markPaid, setMarkPaid] = useState(false);
   const [paidAmount, setPaidAmount] = useState("");
   const [unpaidConfirmOpen, setUnpaidConfirmOpen] = useState(false);
+  const [loanConfirmOpen, setLoanConfirmOpen] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
   const queryClient = useQueryClient();
   const isBarter = kind === "barter";
-  const isReturn = isBarter && barterAction === "return";
 
   const registryQuery = useQuery({
     queryKey: ["cp", "registry", kassaOnly ? "kassa" : "all"],
@@ -148,7 +151,6 @@ export function CreateInvoiceDialog({
   const reset = () => {
     setKind(barter ? "barter" : "normal");
     setWeLend(true);
-    setBarterAction("loan");
     setCounterpartyId("");
     setIssuedAt("");
     setNumber("");
@@ -275,56 +277,28 @@ export function CreateInvoiceDialog({
             </button>
           </div>
 
+          {/* Только НАПРАВЛЕНИЕ займа (возврат оформляется в окне гашения). Одна кнопка-
+              переключатель: стрелка ИЗ поддона — товар уходит от нас, В поддон — приходит к нам. */}
           {isBarter ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex overflow-hidden rounded-md border">
-                <button
-                  type="button"
-                  className={cn("px-3 py-1 text-xs", !isReturn && "bg-primary/10 font-medium text-primary")}
-                  onClick={() => setBarterAction("loan")}
-                >
-                  Займ
-                </button>
-                <button
-                  type="button"
-                  className={cn("px-3 py-1 text-xs", isReturn && "bg-primary/10 font-medium text-primary")}
-                  onClick={() => setBarterAction("return")}
-                >
-                  Возврат
-                </button>
-              </div>
-              {!isReturn ? (
-                <div className="inline-flex overflow-hidden rounded-md border">
-                  <button
-                    type="button"
-                    className={cn("px-3 py-1 text-xs", weLend && "bg-muted font-medium")}
-                    onClick={() => setWeLend(true)}
-                  >
-                    Мы выдаём
-                  </button>
-                  <button
-                    type="button"
-                    className={cn("px-3 py-1 text-xs", !weLend && "bg-muted font-medium")}
-                    onClick={() => setWeLend(false)}
-                  >
-                    Нам выдают
-                  </button>
-                </div>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              onClick={() => setWeLend((prev) => !prev)}
+              className="inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-sm transition hover:bg-muted"
+              title="Нажмите, чтобы сменить направление займа"
+            >
+              {weLend ? (
+                <Upload size={18} className="text-amber-600" aria-hidden="true" />
+              ) : (
+                <Download size={18} className="text-emerald-600" aria-hidden="true" />
+              )}
+              <span className="font-medium">{weLend ? "Мы выдаём" : "Нам выдают"}</span>
+              <span className="text-xs text-muted-foreground">
+                {weLend ? "товар уходит партнёру" : "товар приходит к нам"}
+              </span>
+            </button>
           ) : null}
 
-          {isReturn ? (
-            <ReturnForm
-              onDone={() => {
-                onCreated();
-                void queryClient.invalidateQueries({ queryKey: ["wh", "next-number"] });
-                reset();
-                onOpenChange(false);
-              }}
-            />
-          ) : (
-            <>
+          <>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-2">
@@ -480,8 +454,7 @@ export function CreateInvoiceDialog({
               </span>
             ) : null}
           </div>
-            </>
-          )}
+          </>
         </div>
 
         {kassaOnly && !isBarter ? (
@@ -520,13 +493,15 @@ export function CreateInvoiceDialog({
           </div>
         ) : null}
 
-        {!isReturn ? (
-          <DialogFooter>
+        <DialogFooter>
             <Button
               disabled={!canSave}
               onClick={() => {
                 // В Кассе без тоггла «Оплачено» — переспросить (частая ошибка: забыли отметить).
-                if (kassaOnly && !isBarter && !markPaid) {
+                if (isBarter) {
+                  // Заём — обязательство в товаре: показываем итог словами до оформления.
+                  setLoanConfirmOpen(true);
+                } else if (kassaOnly && !markPaid) {
                   setUnpaidConfirmOpen(true);
                 } else {
                   createMutation.mutate();
@@ -539,8 +514,50 @@ export function CreateInvoiceDialog({
               {isBarter ? "Оформить займ" : "Создать"}
             </Button>
           </DialogFooter>
-        ) : null}
       </DialogContent>
+      </Dialog>
+      <Dialog open={loanConfirmOpen} onOpenChange={setLoanConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Подтвердите заём</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              {weLend ? "Мы выдаём" : "Нам выдают"}{" "}
+              {weLend ? "компании" : "от компании"}{" "}
+              <span className="font-medium">{selectedCp?.name ?? "—"}</span> заём:
+            </p>
+            <ul className="space-y-1 rounded-md bg-muted/50 px-3 py-2">
+              {lines
+                .filter((l) => l.name && num(l.quantity) > 0)
+                .map((l) => (
+                  <li key={l.key} className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{l.name}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {num(l.quantity)} {l.unit ?? "кг"} · {formatRub(num(l.amount))}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+            <p className="text-muted-foreground">
+              Долг в ТОВАРЕ на {formatRub(totals.total)}: гасится возвратом того же товара по цене
+              выдачи либо деньгами — в карточке партнёра.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLoanConfirmOpen(false)}>
+              Вернуться
+            </Button>
+            <Button
+              onClick={() => {
+                setLoanConfirmOpen(false);
+                createMutation.mutate();
+              }}
+            >
+              ОК, подтверждаю
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
       <Dialog open={unpaidConfirmOpen} onOpenChange={setUnpaidConfirmOpen}>
         <DialogContent>
@@ -569,386 +586,6 @@ export function CreateInvoiceDialog({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-function ReturnForm({ onDone }: { onDone: () => void }) {
-  const [loanId, setLoanId] = useState("");
-  const [issuedAt, setIssuedAt] = useState("");
-  const [returnKind, setReturnKind] = useState<"goods" | "money">("goods");
-  const [moneyAmount, setMoneyAmount] = useState("");
-  const [qtyByLine, setQtyByLine] = useState<Record<string, string>>({});
-  // Гашение деньгами нашего займа: по строкам займа — кг × ТЕКУЩАЯ цена (ввод оператора).
-  const [moneyByLine, setMoneyByLine] = useState<Record<string, { qty: string; price: string }>>(
-    {},
-  );
-  const [moneyChannel, setMoneyChannel] = useState<"wallet" | "bank">("wallet");
-  const [walletId, setWalletId] = useState("");
-  const [bankOperationId, setBankOperationId] = useState("");
-
-  const loansQuery = useQuery({ queryKey: ["wh", "loans"], queryFn: () => getOpenLoans() });
-  const returnableQuery = useQuery({
-    queryKey: ["wh", "returnable", loanId],
-    queryFn: () => getLoanReturnable(loanId),
-    enabled: !!loanId,
-  });
-  const loan = returnableQuery.data;
-  const walletsQuery = useQuery({
-    queryKey: ["dds", "wallets"],
-    queryFn: getDdsWallets,
-    enabled: returnKind === "money",
-  });
-  // Пикер операции выписки: наш заём гасят входящие, их заём — наши исходящие платежи.
-  const opsQuery = useQuery({
-    queryKey: ["wh", "barter-ops", loan?.we_lend],
-    queryFn: () => getDdsBankOperations({ limit: 200 }),
-    enabled: returnKind === "money" && moneyChannel === "bank" && !!loan,
-  });
-  const bankOps = useMemo(() => {
-    const wantIn = loan?.we_lend ?? false;
-    return (opsQuery.data?.items ?? []).filter(
-      (op) => op.direction === (wantIn ? "in" : "out") && !op.transfer_group_id,
-    );
-  }, [opsQuery.data, loan]);
-
-  const returnLines = useMemo(() => {
-    if (!loan) return [];
-    return loan.lines.map((l) => {
-      const qty = Math.min(num(qtyByLine[l.id] ?? ""), l.remaining_qty);
-      return { ...l, raw: qtyByLine[l.id] ?? "", qty, amount: Math.round(qty * l.price * 100) / 100 };
-    });
-  }, [loan, qtyByLine]);
-  // Денежные строки нашего займа: деньги = кг × текущая цена; в зачёт долга — кг × цена займа.
-  const moneyLines = useMemo(() => {
-    if (!loan) return [];
-    return loan.lines.map((l) => {
-      const entry = moneyByLine[l.id] ?? { qty: "", price: "" };
-      const qty = Math.min(num(entry.qty), l.remaining_qty);
-      const price = num(entry.price);
-      return {
-        ...l,
-        rawQty: entry.qty,
-        rawPrice: entry.price,
-        qty,
-        unitPrice: price,
-        money: Math.round(qty * price * 100) / 100,
-        credited: Math.round(qty * l.price * 100) / 100,
-      };
-    });
-  }, [loan, moneyByLine]);
-  const money = loan
-    ? loan.we_lend
-      ? moneyLines.reduce((s, l) => s + l.money, 0)
-      : Math.min(num(moneyAmount), loan.remaining)
-    : 0;
-  const moneyCredited = moneyLines.reduce((s, l) => s + l.credited, 0);
-  const totalReturn =
-    returnKind === "money" ? money : returnLines.reduce((s, l) => s + l.amount, 0);
-
-  const returnMutation = useMutation({
-    mutationFn: async (): Promise<void> => {
-      if (returnKind === "money") {
-        // Деньги двигаются по-настоящему: нал — приход/расход по кошельку, банк — привязка
-        // операции выписки. Наш заём — кг × текущая цена, их заём — сумма по накладной.
-        await settleLoanWithMoney(loanId, {
-          operation_date: issuedAt.slice(0, 10),
-          wallet_id: moneyChannel === "wallet" ? walletId : null,
-          bank_operation_id: moneyChannel === "bank" ? bankOperationId : null,
-          lines: loan?.we_lend
-            ? moneyLines
-                .filter((l) => l.qty > 0 && l.unitPrice > 0)
-                .map((l) => ({
-                  loan_line_item_id: l.id,
-                  quantity: l.qty,
-                  unit_price: l.unitPrice,
-                }))
-            : null,
-          amount: loan?.we_lend ? null : money,
-        });
-        return;
-      }
-      await createBarterReturn({
-        loan_id: loanId,
-        issued_at: issuedAt,
-        // Товаром — построчно по ИСХОДНОЙ цене займа (кг возвращаются по цене выдачи).
-        returns: returnLines
-          .filter((l) => l.qty > 0)
-          .map((l) => ({ loan_line_item_id: l.id, quantity: l.qty, amount: l.amount })),
-      });
-    },
-    onSuccess: () => {
-      toast.success(returnKind === "money" ? "Гашение деньгами проведено" : "Возврат проведён");
-      onDone();
-    },
-    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось провести возврат")),
-  });
-
-  const moneyChannelReady =
-    moneyChannel === "wallet" ? !!walletId : !!bankOperationId;
-  const canReturn =
-    !!loanId &&
-    !!issuedAt &&
-    totalReturn > 0 &&
-    (returnKind === "goods" || moneyChannelReady) &&
-    !returnMutation.isPending;
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label>Заём для возврата</Label>
-          <Select
-            value={loanId}
-            onValueChange={(v) => {
-              setLoanId(v);
-              setQtyByLine({});
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Выберите открытый заём" />
-            </SelectTrigger>
-            <SelectContent>
-              {(loansQuery.data ?? []).map((ln) => (
-                <SelectItem key={ln.id} value={ln.id}>
-                  {ln.counterparty_name} · №{ln.number ?? "—"} · остаток {formatRub(ln.remaining)} ·{" "}
-                  {ln.we_lend ? "мы выдали" : "нам выдали"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-2">
-          <Label>Дата и время возврата</Label>
-          <Input
-            type="datetime-local"
-            value={issuedAt}
-            onChange={(e) => setIssuedAt(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {loan ? (
-        <>
-          <div className="inline-flex w-fit overflow-hidden rounded-md border">
-            <button
-              type="button"
-              className={cn("px-3 py-1 text-xs", returnKind === "goods" && "bg-muted font-medium")}
-              onClick={() => setReturnKind("goods")}
-            >
-              Товаром
-            </button>
-            <button
-              type="button"
-              className={cn("px-3 py-1 text-xs", returnKind === "money" && "bg-muted font-medium")}
-              onClick={() => setReturnKind("money")}
-            >
-              Деньгами
-            </button>
-          </div>
-
-          {returnKind === "goods" ? (
-            <div className="space-y-2">
-              <div className="grid grid-cols-[1fr_96px_84px_90px] gap-2 px-2 text-xs text-muted-foreground">
-                <span>Товар</span>
-                <span className="text-right">Остаток</span>
-                <span className="text-right">Вернуть</span>
-                <span className="text-right">Сумма</span>
-              </div>
-              {returnLines.map((l) => (
-                <div
-                  key={l.id}
-                  className="grid grid-cols-[1fr_96px_84px_90px] items-center gap-2 rounded-md border p-2 text-sm"
-                >
-                  <span className="truncate">{l.name}</span>
-                  <span className="text-right tabular-nums text-muted-foreground">
-                    {l.remaining_qty} {l.unit ?? ""}
-                  </span>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={l.remaining_qty}
-                    value={l.raw}
-                    onChange={(e) => setQtyByLine((p) => ({ ...p, [l.id]: e.target.value }))}
-                  />
-                  <span className="text-right tabular-nums">{formatRub(l.amount)}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {loan.we_lend ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    Контрагент платит по ТЕКУЩЕЙ цене; в зачёт долга идёт кг × цена выдачи.
-                  </p>
-                  <div className="grid grid-cols-[1fr_84px_84px_96px_90px] gap-2 px-2 text-xs text-muted-foreground">
-                    <span>Товар</span>
-                    <span className="text-right">Остаток</span>
-                    <span className="text-right">Кг</span>
-                    <span className="text-right">Цена сейчас</span>
-                    <span className="text-right">Деньги</span>
-                  </div>
-                  {moneyLines.map((l) => (
-                    <div
-                      key={l.id}
-                      className="grid grid-cols-[1fr_84px_84px_96px_90px] items-center gap-2 rounded-md border p-2 text-sm"
-                    >
-                      <span className="truncate">
-                        {l.name}
-                        <span className="block text-[11px] text-muted-foreground">
-                          выдано по {formatRub(l.price)}
-                          {l.last_purchase_price != null
-                            ? ` · закуп сейчас ~${formatRub(l.last_purchase_price)}`
-                            : ""}
-                        </span>
-                      </span>
-                      <span className="text-right tabular-nums text-muted-foreground">
-                        {l.remaining_qty} {l.unit ?? ""}
-                      </span>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={l.remaining_qty}
-                        value={l.rawQty}
-                        onChange={(e) =>
-                          setMoneyByLine((p) => ({
-                            ...p,
-                            [l.id]: { qty: e.target.value, price: p[l.id]?.price ?? "" },
-                          }))
-                        }
-                      />
-                      <Input
-                        type="number"
-                        min={0}
-                        placeholder={
-                          l.last_purchase_price != null ? String(l.last_purchase_price) : ""
-                        }
-                        value={l.rawPrice}
-                        onChange={(e) =>
-                          setMoneyByLine((p) => ({
-                            ...p,
-                            [l.id]: { qty: p[l.id]?.qty ?? "", price: e.target.value },
-                          }))
-                        }
-                      />
-                      <span className="text-right tabular-nums">{formatRub(l.money)}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="grid gap-2 sm:max-w-xs">
-                  <Label>Сумма оплаты займа, ₽</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={loan.remaining}
-                    value={moneyAmount}
-                    onChange={(e) => setMoneyAmount(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Оплата «как обычной поставки» — по сумме накладной займа.
-                  </p>
-                </div>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label>Канал денег</Label>
-                  <div className="inline-flex w-fit overflow-hidden rounded-md border">
-                    <button
-                      type="button"
-                      className={cn(
-                        "px-3 py-1 text-xs",
-                        moneyChannel === "wallet" && "bg-muted font-medium",
-                      )}
-                      onClick={() => setMoneyChannel("wallet")}
-                    >
-                      Наличные / кошелёк
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        "px-3 py-1 text-xs",
-                        moneyChannel === "bank" && "bg-muted font-medium",
-                      )}
-                      onClick={() => setMoneyChannel("bank")}
-                    >
-                      Банк-операция
-                    </button>
-                  </div>
-                </div>
-                {moneyChannel === "wallet" ? (
-                  <div className="grid gap-2">
-                    <Label>Кошелёк</Label>
-                    <Select value={walletId} onValueChange={setWalletId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Куда пришли / откуда ушли деньги" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(walletsQuery.data ?? [])
-                          .filter((w) => w.status === "active")
-                          .map((w) => (
-                            <SelectItem key={w.id} value={w.id}>
-                              {w.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    <Label>Операция выписки ({loan.we_lend ? "входящая" : "исходящая"})</Label>
-                    <Select value={bankOperationId} onValueChange={setBankOperationId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите операцию" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {bankOps.map((op) => (
-                          <SelectItem key={op.id} value={op.id}>
-                            {op.operation_date} · {formatRub(Number(op.amount))} ·{" "}
-                            {op.counterparty_name_raw ?? op.payment_purpose ?? "—"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between rounded-md bg-muted/50 p-2 text-sm">
-            <span>
-              {returnKind === "money" && loan.we_lend ? (
-                <>
-                  Деньгами: <span className="font-medium tabular-nums">{formatRub(money)}</span>
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    в зачёт долга {formatRub(moneyCredited)}
-                  </span>
-                </>
-              ) : (
-                <>
-                  К возврату:{" "}
-                  <span className="font-medium tabular-nums">{formatRub(totalReturn)}</span>
-                </>
-              )}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              остаток займа {formatRub(loan.remaining)}
-            </span>
-          </div>
-        </>
-      ) : null}
-
-      <DialogFooter>
-        <Button disabled={!canReturn} onClick={() => returnMutation.mutate()}>
-          {returnMutation.isPending ? (
-            <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
-          ) : null}
-          Провести возврат
-        </Button>
-      </DialogFooter>
-    </div>
   );
 }
 

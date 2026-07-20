@@ -343,6 +343,8 @@ export type ReturnPayload = {
   issued_at: string;
   number?: string | null;
   returns: Array<{ amount: number; loan_line_item_id?: string | null; quantity?: number | null }>;
+  /** Вернули меньше выданного: true — простить хвост долга и закрыть заём. */
+  write_off_remainder?: boolean;
 };
 
 export type BarterPartner = {

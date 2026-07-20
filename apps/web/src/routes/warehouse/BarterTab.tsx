@@ -3,6 +3,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +33,7 @@ import { apiErrorMessage, getDdsBankOperations, getDdsWallets } from "@/lib/api"
 import { cn } from "@/lib/utils";
 
 import {
+  createDraft,
   getBarterDetail,
   getBarterSuggestions,
   settleBarter,
@@ -42,6 +52,10 @@ import {
   type BarterPartner,
   type OpenLoan,
 } from "./api";
+
+// Допуск перевозврата товаром — синхронно с бэком (RETURN_QTY_TOLERANCE): довесок при
+// фасовке принимаем, явный перебор отклоняем.
+const RETURN_QTY_TOLERANCE = 0.1;
 
 /** Вкладка «Бартер»: партнёры с балансом → карточка с накладными → окно гашения. */
 export function BarterPartnersTab({ canOperate }: { canOperate: boolean }) {
@@ -495,9 +509,16 @@ function SettleLoanDialog({
     {},
   );
   const [moneyAmount, setMoneyAmount] = useState("");
-  const [moneyChannel, setMoneyChannel] = useState<"wallet" | "bank">("wallet");
+  // Каналы разные по направлению долга: нам должны — деньги ПРИХОДЯТ (наличный приход или
+  // привязка входящей операции выписки); мы должны — деньги УХОДЯТ (наличная выдача или
+  // черновик платежа в банк). Входящая операция чужой выписки наш долг погасить не может.
+  const [moneyChannel, setMoneyChannel] = useState<"wallet" | "bank" | "draft">("wallet");
   const [walletId, setWalletId] = useState("");
   const [bankOperationId, setBankOperationId] = useState("");
+  const [draftChannel, setDraftChannel] = useState<"bank_draft" | "bank_draft_sber">("bank_draft");
+  // Недовоз: спрашиваем про хвост НЕ в форме, а при подтверждении возврата — иначе вопрос
+  // висит на экране ещё до того, как оператор ввёл килограммы.
+  const [askRemainder, setAskRemainder] = useState(false);
   // Дата события — задаёт оператор (гашение бывает задним числом). Дефолт — сегодня по
   // МЕСТНОМУ времени: toISOString() дал бы UTC и поздним вечером уехал бы на вчера.
   const [happenedAt, setHappenedAt] = useState(() => localDateTimeInput());
@@ -515,28 +536,43 @@ function SettleLoanDialog({
   });
   const opsQuery = useQuery({
     queryKey: ["wh", "barter-ops", info?.we_lend],
-    queryFn: () => getDdsBankOperations({ limit: 200 }),
+    // Только НЕРАЗОБРАННЫЕ операции: уже классифицированную (разнесённую по статьям или
+    // привязанную) предлагать нельзя — её деньги уже учтены в другом месте.
+    queryFn: () => getDdsBankOperations({ limit: 200, classification_status: "needs_review" }),
     enabled: !!loan && mode === "money" && moneyChannel === "bank" && !!info,
   });
-  const bankOps = useMemo(() => {
-    const wantIn = info?.we_lend ?? false;
-    return (opsQuery.data?.items ?? []).filter(
-      (op) => op.direction === (wantIn ? "in" : "out") && !op.transfer_group_id,
-    );
-  }, [opsQuery.data, info]);
+  const bankOps = useMemo(
+    () =>
+      // Канал доступен только когда НАМ должны: контрагент платит → входящая операция.
+      (opsQuery.data?.items ?? []).filter(
+        (op) => op.direction === "in" && !op.transfer_group_id,
+      ),
+    [opsQuery.data],
+  );
 
   const goodsLines = useMemo(() => {
     if (!info) return [];
     return info.lines.map((l) => {
-      const qty = Math.min(num(qtyByLine[l.id] ?? ""), l.remaining_qty);
+      const entered = num(qtyByLine[l.id] ?? "");
+      // Довесок при фасовке принимаем (до 100 г сверх выданного), явный перебор — НЕ молча
+      // обрезаем, а показываем ошибкой: 3,5 кг вместо 3 — это опечатка оператора.
+      const excess = entered > l.remaining_qty + RETURN_QTY_TOLERANCE + 1e-9;
+      const qty = Math.min(entered, l.remaining_qty + RETURN_QTY_TOLERANCE);
+      // Сумма долга от лишних граммов не растёт: закрываем ровно остаток строки.
+      const amount = Math.min(
+        Math.round(qty * l.price * 100) / 100,
+        Math.round(l.remaining_qty * l.price * 100) / 100,
+      );
       return {
         ...l,
         raw: qtyByLine[l.id] ?? "",
         qty,
-        amount: Math.round(qty * l.price * 100) / 100,
+        excess,
+        amount,
       };
     });
   }, [info, qtyByLine]);
+  const overReturnLine = goodsLines.find((l) => l.excess);
   const moneyLines = useMemo(() => {
     if (!info) return [];
     return info.lines.map((l) => {
@@ -556,6 +592,8 @@ function SettleLoanDialog({
   }, [info, moneyByLine]);
 
   const goodsTotal = goodsLines.reduce((s, l) => s + l.amount, 0);
+  // Сколько долга останется после этого возврата: показываем выбор только когда есть хвост.
+  const goodsShortfall = info ? Math.round((info.remaining - goodsTotal) * 100) / 100 : 0;
   const goodsQty = goodsLines.reduce((s, l) => s + l.qty, 0);
   const money = info
     ? info.we_lend
@@ -569,15 +607,22 @@ function SettleLoanDialog({
     .reduce((s, l) => s + l.credited, 0);
 
   const mutation = useMutation({
-    mutationFn: async (): Promise<void> => {
+    mutationFn: async (writeOff: boolean): Promise<void> => {
       if (mode === "goods") {
         await createBarterReturn({
           loan_id: loanId,
           issued_at: happenedAt,
+          write_off_remainder: writeOff,
           returns: goodsLines
             .filter((l) => l.qty > 0)
             .map((l) => ({ loan_line_item_id: l.id, quantity: l.qty, amount: l.amount })),
         });
+        return;
+      }
+      if (moneyChannel === "draft") {
+        // Мы должны и платим безналом: не привязка чужой операции, а СВОЙ платёж — черновик
+        // в банк (подпись в банке, гашение придёт выпиской), как у обычной накладной.
+        await createDraft([loanId], draftChannel);
         return;
       }
       await settleLoanWithMoney(loanId, {
@@ -597,8 +642,15 @@ function SettleLoanDialog({
       });
     },
     onSuccess: () => {
-      toast.success(mode === "goods" ? "Возврат проведён" : "Гашение деньгами проведено");
+      toast.success(
+        mode === "goods"
+          ? "Возврат проведён"
+          : moneyChannel === "draft"
+            ? "Черновик отправлен в банк — подпишите платёж в банке"
+            : "Гашение деньгами проведено",
+      );
       setQtyByLine({});
+      setAskRemainder(false);
       setMoneyByLine({});
       setMoneyAmount("");
       onDone();
@@ -606,12 +658,19 @@ function SettleLoanDialog({
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось провести гашение")),
   });
 
-  const channelReady = moneyChannel === "wallet" ? !!walletId : !!bankOperationId;
+  const channelReady =
+    moneyChannel === "wallet"
+      ? !!walletId
+      : moneyChannel === "bank"
+        ? !!bankOperationId
+        : true; // черновик: сумма и получатель берутся из самой накладной займа
+  // Черновик выписывается на остаток накладной целиком — поле суммы для него не нужно.
+  const amountReady = moneyChannel === "draft" ? (info?.remaining ?? 0) > 0 : money > 0;
   const canSubmit =
     !!loan &&
     !!happenedAt &&
     !mutation.isPending &&
-    (mode === "goods" ? goodsTotal > 0 : money > 0 && channelReady);
+    (mode === "goods" ? goodsTotal > 0 && !overReturnLine : amountReady && channelReady);
 
   return (
     <Dialog open={!!loan} onOpenChange={(v) => !v && onClose()}>
@@ -706,6 +765,13 @@ function SettleLoanDialog({
                     склад принимает по цене выдачи
                   </span>
                 </div>
+                {overReturnLine ? (
+                  <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    По «{overReturnLine.name}» вернуть можно не больше{" "}
+                    {overReturnLine.remaining_qty} кг (+{RETURN_QTY_TOLERANCE} кг довеска) —
+                    проверьте количество.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div className="space-y-3">
@@ -778,7 +844,7 @@ function SettleLoanDialog({
                       </span>
                     </div>
                   </div>
-                ) : (
+                ) : moneyChannel === "draft" ? null : (
                   <div className="grid gap-2 sm:max-w-xs">
                     <Label>Сумма оплаты, ₽</Label>
                     <Input
@@ -809,16 +875,29 @@ function SettleLoanDialog({
                       >
                         Наличные / кошелёк
                       </button>
-                      <button
-                        type="button"
-                        className={cn(
-                          "px-3 py-1.5",
-                          moneyChannel === "bank" && "bg-muted font-medium",
-                        )}
-                        onClick={() => setMoneyChannel("bank")}
-                      >
-                        Банк-операция
-                      </button>
+                      {info.we_lend ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            "px-3 py-1.5",
+                            moneyChannel === "bank" && "bg-muted font-medium",
+                          )}
+                          onClick={() => setMoneyChannel("bank")}
+                        >
+                          Банк-операция
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={cn(
+                            "px-3 py-1.5",
+                            moneyChannel === "draft" && "bg-muted font-medium",
+                          )}
+                          onClick={() => setMoneyChannel("draft")}
+                        >
+                          Черновик в банк
+                        </button>
+                      )}
                     </div>
                   </div>
                   {moneyChannel === "wallet" ? (
@@ -826,7 +905,11 @@ function SettleLoanDialog({
                       <Label>Кошелёк</Label>
                       <Select value={walletId} onValueChange={setWalletId}>
                         <SelectTrigger>
-                          <SelectValue placeholder="Куда пришли / откуда ушли деньги" />
+                          <SelectValue
+                            placeholder={
+                              info.we_lend ? "Куда пришли деньги" : "Откуда ушли деньги"
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {(walletsQuery.data ?? [])
@@ -841,9 +924,9 @@ function SettleLoanDialog({
                         </SelectContent>
                       </Select>
                     </div>
-                  ) : (
+                  ) : moneyChannel === "bank" ? (
                     <div className="grid gap-2">
-                      <Label>Операция ({info.we_lend ? "входящая" : "исходящая"})</Label>
+                      <Label>Входящая операция</Label>
                       <Select value={bankOperationId} onValueChange={setBankOperationId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Выберите операцию" />
@@ -857,6 +940,32 @@ function SettleLoanDialog({
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Только неразобранные приходы — уже разнесённые операции здесь не
+                        предлагаются.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      <Label>Банк-плательщик</Label>
+                      <Select
+                        value={draftChannel}
+                        onValueChange={(v) =>
+                          setDraftChannel(v as "bank_draft" | "bank_draft_sber")
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="bank_draft">Т-Банк</SelectItem>
+                          <SelectItem value="bank_draft_sber">Сбербанк</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Черновик на остаток {formatRub(info.remaining)} — подпись в банке,
+                        гашение придёт выпиской.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -868,18 +977,49 @@ function SettleLoanDialog({
           <Button variant="outline" onClick={onClose}>
             Отмена
           </Button>
-          <Button disabled={!canSubmit} onClick={() => mutation.mutate()}>
+          <Button
+            disabled={!canSubmit}
+            onClick={() => {
+              // Недовоз — спрашиваем, что с хвостом, ПЕРЕД проведением; иначе сразу проводим.
+              if (mode === "goods" && goodsShortfall > 0) {
+                setAskRemainder(true);
+                return;
+              }
+              mutation.mutate(false);
+            }}
+          >
             {mutation.isPending ? (
               <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
             ) : null}
             {mode === "goods"
               ? "Провести возврат"
-              : info?.we_lend
-                ? "Принять деньги"
-                : "Оплатить заём"}
+              : moneyChannel === "draft"
+                ? "Отправить в банк"
+                : info?.we_lend
+                  ? "Принять деньги"
+                  : "Оплатить заём"}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={askRemainder} onOpenChange={(open) => !open && setAskRemainder(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Что с остатком долга?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Возвращаете {goodsQty} кг на {formatRub(goodsTotal)} — это меньше выданного.
+              Непокрытыми останутся {formatRub(goodsShortfall)}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <Button variant="outline" onClick={() => mutation.mutate(false)}>
+              Оставить долгом
+            </Button>
+            <Button onClick={() => mutation.mutate(true)}>Списать остаток</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
