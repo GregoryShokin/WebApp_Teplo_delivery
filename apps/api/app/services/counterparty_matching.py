@@ -103,6 +103,19 @@ async def payment_allocated_amount(
 
 
 async def _invoice_remaining(session: AsyncSession, invoice: SupplierInvoice) -> Decimal:
+    """Непогашенный остаток документа.
+
+    У бартерного ЗАЙМА долг гасится не только деньгами: товарные возвраты живут в леджере
+    ``BarterReturnLine``, прощённый недовес — в ``barter_writeoff_amount``. По аллокациям такой
+    остаток завышен, поэтому поправка стоит ЗДЕСЬ, в единой точке: эту функцию зовут все двери
+    оплаты (черновик в банк, paid-переход после исполнения платежа, FIFO по черновику, сверка,
+    оплата с кошелька, выдача с Сейфа, классификатор). Точечные поправки в отдельных дверях
+    уже приводили к тому, что одна из них платила за уже возвращённый товар второй раз.
+    """
+    if invoice.barter_role == "loan":
+        from app.services.warehouse_invoices import loan_settled_value
+
+        return _money(invoice.amount) - await loan_settled_value(session, invoice)
     return _money(invoice.amount) - await _allocated_amount(session, invoice.id)
 
 

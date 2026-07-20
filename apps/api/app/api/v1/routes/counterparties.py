@@ -238,6 +238,8 @@ class DraftCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     invoice_ids: list[uuid.UUID] = Field(min_length=1)
+    # Банк-плательщик: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
+    channel: Literal["bank_draft", "bank_draft_sber"] | None = None
 
 
 class ProfileUpdate(BaseModel):
@@ -1326,11 +1328,29 @@ async def post_draft(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> DraftRead:
-    # «Отправить в банк» = оплата обычных накладных (бартер в банк не отправляется).
-    ensure_permission(actor, "invoices.normal.pay")
+    # «Отправить в банк» = оплата обычных накладных. Бартерный ЗАЁМ (мы должны товаром) тоже
+    # платится деньгами «как обычная поставка» — но это отдельное право: гасить чужой заём
+    # безналом вправе тот, кто ведёт бартер, а не любой оплачивающий накладные.
+    barter_loans = (
+        await session.scalars(
+            select(SupplierInvoice.id).where(
+                SupplierInvoice.id.in_(payload.invoice_ids),
+                SupplierInvoice.barter_role.is_not(None),
+            )
+        )
+    ).all()
+    # Права СКЛАДЫВАЕМ, а не подменяем: иначе одна бартерная строка в пачке снимала бы
+    # проверку invoices.normal.pay со всех обычных накладных этого же черновика.
+    if barter_loans:
+        ensure_permission(actor, "invoices.barter.create")
+    if len(barter_loans) < len(set(payload.invoice_ids)):
+        ensure_permission(actor, "invoices.normal.pay")
     try:
         draft = await payments.create_payment_draft_for_invoices(
-            session, invoice_ids=payload.invoice_ids, actor_user_id=actor.user_id
+            session,
+            invoice_ids=payload.invoice_ids,
+            actor_user_id=actor.user_id,
+            channel=payload.channel,
         )
     except payments.CounterpartyPaymentError as exc:
         raise _conflict(exc) from exc

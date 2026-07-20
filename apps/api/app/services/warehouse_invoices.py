@@ -132,6 +132,12 @@ def _money(value: Any) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+# Допуск перевозврата ТОВАРОМ: вернуть можно на 100 г больше выданного — при фасовке довесок
+# обычное дело. Сверх допуска ввод отклоняется (заняли 3 кг, вводят 3,5 — это ошибка оператора,
+# а не довесок). Долг от лишних граммов НЕ растёт: он номинирован товаром.
+RETURN_QTY_TOLERANCE = Decimal("0.100")
+
+
 def _qty(value: Any) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
 
@@ -1063,7 +1069,14 @@ async def loan_settled_value(session: AsyncSession, loan: SupplierInvoice) -> De
             )
         )
         settled += _money(allocated)
-    return settled
+    # Прощённый недовес — такая же часть закрытого долга, как товар и деньги: без него заём
+    # с недовозвратом навсегда остался бы partially_returned с копеечной кредиторкой.
+    settled += _money(loan.barter_writeoff_amount)
+    # Зачёт НЕ БОЛЬШЕ суммы займа: возврат не делает нас кредитором (правило владельца).
+    # Клэмп именно здесь, а не только на сумме возвратной накладной: при СМЕШАННОМ гашении
+    # (часть товаром, часть деньгами) километры и рубли считаются разными путями, и без
+    # общего потолка остаток уходил в минус — то есть возврат рождал дебиторку.
+    return min(settled, _money(loan.amount))
 
 
 async def sync_barter_loan_status(session: AsyncSession, loan: SupplierInvoice) -> Decimal:
@@ -1294,10 +1307,26 @@ async def create_barter_return(
     returns: Sequence[ReturnLineInput],
     number: str | None = None,
     actor_user_id: uuid.UUID | None = None,
+    write_off_remainder: bool = False,
 ) -> SupplierInvoice:
+    """Возврат товара по бартерному займу.
+
+    Долг номинирован ТОВАРОМ, поэтому арифметика идёт от килограммов:
+    * вернуть можно на ``RETURN_QTY_TOLERANCE`` больше выданного (довесок при фасовке) —
+      сверх этого ошибка; лишние граммы долг НЕ увеличивают (уходят по более низкой цене);
+    * вернули меньше — хвост либо остаётся долгом, либо списывается
+      (``write_off_remainder=True``: «про эти 60 грамм просто забываю»).
+    """
     loan = await session.get(SupplierInvoice, loan_id)
     if loan is None or loan.barter_role != "loan":
         raise WarehouseInvoiceError("Заём не найден")
+    if loan.draft_id is not None:
+        # Платёж по займу уже в банке на подписи: вернуть товар сейчас — значит закрыть заём
+        # без аллокации, а когда банк исполнит платёж, paid-переход заплатит ВТОРОЙ раз.
+        # И товар у нас, и деньги ушли. Тот же гард стоит на прочих дверях этого файла.
+        raise WarehouseInvoiceError(
+            "Заём отправлен в банк — сначала отзовите платёж, потом оформляйте возврат"
+        )
     if loan.barter_return_status == "returned":
         raise WarehouseInvoiceError("Заём уже полностью возвращён")
     items = [r for r in returns if _money(r.amount) > 0]
@@ -1346,6 +1375,10 @@ async def create_barter_return(
     resolved: list[tuple[InvoiceLineItem | None, Decimal | None, Decimal]] = []
     for r in items:
         line = loan_lines.get(r.loan_line_item_id) if r.loan_line_item_id else None
+        if line is None and r.loan_line_item_id is not None:
+            # Строка не из этого займа: молча трактовать её как свободную денежную сумму
+            # нельзя — так списался бы долг суммой, не привязанной ни к какому товару.
+            raise WarehouseInvoiceError("Позиция возврата не принадлежит этому займу")
         if line is not None:
             if r.quantity is None:
                 raise WarehouseInvoiceError(f"Укажите количество для «{line.name}»")
@@ -1353,8 +1386,12 @@ async def create_barter_return(
             if qty <= 0:
                 raise WarehouseInvoiceError(f"Количество по «{line.name}» должно быть > 0")
             already = returned_qty.get(line.id, Decimal("0"))
-            if _qty(already + qty) > _qty(line.quantity):
-                raise WarehouseInvoiceError(f"Возврат по «{line.name}» превышает остаток")
+            if _qty(already + qty) > _qty(line.quantity) + RETURN_QTY_TOLERANCE:
+                raise WarehouseInvoiceError(
+                    f"Возврат по «{line.name}» превышает выданное больше чем на "
+                    f"{RETURN_QTY_TOLERANCE} кг: выдано {_qty(line.quantity)}, "
+                    f"уже вернули {already}, вводите {qty}"
+                )
             # Копим В СНИМКЕ: две строки запроса по одной позиции займа иначе прошли бы лимит
             # каждая по отдельности и вернули бы больше выданного.
             returned_qty[line.id] = _qty(already + qty)
@@ -1362,7 +1399,10 @@ async def create_barter_return(
             # строки закрываем ровно её рублёвый остаток (сумма − уже зачтённое), а не
             # qty × округлённая цена — иначе копеечный дрейф (2.6 кг × 470.48 = 1223.25 при
             # строке 1223.24) не даст закрыть заём никогда.
-            if _qty(already + qty) == _qty(line.quantity):
+            # ПЕРЕВОЗВРАТ (в пределах допуска) идёт по тому же правилу: долг номинирован
+            # ТОВАРОМ, поэтому лишние граммы не увеличивают сумму — они просто уходят по
+            # более низкой цене за кг, и дебиторки из возврата не возникает.
+            if _qty(already + qty) >= _qty(line.quantity):
                 amount = max(
                     _money(line.sum) - line_credited.get(line.id, Decimal("0.00")),
                     Decimal("0.00"),
@@ -1376,8 +1416,36 @@ async def create_barter_return(
     new_total = _money(sum((amt for _, _, amt in resolved), Decimal("0.00")))
     if new_total <= 0:
         raise WarehouseInvoiceError("Сумма возврата должна быть больше нуля")
+    # Возврат сверх ДЕНЕЖНОГО остатка долга отклоняем, а не режем молча. Килограммы деньги не
+    # расходуют (леджер их не видит), поэтому после частичной ОПЛАТЫ займа товара «на складе
+    # займа» числится больше, чем мы должны: без этой проверки оператор вернул бы весь товар
+    # поверх уже уплаченных денег — переплата не стала бы ни дебиторкой, ни предоплатой, а
+    # возвратная накладная разъехалась бы с зеркалом iiko (там сумма строк, у нас — обрезанная).
+    # Порог допуска в рублях — цена довеска: 100 г по цене самой дорогой строки возврата.
+    price_cap = max(
+        (_money(line.price) for line, _q, _a in resolved if line is not None),
+        default=Decimal("0"),
+    )
+    money_tolerance = _money(RETURN_QTY_TOLERANCE * price_cap)
+    if new_total > loan_remaining + money_tolerance:
+        raise WarehouseInvoiceError(
+            f"Возврат на {new_total} превышает остаток долга {loan_remaining}: "
+            "часть займа уже погашена деньгами"
+        )
     if new_total > loan_remaining:
-        raise WarehouseInvoiceError(f"Возврат {new_total} превышает остаток займа {loan_remaining}")
+        # Довесок в пределах допуска: принимаем товар, но кредиторами не становимся. Срезаем
+        # НЕ только шапку: строки леджера, позиции накладной и зеркало iiko собираются из
+        # ``resolved`` — иначе документ разъехался бы сам с собой (шапка одна, сумма строк
+        # другая) и в iiko ушла бы третья цифра. Излишек снимаем с последней товарной строки.
+        excess = new_total - loan_remaining
+        for idx in range(len(resolved) - 1, -1, -1):
+            if excess <= 0:
+                break
+            line, qty, amount = resolved[idx]
+            take = min(amount, excess)
+            resolved[idx] = (line, qty, _money(amount - take))
+            excess -= take
+        new_total = loan_remaining
 
     ret = SupplierInvoice(
         counterparty_id=loan.counterparty_id,
@@ -1434,7 +1502,14 @@ async def create_barter_return(
             )
     ret.line_items = mirror
 
-    await sync_barter_loan_status(session, loan)
+    remaining_after = await sync_barter_loan_status(session, loan)
+    if write_off_remainder and remaining_after > 0:
+        # Недовес прощён: хвост уходит в зачётную стоимость, заём закрывается штатно, его
+        # кредиторка не остаётся огрызком. Копим (+=), а не присваиваем: списывать могли и
+        # по частям, при нескольких недовозвратах подряд.
+        loan.barter_writeoff_amount = _money(loan.barter_writeoff_amount) + remaining_after
+        await session.flush()
+        await sync_barter_loan_status(session, loan)
     await session.commit()
     await session.refresh(ret)
     return ret

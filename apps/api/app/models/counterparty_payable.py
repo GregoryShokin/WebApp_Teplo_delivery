@@ -494,6 +494,12 @@ class SupplierInvoice(Base):
     )
     # On a loan invoice: cached settlement state — open / partially_returned / returned.
     barter_return_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Прощённый хвост товарного долга: вернули меньше выданного и владелец решил «забыть»
+    # остаток (недовес в пределах пары сотен грамм). Входит в зачётную стоимость займа —
+    # так заём закрывается, а его КЗ не висит вечным огрызком.
+    barter_writeoff_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, server_default="0"
+    )
     # --- контроль ошибочных цен (скользящее среднее по товару) ---
     # Позиция накладной, у которой цена сильно отклонилась от скользящего среднего закупок этого
     # товара (порог +N%/−M%), помечает всю накладную «подозрительной». Пока статус ``flagged`` —

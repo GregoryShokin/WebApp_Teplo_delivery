@@ -149,6 +149,9 @@ class ReturnCreate(BaseModel):
     issued_at: datetime
     number: str | None = None
     returns: list[ReturnLineCreate] = Field(min_length=1)
+    # Вернули меньше выданного: True — простить хвост долга и закрыть заём, False — оставить
+    # его висеть до следующего возврата.
+    write_off_remainder: bool = False
 
 
 class MoneySettleLine(BaseModel):
@@ -356,6 +359,7 @@ async def post_return(
                 for line in payload.returns
             ],
             actor_user_id=actor.user_id,
+            write_off_remainder=payload.write_off_remainder,
         )
     except WarehouseInvoiceError as exc:
         raise HTTPException(

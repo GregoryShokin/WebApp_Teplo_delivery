@@ -82,6 +82,11 @@ async def _resync_rule1_prepayment(
         await ensure_prepayment_from_bank_transaction(session, transaction)
 
 
+# Операция, которую ещё не разнесли по статьям: только такую можно направить на гашение
+# займа. 'classified' / 'internal_transfer' / 'excluded' — деньги уже учтены другим путём.
+UNSETTLED_OPERATION_STATUSES = ("needs_review", "pending")
+
+
 async def _assert_operation_free(
     session: AsyncSession, operation: BankOperation, needed: Decimal
 ) -> None:
@@ -184,6 +189,24 @@ async def settle_receivable_loan_with_money(
             raise WarehouseInvoiceError("Банковская операция не найдена")
         if operation.direction != "in":
             raise WarehouseInvoiceError("Гашение нам — входящая операция, выбрана исходящая")
+        if operation.transfer_group_id is not None:
+            raise WarehouseInvoiceError(
+                "Это внутренний перевод между своими счетами — заём им не гасится"
+            )
+        # Разобранная операция уже учтена статьёй ДДС: погасить ею долг — учесть деньги дважды.
+        # Симметрично соседнему каналу (assert_bank_matchable), где такие гарды есть.
+        if operation.classification_status not in UNSETTLED_OPERATION_STATUSES:
+            raise WarehouseInvoiceError(
+                "Операция уже разобрана — её деньги учтены в ДДС; выберите неразобранный приход"
+            )
+        # Сумма операции должна совпадать с гашением. Иначе разница выпадала из ДДС насовсем:
+        # проводка создавалась на сумму ГАШЕНИЯ, а операция помечалась разобранной ЦЕЛИКОМ, и
+        # доразбор (он смотрит только неразобранные) до остатка уже не добирался.
+        if _money(abs(operation.amount)) != money_total:
+            raise WarehouseInvoiceError(
+                f"Операция на {_money(abs(operation.amount))} не совпадает с суммой гашения "
+                f"{money_total} — сначала разнесите операцию в ДДС или выберите точный приход"
+            )
         # Занятость операции: одна выписочная строка не может закрыть два займа.
         await _assert_operation_free(session, operation, money_total)
         transaction = None
@@ -214,6 +237,16 @@ async def settle_receivable_loan_with_money(
             operation.cashflow_transaction_id = transaction.id
             operation.classification_status = "classified"
         else:
+            # Проводка уже есть (напр. предзаведённая): чужого контрагента молча не перебиваем —
+            # так приход от другой компании переехал бы в карточку бартерного партнёра.
+            if (
+                transaction.counterparty_id is not None
+                and transaction.counterparty_id != loan.counterparty_id
+            ):
+                raise WarehouseInvoiceError(
+                    "Проводка операции уже отнесена другому контрагенту — "
+                    "разберите её в ДДС перед гашением займа"
+                )
             transaction.counterparty_id = loan.counterparty_id
     else:
         wallet = await session.get(Wallet, wallet_id)

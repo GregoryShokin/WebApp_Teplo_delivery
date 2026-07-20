@@ -653,8 +653,9 @@ async def test_incoming_operation_cannot_settle_two_loans(
                                    unit_price=Decimal("300"))],
             bank_operation_id=operation.id,
         )
-        # Та же операция на второй заём — деньги уже потрачены.
-        with pytest.raises(WarehouseInvoiceError, match="остаток операции"):
+        # Та же операция на второй заём — деньги уже потрачены. Отсекается раньше: после
+        # первого гашения операция стала разобранной (её деньги учтены проводкой).
+        with pytest.raises(WarehouseInvoiceError, match="остаток операции|уже разобрана"):
             await settle_receivable_loan_with_money(
                 session, loan_id=loan_b.id, operation_date=OP_DATE,
                 lines=[MoneyReturnLine(loan_line_item_id=line_b.id, quantity=Decimal("10"),
@@ -673,7 +674,7 @@ async def test_duplicate_lines_in_one_request_respect_kg_limit(
     async with async_session_factory() as session:
         loan, line = await _make_loan(session, inn="6155999004", we_lend=True)
         await session.commit()
-        with pytest.raises(WarehouseInvoiceError, match="превышает остаток"):
+        with pytest.raises(WarehouseInvoiceError, match="превышает выданное"):
             await create_barter_return(
                 session, loan_id=loan.id,
                 issued_at=datetime(2026, 7, 20, 10, 0, tzinfo=UTC),

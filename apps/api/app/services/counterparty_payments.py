@@ -169,7 +169,11 @@ async def create_payment_draft_for_invoices(
     invoice_ids: Sequence[uuid.UUID],
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None = None,
+    channel: str | None = None,
 ) -> CounterpartyPaymentDraft:
+    """Черновик оплаты накладных. ``channel`` выбирает банк-плательщика: ``bank_draft``
+    (по умолчанию, Т-Банк) или ``bank_draft_sber`` (Сбер) — тем же интерфейсом, что и
+    свободный вывод из окна «Новый платёж»; провайдер запоминается на черновике."""
     unique_ids = list(dict.fromkeys(invoice_ids))
     if not unique_ids:
         raise CounterpartyPaymentError("Не выбраны накладные для оплаты")
@@ -242,13 +246,24 @@ async def create_payment_draft_for_invoices(
 
     total = Decimal(0)
     for inv in invoices:
-        total += _money(inv.amount) - await _allocated_amount(session, inv.id)
+        if inv.barter_role == "loan":
+            # Долг займа частично гасится ТОВАРОМ (леджер BarterReturnLine) и прощённым
+            # недовесом — в аллокациях этого нет, поэтому «сумма − аллокации» завышена. Без
+            # поправки черновик уходит в банк на полную сумму, и мы платим за уже возвращённое.
+            from app.services.warehouse_invoices import loan_settled_value
+
+            total += _money(inv.amount) - await loan_settled_value(session, inv)
+        else:
+            total += _money(inv.amount) - await _allocated_amount(session, inv.id)
     total = _money(total)
     if total <= 0:
         raise CounterpartyPaymentError("Сумма к оплате равна нулю")
 
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    provider = channel_provider(channel) or "tbank"
+    payer_account = payer_account_for(settings, provider) if channel else _payer_account(settings)
+    if not payer_account:
+        raise CounterpartyPaymentError(f"Не настроен расчётный счёт плательщика ({provider})")
 
     requisites: dict[str, Any]
     if pays_via_safe:
@@ -272,6 +287,7 @@ async def create_payment_draft_for_invoices(
         service_period_start=period_start,
         service_period_end=period_end,
         created_by_user_id=actor_user_id,
+        bank_provider=provider,
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
@@ -288,7 +304,7 @@ async def create_payment_draft_for_invoices(
     except ValueError as exc:
         raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
 
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
             document_id=document_id,
