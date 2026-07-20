@@ -315,6 +315,13 @@ class OperationSplitItem(BaseModel):
     # Заводит EmployeePayout(«выплачено») → расчёт ЗП вычтет сумму из «к выдаче». На не-зарплатной
     # статье запрещён (валидируется в apply_operation_split).
     employee_id: uuid.UUID | None = None
+    # Контрагент ЭТОЙ доли: один платёж часто покрывает расходы разных контрагентов («овощи +
+    # коробки + мусорщики» одним переводом). Пусто — берётся общий ``counterparty_id`` запроса.
+    counterparty_id: uuid.UUID | None = None
+    # Контрагент этой доли — тот, кого создаём из распознанных данных операции
+    # (``new_counterparty_name``/``_inn``). Без флага новый контрагент остаётся лишь общим
+    # дефолтом и в доли, где контрагент осознанно не указан, не протекает.
+    create_counterparty: bool = False
 
 
 class OperationClassifyRequest(BaseModel):
@@ -369,6 +376,8 @@ class CashflowSplitItem(BaseModel):
     # Для зарплатной статьи: сотрудник-получатель (заводит EmployeePayout «выплачено» → учёт
     # в ведомости). На не-зарплатной статье запрещён (валидируется в apply_cashflow_split).
     employee_id: uuid.UUID | None = None
+    # Контрагент ЭТОЙ доли (см. OperationSplitItem). Пусто — общий ``counterparty_id`` запроса.
+    counterparty_id: uuid.UUID | None = None
 
 
 class CashflowClassifyRequest(BaseModel):
@@ -389,6 +398,24 @@ class CashflowClassifyRequest(BaseModel):
 class CashflowClassifyRead(BaseModel):
     transaction_id: uuid.UUID
     cashflow_transaction_ids: list[uuid.UUID] = Field(default_factory=list)
+
+
+class OperationSplitLineRead(BaseModel):
+    """Одна доля уже проведённого разбора операции (проводка ДДС + её привязки)."""
+
+    cashflow_transaction_id: uuid.UUID
+    article_id: uuid.UUID | None = None
+    amount: Decimal
+    counterparty_id: uuid.UUID | None = None
+    invoice_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+
+
+class OperationSplitRead(BaseModel):
+    bank_operation_id: uuid.UUID
+    amount: Decimal
+    classification_status: str
+    lines: list[OperationSplitLineRead] = Field(default_factory=list)
 
 
 class OperationClassifyRead(BaseModel):

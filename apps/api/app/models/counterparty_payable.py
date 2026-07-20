@@ -673,8 +673,12 @@ class InvoicePaymentAllocation(Base):
 
     __tablename__ = "invoice_payment_allocation"
     __table_args__ = (
+        # Денежный ключ и предоплатный — взаимоисключающие. А вот операция выписки и проводка
+        # ДДС — две метки ОДНОГО платёжного факта: доля разбора операции несёт обе (операция для
+        # прежних дверей, проводка — чтобы «бюджет платежа» считался по доле, а не по всей
+        # операции, см. ``payment_allocated_amount``).
         CheckConstraint(
-            "((bank_operation_id is not null)::int + (cashflow_transaction_id is not null)::int "
+            "((bank_operation_id is not null or cashflow_transaction_id is not null)::int "
             "+ (prepayment_id is not null)::int) <= 1",
             name="ck_invoice_allocation_single_source",
         ),

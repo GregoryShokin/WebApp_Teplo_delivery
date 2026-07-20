@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,6 +21,7 @@ import {
   classifyCashflowTransaction,
   classifyOperation,
   getDdsArticles,
+  getDdsOperationSplit,
   getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   getDdsWallets,
@@ -63,6 +64,11 @@ type SplitRow = {
   invoiceId: string;
   employeeId: string;
   transferWalletId: string;
+  // Контрагент ЭТОЙ строки: один платёж часто покрывает расходы разных контрагентов («овощи +
+  // коробки + мусорщики» одним переводом), поэтому контрагент живёт в строке, а не в разборе.
+  counterpartyId: string;
+  // Контрагента этой строки создаём из распознанных данных операции (его нет в реестре).
+  createNewCounterparty: boolean;
 };
 
 const ACTION_TOAST: Record<string, string> = {
@@ -92,7 +98,10 @@ export function OperationClassifyDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const isOperation = row?.kind === "operation";
+  // Проводка, порождённая выпиской, разбирается ТОЛЬКО через свою операцию (её и ждёт бэк:
+  // POST /transactions/{id}/classify на такую проводку отвечает «разбирают через операцию»).
+  // Поэтому режим определяет наличие банк-операции, а не вид строки журнала.
+  const isOperation = row?.kind === "operation" || Boolean(row?.bank_operation_id);
   const targetId = isOperation ? row?.bank_operation_id ?? "" : row?.id ?? "";
 
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
@@ -102,8 +111,6 @@ export function OperationClassifyDialog({
   });
   const walletsQuery = useQuery({ queryKey: ["dds", "wallets"], queryFn: getDdsWallets });
   const [rows, setRows] = useState<SplitRow[]>([]);
-  const [counterpartyId, setCounterpartyId] = useState("");
-  const [createNewCounterparty, setCreateNewCounterparty] = useState(false);
   const [rememberAsRule, setRememberAsRule] = useState(false);
   // Явное подтверждение ручной привязки карт-оплаты к накладной (см. bindsInvoiceOnCard ниже).
   const [cardBindAck, setCardBindAck] = useState(false);
@@ -122,6 +129,8 @@ export function OperationClassifyDialog({
     : undefined;
 
   // Сброс формы при смене строки: одна доля на всю сумму (у проводки — с её текущей статьёй).
+  // Уже разобранная операция догружает свои доли ниже (splitQuery) — здесь лишь стартовое
+  // состояние, чтобы диалог не мигал пустотой, пока разбор едет.
   useEffect(() => {
     if (row) {
       setRows([
@@ -132,16 +141,41 @@ export function OperationClassifyDialog({
           invoiceId: "",
           employeeId: "",
           transferWalletId: "",
+          counterpartyId: row.counterparty_id ?? matchedByInn?.id ?? "",
+          createNewCounterparty: false,
         },
       ]);
-      setCounterpartyId(row.counterparty_id ?? matchedByInn?.id ?? "");
-      setCreateNewCounterparty(false);
       setRememberAsRule(false);
       setCardBindAck(false);
     }
   }, [row?.id, matchedByInn?.id]);
 
-  const total = row ? Number(row.amount) : 0;
+  // Текущий разбор операции: строки журнала показывают ДОЛЮ, а разносится всегда операция
+  // целиком — сумма и доли берутся отсюда, иначе повторный разбор «терял» бы остальные доли.
+  const splitQuery = useQuery({
+    queryKey: ["dds", "operation-split", targetId],
+    queryFn: () => getDdsOperationSplit(targetId),
+    enabled: isOperation && Boolean(targetId),
+  });
+
+  useEffect(() => {
+    const lines = splitQuery.data?.lines ?? [];
+    if (!lines.length) return;
+    setRows(
+      lines.map((line) => ({
+        key: crypto.randomUUID(),
+        articleId: line.article_id ?? "none",
+        amount: line.amount,
+        invoiceId: line.invoice_id ?? "",
+        employeeId: line.employee_id ?? "",
+        transferWalletId: "",
+        counterpartyId: line.counterparty_id ?? "",
+        createNewCounterparty: false,
+      })),
+    );
+  }, [splitQuery.data]);
+
+  const total = Number(splitQuery.data?.amount ?? row?.amount ?? 0);
   const allocated = round2(rows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
   const remainder = round2(total - allocated);
   const balanced = Math.abs(remainder) < 0.005 && rows.every((item) => Number(item.amount) > 0);
@@ -189,11 +223,6 @@ export function OperationClassifyDialog({
       )
       .map((a) => a.id),
   );
-  const usesSupplierPayment =
-    Boolean(supplierPaymentArticleId) &&
-    rows.some((item) => item.articleId === supplierPaymentArticleId);
-  const usesAdvance =
-    Boolean(advanceArticleId) && rows.some((item) => item.articleId === advanceArticleId);
   const usesSalaryArticle = rows.some((item) => salaryArticleIds.has(item.articleId));
 
   // Карт-операция (получатель в банке — эквайер, не поставщик): её оплату не привязывают к
@@ -206,12 +235,26 @@ export function OperationClassifyDialog({
     Boolean(supplierPaymentArticleId) &&
     rows.some((item) => item.articleId === supplierPaymentArticleId && Boolean(item.invoiceId));
 
-  // Неоплаченные накладные контрагента (привязка оплаты) — только для операции выписки.
-  const invoicesQuery = useQuery({
-    queryKey: ["dds", "cp-unpaid-invoices", counterpartyId],
-    queryFn: () => getDdsUnpaidInvoices(counterpartyId),
-    enabled: isOperation && Boolean(counterpartyId) && usesSupplierPayment,
+  // Неоплаченные накладные — по контрагенту КАЖДОЙ строки «Оплата поставщикам» (в одном платеже
+  // строки могут гасить накладные разных контрагентов). Один запрос на контрагента, кэш общий.
+  const invoiceCounterpartyIds = Array.from(
+    new Set(
+      rows
+        .filter((item) => item.articleId === supplierPaymentArticleId && item.counterpartyId)
+        .map((item) => item.counterpartyId),
+    ),
+  );
+  const invoiceQueries = useQueries({
+    queries: invoiceCounterpartyIds.map((cpId) => ({
+      queryKey: ["dds", "cp-unpaid-invoices", cpId],
+      queryFn: () => getDdsUnpaidInvoices(cpId),
+      enabled: isOperation,
+    })),
   });
+  const invoicesByCounterparty = new Map(
+    invoiceCounterpartyIds.map((cpId, index) => [cpId, invoiceQueries[index]?.data ?? []]),
+  );
+  const invoicesFor = (cpId: string) => invoicesByCounterparty.get(cpId) ?? [];
   // Сотрудники для зарплатной строки — активные + увольняемые (обходит запрет /staff кассиру).
   const usesAdvanceArticle = rows.some((item) => employeeAdvanceArticleIds.has(item.articleId));
   const payoutEmployeesQuery = useQuery({
@@ -270,6 +313,10 @@ export function OperationClassifyDialog({
         invoiceId: "",
         employeeId: "",
         transferWalletId: "",
+        // Частый случай — тот же поставщик в двух статьях: контрагент наследуется от предыдущей
+        // строки, а если платёж покрывает разных — правится точечно в самой строке.
+        counterpartyId: current[current.length - 1]?.counterpartyId ?? "",
+        createNewCounterparty: current[current.length - 1]?.createNewCounterparty ?? false,
       },
     ]);
   }
@@ -287,8 +334,8 @@ export function OperationClassifyDialog({
       toast.error("Сумма по статьям должна равняться сумме");
       return;
     }
-    if (usesAdvance && !counterpartyId && !createNewCounterparty) {
-      toast.error("Для статьи «Авансы поставщикам» выберите контрагента");
+    if (advanceRowMissingCounterparty) {
+      toast.error("Для статьи «Авансы поставщикам» выберите контрагента в строке");
       return;
     }
     if (rows.some((item) => salaryArticleIds.has(item.articleId) && !item.employeeId)) {
@@ -304,6 +351,7 @@ export function OperationClassifyDialog({
       return;
     }
     if (isOperation) {
+      const createsCounterparty = rows.some((item) => item.createNewCounterparty);
       mutation.mutate({
         action: "split",
         splits: rows.map((item) => ({
@@ -313,10 +361,12 @@ export function OperationClassifyDialog({
             item.articleId === supplierPaymentArticleId && item.invoiceId ? item.invoiceId : null,
           employee_id:
             salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
+          counterparty_id: item.createNewCounterparty ? null : item.counterpartyId || null,
+          create_counterparty: item.createNewCounterparty,
         })),
-        counterparty_id: createNewCounterparty ? null : counterpartyId || null,
-        new_counterparty_name: createNewCounterparty ? row.counterparty_name_raw : null,
-        new_counterparty_inn: createNewCounterparty ? row.counterparty_inn_raw : null,
+        counterparty_id: null,
+        new_counterparty_name: createsCounterparty ? row?.counterparty_name_raw ?? null : null,
+        new_counterparty_inn: createsCounterparty ? row?.counterparty_inn_raw ?? null : null,
         // Правило не запоминаем при карт-привязке (backend его тоже отклонит) — чекбокс скрыт.
         remember_as_rule: rememberAsRule && rows.length === 1 && !bindsInvoiceOnCard,
         // Карт-операция + привязанная накладная: разрешаем guard пропустить карт-шум.
@@ -331,8 +381,9 @@ export function OperationClassifyDialog({
           transfer_wallet_id: isTransferRow(item.articleId) ? item.transferWalletId || null : null,
           employee_id:
             salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
+          counterparty_id: item.counterpartyId || null,
         })),
-        counterparty_id: counterpartyId || null,
+        counterparty_id: null,
       });
     }
   }
@@ -355,9 +406,9 @@ export function OperationClassifyDialog({
     { value: "", label: "Не указан" },
     ...counterparties.map((cp) => ({ value: cp.id, label: cp.name, keywords: cp.inn ?? undefined })),
   ];
-  const invoiceOptions: ComboboxOption[] = [
+  const invoiceOptionsFor = (cpId: string): ComboboxOption[] => [
     { value: "", label: "Не привязывать" },
-    ...(invoicesQuery.data ?? []).map((inv) => ({
+    ...invoicesFor(cpId).map((inv) => ({
       value: inv.id,
       label: `№ ${inv.number ?? "б/н"} · остаток ${formatDdsMoney(inv.remaining)}`,
       keywords: inv.number ?? undefined,
@@ -378,16 +429,14 @@ export function OperationClassifyDialog({
     .filter((wallet) => wallet.id !== row.wallet_id && wallet.status === "active")
     .map((wallet) => ({ value: wallet.id, label: wallet.name, keywords: wallet.code }));
 
-  function selectCounterparty(value: string) {
-    setCounterpartyId(value);
-    setCreateNewCounterparty(false);
-    setRows((current) => current.map((item) => ({ ...item, invoiceId: "" })));
+  // Контрагент меняется в СТРОКЕ: сбрасываем накладную только этой строки — накладные соседних
+  // строк (других контрагентов) не трогаем.
+  function selectCounterparty(key: string, value: string) {
+    updateRow(key, { counterpartyId: value, createNewCounterparty: false, invoiceId: "" });
   }
 
-  function selectNewCounterparty() {
-    setCounterpartyId("");
-    setCreateNewCounterparty(true);
-    setRows((current) => current.map((item) => ({ ...item, invoiceId: "" })));
+  function selectNewCounterparty(key: string) {
+    updateRow(key, { counterpartyId: "", createNewCounterparty: true, invoiceId: "" });
   }
 
   // Деталь строки (открывается по клику на строку) — зависит от статьи: сотрудник (зарплата) ·
@@ -402,11 +451,12 @@ export function OperationClassifyDialog({
     if (!isOperation && isTransferRow(item.articleId)) return "transfer";
     return "counterparty";
   };
-  const selectedCounterpartyName = createNewCounterparty
-    ? `Будет создан: ${row.counterparty_name_raw ?? ""}`
-    : counterpartyId
-      ? counterparties.find((cp) => cp.id === counterpartyId)?.name ?? ""
-      : "";
+  const counterpartyNameOf = (item: SplitRow) =>
+    item.createNewCounterparty
+      ? `Будет создан: ${row.counterparty_name_raw ?? ""}`
+      : item.counterpartyId
+        ? counterparties.find((cp) => cp.id === item.counterpartyId)?.name ?? ""
+        : "";
   const rowDetailSummary = (item: SplitRow): { text: string; missing: boolean } => {
     switch (rowDetailKind(item)) {
       case "employee": {
@@ -430,13 +480,14 @@ export function OperationClassifyDialog({
       }
       case "counterparty": {
         const isAdvanceRow = item.articleId === advanceArticleId;
-        if (selectedCounterpartyName) {
-          const inv = (invoicesQuery.data ?? []).find((x) => x.id === item.invoiceId);
+        const counterpartyName = counterpartyNameOf(item);
+        if (counterpartyName) {
+          const inv = invoicesFor(item.counterpartyId).find((x) => x.id === item.invoiceId);
           const invText =
             item.articleId === supplierPaymentArticleId && inv
               ? ` · накладная № ${inv.number ?? "б/н"}`
               : "";
-          return { text: `Контрагент: ${selectedCounterpartyName}${invText}`, missing: false };
+          return { text: `Контрагент: ${counterpartyName}${invText}`, missing: false };
         }
         return isAdvanceRow
           ? { text: "нужен контрагент", missing: true }
@@ -450,6 +501,11 @@ export function OperationClassifyDialog({
 
   const salaryRowMissingEmployee = rows.some(
     (item) => salaryArticleIds.has(item.articleId) && !item.employeeId,
+  );
+  // Аванс поставщику рождает дебиторку — без контрагента непонятно, чья она (гард есть и на бэке).
+  const advanceRowMissingCounterparty = rows.some(
+    (item) =>
+      item.articleId === advanceArticleId && !item.counterpartyId && !item.createNewCounterparty,
   );
 
   // «Пополнение Сейфа»: если строки размечены статьёй/получателем — это уже целёвки-резервы
@@ -465,8 +521,8 @@ export function OperationClassifyDialog({
           amount: item.amount,
           employee_id:
             salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
+          counterparty_id: item.counterpartyId || null,
         })),
-        counterparty_id: counterpartyId || null,
       });
     } else {
       mutation.mutate({ action: "mark_safe_topup" });
@@ -508,7 +564,7 @@ export function OperationClassifyDialog({
             <DdsStatusBadge status={row.status} />
           </DialogTitle>
           <DialogDescription className="text-base font-medium text-foreground">
-            {formatDate(row.operation_date)} · {formatDdsMoney(row.amount)}
+            {formatDate(row.operation_date)} · {formatDdsMoney(total)}
           </DialogDescription>
         </DialogHeader>
 
@@ -619,7 +675,7 @@ export function OperationClassifyDialog({
                 disabled={
                   isBusy ||
                   !balanced ||
-                  (usesAdvance && !counterpartyId && !createNewCounterparty) ||
+                  advanceRowMissingCounterparty ||
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
                   usesAdvanceArticle ||
@@ -806,14 +862,14 @@ export function OperationClassifyDialog({
             ) : null}
             {rowDetailKind(detailRow) === "counterparty" ? (
               <>
-                {isOperation && createNewCounterparty ? (
+                {isOperation && detailRow.createNewCounterparty ? (
                   <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
                     <span>
                       Будет создан: <span className="font-medium">{row.counterparty_name_raw}</span>
                       {row.counterparty_inn_raw ? ` · ИНН ${row.counterparty_inn_raw}` : ""}
                     </span>
                     <Button
-                      onClick={() => setCreateNewCounterparty(false)}
+                      onClick={() => updateRow(detailRow.key, { createNewCounterparty: false })}
                       size="sm"
                       type="button"
                       variant="ghost"
@@ -823,10 +879,13 @@ export function OperationClassifyDialog({
                   </div>
                 ) : (
                   <>
-                    {isOperation && row.counterparty_name_raw && !counterpartyId && !matchedByInn ? (
+                    {isOperation &&
+                    row.counterparty_name_raw &&
+                    !detailRow.counterpartyId &&
+                    !matchedByInn ? (
                       <button
                         className="self-start text-left text-sm font-medium text-emerald-700 hover:underline"
-                        onClick={selectNewCounterparty}
+                        onClick={() => selectNewCounterparty(detailRow.key)}
                         type="button"
                       >
                         + Создать контрагента из операции: {row.counterparty_name_raw}
@@ -835,8 +894,8 @@ export function OperationClassifyDialog({
                     ) : null}
                     <InlineOptionList
                       options={counterpartyOptions}
-                      value={counterpartyId}
-                      onChange={selectCounterparty}
+                      value={detailRow.counterpartyId}
+                      onChange={(value) => selectCounterparty(detailRow.key, value)}
                       searchPlaceholder="Поиск по названию или ИНН…"
                       emptyMessage="Контрагенты не найдены"
                       listClassName="max-h-[20rem]"
@@ -847,11 +906,13 @@ export function OperationClassifyDialog({
                   <div className="space-y-1">
                     <Label className="text-sm">Накладная для гашения</Label>
                     <InlineOptionList
-                      options={invoiceOptions}
+                      options={invoiceOptionsFor(detailRow.counterpartyId)}
                       value={detailRow.invoiceId}
                       onChange={(value) => updateRow(detailRow.key, { invoiceId: value })}
                       searchPlaceholder="Поиск по номеру…"
-                      emptyMessage={counterpartyId ? "Накладных нет" : "Сначала выберите контрагента"}
+                      emptyMessage={
+                        detailRow.counterpartyId ? "Накладных нет" : "Сначала выберите контрагента"
+                      }
                       listClassName="max-h-48"
                       autoFocus={false}
                     />

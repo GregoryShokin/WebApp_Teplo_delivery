@@ -15,12 +15,13 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models import (
     BankOperation,
+    CashflowTransaction,
     Counterparty,
     CounterpartyPaymentDraft,
     InvoicePaymentAllocation,
@@ -56,22 +57,30 @@ async def payment_allocated_amount(
     """«Бюджет платежа»: сколько денег ОДНОГО платёжного факта уже пристроено на документы.
 
     Один платёж живёт под ДВУМЯ ключами — проводка ДДС (``cashflow_transaction_id``) и
-    банковская операция (``bank_operation_id``), — а CHECK ``ck_invoice_allocation_single_source``
-    запрещает аллокации нести оба сразу. Поэтому каждый счётчик по отдельности видит лишь свою
+    банковская операция (``bank_operation_id``). Каждый счётчик по отдельности видит лишь свою
     половину платежа: правило 1 метит зачёты кредиторки ПРОВОДКОЙ, банковская сверка метит оплату
     счёта ОПЕРАЦИЕЙ, и друг друга они не видят. Отсюда росли задвоение дебиторки (одни деньги
     дважды становились авансом) и перерасход платежа (1000 ₽ закрывали документов на 1300 ₽).
 
-    Здесь мост между ключами (``BankOperation.cashflow_transaction_id``) сшивается и сумма
-    считается по ОБОИМ — единственный честный ответ на вопрос «сколько из этого платежа уже
-    израсходовано». Аллокации ``source_kind='prepayment'`` не в счёт: их финансирует ранее
-    выданная предоплата, а не сам платёж.
+    Здесь мост между ключами (``BankOperation.cashflow_transaction_id`` и проводки операции)
+    сшивается и сумма считается по ОБОИМ — единственный честный ответ на вопрос «сколько из
+    этого платежа уже израсходовано». Аллокации ``source_kind='prepayment'`` не в счёт: их
+    финансирует ранее выданная предоплата, а не сам платёж.
+
+    БЮДЖЕТ ДОЛИ vs БЮДЖЕТ ОПЕРАЦИИ. Разбор операции построчный: у каждой доли свой контрагент,
+    и гашение накладной помечено И операцией, И проводкой доли. Поэтому мост «проводка →
+    операция» (вопрос про долю) подтягивает только НЕатрибутированные аллокации операции —
+    иначе доля контрагента А засчитала бы себе гашения доли контрагента Б и осталась бы без
+    дебиторки. Вопрос про операцию (``bank_operation_id``) — наоборот, считает всё: там бюджет
+    общий, и на него опирается потолок ручной сверки.
     """
     tx_ids: set[uuid.UUID] = set()
     op_ids: set[uuid.UUID] = set()
+    # Операции, притянутые мостом ОТ проводки: их аллокации считаем только «ничьи» (см. докстринг).
+    bridged_op_ids: set[uuid.UUID] = set()
     if transaction_id is not None:
         tx_ids.add(transaction_id)
-        op_ids.update(
+        bridged_op_ids.update(
             (
                 await session.scalars(
                     select(BankOperation.id).where(
@@ -85,7 +94,20 @@ async def payment_allocated_amount(
         operation = await session.get(BankOperation, bank_operation_id)
         if operation is not None and operation.cashflow_transaction_id is not None:
             tx_ids.add(operation.cashflow_transaction_id)
-    if not tx_ids and not op_ids:
+        # Все доли разбора: правило 1 метит свои зачёты проводкой доли, а якорь операции — лишь
+        # первая из них. Без остальных бюджет операции занижен и сверка выдала бы лишние деньги.
+        tx_ids.update(
+            (
+                await session.scalars(
+                    select(CashflowTransaction.id).where(
+                        CashflowTransaction.source_kind == "bank_operation",
+                        CashflowTransaction.source_id == bank_operation_id,
+                    )
+                )
+            ).all()
+        )
+    bridged_op_ids -= op_ids
+    if not tx_ids and not op_ids and not bridged_op_ids:
         return _money(0)
 
     key_filters = []
@@ -93,6 +115,13 @@ async def payment_allocated_amount(
         key_filters.append(InvoicePaymentAllocation.cashflow_transaction_id.in_(tx_ids))
     if op_ids:
         key_filters.append(InvoicePaymentAllocation.bank_operation_id.in_(op_ids))
+    if bridged_op_ids:
+        key_filters.append(
+            and_(
+                InvoicePaymentAllocation.bank_operation_id.in_(bridged_op_ids),
+                InvoicePaymentAllocation.cashflow_transaction_id.is_(None),
+            )
+        )
     total = await session.scalar(
         select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
             InvoicePaymentAllocation.source_kind != "prepayment",

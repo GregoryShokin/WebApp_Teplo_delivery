@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -407,8 +407,22 @@ async def apply_operation_action(
                 "Операция оплачивает накладную, отправленную в банк-черновик — "
                 "сначала откатите черновик"
             )
+        # Все доли разбора, а не только якорная проводка: у мультисплита предоплата правила 1
+        # висит на КАЖДОЙ доле (у каждой свой контрагент), и по якорю снеслась бы лишь первая —
+        # остальные остались бы открытой дебиторкой без денег за ней.
+        operation_transaction_ids = set(
+            (
+                await session.scalars(
+                    select(CashflowTransaction.id).where(
+                        CashflowTransaction.source_kind == "bank_operation",
+                        CashflowTransaction.source_id == operation.id,
+                    )
+                )
+            ).all()
+        )
         if operation.cashflow_transaction_id is not None:
-            await _drop_untouched_bank_prepayments(session, {operation.cashflow_transaction_id})
+            operation_transaction_ids.add(operation.cashflow_transaction_id)
+        await _drop_untouched_bank_prepayments(session, operation_transaction_ids)
         operation.classification_status = (
             "internal_transfer" if action == "mark_internal_transfer" else "excluded"
         )
@@ -757,11 +771,27 @@ async def resolve_or_create_operation_counterparty(
     return counterparty.id
 
 
+class OperationSplitLine(NamedTuple):
+    """Одна доля разбора банк-операции.
+
+    ``counterparty_id`` — контрагент ИМЕННО этой доли: один платёж часто покрывает расходы
+    разных контрагентов («овощи + коробки + мусорщики» одним переводом), поэтому контрагент —
+    свойство строки, а не операции. Пусто — берётся общий ``counterparty_id`` вызова.
+    """
+
+    article_id: UUID
+    amount: Decimal
+    comment: str | None = None
+    invoice_id: UUID | None = None
+    employee_id: UUID | None = None
+    counterparty_id: UUID | None = None
+
+
 async def apply_operation_split(
     session: AsyncSession,
     operation: BankOperation,
     *,
-    splits: list[tuple[UUID, Decimal, str | None, UUID | None, UUID | None]],
+    splits: list[OperationSplitLine | tuple[Any, ...]],
     counterparty_id: UUID | None = None,
     quality_status: str = "owner_review",
     actor_user_id: UUID | None = None,
@@ -769,7 +799,12 @@ async def apply_operation_split(
 ) -> list[UUID]:
     """Spread one bank operation across one or more DDS articles.
 
-    Splits are ``(article_id, amount, comment, invoice_id, employee_id)``.
+    Splits are ``OperationSplitLine`` (голые кортежи той же формы тоже принимаются).
+
+    Контрагент — свойство ДОЛИ (``line.counterparty_id``), общий ``counterparty_id`` служит
+    дефолтом для долей, где он не задан. Поэтому одна операция может разнестись на несколько
+    контрагентов сразу: каждая порождённая проводка (и её дебиторка/гашение накладной) идёт в
+    карточку своего контрагента.
 
     Balance is taken from the statement (see ``_wallet_movement_deltas``), so this
     only fills DDS analytics — the split amounts must add up to the operation amount
@@ -777,8 +812,10 @@ async def apply_operation_split(
     booked from this operation, then books one cashflow row per article.
 
     Строка со статьёй «Оплата поставщикам» с указанным ``invoice_id`` дополнительно гасит эту
-    накладную на сумму строки (банковская аллокация на операцию). Поддержаны несколько накладных
-    на одну операцию (мультисплит) и частичная оплата (сумма строки ≤ остатка накладной).
+    накладную на сумму строки (банковская аллокация, помеченная И операцией, И проводкой доли).
+    Поддержаны несколько накладных на одну операцию (мультисплит, в т.ч. разных контрагентов —
+    каждая накладная гасится долей СВОЕГО контрагента) и частичная оплата (сумма строки ≤
+    остатка накладной). Одну накладную дважды в одном разборе гасить нельзя.
 
     Строка с зарплатной статьёй (``EMPLOYEE_PAYOUT_ARTICLE_CODES``) и указанным ``employee_id``
     заводит ``EmployeePayout`` («выплачено»), привязанный к порождённой проводке — расчёт ЗП
@@ -800,25 +837,31 @@ async def apply_operation_split(
 
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
-    # Совместимость: строка разбора — (article, amount, comment, invoice_id[, employee_id]).
-    # Старые вызовы без сотрудника (4-кортеж) дополняем employee_id=None.
-    splits = [tuple(item) + (None,) * (5 - len(item)) for item in splits]
-    total = sum((amount for _article, amount, *_rest in splits), Decimal("0"))
+    # Совместимость: доля — (article, amount, comment, invoice_id[, employee_id
+    # [, counterparty_id]]). Старые вызовы (4- и 5-кортежи) дополняются дефолтами NamedTuple.
+    lines = [
+        line if isinstance(line, OperationSplitLine) else OperationSplitLine(*line)
+        for line in splits
+    ]
+    total = sum((line.amount for line in lines), Decimal("0"))
     if total != Decimal(operation.amount):
         raise ValueError(f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})")
     wallet = await _wallet_for_operation(session, operation)
     if wallet is None:
         raise ValueError("Не найден кошелёк для операции")
 
+    # Контрагент доли: свой либо общий по операции (дефолт запроса).
+    def line_counterparty(line: OperationSplitLine) -> UUID | None:
+        return line.counterparty_id or counterparty_id
+
     # Строка со статьёй «Авансы поставщикам» создаёт дебиторку на контрагента — без него
-    # непонятно, чья это предоплата, поэтому контрагент обязателен.
+    # непонятно, чья это предоплата, поэтому контрагент обязателен У САМОЙ СТРОКИ.
     advance_article_id = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
     )
-    uses_advance = advance_article_id is not None and any(
-        article_id == advance_article_id for article_id, *_rest in splits
-    )
-    if uses_advance and counterparty_id is None:
+    if advance_article_id is not None and any(
+        line.article_id == advance_article_id and line_counterparty(line) is None for line in lines
+    ):
         raise ValueError("Для статьи «Авансы поставщикам» укажите контрагента")
 
     # Зарплатные статьи: строка с сотрудником заведёт EmployeePayout. employee_id вне зарплатной
@@ -830,8 +873,8 @@ async def apply_operation_split(
             )
         ).all()
     )
-    for article_id, _amount, _comment, _invoice, employee_id in splits:
-        if employee_id is not None and article_id not in salary_article_ids:
+    for line in lines:
+        if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
 
     # Привязки накладных: валидируем статью и пригодность ДО любых записей.
@@ -839,31 +882,34 @@ async def apply_operation_split(
         select(DdsArticle.id).where(DdsArticle.code == SUPPLIER_PAYMENT_ARTICLE_CODE)
     )
     invoice_by_id: dict[UUID, SupplierInvoice] = {}
-    for article_id, _amount, _comment, invoice_id, _employee in splits:
-        if invoice_id is None:
+    # Контрагент доли, выведенный из её накладной (доля без явного контрагента наследует его от
+    # накладной, которую гасит) — им же заполняется проводка и её дебиторка.
+    resolved_counterparty: dict[int, UUID | None] = {}
+    for index, line in enumerate(lines):
+        resolved_counterparty[index] = line_counterparty(line)
+        if line.invoice_id is None:
             continue
-        if supplier_payment_article_id is None or article_id != supplier_payment_article_id:
+        if supplier_payment_article_id is None or line.article_id != supplier_payment_article_id:
             raise ValueError("Накладную можно привязать только к строке «Оплата поставщикам»")
-        invoice = await session.get(SupplierInvoice, invoice_id)
+        if line.invoice_id in invoice_by_id:
+            # Иначе проверка остатка (она ищет сумму строки по накладной) увидела бы только первую
+            # долю, а погасили бы обе — накладная ушла бы в переплату.
+            raise ValueError("Одну накладную нельзя гасить двумя строками разбора")
+        invoice = await session.get(SupplierInvoice, line.invoice_id)
         if invoice is None:
             raise ValueError("Накладная не найдена")
         try:
             assert_bank_matchable(invoice, operation, allow_card=allow_card)
         except CounterpartyMatchError as error:
             raise ValueError(str(error)) from error
-        invoice_by_id[invoice_id] = invoice
-
-    # Накладная и аналитика ДДС обязаны указывать на одного контрагента. Без этой проверки
-    # проводка могла попасть в карточку B, одновременно погасив накладную карточки A.
-    invoice_counterparty_ids = {invoice.counterparty_id for invoice in invoice_by_id.values()}
-    if len(invoice_counterparty_ids) > 1:
-        raise ValueError("В одной операции нельзя гасить накладные разных контрагентов")
-    if invoice_counterparty_ids:
-        invoice_counterparty_id = next(iter(invoice_counterparty_ids))
-        if counterparty_id is None:
-            counterparty_id = invoice_counterparty_id
-        elif counterparty_id != invoice_counterparty_id:
+        # Накладная и аналитика ДДС обязаны указывать на одного контрагента — иначе проводка
+        # попала бы в карточку Б, одновременно погасив накладную карточки А. Проверка живёт на
+        # УРОВНЕ ДОЛИ: разные доли одной операции могут гасить накладные разных контрагентов.
+        if resolved_counterparty[index] is None:
+            resolved_counterparty[index] = invoice.counterparty_id
+        elif resolved_counterparty[index] != invoice.counterparty_id:
             raise ValueError("Выбранный контрагент не совпадает с контрагентом накладной")
+        invoice_by_id[line.invoice_id] = invoice
 
     # Re-split: снять прежние гашения накладных ЭТОЙ операцией (cashflow чистит
     # _clear_operation_cashflow, аллокации — здесь), иначе повторный разбор задвоит гашение.
@@ -884,7 +930,7 @@ async def apply_operation_split(
     # увидел бы её занятой собственной прежней аллокацией).
     for invoice_id, invoice in invoice_by_id.items():
         remaining = await _invoice_remaining(session, invoice)
-        amount = next(amt for _a, amt, _c, inv, _e in splits if inv == invoice_id)
+        amount = next(line.amount for line in lines if line.invoice_id == invoice_id)
         if amount > remaining:
             raise ValueError(
                 f"Сумма ({amount}) больше остатка накладной "
@@ -919,28 +965,29 @@ async def apply_operation_split(
     await _clear_operation_cashflow(session, operation)
     created: list[UUID] = []
     free_line_txns: list[CashflowTransaction] = []
-    for article_id, amount, comment, invoice_id, employee_id in splits:
+    for index, line in enumerate(lines):
+        article_id, amount, employee_id = line.article_id, line.amount, line.employee_id
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
             direction=operation.direction,
             amount=amount,
             operation_date=operation.operation_date,
             article_id=article_id,
-            counterparty_id=counterparty_id,
+            counterparty_id=resolved_counterparty[index],
             source_kind="bank_operation",
             source_id=operation.id,
             payment_purpose=operation.payment_purpose,
-            comment=comment,
+            comment=line.comment,
             quality_status=quality_status,
         )
         session.add(transaction)
         await session.flush()
         created.append(transaction.id)
-        # Аванс поставщику → дебиторка, привязанная к этой проводке.
+        # Аванс поставщику → дебиторка, привязанная к этой проводке (на контрагента ЭТОЙ доли).
         if advance_article_id is not None and article_id == advance_article_id:
             session.add(
                 SupplierPrepayment(
-                    counterparty_id=counterparty_id,
+                    counterparty_id=resolved_counterparty[index],
                     kind="goods",
                     wallet_id=wallet.id,
                     amount=amount,
@@ -951,21 +998,25 @@ async def apply_operation_split(
                 )
             )
             await session.flush()
-        # Оплата поставщику с привязкой → гасим накладную на сумму строки.
-        if invoice_id is not None:
+        # Оплата поставщику с привязкой → гасим накладную на сумму строки. Аллокацию метим И
+        # операцией, И проводкой доли: без второй метки «бюджет платежа» считался бы по всей
+        # операции и доля контрагента А съедала бы деньги доли контрагента Б (см.
+        # ``payment_allocated_amount``).
+        if line.invoice_id is not None:
             await _apply_bank_allocation(
                 session,
-                invoice=invoice_by_id[invoice_id],
+                invoice=invoice_by_id[line.invoice_id],
                 operation=operation,
                 amount=amount,
                 actor_user_id=actor_user_id,
+                cashflow_transaction_id=transaction.id,
             )
         # Прочая строка расхода на контрагента с предоплатной моделью по банк-фиду (кейс
         # Манго): доля пополняет дебиторку, как и при простой классификации через set_article.
         # Аванс (goods-предоплата выше), оплата накладной и выплата ЗП обрабатываются отдельно.
         is_advance = advance_article_id is not None and article_id == advance_article_id
         is_payout = employee_id is not None and article_id in salary_article_ids
-        if not is_advance and invoice_id is None and not is_payout:
+        if not is_advance and line.invoice_id is None and not is_payout:
             # Правило 1 (FIFO-гашение открытой КЗ / предоплата) откладываем на ПОСЛЕ цикла: иначе
             # свободная строка погасила бы FIFO ту же накладную, которую ЯВНО гасит другая строка
             # этого сплита (invoice_id-строка) → перерасход аллокации, порядкозависимо.
@@ -1011,6 +1062,8 @@ async def apply_operation_split(
         if invoice is not None:
             await _recompute_status(session, invoice)
 
+    # Якорь «проводка операции» = первая доля. Это лишь ссылка для контуров, ожидающих одну
+    # проводку на операцию; контрагентом операции она НЕ является — у долей он свой.
     operation.cashflow_transaction_id = created[0]
     operation.classification_status = "classified"
     return created

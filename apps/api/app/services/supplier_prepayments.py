@@ -735,7 +735,11 @@ async def _transaction_carried_bill_allocations(
     эти деньги в свою предоплату не включает; если записи НЕТ (классификация была первой —
     чокпоинт увидел rule-1-предоплату и уступил), их несёт правило 1. Считаем вторую группу:
     аллокации счетов обоими ключами платежа (cash-проводкой и bank-операцией через мост),
-    у чьих счетов prepaid_bill-записи нет."""
+    у чьих счетов prepaid_bill-записи нет.
+
+    Мост «проводка → операция» тянет только НЕатрибутированные аллокации: у разбора операции по
+    разным контрагентам гашения долей помечены своей проводкой, и чужая доля не должна попасть
+    в бюджет этой (иначе её дебиторка занижена — см. ``payment_allocated_amount``)."""
     operation_ids = select(BankOperation.id).where(
         BankOperation.cashflow_transaction_id == transaction.id
     )
@@ -755,7 +759,10 @@ async def _transaction_carried_bill_allocations(
             SupplierInvoice.doc_kind == "bill",
             InvoicePaymentAllocation.source_kind != "prepayment",
             (InvoicePaymentAllocation.cashflow_transaction_id == transaction.id)
-            | (InvoicePaymentAllocation.bank_operation_id.in_(operation_ids)),
+            | (
+                InvoicePaymentAllocation.bank_operation_id.in_(operation_ids)
+                & InvoicePaymentAllocation.cashflow_transaction_id.is_(None)
+            ),
             ~own_prepaid,
         )
     )

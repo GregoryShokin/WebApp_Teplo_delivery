@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -138,19 +139,37 @@ async def _book_transfer_counter_leg(
         await session.flush()
 
 
+class CashflowSplitLine(NamedTuple):
+    """Одна доля разбора ручной проводки ДДС.
+
+    ``counterparty_id`` — контрагент ИМЕННО этой доли (один платёж часто покрывает расходы
+    разных контрагентов). Пусто — берётся общий ``counterparty_id`` вызова.
+    """
+
+    article_id: UUID
+    amount: Decimal
+    comment: str | None = None
+    transfer_wallet_id: UUID | None = None
+    employee_id: UUID | None = None
+    counterparty_id: UUID | None = None
+
+
 async def apply_cashflow_split(
     session: AsyncSession,
     txn: CashflowTransaction,
     *,
-    splits: list[tuple[UUID, Decimal, str | None, UUID | None, UUID | None]],
+    splits: list[CashflowSplitLine | tuple[Any, ...]],
     counterparty_id: UUID | None = None,
 ) -> list[UUID]:
     """Разнести ручную проводку по нескольким статьям ДДС, сохранив баланс.
 
-    Каждая доля — ``(article_id, amount, comment, transfer_wallet_id, employee_id)``. Кликнутую
+    Каждая доля — ``CashflowSplitLine`` (голые кортежи той же формы тоже принимаются). Кликнутую
     строку мутируем в первую долю (её ``id``/``source_id``/``source_kind`` сохраняются — провенанс
     и идемпотентность импортёра), остальные доли добавляем новыми строками того же
     кошелька/направления/даты. Σ долей = сумма проводки, поэтому баланс не меняется.
+
+    Контрагент — свойство доли: общий ``counterparty_id`` служит лишь дефолтом для долей, где он
+    не задан.
 
     Доля со статьёй «перевод между счетами» и указанным ``transfer_wallet_id`` дополнительно
     заводит встречную ногу на счёт-получатель (наличный) + ``TransferGroup`` — тогда деньги не
@@ -163,8 +182,11 @@ async def apply_cashflow_split(
     ensure_cashflow_reclassifiable(txn)
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
-    # Совместимость: доля — (article, amount, comment, transfer_wallet_id[, employee_id]).
-    splits = [tuple(item) + (None,) * (5 - len(item)) for item in splits]
+    # Совместимость: доля — (article, amount, comment, transfer_wallet_id[, employee_id
+    # [, counterparty_id]]). Старые кортежи дополняются дефолтами NamedTuple.
+    splits = [
+        line if isinstance(line, CashflowSplitLine) else CashflowSplitLine(*line) for line in splits
+    ]
     salary_article_ids = set(
         (
             await session.scalars(
@@ -172,18 +194,19 @@ async def apply_cashflow_split(
             )
         ).all()
     )
-    for article_id, _amount, _comment, _wallet, employee_id in splits:
-        if employee_id is not None and article_id not in salary_article_ids:
+    for line in splits:
+        if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
     original_amount = Decimal(txn.amount)
-    total = sum((amount for _a, amount, *_rest in splits), Decimal("0"))
+    total = sum((line.amount for line in splits), Decimal("0"))
     if total != original_amount:
         raise ValueError(f"Сумма по статьям ({total}) не равна сумме проводки ({original_amount})")
 
     out_article, in_article = await _transfer_article_ids(session)
     transfer_article_ids = {a for a in (out_article, in_article) if a is not None}
     destinations: dict[UUID, Wallet] = {}
-    for article_id, _amount, _comment, transfer_wallet_id, _employee in splits:
+    for line in splits:
+        article_id, transfer_wallet_id = line.article_id, line.transfer_wallet_id
         if await session.get(DdsArticle, article_id) is None:
             raise ValueError("Статья не найдена")
         if transfer_wallet_id is None:
@@ -230,12 +253,15 @@ async def apply_cashflow_split(
         await session.flush()
 
     created: list[UUID] = []
-    for index, (article_id, amount, comment, transfer_wallet_id, employee_id) in enumerate(splits):
+    for index, line in enumerate(splits):
+        article_id, amount, employee_id = line.article_id, line.amount, line.employee_id
+        transfer_wallet_id = line.transfer_wallet_id
+        line_counterparty_id = line.counterparty_id or counterparty_id
         if index == 0:
             txn.article_id = article_id
             txn.amount = amount
-            txn.comment = comment
-            txn.counterparty_id = counterparty_id
+            txn.comment = line.comment
+            txn.counterparty_id = line_counterparty_id
             txn.quality_status = MANUAL_QUALITY
             leg = txn
         else:
@@ -245,11 +271,11 @@ async def apply_cashflow_split(
                 amount=amount,
                 operation_date=txn.operation_date,
                 article_id=article_id,
-                counterparty_id=counterparty_id,
+                counterparty_id=line_counterparty_id,
                 source_kind=SPLIT_SOURCE_KIND,
                 source_id=txn.id,
                 payment_purpose=txn.payment_purpose,
-                comment=comment,
+                comment=line.comment,
                 quality_status=MANUAL_QUALITY,
             )
             session.add(leg)

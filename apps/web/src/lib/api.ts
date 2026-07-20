@@ -2442,6 +2442,8 @@ export type OperationSplitItem = {
   invoice_id?: string | null;
   // Для зарплатной статьи: сотрудник-получатель (заводит EmployeePayout → учёт в ведомости).
   employee_id?: string | null;
+  // Контрагент ЭТОЙ строки: один платёж часто покрывает расходы разных контрагентов.
+  counterparty_id?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2469,6 +2471,8 @@ export type CashflowSplitItem = {
   transfer_wallet_id?: string | null;
   // Для зарплатной статьи: сотрудник-получатель (заводит EmployeePayout → учёт в ведомости).
   employee_id?: string | null;
+  // Контрагент ЭТОЙ строки (см. OperationSplitItem).
+  counterparty_id?: string | null;
 };
 
 // Полный разбор РУЧНОЙ проводки ДДС (без bank-операции), сохраняющий баланс кошелька.
@@ -2960,6 +2964,29 @@ export async function getDdsUnpaidInvoices(counterpartyId: string): Promise<DdsU
       direction: "payable",
     },
   });
+  return response.data;
+}
+
+// Текущий разбор банк-операции: диалог открывается на том, что уже размечено, а не с чистой
+// строки на всю сумму (иначе повторный разбор пришлось бы набивать заново).
+export type DdsOperationSplitLine = {
+  cashflow_transaction_id: string;
+  article_id: string | null;
+  amount: string;
+  counterparty_id: string | null;
+  invoice_id: string | null;
+  employee_id: string | null;
+};
+
+export type DdsOperationSplit = {
+  bank_operation_id: string;
+  amount: string;
+  classification_status: string;
+  lines: DdsOperationSplitLine[];
+};
+
+export async function getDdsOperationSplit(operationId: string): Promise<DdsOperationSplit> {
+  const response = await api.get<DdsOperationSplit>(`/dds/operations/${operationId}/split`);
   return response.data;
 }
 

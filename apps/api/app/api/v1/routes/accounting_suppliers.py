@@ -655,11 +655,15 @@ async def list_payment_register(
     ).all()
 
     tx_ids = [row[0].id for row in tx_rows]
-    bank_op_to_tx = {
-        row[0].source_id: row[0].id
-        for row in tx_rows
-        if row[0].source_kind == "bank_operation" and row[0].source_id is not None
-    }
+    # Мультисплит операции даёт НЕСКОЛЬКО проводок с одним source_id (по одной на долю, у каждой
+    # свой контрагент). Аллокации доли помечены её проводкой и раскладываются точно; «ничьи»
+    # аллокации операции (ручная сверка их не атрибутирует) вешаем на первую по времени долю —
+    # иначе они попали бы в каждую строку реестра и задвоили бы покрытие.
+    bank_op_to_tx: dict[uuid.UUID, uuid.UUID] = {}
+    for row in reversed(tx_rows):
+        tx = row[0]
+        if tx.source_kind == "bank_operation" and tx.source_id is not None:
+            bank_op_to_tx.setdefault(tx.source_id, tx.id)
 
     direct_allocs: list[InvoicePaymentAllocation] = []
     if tx_ids or bank_op_to_tx:
@@ -765,7 +769,8 @@ async def list_payment_register(
             for alloc in direct_allocs
             if alloc.cashflow_transaction_id == tx.id
             or (
-                alloc.bank_operation_id is not None
+                alloc.cashflow_transaction_id is None
+                and alloc.bank_operation_id is not None
                 and bank_op_to_tx.get(alloc.bank_operation_id) == tx.id
             )
         ]

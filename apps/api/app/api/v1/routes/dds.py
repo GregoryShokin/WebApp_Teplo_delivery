@@ -32,6 +32,8 @@ from app.models import (
     CounterpartyPaymentDraft,
     DdsArticle,
     DdsArticleAlias,
+    EmployeePayout,
+    InvoicePaymentAllocation,
     ReconciliationCase,
     SafeAllocation,
     SourceCredential,
@@ -76,6 +78,7 @@ from app.schemas.dds import (
     NewPaymentTransferRead,
     OperationClassifyRead,
     OperationClassifyRequest,
+    OperationSplitRead,
     OwnerReviewActionRead,
     OwnerReviewClassifyRequest,
     OwnerReviewListRead,
@@ -95,6 +98,7 @@ from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
     CashflowClassificationConflictError,
+    CashflowSplitLine,
     apply_cashflow_exclude,
     apply_cashflow_split,
     ensure_cashflow_reclassifiable,
@@ -103,6 +107,7 @@ from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     SAFE_WALLET_CODE,
+    OperationSplitLine,
     apply_operation_action,
     apply_operation_split,
     book_safe_topup,
@@ -1739,6 +1744,78 @@ async def confirm_iiko_manual_owner_review_case(
     return {"case_id": case.id, "status": case.status, "bank_operation_id": case.bank_operation_id}
 
 
+@router.get(
+    "/operations/{operation_id}/split",
+    response_model=OperationSplitRead,
+    dependencies=DDS_READ_ACCESS,
+)
+async def read_operation_split(
+    operation_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    """Текущий разбор банк-операции — чтобы диалог открывался на том, что уже размечено.
+
+    Без этого повторный разбор начинался бы с чистой строки на всю сумму: оператор заново
+    набивал бы статьи, контрагентов и накладные, а промах по сумме молча перезаписывал бы
+    прежнюю разметку. Отдаём доли (по одной проводке на долю) с их контрагентом, накладной
+    (гашение, помеченное этой долей) и сотрудником-получателем.
+    """
+    operation = await session.get(BankOperation, operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Bank operation not found")
+    transactions = (
+        await session.scalars(
+            select(CashflowTransaction)
+            .where(
+                CashflowTransaction.source_kind == "bank_operation",
+                CashflowTransaction.source_id == operation.id,
+            )
+            .order_by(CashflowTransaction.created_at, CashflowTransaction.id)
+        )
+    ).all()
+    tx_ids = [tx.id for tx in transactions]
+    invoice_by_tx: dict[UUID, UUID] = {}
+    employee_by_tx: dict[UUID, UUID] = {}
+    if tx_ids:
+        invoice_by_tx = {
+            tx_id: invoice_id
+            for invoice_id, tx_id in (
+                await session.execute(
+                    select(
+                        InvoicePaymentAllocation.invoice_id,
+                        InvoicePaymentAllocation.cashflow_transaction_id,
+                    ).where(InvoicePaymentAllocation.cashflow_transaction_id.in_(tx_ids))
+                )
+            ).all()
+        }
+        employee_by_tx = {
+            tx_id: employee_id
+            for employee_id, tx_id in (
+                await session.execute(
+                    select(
+                        EmployeePayout.employee_id, EmployeePayout.cashflow_transaction_id
+                    ).where(EmployeePayout.cashflow_transaction_id.in_(tx_ids))
+                )
+            ).all()
+        }
+    return {
+        "bank_operation_id": operation.id,
+        "amount": _money(operation.amount),
+        "classification_status": operation.classification_status,
+        "lines": [
+            {
+                "cashflow_transaction_id": tx.id,
+                "article_id": tx.article_id,
+                "amount": _money(tx.amount),
+                "counterparty_id": tx.counterparty_id,
+                "invoice_id": invoice_by_tx.get(tx.id),
+                "employee_id": employee_by_tx.get(tx.id),
+            }
+            for tx in transactions
+        ],
+    }
+
+
 @router.post(
     "/operations/{operation_id}/classify",
     response_model=OperationClassifyRead,
@@ -1762,9 +1839,10 @@ async def classify_operation(
         counterparty_id = payload.counterparty_id
         # Создать контрагента из распознанных данных операции, если оператор это выбрал (его нет
         # в реестре, но имя/ИНН известны из выписки) — резолв по ИНН или новая карточка.
+        created_counterparty_id: UUID | None = None
         if payload.new_counterparty_name:
             try:
-                counterparty_id = await resolve_or_create_operation_counterparty(
+                created_counterparty_id = await resolve_or_create_operation_counterparty(
                     session,
                     name=payload.new_counterparty_name,
                     inn=payload.new_counterparty_inn,
@@ -1772,6 +1850,17 @@ async def classify_operation(
                 )
             except ValueError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
+            # Без построчных флагов новый контрагент — общий дефолт разбора (прежнее поведение);
+            # со флагами он достаётся ровно тем долям, которые его попросили.
+            if not any(item.create_counterparty for item in payload.splits):
+                counterparty_id = created_counterparty_id
+        if any(item.create_counterparty for item in payload.splits) and (
+            created_counterparty_id is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Не переданы данные контрагента для создания из операции",
+            )
         # Ручная привязка карт-оплаты к накладной (получатель в банке — эквайер, не поставщик) —
         # привилегированное действие: требуем право оплаты накладной (как в /match/confirm), чтобы
         # разбор ДДС не обходил RBAC. Проверяем ДО мутаций (единственный commit — в конце роута).
@@ -1790,7 +1879,18 @@ async def classify_operation(
                 session,
                 operation,
                 splits=[
-                    (item.article_id, item.amount, item.comment, item.invoice_id, item.employee_id)
+                    OperationSplitLine(
+                        article_id=item.article_id,
+                        amount=item.amount,
+                        comment=item.comment,
+                        invoice_id=item.invoice_id,
+                        employee_id=item.employee_id,
+                        counterparty_id=(
+                            created_counterparty_id
+                            if item.create_counterparty
+                            else item.counterparty_id
+                        ),
+                    )
                     for item in payload.splits
                 ],
                 counterparty_id=counterparty_id,
@@ -1829,7 +1929,13 @@ async def classify_operation(
                     session,
                     operation,
                     reserves=reserves,
-                    counterparty_id=payload.counterparty_id,
+                    # Резервы Сейфа держат одного контрагента на пополнение: берём общий, а если
+                    # клиент указал контрагентов только построчно — первого непустого.
+                    counterparty_id=payload.counterparty_id
+                    or next(
+                        (item.counterparty_id for item in payload.splits if item.counterparty_id),
+                        None,
+                    ),
                 )
                 created_ids = []
             else:
@@ -1896,7 +2002,17 @@ async def classify_operation(
         and len(payload.splits) == 1
         and not payload.allow_card
     ):
-        rule = _rule_from_operation_split(operation, payload.splits[0].article_id, counterparty_id)
+        rule = _rule_from_operation_split(
+            operation,
+            payload.splits[0].article_id,
+            # Контрагент живёт на строке; у правила из одной строки он оттуда и берётся.
+            (
+                created_counterparty_id
+                if payload.splits[0].create_counterparty
+                else payload.splits[0].counterparty_id
+            )
+            or counterparty_id,
+        )
         session.add(rule)
         await session.flush()
         rule_id = rule.id
@@ -1996,12 +2112,13 @@ async def classify_transaction_full(
                 session,
                 txn,
                 splits=[
-                    (
-                        item.article_id,
-                        item.amount,
-                        item.comment,
-                        item.transfer_wallet_id,
-                        item.employee_id,
+                    CashflowSplitLine(
+                        article_id=item.article_id,
+                        amount=item.amount,
+                        comment=item.comment,
+                        transfer_wallet_id=item.transfer_wallet_id,
+                        employee_id=item.employee_id,
+                        counterparty_id=item.counterparty_id,
                     )
                     for item in payload.splits
                 ],

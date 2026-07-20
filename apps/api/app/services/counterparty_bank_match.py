@@ -374,15 +374,23 @@ async def _apply_bank_allocation(
     operation: BankOperation,
     amount: Decimal,
     actor_user_id: uuid.UUID | None,
+    cashflow_transaction_id: uuid.UUID | None = None,
 ) -> None:
     """Add one bank allocation to the invoice WITHOUT committing — the commit-less core
     shared by ``confirm_invoice_match`` and the split orchestrator. The caller validates
-    occupancy/remaining and runs ``_recompute_status`` + commit."""
+    occupancy/remaining and runs ``_recompute_status`` + commit.
+
+    ``cashflow_transaction_id`` — доля разбора, которая гасит накладную (мультисплит операции по
+    разным контрагентам). Аллокация несёт ОБА ключа: операцию — чтобы прежние двери («операция
+    уже использована», откат операции) видели её как раньше, и проводку — чтобы «бюджет платежа»
+    считался по доле, а не по всей операции. Ручная сверка (``confirm_invoice_match``) доли не
+    знает и оставляет ключ пустым — такие аллокации по-прежнему относятся ко всей операции."""
     session.add(
         InvoicePaymentAllocation(
             invoice_id=invoice.id,
             source_kind="bank",
             bank_operation_id=operation.id,
+            cashflow_transaction_id=cashflow_transaction_id,
             amount=_money(amount),
             created_by_user_id=actor_user_id,
         )
