@@ -2,7 +2,7 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 
 import { clearSession, getAccessToken, setSession, type AuthUser } from "./auth";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type RetriableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };

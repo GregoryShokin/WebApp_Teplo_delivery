@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { LockKeyhole, LogIn } from "lucide-react";
 
 import { Button } from "../components/ui/button";
-import { apiErrorMessage, apiErrorStatus, login } from "../lib/api";
+import { API_BASE_URL, apiErrorMessage, apiErrorStatus, login } from "../lib/api";
 
 type LoginRouteProps = {
   onNavigate: (path: string) => void;
@@ -27,7 +27,9 @@ export function LoginRoute({ onNavigate }: LoginRouteProps) {
         status === 401
           ? "Неверная почта или пароль"
           : status === undefined
-            ? "API недоступен: проверьте backend на localhost:8000"
+            ? // Адрес берём фактический (VITE_API_BASE_URL): на превью-стендах порт свой, и
+              // зашитый 8000 отправлял проверять не тот backend.
+              `API недоступен: проверьте backend на ${API_BASE_URL}`
             : apiErrorMessage(loginError, "Не удалось войти"),
       );
     } finally {
