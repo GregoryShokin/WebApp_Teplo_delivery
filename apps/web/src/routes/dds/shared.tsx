@@ -41,7 +41,14 @@ export type DdsActiveTab =
 
 export const DDS_ACTIVE_TAB_STORAGE_KEY = "dds.activeTab";
 
-export const DDS_TABS: Array<{ value: DdsActiveTab; label: string; path: string }> = [
+export const DDS_TABS: Array<{
+  value: DdsActiveTab;
+  label: string;
+  path: string;
+  // Вкладка-ссылка: её путь редиректит ВОН из ДДС (единый реестр контрагентов). Внутри ДДС
+  // она не рендерится, поэтому запоминать её как «последнюю вкладку» нельзя — см. isDdsTabInternal.
+  external?: true;
+}> = [
   { value: "today", label: "Деньги сегодня", path: "/dds" },
   { value: "accounts", label: "Счета", path: "/dds/accounts" },
   { value: "ledger", label: "Журнал ДДС", path: "/dds/ledger" },
@@ -50,7 +57,7 @@ export const DDS_TABS: Array<{ value: DdsActiveTab; label: string; path: string 
   // вкладку убрали, а кнопку «Требует разбора» на «Деньгах сегодня» оставили, и она
   // редиректила обратно. Без этой строки кейсы копятся вслепую.
   { value: "owner-review", label: "Требуют разбора", path: "/dds/owner-review" },
-  { value: "counterparties", label: "Контрагенты", path: "/dds/counterparties" },
+  { value: "counterparties", label: "Контрагенты", path: "/dds/counterparties", external: true },
   { value: "articles", label: "Статьи ДДС", path: "/dds/articles" },
   { value: "credentials", label: "Доступы", path: "/dds/credentials" },
 ];
@@ -102,6 +109,12 @@ export function ddsTabPath(tab: DdsActiveTab) {
 
 export function isDdsTab(value: unknown): value is DdsActiveTab {
   return DDS_TABS.some((item) => item.value === value);
+}
+
+/** Вкладка, которая реально живёт ВНУТРИ ДДС (не ссылка наружу). Только такую можно
+ * запомнить как последнюю: иначе заход на /dds каждый раз уводил бы в чужой раздел. */
+export function isDdsTabInternal(value: unknown): value is DdsActiveTab {
+  return DDS_TABS.some((item) => item.value === value && !item.external);
 }
 
 export function formatDdsMoney(value: string | number | null | undefined) {

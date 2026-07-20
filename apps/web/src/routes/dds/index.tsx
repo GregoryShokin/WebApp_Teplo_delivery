@@ -19,6 +19,7 @@ import {
   DDS_TABS,
   ddsTabPath,
   isDdsTab,
+  isDdsTabInternal,
   type DdsActiveTab,
 } from "@/routes/dds/shared";
 
@@ -82,7 +83,11 @@ export function DdsRoute({
     if (!isDdsTab(value)) {
       return;
     }
-    window.localStorage.setItem(DDS_ACTIVE_TAB_STORAGE_KEY, value);
+    // Уходя по вкладке-ссылке, запоминаем не её, а вкладку, с которой ушли: иначе следующий
+    // заход в ДДС снова выкидывал бы в чужой раздел.
+    if (isDdsTabInternal(value)) {
+      window.localStorage.setItem(DDS_ACTIVE_TAB_STORAGE_KEY, value);
+    }
     onNavigate(ddsTabPath(value));
   }
 
@@ -178,5 +183,7 @@ function canOpenDdsTab(tab: DdsActiveTab, permissions: ReturnType<typeof usePerm
 
 function readStoredDdsTab() {
   const value = window.localStorage.getItem(DDS_ACTIVE_TAB_STORAGE_KEY);
-  return isDdsTab(value) ? value : null;
+  // Вкладка-ссылка («Контрагенты» → единый реестр) в памяти залипала: клик по ней сохранял
+  // её как последнюю, и дальше любой заход на /dds редиректил в реестр — в ДДС было не попасть.
+  return isDdsTabInternal(value) ? value : null;
 }
