@@ -628,6 +628,16 @@ async def pay_kassa_target(
     только кошелёк — касса и свой ``source_kind``; статья и контрагент — целёвки.
     Сумма больше учётного остатка кассы не блокируется (предупреждение на фронте).
     """
+    # Локальные импорты: deposit_bank_draft локально импортирует этот модуль (наличный резерв),
+    # deposit_iiko тянет iiko-клиента — top-import замкнул бы цикл / раздул загрузку.
+    from app.services.deposit_bank_draft import (
+        allocation_deposit_draft,
+        sync_deposit_after_allocation_change,
+    )
+    from app.services.deposit_iiko_payout_production import (
+        post_production_deposit_payout_to_iiko,
+    )
+
     wallet = await get_kassa_wallet(session)
     allocation = await session.get(SafeAllocation, allocation_id, with_for_update=True)
     if allocation is None:
@@ -638,6 +648,17 @@ async def pay_kassa_target(
         raise KassaPayoutError("Резерв выплаты ЗП — выдача через окно ведомости, не из «К выдаче»")
     if allocation.location != "kassa" or allocation.wallet_id != wallet.id:
         raise KassaPayoutError("Целёвка не передана в кассу — оплата идёт с Сейфа")
+    # Депозит-резерв (обязательство перед сотрудником) выдаётся ТОЛЬКО целиком: частичная
+    # выдача разъехала бы депозит-леджер (списываем всю сумму) с ДДС (частичный расход).
+    deposit_draft = await allocation_deposit_draft(session, allocation.id)
+    if deposit_draft is not None:
+        outstanding = _money(
+            Decimal(str(allocation.amount)) - Decimal(str(allocation.amount_paid))
+        )
+        if _money(amount) < outstanding:
+            raise KassaPayoutError(
+                "Депозит-резерв выдаётся только целиком (частичная выдача запрещена)"
+            )
     try:
         transaction_id = await pay_allocation(
             session,
@@ -649,7 +670,16 @@ async def pay_kassa_target(
         )
     except ValueError as exc:
         raise KassaPayoutError(str(exc)) from exc
+    # Депозит из кассы: фактическая выдача = списание депозита + черновик → disbursed.
+    disbursement = await sync_deposit_after_allocation_change(session, allocation_id=allocation.id)
     await session.commit()
+    # iiko-изъятие из «Главной кассы» при выдаче депозита из кассы — ПОСЛЕ commit (БД источник
+    # истины). disbursement заполнен ровно один раз (черновик paid→disbursed), поэтому изъятие
+    # не задваивается; ключ-комментарий — allocation.id.
+    if disbursement is not None:
+        post_production_deposit_payout_to_iiko(
+            amount=disbursement.amount, payout_date=kassa_today(), source_id=allocation.id
+        )
     return transaction_id
 
 

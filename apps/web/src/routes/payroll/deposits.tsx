@@ -478,12 +478,19 @@ function DepositOperationDialog({
   // Режим выдачи депозита: отложенная (в ближайшей ведомости, по умолчанию при включённом
   // флаге) или немедленная. Удержание/списание режима не имеют.
   const [payoutMode, setPayoutMode] = useState<"scheduled" | "immediate">("scheduled");
+  // Наличный режим (этап 4): «выдать сразу» или «завести резерв» (передать в кассу / на Сейф).
+  // Только для наличных каналов; банк-каналы всегда идут черновиком.
+  const [cashMode, setCashMode] = useState<"immediate" | "reserve">("immediate");
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const type = operation?.type ?? "payout";
   const isScheduled = type === "payout" && scheduledEnabled && payoutMode === "scheduled";
+  const isCashChannel = payoutMethod === "cash_tk" || payoutMethod === "cash_safe";
+  // Наличный резерв доступен только для наличного канала при немедленной (не отложенной) выдаче.
+  const useCashReserve =
+    type === "payout" && !isScheduled && isCashChannel && cashMode === "reserve";
   // Каналы немедленной выдачи, доступные по правам.
   const allowedChannels = (
     [
@@ -513,6 +520,7 @@ function DepositOperationDialog({
     setAmount(operation.type === "payout" ? String(balanceNumber(operation.row)) : "");
     setComment("");
     setPayoutMethod(allowedChannels[0] ?? "cash_tk");
+    setCashMode("immediate");
     // При включённой отложенной выдаче режим по умолчанию — «в ближайшей ведомости».
     setPayoutMode(scheduledEnabled ? "scheduled" : "immediate");
     setSubmitted(false);
@@ -537,6 +545,7 @@ function DepositOperationDialog({
           amount: normalized,
           comment: comment.trim() || null,
           payout_method: payoutMethod,
+          payout_mode: useCashReserve ? "reserve" : "immediate",
         });
       }
       return postDepositWriteoff(operation.row.id, {
@@ -545,12 +554,21 @@ function DepositOperationDialog({
       });
     },
     onSuccess: async () => {
+      const isBankDraft = type === "payout" && !isScheduled && payoutMethod.startsWith("bank_draft");
+      const reserveMsg =
+        payoutMethod === "cash_tk"
+          ? "Передано в кассу — выдать во вкладке «К выдаче»"
+          : "Резерв на Сейфе создан — выплатить в «Активных платежах»";
       toast.success(
         type === "writeoff"
           ? "Депозит списан"
           : isScheduled
             ? "Выдача запланирована в ближайшей ведомости"
-            : "Депозит выдан",
+            : useCashReserve
+              ? reserveMsg
+              : isBankDraft
+                ? "Черновик отправлен в банк — платёж появится в «Активных платежах»"
+                : "Депозит выдан",
       );
       setConfirmOpen(false);
       onClose();
@@ -680,6 +698,37 @@ function DepositOperationDialog({
                     : payoutMethod === "cash_safe"
                       ? "Наличные с карты «Сейф». Изъятие в iiko не делается."
                       : "Перевод р/с → Сейф и черновик платежа на ИП Шокину (как ЗП); раздача с Сейфа, iiko не трогаем."}
+                </span>
+              </Label>
+            ) : null}
+
+            {type === "payout" && !isScheduled && isCashChannel ? (
+              <Label className="grid gap-2">
+                <span>Как выдать</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    disabled={mutation.isPending}
+                    onClick={() => setCashMode("immediate")}
+                    type="button"
+                    variant={cashMode === "immediate" ? "default" : "outline"}
+                  >
+                    Выдать сразу
+                  </Button>
+                  <Button
+                    disabled={mutation.isPending}
+                    onClick={() => setCashMode("reserve")}
+                    type="button"
+                    variant={cashMode === "reserve" ? "default" : "outline"}
+                  >
+                    {payoutMethod === "cash_tk" ? "Передать в кассу" : "Создать резерв"}
+                  </Button>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {cashMode === "immediate"
+                    ? "Деньги выданы прямо сейчас, депозит списывается сразу."
+                    : payoutMethod === "cash_tk"
+                      ? "Резерв в кассе: появится во вкладке «К выдаче» и в «Активных платежах». Депозит спишется при выдаче."
+                      : "Резерв на Сейфе: появится в «Активных платежах». Депозит спишется при выплате."}
                 </span>
               </Label>
             ) : null}

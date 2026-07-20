@@ -10,6 +10,7 @@ import asyncio
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import Employee, EmployeePositionAssignment, PayrollRate
 
 AS_OF = "2026-05-05"  # первая половина мая, 5/15 → 15000 из оклада 90000
+# «Сегодня» эндпоинта — по Москве; тесты дат «сегодня/завтра» считают в тех же сутках.
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 def _seed_okladnik(factory: async_sessionmaker[AsyncSession]) -> uuid.UUID:
@@ -186,7 +189,12 @@ def test_manager_cannot_issue_explicit_loan(
     resp = client.post(
         "/api/v1/payroll/advances",
         headers={"X-User-Role": "manager"},
-        json={"employee_id": str(employee_id), "amount": "10000", "kind": "loan", "issued_on": AS_OF},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "10000",
+            "kind": "loan",
+            "issued_on": AS_OF,
+        },
     )
     assert resp.status_code == 409
 
@@ -256,7 +264,7 @@ def test_future_date_rejected(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     employee_id = _seed_okladnik(async_session_factory)
-    tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
+    tomorrow = (datetime.now(_MOSCOW_TZ).date() + timedelta(days=1)).isoformat()
     resp = client.post(
         "/api/v1/payroll/advances",
         headers={"X-User-Role": "owner"},
@@ -270,11 +278,19 @@ def test_today_date_allowed_without_backdate(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     employee_id = _seed_okladnik(async_session_factory)
-    today = datetime.now(UTC).date().isoformat()
+    today = datetime.now(_MOSCOW_TZ).date().isoformat()
+    # Заём (не аванс): проверяем ровно ветку разрешения даты «сегодня» без права
+    # backdate. Заём отсечкой «день выплаты» не блокируется, поэтому тест устойчив к
+    # тому, что «сегодня» может оказаться днём выплаты (15-е/1-е).
     resp = client.post(
         "/api/v1/payroll/advances",
         headers={"X-User-Role": "owner"},
-        json={"employee_id": str(employee_id), "amount": "5000", "issued_on": today},
+        json={
+            "employee_id": str(employee_id),
+            "amount": "5000",
+            "issued_on": today,
+            "kind": "loan",
+        },
     )
     assert resp.status_code == 201
 

@@ -1008,6 +1008,8 @@ export type PayrollAdvanceAvailability = {
   already_advanced: number;
   available: number;
   note: string | null;
+  // true в день выплаты периода: заработанное уходит с ведомостью, аванс недоступен.
+  payout_reached: boolean;
 };
 
 export type PayrollAdvancePayoutStatus =
@@ -1940,6 +1942,9 @@ export type DepositPayoutPayload = {
   // Счёт немедленной выдачи: ТК Черникова (по умолч., +iiko) / Сейф / банк-черновик Т-Банк
   // (bank_draft) или Сбер (bank_draft_sber).
   payout_method?: DepositPayoutMethod;
+  // Режим наличных каналов: immediate — выдать сразу; reserve — завести резерв («В кассе»/
+  // «На Сейфе»), выдать позже. Для банк-каналов игнорируется (там всегда черновик).
+  payout_mode?: "immediate" | "reserve";
 };
 
 export type DepositWriteoffPayload = {
@@ -2402,7 +2407,8 @@ export type OwnerReviewKind =
   | "payer_wallet_unresolved"
   | "iiko_payment_unsettled"
   | "card_refund_after_cheque"
-  | "cheque_refund_missing";
+  | "cheque_refund_missing"
+  | "deposit_bank_draft_failed";
 
 export type ReconciliationCaseRead = {
   id: string;
@@ -4230,12 +4236,35 @@ export async function deletePayrollAdjustment(id: string): Promise<void> {
   await api.delete(`/payroll/adjustments/${id}`);
 }
 
+export type UpcomingPayslip = {
+  period_start: string;
+  period_end: string;
+  payout_date: string;
+};
+
+export async function getUpcomingPayslips(
+  employeeId?: string,
+  count = 2,
+): Promise<UpcomingPayslip[]> {
+  const response = await api.get<UpcomingPayslip[]>("/payroll/advances/upcoming-payslips", {
+    params: { employee_id: employeeId || undefined, count },
+  });
+  return response.data;
+}
+
 export async function getPayrollAdvanceAvailability(
   employeeId: string,
   asOf?: string,
+  // applyPayoutGate=false — для реконсиляции уже прошедшей операции: дата операции в
+  // прошлом не должна обнулять исторический аванс отсечкой «день выплаты».
+  applyPayoutGate = true,
 ): Promise<PayrollAdvanceAvailability> {
   const response = await api.get<PayrollAdvanceAvailability>("/payroll/advances/availability", {
-    params: { employee_id: employeeId, as_of: asOf || undefined },
+    params: {
+      employee_id: employeeId,
+      as_of: asOf || undefined,
+      apply_payout_gate: applyPayoutGate ? undefined : false,
+    },
   });
   return response.data;
 }

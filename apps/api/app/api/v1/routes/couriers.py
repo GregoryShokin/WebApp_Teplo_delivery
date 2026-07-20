@@ -9,6 +9,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -75,7 +76,11 @@ from app.services.couriers import (
 )
 from app.services.couriers.deposit_iiko_payout import post_deposit_return_to_iiko
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
-from app.services.deposit_bank_draft import send_deposit_payout_bank_draft
+from app.services.deposit_bank_draft import (
+    create_deposit_payout_draft,
+    deposit_in_flight_amount,
+    send_deposit_payout_bank_draft,
+)
 from app.services.position_registry import courier_positions
 
 router = APIRouter()
@@ -736,6 +741,45 @@ async def post_courier_deposit_transaction(
         channel_perm = payout_channel_permission(payload.payout_method or "cash_tk")
         if channel_perm is not None:
             ensure_permission(actor, channel_perm)
+        provider = channel_provider(payload.payout_method)
+        if provider is not None:
+            # БАНК-ВОЗВРАТ полным циклом (этап 5): заводим только черновик, курьерский депозит
+            # НЕ трогаем — строка возврата и расход появятся при фактической выдаче резерва.
+            if await deposit_in_flight_amount(session, employee_id) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="У курьера уже есть активная выдача депозита",
+                )
+            amount = (Decimal(payload.amount_cents) / Decimal("100")).quantize(Decimal("0.01"))
+            try:
+                await create_deposit_payout_draft(
+                    session,
+                    recipient_kind="courier",
+                    amount=amount,
+                    purpose="Возврат депозита курьеру (через Сейф)",
+                    provider=provider,
+                    employee_id=employee_id,
+                    created_by_user_id=actor_user_id,
+                )
+            except IntegrityError:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="У курьера уже есть активная выдача депозита",
+                ) from None
+            await session.commit()
+            # Черновика ещё нет транзакции курьерского леджера (id=None) — она появится при выдаче.
+            return {
+                "id": None,
+                "account_employee_id": employee_id,
+                "transaction_type": CourierDepositTransactionType.RETURN.value,
+                "amount_cents": payload.amount_cents,
+                "transaction_date": payload.transaction_date,
+                "comment": payload.comment,
+                "created_by": actor_user_id,
+                "created_by_name": None,
+                "created_at": None,
+            }
     transaction = await deposit_service.create_transaction(
         session,
         employee_id=employee_id,

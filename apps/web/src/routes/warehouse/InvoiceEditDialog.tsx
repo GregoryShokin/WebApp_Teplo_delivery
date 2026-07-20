@@ -14,9 +14,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api";
+import { getRegistry } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
 import {
+  CounterpartySearch,
   emptyLine,
   emptyStaffLine,
   LineRow,
@@ -65,12 +67,19 @@ export function InvoiceEditDialog({
     enabled: open,
     staleTime: 60_000,
   });
+  // Реестр контрагентов — для смены поставщика (только неоплаченная накладная).
+  const registryQuery = useQuery({
+    queryKey: ["cp", "registry", "all"],
+    queryFn: () => getRegistry(),
+    enabled: open && !paid,
+  });
   const detail = detailQuery.data;
   const staffArticles = staffArticlesQuery.data ?? [];
 
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
   const [number, setNumber] = useState("");
+  const [counterpartyId, setCounterpartyId] = useState("");
 
   // Инициализируем из накладной при загрузке детали.
   useEffect(() => {
@@ -100,6 +109,7 @@ export function InvoiceEditDialog({
         })),
     );
     setNumber(detail.number ?? "");
+    setCounterpartyId(detail.counterparty_id);
   }, [detail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totals = useMemo(() => {
@@ -123,6 +133,14 @@ export function InvoiceEditDialog({
       hasSavedLines
     : detail?.payment_status === "unpaid" && !detail?.barter_role;
 
+  // Смена поставщика — только у неоплаченной. Если накладная уже в iiko (external_id), новый
+  // контрагент обязан иметь iiko-GUID: иначе Cloud update повиснет, а документ останется на старом
+  // поставщике (рассинхрон). Блокируем прямо в форме — тот же гейт дублирует бэкенд (409).
+  const supplierChanged = !paid && !!detail && counterpartyId !== detail.counterparty_id;
+  const selectedCp = registryQuery.data?.find((i) => i.counterparty_id === counterpartyId);
+  const supplierNeedsIikoGuid =
+    supplierChanged && !!detail?.external_id && !(selectedCp?.has_iiko_guid ?? false);
+
   const buildPayload = () => ({
     number: number.trim() || undefined,
     lines: [
@@ -135,6 +153,8 @@ export function InvoiceEditDialog({
           iiko_product_id: l.product_id,
           vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
           is_staff: false,
+          // Сумма строки — эталон (как при создании): не пересчитываем кол-во×округлённая цена.
+          sum: l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price),
         })),
       ...staffLines
         .filter((l) => l.articleId && num(l.amount) > 0)
@@ -147,13 +167,20 @@ export function InvoiceEditDialog({
           vat_percent: null,
           is_staff: true,
           dds_article_id: l.articleId,
+          sum: num(l.amount),
         })),
     ],
   });
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      paid ? adjustPaidInvoice(invoiceId!, buildPayload()) : updateWarehouseInvoice(invoiceId!, buildPayload()),
+      paid
+        ? adjustPaidInvoice(invoiceId!, buildPayload())
+        : updateWarehouseInvoice(invoiceId!, {
+            ...buildPayload(),
+            // Поставщик уходит всегда; бэк сам сверит с текущим и не тронет, если не менялся.
+            counterparty_id: counterpartyId || undefined,
+          }),
     onSuccess: (updated) => {
       queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
       void queryClient.invalidateQueries({ queryKey: ["wh"] });
@@ -181,7 +208,11 @@ export function InvoiceEditDialog({
     (l) => l.name.trim() && num(l.quantity) > 0 && !l.product_id,
   );
   const canSave =
-    !!editable && filled + filledStaff > 0 && !saveMutation.isPending && !goodsMissingProduct;
+    !!editable &&
+    filled + filledStaff > 0 &&
+    !saveMutation.isPending &&
+    !goodsMissingProduct &&
+    !supplierNeedsIikoGuid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -213,6 +244,31 @@ export function InvoiceEditDialog({
                 уйдёт в дебиторку поставщику («поставщик нам должен», гасится будущими поставками).
                 iiko-документ не меняется — корректируйте его отдельно (возвратная накладная).
               </p>
+            ) : null}
+            {!paid ? (
+              <div className="grid max-w-md gap-1.5">
+                <Label>Поставщик</Label>
+                <CounterpartySearch
+                  items={registryQuery.data ?? []}
+                  value={counterpartyId}
+                  onPick={setCounterpartyId}
+                />
+                {supplierChanged && !supplierNeedsIikoGuid ? (
+                  <span className="text-xs text-muted-foreground">
+                    Поставщик изменён
+                    {detail?.external_id
+                      ? " — правка уйдёт в iiko (сменится контрагент документа)"
+                      : ""}
+                  </span>
+                ) : null}
+                {supplierNeedsIikoGuid ? (
+                  <span className="text-xs text-red-600">
+                    У выбранного контрагента нет привязки к iiko, а накладная уже выгружена. Сначала
+                    сматчите контрагента с поставщиком iiko — иначе документ останется на старом
+                    поставщике.
+                  </span>
+                ) : null}
+              </div>
             ) : null}
             <div className="grid max-w-[220px] gap-1.5">
               <Label htmlFor="invoice-number">Номер</Label>

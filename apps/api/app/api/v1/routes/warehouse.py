@@ -110,6 +110,10 @@ class LineCreate(BaseModel):
     # Статья ДДС персональной строки (питание / прочие затраты на персонал) — задаёт,
     # на какую статью ляжет «персонал»-часть при оплате накладной. Только для is_staff.
     dds_article_id: uuid.UUID | None = None
+    # Сумма строки как её видит пользователь (эталон из документа поставщика). Если задана —
+    # бэк хранит её, а не пересчитывает кол-во×цена (цена в 2 знака не всегда точна). None —
+    # старые клиенты / фолбэк на кол-во×цена.
+    sum: Decimal | None = Field(default=None, ge=0)
 
 
 class InvoiceCreate(BaseModel):
@@ -132,10 +136,13 @@ class InvoiceCreate(BaseModel):
 
 
 class InvoiceUpdate(BaseModel):
-    # Правка позиций неоплаченной накладной (товар + персонал). Контрагент/режим не меняем.
+    # Правка позиций неоплаченной накладной (товар + персонал). Режим (обычная/бартер) не меняем.
     lines: list[LineCreate] = Field(min_length=1)
     issued_at: datetime | None = None
     number: str | None = None
+    # Смена поставщика при правке (только неоплаченная, путь put_invoice). None → поставщик не
+    # трогаем. В adjust-paid (оплаченная) поле игнорируется — там контрагента менять нельзя.
+    counterparty_id: uuid.UUID | None = None
 
 
 class ReturnLineCreate(BaseModel):
@@ -789,6 +796,7 @@ async def post_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],
@@ -827,13 +835,27 @@ async def put_invoice(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     """Правка позиций неоплаченной (не бартерной) накладной — «переделать и отправить в iiko».
-    Контрагент и режим не меняются; пересчитываются суммы/персонал и сбрасывается статус
-    отправки в iiko, чтобы исправленную накладную можно было запушить."""
+    Режим не меняется; поставщика сменить можно (``counterparty_id``). Пересчитываются
+    суммы/персонал и сбрасывается статус отправки в iiko, чтобы исправленную накладную можно было
+    запушить."""
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
     kind = await invoice_permission_kind(session, invoice)
     ensure_any_permission(actor, (f"invoices.{kind}.edit", "kassa.invoices.create"))
+    # Смена поставщика у УЖЕ ВЫГРУЖЕННОЙ в iiko накладной: у нового контрагента должен быть
+    # iiko-GUID, иначе локально сменим, а Cloud update повиснет в failed («Нет iiko-GUID») —
+    # документ в iiko останется на старом поставщике, получим рассинхрон. Блокируем заранее.
+    if (
+        payload.counterparty_id is not None
+        and payload.counterparty_id != invoice.counterparty_id
+        and invoice.external_id
+        and not await counterparty_iiko_guid(session, payload.counterparty_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="У нового контрагента нет привязки к iiko — сначала сматчите его с поставщиком iiko",
+        )
     try:
         await update_warehouse_invoice(
             session,
@@ -847,11 +869,13 @@ async def put_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],
             issued_at=payload.issued_at,
             number=payload.number,
+            counterparty_id=payload.counterparty_id,
         )
     except WarehouseInvoiceError as exc:
         raise HTTPException(
@@ -901,6 +925,7 @@ async def post_adjust_paid_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    sum=line.sum,
                 )
                 for line in payload.lines
             ],

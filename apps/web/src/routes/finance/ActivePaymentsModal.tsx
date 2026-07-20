@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   ArrowLeftRight,
   Banknote,
   Clock,
@@ -41,6 +42,10 @@ const money = new Intl.NumberFormat("ru-RU", {
   currency: "RUB",
   maximumFractionDigits: 0,
 });
+
+// Без символа валюты — для первой половины пары «выплачено X из Y ₽», чтобы
+// подпись строки влезала и не обрезалась на самом важном.
+const moneyPlain = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
 // Оформление каждой корзины: иконка + семантический цвет (палитра проекта:
 // border-{c}-200 bg-{c}-50 text-{c}-700). Классы записаны целиком — Tailwind JIT
@@ -96,6 +101,31 @@ function methodHint(row: PaymentRow): string | null {
   return null;
 }
 
+// Сообщение об ошибке для тоста. Бэкенд на отказ по правам отдаёт английское
+// «Insufficient permission», axios на мёртвый сервер — «Network Error»: показывать
+// это владельцу как есть нельзя.
+const ERROR_TEXTS: Record<string, string> = {
+  "insufficient permission": "Недостаточно прав для этого действия",
+  "not authenticated": "Сессия истекла — войдите заново",
+  "network error": "Нет связи с сервером",
+};
+
+function errorText(error: unknown, fallback: string): string {
+  const detail =
+    (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+    (error instanceof Error ? error.message : null);
+  if (!detail) return fallback;
+  return ERROR_TEXTS[detail.trim().toLowerCase()] ?? detail;
+}
+
+// Сколько ещё нужно денег по строке. Окно отвечает на вопрос «сколько платить»,
+// поэтому везде считаем остаток, а не номинал: у частично выплаченного резерва
+// номинал завышает потребность на уже выданную часть. Без частичной выплаты
+// (amount_paid пуст или 0) остаток равен номиналу — поведение не меняется.
+function outstanding(row: PaymentRow): number {
+  return row.amount - (row.amount_paid ?? 0);
+}
+
 export function ActivePaymentsModal({
   open,
   onOpenChange,
@@ -120,7 +150,7 @@ export function ActivePaymentsModal({
     await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
   }
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const query = useQuery({
     queryKey: ["finance-payments", "active"],
     queryFn: () => getPayments("active"),
     enabled: open,
@@ -130,10 +160,31 @@ export function ActivePaymentsModal({
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
+  const { data, isLoading, isFetching, isError, refetch } = query;
+  // Недоступный сервер react-query ошибкой НЕ считает: он трактует сетевой сбой как
+  // офлайн и ставит запрос на паузу — status остаётся 'pending', isError=false, причина
+  // видна только в fetchFailureReason. Поэтому одного isError мало: без проверки паузы
+  // мёртвый сервер снова притворится пустым списком («всё оплачено»).
+  const offline = query.fetchStatus === "paused";
+  const broken = isError || offline;
 
   const items = useMemo(() => data?.items ?? [], [data?.items]);
   const buckets = data?.buckets ?? [];
-  const totalSum = items.reduce((acc, row) => acc + row.amount, 0);
+  const totalSum = items.reduce((acc, row) => acc + outstanding(row), 0);
+  // Запрос сорвался и показать нечего — это НЕ «платежей нет». Пустой список и молчащий
+  // сервер обязаны выглядеть по-разному, иначе сбой читается как «всё оплачено».
+  const failedEmpty = broken && data === undefined;
+  // Данные есть, но обновиться не удалось: список верен на момент последней удачной
+  // загрузки — молча показывать его как актуальный нельзя.
+  const stale = broken && data !== undefined;
+
+  // Приостановленный запрос не поднять ни refetch(), ни resetQueries: react-query ждёт
+  // события «сеть вернулась», а браузер офлайн и не считался — событию взяться неоткуда.
+  // Дёргать onlineManager ради этого — лезть библиотеке во внутренности; перезагрузка
+  // страницы решает надёжно и предсказуемо.
+  function retryLoad() {
+    window.location.reload();
+  }
 
   const q = search.trim().toLowerCase();
   const visible = useMemo(() => {
@@ -166,13 +217,17 @@ export function ActivePaymentsModal({
         setSendIntake(await getIntake(row.ref_id));
       }
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        (error instanceof Error ? error.message : null) ??
-        "Не удалось открыть платёж";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось открыть платёж"));
+      return;
     } finally {
       setSendingId(null);
+    }
+    // Обновление списка — уже после успеха и вне try: раньше падение refetch
+    // показывало «Не удалось отправить в банк» по фактически ушедшему платежу.
+    try {
+      await refetchAll();
+    } catch {
+      // список подтянется следующим поллингом — платёж от этого не пострадал
     }
   }
 
@@ -219,7 +274,11 @@ export function ActivePaymentsModal({
     if (row.can_pay) {
       return (
         <Button size="sm" variant="outline" className="h-8" onClick={() => setPayRow(row)}>
-          {row.bucket === "reserved_kassa" ? "Выдать" : "Выплатить"}
+          {row.kind === "deposit_reserve"
+            ? "Выплатить депозит"
+            : row.bucket === "reserved_kassa"
+              ? "Выдать"
+              : "Выплатить"}
         </Button>
       );
     }
@@ -235,7 +294,9 @@ export function ActivePaymentsModal({
             <DialogDescription className="mt-0.5">
               {isLoading
                 ? "Загрузка…"
-                : `${items.length} шт · ${money.format(totalSum)} — ждут оплаты, отправки или выдачи`}
+                : failedEmpty
+                  ? "Список не загрузился — сумма неизвестна"
+                  : `${items.length} шт · ${money.format(totalSum)} — ждут оплаты, отправки или выдачи`}
             </DialogDescription>
           </DialogHeader>
 
@@ -295,11 +356,38 @@ export function ActivePaymentsModal({
             </div>
           </div>
 
+          {stale ? (
+            <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs text-amber-800">
+              {offline ? "Нет связи с сервером" : "Обновить список не удалось"} — данные могли
+              устареть.
+            </div>
+          ) : null}
+
           <div className="min-h-0 flex-1 overflow-y-auto [max-height:calc(86vh-11rem)]">
             <div className="space-y-6 px-6 py-5">
               {isLoading ? (
                 <div className="flex items-center justify-center py-16 text-muted-foreground">
                   <Loader2 className="mr-2 animate-spin" size={18} /> Загрузка…
+                </div>
+              ) : failedEmpty ? (
+                // Ветка обязана стоять ВЫШЕ проверки на пустоту: иначе несостоявшийся
+                // запрос снова выдаст себя за «платежей нет — всё оплачено».
+                <div className="flex flex-col items-center gap-3 py-16 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-100">
+                    <AlertTriangle className="text-rose-600" size={22} />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">
+                      {offline ? "Нет связи с сервером" : "Не удалось загрузить платежи"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Список не получен, поэтому показать нечего. Это не значит, что платежей нет.
+                    </div>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={retryLoad}>
+                    <RefreshCw className="mr-1.5" size={14} />
+                    Обновить страницу
+                  </Button>
                 </div>
               ) : visible.length === 0 ? (
                 <div className="flex flex-col items-center gap-3 py-16 text-center">
@@ -324,7 +412,7 @@ export function ActivePaymentsModal({
                   const meta = buckets.find((b) => b.key === key);
                   const style = BUCKET_STYLE[key];
                   const Icon = style.icon;
-                  const sum = rows.reduce((acc, row) => acc + row.amount, 0);
+                  const sum = rows.reduce((acc, row) => acc + outstanding(row), 0);
                   return (
                     <section key={key}>
                       <header className="mb-2 flex items-center gap-2.5">
@@ -345,6 +433,13 @@ export function ActivePaymentsModal({
                       <div className="overflow-hidden rounded-lg border">
                         {rows.map((row, index) => {
                           const hint = methodHint(row);
+                          const paidHint =
+                            row.amount_paid && row.amount_paid > 0
+                              ? `выплачено ${moneyPlain.format(row.amount_paid)} из ${money.format(row.amount)}`
+                              : null;
+                          const subtitle = [row.article_name ?? "Без статьи", hint, paidHint]
+                            .filter(Boolean)
+                            .join(" · ");
                           return (
                             <div
                               key={row.id}
@@ -359,16 +454,15 @@ export function ActivePaymentsModal({
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="truncate text-sm font-medium">{row.title}</div>
-                                <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                                  {row.article_name ?? "Без статьи"}
-                                  {hint ? ` · ${hint}` : ""}
-                                  {row.amount_paid && row.amount_paid > 0
-                                    ? ` · выплачено ${money.format(row.amount_paid)}`
-                                    : ""}
+                                <div
+                                  className="mt-0.5 truncate text-xs text-muted-foreground"
+                                  title={subtitle}
+                                >
+                                  {subtitle}
                                 </div>
                               </div>
                               <div className="shrink-0 text-right text-sm font-semibold tabular-nums">
-                                {money.format(row.amount)}
+                                {money.format(outstanding(row))}
                               </div>
                               <div className="w-[92px] shrink-0 text-right">{rowAction(row)}</div>
                             </div>
@@ -444,6 +538,9 @@ function PayReserveDialog({
   const paid = row?.amount_paid ?? 0;
   const remaining = row ? row.amount - paid : 0;
   const isKassa = row?.bucket === "reserved_kassa";
+  // Депозит-резерв — обязательство перед сотрудником: выдаётся ТОЛЬКО целиком, отмена/перенос
+  // запрещены (иначе выдача исчезнет без следа / депозит разъедется с ДДС). См. R1/R5.
+  const isDeposit = row?.kind === "deposit_reserve";
   const where = isKassa ? "в кассе" : "на Сейфе";
 
   useEffect(() => {
@@ -453,7 +550,7 @@ function PayReserveDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id]);
 
-  const value = Number(amount.replace(",", ".").replace(/\s/g, ""));
+  const value = isDeposit ? remaining : Number(amount.replace(",", ".").replace(/\s/g, ""));
   const valid = value > 0 && value <= remaining + 0.01;
 
   async function submit() {
@@ -464,14 +561,11 @@ function PayReserveDialog({
         ? `/kassa/targets/${row.ref_id}/payout`
         : `/dds/allocations/${row.ref_id}/pay`;
       await api.post(url, { amount: value });
-      toast.success(isKassa ? "Выдано из кассы" : "Выплачено с Сейфа");
+      toast.success(isDeposit ? "Депозит выдан" : isKassa ? "Выдано из кассы" : "Выплачено с Сейфа");
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось провести выплату";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось провести выплату"));
     } finally {
       setSubmitting(false);
     }
@@ -488,10 +582,7 @@ function PayReserveDialog({
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось списать остаток";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось списать остаток"));
     } finally {
       setWritingOff(false);
     }
@@ -508,10 +599,7 @@ function PayReserveDialog({
       await onPaid();
       onOpenChange(false);
     } catch (error) {
-      const detail =
-        (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось переместить резерв";
-      toast.error(detail);
+      toast.error(errorText(error, "Не удалось переместить резерв"));
     } finally {
       setMoving(false);
     }
@@ -523,7 +611,9 @@ function PayReserveDialog({
     <Dialog open={row !== null} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isKassa ? "Выдать из кассы" : "Выплатить с Сейфа"}</DialogTitle>
+          <DialogTitle>
+            {isDeposit ? "Выплатить депозит" : isKassa ? "Выдать из кассы" : "Выплатить с Сейфа"}
+          </DialogTitle>
           <DialogDescription>
             {row?.title}
             {row?.article_name ? ` · ${row.article_name}` : ""}
@@ -546,93 +636,107 @@ function PayReserveDialog({
             <span className="font-medium tabular-nums">{money.format(remaining)}</span>
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium" htmlFor="pay-amount">
-                Сумма выплаты
-              </label>
-              <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                onClick={() => setAmount(String(remaining))}
-              >
-                Весь остаток
-              </button>
-            </div>
-            <Input
-              id="pay-amount"
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="tabular-nums"
-            />
-            {amount && !valid ? (
-              <p className="text-xs text-rose-600">
-                Сумма должна быть больше 0 и не больше остатка {money.format(remaining)}.
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 rounded-md border p-3">
-          <span className="text-xs text-muted-foreground">
-            {isKassa ? "Вернуть резерв на карту Сейф" : "Передать резерв в кассу для выдачи"}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0"
-            onClick={move}
-            disabled={busy}
-          >
-            {moving ? (
-              <Loader2 className="animate-spin" size={14} />
-            ) : (
-              <>
-                <ArrowLeftRight size={14} className="mr-1.5" />
-                {isKassa ? "Вернуть на Сейф" : "Передать в Кассу"}
-              </>
-            )}
-          </Button>
-        </div>
-
-        <div className="rounded-md border border-dashed p-3">
-          {confirmWriteOff ? (
-            <div className="space-y-2">
-              <p className="text-sm">
-                Списать остаток {money.format(remaining)}? Резерв снимется, деньги останутся
-                свободными {where} — платёж не проводится.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="destructive" onClick={writeOff} disabled={writingOff}>
-                  {writingOff ? <Loader2 className="mr-1.5 animate-spin" size={14} /> : null}
-                  Списать {money.format(remaining)}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setConfirmWriteOff(false)}
-                  disabled={writingOff}
-                >
-                  Отмена
-                </Button>
-              </div>
-            </div>
+          {isDeposit ? (
+            // Депозит-резерв: сумма фиксирована (только целиком), ввода нет — это выдача
+            // конкретному сотруднику, дробить нельзя (депозит разъедется с ДДС).
+            <p className="px-3 text-xs text-muted-foreground">
+              Выдаётся полностью, одной суммой — депозит сотрудника нельзя выдавать частями.
+            </p>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
-                Не платить — снять резерв, освободить остаток.
-              </span>
-              <button
-                type="button"
-                className="shrink-0 text-sm font-medium text-rose-600 hover:underline"
-                onClick={() => setConfirmWriteOff(true)}
-              >
-                Списать остаток
-              </button>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium" htmlFor="pay-amount">
+                  Сумма выплаты
+                </label>
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline"
+                  onClick={() => setAmount(String(remaining))}
+                >
+                  Весь остаток
+                </button>
+              </div>
+              <Input
+                id="pay-amount"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="tabular-nums"
+              />
+              {amount && !valid ? (
+                <p className="text-xs text-rose-600">
+                  Сумма должна быть больше 0 и не больше остатка {money.format(remaining)}.
+                </p>
+              ) : null}
             </div>
           )}
         </div>
+
+        {/* Перенос между Сейфом и Кассой и «Списать остаток» — только для обычных целёвок.
+            Депозит-резерв это обязательство перед сотрудником: снять/перенести его нельзя. */}
+        {isDeposit ? null : (
+          <div className="flex items-center justify-between gap-2 rounded-md border p-3">
+            <span className="text-xs text-muted-foreground">
+              {isKassa ? "Вернуть резерв на карту Сейф" : "Передать резерв в кассу для выдачи"}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0"
+              onClick={move}
+              disabled={busy}
+            >
+              {moving ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                <>
+                  <ArrowLeftRight size={14} className="mr-1.5" />
+                  {isKassa ? "Вернуть на Сейф" : "Передать в Кассу"}
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {isDeposit ? null : (
+          <div className="rounded-md border border-dashed p-3">
+            {confirmWriteOff ? (
+              <div className="space-y-2">
+                <p className="text-sm">
+                  Списать остаток {money.format(remaining)}? Резерв снимется, деньги останутся
+                  свободными {where} — платёж не проводится.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="destructive" onClick={writeOff} disabled={writingOff}>
+                    {writingOff ? <Loader2 className="mr-1.5 animate-spin" size={14} /> : null}
+                    Списать {money.format(remaining)}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmWriteOff(false)}
+                    disabled={writingOff}
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">
+                  Не платить — снять резерв, освободить остаток.
+                </span>
+                <button
+                  type="button"
+                  className="shrink-0 text-sm font-medium text-rose-600 hover:underline"
+                  onClick={() => setConfirmWriteOff(true)}
+                >
+                  Списать остаток
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>

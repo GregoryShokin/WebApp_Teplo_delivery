@@ -11,13 +11,23 @@
   «из загруженных явок», без live-iiko в момент выдачи). `total_payable` — netto.
 
 Доступно к авансу = earned-to-date − уже выданные авансы за текущий период.
+
+Отсечка «день выплаты»: в САМ день выплаты ведомости заработанное уходит сотруднику
+вместе с ней (даже если она ещё не финализирована/не выплачена физически), поэтому
+аванс за этот период теряет смысл — `available` обнуляется, `payout_reached=True`.
+День выплаты определяется по «только что закрытой» оплачиваемой ведомости:
+- полумесяц (админ): 15-е (платится [1..15]) и 1-е (платится [16..конец] прошлого
+  месяца) — на 1-е новый период уже начался, но по правилу «блокируем весь день»;
+- недельный (производство): день = `payroll_date` завершившейся недели (ищем её
+  напрямую, не полагаясь на «период, содержащий as_of», — иначе предсозданная
+  следующая неделя глушит отсечку).
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -27,6 +37,9 @@ from app.models import AttendanceEntry, Employee, PayrollPeriod, SalaryAdvance
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import (
     HALF_MONTH_SPLIT_DAY,
+    PAYOUT_MODE_FIRST_HALF,
+    PAYOUT_MODE_ON_DEMAND,
+    PAYOUT_MODE_SECOND_HALF,
     _dishwasher_shift_rate,
     _first_half,
     _load_dishwasher_pool,
@@ -54,6 +67,9 @@ class AdvanceAvailability:
     already_advanced: Decimal
     available: Decimal
     note: str | None = None
+    # True в день выплаты периода: заработанное уходит с ведомостью, аванс за этот
+    # период уже недоступен (available обнулён).
+    payout_reached: bool = False
 
 
 def _half_month_bounds(as_of: date) -> tuple[date, date]:
@@ -63,6 +79,73 @@ def _half_month_bounds(as_of: date) -> tuple[date, date]:
     else:
         start, end, _ = _second_half(as_of.year, as_of.month)
     return start, end
+
+
+def _half_month_payout_paid_end(check: date) -> date | None:
+    """Если `check` — день выплаты полумесячной ведомости, вернуть последний день
+    ОПЛАЧИВАЕМОГО полупериода; иначе None.
+
+    - 15-е: платится текущий 1-й полупериод [1..15] → конец = 15-е.
+    - 1-е: платится 2-й полупериод ПРЕДЫДУЩЕГО месяца [16..конец] → конец = последний
+      день прошлого месяца (на 1-е новый период уже стартовал, но день выплаты — этот).
+    """
+    if check.day == HALF_MONTH_SPLIT_DAY:
+        return check
+    if check.day == 1:
+        return check - timedelta(days=1)
+    return None
+
+
+async def _weekly_payout_paid_end(session: AsyncSession, check: date) -> date | None:
+    """Если `check` — `payroll_date` завершившейся недельной ведомости (ещё не
+    финализированной), вернуть её `end_date`; иначе None."""
+    period = await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.status != "finalized",
+            PayrollPeriod.payroll_date == check,
+        )
+        .order_by(PayrollPeriod.start_date.desc())
+        .limit(1)
+    )
+    return period.end_date if period is not None else None
+
+
+def _okladnik_payout_paid_end(mode: str, check: date) -> date | None:
+    """День выплаты окладника зависит от режима: on_demand не выплачивается автоматически
+    (нет дня выплаты); first_half — весь оклад в первой ведомости (15-е); second_half — в
+    последней (1-е); split — обе половины (15-е и 1-е)."""
+    if mode == PAYOUT_MODE_ON_DEMAND:
+        return None
+    on_first_half_payday = check.day == HALF_MONTH_SPLIT_DAY  # 15-е → платится [1..15]
+    on_second_half_payday = check.day == 1  # 1-е → платится [16..конец] прошлого месяца
+    if mode == PAYOUT_MODE_FIRST_HALF:
+        return check if on_first_half_payday else None
+    if mode == PAYOUT_MODE_SECOND_HALF:
+        return (check - timedelta(days=1)) if on_second_half_payday else None
+    # split (дефолт): выплачиваются обе половины.
+    if on_first_half_payday:
+        return check
+    if on_second_half_payday:
+        return check - timedelta(days=1)
+    return None
+
+
+async def _payout_paid_end(
+    session: AsyncSession, basis: str, position: str, check: date
+) -> date | None:
+    """Последний день оплачиваемого периода, если `check` — его день выплаты; иначе None."""
+    if basis == "dishwasher":
+        # Мойщица выплачивается вместе с полумесячной ведомостью (обе половины).
+        return _half_month_payout_paid_end(check)
+    if basis == "okladnik":
+        modes = await _load_okladnik_payout_modes(session)
+        mode = _okladnik_payout_mode(modes, position)
+        return _okladnik_payout_paid_end(mode, check)
+    if basis == "production":
+        return await _weekly_payout_paid_end(session, check)
+    return None
 
 
 async def _open_weekly_period(session: AsyncSession, as_of: date) -> PayrollPeriod | None:
@@ -168,7 +251,12 @@ async def _production_earned(
     )
     result = await calculate_payroll_lines(session, provisional, uuid.uuid4(), entries)
     if result.blocking_issues:
-        return Decimal("0.00"), period.start_date, as_of, "Расчёт заблокирован — проверьте явки/ставки"
+        return (
+            Decimal("0.00"),
+            period.start_date,
+            as_of,
+            "Расчёт заблокирован — проверьте явки/ставки",
+        )
     earned = sum(
         (decimal(line.total_payable) for line in result.lines if line.employee_id == employee.id),
         Decimal("0"),
@@ -196,25 +284,118 @@ async def _already_advanced_in_period(
     return sum((decimal(row.amount) for row in rows), Decimal("0")).quantize(_CENTS)
 
 
+async def _basis_earned(
+    session: AsyncSession,
+    employee: Employee,
+    position: str,
+    basis: str,
+    as_of: date,
+) -> tuple[Decimal, date | None, date | None, str | None]:
+    """Заработанное и границы периода для базиса на дату `as_of`."""
+    if basis == "okladnik":
+        earned, start, end = await _okladnik_earned(session, employee, position, as_of)
+        return earned, start, end, None
+    if basis == "dishwasher":
+        earned, start, end = await _dishwasher_earned(session, employee, as_of)
+        return earned, start, end, None
+    return await _production_earned(session, employee, as_of)
+
+
+def _upcoming_weekly_payslips(today: date, count: int) -> list[tuple[date, date, date]]:
+    from app.services.payroll_runner import current_week_bounds
+
+    start, _, _ = current_week_bounds(today)
+    out: list[tuple[date, date, date]] = []
+    for i in range(count + 2):
+        s, e, p = current_week_bounds(start + timedelta(days=7 * i))
+        if p >= today:
+            out.append((s, e, p))
+        if len(out) >= count:
+            break
+    return out[:count]
+
+
+def _upcoming_half_month_payslips(
+    today: date, count: int, *, mode: str | None
+) -> list[tuple[date, date, date]]:
+    if mode == PAYOUT_MODE_ON_DEMAND:
+        return []  # нет автоматических выплат — удерживать неоткуда
+    out: list[tuple[date, date, date]] = []
+    year, month = today.year, today.month
+    for _ in range(count + 3):
+        for start, end, payout in (_first_half(year, month), _second_half(year, month)):
+            if payout < today:
+                continue
+            # first_half платит только 15-го (payout.day==15), second_half — только 1-го.
+            if mode == PAYOUT_MODE_FIRST_HALF and payout.day != HALF_MONTH_SPLIT_DAY:
+                continue
+            if mode == PAYOUT_MODE_SECOND_HALF and payout.day == HALF_MONTH_SPLIT_DAY:
+                continue
+            out.append((start, end, payout))
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        if len(out) >= count:
+            break
+    out.sort(key=lambda item: item[2])
+    return out[:count]
+
+
+async def upcoming_payslips(
+    session: AsyncSession, employee: Employee | None, today: date, *, count: int = 2
+) -> list[tuple[date, date, date]]:
+    """Ближайшие `count` ведомостей (payout_date ≥ today), вычисленные по расписанию
+    (недельное / полумесячное с учётом режима окладника) — без опоры на строки периодов,
+    которых может ещё не быть. Возвращает (period_start, period_end, payout_date).
+
+    Без сотрудника — недельное расписание по умолчанию (основной контур «выплаты по
+    вторникам»); с сотрудником — под его пайплайн."""
+    if employee is None:
+        return _upcoming_weekly_payslips(today, count)
+    position = await get_position_on_date(session, employee.id, today)
+    position = position or employee.position or ""
+    if position in okladnik_positions():
+        modes = await _load_okladnik_payout_modes(session)
+        mode = _okladnik_payout_mode(modes, position)
+        return _upcoming_half_month_payslips(today, count, mode=mode)
+    if position in dishwasher_positions():
+        return _upcoming_half_month_payslips(today, count, mode=None)  # обе половины
+    return _upcoming_weekly_payslips(today, count)
+
+
 async def available_to_advance(
     session: AsyncSession,
     employee: Employee,
     as_of: date,
+    *,
+    apply_payout_gate: bool = True,
 ) -> AdvanceAvailability:
-    """Доступно к авансу = earned-to-date − уже выданные авансы за текущий период."""
+    """Доступно к авансу = earned-to-date − уже выданные авансы за текущий период.
+
+    Отсечка «день выплаты»: если `as_of` приходится на день выплаты ведомости сотрудника
+    (с учётом режима выплат окладника), `available` обнуляется, а `payout_reached=True`;
+    заработанное показываем по ОПЛАЧИВАЕМОМУ периоду (справочно).
+
+    `apply_payout_gate=False` полностью выключает отсечку — для реконсиляции уже прошедших
+    операций (дата операции в прошлом не должна «обнулять» исторический аванс) и для
+    выдачи «через ведомость», где блокировку решает вызывающий по дате выплаты периода.
+    """
     position = await get_position_on_date(session, employee.id, as_of)
     position = position or employee.position or ""
 
-    note: str | None = None
     if position in okladnik_positions():
         basis = "okladnik"
-        earned, start, end = await _okladnik_earned(session, employee, position, as_of)
     elif position in dishwasher_positions():
         basis = "dishwasher"
-        earned, start, end = await _dishwasher_earned(session, employee, as_of)
     else:
         basis = "production"
-        earned, start, end, note = await _production_earned(session, employee, as_of)
+
+    paid_end = (
+        await _payout_paid_end(session, basis, position, as_of) if apply_payout_gate else None
+    )
+    # В день выплаты earned показываем по ОПЛАЧИВАЕМОМУ периоду (as_of → его конец),
+    # иначе — по периоду, содержащему as_of.
+    earned_as_of = paid_end if paid_end is not None else as_of
+
+    earned, start, end, note = await _basis_earned(session, employee, position, basis, earned_as_of)
 
     if start is None or end is None:
         return AdvanceAvailability(
@@ -230,6 +411,23 @@ async def available_to_advance(
         )
 
     already = await _already_advanced_in_period(session, employee.id, start, end)
+    if paid_end is not None:
+        return AdvanceAvailability(
+            employee_id=employee.id,
+            as_of=as_of,
+            period_start=start,
+            period_end=end,
+            basis=basis,
+            earned_to_date=earned.quantize(_CENTS),
+            already_advanced=already,
+            available=Decimal("0.00"),
+            note=(
+                f"Наступил день выплаты ({as_of.strftime('%d.%m.%Y')}) — "
+                "заработанное уходит с ведомостью, аванс за этот период уже недоступен"
+            ),
+            payout_reached=True,
+        )
+
     available = max(earned - already, Decimal("0")).quantize(_CENTS)
     return AdvanceAvailability(
         employee_id=employee.id,
@@ -241,4 +439,5 @@ async def available_to_advance(
         already_advanced=already,
         available=available,
         note=note,
+        payout_reached=False,
     )

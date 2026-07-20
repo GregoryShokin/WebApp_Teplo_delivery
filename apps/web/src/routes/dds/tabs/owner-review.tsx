@@ -85,6 +85,9 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
             <SelectItem value="iiko_payment_unsettled">Оплата в iiko не проведена</SelectItem>
             <SelectItem value="card_refund_after_cheque">Возврат по проведённому чеку</SelectItem>
             <SelectItem value="cheque_refund_missing">Возврат не пришёл от банка</SelectItem>
+            <SelectItem value="deposit_bank_draft_failed">
+              Депозит выдан, а платёж в банк не ушёл
+            </SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -276,6 +279,9 @@ function OwnerReviewCard({
   const isRefundMissing = item.kind === "cheque_refund_missing";
   // Кейс «оплата в iiko не проведена»: своя карточка (поставщик/сумма/дата/причина) и действия.
   const isIikoUnsettled = item.kind === "iiko_payment_unsettled";
+  // Депозит списан, а черновик в банк не ушёл: банковской операции нет вообще, поэтому
+  // общая карточка показала бы пустые поля и сырой payload — рисуем своё.
+  const isDepositDraftFailed = item.kind === "deposit_bank_draft_failed";
   const iikoRetriable = isIikoUnsettled && item.payload?.retriable === true;
   const isMultiInvoiceResidual =
     isIikoUnsettled && item.payload?.reason_code === "multi_invoice_residual";
@@ -311,7 +317,20 @@ function OwnerReviewCard({
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {isIikoUnsettled ? (
+        {isDepositDraftFailed ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-2">
+              <ReviewField label="Назначение" value={payloadText("purpose")} />
+              <ReviewField label="Документ" value={payloadText("document_id")} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Почему не ушло</Label>
+              <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm">
+                {payloadText("reason")}
+              </div>
+            </div>
+          </>
+        ) : isIikoUnsettled ? (
           <>
             <div className="grid gap-3 md:grid-cols-3">
               <ReviewField label="Поставщик" value={payloadText("supplier_name")} />
@@ -503,6 +522,12 @@ function OwnerReviewCard({
               </span>
             </label>
           </>
+        ) : isDepositDraftFailed ? (
+          <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200">
+            Депозит уже списан со счёта сотрудника, но платёж в банк не ушёл — значит денег он
+            не получил, и в банке подписывать нечего. Переведите сумму вручную (или выдайте
+            наличными) и отметьте кейс разобранным.
+          </div>
         ) : item.kind === "iiko_payment_unsettled" ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             {isMultiInvoiceResidual
@@ -627,6 +652,9 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "cheque_refund_missing") {
     return "Возврат не пришёл от банка";
+  }
+  if (kind === "deposit_bank_draft_failed") {
+    return "Депозит выдан, а платёж в банк не ушёл";
   }
   return kind;
 }

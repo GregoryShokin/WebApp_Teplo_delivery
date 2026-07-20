@@ -135,6 +135,8 @@ export type LinePayload = {
   vat_percent?: number | null;
   is_staff: boolean;
   dds_article_id?: string | null;
+  // Сумма строки как её видит пользователь — эталон (кол-во×округлённая цена не всегда точна).
+  sum?: number;
 };
 
 export type CreateInvoicePayload = {
@@ -204,6 +206,8 @@ export type UpdateInvoicePayload = {
   lines: LinePayload[];
   issued_at?: string;
   number?: string | null;
+  // Смена поставщика (только неоплаченная накладная). undefined → поставщик не меняется.
+  counterparty_id?: string;
 };
 
 export async function updateWarehouseInvoice(

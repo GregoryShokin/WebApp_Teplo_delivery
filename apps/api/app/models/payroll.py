@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -1368,6 +1369,95 @@ class SalaryAdvanceBankDraft(Base):
     )
     provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Резерв Сейфа, созданный при исполнении платежа (источник кнопки «Выплачено»).
+    safe_allocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("safe_allocations.id", ondelete="SET NULL"), nullable=True
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DepositBankDraft(Base):
+    """Банк-черновик выдачи депозита (производственники + курьеры) — зеркало ``SalaryAdvanceBankDraft``.
+
+    Полный цикл вместо мгновенной выдачи: когда счёт выдачи — банковский, деньги не уходят
+    сразу. Выписывается черновик в Т-Банке/Сбере, оплата приходит вебхуком (Т-Банк) или
+    поллингом (Сбер) по ``provider_ref``, тогда заводится транзит р/с→Сейф и резерв Сейфа
+    (``safe_allocation_id``) со статьёй «Выдача депозита». Депозит-счёт сотрудника
+    списывается только при фактической выдаче (оплата резерва по кнопке) → черновик
+    ``disbursed``. Это ключевое отличие от прежней логики: пока черновик висит, депозит цел.
+
+    Получатель — либо производственник (``deposit_transaction_id`` → ``deposit_transaction``,
+    UUID), либо курьер (``courier_deposit_transaction_id`` → ``courier_deposit_transaction``,
+    Integer). Ссылка на транзакцию заполняется при ВЫДАЧЕ (её раньше не было — списания нет,
+    пока деньги не выданы), поэтому обе nullable. Кто получатель, задаёт ``recipient_kind``.
+
+    status: ``created``/``updated`` (в банке) → ``paid`` (исполнен, деньги в Сейфе резервом)
+    → ``disbursed`` (выдан сотруднику); ``failed`` — отклонён банком; ``deleted`` — удалён в
+    банке (можно отправить заново); ``cancelled`` — отменён до выдачи.
+    """
+
+    __tablename__ = "deposit_bank_draft"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', 'deleted', 'cancelled')",
+            name="ck_deposit_bank_draft_status",
+        ),
+        CheckConstraint(
+            "recipient_kind in ('production', 'courier')",
+            name="ck_deposit_bank_draft_recipient_kind",
+        ),
+        # Получатель — сотрудник (employee_id): у производственника это адресат, у курьера тоже
+        # (курьер — Employee). courier_deposit_transaction_id заполняется при фактической выдаче
+        # (0192), поэтому у производственника он NULL, у курьера — необязателен.
+        CheckConstraint(
+            "(recipient_kind = 'production' AND employee_id IS NOT NULL "
+            "AND courier_deposit_transaction_id IS NULL) "
+            "OR (recipient_kind = 'courier' AND employee_id IS NOT NULL)",
+            name="ck_deposit_bank_draft_recipient_ref",
+        ),
+        Index("ix_deposit_bank_draft_status", "status"),
+        # Один активный черновик на производственника — гард от двойной отправки. Частичный
+        # индекс: только по незакрытым, чтобы история не мешала новой выдаче.
+        Index(
+            "uq_deposit_bank_draft_active_employee",
+            "employee_id",
+            unique=True,
+            postgresql_where=text(
+                "status in ('created', 'updated', 'paid') AND employee_id IS NOT NULL"
+            ),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipient_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Производственник: сотрудник-получатель (черновик заводится ДО выдачи, а транзакция —
+    # при выдаче, поэтому ссылаемся на сотрудника, а не на транзакцию).
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=True
+    )
+    deposit_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deposit_transaction.id", ondelete="SET NULL"), nullable=True
+    )
+    # Курьер: id операции возврата (Integer — своя таблица с целочисленным ключом).
+    courier_deposit_transaction_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("courier_deposit_transaction.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    document_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    bank_provider: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="tbank", server_default="tbank"
+    )
+    provider_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Резерв Сейфа, созданный при исполнении платежа (источник кнопки «Выплатить депозит»).
     safe_allocation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("safe_allocations.id", ondelete="SET NULL"), nullable=True
     )

@@ -226,7 +226,9 @@ export function OperationClassifyDialog({
     : "";
   const advanceAvailabilityQuery = useQuery({
     queryKey: ["dds", "advance-availability", advanceEmployeeId, row?.operation_date],
-    queryFn: () => getPayrollAdvanceAvailability(advanceEmployeeId, row!.operation_date),
+    // Реконсиляция уже прошедшей операции: без отсечки «день выплаты» (apply_payout_gate=false),
+    // иначе на дату операции = день выплаты показалось бы ложное «доступно 0».
+    queryFn: () => getPayrollAdvanceAvailability(advanceEmployeeId, row!.operation_date, false),
     enabled: Boolean(isOperation && advanceEmployeeId && row?.operation_date),
   });
 

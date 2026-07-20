@@ -205,6 +205,11 @@ async def test_paid_books_transfer_settles_invoices_creates_reserve(
         assert reserve.purpose is not None
         assert "Местный закуп Ромашка" in reserve.purpose
         assert "№14" in reserve.purpose
+        # Техметка [TPL-…] остаётся в банк-назначении черновика и не течёт в человеческие
+        # поля: ни в целёвку Сейфа, ни в ноги транзита в журнале ДДС.
+        assert "[TPL-" in draft.payload["paymentPurpose"]
+        assert "[TPL-" not in reserve.purpose
+        assert all("[TPL-" not in (t.payment_purpose or "") for t in legs)
 
 
 async def test_paid_is_idempotent(
@@ -365,11 +370,17 @@ async def test_partial_reserve_payout_partially_settles_invoices(
         await make_expense_article(session)
         supplier = await _informal_supplier(session, name="Ромашка Частями")
         inv1 = await make_invoice(
-            session, counterparty_id=supplier.id, amount="1000.00", number="31",
+            session,
+            counterparty_id=supplier.id,
+            amount="1000.00",
+            number="31",
             invoice_date=date(2026, 7, 1),
         )
         inv2 = await make_invoice(
-            session, counterparty_id=supplier.id, amount="2000.00", number="32",
+            session,
+            counterparty_id=supplier.id,
+            amount="2000.00",
+            number="32",
             invoice_date=date(2026, 7, 2),
         )
         await session.commit()

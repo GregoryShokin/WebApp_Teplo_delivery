@@ -33,6 +33,7 @@ from app.models import (
     DeferredAuditCharge,
     DeferredAuditChargeRecipient,
     DepositAccount,
+    DepositBankDraft,
     DepositPayoutSchedule,
     Employee,
     EmployeePayout,
@@ -88,6 +89,18 @@ async def _deposit_settled(session: AsyncSession, employee_id: uuid.UUID) -> boo
         select(DepositAccount.balance).where(DepositAccount.employee_id == employee_id)
     )
     if balance is not None and Decimal(balance) > _MONEY_EPSILON:
+        return False
+    # Висящий банк-черновик выдачи депозита (created/updated/paid) = деньги ещё в пути / резервом
+    # на Сейфе, сотруднику не выданы → расчёт не закрыт (баланс обычно >0 и так, но подстрахуемся).
+    has_active_draft = await session.scalar(
+        select(
+            exists().where(
+                DepositBankDraft.employee_id == employee_id,
+                DepositBankDraft.status.in_(("created", "updated", "paid")),
+            )
+        )
+    )
+    if bool(has_active_draft):
         return False
     # Забронированная, но ещё не проведённая выдача депозита в ведомость = деньги
     # не двинулись → расчёт не закрыт.

@@ -3,7 +3,7 @@ import { api } from "@/lib/api";
 // Одна нормализованная строка платежа из агрегатора (см. finance_payments.py).
 export type PaymentRow = {
   id: string;
-  source: "invoice" | "draft" | "reserve" | "payroll_draft";
+  source: "invoice" | "draft" | "reserve" | "payroll_draft" | "deposit_draft" | "advance_draft";
   kind: string;
   ref_id: string;
   title: string;

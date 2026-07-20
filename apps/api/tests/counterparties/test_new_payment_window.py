@@ -42,6 +42,7 @@ from app.services.counterparty_payments import (
     DEFAULT_SUPPLIER_ARTICLE_CODE,
     CounterpartyPaymentError,
     ExpenseLineInput,
+    create_bank_safe_topup_draft,
     create_expense_payment_draft,
     create_payment_draft_for_invoices,
 )
@@ -144,7 +145,10 @@ async def test_expense_draft_targets_ip_card(
             select(AppSetting).where(AppSetting.key == "payroll.bank_payout_requisites")
         )
         assert draft.payload["recipientName"] == payout_setting.value["recipientName"]
-        assert draft.payload["paymentPurpose"] == "Аренда помещения за июль"
+        # В банк назначение уходит с меткой связи черновик↔операция; человеческое
+        # target_purpose остаётся чистым.
+        marker = f"[TPL-{draft.id.hex[:12].upper()}]"
+        assert draft.payload["paymentPurpose"] == f"Аренда помещения за июль {marker}"
         # Регрессия: контрагентские схемы переваривают черновик без контрагента
         # (GET /counterparties/drafts/list гоняет все черновики через DraftRead).
         assert DraftRead.model_validate(draft).counterparty_id is None
@@ -174,6 +178,8 @@ async def test_expense_draft_channel_selects_bank_provider(
             channel="bank_draft_sber",
         )
         assert sber_draft.bank_provider == "sber"
+        # Метка связи кладётся независимо от банка-плательщика (Сберу — задел на матчер).
+        assert f"[TPL-{sber_draft.id.hex[:12].upper()}]" in sber_draft.payload["paymentPurpose"]
 
 
 async def test_expense_paid_books_transfer_and_targeted_allocation(
@@ -308,6 +314,9 @@ async def test_expense_multiline_tranche_splits_into_per_line_reserves(
         safe_in = sum(t.amount for t in legs if t.wallet_id == safe_wallet.id)
         assert safe_in == Decimal("2500.00")
         assert any(t.wallet_id == payer_wallet.id for t in legs)
+        # В банк транш уходит с меткой, а в назначение транзита (журнал ДДС) она не течёт.
+        assert f"[TPL-{draft.id.hex[:12].upper()}]" in draft.payload["paymentPurpose"]
+        assert all("[TPL-" not in (t.payment_purpose or "") for t in legs)
 
         reserves = (
             await session.scalars(
@@ -567,12 +576,28 @@ async def test_expense_optional_purpose_defaults_to_article_name(
             session, article_id=article.id, amount=Decimal("100"), purpose="   "
         )
         assert draft.target_purpose == article.name
-        assert draft.payload["paymentPurpose"] == article.name
+        assert draft.payload["paymentPurpose"] == (
+            f"{article.name} [TPL-{draft.id.hex[:12].upper()}]"
+        )
         # Нулевая/отрицательная сумма всё так же запрещена.
         with pytest.raises(CounterpartyPaymentError, match="больше нуля"):
             await create_expense_payment_draft(
                 session, article_id=article.id, amount=Decimal("0"), purpose="x"
             )
+
+
+async def test_bank_safe_topup_draft_carries_match_marker(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пополнение Сейфа: банк-назначение несёт метку связи, target_purpose — чистый."""
+    async with async_session_factory() as session:
+        draft = await create_bank_safe_topup_draft(
+            session, amount=Decimal("5000.00"), purpose="Пополнение под инкассацию"
+        )
+        assert draft.topup_only is True
+        assert draft.target_purpose == "Пополнение под инкассацию"
+        marker = f"[TPL-{draft.id.hex[:12].upper()}]"
+        assert draft.payload["paymentPurpose"] == f"Пополнение под инкассацию {marker}"
 
 
 async def test_context_articles_follow_permissions(

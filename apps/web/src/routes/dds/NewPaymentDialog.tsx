@@ -1960,6 +1960,11 @@ function AdvanceForm({
     enabled: active && Boolean(employeeId),
   });
   const available = availabilityQuery.data?.available ?? 0;
+  // День выплаты: available уже 0 и причина — не «больше заработанного», а наступивший
+  // день выплаты (заработанное уходит с ведомостью).
+  const payoutReached = availabilityQuery.data?.payout_reached ?? false;
+  const availabilityNote = availabilityQuery.data?.note ?? null;
+  const earnedToDate = availabilityQuery.data?.earned_to_date ?? 0;
   const numericAmount = amountOf(amount);
   const overAvailable =
     kind === "advance" &&
@@ -2005,9 +2010,12 @@ function AdvanceForm({
     summary = "Выберите счёт списания.";
   } else if (overAvailable) {
     tone = "warning";
-    summary = `Больше заработанного (${formatRub(available)}) — аванс не пройдёт.${
-      canLoan ? " Переключите на «Заём»." : " Такую сумму выдаёт только заём (нужно право займов)."
-    }`;
+    const loanHint = canLoan
+      ? " Оформите «Заём»."
+      : " Такую сумму выдаёт только заём (нужно право займов).";
+    summary = payoutReached
+      ? `Наступил день выплаты — аванс за этот период недоступен.${loanHint}`
+      : `Больше заработанного (${formatRub(available)}) — аванс не пройдёт.${loanHint}`;
   } else if (selectedWallet.kind !== "cash") {
     // Черновик идёт на реквизиты ИП → Сейф-резерв; сотруднику выдают наличными.
     tone = "draft";
@@ -2076,6 +2084,14 @@ function AdvanceForm({
           <div className="rounded-md border bg-muted/40 p-2.5 text-sm">
             {availabilityQuery.isLoading ? (
               "Считаем доступное…"
+            ) : payoutReached ? (
+              isLoan ? (
+                <>
+                  В пределах заработанного: <b>{formatRub(earnedToDate)}</b>
+                </>
+              ) : (
+                <span className="text-amber-700">{availabilityNote}</span>
+              )
             ) : availabilityQuery.data ? (
               <>
                 Доступно к авансу сегодня: <b>{formatRub(available)}</b>

@@ -18,6 +18,7 @@ from app.models import (
     Account,
     BankOperation,
     CounterpartyPaymentDraft,
+    DepositBankDraft,
     OwnAccountsRegistry,
     PayrollBankDraft,
     ReconciliationCase,
@@ -40,6 +41,7 @@ from app.services.banking.tbank import TbankClient, _document_number
 from app.services.couriers.iiko_attendance_sync import sync_attendance
 from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
+from app.services.deposit_bank_draft import apply_deposit_draft_status
 from app.services.dismissal_reconciliation_service import reconcile_all_dismissing
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 from app.services.payroll_advance_service import apply_advance_draft_status
@@ -321,6 +323,45 @@ async def run_payment_status_poll(
         if advance_status == "paid":
             result["paid"] += 1
         elif advance_status == "failed":
+            result["failed"] += 1
+
+    # Те же статусы для банк-выдачи депозитов: при «исполнен» — транзит р/с→Сейф + резерв Сейфа
+    # (депозит-счёт списывается лишь при фактической выдаче резерва). Для Сбера это единственный
+    # путь довести черновик до paid (вебхука у него нет).
+    deposit_drafts = (
+        await session.scalars(
+            select(DepositBankDraft).where(
+                DepositBankDraft.status.in_(("created", "updated")),
+                DepositBankDraft.provider_ref.is_not(None),
+            )
+        )
+    ).all()
+    for deposit_draft in deposit_drafts:
+        try:
+            raw = await status_client_for(deposit_draft.bank_provider).get_payment_status(
+                deposit_draft.provider_ref or ""
+            )
+        except BankCredentialsError:
+            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+            result["errors"] += 1
+            break
+        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+            logger.warning(
+                "payment-status poll: ошибка по deposit-черновику %s",
+                deposit_draft.id,
+                exc_info=True,
+            )
+            result["errors"] += 1
+            continue
+        result["checked"] += 1
+        if raw is None:
+            continue
+        deposit_status = await apply_deposit_draft_status(
+            session, draft=deposit_draft, raw_status=raw, commit=False
+        )
+        if deposit_status == "paid":
+            result["paid"] += 1
+        elif deposit_status == "failed":
             result["failed"] += 1
 
     # Статус черновика T-Банка может застрять на SUBMITTED уже после фактического списания.

@@ -316,6 +316,40 @@ async def create_transaction(
     return transaction
 
 
+async def add_return_transaction_ledger_only(
+    session: AsyncSession,
+    *,
+    employee_id: uuid.UUID,
+    amount_cents: int,
+    transaction_date: date,
+    comment: str | None,
+    created_by_user_id: uuid.UUID,
+    payout_method: str,
+) -> CourierDepositTransaction:
+    """Записать возврат депозита курьеру в леджер БЕЗ проводок ДДС (полный цикл, этап 5).
+
+    Для банк-возврата полным циклом: при фактической выдаче резерва Сейфа расход уже книжит
+    ``pay_allocation`` (safe_payout), а курьерский леджер (уменьшение баланса депозита) — эта
+    строка. Зеркало производственного ``deposit_service.add_transaction`` (тоже ledger-only:
+    без cashflow и без транзита — транзит уже завёл ``apply_deposit_draft_status``).
+    """
+    account = await ensure_account(session, employee_id)
+    transaction = CourierDepositTransaction(
+        account_employee_id=account.employee_id,
+        transaction_type=CourierDepositTransactionType.RETURN.value,
+        amount_cents=amount_cents,
+        transaction_date=transaction_date,
+        comment=comment,
+        created_by=created_by_user_id,
+        payout_method=payout_method,
+        payout_wallet_id=None,
+    )
+    account.updated_at = datetime.now(UTC)
+    session.add(transaction)
+    await session.flush()
+    return transaction
+
+
 async def _book_deposit_return_cashflow(
     session: AsyncSession,
     transaction: CourierDepositTransaction,

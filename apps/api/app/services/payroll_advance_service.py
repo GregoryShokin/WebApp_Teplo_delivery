@@ -66,6 +66,9 @@ from app.services.position_registry import admin_payroll_positions
 
 _CENTS = Decimal("0.01")
 PAYOUT_METHODS = ("business_card", "cash", "transfer", "other", "payroll")
+# Расчётный «сегодня» — по Москве (как весь payroll/касса-контур), чтобы отсечка
+# «день выплаты» и дата выдачи считались в тех же сутках, а не в UTC.
+_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 # Проводка ДДС при выдаче аванса/займа: статья по типу, источник по выбранному кошельку.
 ADVANCE_PAYOUT_SOURCE_KIND = "salary_advance"
@@ -310,7 +313,7 @@ async def issue_advance(
     employee = await session.get(Employee, employee_id)
     if employee is None:
         raise PayrollNotFoundError("Сотрудник не найден")
-    requested_issued_on = issued_on or datetime.now(UTC).date()
+    requested_issued_on = issued_on or datetime.now(_MOSCOW_TZ).date()
     amount = decimal(amount).quantize(_CENTS)
     if amount <= 0:
         raise PayrollConflictError("Сумма должна быть больше нуля")
@@ -343,7 +346,29 @@ async def issue_advance(
         availability_as_of = target_period.payroll_date
     else:
         availability_as_of = target_period.end_date
-    availability = await available_to_advance(session, employee, availability_as_of)
+    # Отсечка «день выплаты» блокирует ТОЛЬКО выдачу аванса сегодняшней датой в день
+    # выплаты ведомости, к которой аванс относится:
+    # - мгновенная выдача (target_period=None): гейтим лишь выдачу сегодняшней датой;
+    #   бэкдейт — запись уже ушедших денег прошлой датой — не гейтим (как реконсиляция);
+    # - «через ведомость»/без даты (target_period задан): earned считаем на конец периода
+    #   без гейта, а блокируем, только если СЕГОДНЯ — день выплаты ИМЕННО этой ведомости.
+    today = datetime.now(_MOSCOW_TZ).date()
+    if target_period is None:
+        availability = await available_to_advance(
+            session, employee, availability_as_of, apply_payout_gate=issued_on >= today
+        )
+        payout_blocked = availability.payout_reached
+    else:
+        availability = await available_to_advance(
+            session, employee, availability_as_of, apply_payout_gate=False
+        )
+        payout_blocked = today == target_period.payroll_date
+    # Явный заём в день выплаты — можно; авто-классификация (kind=None) блокируется.
+    if payout_blocked and requested_kind != "loan":
+        raise PayrollConflictError(
+            availability.note
+            or "Наступил день выплаты — аванс за эту ведомость недоступен. Оформите заём."
+        )
     finalization_date = target_period.end_date if target_period is not None else issued_on
     if await _date_in_finalized_period(
         session, finalization_date, admin=role in admin_payroll_positions()

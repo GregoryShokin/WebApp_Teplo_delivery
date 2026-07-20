@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, CircleSlash, LoaderCircle, MoreHorizontal, Plus } from "lucide-react";
-import { useState } from "react";
+import { Ban, ChevronDown, CircleSlash, LoaderCircle, MoreHorizontal, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -32,6 +31,7 @@ import {
   getEmployees,
   getPayrollAdvanceAvailability,
   getPayrollAdvances,
+  getUpcomingPayslips,
   revokeKassaPayrollAdvance,
   writeOffPayrollAdvance,
   type PayrollAdvance,
@@ -64,6 +64,8 @@ export function PayrollAdvancesRoute() {
   const [kind, setKind] = useState<"advance" | "loan">("advance");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
+  // Выбранная ведомость для удержания займа «через ведомость» (индекс среди ближайших).
+  const [payslipIdx, setPayslipIdx] = useState(0);
   const [comment, setComment] = useState("");
   const [overrideCeiling, setOverrideCeiling] = useState(false);
   const [issuedOn, setIssuedOn] = useState(todayIso);
@@ -88,23 +90,71 @@ export function PayrollAdvancesRoute() {
   });
   const availability = availabilityQuery.data ?? null;
   const available = availability?.available ?? 0;
+  // День выплаты: заработанное уходит с ведомостью — аванс за период уже недоступен.
+  const payoutReached = availability?.payout_reached ?? false;
   const issueWalletsQuery = useQuery({
     queryKey: ["advance-issue-wallets"],
     queryFn: getAdvanceIssueWallets,
     enabled: dialogOpen,
   });
-  const issueWallets = issueWalletsQuery.data ?? [];
+  const issueWallets = useMemo(() => issueWalletsQuery.data ?? [], [issueWalletsQuery.data]);
+  // Ближайшие ведомости — «с какой ЗП удерживать» заём через ведомость (по расписанию).
+  const payslipsQuery = useQuery({
+    // Без сотрудника — недельное расписание по умолчанию (выплаты по вторникам); с
+    // сотрудником — под его пайплайн (недельный/полумесячный).
+    queryKey: ["advance-upcoming-payslips", issueEmployeeId || "default"],
+    queryFn: () => getUpcomingPayslips(issueEmployeeId || undefined),
+    enabled: kind === "loan" && walletId === PAYROLL_WALLET && dialogOpen,
+  });
+  const payslips = useMemo(() => payslipsQuery.data ?? [], [payslipsQuery.data]);
   const amountNumber = numericAmount(amount);
   const overEarned = amountNumber > available;
   const isLoan = kind === "loan";
   const advanceOverEarned = kind === "advance" && overEarned;
+  const availabilityReady = Boolean(issueEmployeeId) && !availabilityQuery.isLoading;
+  // Заём в день выплаты: available уже 0, но справочно показываем полное заработанное.
+  const earnedToDate = availability?.earned_to_date ?? 0;
+  const loanReference = payoutReached ? earnedToDate : available;
+  // Note-строку не дублируем, когда её перекрывает amber-box (аванс + день выплаты + сумма),
+  // и не показываем payout-note про аванс при выбранном займе (к займу неприменима).
+  const showAvailabilityNote =
+    Boolean(availability?.note) && !(payoutReached && (isLoan || advanceOverEarned));
   const isBackdated = issuedOn < todayIso();
   const throughPayroll = walletId === PAYROLL_WALLET;
+  const selectedPayslip = payslips[payslipIdx] ?? payslips[0] ?? null;
   // ТК Черникова сегодняшней датой = разрешение на выдачу через кассу (не мгновенно);
   // задним числом деньги уже выданы — остаётся мгновенная фиксация.
   const selectedWallet = issueWallets.find((wallet) => wallet.id === walletId) ?? null;
   const viaKassaPermission =
     !throughPayroll && !isBackdated && selectedWallet?.code === KASSA_WALLET_CODE;
+
+  // Аванс — это досрочная выдача уже заработанного ЖИВЫМИ деньгами (нал/банк). «Через
+  // ведомость» для аванса бессмысленно: деньги ушли бы вместе с ЗП в день выплаты, когда
+  // заработанное уже обнуляется выплатой. Поэтому канал «через ведомость» — только у займа;
+  // для аванса выбираем конкретный счёт (по умолчанию — первый доступный).
+  useEffect(() => {
+    if (kind === "advance" && walletId === PAYROLL_WALLET && issueWallets.length > 0) {
+      setWalletId(issueWallets[0].id);
+    }
+  }, [kind, walletId, issueWallets]);
+
+  // «Через ведомость»: выбор ведомости = с какой ЗП удерживать. Первая (ближайшая) →
+  // recovery_start пусто (с ближайшей); последующие → удержание с начала выбранного периода.
+  useEffect(() => {
+    if (!throughPayroll || payslips.length === 0) return;
+    const idx = payslipIdx < payslips.length ? payslipIdx : 0;
+    if (idx !== payslipIdx) setPayslipIdx(idx);
+    setRecoveryStartDate(idx === 0 ? "" : payslips[idx].period_start);
+  }, [throughPayroll, payslips, payslipIdx]);
+
+  // Дата ближайшей выплаты, из которой удержим (для «через ведомость» — выбранная).
+  const nearestPayoutLabel = throughPayroll
+    ? selectedPayslip
+      ? formatDate(selectedPayslip.payout_date)
+      : null
+    : availability?.period_end
+      ? formatDate(availability.period_end)
+      : null;
 
   function resetForm() {
     setIssueEmployeeId("");
@@ -112,6 +162,7 @@ export function PayrollAdvancesRoute() {
     setKind("advance");
     setInstallmentAmount("");
     setRecoveryStartDate("");
+    setPayslipIdx(0);
     setComment("");
     setOverrideCeiling(false);
     setIssuedOn(todayIso());
@@ -306,208 +357,316 @@ export function PayrollAdvancesRoute() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="grid max-h-[calc(100dvh-2rem)] max-w-lg grid-rows-[auto_minmax(0,1fr)_auto] gap-3 overflow-hidden p-4 sm:p-5">
-          <DialogHeader className="space-y-1">
-            <DialogTitle>{isLoan ? "Добавить заём" : "Добавить аванс"}</DialogTitle>
-            <DialogDescription>
-              Аванс — в пределах заработанного. Заём — деньги в долг, гасится в рассрочку.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-hidden p-0">
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+            <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5">
+              <DialogHeader className="space-y-1 text-left">
+                <DialogTitle>{isLoan ? "Выдать заём" : "Выдать аванс"}</DialogTitle>
+                <DialogDescription>
+                  {isLoan
+                    ? "Деньги в долг сверх заработанного — гасятся из будущих зарплат."
+                    : "Часть уже заработанной зарплаты, досрочно. Удержим из ближайшей выплаты."}
+                </DialogDescription>
+              </DialogHeader>
 
-          <div className="grid gap-3 overflow-y-auto pr-1">
-            <Label className="grid gap-1.5">
-              <span>Сотрудник</span>
-              <EmployeeCombobox
-                employees={employees.filter((employee) => employee.status === "active")}
-                value={issueEmployeeId}
-                onChange={setIssueEmployeeId}
-              />
-            </Label>
+              <div className="mt-4 grid gap-4">
+                <div className="grid gap-2.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Кому и сколько
+                  </span>
+                  <EmployeeCombobox
+                    employees={employees.filter((employee) => employee.status === "active")}
+                    value={issueEmployeeId}
+                    onChange={setIssueEmployeeId}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setKind("advance")}
+                      className={cn(
+                        "rounded-md border py-2 text-center text-sm",
+                        !isLoan
+                          ? "border-primary bg-primary/5 font-medium text-primary ring-1 ring-primary"
+                          : "border-input hover:bg-muted/50",
+                      )}
+                    >
+                      Аванс
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canLoan}
+                      onClick={() => setKind("loan")}
+                      className={cn(
+                        "rounded-md border py-2 text-center text-sm disabled:cursor-not-allowed disabled:opacity-50",
+                        isLoan
+                          ? "border-primary bg-primary/5 font-medium text-primary ring-1 ring-primary"
+                          : "border-input hover:bg-muted/50",
+                      )}
+                    >
+                      Заём
+                    </button>
+                  </div>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="Сумма, ₽"
+                  />
+                  {issueEmployeeId ? (
+                    availabilityQuery.isLoading ? (
+                      <span className="text-xs text-muted-foreground">Считаем заработанное…</span>
+                    ) : showAvailabilityNote ? (
+                      <span className="text-xs text-amber-600">{availability!.note}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {isLoan ? "В пределах заработанного" : "Доступно к авансу"}:{" "}
+                        <b className="font-medium text-foreground">
+                          {formatMoney(isLoan ? loanReference : available)}
+                        </b>
+                      </span>
+                    )
+                  ) : null}
+                  {availabilityReady && advanceOverEarned ? (
+                    payoutReached ? (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                        Наступил день выплаты — заработанное уходит с ведомостью. Аванс за этот
+                        период уже недоступен{canLoan ? "; можно оформить заём" : ""}.
+                      </div>
+                    ) : (
+                      <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                        Превышает заработанное ({formatMoney(available)}) — выдать можно только как{" "}
+                        <b>заём</b>.
+                      </div>
+                    )
+                  ) : null}
+                </div>
 
-            <div className="grid gap-1.5">
-              <span className="text-sm font-medium">Тип выдачи</span>
-              <div className="inline-flex w-fit overflow-hidden rounded-md border">
-                <button
-                  type="button"
-                  className={cn(
-                    "px-4 py-1.5 text-sm",
-                    !isLoan && "bg-primary/10 font-medium text-primary",
-                  )}
-                  onClick={() => setKind("advance")}
-                >
-                  Аванс
-                </button>
-                <button
-                  type="button"
-                  disabled={!canLoan}
-                  className={cn(
-                    "px-4 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50",
-                    isLoan && "bg-primary/10 font-medium text-primary",
-                  )}
-                  onClick={() => setKind("loan")}
-                >
-                  Заём
-                </button>
+                {isLoan ? (
+                  <div className="grid gap-2.5">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Как удержать
+                    </span>
+                    <div
+                      className={cn("grid gap-2", throughPayroll ? "grid-cols-1" : "grid-cols-2")}
+                    >
+                      <Label className="grid gap-1.5">
+                        <span className="text-sm">Удержание за период</span>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={installmentAmount}
+                          onChange={(event) => setInstallmentAmount(event.target.value)}
+                          placeholder="весь заём сразу"
+                        />
+                      </Label>
+                      {/* «Через ведомость» задаёт старт удержания через выбор ведомости ниже. */}
+                      {throughPayroll ? null : (
+                        <Label className="grid gap-1.5">
+                          <span className="text-sm">Удерживать с</span>
+                          <Input
+                            type="date"
+                            value={recoveryStartDate}
+                            onChange={(event) => setRecoveryStartDate(event.target.value)}
+                          />
+                        </Label>
+                      )}
+                    </div>
+                    {canLoan ? null : (
+                      <div className="text-xs text-amber-600">У вас нет права на выдачу займов.</div>
+                    )}
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={overrideCeiling}
+                        onChange={(event) => setOverrideCeiling(event.target.checked)}
+                      />
+                      Превысить потолок займа (подтверждаю)
+                    </label>
+                  </div>
+                ) : null}
+
+                <div className="grid gap-2.5">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Как выдать
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Label className="grid gap-1.5">
+                      <span className="text-sm">Счёт выдачи</span>
+                      <div className="relative">
+                        <select
+                          className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm disabled:opacity-50"
+                          value={walletId}
+                          onChange={(event) => setWalletId(event.target.value)}
+                        >
+                          {isLoan && !isBackdated ? (
+                            <option value={PAYROLL_WALLET}>Через ведомость</option>
+                          ) : null}
+                          {issueWallets.map((wallet) => (
+                            <option key={wallet.id} value={wallet.id}>
+                              {wallet.name}
+                              {wallet.channel === "bank" ? " (банк)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </Label>
+                    {throughPayroll ? (
+                      <Label className="grid gap-1.5">
+                        <span className="text-sm">Удержать из ЗП</span>
+                        <div className="relative">
+                          <select
+                            className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm disabled:opacity-50"
+                            value={payslipIdx}
+                            disabled={payslips.length === 0}
+                            onChange={(event) => setPayslipIdx(Number(event.target.value))}
+                          >
+                            {payslips.length === 0 ? (
+                              <option value={0}>
+                                {payslipsQuery.isLoading ? "Загрузка…" : "Нет ближайших ведомостей"}
+                              </option>
+                            ) : (
+                              payslips.map((payslip, idx) => (
+                                <option key={payslip.payout_date} value={idx}>
+                                  ЗП {formatDate(payslip.payout_date)}
+                                  {idx === 0 ? " (ближайшая)" : ""}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          <ChevronDown
+                            className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </Label>
+                    ) : (
+                      <Label className="grid gap-1.5">
+                        <span className="text-sm">Дата выдачи</span>
+                        <Input
+                          type="date"
+                          value={issuedOn}
+                          max={todayIso()}
+                          min={canBackdate ? undefined : todayIso()}
+                          onChange={(event) => {
+                            const value = event.target.value || todayIso();
+                            setIssuedOn(value);
+                            if (
+                              value < todayIso() &&
+                              walletId === PAYROLL_WALLET &&
+                              issueWallets.length > 0
+                            ) {
+                              setWalletId(issueWallets[0].id);
+                            }
+                          }}
+                        />
+                      </Label>
+                    )}
+                  </div>
+                  {viaKassaPermission ? (
+                    <span className="text-xs font-medium text-amber-600">
+                      Уйдёт в кассу — выдаст администратор. Деньги и удержание появятся после
+                      фактической выдачи.
+                    </span>
+                  ) : null}
+                  <Label className="grid gap-1.5">
+                    <span className="text-sm">Комментарий</span>
+                    <Input
+                      value={comment}
+                      onChange={(event) => setComment(event.target.value)}
+                      placeholder="Необязательно"
+                    />
+                  </Label>
+                </div>
               </div>
             </div>
 
-            <Label className="grid gap-1.5">
-              <span>Дата выдачи</span>
-              <Input
-                type="date"
-                value={issuedOn}
-                max={todayIso()}
-                min={canBackdate ? undefined : todayIso()}
-                onChange={(event) => {
-                  const value = event.target.value || todayIso();
-                  setIssuedOn(value);
-                  if (
-                    value < todayIso() &&
-                    walletId === PAYROLL_WALLET &&
-                    issueWallets.length > 0
-                  ) {
-                    setWalletId(issueWallets[0].id);
-                  }
-                }}
-              />
-              <span className="text-xs text-muted-foreground">
-                {isBackdated
-                  ? "Задним числом: деньги уже выданы — выберите счёт выдачи ниже."
-                  : canBackdate
-                    ? "Сегодня или задним числом. Будущей датой нельзя."
-                    : "Только сегодня. Для прошлых дат нужно отдельное право."}
-              </span>
-            </Label>
-
-            {issueEmployeeId ? (
-              <div className="rounded-md border bg-muted/40 p-2.5 text-sm">
-                {availabilityQuery.isLoading ? (
-                  "Считаем доступное…"
-                ) : availability?.note ? (
-                  <span className="text-amber-600">{availability.note}</span>
+            <div className="border-t p-5 sm:border-l sm:border-t-0">
+              <div className="rounded-xl border bg-muted/40 p-4">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Что произойдёт
+                </span>
+                {issueEmployeeId ? (
+                  <div className="mt-3 grid gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                        {employeeName(issueEmployeeId)
+                          .split(" ")
+                          .filter(Boolean)
+                          .slice(0, 2)
+                          .map((word) => word[0])
+                          .join("")
+                          .toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {employeeName(issueEmployeeId)}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {employees.find((employee) => employee.id === issueEmployeeId)?.position ??
+                            "—"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 text-sm">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">Получит</span>
+                        <b className="font-medium tabular-nums">{formatMoney(amountNumber)}</b>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">Способ</span>
+                        <span className="text-right">
+                          {throughPayroll ? "через ведомость" : (selectedWallet?.name ?? "—")}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">Удержим из</span>
+                        <span className="text-right">
+                          {nearestPayoutLabel ? `ЗП ${nearestPayoutLabel}` : "ближайшей ЗП"}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground">{isLoan ? "Оформлен" : "Выдан"}</span>
+                        <span className="text-right">{formatDate(issuedOn)}</span>
+                      </div>
+                    </div>
+                    {availabilityReady && advanceOverEarned ? (
+                      <div className="rounded-md bg-amber-50 p-2.5 text-xs text-amber-800">
+                        {payoutReached
+                          ? "День выплаты — аванс за этот период недоступен, оформите заём."
+                          : "Сумма больше заработанного — переключите на заём."}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
-                  <>
-                    Доступно к авансу {isBackdated ? `на ${formatDate(issuedOn)}` : "сегодня"}:{" "}
-                    <b>{formatMoney(available)}</b>
-                  </>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Выберите сотрудника и сумму — здесь появится итог.
+                  </p>
                 )}
+                <Button
+                  className="mt-4 w-full"
+                  disabled={!canSubmit || issueMutation.isPending}
+                  onClick={() => issueMutation.mutate()}
+                >
+                  {issueMutation.isPending ? (
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {isLoan ? "Выдать заём" : "Выдать аванс"}
+                </Button>
               </div>
-            ) : null}
-
-            <Label className="grid gap-1.5">
-              <span>Сумма, ₽</span>
-              <Input
-                type="number"
-                inputMode="decimal"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="0"
-              />
-            </Label>
-
-            {advanceOverEarned ? (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                Сумма превышает заработанное ({formatMoney(available)}). Это можно выдать только как{" "}
-                <b>заём</b> — переключите тип выдачи.
-              </div>
-            ) : null}
-
-            {isLoan ? (
-              <>
-                <div className="rounded-md border bg-muted/40 p-2.5 text-sm text-muted-foreground">
-                  В пределах заработанного: {formatMoney(Math.min(amountNumber, available))}; эта
-                  часть тоже идёт в долг.
-                </div>
-                <Label className="grid gap-1.5">
-                  <span>Сумма удержания за период, ₽</span>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    value={installmentAmount}
-                    onChange={(event) => setInstallmentAmount(event.target.value)}
-                    placeholder="Пусто — весь заём одной ведомостью"
-                  />
-                </Label>
-                <Label className="grid gap-1.5">
-                  <span>Удерживать с выплаты</span>
-                  <Input
-                    type="date"
-                    value={recoveryStartDate}
-                    onChange={(event) => setRecoveryStartDate(event.target.value)}
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    Пусто — с самой ранней незафинализированной выплаты.
-                  </span>
-                </Label>
-                {canLoan ? null : (
-                  <div className="text-sm text-amber-600">У вас нет права на выдачу займов.</div>
-                )}
-                <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={overrideCeiling}
-                    onChange={(event) => setOverrideCeiling(event.target.checked)}
-                  />
-                  Превысить потолок займа (подтверждаю)
-                </label>
-              </>
-            ) : null}
-
-            <Label className="grid gap-1.5">
-              <span>Счёт выдачи</span>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm disabled:opacity-50"
-                value={walletId}
-                onChange={(event) => setWalletId(event.target.value)}
+              <Button
+                variant="ghost"
+                className="mt-2 w-full"
+                onClick={() => setDialogOpen(false)}
               >
-                {!isBackdated ? (
-                  <option value={PAYROLL_WALLET}>Через ведомость (с ближайшей ЗП)</option>
-                ) : null}
-                {issueWallets.map((wallet) => (
-                  <option key={wallet.id} value={wallet.id}>
-                    {wallet.name}
-                    {wallet.channel === "bank" ? " (банк)" : ""}
-                  </option>
-                ))}
-              </select>
-              <span
-                className={cn(
-                  "text-xs",
-                  viaKassaPermission ? "font-medium text-amber-600" : "text-muted-foreground",
-                )}
-              >
-                {throughPayroll
-                  ? "Сумма уйдёт вместе с зарплатой по ближайшей незафинализированной ведомости."
-                  : viaKassaPermission
-                    ? "Уйдёт в кассу — выдаст администратор. Деньги и удержания появятся после фактической выдачи."
-                    : "Наличные — расход в ДДС сразу; банк — черновик платежа в Т-Банке. Удержание — из ближайшей ЗП."}
-              </span>
-            </Label>
-
-            <Label className="grid gap-1.5">
-              <span>Комментарий</span>
-              <Input
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                placeholder="Необязательно"
-              />
-            </Label>
+                Отмена
+              </Button>
+            </div>
           </div>
-
-          <DialogFooter className="pt-1">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Отмена
-            </Button>
-            <Button
-              disabled={!canSubmit || issueMutation.isPending}
-              onClick={() => issueMutation.mutate()}
-            >
-              {issueMutation.isPending ? (
-                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              {isLoan ? "Добавить заём" : "Добавить аванс"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

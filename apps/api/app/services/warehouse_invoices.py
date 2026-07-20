@@ -152,6 +152,10 @@ class LineInput:
     is_staff: bool = False
     # Статья ДДС персональной строки — на неё ляжет «персонал»-часть при оплате.
     dds_article_id: uuid.UUID | None = None
+    # Явная сумма строки (эталон из документа поставщика). Если задана — хранится как есть, а
+    # не пересчитывается кол-во×цена: цена в 2 знака не всегда даёт точную сумму (80×41,225 =
+    # 3298, но округлённая цена 41,23 даёт 3298,40). None → обратная совместимость (кол-во×цена).
+    sum: Decimal | None = None
 
 
 def _assert_goods_have_product(
@@ -303,7 +307,9 @@ async def create_warehouse_invoice(
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
         price = _money(line.price)
-        line_sum = _money(quantity * price)
+        # Явная сумма строки — эталон (если пришла); иначе кол-во×цена. Так итог накладной
+        # совпадает с введённым в форме: округление цены до копейки не «уводит» сумму.
+        line_sum = _money(line.sum) if line.sum is not None else _money(quantity * price)
         vat_sum: Decimal | None = None
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))
@@ -394,7 +400,9 @@ async def _rebuild_invoice_lines(
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         quantity = _qty(line.quantity)
         price = _money(line.price)
-        line_sum = _money(quantity * price)
+        # Явная сумма строки — эталон (если пришла); иначе кол-во×цена. Так итог накладной
+        # совпадает с введённым в форме: округление цены до копейки не «уводит» сумму.
+        line_sum = _money(line.sum) if line.sum is not None else _money(quantity * price)
         vat_sum: Decimal | None = None
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))
@@ -455,13 +463,19 @@ async def update_warehouse_invoice(
     lines: Sequence[LineInput],
     issued_at: datetime | None = None,
     number: str | None = None,
+    counterparty_id: uuid.UUID | None = None,
 ) -> SupplierInvoice:
     """Replace an invoice's lines and recompute totals. Only for UNPAID, non-barter invoices
     (paid allocations are tied to the amount; barter has its own loan/return ledger). The lines
     are rebuilt exactly like ``create_warehouse_invoice``. iiko push state is reset to
     ``not_pushed`` (so a corrected invoice can be pushed) UNLESS it was already pushed — then
     ``external_id`` is kept so the round-trip dedup still recognises it (the stale iiko document
-    is the owner's to delete + re-push)."""
+    is the owner's to delete + re-push).
+
+    ``counterparty_id`` (опционально) меняет поставщика накладной. Смена разрешена в тех же
+    рамках, что и вся правка (unpaid / не бартер / не в банке); при зеркалировании в iiko
+    (``propagate_invoice_edit_to_iiko``) новый поставщик подставится в ``counteragent`` документа —
+    гейт «у нового поставщика есть iiko-GUID для уже выгруженной накладной» стоит в роуте."""
     if not lines:
         raise WarehouseInvoiceError("Добавьте хотя бы одну строку накладной")
     if invoice.barter_role is not None:
@@ -472,6 +486,14 @@ async def update_warehouse_invoice(
         # Платёж уже уехал (черновик в банке / деньги на Сейфе под этот черновик) — правка сумм
         # разошлась бы с платежом/резервом. Сначала отзыв платежа.
         raise WarehouseInvoiceError("Накладная отправлена в банк — сначала отзовите платёж")
+
+    # Смена поставщика: применяем до пересчёта строк, чтобы номенклатурный гард/iiko-пуш работали
+    # уже с новым контрагентом. Проверяем существование (FK RESTRICT дал бы 500 позже).
+    if counterparty_id is not None and counterparty_id != invoice.counterparty_id:
+        new_counterparty = await session.get(Counterparty, counterparty_id)
+        if new_counterparty is None:
+            raise WarehouseInvoiceError("Контрагент не найден")
+        invoice.counterparty_id = counterparty_id
 
     product_ids = [line.iiko_product_id for line in lines if line.iiko_product_id]
     products: dict[uuid.UUID, IikoProduct] = {}

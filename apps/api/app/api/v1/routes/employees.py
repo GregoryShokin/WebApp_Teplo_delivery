@@ -86,11 +86,11 @@ from app.services import employee_effective_events as employee_effective_event_s
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
 from app.services.banking.payout import channel_provider
 from app.services.deposit_bank_draft import (
-    PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-    book_deposit_bank_to_safe_transfer,
-    send_deposit_payout_bank_draft,
+    create_deposit_payout_draft,
+    deposit_in_flight_amount,
 )
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
+from app.services.deposit_payout import execute_deposit_payout
 from app.services.employee_status import (
     COOKING_STATIONS,
     EMPLOYEE_CATEGORIES,
@@ -1411,24 +1411,15 @@ async def dismiss_employee(
 
     await session.commit()
     await session.refresh(employee)
-    # Внешние эффекты выдачи депозита — после commit: БД источник истины, ошибка iiko/банка
-    # не откатывает увольнение (как в обычной выдаче депозита).
-    if payout_effect is not None:
-        if payout_effect.wallet_code == "tk_chernikova":
-            post_production_deposit_payout_to_iiko(
-                amount=payout_effect.amount,
-                payout_date=now.date(),
-                source_id=payout_effect.transaction_id,
-            )
-        payout_provider = channel_provider(payout_effect.method.value)
-        if payout_provider is not None:
-            await send_deposit_payout_bank_draft(
-                session,
-                document_id=f"teplo-deposit-{payout_effect.transaction_id}",
-                amount=payout_effect.amount,
-                purpose=f"Выдача депозита {employee.full_name} (через Сейф)",
-                provider=payout_provider,
-            )
+    # Внешний эффект наличной выдачи депозита — после commit: БД источник истины, ошибка iiko
+    # не откатывает увольнение. Банк-канал сюда не попадает: там заведён черновик (полный цикл),
+    # деньги и iiko-эффект наступят при фактической выдаче резерва, а не при увольнении.
+    if payout_effect is not None and payout_effect.wallet_code == "tk_chernikova":
+        post_production_deposit_payout_to_iiko(
+            amount=payout_effect.amount,
+            payout_date=now.date(),
+            source_id=payout_effect.transaction_id,
+        )
     if isinstance(session, AsyncSession):
         return await _get_employee_or_404(
             session,
@@ -3955,46 +3946,60 @@ async def _apply_dismiss_deposit_decision(
     account = deposit_service.ensure_account(session, employee_id, account, now)
     transactions: list[DepositTransaction] = []
     payout_effect: DismissDepositPayoutEffect | None = None
+    # Банк-канал выдачи: заведён черновик, депозит списывается лишь при фактической выдаче →
+    # выплачиваемую часть оставляем на счёте (как и via_payroll), сотрудник — dismissing.
+    bank_draft_pending = False
+    bank_draft_id: uuid.UUID | None = None
     via_payroll = (
         decision.payout_amount > 0 and decision.payout_target == DepositPayoutTarget.PAYROLL
     )
     schedule_id: uuid.UUID | None = None
     if decision.payout_amount > 0 and decision.payout_target == DepositPayoutTarget.ACCOUNT:
-        payout_tx = deposit_service.add_transaction(
-            session,
-            employee_id=employee_id,
-            transaction_type="dismissal_payout",
-            amount=decision.payout_amount,
-            now=now,
-        )
-        transactions.append(payout_tx)
-        # Реальная выдача денег — тот же контур, что и обычная выдача депозита:
-        # расход с выбранного счёта (для банк-черновика — с Сейфа + транзит банк→Сейф).
         method = decision.payout_method or DepositPayoutMethod.CASH_TK
-        payout_wallet = await deposit_service.book_production_deposit_payout_cashflow(
-            session,
-            transaction=payout_tx,
-            payout_method=method.value,
-            transaction_date=now.date(),
-            comment=comment,
-        )
-        transit_provider = channel_provider(method.value)
-        if transit_provider is not None:
-            await book_deposit_bank_to_safe_transfer(
+        provider = channel_provider(method.value)
+        if provider is not None:
+            # БАНК-КАНАЛ: только черновик. Депозит НЕ списываем и расход НЕ книжим — деньги
+            # двинутся после оплаты черновика (транзит+резерв) и фактической выдачи резерва.
+            # Баланс остаётся на счёте → _deposit_settled=False → сотрудник остаётся dismissing
+            # до фактической выдачи (решение владельца: списание при выдаче, не при нажатии).
+            if await deposit_in_flight_amount(session, employee_id) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="У сотрудника уже есть активный банк-черновик выдачи депозита",
+                )
+            bank_draft = await create_deposit_payout_draft(
                 session,
-                source_kind=PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
-                source_id=payout_tx.id,
+                recipient_kind="production",
                 amount=decision.payout_amount,
-                operation_date=now.date(),
                 purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
-                provider=transit_provider,
+                provider=provider,
+                employee_id=employee_id,
             )
-        payout_effect = DismissDepositPayoutEffect(
-            transaction_id=payout_tx.id,
-            amount=decision.payout_amount,
-            method=method,
-            wallet_code=payout_wallet.code if payout_wallet is not None else None,
-        )
+            bank_draft_pending = True
+            bank_draft_id = bank_draft.id
+        else:
+            # НАЛИЧНЫЙ канал: реальная выдача денег — леджер + расход в ДДС сразу.
+            # Тип операции — dismissal_payout.
+            payout = await execute_deposit_payout(
+                session,
+                employee_id=employee_id,
+                employee_full_name=employee_full_name,
+                amount=decision.payout_amount,
+                payout_method=method.value,
+                transaction_type="dismissal_payout",
+                now=now,
+                comment=comment,
+            )
+            payout_tx = payout.transaction
+            transactions.append(payout_tx)
+            payout_effect = DismissDepositPayoutEffect(
+                transaction_id=payout_tx.id,
+                amount=decision.payout_amount,
+                method=method,
+                wallet_code=(
+                    payout.payout_wallet.code if payout.payout_wallet is not None else None
+                ),
+            )
     elif via_payroll:
         # Выдача через зарплатную ведомость: деньги сейчас не двигаем — планируем выдачу в
         # выбранной ведомости (выплатится при её финализации, через Сейф-контур, как остальная ЗП).
@@ -4017,9 +4022,12 @@ async def _apply_dismiss_deposit_decision(
                 now=now,
             )
         )
-    # Через ведомость выплачиваемую часть оставляем на счёте до финализации ведомости —
-    # тогда она спишется вместе с выдачей. Иначе счёт обнуляем (деньги выданы/списаны сразу).
-    account.balance = decision.payout_amount if via_payroll else Decimal("0")
+    # Через ведомость или банк-черновик выплачиваемую часть оставляем на счёте до фактической
+    # выдачи (финализация ведомости / оплата банк-резерва спишет её). Иначе счёт обнуляем
+    # (деньги выданы наличными или списаны сразу).
+    account.balance = (
+        decision.payout_amount if (via_payroll or bank_draft_pending) else Decimal("0")
+    )
     account.last_updated = now
 
     after = deposit_service.deposit_account_snapshot(account) | {
@@ -4033,6 +4041,7 @@ async def _apply_dismiss_deposit_decision(
                 str(decision.period_id) if decision.period_id is not None else None
             ),
             "schedule_id": str(schedule_id) if schedule_id is not None else None,
+            "bank_draft_id": str(bank_draft_id) if bank_draft_id is not None else None,
             "balance_before": deposit_service.decimal_string(decision.balance),
             "payout_amount": deposit_service.decimal_string(decision.payout_amount),
             "writeoff_amount": deposit_service.decimal_string(decision.writeoff_amount),

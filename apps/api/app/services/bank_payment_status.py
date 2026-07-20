@@ -51,6 +51,7 @@ from app.services.counterparty_matching import (
     _invoice_remaining,
     _recompute_status,
 )
+from app.services.counterparty_payments import strip_match_marker
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
@@ -150,7 +151,7 @@ async def _settle_draft_via_safe(
 
     purpose = (
         (draft.target_purpose or "").strip()
-        or str((draft.payload or {}).get("paymentPurpose") or "").strip()
+        or strip_match_marker(str((draft.payload or {}).get("paymentPurpose") or ""))
         or "Закуп у неофициального поставщика"
     )
 

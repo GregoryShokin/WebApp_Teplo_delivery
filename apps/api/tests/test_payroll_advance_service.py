@@ -108,6 +108,89 @@ async def test_okladnik_availability_reflects_calendar_earning(
         assert (avail.period_start, avail.period_end) == (date(2026, 5, 1), date(2026, 5, 15))
 
 
+async def test_okladnik_second_half_payout_day_blocks(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """2-я половина: на 1-е число (день выплаты [16..конец] прошлого месяца) аванс = 0.
+
+    Проверяет исправление «для 2-й половины отсечка не срабатывала никогда»: на 1-е
+    `_half_month_bounds` вернул бы новый период, но день выплаты детектируется отдельно.
+    """
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        await session.commit()
+
+        avail = await available_to_advance(session, emp, date(2026, 6, 1))
+        assert avail.basis == "okladnik"
+        assert avail.available == Decimal("0.00")
+        assert avail.payout_reached is True
+        assert avail.note is not None
+        # Заработанное показываем по ОПЛАЧИВАЕМОМУ периоду — 2-я половина МАЯ [16..31].
+        assert (avail.period_start, avail.period_end) == (date(2026, 5, 16), date(2026, 5, 31))
+        assert avail.earned_to_date == Decimal("45000.00")
+
+
+async def test_issue_advance_payout_gate_present_day_only(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Отсечка блокирует выдачу аванса СЕГОДНЯшней датой в день выплаты, но НЕ блокирует
+    запись задним числом (деньги уже ушли) и пропускает явный заём. «Сегодня» пиним на
+    15 мая (день выплаты [1..15])."""
+    import app.services.payroll_advance_service as svc
+
+    real_dt = svc.datetime
+
+    class _FixedToday(real_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return real_dt(2026, 5, 15, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(svc, "datetime", _FixedToday)
+
+    async with async_session_factory() as session:
+        emp = await _make_okladnik(session)
+        await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
+        await session.commit()
+
+        # Сегодняшней датой (15 мая = день выплаты) аванс отклоняется.
+        with pytest.raises(PayrollConflictError):
+            await issue_advance(
+                session,
+                employee_id=emp.id,
+                amount=Decimal("1000"),
+                allow_loan=False,
+                issued_on=date(2026, 5, 15),
+                requested_kind="advance",
+                payout_method="transfer",
+            )
+
+        # Задним числом (14 мая < сегодня) — разрешено: запись уже ушедших денег.
+        backdated = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("1000"),
+            allow_loan=False,
+            issued_on=date(2026, 5, 14),
+            requested_kind="advance",
+            payout_method="transfer",
+        )
+        assert backdated.kind == "advance"
+
+        # Явный заём в сам день выплаты — проходит.
+        loan = await issue_advance(
+            session,
+            employee_id=emp.id,
+            amount=Decimal("1000"),
+            allow_loan=True,
+            issued_on=date(2026, 5, 15),
+            requested_kind="loan",
+            payout_method="transfer",
+        )
+        assert loan.kind == "loan"
+
+
 async def test_issue_advance_within_earned_and_decrements_available(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
