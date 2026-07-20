@@ -202,6 +202,44 @@ async def test_split_rejects_same_invoice_in_two_lines(
             )
 
 
+async def test_supplier_payment_line_requires_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Оплата поставщикам» без контрагента — расход в никуда: не в карточку и не в ДЗ/КЗ."""
+    async with async_session_factory() as session:
+        _account, article, op = await _bank_fixture(session, op_amount="5000.00")
+        await session.commit()
+
+        with pytest.raises(ValueError, match="Оплата поставщикам"):
+            await apply_operation_split(
+                session,
+                op,
+                splits=[OperationSplitLine(article.id, Decimal("5000.00"))],
+            )
+
+
+async def test_supplier_payment_line_takes_counterparty_from_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Доля с накладной контрагента уже «знает» его — отдельно выбирать не заставляем."""
+    async with async_session_factory() as session:
+        _account, article, op = await _bank_fixture(session, op_amount="5000.00")
+        supplier = await make_counterparty(session, name="Поставщик", inn="7701234567")
+        invoice = await make_invoice(session, counterparty_id=supplier.id, amount="5000.00")
+        await session.commit()
+
+        created_ids = await apply_operation_split(
+            session,
+            op,
+            splits=[OperationSplitLine(article.id, Decimal("5000.00"), invoice_id=invoice.id)],
+        )
+        await session.commit()
+
+        assert (await session.get(CashflowTransaction, created_ids[0])).counterparty_id == (
+            supplier.id
+        )
+
+
 async def test_advance_line_requires_own_counterparty(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

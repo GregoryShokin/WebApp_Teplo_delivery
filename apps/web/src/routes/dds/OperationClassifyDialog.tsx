@@ -334,8 +334,8 @@ export function OperationClassifyDialog({
       toast.error("Сумма по статьям должна равняться сумме");
       return;
     }
-    if (advanceRowMissingCounterparty) {
-      toast.error("Для статьи «Авансы поставщикам» выберите контрагента в строке");
+    if (rowMissingCounterparty) {
+      toast.error("Для статей «Оплата поставщикам» и «Авансы поставщикам» выберите контрагента");
       return;
     }
     if (rows.some((item) => salaryArticleIds.has(item.articleId) && !item.employeeId)) {
@@ -451,6 +451,11 @@ export function OperationClassifyDialog({
     if (!isOperation && isTransferRow(item.articleId)) return "transfer";
     return "counterparty";
   };
+  // Статьи, где контрагент обязателен: «Авансы поставщикам» рождает дебиторку (чья предоплата?),
+  // «Оплата поставщикам» — расход в карточку и в ДЗ/КЗ (без контрагента платёж повисает в никуда).
+  // Те же гарды продублированы на бэке.
+  const requiresCounterparty = (item: SplitRow) =>
+    item.articleId === advanceArticleId || item.articleId === supplierPaymentArticleId;
   const counterpartyNameOf = (item: SplitRow) =>
     item.createNewCounterparty
       ? `Будет создан: ${row.counterparty_name_raw ?? ""}`
@@ -479,7 +484,6 @@ export function OperationClassifyDialog({
           : { text: "нужен счёт-получатель", missing: true };
       }
       case "counterparty": {
-        const isAdvanceRow = item.articleId === advanceArticleId;
         const counterpartyName = counterpartyNameOf(item);
         if (counterpartyName) {
           const inv = invoicesFor(item.counterpartyId).find((x) => x.id === item.invoiceId);
@@ -489,7 +493,7 @@ export function OperationClassifyDialog({
               : "";
           return { text: `Контрагент: ${counterpartyName}${invText}`, missing: false };
         }
-        return isAdvanceRow
+        return requiresCounterparty(item)
           ? { text: "нужен контрагент", missing: true }
           : { text: "контрагент (необязательно)", missing: false };
       }
@@ -502,10 +506,8 @@ export function OperationClassifyDialog({
   const salaryRowMissingEmployee = rows.some(
     (item) => salaryArticleIds.has(item.articleId) && !item.employeeId,
   );
-  // Аванс поставщику рождает дебиторку — без контрагента непонятно, чья она (гард есть и на бэке).
-  const advanceRowMissingCounterparty = rows.some(
-    (item) =>
-      item.articleId === advanceArticleId && !item.counterpartyId && !item.createNewCounterparty,
+  const rowMissingCounterparty = rows.some(
+    (item) => requiresCounterparty(item) && !item.counterpartyId && !item.createNewCounterparty,
   );
 
   // «Пополнение Сейфа»: если строки размечены статьёй/получателем — это уже целёвки-резервы
@@ -675,7 +677,7 @@ export function OperationClassifyDialog({
                 disabled={
                   isBusy ||
                   !balanced ||
-                  advanceRowMissingCounterparty ||
+                  rowMissingCounterparty ||
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
                   usesAdvanceArticle ||

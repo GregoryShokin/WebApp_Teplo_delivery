@@ -241,7 +241,9 @@ async def test_resplit_clears_prior_payout(
 ) -> None:
     async with async_session_factory() as session:
         salary, op = await _salary_op(session)
-        expense = await make_expense_article(session)  # payment_to_supplier
+        # Не-зарплатная статья БЕЗ обязательного контрагента: тест про снятие выплаты, а
+        # «Оплата поставщикам» теперь требует контрагента и увела бы его в сторону.
+        expense = await make_expense_article(session, code="prochie_rashody", name="Прочие расходы")
         employee = await _employee(session)
         await session.commit()
 

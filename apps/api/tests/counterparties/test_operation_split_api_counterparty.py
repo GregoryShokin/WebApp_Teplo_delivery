@@ -76,6 +76,11 @@ def _seed(factory: async_sessionmaker[AsyncSession], *, op_amount: str = "8000.0
             account = await make_account(session)
             await make_wallet(session, wallet_type="bank", account_id=account.id)
             article = await make_expense_article(session)  # payment_to_supplier
+            # Статья без обязательного контрагента — на ней проверяем, что новый контрагент
+            # достаётся только запросившей доле, а «пустая» доля остаётся пустой.
+            other = await make_expense_article(
+                session, code="prochie_rashody", name="Прочие расходы"
+            )
             veggies = await make_counterparty(session, name="Поставка овощей", inn="7701234567")
             boxes = await make_counterparty(session, name="Коробки", inn="7801234567")
             op = await make_bank_operation(
@@ -87,7 +92,7 @@ def _seed(factory: async_sessionmaker[AsyncSession], *, op_amount: str = "8000.0
                 inn="7901234567",
             )
             await session.commit()
-            return article.id, veggies.id, boxes.id, op.id
+            return article.id, other.id, veggies.id, boxes.id, op.id
 
     return asyncio.run(_run())
 
@@ -97,7 +102,7 @@ def test_classify_assigns_counterparty_per_line(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Один платёж на двух контрагентов: каждая проводка идёт в свою карточку."""
-    article_id, veggies_id, boxes_id, op_id = _seed(async_session_factory)
+    article_id, _other_id, veggies_id, boxes_id, op_id = _seed(async_session_factory)
     response = client.post(
         f"/api/v1/dds/operations/{op_id}/classify",
         json={
@@ -135,7 +140,7 @@ def test_classify_creates_counterparty_only_for_requesting_line(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """``create_counterparty`` у одной доли не «протекает» в соседнюю, где контрагент не указан."""
-    article_id, veggies_id, _boxes_id, op_id = _seed(async_session_factory)
+    article_id, other_id, veggies_id, _boxes_id, op_id = _seed(async_session_factory)
     response = client.post(
         f"/api/v1/dds/operations/{op_id}/classify",
         json={
@@ -146,7 +151,8 @@ def test_classify_creates_counterparty_only_for_requesting_line(
                     "amount": "5000.00",
                     "create_counterparty": True,
                 },
-                {"article_id": str(article_id), "amount": "3000.00"},
+                # Статья без обязательного контрагента: доля осознанно остаётся без него.
+                {"article_id": str(other_id), "amount": "3000.00"},
             ],
             "new_counterparty_name": "ООО «Мусорщики»",
             "new_counterparty_inn": "7901234567",
@@ -176,7 +182,7 @@ def test_read_split_returns_current_lines(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """GET /split отдаёт доли уже разобранной операции — с контрагентом и накладной."""
-    article_id, veggies_id, boxes_id, op_id = _seed(async_session_factory)
+    article_id, _other_id, veggies_id, boxes_id, op_id = _seed(async_session_factory)
 
     async def _add_invoice():
         async with async_session_factory() as session:
@@ -216,11 +222,14 @@ def test_read_split_returns_current_lines(
     assert payload["amount"] == "8000.00"
     assert payload["classification_status"] == "classified"
     lines = payload["lines"]
-    assert [line["amount"] for line in lines] == ["5000.00", "3000.00"]
+    # Якорная доля (первая строка прошлого разбора) идёт первой, остальные — стабильным порядком.
+    assert lines[0]["amount"] == "5000.00"
     assert lines[0]["counterparty_id"] == str(veggies_id)
     assert lines[0]["invoice_id"] is None
-    assert lines[1]["counterparty_id"] == str(boxes_id)
-    assert lines[1]["invoice_id"] == str(invoice_id)
+    by_amount = {line["amount"]: line for line in lines}
+    assert set(by_amount) == {"5000.00", "3000.00"}
+    assert by_amount["3000.00"]["counterparty_id"] == str(boxes_id)
+    assert by_amount["3000.00"]["invoice_id"] == str(invoice_id)
 
     async def _invoice_paid():
         async with async_session_factory() as session:

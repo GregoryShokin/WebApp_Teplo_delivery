@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import CashflowTransaction, DdsArticle, EmployeePayout, TransferGroup, Wallet
 from app.services.banking.classifier import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
+    SUPPLIER_PAYMENT_ARTICLE_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
@@ -197,6 +198,19 @@ async def apply_cashflow_split(
     for line in splits:
         if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
+
+    # «Оплата поставщикам» без контрагента — расход в никуда: платёж не попадает в карточку и в
+    # ДЗ/КЗ (правило 1 считает от контрагента проводки). Решение владельца 20.07.2026.
+    supplier_payment_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == SUPPLIER_PAYMENT_ARTICLE_CODE)
+    )
+    if supplier_payment_article_id is not None and any(
+        line.article_id == supplier_payment_article_id
+        and (line.counterparty_id or counterparty_id) is None
+        for line in splits
+    ):
+        raise ValueError("Для статьи «Оплата поставщикам» укажите контрагента")
+
     original_amount = Decimal(txn.amount)
     total = sum((line.amount for line in splits), Decimal("0"))
     if total != original_amount:

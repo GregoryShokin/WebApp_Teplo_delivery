@@ -1763,16 +1763,21 @@ async def read_operation_split(
     operation = await session.get(BankOperation, operation_id)
     if operation is None:
         raise HTTPException(status_code=404, detail="Bank operation not found")
-    transactions = (
+    rows = (
         await session.scalars(
-            select(CashflowTransaction)
-            .where(
+            select(CashflowTransaction).where(
                 CashflowTransaction.source_kind == "bank_operation",
                 CashflowTransaction.source_id == operation.id,
             )
-            .order_by(CashflowTransaction.created_at, CashflowTransaction.id)
         )
     ).all()
+    # Доли рождаются одной транзакцией, поэтому ``created_at`` у них общий, а ``id`` случайные —
+    # без явного порядка строки разбора прыгали бы при каждом открытии. Якорную долю (первую
+    # строку прошлого разбора) поднимаем наверх, остальные упорядочиваем стабильно по id.
+    transactions = sorted(
+        rows,
+        key=lambda tx: (tx.id != operation.cashflow_transaction_id, tx.created_at, str(tx.id)),
+    )
     tx_ids = [tx.id for tx in transactions]
     invoice_by_tx: dict[UUID, UUID] = {}
     employee_by_tx: dict[UUID, UUID] = {}

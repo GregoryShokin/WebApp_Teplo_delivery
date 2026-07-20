@@ -911,6 +911,15 @@ async def apply_operation_split(
             raise ValueError("Выбранный контрагент не совпадает с контрагентом накладной")
         invoice_by_id[line.invoice_id] = invoice
 
+    # «Оплата поставщикам» без контрагента — расход в никуда: платёж не попадает в карточку и не
+    # участвует в ДЗ/КЗ (правило 1 работает от контрагента проводки). Проверяем ПОСЛЕ накладных:
+    # доля с привязанной накладной контрагента уже унаследовала (решение владельца 20.07.2026).
+    if supplier_payment_article_id is not None and any(
+        line.article_id == supplier_payment_article_id and resolved_counterparty[index] is None
+        for index, line in enumerate(lines)
+    ):
+        raise ValueError("Для статьи «Оплата поставщикам» укажите контрагента")
+
     # Re-split: снять прежние гашения накладных ЭТОЙ операцией (cashflow чистит
     # _clear_operation_cashflow, аллокации — здесь), иначе повторный разбор задвоит гашение.
     prior_allocations = (
