@@ -206,9 +206,14 @@ type StaffPayable = {
     position: string | null;
     basis: string;
     earned_to_date: number;
+    on_demand_accrued: number;
+    on_demand_paid: number;
+    on_demand_debt: number;
     already_advanced: number;
+    advances_outstanding: number;
     finalized_unpaid: number;
     loans_outstanding: number;
+    salary_payouts_outstanding: number;
     payable: number;
     receivable: number;
   }[];
@@ -216,6 +221,7 @@ type StaffPayable = {
 
 const STAFF_BASIS_LABEL: Record<string, string> = {
   okladnik: "оклад",
+  on_demand: "по востребованию",
   dishwasher: "смены",
   production: "выработка",
 };
@@ -464,8 +470,8 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
         <div>
           <div className="font-medium">Сотрудники — баланс расчётов</div>
           <div className="text-xs text-muted-foreground">
-            Мы должны: заработанное за период минус авансы + невыплаченные остатки ведомостей.
-            Нам должны: займы и выдачи сверх заработанного; удержится будущими ведомостями
+            Вся зарплатная задолженность в обе стороны. Депозиты и накопительный фонд здесь не
+            учитываются — для них будут отдельные регистры.
           </div>
         </div>
         <div className="flex items-center gap-3 text-lg font-semibold tabular-nums">
@@ -497,9 +503,11 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
               <TableRow>
                 <TableHead>Сотрудник</TableHead>
                 <TableHead>Основа</TableHead>
-                <TableHead className="text-right">Заработано</TableHead>
-                <TableHead className="text-right">Авансы</TableHead>
+                <TableHead className="text-right">Текущая ЗП</TableHead>
+                <TableHead className="text-right">По востребованию</TableHead>
                 <TableHead className="text-right">Хвост ведомостей</TableHead>
+                <TableHead className="text-right">Авансы</TableHead>
+                <TableHead className="text-right">Займы / выплаты</TableHead>
                 <TableHead className="text-right">Мы должны</TableHead>
                 <TableHead className="text-right">Нам должны</TableHead>
               </TableRow>
@@ -515,13 +523,37 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                     {STAFF_BASIS_LABEL[row.basis] ?? row.basis}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {money.format(row.earned_to_date)}
+                    {row.earned_to_date > 0 ? money.format(row.earned_to_date) : "—"}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money.format(row.already_advanced)}
+                  <TableCell
+                    className="text-right tabular-nums"
+                    title={
+                      row.on_demand_accrued > 0 || row.on_demand_paid > 0
+                        ? `начислено ${money.format(row.on_demand_accrued)} · выплачено/включено ${money.format(row.on_demand_paid)}`
+                        : undefined
+                    }
+                  >
+                    {row.on_demand_debt !== 0 ? money.format(row.on_demand_debt) : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {row.finalized_unpaid > 0 ? money.format(row.finalized_unpaid) : "—"}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.advances_outstanding > 0
+                      ? money.format(row.advances_outstanding)
+                      : "—"}
+                  </TableCell>
+                  <TableCell
+                    className="text-right tabular-nums"
+                    title={
+                      row.loans_outstanding > 0 || row.salary_payouts_outstanding > 0
+                        ? `займы ${money.format(row.loans_outstanding)} · выплаты вне ведомости ${money.format(row.salary_payouts_outstanding)}`
+                        : undefined
+                    }
+                  >
+                    {row.loans_outstanding + row.salary_payouts_outstanding > 0
+                      ? money.format(row.loans_outstanding + row.salary_payouts_outstanding)
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums text-rose-700">
                     {row.payable > 0 ? money.format(row.payable) : "—"}
@@ -529,8 +561,23 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                   <TableCell
                     className="text-right font-semibold tabular-nums text-sky-700"
                     title={
-                      row.loans_outstanding > 0
-                        ? `в т.ч. займы/старые авансы ${money.format(row.loans_outstanding)}`
+                      row.receivable > 0
+                        ? [
+                            row.advances_outstanding > 0
+                              ? `авансы ${money.format(row.advances_outstanding)}`
+                              : null,
+                            row.loans_outstanding > 0
+                              ? `займы ${money.format(row.loans_outstanding)}`
+                              : null,
+                            row.salary_payouts_outstanding > 0
+                              ? `выплаты вне ведомости ${money.format(row.salary_payouts_outstanding)}`
+                              : null,
+                            row.on_demand_debt < 0
+                              ? `переплата по востребованию ${money.format(-row.on_demand_debt)}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
                         : undefined
                     }
                   >

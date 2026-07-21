@@ -21,6 +21,7 @@ from app.models import (
     CounterpartyPaymentDraft,
     DdsArticle,
     Employee,
+    EmployeePayout,
     InvoiceLineItem,
     InvoicePaymentAllocation,
     PayrollLine,
@@ -34,6 +35,7 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as periods
+from app.services.payroll_admin import compute_on_demand_debt, list_on_demand_employees
 from app.services.payroll_advance_availability import available_to_advance
 
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
@@ -952,9 +954,14 @@ class StaffPayableRow(BaseModel):
     position: str | None = None
     basis: str
     earned_to_date: float
+    on_demand_accrued: float
+    on_demand_paid: float
+    on_demand_debt: float
     already_advanced: float
+    advances_outstanding: float
     finalized_unpaid: float
     loans_outstanding: float
+    salary_payouts_outstanding: float
     payable: float
     receivable: float
 
@@ -1021,15 +1028,18 @@ async def _finalized_unpaid_by_employee(session: AsyncSession) -> dict[uuid.UUID
 async def list_staff_payable(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> StaffPayableList:
-    """Полный баланс с сотрудниками по канону: КЗ ← начисления, ДЗ ← выдачи сверх них.
+    """Полный ВАЛОВЫЙ зарплатный баланс с сотрудниками.
 
-    Кредиторка (мы должны) = заработанное за открытый период минус авансы периода
-    (механизм «доступно к авансу»: провизорный прогон калькулятора по явкам / оклад
-    по дням / смены — удержания уже в netto) ПЛЮС невыплаченные остатки финализированных
-    ведомостей. Дебиторка (нам должны) = выдано за период сверх заработанного ПЛЮС
-    непогашенные остатки займов/авансов, выданных ДО открытого периода (они удержатся
-    будущими ведомостями). Займы внутри периода уже учтены в «выдано» — не задваиваются.
-    Отдельная ручка: расчёт тяжёлый, дашборд грузит её асинхронно.
+    Кредиторка (мы должны) складывается из текущего заработка обычных сотрудников,
+    невыплаченных хвостов финализированных ведомостей и накопленного долга сотрудников
+    в режиме ``on_demand``. Для ``on_demand`` синтетический earned-to-date не используется:
+    тот же оклад уже целиком живёт в ``compute_on_demand_debt``.
+
+    Дебиторка (нам должны) — все фактически выданные и ещё не погашенные авансы/займы,
+    зарплатные выплаты вне ведомости (``EmployeePayout``) и переплата ``on_demand``.
+    До финализации ведомости встречные суммы показываются валово в обе стороны; после
+    финализации recovery/offset уменьшает соответствующий долг. Депозиты и накопительный
+    фонд намеренно не входят — это отдельные будущие субрегистры.
     """
     as_of = date.today()
     employees = (
@@ -1040,22 +1050,49 @@ async def list_staff_payable(
         )
     ).all()
 
+    employee_ids = [employee.id for employee in employees]
+    on_demand_balances = await compute_on_demand_debt(session, employee_ids)
+    current_on_demand_ids = {
+        employee.id for employee in await list_on_demand_employees(session)
+    }
+
     finalized_unpaid = await _finalized_unpaid_by_employee(session)
-    outstanding_rows = (
+    advances_by_emp: dict[uuid.UUID, Decimal] = {}
+    loans_by_emp: dict[uuid.UUID, Decimal] = {}
+    for employee_id, kind, remainder in (
         await session.execute(
             select(
                 SalaryAdvance.employee_id,
-                SalaryAdvance.issued_on,
+                SalaryAdvance.kind,
                 SalaryAdvance.amount - SalaryAdvance.recovered_amount,
             ).where(
                 SalaryAdvance.status == "issued",
                 SalaryAdvance.amount > SalaryAdvance.recovered_amount,
             )
         )
+    ).all():
+        target = advances_by_emp if kind == "advance" else loans_by_emp
+        target[employee_id] = target.get(employee_id, Decimal("0.00")) + periods.money(remainder)
+
+    # Выплаты зарплаты из ДДС до их зачёта ведомостью — такой же долг сотрудника компании,
+    # как выданный аванс. ``owner_salary`` сюда не входит: он уже уменьшает on_demand_debt.
+    salary_payouts_by_emp: dict[uuid.UUID, Decimal] = {}
+    payout_rows = (
+        await session.execute(
+            select(
+                EmployeePayout.employee_id,
+                EmployeePayout.amount - EmployeePayout.offset_amount,
+            ).where(
+                EmployeePayout.kind.in_(("salary", "other")),
+                EmployeePayout.status == "paid",
+                EmployeePayout.amount > EmployeePayout.offset_amount,
+            )
+        )
     ).all()
-    outstanding_by_emp: dict[uuid.UUID, list[tuple[date, Decimal]]] = {}
-    for employee_id, issued_on, remainder in outstanding_rows:
-        outstanding_by_emp.setdefault(employee_id, []).append((issued_on, periods.money(remainder)))
+    for employee_id, remainder in payout_rows:
+        salary_payouts_by_emp[employee_id] = salary_payouts_by_emp.get(
+            employee_id, Decimal("0.00")
+        ) + periods.money(remainder)
 
     # Границы ФИНАЛИЗИРОВАННЫХ ведомостных периодов: калькулятор доступного-к-авансу строит
     # СИНТЕТИЧЕСКИЙ «текущий» период по календарю (не глядя в PayrollPeriod), поэтому в день
@@ -1080,10 +1117,8 @@ async def list_staff_payable(
         earned = periods.money(availability.earned_to_date)
         tail = finalized_unpaid.get(employee.id, Decimal("0"))
         period_start = availability.period_start
-        # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail);
-        # синтетический earned обнуляем, а внутрипериодные авансы уводим в «старые»: ведомость
-        # их либо удержала (тогда их нет в outstanding), либо они выданы сверх рассчитанного —
-        # это переаванс (дебиторка), не вычет из несуществующего earned.
+        # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail),
+        # поэтому синтетический earned обнуляем.
         period_settled = (
             period_start is not None
             and availability.period_end is not None
@@ -1091,30 +1126,27 @@ async def list_staff_payable(
         )
         if period_settled:
             earned = Decimal("0.00")
-        # Обе половины формулы делят авансы/займы ЕДИНЫМ фильтром outstanding_by_emp
-        # (status='issued', непогашенный остаток). НЕ переиспользуем availability.already_advanced:
-        # там фильтр `status != 'cancelled'`, т.е. в «выданное» протекают awaiting_payout (деньги
-        # ещё НЕ выданы, банк-черновик/касса pending) и written_off (прощён) — они не живой долг и
-        # искажали бы КЗ вниз, а ДЗ вверх фантомом. Внутрипериодные авансы уменьшают КЗ (аванс под
-        # текущий заработок), выданные до периода — формируют ДЗ (займы-рассрочки, переавансы).
-        in_period_advanced = sum(
-            (
-                remainder
-                for issued_on, remainder in outstanding_by_emp.get(employee.id, [])
-                if not period_settled and period_start is not None and issued_on >= period_start
-            ),
-            Decimal("0.00"),
+
+        on_demand = on_demand_balances.get(employee.id, {})
+        on_demand_accrued = periods.money(on_demand.get("accrued", 0))
+        on_demand_paid = periods.money(on_demand.get("paid", 0))
+        on_demand_debt = periods.money(on_demand.get("debt", 0))
+        if employee.id in current_on_demand_ids:
+            # 52 500 ₽ у оклада 140 000 ₽ на 21 июля — это именно этот синтетический прорейт.
+            # Он не является отдельной кредиторкой поверх накопленного on_demand-долга.
+            earned = Decimal("0.00")
+
+        advances = advances_by_emp.get(employee.id, Decimal("0.00"))
+        loans = loans_by_emp.get(employee.id, Decimal("0.00"))
+        salary_payouts = salary_payouts_by_emp.get(employee.id, Decimal("0.00"))
+
+        payable = earned + tail + _clamp_money(on_demand_debt)
+        receivable = (
+            advances
+            + loans
+            + salary_payouts
+            + _clamp_money(-on_demand_debt)
         )
-        old_outstanding = sum(
-            (
-                remainder
-                for issued_on, remainder in outstanding_by_emp.get(employee.id, [])
-                if period_settled or period_start is None or issued_on < period_start
-            ),
-            Decimal("0.00"),
-        )
-        payable = _clamp_money(earned - in_period_advanced) + tail
-        receivable = _clamp_money(in_period_advanced - earned) + old_outstanding
         if payable <= 0 and receivable <= 0:
             continue
         payable_total += payable
@@ -1124,11 +1156,16 @@ async def list_staff_payable(
                 employee_id=employee.id,
                 full_name=employee.full_name,
                 position=employee.position,
-                basis=availability.basis,
+                basis=("on_demand" if employee.id in current_on_demand_ids else availability.basis),
                 earned_to_date=_float(earned),
-                already_advanced=_float(in_period_advanced),
+                on_demand_accrued=_float(on_demand_accrued),
+                on_demand_paid=_float(on_demand_paid),
+                on_demand_debt=_float(on_demand_debt),
+                already_advanced=_float(advances),
+                advances_outstanding=_float(advances),
                 finalized_unpaid=_float(tail),
-                loans_outstanding=_float(old_outstanding),
+                loans_outstanding=_float(loans),
+                salary_payouts_outstanding=_float(salary_payouts),
                 payable=_float(payable),
                 receivable=_float(receivable),
             )

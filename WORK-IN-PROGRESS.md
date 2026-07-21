@@ -49,15 +49,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: пункт меню «Платежи», секция прав платежей, compose `agent-payments` и порт 7153
 - статус: в работе (разведка завершена, уточняю ТЗ)
 
-### agent-employee-balance — ветка `agent/employee-balance-staff-debt-ledger`
-- worktree: `../Teplo-agent-employee-balance`
-- compose: без отдельного стека; точечные unit/API-тесты
-- трогает: зарплатный баланс сотрудников в «Учёте ДЗ/КЗ»:
-  - back: `apps/api/app/api/v1/routes/accounting_suppliers.py`, связанный сервис и тесты
-  - front: `apps/web/src/routes/accounting/dz-kz.tsx`
-- НЕ трогать другим: формула `GET /accounting/suppliers/staff-payable` до завершения задачи
-- статус: в работе
-
 ---
 
 ## Shared-ресурсы — кто сейчас держит
