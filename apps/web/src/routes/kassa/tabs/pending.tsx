@@ -16,6 +16,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { apiErrorMessage } from "@/lib/api";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
@@ -24,6 +31,7 @@ import {
   getKassaFreelancerShifts,
   getKassaPending,
   payKassaFreelancerShifts,
+  payKassaPayrollTarget,
   payKassaTarget,
   syncKassaFreelancerShifts,
   type KassaAdvancePermission,
@@ -35,6 +43,41 @@ const KIND_LABEL: Record<KassaAdvancePermission["kind"], string> = {
   advance: "Аванс",
   loan: "Заём",
 };
+const AUTO_BOUNDARY_VALUE = "auto";
+
+// То же превью, что в окне «Активные платежи»: меньшие остатки первыми, выбранный
+// граничный — последним и получает остаток пула (возможно частично).
+function previewPayrollAllocation(
+  pool: number,
+  employees: KassaTarget["payroll_employees"],
+  selected: Set<string>,
+  boundaryId: string | null,
+): Map<string, number> {
+  let candidates = employees
+    .filter(
+      (employee) =>
+        employee.payable && employee.remaining > 0.005 && selected.has(employee.employee_id),
+    )
+    .sort(
+      (left, right) =>
+        left.remaining - right.remaining || left.employee_id.localeCompare(right.employee_id),
+    );
+  if (boundaryId && candidates.some((employee) => employee.employee_id === boundaryId)) {
+    candidates = [
+      ...candidates.filter((employee) => employee.employee_id !== boundaryId),
+      ...candidates.filter((employee) => employee.employee_id === boundaryId),
+    ];
+  }
+  const result = new Map<string, number>();
+  let left = pool;
+  for (const employee of candidates) {
+    if (left <= 0.005) break;
+    const amount = Math.min(employee.remaining, left);
+    result.set(employee.employee_id, Math.round(amount * 100) / 100);
+    left -= amount;
+  }
+  return result;
+}
 
 /**
  * Вкладка «К выдаче»: целёвки, переданные в кассу (частичная выдача допустима),
@@ -57,6 +100,26 @@ export function KassaPendingTab() {
       invalidate();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выдать")),
+  });
+
+  const payPayrollMutation = useMutation({
+    mutationFn: ({
+      id,
+      employeeIds,
+      boundaryId,
+    }: {
+      id: string;
+      employeeIds: string[];
+      boundaryId: string | null;
+    }) => payKassaPayrollTarget(id, employeeIds, boundaryId),
+    onSuccess: (_pending, variables) => {
+      toast.success(`Зарплата выдана: ${variables.employeeIds.length} сотрудникам`);
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-run"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-run-lines"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести выдачу зарплаты")),
   });
 
   const disburseMutation = useMutation({
@@ -102,6 +165,7 @@ export function KassaPendingTab() {
   const pending = pendingQuery.data;
   const busy =
     payTargetMutation.isPending ||
+    payPayrollMutation.isPending ||
     disburseMutation.isPending ||
     cancelMutation.isPending ||
     syncShiftsMutation.isPending ||
@@ -144,9 +208,7 @@ export function KassaPendingTab() {
           {pending ? (
             <div className="mt-0.5 text-xs text-muted-foreground">
               в кассе {formatRub(pending.balance)} · из них целевые{" "}
-              <span className="font-medium text-amber-600">
-                {formatRub(pending.targets_total)}
-              </span>
+              <span className="font-medium text-amber-600">{formatRub(pending.targets_total)}</span>
             </div>
           ) : null}
         </CardContent>
@@ -154,9 +216,9 @@ export function KassaPendingTab() {
 
       {isEmpty ? (
         <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-          К выдаче ничего нет: целёвки передаются из Сейфа («Передать в кассу»), разрешения
-          на авансы и займы приходят со страницы «Авансы и займы», а смены внештатников
-          подтягиваются кнопкой «Синхронизировать смены».
+          К выдаче ничего нет: целёвки передаются из Сейфа («Передать в кассу»), разрешения на
+          авансы и займы приходят со страницы «Авансы и займы», а смены внештатников подтягиваются
+          кнопкой «Синхронизировать смены».
         </div>
       ) : null}
 
@@ -170,6 +232,11 @@ export function KassaPendingTab() {
               balance={pending.balance}
               busy={busy}
               onPay={(amount) => payTargetMutation.mutate({ id: target.id, amount })}
+              onPayPayroll={(employeeIds, boundaryId) =>
+                payPayrollMutation
+                  .mutateAsync({ id: target.id, employeeIds, boundaryId })
+                  .then(() => undefined)
+              }
             />
           ))}
         </div>
@@ -437,23 +504,86 @@ function TargetCard({
   balance,
   busy,
   onPay,
+  onPayPayroll,
 }: {
   target: KassaTarget;
   balance: number;
   busy: boolean;
   onPay: (amount: number) => void;
+  onPayPayroll: (employeeIds: string[], boundaryId: string | null) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState("");
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
+  const [boundaryId, setBoundaryId] = useState<string | null>(null);
 
   const amountNumber = Number(amount.replace(",", "."));
   const validAmount = Number.isFinite(amountNumber) && amountNumber > 0;
   const overOutstanding = validAmount && amountNumber > target.outstanding + 0.005;
   const overBalance = validAmount && amountNumber > balance;
+  const selectedPayrollRows = target.payroll_employees.filter(
+    (employee) =>
+      employee.payable && employee.remaining > 0.005 && selectedEmployees.has(employee.employee_id),
+  );
+  const selectedPayrollRemaining = selectedPayrollRows.reduce(
+    (total, employee) => total + employee.remaining,
+    0,
+  );
+  const payrollPreview = previewPayrollAllocation(
+    target.outstanding,
+    target.payroll_employees,
+    selectedEmployees,
+    boundaryId,
+  );
+  const selectedPayrollTotal = Array.from(payrollPreview.values()).reduce(
+    (total, amount) => total + amount,
+    0,
+  );
+  const payrollUncovered = Math.max(0, selectedPayrollRemaining - selectedPayrollTotal);
+  const payrollOverBalance = selectedPayrollTotal > balance + 0.005;
+
+  const toggleEmployee = (employeeId: string) => {
+    setSelectedEmployees((current) => {
+      const next = new Set(current);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+        if (boundaryId === employeeId) setBoundaryId(null);
+      } else next.add(employeeId);
+      return next;
+    });
+  };
+
+  const paySelectedEmployees = async () => {
+    await onPayPayroll(
+      selectedPayrollRows.map((employee) => employee.employee_id),
+      boundaryId,
+    );
+    setSelectedEmployees(new Set());
+    setBoundaryId(null);
+  };
 
   return (
     <div className="rounded-md border p-3 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div
+        className={
+          target.is_payroll
+            ? "flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-md hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            : "flex flex-wrap items-center justify-between gap-2"
+        }
+        role={target.is_payroll ? "button" : undefined}
+        tabIndex={target.is_payroll ? 0 : undefined}
+        onClick={target.is_payroll ? () => setOpen((current) => !current) : undefined}
+        onKeyDown={
+          target.is_payroll
+            ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setOpen((current) => !current);
+                }
+              }
+            : undefined
+        }
+      >
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium">{target.article_name ?? "Без статьи"}</span>
@@ -465,6 +595,7 @@ function TargetCard({
                 из банковской выплаты
               </Badge>
             ) : null}
+            {target.is_payroll ? <Badge variant="secondary">зарплатная ведомость</Badge> : null}
           </div>
           {target.counterparty_name ? (
             <div className="text-xs font-medium">{target.counterparty_name}</div>
@@ -473,19 +604,173 @@ function TargetCard({
             <div className="text-xs text-muted-foreground">{target.purpose}</div>
           ) : null}
         </div>
-        <div className="text-right tabular-nums">
-          <div className="font-medium">{formatRub(target.outstanding)}</div>
-          {target.amount_paid > 0 ? (
-            <div className="text-xs text-muted-foreground">
-              из {formatRub(target.amount)} · выдано {formatRub(target.amount_paid)}
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground">из {formatRub(target.amount)}</div>
-          )}
+        <div className="flex items-center gap-2">
+          <div className="text-right tabular-nums">
+            <div className="font-medium">{formatRub(target.outstanding)}</div>
+            {target.amount_paid > 0 ? (
+              <div className="text-xs text-muted-foreground">
+                из {formatRub(target.amount)} · выдано {formatRub(target.amount_paid)}
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">из {formatRub(target.amount)}</div>
+            )}
+          </div>
+          {target.is_payroll ? (
+            <ChevronRight
+              size={16}
+              className={`text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+              aria-hidden="true"
+            />
+          ) : null}
         </div>
       </div>
 
-      {open ? (
+      {target.is_payroll && open ? (
+        <div className="mt-3 grid gap-2 border-t pt-3">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>Отметьте сотрудников, которым фактически выдали деньги</span>
+            <button
+              type="button"
+              className="font-medium text-foreground hover:underline"
+              disabled={busy}
+              onClick={() => {
+                setBoundaryId(null);
+                setSelectedEmployees(
+                  new Set(
+                    target.payroll_employees
+                      .filter((employee) => employee.payable && employee.remaining > 0.005)
+                      .map((employee) => employee.employee_id),
+                  ),
+                );
+              }}
+            >
+              Выбрать всех
+            </button>
+          </div>
+
+          {target.payroll_employees.length > 0 ? (
+            <div className="grid max-h-80 gap-1.5 overflow-y-auto">
+              {target.payroll_employees.map((employee) => {
+                const paid = employee.remaining <= 0.005;
+                const checked = paid || selectedEmployees.has(employee.employee_id);
+                const previewAmount = payrollPreview.get(employee.employee_id) ?? 0;
+                const partial = previewAmount > 0.005 && previewAmount < employee.remaining - 0.005;
+                return (
+                  <div
+                    key={employee.employee_id}
+                    className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 ${
+                      paid || !employee.payable ? "border-dashed opacity-60" : "hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 shrink-0"
+                        checked={checked}
+                        disabled={busy || paid || !employee.payable}
+                        onChange={() => toggleEmployee(employee.employee_id)}
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{employee.employee_name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {!employee.payable
+                            ? "выдача депозита — через ведомость"
+                            : paid
+                              ? `выдано ${formatRub(employee.paid)}`
+                              : employee.paid > 0
+                                ? `частично выдано ${formatRub(employee.paid)}`
+                                : checked && partial
+                                  ? `получит частично · останется ${formatRub(employee.remaining - previewAmount)}`
+                                  : checked && previewAmount <= 0.005
+                                    ? "не покрывается выбранным резервом"
+                                    : "ожидает выдачи"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right font-medium tabular-nums">
+                      {paid
+                        ? "выдано"
+                        : checked
+                          ? `получит ${formatRub(previewAmount)}`
+                          : formatRub(employee.remaining)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              В ведомости нет сотрудников к выдаче.
+            </div>
+          )}
+
+          {payrollUncovered > 0.005 && selectedPayrollRows.length > 1 ? (
+            <div className="grid gap-1.5 rounded-md border bg-muted/30 p-3">
+              <Label className="text-xs font-medium">Кому отдать неполный остаток резерва</Label>
+              <Select
+                value={boundaryId ?? AUTO_BOUNDARY_VALUE}
+                disabled={busy}
+                onValueChange={(value) =>
+                  setBoundaryId(value === AUTO_BOUNDARY_VALUE ? null : value)
+                }
+              >
+                <SelectTrigger className="h-9 bg-background">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTO_BOUNDARY_VALUE}>
+                    Автоматически — сотруднику с наибольшим остатком
+                  </SelectItem>
+                  {selectedPayrollRows.map((employee) => (
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.employee_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Только выбранный здесь сотрудник рассчитывается последним и получает остаток
+                резерва. Остальные получают суммы по очереди.
+              </p>
+            </div>
+          ) : null}
+
+          {payrollOverBalance ? (
+            <p className="text-xs font-medium text-destructive">
+              В кассе недостаточно денег: доступно {formatRub(balance)}. Счёт не может уйти в минус.
+            </p>
+          ) : payrollUncovered > 0.005 ? (
+            <p className="text-xs font-medium text-amber-700">
+              Резерв покроет {formatRub(selectedPayrollTotal)}; долг выбранных сотрудников после
+              выдачи составит {formatRub(payrollUncovered)}.
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+            <div className="text-xs text-muted-foreground">
+              {selectedPayrollRows.length > 0
+                ? `Выбрано ${selectedPayrollRows.length} · к выдаче ${formatRub(selectedPayrollTotal)}`
+                : "Никто не выбран"}
+            </div>
+            <Button
+              size="sm"
+              disabled={busy || selectedPayrollRows.length === 0 || payrollOverBalance}
+              onClick={() => void paySelectedEmployees()}
+            >
+              {busy ? (
+                <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <HandCoins size={14} aria-hidden="true" />
+              )}
+              Выплатить{selectedPayrollTotal > 0 ? ` ${formatRub(selectedPayrollTotal)}` : ""}
+            </Button>
+          </div>
+        </div>
+      ) : target.is_payroll ? (
+        <div className="mt-2 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          Нажмите на строку, чтобы выбрать сотрудников и отметить фактическую выдачу.
+        </div>
+      ) : open ? (
         <div className="mt-2 grid gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <Input

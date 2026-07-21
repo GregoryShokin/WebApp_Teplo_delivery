@@ -109,18 +109,9 @@ export type SubstitutePairsResponse = {
 };
 
 export type PositionArchetype =
-  | "okladnik"
-  | "production_percent"
-  | "shift_pool"
-  | "courier"
-  | "none";
+  "okladnik" | "production_percent" | "shift_pool" | "courier" | "none";
 export type PositionPermissionGroup =
-  | "administration"
-  | "cooks"
-  | "cashiers"
-  | "auxiliary"
-  | "couriers"
-  | "none";
+  "administration" | "cooks" | "cashiers" | "auxiliary" | "couriers" | "none";
 export type PositionScheduleType = "SESSION" | "FIXED" | "HOURS";
 export type PositionStatus = "active" | "excluded";
 
@@ -157,12 +148,7 @@ export type PositionsSyncResult = {
 
 export type EmployeeStatus = "active" | "inactive" | "requires_setup" | "dismissing";
 export type EmployeeCategory =
-  | "category_1"
-  | "category_2"
-  | "category_3"
-  | "category_4"
-  | "intern"
-  | "freelancer";
+  "category_1" | "category_2" | "category_3" | "category_4" | "intern" | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
 export type PayrollRole = CookingStation | "prep" | "administrator";
 
@@ -325,11 +311,7 @@ export type EmployeePositionAssignmentDeletePayload = {
 };
 
 export type DepositDismissAction =
-  | "payout_full"
-  | "payout_partial"
-  | "write_off"
-  | "schedule_payout"
-  | "none";
+  "payout_full" | "payout_partial" | "write_off" | "schedule_payout" | "none";
 
 export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 
@@ -544,12 +526,14 @@ export type PayrollRunSummary = Record<string, unknown> & {
 };
 
 export type PayrollPaymentMethod = "business_card" | "cash" | "transfer" | "other";
+export type PayrollCashWalletCode = "cash_safe" | "tk_chernikova";
 export type PayrollPayoutStatus = "pending" | "planned" | "draft_created" | "paid";
 export type PayrollPayoutDeltaClassification = "unchanged" | "topup" | "overpay";
 
 export type PayrollPaymentPayload = {
   paid_at: string;
   method: PayrollPaymentMethod;
+  cash_wallet_code: PayrollCashWalletCode;
 };
 
 export type MarkPayrollPaymentPayload = PayrollPaymentPayload & {
@@ -1496,11 +1480,7 @@ export type PayrollForecastRunRead = {
 };
 
 export type PlanFactDeviationStatus =
-  | "no_data"
-  | "within_threshold"
-  | "over_threshold"
-  | "plan_no_fact"
-  | "fact_no_plan";
+  "no_data" | "within_threshold" | "over_threshold" | "plan_no_fact" | "fact_no_plan";
 
 export type PlanFactDayRowRead = {
   business_date: string;
@@ -2242,11 +2222,7 @@ export type CourierScheduleUpsertPayload = {
 export type DdsProvider = "sber" | "tbank";
 export type DdsDirection = "in" | "out";
 export type DdsClassificationStatus =
-  | "pending"
-  | "classified"
-  | "internal_transfer"
-  | "needs_review"
-  | "excluded";
+  "pending" | "classified" | "internal_transfer" | "needs_review" | "excluded";
 
 export type WalletRead = {
   id: string;
@@ -2486,11 +2462,7 @@ export type CredentialRead = {
   id: string;
   provider: DdsProvider;
   credential_kind:
-    | "access_token"
-    | "client_secret"
-    | "bearer_token"
-    | "mtls_cert_path"
-    | "mtls_key_path";
+    "access_token" | "client_secret" | "bearer_token" | "mtls_cert_path" | "mtls_key_path";
   is_active: boolean;
   expires_at: string | null;
   metadata: Record<string, unknown> | null;
@@ -3776,6 +3748,7 @@ export type PartialPayrollPaymentPayload = {
   paid_at: string;
   method?: PayrollPaymentMethod | null;
   comment?: string | null;
+  cash_wallet_code: PayrollCashWalletCode;
 };
 
 export async function markPartialPayrollPayment(
@@ -3903,10 +3876,11 @@ export async function bulkMarkPayrollPayments(
   runId: string,
   employeeIds: string[],
   paidAt: string,
+  cashWalletCode: PayrollCashWalletCode,
 ): Promise<MarkAllPayrollPaymentsResponse> {
   const response = await api.post<MarkAllPayrollPaymentsResponse>(
     `/payroll/runs/${runId}/payments/bulk-mark`,
-    { employee_ids: employeeIds, paid_at: paidAt },
+    { employee_ids: employeeIds, paid_at: paidAt, cash_wallet_code: cashWalletCode },
   );
   return response.data;
 }
@@ -4032,6 +4006,8 @@ export type PayrollFundingSource = CashWallet & {
   balance: number;
   reserved_other: number;
   available: number;
+  reserved_for_run: number;
+  payroll_available: number;
   is_configured: boolean;
 };
 

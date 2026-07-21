@@ -37,6 +37,8 @@ from app.models import (
     CounterpartyPayableProfile,
     DdsArticle,
     Employee,
+    PayrollLine,
+    PayrollPayment,
     SafeAllocation,
     SalaryAdvance,
     SupplierPrepayment,
@@ -416,8 +418,7 @@ async def _editable_target(
         raise KassaPayoutError("Можно править только свои кассовые записи")
     if transaction.operation_date != today:
         raise KassaPayoutError(
-            "Правка доступна только в день создания записи — за прошлые даты "
-            "обратитесь к владельцу"
+            "Правка доступна только в день создания записи — за прошлые даты обратитесь к владельцу"
         )
     if isinstance(target, SalaryAdvance) and (
         target.status != "issued" or _money(target.recovered_amount) > 0
@@ -550,17 +551,71 @@ async def _kassa_pending_freelancers(session: AsyncSession) -> list[dict[str, An
     return await list_unpaid_freelancers(session)
 
 
+async def _payroll_employees_by_run(
+    session: AsyncSession,
+    run_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """Состав зарплатных резервов для кассира без доступа к payroll API."""
+    if not run_ids:
+        return {}
+    accrued_rows = (
+        await session.execute(
+            select(
+                PayrollLine.run_id,
+                PayrollLine.employee_id,
+                Employee.full_name,
+                func.sum(PayrollLine.total_payable),
+                func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0),
+            )
+            .join(Employee, Employee.id == PayrollLine.employee_id)
+            .where(PayrollLine.run_id.in_(run_ids))
+            .group_by(PayrollLine.run_id, PayrollLine.employee_id, Employee.full_name)
+        )
+    ).all()
+    paid_rows = (
+        await session.execute(
+            select(PayrollPayment.run_id, PayrollPayment.employee_id, PayrollPayment.amount).where(
+                PayrollPayment.run_id.in_(run_ids)
+            )
+        )
+    ).all()
+    paid_by_employee = {
+        (run_id, employee_id): _money(amount) for run_id, employee_id, amount in paid_rows
+    }
+    result: dict[uuid.UUID, list[dict[str, Any]]] = {run_id: [] for run_id in run_ids}
+    for run_id, employee_id, employee_name, accrued, deposit_scheduled in accrued_rows:
+        accrued_q = _money(accrued or 0)
+        paid_q = min(accrued_q, paid_by_employee.get((run_id, employee_id), Decimal("0")))
+        remaining = _money(max(Decimal("0"), accrued_q - paid_q))
+        result[run_id].append(
+            {
+                "employee_id": employee_id,
+                "employee_name": employee_name,
+                "accrued": float(accrued_q),
+                "paid": float(paid_q),
+                "remaining": float(remaining),
+                "payment_status": (
+                    "paid" if remaining == 0 else "partially_paid" if paid_q > 0 else "pending"
+                ),
+                # Депозитная выдача имеет отдельный полный контур и из кассового пула не идёт.
+                "payable": _money(deposit_scheduled or 0) == 0,
+            }
+        )
+    for employees in result.values():
+        employees.sort(key=lambda employee: employee["employee_name"].casefold())
+    return result
+
+
 async def kassa_pending_payload(
     session: AsyncSession,
     *,
-    include_payroll_targets: bool = False,
+    include_payroll_targets: bool = True,
 ) -> dict[str, Any]:
     """Состав вкладки «К выдаче»: целёвки в кассе + ожидающие разрешения + итоги.
 
-    Этот же payload отдаёт read-only диалог «Целевые в Торговой кассе» на «Деньгах
-    сегодня». Для диалога ``include_payroll_targets=True`` добавляет пул-резервы
-    ведомостей: они входят в целевые деньги кассы, но выдаются только через
-    «Активные платежи», а не обычной кнопкой «Выдано» модуля «Касса».
+    Пул-резервы ведомостей входят в целевые деньги кассы и раскрываются до сотрудников.
+    Их выдача идёт отдельным зарплатным endpoint, а не обычной кнопкой целёвки «Выдано».
+    ``include_payroll_targets=False`` оставлен для узких внутренних витрин.
     """
     wallet = await get_kassa_wallet(session)
     target_filters = [
@@ -579,6 +634,14 @@ async def kassa_pending_payload(
             .order_by(SafeAllocation.created_at.desc())
         )
     ).all()
+    payroll_employees = await _payroll_employees_by_run(
+        session,
+        {
+            allocation.source_run_id
+            for allocation, _article_name, _counterparty_name in rows
+            if allocation.source_run_id is not None
+        },
+    )
     targets = [
         {
             "id": allocation.id,
@@ -594,9 +657,9 @@ async def kassa_pending_payload(
             ),
             # Происхождение: авто-целёвка закупа из оплаченного банковского черновика.
             "from_bank_payout": allocation.source_draft_id is not None,
-            # Пул ведомости показываем в read-only модалке ДДС, но не отдаём в обычную
-            # очередь кассира без явного include_payroll_targets.
             "is_payroll": allocation.source_run_id is not None,
+            "run_id": allocation.source_run_id,
+            "payroll_employees": payroll_employees.get(allocation.source_run_id, []),
             "created_at": allocation.created_at,
         }
         for allocation, article_name, counterparty_name in rows
@@ -652,9 +715,7 @@ async def pay_kassa_target(
     # выдача разъехала бы депозит-леджер (списываем всю сумму) с ДДС (частичный расход).
     deposit_draft = await allocation_deposit_draft(session, allocation.id)
     if deposit_draft is not None:
-        outstanding = _money(
-            Decimal(str(allocation.amount)) - Decimal(str(allocation.amount_paid))
-        )
+        outstanding = _money(Decimal(str(allocation.amount)) - Decimal(str(allocation.amount_paid)))
         if _money(amount) < outstanding:
             raise KassaPayoutError(
                 "Депозит-резерв выдаётся только целиком (частичная выдача запрещена)"

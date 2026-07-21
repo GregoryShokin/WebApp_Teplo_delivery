@@ -20,7 +20,9 @@ from app.models import (
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
+    SafeAllocation,
     User,
+    Wallet,
 )
 from app.schemas.payroll import (
     PayrollPaymentMarkRequest,
@@ -43,6 +45,7 @@ async def test_mark_payment_on_finalized_run_creates_snapshot_and_serializes_lin
             period_status="finalized",
             employee_line_totals=[[Decimal("1000"), Decimal("250.50")]],
         )
+        await reserve_payroll_run(session, run.id)
 
         await mark_payment(
             session,
@@ -89,6 +92,7 @@ async def test_mark_payment_uses_total_payable_after_ndfl(
         line.ndfl_withheld = Decimal("130.00")
         line.total_payable = Decimal("870.00")
         await session.commit()
+        await reserve_payroll_run(session, run.id)
 
         payment = await mark_payment(
             session,
@@ -117,9 +121,14 @@ async def test_mark_payment_on_not_finalized_run_returns_409(
                     employee_id=employees[0].id,
                     paid_at=date(2026, 5, 27),
                     method="cash",
+                    cash_wallet_code="cash_safe",
                 ),
                 session,
-                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+                CurrentActor(
+                    roles=frozenset({"manager"}),
+                    user_id=actor.id,
+                    permissions=frozenset({"finance.payout_channel.safe"}),
+                ),
             )
 
         assert exc_info.value.status_code == 409
@@ -145,9 +154,14 @@ async def test_mark_payment_on_legacy_run_returns_409(
                     employee_id=employees[0].id,
                     paid_at=date(2026, 5, 27),
                     method="cash",
+                    cash_wallet_code="cash_safe",
                 ),
                 session,
-                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+                CurrentActor(
+                    roles=frozenset({"manager"}),
+                    user_id=actor.id,
+                    permissions=frozenset({"finance.payout_channel.safe"}),
+                ),
             )
 
         assert exc_info.value.status_code == 409
@@ -172,9 +186,14 @@ async def test_mark_payment_with_invalid_method_returns_409(
                     employee_id=employees[0].id,
                     paid_at=date(2026, 5, 27),
                     method="crypto",
+                    cash_wallet_code="cash_safe",
                 ),
                 session,
-                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+                CurrentActor(
+                    roles=frozenset({"manager"}),
+                    user_id=actor.id,
+                    permissions=frozenset({"finance.payout_channel.safe"}),
+                ),
             )
 
         assert exc_info.value.status_code == 409
@@ -191,6 +210,7 @@ async def test_unmark_payment_deletes_row_and_line_returns_pending(
             status="finalized",
             period_status="finalized",
         )
+        await reserve_payroll_run(session, run.id)
         await mark_payment(
             session,
             run.id,
@@ -218,10 +238,10 @@ async def test_unmark_payment_deletes_row_and_line_returns_pending(
         assert {line.paid_amount for line in lines} == {None}
 
 
-async def test_unmark_booked_payment_is_rejected(
+async def test_unmark_booked_payment_creates_financial_reversal(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Нельзя удалить PayrollPayment, если по нему уже проведён расход ДДС."""
+    """Отмена проведённой выплаты удаляет отметку и делает обратную проводку ДДС."""
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
         _period, run, employees = await create_payroll_run(
@@ -229,6 +249,7 @@ async def test_unmark_booked_payment_is_rejected(
             status="finalized",
             period_status="finalized",
         )
+        await reserve_payroll_run(session, run.id)
         payment = await mark_payment(
             session,
             run.id,
@@ -237,21 +258,15 @@ async def test_unmark_booked_payment_is_rejected(
             method="transfer",
             actor_user_id=actor.id,
         )
-        payment.booked_amount = payment.amount
-        await session.commit()
+        await payroll_routes.delete_mark_payment(
+            run.id,
+            employees[0].id,
+            session,
+            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+        )
 
-        with pytest.raises(HTTPException) as exc_info:
-            await payroll_routes.delete_mark_payment(
-                run.id,
-                employees[0].id,
-                session,
-                CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
-            )
-
-        assert exc_info.value.status_code == 409
-        assert exc_info.value.detail == "Проведённую выплату нельзя снять без финансового отката"
         saved = await session.get(PayrollPayment, payment.id)
-        assert saved is not None and saved.booked_amount == payment.amount
+        assert saved is None
 
 
 async def test_mark_all_payments_marks_only_unpaid_employees(
@@ -265,6 +280,7 @@ async def test_mark_all_payments_marks_only_unpaid_employees(
             period_status="finalized",
             employee_line_totals=[[Decimal("1000")], [Decimal("2000")]],
         )
+        await reserve_payroll_run(session, run.id)
         await mark_payment(
             session,
             run.id,
@@ -276,9 +292,15 @@ async def test_mark_all_payments_marks_only_unpaid_employees(
 
         response = await payroll_routes.post_mark_all_payments(
             run.id,
-            PayrollPaymentsMarkAllRequest(paid_at=date(2026, 5, 28), method="transfer"),
+            PayrollPaymentsMarkAllRequest(
+                paid_at=date(2026, 5, 28), method="transfer", cash_wallet_code="cash_safe"
+            ),
             session,
-            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+            CurrentActor(
+                roles=frozenset({"manager"}),
+                user_id=actor.id,
+                permissions=frozenset({"finance.payout_channel.safe"}),
+            ),
         )
         payments = (
             await session.scalars(
@@ -306,6 +328,7 @@ async def test_repeat_mark_payment_updates_existing_row_without_duplicate(
             status="finalized",
             period_status="finalized",
         )
+        await reserve_payroll_run(session, run.id)
 
         first = await mark_payment(
             session,
@@ -344,6 +367,7 @@ async def test_payment_survives_unfinalize_recompute_and_keeps_original_amount(
             employee_line_totals=[[Decimal("1000")]],
         )
         await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        await reserve_payroll_run(session, run.id)
         payment = await mark_payment(
             session,
             run.id,
@@ -385,6 +409,7 @@ async def test_mark_and_unmark_create_payroll_run_events(
             status="finalized",
             period_status="finalized",
         )
+        await reserve_payroll_run(session, run.id)
 
         await mark_payment(
             session,
@@ -398,7 +423,11 @@ async def test_mark_and_unmark_create_payroll_run_events(
             run.id,
             employees[0].id,
             session,
-            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+            CurrentActor(
+                roles=frozenset({"manager"}),
+                user_id=actor.id,
+                permissions=frozenset({"finance.payout_channel.safe"}),
+            ),
         )
         events = (
             await session.scalars(
@@ -426,6 +455,7 @@ async def test_bulk_mark_selected_marks_only_chosen_without_method(
             period_status="finalized",
             employee_line_totals=[[Decimal("1000")], [Decimal("2000")], [Decimal("3000")]],
         )
+        await reserve_payroll_run(session, run.id)
 
         marked = await mark_payments_selected(
             session,
@@ -452,10 +482,16 @@ async def test_bulk_mark_selected_marks_only_chosen_without_method(
         result = await payroll_routes.post_bulk_mark_payments(
             run.id,
             PayrollPaymentsBulkMarkRequest(
-                employee_ids=[employees[1].id], paid_at=date(2026, 5, 27)
+                employee_ids=[employees[1].id],
+                paid_at=date(2026, 5, 27),
+                cash_wallet_code="cash_safe",
             ),
             session,
-            CurrentActor(roles=frozenset({"manager"}), user_id=actor.id),
+            CurrentActor(
+                roles=frozenset({"manager"}),
+                user_id=actor.id,
+                permissions=frozenset({"finance.payout_channel.safe"}),
+            ),
         )
         assert result.marked_count == 1
 
@@ -481,6 +517,37 @@ async def create_actor_user(session: AsyncSession) -> User:
     session.add(user)
     await session.commit()
     return user
+
+
+async def reserve_payroll_run(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    wallet_code: str = "cash_safe",
+    amount: Decimal | None = None,
+) -> SafeAllocation:
+    """Создать целевой зарплатный резерв для service-тестов отметки выплаты."""
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == wallet_code))
+    assert wallet is not None
+    if amount is None:
+        total = await session.scalar(
+            select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
+                PayrollLine.run_id == run_id
+            )
+        )
+        amount = Decimal(total or 0)
+    reserve = SafeAllocation(
+        wallet_id=wallet.id,
+        amount=amount,
+        amount_paid=Decimal("0"),
+        purpose="Выплата зарплаты",
+        source_run_id=run_id,
+        status="reserved",
+        location="kassa" if wallet_code == "tk_chernikova" else "safe",
+    )
+    session.add(reserve)
+    await session.commit()
+    return reserve
 
 
 async def create_payroll_run(
@@ -529,6 +596,9 @@ async def create_payroll_run(
     ]
     session.add_all([period, run, *employees])
     await session.flush()
+    safe_wallet = await session.scalar(select(Wallet).where(Wallet.code == "cash_safe"))
+    assert safe_wallet is not None
+    safe_wallet.opening_balance = Decimal("1000000")
     for employee, employee_totals in zip(employees, line_totals, strict=True):
         for role_index, total_payable in enumerate(employee_totals):
             session.add(make_payroll_line(run.id, employee.id, role_index, total_payable))

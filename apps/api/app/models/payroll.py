@@ -329,6 +329,40 @@ class PayrollPayment(Base):
     )
 
 
+class PayrollPayoutBooking(Base):
+    """Связь выплаты сотруднику с расходом ДДС и его финансовым откатом."""
+
+    __tablename__ = "payroll_payout_booking"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_payroll_payout_booking_amount_positive"),
+        Index("ix_payroll_payout_booking_payment", "payment_id"),
+        Index("ix_payroll_payout_booking_employee", "run_id", "employee_id"),
+        Index("ix_payroll_payout_booking_transaction", "cashflow_transaction_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("payroll_run.id", ondelete="CASCADE"), nullable=False
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
+    )
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_payment.id", ondelete="SET NULL"), nullable=True
+    )
+    cashflow_transaction_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="RESTRICT"), nullable=False
+    )
+    reversal_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="RESTRICT"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class PayrollBankDraft(Base):
     """Сводный банковский черновик ведомости.
 

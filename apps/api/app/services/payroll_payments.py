@@ -1,17 +1,37 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import PayrollLine, PayrollPayment, PayrollRun, PayrollRunEvent
+from app.models import (
+    CashflowTransaction,
+    DdsArticle,
+    PayrollLine,
+    PayrollPayment,
+    PayrollPayoutBooking,
+    PayrollRun,
+    PayrollRunEvent,
+)
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
 
 PAYROLL_PAYMENT_METHODS = frozenset({"business_card", "cash", "transfer", "other"})
+
+
+async def _payroll_cash_wallet_id(session: AsyncSession, code: str) -> uuid.UUID:
+    from app.services.payroll_payouts import PAYROLL_CASH_WALLET_CODES
+    from app.services.wallets import CashWalletError, resolve_cash_wallet
+
+    if code not in PAYROLL_CASH_WALLET_CODES:
+        raise PayrollConflictError("Для выплаты можно выбрать только Сейф или торговую кассу")
+    try:
+        return (await resolve_cash_wallet(session, code)).id
+    except CashWalletError as exc:
+        raise PayrollConflictError(str(exc)) from exc
 
 
 async def mark_payment(
@@ -22,9 +42,11 @@ async def mark_payment(
     paid_at: date,
     method: str,
     actor_user_id: uuid.UUID | None,
+    cash_wallet_code: str = "cash_safe",
 ) -> PayrollPayment:
     run = await _get_payment_run(session, run_id)
     _validate_method(method)
+    pay_wallet_id = await _payroll_cash_wallet_id(session, cash_wallet_code)
     amount = await _employee_payable_amount(session, run_id, employee_id)
 
     payment = await session.scalar(
@@ -53,6 +75,13 @@ async def mark_payment(
         payment.method = method
         payment.paid_by_user_id = actor_user_id
         payment.status = "paid"
+    await session.flush()
+    from app.services.payroll_payouts import book_payout_expense_for_employees
+
+    payout_result = await book_payout_expense_for_employees(
+        session, run, [employee_id], pay_wallet_id=pay_wallet_id
+    )
+    await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
         session,
         run=run,
@@ -63,10 +92,12 @@ async def mark_payment(
             "amount": money_text(amount),
             "method": method,
             "paid_at": paid_at.isoformat(),
+            "cash_wallet_code": cash_wallet_code,
         },
     )
     await session.commit()
     await session.refresh(payment)
+    _post_deposit_payout_iiko(payout_result, run, paid_at)
     return payment
 
 
@@ -84,15 +115,46 @@ async def unmark_payment(
             PayrollPayment.employee_id == employee_id,
         )
     )
-    # Только полностью выплаченную без проведённого ДДС. Если booked_amount > 0, удаление
-    # строки оставит сиротский расход и при повторной выплате задвоит ДДС. Такой откат должен
-    # идти будущим доменным сценарием с компенсирующей проводкой и пересчётом резерва.
     if payment is None or payment.status != "paid":
         raise PayrollNotFoundError("Payroll payment not found")
-    if Decimal(payment.booked_amount or 0) > 0:
-        raise PayrollConflictError("Проведённую выплату нельзя снять без финансового отката")
+
+    bookings = (
+        await session.scalars(
+            select(PayrollPayoutBooking).where(
+                PayrollPayoutBooking.payment_id == payment.id,
+                PayrollPayoutBooking.reversal_transaction_id.is_(None),
+            )
+        )
+    ).all()
+    if Decimal(payment.booked_amount or 0) > 0 and not bookings:
+        bookings = await _link_legacy_payout(session, run, payment)
+
+    reversal_ids: list[str] = []
+    for booking in bookings:
+        original = await session.get(CashflowTransaction, booking.cashflow_transaction_id)
+        if original is None:
+            raise PayrollConflictError("Не найдена исходная проводка выплаты в ДДС")
+        reversal = CashflowTransaction(
+            wallet_id=original.wallet_id,
+            direction="in",
+            amount=booking.amount,
+            operation_date=datetime.now(UTC).date(),
+            article_id=original.article_id,
+            source_kind=original.source_kind,
+            source_id=run.id,
+            payment_purpose="Финансовый откат выплаты зарплаты",
+            comment=f"Отмена отметки выплаты сотруднику {employee_id}",
+            quality_status="final",
+            created_by_user_id=actor_user_id,
+        )
+        session.add(reversal)
+        await session.flush()
+        booking.reversal_transaction_id = reversal.id
+        booking.reversed_at = datetime.now(UTC)
+        reversal_ids.append(str(reversal.id))
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
+    await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
         session,
         run=run,
@@ -103,9 +165,146 @@ async def unmark_payment(
             "amount": money_text(payment.amount),
             "method": payment.method,
             "paid_at": payment.paid_at.isoformat(),
+            "reversal_transaction_ids": reversal_ids,
         },
     )
     await session.commit()
+
+
+async def _link_legacy_payout(
+    session: AsyncSession,
+    run: PayrollRun,
+    payment: PayrollPayment,
+) -> list[PayrollPayoutBooking]:
+    """Восстановить связи для расходов, созданных до появления payout-booking.
+
+    Старый bulk объединял сотрудников по статье в одну проводку. Долю конкретного сотрудника
+    можно однозначно восстановить из строк ведомости; занятая другими сотрудниками часть
+    общей проводки учитывается через уже созданные booking-записи.
+    """
+    from app.services.payroll_payout_allocation import (
+        DDS_ARTICLE_ADMIN_PAYROLL,
+        DDS_ARTICLE_PRODUCTION_PAYROLL,
+        build_payout_buckets,
+    )
+    from app.services.payroll_payouts import DDS_ARTICLE_DEPOSIT_PAYOUT
+
+    lines = (
+        await session.scalars(
+            select(PayrollLine).where(
+                PayrollLine.run_id == run.id,
+                PayrollLine.employee_id == payment.employee_id,
+            )
+        )
+    ).all()
+    if not lines:
+        raise PayrollConflictError("Не найдены строки сотрудника в ведомости")
+    target = Decimal(payment.booked_amount or 0).quantize(Decimal("0.01"))
+    distributed = _distribute_legacy_amount(target, lines)
+    is_admin = isinstance(run.summary, dict) and run.summary.get("kind") == "admin"
+    default_article = DDS_ARTICLE_ADMIN_PAYROLL if is_admin else DDS_ARTICLE_PRODUCTION_PAYROLL
+    buckets = build_payout_buckets(distributed, default_article_code=default_article)
+    accrued = sum((Decimal(line.total_payable or 0) for line in lines), Decimal("0"))
+    if Decimal(payment.amount or 0) >= accrued:
+        deposit = sum(
+            (Decimal(getattr(line, "deposit_payout_scheduled", 0) or 0) for line in lines),
+            Decimal("0"),
+        )
+        if deposit > 0:
+            from app.services.payroll_payout_allocation import PayoutBucket
+
+            buckets.append(PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit))
+
+    codes = {bucket.article_code for bucket in buckets}
+    articles = dict(
+        (
+            await session.execute(
+                select(DdsArticle.code, DdsArticle.id).where(DdsArticle.code.in_(codes))
+            )
+        ).all()
+    )
+    created_at = payment.created_at or datetime.now(UTC)
+    candidates = (
+        await session.scalars(
+            select(CashflowTransaction)
+            .where(
+                CashflowTransaction.source_kind == "payroll_payout",
+                CashflowTransaction.source_id == run.id,
+                CashflowTransaction.direction == "out",
+                CashflowTransaction.quality_status != "excluded",
+                CashflowTransaction.created_at >= created_at - timedelta(minutes=5),
+                CashflowTransaction.created_at <= created_at + timedelta(minutes=15),
+            )
+            .order_by(CashflowTransaction.created_at, CashflowTransaction.id)
+        )
+    ).all()
+    linked_rows = (
+        (
+            await session.execute(
+                select(
+                    PayrollPayoutBooking.cashflow_transaction_id,
+                    func.coalesce(func.sum(PayrollPayoutBooking.amount), 0),
+                )
+                .where(
+                    PayrollPayoutBooking.cashflow_transaction_id.in_([row.id for row in candidates])
+                )
+                .group_by(PayrollPayoutBooking.cashflow_transaction_id)
+            )
+        ).all()
+        if candidates
+        else []
+    )
+    linked = {transaction_id: Decimal(amount) for transaction_id, amount in linked_rows}
+    result: list[PayrollPayoutBooking] = []
+    for bucket in buckets:
+        remaining = Decimal(bucket.total)
+        article_id = articles.get(bucket.article_code)
+        for transaction in candidates:
+            if transaction.article_id != article_id or remaining <= 0:
+                continue
+            capacity = Decimal(transaction.amount) - linked.get(transaction.id, Decimal("0"))
+            if capacity <= 0:
+                continue
+            share = min(remaining, capacity)
+            booking = PayrollPayoutBooking(
+                run_id=run.id,
+                employee_id=payment.employee_id,
+                payment_id=payment.id,
+                cashflow_transaction_id=transaction.id,
+                amount=share,
+            )
+            session.add(booking)
+            result.append(booking)
+            linked[transaction.id] = linked.get(transaction.id, Decimal("0")) + share
+            remaining -= share
+        if remaining > 0:
+            raise PayrollConflictError(
+                "Не удалось сопоставить старую выплату с проводкой ДДС; откат не выполнен"
+            )
+    await session.flush()
+    return result
+
+
+def _distribute_legacy_amount(
+    amount: Decimal, lines: list[PayrollLine]
+) -> list[tuple[str, Decimal]]:
+    if len(lines) == 1:
+        return [(lines[0].role, amount)]
+    total = sum((Decimal(line.total_payable or 0) for line in lines), Decimal("0"))
+    if total <= 0:
+        return [(lines[0].role, amount)]
+    result: list[tuple[str, Decimal]] = []
+    allocated = Decimal("0")
+    for index, line in enumerate(lines):
+        share = (
+            amount - allocated
+            if index == len(lines) - 1
+            else (Decimal(line.total_payable or 0) / total * amount).quantize(Decimal("0.01"))
+        )
+        allocated += share
+        if share > 0:
+            result.append((line.role, share))
+    return result
 
 
 async def mark_all_payments(
@@ -115,9 +314,11 @@ async def mark_all_payments(
     paid_at: date,
     method: str,
     actor_user_id: uuid.UUID | None,
+    cash_wallet_code: str = "cash_safe",
 ) -> int:
     run = await _get_payment_run(session, run_id)
     _validate_method(method)
+    pay_wallet_id = await _payroll_cash_wallet_id(session, cash_wallet_code)
     rows = await _unpaid_employee_payment_rows(session, run_id)
     if not rows:
         return 0
@@ -149,7 +350,10 @@ async def mark_all_payments(
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
     payout_result = await book_payout_expense_for_employees(
-        session, run, [employee_id for employee_id, _amount, _payment in rows]
+        session,
+        run,
+        [employee_id for employee_id, _amount, _payment in rows],
+        pay_wallet_id=pay_wallet_id,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -165,6 +369,7 @@ async def mark_all_payments(
             ),
             "method": method,
             "paid_at": paid_at.isoformat(),
+            "cash_wallet_code": cash_wallet_code,
         },
     )
     await session.commit()
@@ -179,6 +384,7 @@ async def mark_payments_selected(
     *,
     paid_at: date,
     actor_user_id: uuid.UUID | None,
+    cash_wallet_code: str = "cash_safe",
 ) -> int:
     """Mark the given employees as paid in one shot, without a payment method.
 
@@ -187,6 +393,7 @@ async def mark_payments_selected(
     not recorded.
     """
     run = await _get_payment_run(session, run_id)
+    pay_wallet_id = await _payroll_cash_wallet_id(session, cash_wallet_code)
     wanted = set(employee_ids)
     if not wanted:
         return 0
@@ -221,7 +428,10 @@ async def mark_payments_selected(
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
     payout_result = await book_payout_expense_for_employees(
-        session, run, [employee_id for employee_id, _amount, _payment in rows]
+        session,
+        run,
+        [employee_id for employee_id, _amount, _payment in rows],
+        pay_wallet_id=pay_wallet_id,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -237,6 +447,7 @@ async def mark_payments_selected(
             ),
             "method": None,
             "paid_at": paid_at.isoformat(),
+            "cash_wallet_code": cash_wallet_code,
         },
     )
     await session.commit()
@@ -254,6 +465,7 @@ async def mark_partial_payment(
     method: str | None = None,
     comment: str | None = None,
     actor_user_id: uuid.UUID | None,
+    cash_wallet_code: str = "cash_safe",
 ) -> PayrollPayment:
     """Выплатить сотруднику ЧАСТЬ начисленного (или доплатить остаток) — снятие атомарности.
 
@@ -262,6 +474,7 @@ async def mark_partial_payment(
     ДДС инкрементально (Сейф-модель, ``book_payout_expense_for_employees`` по дельте).
     """
     run = await _get_payment_run(session, run_id)
+    pay_wallet_id = await _payroll_cash_wallet_id(session, cash_wallet_code)
     if method is not None:
         _validate_method(method)
     accrued = await _employee_payable_amount(session, run_id, employee_id)
@@ -324,7 +537,11 @@ async def mark_partial_payment(
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
     payout_result = await book_payout_expense_for_employees(
-        session, run, [employee_id], amount_by_employee={employee_id: new_total}
+        session,
+        run,
+        [employee_id],
+        amount_by_employee={employee_id: new_total},
+        pay_wallet_id=pay_wallet_id,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -340,6 +557,7 @@ async def mark_partial_payment(
             "partial": status == "partially_paid",
             "method": method,
             "paid_at": paid_at.isoformat(),
+            "cash_wallet_code": cash_wallet_code,
         },
     )
     await session.commit()

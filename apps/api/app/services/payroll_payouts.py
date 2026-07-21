@@ -20,6 +20,7 @@ from app.models import (
     PayrollBankDraft,
     PayrollLine,
     PayrollPayment,
+    PayrollPayoutBooking,
     PayrollPeriod,
     PayrollRun,
     PayrollRunEvent,
@@ -72,6 +73,7 @@ BANK_TO_SAFE_SOURCE_KIND = "payroll_bank_to_safe"
 # с ТК Черникова (= iiko Главная касса). Когда выдач нет (deposit_payout_scheduled=0) — инертно.
 DDS_ARTICLE_DEPOSIT_PAYOUT = "vydacha_depozita_sotrudniku"
 DEPOSIT_PAYOUT_TK_WALLET_CODE = "tk_chernikova"
+PAYROLL_CASH_WALLET_CODES = frozenset({SAFE_WALLET_CODE, DEPOSIT_PAYOUT_TK_WALLET_CODE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +99,8 @@ class PayrollFundingSource:
     balance: Decimal
     reserved_other: Decimal
     available: Decimal
+    reserved_for_run: Decimal = Decimal("0")
+    payroll_available: Decimal = Decimal("0")
     is_configured: bool = True
 
 
@@ -143,13 +147,11 @@ async def set_run_payout_cash(
 
     run.payout_cash_total = cash
     run.payout_cash_wallet_id = wallet.id if wallet is not None else None
-    # Наличный пул-резерв ЗП: заводим на Кассе Черникова (кликабелен сразу). Наличную из Сейфа
-    # (редкий выбор) не earmark'им отдельным касса-резервом — она в контуре Сейфа.
-    from app.services.payroll_reserves import KASSA_WALLET_CODE, ensure_run_kassa_reserve
-
-    kassa_cash = cash if (wallet is not None and wallet.code == KASSA_WALLET_CODE) else Decimal("0")
-    await ensure_run_kassa_reserve(
-        session, run, cash_amount=kassa_cash, created_by_user_id=actor_user_id
+    await _sync_run_kassa_reserve_from_config(
+        session,
+        run,
+        actor_user_id=actor_user_id,
+        validate_funds=False,
     )
     _add_payout_event(
         session,
@@ -167,6 +169,43 @@ async def set_run_payout_cash(
     await session.commit()
     await session.refresh(run)
     return run
+
+
+async def _sync_run_kassa_reserve_from_config(
+    session: AsyncSession,
+    run: PayrollRun,
+    *,
+    actor_user_id: uuid.UUID | None,
+    validate_funds: bool,
+) -> SafeAllocation | None:
+    """Materialize the configured cash split as an idempotent Kassa reserve.
+
+    Normally ``set_run_payout_cash`` creates the reserve immediately.  Draft creation also
+    calls this helper so legacy/imported runs (or preview data) with populated split fields but
+    no ``SafeAllocation`` repair themselves before appearing in «Активных платежах».
+    """
+    from app.services.payroll_reserves import KASSA_WALLET_CODE, ensure_run_kassa_reserve
+
+    cash = _money(run.payout_cash_total)
+    wallet = (
+        await session.get(Wallet, run.payout_cash_wallet_id)
+        if run.payout_cash_wallet_id is not None
+        else None
+    )
+    if cash > 0 and wallet is None:
+        raise PayrollConflictError("Для наличной части выплаты не найден выбранный счёт")
+    if cash > 0 and wallet is not None and wallet.code not in PAYROLL_CASH_WALLET_CODES:
+        raise PayrollConflictError("Для выплаты можно выбрать только Сейф или торговую кассу")
+    if validate_funds and cash > 0 and wallet is not None:
+        await _ensure_cash_source_funds(session, run, wallet, cash)
+
+    kassa_cash = cash if wallet is not None and wallet.code == KASSA_WALLET_CODE else Decimal("0")
+    return await ensure_run_kassa_reserve(
+        session,
+        run,
+        cash_amount=kassa_cash,
+        created_by_user_id=actor_user_id,
+    )
 
 
 def _is_admin_run(run: PayrollRun) -> bool:
@@ -299,6 +338,12 @@ async def book_bank_to_safe_transfer(
     from app.services.payroll_reserves import ensure_run_safe_reserve
 
     await ensure_run_safe_reserve(session, run, account_amount=amount)
+    # Исторические/конкурентные выплаты этой ведомости с Сейфа должны быть зачтены в новый
+    # резерв в той же транзакции. В нормальном новом контуре до резерва они запрещены, но
+    # сверка не даёт старым данным создать завышенный непогашенный резерв.
+    from app.services.payroll_reserves import reconcile_run_reserves
+
+    await reconcile_run_reserves(session, run.id)
     return True
 
 
@@ -408,8 +453,10 @@ async def book_payout_expense_for_employees(
     ``pay_wallet_id`` — контур выплаты ЗП из пула-резерва: вся дельта книжится ОДНИМ кошельком
     (Сейф ЛИБО касса), без run-level каскада нал/безнал. Так «оплата из Сейфа» садится на Сейф,
     «оплата из кассы» — на кассу (переток пулов реализует вызывающий, книжа остаток другим
-    кошельком). Статьи ДДС по-прежнему разносятся по должностям. ``deposit_iiko_amount`` в этом
-    режиме не считается (депозит идёт полным путём «Выплатить»).
+    кошельком). Выбранный кошелёк обязан иметь активный резерв именно этой ведомости, а сумма
+    выплаты не может превышать непогашенный остаток резерва. Свободный остаток кошелька не
+    является источником зарплаты. Статьи ДДС по-прежнему разносятся по должностям.
+    ``deposit_iiko_amount`` в этом режиме не считается (депозит идёт полным путём «Выплатить»).
     """
     empty = PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal("0"))
     if not _uses_safe_payout(run) or not employee_ids:
@@ -441,6 +488,7 @@ async def book_payout_expense_for_employees(
     )
     # Книжим только НЕ забронированную часть по каждому сотруднику (delta = target − booked).
     row_amounts: list[tuple[str, Decimal]] = []
+    employee_buckets: dict[uuid.UUID, list[PayoutBucket]] = {}
     booked_targets: dict[uuid.UUID, Decimal] = {}
     for employee_id, employee_lines in lines_by_employee.items():
         accrued = sum((_money(line.total_payable) for line in employee_lines), Decimal("0"))
@@ -453,25 +501,32 @@ async def book_payout_expense_for_employees(
         delta = target - already_booked
         if delta <= 0:
             continue
-        row_amounts.extend(_distribute_amount(delta, employee_lines))
+        distributed = _distribute_amount(delta, employee_lines)
+        row_amounts.extend(distributed)
+        employee_buckets[employee_id] = build_payout_buckets(
+            distributed, default_article_code=default_article
+        )
         booked_targets[employee_id] = target
     buckets = build_payout_buckets(row_amounts, default_article_code=default_article)
     # Выдача депозита — отдельной корзиной В КОНЦЕ (наличные гасят сначала ЗП, потом выдачу).
     # Только при полной выплате: в режиме частичной выплаты депозит не трогаем.
     if amount_by_employee is None:
-        deposit_total = sum(
-            (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in lines), Decimal("0")
-        )
+        deposit_total = Decimal("0")
+        for employee_id, employee_lines in lines_by_employee.items():
+            employee_deposit = sum(
+                (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in employee_lines),
+                Decimal("0"),
+            )
+            if employee_deposit <= 0 or employee_id not in booked_targets:
+                continue
+            deposit_total += employee_deposit
+            employee_buckets.setdefault(employee_id, []).append(
+                PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, employee_deposit)
+            )
         if deposit_total > 0:
             buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
     if not buckets:
         return empty
-    safe_wallet = await session.scalar(
-        select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
-    )
-    if safe_wallet is None:
-        return empty
-
     rows_total = sum((bucket.total for bucket in buckets), Decimal("0"))
     codes = {bucket.article_code for bucket in buckets}
     article_rows = (
@@ -484,16 +539,53 @@ async def book_payout_expense_for_employees(
     deposit_iiko_amount = Decimal("0")
 
     if pay_wallet_id is not None:
-        # Контур пула-резерва: вся дельта одним кошельком, без каскада нал/безнал.
-        pay_wallet = await session.get(Wallet, pay_wallet_id)
+        # Сначала блокируем целевой резерв, затем кошелёк. Такой же порядок использует
+        # pay_run_from_pool; единый порядок не допускает дедлоков reserve↔wallet.
+        reserve = await session.scalar(
+            select(SafeAllocation)
+            .where(
+                SafeAllocation.source_run_id == run.id,
+                SafeAllocation.wallet_id == pay_wallet_id,
+                SafeAllocation.employee_id.is_(None),
+                SafeAllocation.status.in_(("reserved", "partially_paid")),
+            )
+            .with_for_update()
+        )
+        if reserve is None:
+            raise PayrollConflictError(
+                "На выбранном счёте нет активного резерва под зарплату этой ведомости"
+            )
+        reserve_outstanding = _money(Decimal(reserve.amount) - Decimal(reserve.amount_paid))
+        if rows_total > reserve_outstanding:
+            raise PayrollConflictError(
+                f"В зарплатном резерве выбранного счёта доступно "
+                f"{money_text(reserve_outstanding)} ₽, требуется {money_text(rows_total)} ₽"
+            )
+
+        # Физический баланс остаётся второй защитой: целевое назначение разрешает выплату,
+        # но не позволяет увести сам счёт в минус при расхождении учёта.
+        pay_wallet = await session.scalar(
+            select(Wallet)
+            .where(
+                Wallet.id == pay_wallet_id,
+                Wallet.code.in_(PAYROLL_CASH_WALLET_CODES),
+                Wallet.status == "active",
+            )
+            .with_for_update()
+        )
         if pay_wallet is None:
-            return empty
-        from_label = "кассы" if pay_wallet.id != safe_wallet.id else "Сейфа"
-        for bucket in buckets:
-            if bucket.total <= 0:
-                continue
-            session.add(
-                CashflowTransaction(
+            raise PayrollConflictError("Для выплаты можно выбрать только Сейф или торговую кассу")
+        await _ensure_cash_source_funds(session, run, pay_wallet, rows_total)
+        from_label = "кассы" if pay_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE else "Сейфа"
+        for employee_id, employee_rows in employee_buckets.items():
+            payment = payments.get(employee_id)
+            if payment is None:
+                raise PayrollConflictError("Не найдена отметка выплаты сотруднику")
+            for bucket in employee_rows:
+                if bucket.total <= 0:
+                    continue
+                is_deposit = bucket.article_code == DDS_ARTICLE_DEPOSIT_PAYOUT
+                transaction = CashflowTransaction(
                     wallet_id=pay_wallet.id,
                     direction="out",
                     amount=bucket.total,
@@ -501,15 +593,40 @@ async def book_payout_expense_for_employees(
                     article_id=article_ids.get(bucket.article_code),
                     source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
                     source_id=run.id,
-                    payment_purpose=f"Выплата ЗП (из {from_label})",
+                    payment_purpose=(
+                        f"Выдача депозита (из {from_label})"
+                        if is_deposit
+                        else f"Выплата ЗП (из {from_label})"
+                    ),
                     quality_status="final",
                 )
-            )
+                session.add(transaction)
+                await session.flush()
+                session.add(
+                    PayrollPayoutBooking(
+                        run_id=run.id,
+                        employee_id=employee_id,
+                        payment_id=payment.id,
+                        cashflow_transaction_id=transaction.id,
+                        amount=bucket.total,
+                    )
+                )
+                if is_deposit and pay_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE:
+                    deposit_iiko_amount += bucket.total
     else:
+        safe_wallet = await session.scalar(
+            select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
+        )
+        if safe_wallet is None:
+            raise PayrollConflictError("Счёт «Сейф» не найден или неактивен")
         # Наличный бюджет прогона за вычетом уже списанного наличными (cash-проводки не на Сейфе).
         cash_wallet: Wallet | None = None
         if run.payout_cash_wallet_id is not None:
             cash_wallet = await session.get(Wallet, run.payout_cash_wallet_id)
+            if cash_wallet is not None and cash_wallet.code not in PAYROLL_CASH_WALLET_CODES:
+                raise PayrollConflictError(
+                    "Для выплаты можно выбрать только Сейф или торговую кассу"
+                )
         already_cash = Decimal("0")
         if cash_wallet is not None and cash_wallet.id != safe_wallet.id:
             already_cash = _money(
@@ -524,9 +641,32 @@ async def book_payout_expense_for_employees(
             )
         cash_budget = max(Decimal("0"), _money(run.payout_cash_total) - already_cash)
         cash_for_rows = min(cash_budget, rows_total)
+        if cash_for_rows > 0 and cash_wallet is None:
+            raise PayrollConflictError("Выберите счёт для наличной части выплаты")
         allocations = allocate_cash_cascade(buckets, cash_for_rows)
-        # Если наличный кошелёк не задан, наличную часть тоже списываем с Сейфа (фолбэк).
         cash_target = cash_wallet.id if cash_wallet is not None else safe_wallet.id
+        required_by_wallet: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+        for alloc in allocations:
+            required_by_wallet[safe_wallet.id] += alloc.bank
+            required_by_wallet[cash_target] += alloc.cash
+        locked_wallets = {
+            wallet.id: wallet
+            for wallet in (
+                await session.scalars(
+                    select(Wallet)
+                    .where(Wallet.id.in_(required_by_wallet))
+                    .order_by(Wallet.id)
+                    .with_for_update()
+                )
+            ).all()
+        }
+        for wallet_id, required in required_by_wallet.items():
+            if required <= 0:
+                continue
+            wallet = locked_wallets.get(wallet_id)
+            if wallet is None:
+                raise PayrollConflictError("Счёт выплаты не найден")
+            await _ensure_cash_source_funds(session, run, wallet, required)
         for alloc in allocations:
             article_id = article_ids.get(alloc.article_code)
             is_deposit = alloc.article_code == DDS_ARTICLE_DEPOSIT_PAYOUT
@@ -600,6 +740,15 @@ async def create_or_update_run_draft(
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
+    # Split fields predate payroll pool reserves and may also arrive from an import/seed.
+    # Creating the bank draft is the last safe point to repair a missing cash-side reserve,
+    # otherwise «Активные платежи» shows only the bank leg and hides the Kassa obligation.
+    await _sync_run_kassa_reserve_from_config(
+        session,
+        run,
+        actor_user_id=actor_user_id,
+        validate_funds=True,
+    )
     await _ensure_bank_source_funds(session, provider, total_account)
 
     existing = await _get_bank_draft(session, run_id)
@@ -782,7 +931,7 @@ async def get_run_funding_sources(
     session: AsyncSession,
     run_id: uuid.UUID,
 ) -> PayrollRunFunding:
-    """Остатки источников сплита с учётом чужих активных резервов."""
+    """Остатки источников сплита и целевые зарплатные резервы этой ведомости."""
     run = await _get_payout_run(session, run_id)
     cash_wallets = await list_cash_wallets(session)
     cash_sources = tuple(
@@ -856,6 +1005,8 @@ async def _cash_funding_source(
 ) -> PayrollFundingSource:
     balance = await _wallet_ledger_balance(session, wallet)
     reserved_other = await _reserved_by_other_payments(session, wallet_id=wallet.id, run_id=run.id)
+    reserved_for_run = await _reserved_for_run_payroll(session, wallet_id=wallet.id, run_id=run.id)
+    spendable_balance = max(Decimal("0"), _money(balance - reserved_other))
     return PayrollFundingSource(
         id=wallet.id,
         code=wallet.code,
@@ -864,8 +1015,29 @@ async def _cash_funding_source(
         provider=None,
         balance=balance,
         reserved_other=reserved_other,
-        available=max(Decimal("0"), _money(balance - reserved_other)),
+        available=spendable_balance,
+        reserved_for_run=reserved_for_run,
+        payroll_available=min(spendable_balance, reserved_for_run),
     )
+
+
+async def _reserved_for_run_payroll(
+    session: AsyncSession,
+    *,
+    wallet_id: uuid.UUID,
+    run_id: uuid.UUID,
+) -> Decimal:
+    """Непогашенный целевой резерв выбранной ведомости на конкретном кошельке."""
+    outstanding = func.sum(SafeAllocation.amount - SafeAllocation.amount_paid)
+    total = await session.scalar(
+        select(func.coalesce(outstanding, 0)).where(
+            SafeAllocation.wallet_id == wallet_id,
+            SafeAllocation.source_run_id == run_id,
+            SafeAllocation.employee_id.is_(None),
+            SafeAllocation.status.in_(("reserved", "partially_paid")),
+        )
+    )
+    return _money(total or 0)
 
 
 async def _payer_wallet_for_provider(

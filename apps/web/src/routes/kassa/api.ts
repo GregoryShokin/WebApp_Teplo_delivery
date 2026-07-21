@@ -257,10 +257,7 @@ export async function waiveKassaShiftPenalty(id: string): Promise<KassaShiftDeta
 // Маршрут выплаты по статье: сотрудниковые статьи ведут в авансовый леджер,
 // предоплата — в дебиторку поставщика, прочие — голая расходная проводка.
 export type KassaPayoutFlow =
-  | "expense"
-  | "employee_advance"
-  | "employee_loan"
-  | "supplier_prepayment";
+  "expense" | "employee_advance" | "employee_loan" | "supplier_prepayment";
 
 // Маршрут строки журнала: выплаты + приход по пресету («Внесение в кассу»).
 export type KassaJournalFlow = KassaPayoutFlow | "payin";
@@ -384,9 +381,21 @@ export type KassaTarget = {
   outstanding: number;
   // Авто-целёвка оплаченного банковского черновика закупа.
   from_bank_payout: boolean;
-  // В обычной очереди кассы всегда false; зарплатные пулы выдаются отдельным контуром.
+  // Зарплатный пул раскрывается до сотрудников и выдаётся общим payroll-движком.
   is_payroll: boolean;
+  run_id: string | null;
+  payroll_employees: KassaPayrollEmployee[];
   created_at: string;
+};
+
+export type KassaPayrollEmployee = {
+  employee_id: string;
+  employee_name: string;
+  accrued: number;
+  paid: number;
+  remaining: number;
+  payment_status: "pending" | "partially_paid" | "paid";
+  payable: boolean;
 };
 
 export type KassaAdvancePermission = {
@@ -466,6 +475,19 @@ export async function payKassaFreelancerShifts(
 export async function payKassaTarget(allocationId: string, amount: number): Promise<KassaPending> {
   const response = await api.post<KassaPending>(`${BASE}/targets/${allocationId}/payout`, {
     amount,
+  });
+  return response.data;
+}
+
+/** Распределить зарплатный резерв торговой кассы между выбранными сотрудниками. */
+export async function payKassaPayrollTarget(
+  allocationId: string,
+  employeeIds: string[],
+  boundaryId: string | null,
+): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(`${BASE}/targets/${allocationId}/payroll-payout`, {
+    employee_ids: employeeIds,
+    boundary_id: boundaryId,
   });
   return response.data;
 }

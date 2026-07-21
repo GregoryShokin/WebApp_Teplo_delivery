@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -424,16 +424,26 @@ async def reconcile_run_reserves(
         return
     settlement = await run_payment_settlement(session, run_id)
     for reserve in reserves:
-        out = await session.scalar(
-            select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
+        net_paid = await session.scalar(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (CashflowTransaction.direction == "out", CashflowTransaction.amount),
+                            else_=-CashflowTransaction.amount,
+                        )
+                    ),
+                    0,
+                )
+            ).where(
                 CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
                 CashflowTransaction.source_id == run_id,
-                CashflowTransaction.direction == "out",
+                CashflowTransaction.direction.in_(("out", "in")),
                 CashflowTransaction.wallet_id == reserve.wallet_id,
                 CashflowTransaction.quality_status != EXCLUDED_QUALITY,
             )
         )
-        paid = min(_q(reserve.amount), _q(out or 0))
+        paid = min(_q(reserve.amount), max(Decimal("0"), _q(net_paid or 0)))
         reserve.amount_paid = paid
         if settlement.settled and paid < _q(reserve.amount):
             # Обязательство ведомости закрыто из другого кошелька: фактически не потраченный
@@ -624,6 +634,7 @@ async def pay_run_from_pool(
     selected_ids: set[uuid.UUID] | None = None,
     boundary_override: uuid.UUID | None = None,
     allow_overflow: bool = True,
+    expected_location: str | None = None,
     paid_at: date,
     actor_user_id: uuid.UUID | None,
 ) -> PoolPayoutResult:
@@ -633,13 +644,16 @@ async def pay_run_from_pool(
     через ``apply_pool_tranche`` (ДДС из кошелька пула, учёт ``booked_amount``) и наращивает
     ``amount_paid`` резерва. Если ``allow_overflow`` и есть второй активный пул-резерв
     ведомости — непокрытое доводится с него (симметрия Сейф↔касса). Непокрытое обоими
-    остаётся долгом (``partially_paid`` в ``PayrollPayment``). Атомарно (один commit).
+    остаётся долгом (``partially_paid`` в ``PayrollPayment``). ``expected_location`` не даёт
+    кассовому интерфейсу подставить резерв другого наличного счёта. Атомарно (один commit).
     """
     primary = await session.get(SafeAllocation, reserve_id, with_for_update=True)
     if primary is None or primary.source_run_id is None:
         raise PayrollNotFoundError("Резерв ведомости не найден")
     if primary.employee_id is not None:
         raise PayrollConflictError("Это не пул-резерв ведомости")
+    if expected_location is not None and primary.location != expected_location:
+        raise PayrollConflictError("Этот резерв относится к другому наличному счёту")
     if primary.status not in ACTIVE_RESERVE_STATUSES:
         raise PayrollConflictError("Резерв уже оплачен или отменён")
     run = await session.get(PayrollRun, primary.source_run_id)

@@ -24,6 +24,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { navigateTo } from "@/router";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,6 +55,7 @@ import {
   unmarkPayrollPayment,
   type Employee,
   type PayrollAdvance,
+  type PayrollCashWalletCode,
   type PayrollLine,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -65,6 +74,7 @@ import {
   todayDateInputValue,
 } from "./admin-payslip-utils";
 import { EmployeePayoutDialog } from "./employee-payout-dialog";
+import { CashPayoutSourcePicker, type PayrollCashChannelPerms } from "./cash-payout-source-picker";
 import { RecoveryDialog } from "./recovery-dialog";
 import { formatDate, formatMoney, formatPeriodRange } from "./runs";
 
@@ -485,6 +495,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
         canManagePayments={canManagePayments}
         canCreatePayout={canCreatePayout}
         canDeferLoans={canManageLoans && run?.status !== "finalized"}
+        channelPerms={payoutChannelPerms}
         employeesById={employeesById}
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
@@ -501,6 +512,7 @@ function AdminLinesTable({
   canManagePayments,
   canCreatePayout,
   canDeferLoans,
+  channelPerms,
   employeesById,
   isLoading,
   lines,
@@ -512,6 +524,7 @@ function AdminLinesTable({
   canManagePayments: boolean;
   canCreatePayout: boolean;
   canDeferLoans: boolean;
+  channelPerms: PayrollCashChannelPerms;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
@@ -535,6 +548,9 @@ function AdminLinesTable({
   const [recoveryEmployeeId, setRecoveryEmployeeId] = useState<string | null>(null);
   const [payoutRow, setPayoutRow] = useState<AdminLineRowModel | null>(null);
   const [detailRow, setDetailRow] = useState<AdminLineRowModel | null>(null);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkWalletCode, setBulkWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [bulkCanSubmit, setBulkCanSubmit] = useState(false);
 
   const unpaidEmployeeIds = useMemo(
     () =>
@@ -580,14 +596,22 @@ function AdminLinesTable({
   }
 
   const bulkMarkMutation = useMutation({
-    mutationFn: (employeeIds: string[]) =>
-      bulkMarkPayrollPayments(runId, employeeIds, todayDateInputValue()),
+    mutationFn: ({
+      employeeIds,
+      walletCode,
+    }: {
+      employeeIds: string[];
+      walletCode: PayrollCashWalletCode;
+    }) => bulkMarkPayrollPayments(runId, employeeIds, todayDateInputValue(), walletCode),
     onSuccess: async (response) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["payroll-admin-run", runId] }),
         queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
       ]);
       setSelectedEmployeeIds(new Set());
+      setBulkDialogOpen(false);
+      setBulkWalletCode(null);
       toast.success(
         response.marked_count > 0
           ? `Отмечено выплат: ${response.marked_count}`
@@ -614,6 +638,12 @@ function AdminLinesTable({
       .filter((row) => (needle ? row.employeeName.toLowerCase().includes(needle) : true))
       .sort((left, right) => left.employeeName.localeCompare(right.employeeName, "ru"));
   }, [employeesById, lines, search]);
+  const selectedAmount = lines
+    .filter((line) => selectedEmployeeIds.has(line.employee_id))
+    .reduce(
+      (sum, line) => sum + Math.max(0, Number(line.total_payable) - Number(line.paid_amount ?? 0)),
+      0,
+    );
 
   const tableColumns: Array<DataTableColumn<AdminLineRowModel>> = [
     ...(canManagePayments
@@ -815,7 +845,10 @@ function AdminLinesTable({
           {canManagePayments ? (
             <Button
               disabled={selectedCount === 0 || bulkMarkMutation.isPending}
-              onClick={() => bulkMarkMutation.mutate(Array.from(selectedEmployeeIds))}
+              onClick={() => {
+                setBulkWalletCode(null);
+                setBulkDialogOpen(true);
+              }}
               type="button"
             >
               {bulkMarkMutation.isPending ? (
@@ -828,6 +861,47 @@ function AdminLinesTable({
           ) : null}
         </div>
       </section>
+
+      <Dialog onOpenChange={setBulkDialogOpen} open={bulkDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Выплатить выбранным сотрудникам</DialogTitle>
+            <DialogDescription>
+              {selectedCount} сотрудников · к выплате {formatMoney(selectedAmount)}. Выберите счёт
+              фактической выдачи.
+            </DialogDescription>
+          </DialogHeader>
+          <CashPayoutSourcePicker
+            amount={selectedAmount}
+            channelPerms={channelPerms}
+            onCanSubmitChange={setBulkCanSubmit}
+            onChange={setBulkWalletCode}
+            runId={runId}
+            value={bulkWalletCode}
+          />
+          <DialogFooter>
+            <Button onClick={() => setBulkDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!bulkCanSubmit || !bulkWalletCode || bulkMarkMutation.isPending}
+              onClick={() =>
+                bulkWalletCode &&
+                bulkMarkMutation.mutate({
+                  employeeIds: Array.from(selectedEmployeeIds),
+                  walletCode: bulkWalletCode,
+                })
+              }
+              type="button"
+            >
+              {bulkMarkMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : null}
+              Выплатить {formatMoney(selectedAmount)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {lines.length === 0 && !isLoading ? (
         <EmptyState
@@ -848,6 +922,7 @@ function AdminLinesTable({
       <AdminLineDialog
         canCreatePayout={canCreatePayout}
         canManagePayments={canManagePayments}
+        channelPerms={channelPerms}
         onIncludeOnDemand={(row) => setPayoutRow(row)}
         onManageRecovery={(employeeId) => setRecoveryEmployeeId(employeeId)}
         onOpenChange={(open) => {

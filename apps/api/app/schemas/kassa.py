@@ -266,6 +266,18 @@ class KassaJournalRead(BaseModel):
 # --- Вкладка «К выдаче»: целёвки в кассе + разрешения на авансы/займы ------------
 
 
+class KassaPayrollEmployeeRead(BaseModel):
+    """Сотрудник зарплатной ведомости внутри кассового резерва."""
+
+    employee_id: uuid.UUID
+    employee_name: str
+    accrued: float
+    paid: float
+    remaining: float
+    payment_status: str
+    payable: bool
+
+
 class KassaTargetRead(BaseModel):
     """Целёвка, переданная в кассу: выдаётся наличными по статье с контрагентом."""
 
@@ -281,8 +293,10 @@ class KassaTargetRead(BaseModel):
     outstanding: float
     # Авто-целёвка оплаченного банковского черновика закупа («из банковской выплаты»).
     from_bank_payout: bool
-    # Пул зарплатной ведомости: виден в модалке ДДС, выдаётся через «Активные платежи».
+    # Пул зарплатной ведомости: раскрывается в кассе и выдаётся выбранным сотрудникам.
     is_payroll: bool
+    run_id: uuid.UUID | None = None
+    payroll_employees: list[KassaPayrollEmployeeRead] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -342,6 +356,15 @@ class KassaTargetPayoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount: Decimal = Field(gt=0)
+
+
+class KassaPayrollPayoutRequest(BaseModel):
+    """Распределить кассовый резерв между выбранными сотрудниками ведомости."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    employee_ids: list[uuid.UUID] = Field(min_length=1)
+    boundary_id: uuid.UUID | None = None
 
 
 class KassaFreelancerShiftPayoutRequest(BaseModel):

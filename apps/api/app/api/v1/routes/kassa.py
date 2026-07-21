@@ -22,6 +22,9 @@ from app.schemas.kassa import (
     KassaConfigRead,
     KassaCounterpartyRead,
     KassaDdsArticleRead,
+    KassaFreelancerShiftPayoutRequest,
+    KassaFreelancerShiftsRead,
+    KassaFreelancerSyncReport,
     KassaJournalRead,
     KassaPayinCreate,
     KassaPayinPresetArticleRead,
@@ -36,9 +39,7 @@ from app.schemas.kassa import (
     KassaPayoutCreate,
     KassaPayoutEmployeeRead,
     KassaPayoutResultRead,
-    KassaFreelancerShiftPayoutRequest,
-    KassaFreelancerShiftsRead,
-    KassaFreelancerSyncReport,
+    KassaPayrollPayoutRequest,
     KassaPendingRead,
     KassaShiftDetailRead,
     KassaShiftRead,
@@ -46,6 +47,12 @@ from app.schemas.kassa import (
     KassaTargetPayoutRequest,
 )
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
+from app.services.freelancer.shift_settlement import (
+    FreelancerShiftSettlementError,
+    freelancer_shift_details,
+    pay_freelancer_shifts,
+    sync_freelancer_shifts,
+)
 from app.services.kassa.cheque import (
     ChequeBankPart,
     ChequeLineInput,
@@ -79,6 +86,7 @@ from app.services.kassa.payins import (
     update_preset,
 )
 from app.services.kassa.payouts import (
+    MOSCOW_TZ,
     KassaPayoutError,
     KassaPayoutResult,
     create_payout,
@@ -93,16 +101,11 @@ from app.services.kassa.payouts import (
     pay_kassa_target,
     update_payout,
 )
-from app.services.freelancer.shift_settlement import (
-    FreelancerShiftSettlementError,
-    freelancer_shift_details,
-    pay_freelancer_shifts,
-    sync_freelancer_shifts,
-)
 from app.services.payroll_advance_service import (
     cancel_kassa_advance,
     disburse_kassa_advance,
 )
+from app.services.payroll_reserves import pay_run_from_pool
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.settings_service import SettingNotFoundError, get_setting
 from app.services.warehouse_invoice_push import WarehousePushError, push_invoice_to_iiko
@@ -122,6 +125,7 @@ async def _manual_pending_enabled(session: AsyncSession) -> bool:
     except SettingNotFoundError:
         return False
     return bool(setting.get("value"))
+
 
 # Служебный контрагент-«корзина» местных закупок: жёстко зашит получателем чека по
 # бизнес-карте. Он синтетический (без ИНН/реквизитов), поэтому может оказаться в статусе
@@ -194,9 +198,7 @@ async def list_counterparties(
 
     «Местный закуп» отдаём независимо от статуса (он синтетический, может быть
     requires_setup) — иначе кнопка «Создать чек» гаснет без объяснения."""
-    available = or_(
-        Counterparty.status == "active", Counterparty.name == LOCAL_PURCHASE_NAME
-    )
+    available = or_(Counterparty.status == "active", Counterparty.name == LOCAL_PURCHASE_NAME)
     conditions = [available]
     if search:
         pattern = f"%{search.strip()}%"
@@ -575,9 +577,7 @@ async def delete_payout_endpoint(
     """Удалить СВОЮ кассовую запись в день создания (аванс — отмена, предоплата — снятие)."""
     ensure_permission(actor, "kassa.payouts.create")
     try:
-        await delete_payout(
-            session, transaction_id=transaction_id, actor_user_id=actor.user_id
-        )
+        await delete_payout(session, transaction_id=transaction_id, actor_user_id=actor.user_id)
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
@@ -815,6 +815,40 @@ async def pay_kassa_target_endpoint(
         )
         return await kassa_pending_payload(session)
     except KassaPayoutError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/targets/{allocation_id}/payroll-payout",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_PAYOUTS_CREATE,
+)
+async def pay_kassa_payroll_target_endpoint(
+    allocation_id: uuid.UUID,
+    payload: KassaPayrollPayoutRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """Выдать полные остатки выбранным сотрудникам из зарплатного резерва кассы.
+
+    Кассиру не нужны права на payroll: endpoint узко принимает только резерв торговой
+    кассы, а проводку выполняет общий зарплатный движок (ведомость + резерв + ДДС).
+    """
+    try:
+        await pay_run_from_pool(
+            session,
+            reserve_id=allocation_id,
+            selected_ids=set(payload.employee_ids),
+            boundary_override=payload.boundary_id,
+            allow_overflow=False,
+            expected_location="kassa",
+            paid_at=datetime.now(MOSCOW_TZ).date(),
+            actor_user_id=actor.user_id,
+        )
+        return await kassa_pending_payload(session)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 

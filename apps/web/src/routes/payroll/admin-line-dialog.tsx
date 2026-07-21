@@ -21,6 +21,7 @@ import {
   bulkMarkPayrollPayments,
   markPartialPayrollPayment,
   unmarkPayrollPayment,
+  type PayrollCashWalletCode,
   type PayrollLine,
 } from "@/lib/api";
 
@@ -38,6 +39,7 @@ import {
   todayDateInputValue,
 } from "./admin-payslip-utils";
 import { formatDate, formatMoney } from "./runs";
+import { CashPayoutSourcePicker, type PayrollCashChannelPerms } from "./cash-payout-source-picker";
 
 export type AdminLineDetailRow = {
   line: PayrollLine;
@@ -54,6 +56,7 @@ export type AdminLineDetailRow = {
 export function AdminLineDialog({
   canManagePayments,
   canCreatePayout,
+  channelPerms,
   onIncludeOnDemand,
   onManageRecovery,
   onOpenChange,
@@ -63,6 +66,7 @@ export function AdminLineDialog({
 }: {
   canManagePayments: boolean;
   canCreatePayout: boolean;
+  channelPerms: PayrollCashChannelPerms;
   onIncludeOnDemand: (row: AdminLineDetailRow) => void;
   onManageRecovery: (employeeId: string) => void;
   onOpenChange: (open: boolean) => void;
@@ -77,6 +81,7 @@ export function AdminLineDialog({
           <AdminLineDialogContent
             canCreatePayout={canCreatePayout}
             canManagePayments={canManagePayments}
+            channelPerms={channelPerms}
             onIncludeOnDemand={() => onIncludeOnDemand(row)}
             onManageRecovery={() => onManageRecovery(row.line.employee_id)}
             periodLabel={periodLabel}
@@ -91,6 +96,7 @@ export function AdminLineDialog({
 function AdminLineDialogContent({
   canCreatePayout,
   canManagePayments,
+  channelPerms,
   onIncludeOnDemand,
   onManageRecovery,
   periodLabel,
@@ -98,6 +104,7 @@ function AdminLineDialogContent({
 }: {
   canCreatePayout: boolean;
   canManagePayments: boolean;
+  channelPerms: PayrollCashChannelPerms;
   onIncludeOnDemand: () => void;
   onManageRecovery: () => void;
   periodLabel: string;
@@ -208,7 +215,11 @@ function AdminLineDialogContent({
           )}
         </div>
         {isOnDemand ? null : (
-          <AdminPaymentActions canManagePayments={canManagePayments} line={line} />
+          <AdminPaymentActions
+            canManagePayments={canManagePayments}
+            channelPerms={channelPerms}
+            line={line}
+          />
         )}
       </section>
     </div>
@@ -219,9 +230,11 @@ function AdminLineDialogContent({
  *  «Расчётах», с инвалидацией админских ключей. */
 function AdminPaymentActions({
   canManagePayments,
+  channelPerms,
   line,
 }: {
   canManagePayments: boolean;
+  channelPerms: PayrollCashChannelPerms;
   line: PayrollLine;
 }) {
   const queryClient = useQueryClient();
@@ -233,12 +246,18 @@ function AdminPaymentActions({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [amountInput, setAmountInput] = useState("");
   const [comment, setComment] = useState("");
+  const [partialWalletCode, setPartialWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [partialCanSubmit, setPartialCanSubmit] = useState(false);
+  const [fullDialogOpen, setFullDialogOpen] = useState(false);
+  const [fullWalletCode, setFullWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [fullCanSubmit, setFullCanSubmit] = useState(false);
 
   const invalidate = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["payroll-admin-run", line.run_id] }),
       queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", line.run_id] }),
       queryClient.invalidateQueries({ queryKey: ["admin-run-bank-draft", line.run_id] }),
+      queryClient.invalidateQueries({ queryKey: ["run-funding-sources", line.run_id] }),
     ]);
 
   const unmarkMutation = useMutation({
@@ -251,28 +270,36 @@ function AdminPaymentActions({
   });
 
   const partialMutation = useMutation({
-    mutationFn: (payload: { amount: number | null; comment: string | null }) =>
+    mutationFn: (payload: {
+      amount: number | null;
+      comment: string | null;
+      walletCode: PayrollCashWalletCode;
+    }) =>
       markPartialPayrollPayment(line.run_id, {
         employee_id: line.employee_id,
         amount: payload.amount,
         paid_at: todayDateInputValue(),
         comment: payload.comment,
+        cash_wallet_code: payload.walletCode,
       }),
     onSuccess: async () => {
       await invalidate();
       setDialogOpen(false);
       setAmountInput("");
       setComment("");
+      setPartialWalletCode(null);
       toast.success("Выплата отмечена");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отметить выплату")),
   });
 
   const fullMutation = useMutation({
-    mutationFn: () =>
-      bulkMarkPayrollPayments(line.run_id, [line.employee_id], todayDateInputValue()),
+    mutationFn: (walletCode: PayrollCashWalletCode) =>
+      bulkMarkPayrollPayments(line.run_id, [line.employee_id], todayDateInputValue(), walletCode),
     onSuccess: async () => {
       await invalidate();
+      setFullDialogOpen(false);
+      setFullWalletCode(null);
       toast.success("Выплата проведена полностью");
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось провести выплату")),
@@ -281,10 +308,15 @@ function AdminPaymentActions({
   function openDialog() {
     setAmountInput(remaining > 0 ? String(remaining) : "");
     setComment("");
+    setPartialWalletCode(null);
     setDialogOpen(true);
   }
 
   function submitPartial() {
+    if (!partialWalletCode || !partialCanSubmit) {
+      toast.error("Выберите счёт с достаточным остатком");
+      return;
+    }
     const raw = amountInput.trim().replace(",", ".");
     const parsed = raw === "" ? null : Number(raw);
     if (parsed !== null && (!Number.isFinite(parsed) || parsed <= 0)) {
@@ -295,7 +327,11 @@ function AdminPaymentActions({
       toast.error(`Сумма превышает остаток ${formatMoney(remaining)}`);
       return;
     }
-    partialMutation.mutate({ amount: parsed, comment: comment.trim() ? comment.trim() : null });
+    partialMutation.mutate({
+      amount: parsed,
+      comment: comment.trim() ? comment.trim() : null,
+      walletCode: partialWalletCode,
+    });
   }
 
   return (
@@ -331,7 +367,10 @@ function AdminPaymentActions({
         <div className="flex flex-wrap gap-2">
           <Button
             disabled={fullMutation.isPending || remaining <= 0}
-            onClick={() => fullMutation.mutate()}
+            onClick={() => {
+              setFullWalletCode(null);
+              setFullDialogOpen(true);
+            }}
             size="sm"
             type="button"
           >
@@ -389,6 +428,16 @@ function AdminPaymentActions({
                 Пусто = выплатить весь остаток {formatMoney(remaining)}.
               </p>
             </div>
+            <CashPayoutSourcePicker
+              amount={normalizeMoney(
+                amountInput.trim() ? Number(amountInput.trim().replace(",", ".")) || 0 : remaining,
+              )}
+              channelPerms={channelPerms}
+              onCanSubmitChange={setPartialCanSubmit}
+              onChange={setPartialWalletCode}
+              runId={line.run_id}
+              value={partialWalletCode}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="admin-partial-comment">Причина недоплаты (необязательно)</Label>
               <Textarea
@@ -404,11 +453,49 @@ function AdminPaymentActions({
             <Button onClick={() => setDialogOpen(false)} type="button" variant="outline">
               Отмена
             </Button>
-            <Button disabled={partialMutation.isPending} onClick={submitPartial} type="button">
+            <Button
+              disabled={!partialCanSubmit || partialMutation.isPending}
+              onClick={submitPartial}
+              type="button"
+            >
               {partialMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
               ) : null}
               {isPartial ? "Доплатить" : "Выплатить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setFullDialogOpen} open={fullDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isPartial ? "Доплатить сотруднику" : "Выплатить сотруднику"}</DialogTitle>
+            <DialogDescription>
+              К выплате {formatMoney(remaining)}. Выберите счёт фактической выдачи денег.
+            </DialogDescription>
+          </DialogHeader>
+          <CashPayoutSourcePicker
+            amount={remaining}
+            channelPerms={channelPerms}
+            onCanSubmitChange={setFullCanSubmit}
+            onChange={setFullWalletCode}
+            runId={line.run_id}
+            value={fullWalletCode}
+          />
+          <DialogFooter>
+            <Button onClick={() => setFullDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!fullCanSubmit || !fullWalletCode || fullMutation.isPending}
+              onClick={() => fullWalletCode && fullMutation.mutate(fullWalletCode)}
+              type="button"
+            >
+              {fullMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : null}
+              Выплатить {formatMoney(remaining)}
             </Button>
           </DialogFooter>
         </DialogContent>

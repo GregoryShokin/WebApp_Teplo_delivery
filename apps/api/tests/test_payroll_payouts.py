@@ -63,6 +63,33 @@ async def fund_wallet(
     return wallet
 
 
+async def reserve_payroll_run(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    wallet_code: str = "cash_safe",
+) -> SafeAllocation:
+    wallet = await session.scalar(select(Wallet).where(Wallet.code == wallet_code))
+    assert wallet is not None
+    total = await session.scalar(
+        select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
+            PayrollLine.run_id == run_id
+        )
+    )
+    reserve = SafeAllocation(
+        wallet_id=wallet.id,
+        amount=Decimal(total or 0),
+        amount_paid=Decimal("0"),
+        purpose="Выплата зарплаты",
+        source_run_id=run_id,
+        status="reserved",
+        location="safe",
+    )
+    session.add(reserve)
+    await session.commit()
+    return reserve
+
+
 async def test_split_blocks_cash_above_available_wallet_balance_and_ignores_own_reserve(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -99,6 +126,8 @@ async def test_split_blocks_cash_above_available_wallet_balance_and_ignores_own_
         assert kassa.balance == Decimal("49000.00")
         assert kassa.reserved_other == Decimal("0.00")
         assert kassa.available == Decimal("49000.00")
+        assert kassa.reserved_for_run == Decimal("49000.00")
+        assert kassa.payroll_available == Decimal("49000.00")
 
         session.add(
             SafeAllocation(
@@ -312,6 +341,41 @@ async def test_create_or_update_drafts_uses_run_account_part_and_writes_events(
         assert events[0].payload["amount_account"] == "3750.00"
 
 
+async def test_create_draft_restores_missing_configured_kassa_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        await fund_wallet(session, "tk_chernikova")
+        _period, run, _employees = await create_payroll_run(
+            session,
+            employee_line_totals=[[Decimal("6000")]],
+        )
+        await set_run_payout_cash(
+            session,
+            run.id,
+            amount_cash=Decimal("5000"),
+            cash_wallet_code="tk_chernikova",
+            actor_user_id=actor.id,
+        )
+        original = await session.scalar(
+            select(SafeAllocation).where(SafeAllocation.source_run_id == run.id)
+        )
+        assert original is not None
+        await session.delete(original)
+        await session.commit()
+
+        await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+
+        restored = await session.scalar(
+            select(SafeAllocation).where(SafeAllocation.source_run_id == run.id)
+        )
+        assert restored is not None
+        assert restored.location == "kassa"
+        assert restored.amount == Decimal("5000.00")
+        assert restored.status == "reserved"
+
+
 async def test_create_or_update_drafts_is_idempotent_for_same_document_id(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -360,6 +424,8 @@ async def test_get_payout_deltas_after_recompute_classifies_all_directions(
             ],
         )
         await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        await fund_wallet(session, "cash_safe")
+        await reserve_payroll_run(session, run.id)
         for employee in employees:
             await mark_payment(
                 session,
@@ -409,6 +475,8 @@ async def test_apply_deltas_topup_creates_separate_mock_draft_and_event(
             period_status="open",
         )
         await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        await fund_wallet(session, "cash_safe")
+        await reserve_payroll_run(session, run.id)
         await mark_payment(
             session,
             run.id,
@@ -465,6 +533,8 @@ async def test_apply_deltas_overpay_records_excess_without_bank_draft(
             period_status="open",
         )
         await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+        await fund_wallet(session, "cash_safe")
+        await reserve_payroll_run(session, run.id)
         await mark_payment(
             session,
             run.id,

@@ -699,15 +699,14 @@ async def test_kassa_target_payout_rejects_run_pool_reserve(
             )
 
 
-async def test_dds_kassa_targets_include_run_pool_but_kassa_queue_does_not(
+async def test_dds_and_kassa_targets_include_run_pool_without_generic_payout(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Плитка и read-only модалка ДДС считают один зарплатный резерв, а кассир не
-    получает для него обычную кнопку «Выдано»."""
+    """ДДС и касса показывают зарплатный резерв как целевой без обычной выдачи."""
     from app.services.kassa.payouts import kassa_pending_payload
 
     async with async_session_factory() as session:
-        run_id, _emps, _actor = await _setup_run_with_reserves(
+        run_id, emps, _actor = await _setup_run_with_reserves(
             session, totals=[[Decimal("30000")]], cash=Decimal("30000")
         )
         reserve = await _reserve(session, run_id, "kassa")
@@ -721,7 +720,66 @@ async def test_dds_kassa_targets_include_run_pool_but_kassa_queue_does_not(
         assert dds_payload["targets_total"] == pytest.approx(30000.0)
 
         kassa_payload = await kassa_pending_payload(session)
-        assert all(target["id"] != reserve.id for target in kassa_payload["targets"])
+        kassa_target = next(
+            target for target in kassa_payload["targets"] if target["id"] == reserve.id
+        )
+        assert kassa_target["is_payroll"] is True
+        assert kassa_target["run_id"] == run_id
+        assert kassa_target["outstanding"] == pytest.approx(30000.0)
+        assert {employee["employee_id"] for employee in kassa_target["payroll_employees"]} == set(
+            emps
+        )
+        assert kassa_target["payroll_employees"][0]["remaining"] == pytest.approx(30000.0)
+        assert kassa_target["payroll_employees"][0]["payment_status"] == "pending"
+        assert kassa_payload["targets_total"] == pytest.approx(30000.0)
+
+
+async def test_kassa_payroll_selection_uses_payroll_engine_without_safe_overflow(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Касса платит выбранных через payroll-контур, включая граничного, без перетока."""
+    from app.services.payroll_runner import PayrollConflictError
+
+    async with async_session_factory() as session:
+        run_id, emps, actor = await _setup_run_with_reserves(
+            session, totals=[[Decimal("1000")], [Decimal("2000")]], cash=Decimal("1500")
+        )
+        kassa = await _reserve(session, run_id, "kassa")
+        safe = await _reserve(session, run_id, "safe")
+
+        with pytest.raises(PayrollConflictError, match="другому наличному счёту"):
+            await pay_run_from_pool(
+                session,
+                reserve_id=safe.id,
+                selected_ids={emps[0]},
+                allow_overflow=False,
+                expected_location="kassa",
+                paid_at=PAID_AT,
+                actor_user_id=actor,
+            )
+
+        result = await pay_run_from_pool(
+            session,
+            reserve_id=kassa.id,
+            selected_ids=set(emps),
+            boundary_override=emps[1],
+            allow_overflow=False,
+            expected_location="kassa",
+            paid_at=PAID_AT,
+            actor_user_id=actor,
+        )
+        assert result.primary_booked == Decimal("1500.00")
+        assert result.overflow_booked == Decimal("0.00")
+        first_payment = await _payment(session, run_id, emps[0])
+        boundary_payment = await _payment(session, run_id, emps[1])
+        assert first_payment.amount == Decimal("1000.00")
+        assert first_payment.status == "paid"
+        assert boundary_payment.amount == Decimal("500.00")
+        assert boundary_payment.status == "partially_paid"
+        await session.refresh(kassa)
+        await session.refresh(safe)
+        assert kassa.amount_paid == Decimal("1500.00")
+        assert safe.amount_paid == Decimal("0.00")
 
 
 async def test_paid_run_bank_draft_not_active(

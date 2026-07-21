@@ -88,6 +88,7 @@ class PayrollPaymentMarkRequest(BaseModel):
     employee_id: uuid.UUID
     paid_at: date
     method: str
+    cash_wallet_code: Literal["cash_safe", "tk_chernikova"]
 
 
 class PayrollPaymentPartialRequest(BaseModel):
@@ -103,6 +104,7 @@ class PayrollPaymentPartialRequest(BaseModel):
     paid_at: date
     method: str | None = None
     comment: str | None = None
+    cash_wallet_code: Literal["cash_safe", "tk_chernikova"]
 
 
 class PayrollPaymentsMarkAllRequest(BaseModel):
@@ -110,6 +112,7 @@ class PayrollPaymentsMarkAllRequest(BaseModel):
 
     paid_at: date
     method: str
+    cash_wallet_code: Literal["cash_safe", "tk_chernikova"]
 
 
 class PayrollPaymentsBulkMarkRequest(BaseModel):
@@ -117,6 +120,7 @@ class PayrollPaymentsBulkMarkRequest(BaseModel):
 
     employee_ids: list[uuid.UUID] = Field(min_length=1)
     paid_at: date
+    cash_wallet_code: Literal["cash_safe", "tk_chernikova"]
 
 
 class PayrollPaymentsMarkAllResponse(BaseModel):
@@ -313,6 +317,8 @@ class PayrollFundingSourceRead(BaseModel):
     balance: Decimal
     reserved_other: Decimal
     available: Decimal
+    reserved_for_run: Decimal = Decimal("0")
+    payroll_available: Decimal = Decimal("0")
     is_configured: bool = True
 
 

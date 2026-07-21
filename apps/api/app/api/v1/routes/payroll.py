@@ -1001,6 +1001,9 @@ async def post_mark_payment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> None:
+    channel_perm = payout_channel_permission(payload.cash_wallet_code)
+    if channel_perm:
+        ensure_permission(actor, channel_perm)
     try:
         await mark_payment(
             session,
@@ -1008,6 +1011,7 @@ async def post_mark_payment(
             payload.employee_id,
             paid_at=payload.paid_at,
             method=payload.method,
+            cash_wallet_code=payload.cash_wallet_code,
             actor_user_id=actor.user_id,
         )
     except PayrollNotFoundError as exc:
@@ -1051,12 +1055,16 @@ async def post_mark_all_payments(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollPaymentsMarkAllResponse:
+    channel_perm = payout_channel_permission(payload.cash_wallet_code)
+    if channel_perm:
+        ensure_permission(actor, channel_perm)
     try:
         marked_count = await mark_all_payments(
             session,
             run_id,
             paid_at=payload.paid_at,
             method=payload.method,
+            cash_wallet_code=payload.cash_wallet_code,
             actor_user_id=actor.user_id,
         )
     except PayrollNotFoundError as exc:
@@ -1077,12 +1085,16 @@ async def post_bulk_mark_payments(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollPaymentsMarkAllResponse:
+    channel_perm = payout_channel_permission(payload.cash_wallet_code)
+    if channel_perm:
+        ensure_permission(actor, channel_perm)
     try:
         marked_count = await mark_payments_selected(
             session,
             run_id,
             payload.employee_ids,
             paid_at=payload.paid_at,
+            cash_wallet_code=payload.cash_wallet_code,
             actor_user_id=actor.user_id,
         )
     except PayrollNotFoundError as exc:
@@ -1103,6 +1115,9 @@ async def post_mark_partial_payment(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> None:
+    channel_perm = payout_channel_permission(payload.cash_wallet_code)
+    if channel_perm:
+        ensure_permission(actor, channel_perm)
     try:
         await mark_partial_payment(
             session,
@@ -1110,6 +1125,7 @@ async def post_mark_partial_payment(
             payload.employee_id,
             amount=payload.amount,
             paid_at=payload.paid_at,
+            cash_wallet_code=payload.cash_wallet_code,
             method=payload.method,
             comment=payload.comment,
             actor_user_id=actor.user_id,

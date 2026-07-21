@@ -70,6 +70,7 @@ import {
   type AppSetting,
   type Employee,
   type PayrollBankDraft,
+  type PayrollCashWalletCode,
   type PayrollFundingSource,
   type PayrollLine,
   type PayrollPaymentMethod,
@@ -87,6 +88,7 @@ import {
   runRevenue,
 } from "./runs";
 import { PayrollPayoutWalletCorrectionButton } from "./payout-wallet-correction-dialog";
+import { CashPayoutSourcePicker, type PayrollCashChannelPerms } from "./cash-payout-source-picker";
 
 type PayrollRunDetailRouteProps = {
   runId: string;
@@ -256,6 +258,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         queryClient.invalidateQueries({ queryKey: ["payroll-runs"] }),
         queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
         queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
+        queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
       ]);
     },
     onError: (mutationError) => toast.error((mutationError as Error).message),
@@ -609,6 +612,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
       <section className="space-y-3">
         <PayrollPaymentsTable
+          channelPerms={payoutChannelPerms}
           canManagePayments={canManagePayments}
           canEditDeposits={canEditDeposits}
           cancelDepositPayoutPending={
@@ -919,6 +923,7 @@ function PayrollPaymentsTable({
   canManagePayments,
   canEditDeposits,
   cancelDepositPayoutPending,
+  channelPerms,
   employeesById,
   isLoading,
   lines,
@@ -930,6 +935,7 @@ function PayrollPaymentsTable({
   canManagePayments: boolean;
   canEditDeposits: boolean;
   cancelDepositPayoutPending: boolean;
+  channelPerms: PayrollCashChannelPerms;
   employeesById: Map<string, Employee>;
   isLoading: boolean;
   lines: PayrollLine[];
@@ -942,6 +948,9 @@ function PayrollPaymentsTable({
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkWalletCode, setBulkWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [bulkCanSubmit, setBulkCanSubmit] = useState(false);
 
   const rows = useMemo(() => {
     const groups = new Map<string, PayrollLine[]>();
@@ -996,8 +1005,13 @@ function PayrollPaymentsTable({
   const someUnpaidSelected = selectedCount > 0 && !allUnpaidSelected;
 
   const bulkMarkMutation = useMutation({
-    mutationFn: (employeeIds: string[]) =>
-      bulkMarkPayrollPayments(runId, employeeIds, todayDateInputValue()),
+    mutationFn: ({
+      employeeIds,
+      walletCode,
+    }: {
+      employeeIds: string[];
+      walletCode: PayrollCashWalletCode;
+    }) => bulkMarkPayrollPayments(runId, employeeIds, todayDateInputValue(), walletCode),
     onSuccess: async (response) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["payroll-run", runId] }),
@@ -1006,6 +1020,8 @@ function PayrollPaymentsTable({
         queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
       ]);
       setSelectedEmployeeIds(new Set());
+      setBulkDialogOpen(false);
+      setBulkWalletCode(null);
       toast.success(
         response.marked_count > 0
           ? `Отмечено выплат: ${response.marked_count}`
@@ -1033,6 +1049,11 @@ function PayrollPaymentsTable({
   );
 
   const selectedLine = rows.find((row) => row.line.id === selectedLineId) ?? null;
+  const selectedAmount = normalizeMoney(
+    rows
+      .filter((row) => selectedEmployeeIds.has(row.line.employee_id))
+      .reduce((sum, row) => sum + lineRemainingOnHand(row.line), 0),
+  );
   const statusChips = [
     { key: "all" as const, label: "Все" },
     { key: "pending" as const, label: "Ожидают" },
@@ -1081,7 +1102,10 @@ function PayrollPaymentsTable({
         {canManagePayments && selectedCount > 0 ? (
           <Button
             disabled={bulkMarkMutation.isPending}
-            onClick={() => bulkMarkMutation.mutate(Array.from(selectedEmployeeIds))}
+            onClick={() => {
+              setBulkWalletCode(null);
+              setBulkDialogOpen(true);
+            }}
             size="sm"
             type="button"
           >
@@ -1094,6 +1118,47 @@ function PayrollPaymentsTable({
           </Button>
         ) : null}
       </div>
+
+      <Dialog onOpenChange={setBulkDialogOpen} open={bulkDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Выплатить выбранным сотрудникам</DialogTitle>
+            <DialogDescription>
+              {selectedCount} сотрудников · к выплате {formatMoney(selectedAmount)}. Укажите, откуда
+              фактически выдаются деньги.
+            </DialogDescription>
+          </DialogHeader>
+          <CashPayoutSourcePicker
+            amount={selectedAmount}
+            channelPerms={channelPerms}
+            onCanSubmitChange={setBulkCanSubmit}
+            onChange={setBulkWalletCode}
+            runId={runId}
+            value={bulkWalletCode}
+          />
+          <DialogFooter>
+            <Button onClick={() => setBulkDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!bulkCanSubmit || !bulkWalletCode || bulkMarkMutation.isPending}
+              onClick={() => {
+                if (!bulkWalletCode) return;
+                bulkMarkMutation.mutate({
+                  employeeIds: Array.from(selectedEmployeeIds),
+                  walletCode: bulkWalletCode,
+                });
+              }}
+              type="button"
+            >
+              {bulkMarkMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : null}
+              Выплатить {formatMoney(selectedAmount)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {lines.length === 0 && !isLoading ? (
         <EmptyState
@@ -1230,6 +1295,7 @@ function PayrollPaymentsTable({
               canEditDeposits={canEditDeposits}
               canManagePayments={canManagePayments}
               cancelDepositPayoutPending={cancelDepositPayoutPending}
+              channelPerms={channelPerms}
               onCancelDepositPayout={() => onCancelDepositPayout(selectedLine.line.employee_id)}
               periodLabel={periodLabel}
               row={selectedLine}
@@ -1947,9 +2013,11 @@ function PaymentStatusSummary({ line }: { line: PayrollLine }) {
 
 function PaymentCell({
   canManagePayments,
+  channelPerms,
   line,
 }: {
   canManagePayments: boolean;
+  channelPerms: PayrollCashChannelPerms;
   line: PayrollLine;
 }) {
   const queryClient = useQueryClient();
@@ -1962,6 +2030,11 @@ function PaymentCell({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [amountInput, setAmountInput] = useState("");
   const [comment, setComment] = useState("");
+  const [partialWalletCode, setPartialWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [partialCanSubmit, setPartialCanSubmit] = useState(false);
+  const [fullDialogOpen, setFullDialogOpen] = useState(false);
+  const [fullWalletCode, setFullWalletCode] = useState<PayrollCashWalletCode | null>(null);
+  const [fullCanSubmit, setFullCanSubmit] = useState(false);
 
   const invalidate = () =>
     Promise.all([
@@ -1969,6 +2042,7 @@ function PaymentCell({
       queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
       queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
       queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
+      queryClient.invalidateQueries({ queryKey: ["run-funding-sources", line.run_id] }),
     ]);
 
   const unmarkMutation = useMutation({
@@ -1983,18 +2057,24 @@ function PaymentCell({
   });
 
   const partialMutation = useMutation({
-    mutationFn: (payload: { amount: number | null; comment: string | null }) =>
+    mutationFn: (payload: {
+      amount: number | null;
+      comment: string | null;
+      walletCode: PayrollCashWalletCode;
+    }) =>
       markPartialPayrollPayment(line.run_id, {
         employee_id: line.employee_id,
         amount: payload.amount,
         paid_at: todayDateInputValue(),
         comment: payload.comment,
+        cash_wallet_code: payload.walletCode,
       }),
     onSuccess: async () => {
       await invalidate();
       setDialogOpen(false);
       setAmountInput("");
       setComment("");
+      setPartialWalletCode(null);
       toast.success("Выплата отмечена");
     },
     onError: (error) => {
@@ -2003,10 +2083,12 @@ function PaymentCell({
   });
 
   const fullMutation = useMutation({
-    mutationFn: () =>
-      bulkMarkPayrollPayments(line.run_id, [line.employee_id], todayDateInputValue()),
+    mutationFn: (walletCode: PayrollCashWalletCode) =>
+      bulkMarkPayrollPayments(line.run_id, [line.employee_id], todayDateInputValue(), walletCode),
     onSuccess: async () => {
       await invalidate();
+      setFullDialogOpen(false);
+      setFullWalletCode(null);
       toast.success("Выплата проведена полностью");
     },
     onError: (error) => {
@@ -2017,10 +2099,15 @@ function PaymentCell({
   function openDialog() {
     setAmountInput(remaining > 0 ? String(remaining) : "");
     setComment("");
+    setPartialWalletCode(null);
     setDialogOpen(true);
   }
 
   function submitPartial() {
+    if (!partialWalletCode || !partialCanSubmit) {
+      toast.error("Выберите счёт с достаточным остатком");
+      return;
+    }
     const raw = amountInput.trim().replace(",", ".");
     const parsed = raw === "" ? null : Number(raw);
     if (parsed !== null && (!Number.isFinite(parsed) || parsed <= 0)) {
@@ -2034,6 +2121,7 @@ function PaymentCell({
     partialMutation.mutate({
       amount: parsed,
       comment: comment.trim() ? comment.trim() : null,
+      walletCode: partialWalletCode,
     });
   }
 
@@ -2072,7 +2160,8 @@ function PaymentCell({
             disabled={fullMutation.isPending || remaining <= 0}
             onClick={(event) => {
               event.stopPropagation();
-              fullMutation.mutate();
+              setFullWalletCode(null);
+              setFullDialogOpen(true);
             }}
             size="sm"
             type="button"
@@ -2144,6 +2233,16 @@ function PaymentCell({
                 Пусто = выплатить весь остаток {formatMoney(remaining)}.
               </p>
             </div>
+            <CashPayoutSourcePicker
+              amount={normalizeMoney(
+                amountInput.trim() ? Number(amountInput.trim().replace(",", ".")) || 0 : remaining,
+              )}
+              channelPerms={channelPerms}
+              onCanSubmitChange={setPartialCanSubmit}
+              onChange={setPartialWalletCode}
+              runId={line.run_id}
+              value={partialWalletCode}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="partial-comment">Причина недоплаты (необязательно)</Label>
               <Textarea
@@ -2159,11 +2258,49 @@ function PaymentCell({
             <Button onClick={() => setDialogOpen(false)} type="button" variant="outline">
               Отмена
             </Button>
-            <Button disabled={partialMutation.isPending} onClick={submitPartial} type="button">
+            <Button
+              disabled={!partialCanSubmit || partialMutation.isPending}
+              onClick={submitPartial}
+              type="button"
+            >
               {partialMutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
               ) : null}
               {isPartial ? "Доплатить" : "Выплатить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={setFullDialogOpen} open={fullDialogOpen}>
+        <DialogContent onClick={(event) => event.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>{isPartial ? "Доплатить сотруднику" : "Выплатить сотруднику"}</DialogTitle>
+            <DialogDescription>
+              К выплате {formatMoney(remaining)}. Выберите счёт фактической выдачи денег.
+            </DialogDescription>
+          </DialogHeader>
+          <CashPayoutSourcePicker
+            amount={remaining}
+            channelPerms={channelPerms}
+            onCanSubmitChange={setFullCanSubmit}
+            onChange={setFullWalletCode}
+            runId={line.run_id}
+            value={fullWalletCode}
+          />
+          <DialogFooter>
+            <Button onClick={() => setFullDialogOpen(false)} type="button" variant="outline">
+              Отмена
+            </Button>
+            <Button
+              disabled={!fullCanSubmit || !fullWalletCode || fullMutation.isPending}
+              onClick={() => fullWalletCode && fullMutation.mutate(fullWalletCode)}
+              type="button"
+            >
+              {fullMutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : null}
+              Выплатить {formatMoney(remaining)}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2216,6 +2353,7 @@ function PayrollLineDialogContent({
   canEditDeposits,
   canManagePayments,
   cancelDepositPayoutPending,
+  channelPerms,
   onCancelDepositPayout,
   periodLabel,
   row,
@@ -2224,6 +2362,7 @@ function PayrollLineDialogContent({
   canEditDeposits: boolean;
   canManagePayments: boolean;
   cancelDepositPayoutPending: boolean;
+  channelPerms: PayrollCashChannelPerms;
   onCancelDepositPayout: () => void;
   periodLabel: string;
   row: PayrollLineRowModel;
@@ -2414,7 +2553,11 @@ function PayrollLineDialogContent({
           <div className="text-sm font-semibold text-emerald-950">Итог выплаты</div>
           <PayoutFormula line={row.line} />
         </div>
-        <PaymentCell canManagePayments={canManagePayments} line={row.line} />
+        <PaymentCell
+          canManagePayments={canManagePayments}
+          channelPerms={channelPerms}
+          line={row.line}
+        />
       </section>
     </div>
   );

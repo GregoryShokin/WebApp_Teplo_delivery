@@ -96,7 +96,11 @@ const PILL_LABEL: Record<string, string> = {
 
 // Подпись способа оплаты — только когда осмысленна (нал/Сбер); Т-Банк по умолчанию.
 function methodHint(row: PaymentRow): string | null {
-  if (row.method === "cash") return "Наличными / Сейф";
+  if (row.method === "cash") {
+    return row.bucket === "reserved_kassa" || row.extra.location === "kassa"
+      ? "Торговая касса Черникова"
+      : "Наличными / Сейф";
+  }
   if (row.bank_channel === "sber") return "Сбербанк";
   return null;
 }
