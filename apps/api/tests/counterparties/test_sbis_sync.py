@@ -449,6 +449,123 @@ async def test_counterparty_without_channel_stays_mirror(
         assert doc.invoice_id is None
 
 
+async def test_iiko_counterparty_keeps_sbis_closing_as_matched_mirror(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """УПД iiko-поставщика — ЭДО-доказательство, а не второе обязательство."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Буряк", inn="231006560100")
+        session.add_all(
+            [
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="iiko", value="iiko-buryak"
+                ),
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="sbis", value="231006560100"
+                ),
+            ]
+        )
+        iiko_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="121313.24",
+            number="ЦБ-9437",
+            source="iiko",
+            invoice_date=date(2026, 7, 15),
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item()], result)
+        await session.flush()
+
+        route_result = await _route(session)
+        await session.flush()
+        await _match_documents(session, route_result)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.materialized == 0
+        assert route_result.matched == 1
+        assert doc.intake_status == "mirror"
+        assert doc.invoice_id is None
+        assert doc.match_status == "matched"
+        assert doc.matched_invoice_id == iiko_invoice.id
+        assert await session.scalar(select(func.count()).select_from(SupplierInvoice)) == 1
+
+
+async def test_iiko_counterparty_keeps_unmatched_sbis_closing_out_of_payables(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Если iiko ещё не отдал накладную, УПД ждёт в зеркале, а не создаёт долг."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Буряк", inn="231006560100")
+        session.add_all(
+            [
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="iiko", value="iiko-buryak"
+                ),
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="sbis", value="231006560100"
+                ),
+            ]
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item()], result)
+        await session.flush()
+
+        route_result = await _route(session)
+        await session.flush()
+        await _match_documents(session, route_result)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert route_result.materialized == 0
+        assert route_result.matched == 0
+        assert doc.intake_status == "mirror"
+        assert doc.match_status == "unmatched"
+        assert doc.invoice_id is None
+        assert await session.scalar(select(func.count()).select_from(SupplierInvoice)) == 0
+
+
+async def test_iiko_counterparty_still_materializes_sbis_bill(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт на предоплату и товарный closing — разные роли, счёт не подавляем."""
+    from app.models import CounterpartyCollectionSource
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Буряк", inn="231006560100")
+        session.add_all(
+            [
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="iiko", value="iiko-buryak"
+                ),
+                CounterpartyCollectionSource(
+                    counterparty_id=cp.id, kind="sbis", value="231006560100"
+                ),
+            ]
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(
+            session, [_registry_item(doc_type="СчетВх", doc_id="sbis-bill")], result
+        )
+        await session.flush()
+
+        route_result = await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert route_result.materialized == 1
+        assert doc.intake_status == "materialized"
+        assert invoice is not None
+        assert invoice.source == "sbis"
+        assert invoice.doc_kind == "bill"
+
+
 async def test_new_counterparty_backfills_after_setup(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

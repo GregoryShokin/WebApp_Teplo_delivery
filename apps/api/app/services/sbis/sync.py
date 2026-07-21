@@ -517,15 +517,19 @@ async def _route_documents(
     ).all()
     if not docs:
         return
-    channel_ids = set(
-        (
-            await session.scalars(
-                select(CounterpartyCollectionSource.counterparty_id).where(
-                    CounterpartyCollectionSource.kind == "sbis"
-                )
+    source_rows = (
+        await session.execute(
+            select(
+                CounterpartyCollectionSource.counterparty_id,
+                CounterpartyCollectionSource.kind,
+            ).where(
+                CounterpartyCollectionSource.kind.in_(("iiko", "sbis")),
+                CounterpartyCollectionSource.is_active.is_(True),
             )
-        ).all()
-    )
+        )
+    ).all()
+    channel_ids = {cp_id for cp_id, kind in source_rows if kind == "sbis"}
+    iiko_channel_ids = {cp_id for cp_id, kind in source_rows if kind == "iiko"}
     # Зеркало-набор перечитывается каждый прогон целиком (так задумано: документы
     # new_counterparty материализуются задним числом после настройки карточки) — поэтому
     # контрагентов резолвим ОДНИМ запросом по всем ИНН пачки, а не по SELECT'у на документ.
@@ -575,6 +579,14 @@ async def _route_documents(
             # Архив и прочие не-активные: новые счета не создаём (архив = блок накладных),
             # документы остаются видимыми в зеркале.
             doc.intake_status = "mirror"
+            continue
+        # Для iiko-поставщика приход товара канонически живёт только в iiko. УПД из
+        # СБИС сохраняем как ЭДО-зеркало и ниже связываем с iiko-накладной, но второе
+        # обязательство SupplierInvoice не создаём. СчетВх остаётся отдельным bill:
+        # его можно оплатить до поставки, а будущий iiko closing погасит предоплату.
+        if counterparty.id in iiko_channel_ids and (doc.doc_type or "") == "ДокОтгрВх":
+            doc.intake_status = "mirror"
+            doc.invoice_id = None
             continue
         if (
             counterparty.id in channel_ids
