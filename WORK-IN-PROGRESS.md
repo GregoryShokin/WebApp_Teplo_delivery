@@ -25,15 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-warehouse-scope-ui — ветка `agent/warehouse-scope-ui-filter`
-- worktree: `../Teplo-agent-warehouse-scope-ui`
-- compose: отдельная временная PostgreSQL для тестов
-- трогает: фильтр `operational_scope` в реестре накладных и его явную передачу со страницы
-  склада (`counterparty_registry.py`, маршрут `counterparties.py`, `counterparties/api.ts`,
-  `counterparties/tabs/inbox.tsx`, `warehouse/index.tsx`, профильный тест)
-- НЕ трогать другим: перечисленные точки до завершения hotfix
-- статус: в работе
-
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
