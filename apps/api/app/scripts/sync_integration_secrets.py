@@ -221,6 +221,8 @@ async def _sync_sber_credentials() -> dict[str, str]:
     metadata = _sber_metadata()
     return {
         SBER_ACCESS_TOKEN.kind: await _sync_credential(SBER_ACCESS_TOKEN, metadata),
+        SBER_REFRESH_TOKEN.kind: await _sync_credential(SBER_REFRESH_TOKEN),
+        SBER_CLIENT_SECRET.kind: await _sync_credential(SBER_CLIENT_SECRET),
         SBER_MTLS_CERT.kind: await _sync_credential(SBER_MTLS_CERT),
         SBER_MTLS_KEY.kind: await _sync_credential(SBER_MTLS_KEY),
     }
