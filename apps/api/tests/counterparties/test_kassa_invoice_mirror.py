@@ -300,11 +300,11 @@ def test_amount_iiko_representable_matches_iiko_validator() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mirror_unrepresentable_amount_opens_case_without_sending(
+async def test_mirror_splits_unrepresentable_amount_without_manual_case(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """«Несчастливая» сумма (4213.44): НЕ шлём в iiko (обречено), помечаем терминально (кап),
-    заводим видимый кейс owner-review и закрываем накладную done с пометкой «ручной разбор»."""
+    """«Несчастливая» сумма 4213.44 дробится на представимые 4213.00 + 0.44 и полностью
+    проводится в iiko без owner-review; итоговая summary-строка закрывает накладную как done."""
     inv_id = await _seed_kassa(
         async_session_factory, source="kassa_invoice", goods="4213.44", card="0.00", cash="4213.44"
     )
@@ -314,14 +314,31 @@ async def test_mirror_unrepresentable_amount_opens_case_without_sending(
     async with async_session_factory() as session:
         result = await mod.mirror_paid_kassa_invoices(session)
 
-    assert calls == []  # обречённую сумму в iiko НЕ отправляем
-    assert result["manual"] == 1 and result["ok"] == 0, result
+    assert result["ok"] == 1 and result["manual"] == 0, result
+    amounts = sorted(call["amount"] for call in calls)
+    assert amounts == [0.44, 4213.0]
+    assert all((amount * 100).is_integer() for amount in amounts)
 
     rows = await _push_rows(async_session_factory, inv_id)
-    cash_row = next(r for r in rows if r.idempotency_key == f"kassa_goods:{inv_id}:cash")
-    assert cash_row.status == "error"
-    assert cash_row.attempts == mod.MAX_PUSH_ATTEMPTS  # терминально → джоб не долбит
+    by_key = {row.idempotency_key: row for row in rows}
+    cash_key = f"kassa_goods:{inv_id}:cash"
+    assert by_key[cash_key].status == "ok"
+    assert by_key[cash_key].invoice_id == inv_id
     assert f"kassa_goods_done:{inv_id}" in {r.idempotency_key for r in rows}
+
+    async with async_session_factory() as session:
+        split_rows = (
+            await session.scalars(
+                select(IikoInvoicePaymentPush).where(
+                    IikoInvoicePaymentPush.idempotency_key.like(f"{cash_key}#%")
+                )
+            )
+        ).all()
+    split_by_key = {row.idempotency_key: row for row in split_rows}
+    assert split_by_key[f"{cash_key}#0"].status == "ok"
+    assert split_by_key[f"{cash_key}#0"].invoice_id is None
+    assert split_by_key[f"{cash_key}#1"].status == "ok"
+    assert split_by_key[f"{cash_key}#1"].invoice_id is None
 
     async with async_session_factory() as session:
         cases = (
@@ -331,9 +348,7 @@ async def test_mirror_unrepresentable_amount_opens_case_without_sending(
                 )
             )
         ).all()
-    assert len(cases) == 1
-    assert cases[0].status == "pending"
-    assert cases[0].payload["invoice_id"] == str(inv_id)
+    assert cases == []
 
 
 @pytest.mark.asyncio
