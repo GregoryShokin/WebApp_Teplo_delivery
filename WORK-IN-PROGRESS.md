@@ -25,6 +25,14 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-sber-credentials — ветка `agent/sber-credentials-automation`
+- worktree: `../Teplo-agent-sber-credentials`
+- compose: без локального стека; только unit-тесты
+- трогает: автоматическая ротация Sber `client_secret`, контроль срока mTLS, scheduler,
+  конфигурация/документация и связанные тесты
+- НЕ трогать другим: `app/services/banking/sber.py`, Sber-планировщик и его тесты
+- статус: в работе
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
