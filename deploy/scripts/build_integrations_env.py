@@ -18,6 +18,9 @@ SBER_CERT_DEFAULTS = {
     ),
     "SBER_API_CA_BUNDLE_PATH": ("ca.pem", ""),
 }
+RUSSIAN_TRUSTED_ROOT_CA = (
+    Path(__file__).resolve().parents[1] / "certs" / "russian_trusted_root_ca.pem"
+)
 
 
 def parse_env(path: Path) -> dict[str, str]:
@@ -64,7 +67,17 @@ def copy_sber_secret_files(
         if source is None:
             continue
         sber_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, sber_dir / remote_name)
+        destination = sber_dir / remote_name
+        shutil.copy2(source, destination)
+        if env_name == "SBER_API_CA_BUNDLE_PATH":
+            # Sber Fintech uses SberCA, whereas SSO OAuth uses the Russian trusted
+            # root certificate. Both are required for a fully verified token refresh.
+            with (
+                destination.open("ab") as bundle,
+                RUSSIAN_TRUSTED_ROOT_CA.open("rb") as root,
+            ):
+                bundle.write(b"\n")
+                shutil.copyfileobj(root, bundle)
         values[env_name] = f"/run/secrets/teplo/sber/{remote_name}"
 
 
