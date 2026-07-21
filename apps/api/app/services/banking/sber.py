@@ -3,7 +3,7 @@ from __future__ import annotations
 import ssl
 import uuid
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.models import SourceCredential
 from app.services.banking.base import (
     AccountMeta,
     NormalizedBankOperation,
@@ -127,6 +128,13 @@ class SberClient:
                 json=payload,
                 headers={"X-Request-Id": str(uuid.uuid4())},
             )
+            if response.status_code == 401:
+                await self._refresh_client_access_token(client)
+                response = await client.post(
+                    PAYMENT_CREATE_PATH,
+                    json=payload,
+                    headers={"X-Request-Id": str(uuid.uuid4())},
+                )
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "Sber access token/scope is invalid")
         if response.status_code >= 400:
@@ -157,6 +165,12 @@ class SberClient:
                 f"{PAYMENT_CREATE_PATH}/{payment_id}/state",
                 headers={"X-Request-Id": str(uuid.uuid4())},
             )
+            if response.status_code == 401:
+                await self._refresh_client_access_token(client)
+                response = await client.get(
+                    f"{PAYMENT_CREATE_PATH}/{payment_id}/state",
+                    headers={"X-Request-Id": str(uuid.uuid4())},
+                )
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "Sber access token/scope is invalid")
         if response.status_code == 404:
@@ -182,7 +196,7 @@ class SberClient:
         httpx 0.28 игнорирует ``cert=(certfile, keyfile)`` — сертификат не предъявляется и Сбер
         отвечает «400 No required SSL certificate was sent». Поэтому строим mTLS-контекст явно
         и отдаём через ``verify=``. Тот же контур, что и выписка."""
-        token = await required_credential(self.session, self.provider, "access_token")
+        token = await self._access_token()
         cert_path = await required_credential(self.session, self.provider, "mtls_cert_path")
         key_path = await required_credential(self.session, self.provider, "mtls_key_path")
         ssl_context = ssl.create_default_context(
@@ -199,6 +213,136 @@ class SberClient:
             verify=ssl_context,
             timeout=self.settings.bank_client_timeout_seconds,
         )
+
+    async def _access_token(self) -> str:
+        """Return a usable token, refreshing a known-expired pair before a bank call."""
+        credential = await self._active_credential("access_token")
+        if credential is None or not credential.value_encrypted:
+            raise BankCredentialsError(self.provider, "missing active credential access_token")
+        expires_at = credential.expires_at
+        if expires_at is not None:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=UTC)
+            if expires_at <= datetime.now(UTC) + timedelta(minutes=2):
+                return await self._refresh_access_token()
+        return credential.value_encrypted
+
+    async def _active_credential(self, kind: str) -> SourceCredential | None:
+        if self.session is None:
+            return None
+        return await self.session.scalar(
+            select(SourceCredential).where(
+                SourceCredential.provider == self.provider,
+                SourceCredential.credential_kind == kind,
+                SourceCredential.is_active.is_(True),
+            )
+        )
+
+    async def _refresh_client_access_token(self, client: httpx.AsyncClient) -> None:
+        client.headers["Authorization"] = f"Bearer {await self._refresh_access_token()}"
+
+    async def _refresh_access_token(self) -> str:
+        """Exchange Sber's rotating refresh token and persist the new token pair."""
+        if self.session is None:
+            raise BankCredentialsError(
+                self.provider, "Sber token refresh requires a database session"
+            )
+        if not self.settings.sber_api_client_id:
+            raise BankCredentialsError(self.provider, "missing SBER_API_CLIENT_ID")
+        refresh = await required_credential(self.session, self.provider, "refresh_token")
+        client_secret = await required_credential(self.session, self.provider, "client_secret")
+        try:
+            payload = await self._request_token_refresh(
+                refresh_token=refresh,
+                client_secret=client_secret,
+            )
+        except httpx.HTTPError as exc:
+            raise BankCredentialsError(self.provider, "Sber access token refresh failed") from exc
+
+        access_token = str(payload.get("access_token") or "").strip()
+        refresh_token = str(payload.get("refresh_token") or "").strip()
+        try:
+            expires_in = int(payload.get("expires_in") or 3600)
+        except (TypeError, ValueError):
+            expires_in = 3600
+        if not access_token or not refresh_token or expires_in <= 0:
+            raise BankCredentialsError(
+                self.provider, "Sber token refresh returned an invalid token pair"
+            )
+
+        now = datetime.now(UTC)
+        active = await self.session.scalars(
+            select(SourceCredential).where(
+                SourceCredential.provider == self.provider,
+                SourceCredential.credential_kind.in_(("access_token", "refresh_token")),
+                SourceCredential.is_active.is_(True),
+            )
+        )
+        active_credentials = active.all()
+        access_metadata = next(
+            (
+                credential.metadata_json
+                for credential in active_credentials
+                if credential.credential_kind == "access_token"
+            ),
+            None,
+        )
+        for credential in active_credentials:
+            credential.is_active = False
+            credential.status = "rotated"
+            credential.last_rotated_at = now
+        await self.session.flush()
+        self.session.add_all(
+            (
+                SourceCredential(
+                    provider=self.provider,
+                    credential_kind="access_token",
+                    value_encrypted=access_token,
+                    expires_at=now + timedelta(seconds=expires_in),
+                    is_active=True,
+                    status="active",
+                    metadata_json=access_metadata,
+                ),
+                SourceCredential(
+                    provider=self.provider,
+                    credential_kind="refresh_token",
+                    value_encrypted=refresh_token,
+                    is_active=True,
+                    status="active",
+                ),
+            )
+        )
+        # The new refresh token must survive a later statement/payment rollback.
+        await self.session.commit()
+        return access_token
+
+    async def _request_token_refresh(
+        self, *, refresh_token: str, client_secret: str
+    ) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=self.settings.bank_client_timeout_seconds) as client:
+            response = await client.post(
+                self.settings.sber_api_token_url,
+                data={
+                    "grant_type": "refresh_token",
+                    "client_id": self.settings.sber_api_client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                },
+                headers={"Accept": "application/json"},
+            )
+        if response.status_code >= 400:
+            raise BankCredentialsError(
+                self.provider, f"Sber token endpoint returned {response.status_code}"
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise BankCredentialsError(
+                self.provider, "Sber token endpoint returned invalid JSON"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise BankCredentialsError(self.provider, "Sber token endpoint returned invalid JSON")
+        return payload
 
     async def _payer_requisites(self) -> Mapping[str, Any]:
         from app.models import AppSetting
@@ -273,6 +417,9 @@ class SberClient:
 
     async def _get_json(self, client: httpx.AsyncClient, path: str, params: dict[str, Any]) -> Any:
         response = await client.get(path, params=params)
+        if response.status_code == 401:
+            await self._refresh_client_access_token(client)
+            response = await client.get(path, params=params)
         if response.status_code == 401:
             raise BankCredentialsError(self.provider, "Sber access token is invalid or expired")
         if response.status_code >= 400:

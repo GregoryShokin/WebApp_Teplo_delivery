@@ -193,6 +193,19 @@ if [[ -f "$integrations_env_file" ]]; then
   if [[ -z "$(integrations_env_value TBANK_API_ACCOUNT_NUMBER)" ]]; then
     warnings+=("TBANK_API_ACCOUNT_NUMBER is missing; T-Bank payment draft creation needs a payer account")
   fi
+
+  bank_sync_providers=",$(env_value BANK_SYNC_PROVIDERS),"
+  if [[ "$bank_sync_providers" == *",sber,"* ]]; then
+    require_integrations_value SBER_API_BASE_URL
+    require_integrations_value SBER_API_TOKEN_URL
+    require_integrations_value SBER_API_CLIENT_ID
+    require_integrations_value SBER_API_CLIENT_SECRET
+    require_integrations_value SBER_API_ACCOUNT_NUMBER
+    require_integrations_value SBER_API_ACCESS_TOKEN
+    require_integrations_value SBER_API_REFRESH_TOKEN
+    require_integrations_value SBER_API_TLS_CERT_PATH
+    require_integrations_value SBER_API_TLS_KEY_PATH
+  fi
 fi
 
 jwt_secret="$(env_value JWT_SECRET_KEY)"

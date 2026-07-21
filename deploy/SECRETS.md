@@ -102,6 +102,17 @@ tbank_bearer_token=env:set db:set
 
 Секретные значения не выводятся.
 
+## Sber API OAuth
+
+Если в `.env.prod` задано `BANK_SYNC_PROVIDERS=sber,...`, добавь в
+`.env.integrations` все значения Sber: `SBER_API_CLIENT_ID`,
+`SBER_API_CLIENT_SECRET`, `SBER_API_ACCESS_TOKEN`, `SBER_API_REFRESH_TOKEN`,
+`SBER_API_ACCOUNT_NUMBER`, `SBER_API_TLS_CERT_PATH` и `SBER_API_TLS_KEY_PATH`.
+`SBER_API_TOKEN_URL` оставь значением из шаблона. После перезапуска выполни
+`sync_integration_secrets`; access/refresh пара сохранится в БД. Сбер выдаёт
+новый refresh token при каждом обновлении, поэтому не заменяй его вручную после
+успешного запуска — приложение ротирует пару само.
+
 ## Что не требуется для первого go-live
 
 - Sber access token.

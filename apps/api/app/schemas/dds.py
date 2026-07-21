@@ -244,6 +244,7 @@ class CredentialCreate(BaseModel):
     provider: Literal["sber", "tbank"]
     credential_kind: Literal[
         "access_token",
+        "refresh_token",
         "client_secret",
         "bearer_token",
         "mtls_cert_path",

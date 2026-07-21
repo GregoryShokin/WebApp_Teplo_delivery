@@ -53,13 +53,21 @@ class CheckStatus:
 TBANK_BEARER_TOKEN = CredentialSpec("tbank", "bearer_token", "TBANK_API_ACCESS_TOKEN")
 TBANK_ACCOUNT_NUMBER_ENV = "TBANK_API_ACCOUNT_NUMBER"
 
-# Sber syncs through the same movement pipeline as T-Bank; it needs a (long-lived)
-# access token plus the mTLS cert/key file paths inside the container. The account
-# number rides as metadata on the access_token credential, mirroring T-Bank.
+# Sber refreshes OAuth token pairs in the application.  The refresh token and client
+# secret must therefore reach the credential store alongside the access token and mTLS
+# files. The account number rides as metadata on the access_token credential.
 SBER_ACCESS_TOKEN = CredentialSpec("sber", "access_token", "SBER_API_ACCESS_TOKEN")
+SBER_REFRESH_TOKEN = CredentialSpec("sber", "refresh_token", "SBER_API_REFRESH_TOKEN")
+SBER_CLIENT_SECRET = CredentialSpec("sber", "client_secret", "SBER_API_CLIENT_SECRET")
 SBER_MTLS_CERT = CredentialSpec("sber", "mtls_cert_path", "SBER_API_TLS_CERT_PATH")
 SBER_MTLS_KEY = CredentialSpec("sber", "mtls_key_path", "SBER_API_TLS_KEY_PATH")
-SBER_CREDENTIALS = (SBER_ACCESS_TOKEN, SBER_MTLS_CERT, SBER_MTLS_KEY)
+SBER_CREDENTIALS = (
+    SBER_ACCESS_TOKEN,
+    SBER_REFRESH_TOKEN,
+    SBER_CLIENT_SECRET,
+    SBER_MTLS_CERT,
+    SBER_MTLS_KEY,
+)
 SBER_ACCOUNT_NUMBER_ENV = "SBER_API_ACCOUNT_NUMBER"
 
 

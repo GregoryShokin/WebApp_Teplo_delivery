@@ -11,6 +11,7 @@ from app.models import SourceCredential
 Provider = Literal["sber", "tbank"]
 CredentialKind = Literal[
     "access_token",
+    "refresh_token",
     "client_secret",
     "bearer_token",
     "mtls_cert_path",
@@ -18,7 +19,14 @@ CredentialKind = Literal[
 ]
 
 PROVIDERS = ("sber", "tbank")
-KINDS = ("access_token", "client_secret", "bearer_token", "mtls_cert_path", "mtls_key_path")
+KINDS = (
+    "access_token",
+    "refresh_token",
+    "client_secret",
+    "bearer_token",
+    "mtls_cert_path",
+    "mtls_key_path",
+)
 
 
 async def set_credential(

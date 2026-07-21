@@ -11,7 +11,8 @@ SECRET_ENV_KEYS = (
     *sync_integration_secrets.IIKO_ENV_KEYS,
     sync_integration_secrets.TBANK_BEARER_TOKEN.env_name,
     sync_integration_secrets.TBANK_ACCOUNT_NUMBER_ENV,
-    "SBER_API_ACCESS_TOKEN",
+    *(spec.env_name for spec in sync_integration_secrets.SBER_CREDENTIALS),
+    sync_integration_secrets.SBER_ACCOUNT_NUMBER_ENV,
 )
 
 
@@ -57,6 +58,9 @@ def _assert_no_secret_values(output: str) -> None:
         "first-token",
         "second-token",
         "unused-sber-token",
+        "sber-access-token",
+        "sber-refresh-token",
+        "sber-client-secret",
         "40702810900000000001",
     )
     for value in leaked_values:
@@ -232,4 +236,47 @@ async def test_sber_missing_does_not_break_minimal_check(
         "tbank_bearer_token=env:set db:set",
     ]
     assert "sber" not in output.casefold()
+    _assert_no_secret_values(output)
+
+
+@pytest.mark.asyncio
+async def test_sync_sber_oauth_pair_and_mtls_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_test_session_factory(monkeypatch, async_session_factory)
+    _set_iiko_env(monkeypatch)
+    monkeypatch.setenv("TBANK_API_ACCESS_TOKEN", "first-token")
+    monkeypatch.setenv("SBER_API_ACCESS_TOKEN", "sber-access-token")
+    monkeypatch.setenv("SBER_API_REFRESH_TOKEN", "sber-refresh-token")
+    monkeypatch.setenv("SBER_API_CLIENT_SECRET", "sber-client-secret")
+    monkeypatch.setenv("SBER_API_TLS_CERT_PATH", "/run/secrets/sber/client.crt")
+    monkeypatch.setenv("SBER_API_TLS_KEY_PATH", "/run/secrets/sber/client.key")
+    monkeypatch.setenv("SBER_API_ACCOUNT_NUMBER", "40702810900000000001")
+
+    assert await sync_integration_secrets.sync() == 0
+
+    output = capsys.readouterr().out
+    rows = await _load_credentials(async_session_factory)
+    active_sber = {
+        row.credential_kind: row for row in rows if row.provider == "sber" and row.is_active
+    }
+    assert set(active_sber) == {
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "mtls_cert_path",
+        "mtls_key_path",
+    }
+    assert active_sber["access_token"].metadata_json == {"account_number": "40702810900000000001"}
+    assert output.splitlines() == [
+        "iiko_env=set",
+        "tbank_bearer_token=created",
+        "sber_access_token=created",
+        "sber_refresh_token=created",
+        "sber_client_secret=created",
+        "sber_mtls_cert_path=created",
+        "sber_mtls_key_path=created",
+    ]
     _assert_no_secret_values(output)
