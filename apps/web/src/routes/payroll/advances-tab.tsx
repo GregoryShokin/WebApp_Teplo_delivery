@@ -98,7 +98,7 @@ export function PayrollAdvancesRoute() {
     enabled: dialogOpen,
   });
   const issueWallets = useMemo(() => issueWalletsQuery.data ?? [], [issueWalletsQuery.data]);
-  // Ближайшие ведомости — «с какой ЗП удерживать» заём через ведомость (по расписанию).
+  // Ведомости для удержания займа: все созданные нефинализированные и ближайшие по расписанию.
   const payslipsQuery = useQuery({
     // Без сотрудника — недельное расписание по умолчанию (выплаты по вторникам); с
     // сотрудником — под его пайплайн (недельный/полумесячный).

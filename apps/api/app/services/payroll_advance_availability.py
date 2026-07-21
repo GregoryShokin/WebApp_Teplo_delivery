@@ -342,23 +342,58 @@ def _upcoming_half_month_payslips(
 async def upcoming_payslips(
     session: AsyncSession, employee: Employee | None, today: date, *, count: int = 2
 ) -> list[tuple[date, date, date]]:
-    """Ближайшие `count` ведомостей (payout_date ≥ today), вычисленные по расписанию
-    (недельное / полумесячное с учётом режима окладника) — без опоры на строки периодов,
-    которых может ещё не быть. Возвращает (period_start, period_end, payout_date).
+    """Ведомости для выбора удержания займа.
 
-    Без сотрудника — недельное расписание по умолчанию (основной контур «выплаты по
-    вторникам»); с сотрудником — под его пайплайн."""
+    Все уже созданные нефинализированные ведомости нужного контура доступны всегда,
+    даже когда их ``payroll_date`` уже прошла. Это позволяет направить удержание в
+    ближайшую ещё открытую ведомость. К ним добавляются `count` дат из будущего
+    расписания (там строки ``PayrollPeriod`` могут ещё не существовать).
+
+    Возвращает ``(period_start, period_end, payout_date)``. Без сотрудника используется
+    недельный контур по умолчанию; с сотрудником — его payroll-пайплайн.
+    """
     if employee is None:
-        return _upcoming_weekly_payslips(today, count)
-    position = await get_position_on_date(session, employee.id, today)
-    position = position or employee.position or ""
-    if position in okladnik_positions():
-        modes = await _load_okladnik_payout_modes(session)
-        mode = _okladnik_payout_mode(modes, position)
-        return _upcoming_half_month_payslips(today, count, mode=mode)
-    if position in dishwasher_positions():
-        return _upcoming_half_month_payslips(today, count, mode=None)  # обе половины
-    return _upcoming_weekly_payslips(today, count)
+        period_type = "week"
+        scheduled = _upcoming_weekly_payslips(today, count)
+    else:
+        position = await get_position_on_date(session, employee.id, today)
+        position = position or employee.position or ""
+        if position in okladnik_positions():
+            period_type = "half_month"
+            modes = await _load_okladnik_payout_modes(session)
+            mode = _okladnik_payout_mode(modes, position)
+            scheduled = _upcoming_half_month_payslips(today, count, mode=mode)
+        elif position in dishwasher_positions():
+            period_type = "half_month"
+            scheduled = _upcoming_half_month_payslips(today, count, mode=None)
+        else:
+            period_type = "week"
+            scheduled = _upcoming_weekly_payslips(today, count)
+
+    open_periods = (
+        await session.scalars(
+            select(PayrollPeriod)
+            .where(
+                PayrollPeriod.period_type == period_type,
+                PayrollPeriod.status != "finalized",
+            )
+            .order_by(PayrollPeriod.payroll_date, PayrollPeriod.start_date)
+        )
+    ).all()
+    # Реальные ведомости приоритетнее расчётных дат: они могут быть уже рассчитаны,
+    # но всё ещё не финализированы. Ключ по границам не даёт продублировать такую
+    # ведомость её виртуальной датой из расписания.
+    payslips = {
+        (period.start_date, period.end_date): (
+            period.start_date,
+            period.end_date,
+            period.payroll_date,
+        )
+        for period in open_periods
+    }
+    for period_start, period_end, payout_date in scheduled:
+        payslips.setdefault((period_start, period_end), (period_start, period_end, payout_date))
+    return sorted(payslips.values(), key=lambda item: (item[2], item[0], item[1]))
 
 
 async def available_to_advance(

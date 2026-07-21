@@ -271,6 +271,44 @@ def test_upcoming_weekly_payslips_from_schedule() -> None:
     ]
 
 
+async def test_upcoming_payslips_include_unfinalized_past_payout(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Открытая ведомость не исчезает из выбора после даты выплаты."""
+    from app.services.payroll_advance_availability import upcoming_payslips
+
+    async with async_session_factory() as session:
+        session.add_all(
+            [
+                PayrollPeriod(
+                    id=uuid.uuid4(),
+                    period_type="week",
+                    start_date=date(2026, 7, 7),
+                    end_date=date(2026, 7, 13),
+                    payroll_date=date(2026, 7, 14),
+                    status="finalized",
+                ),
+                PayrollPeriod(
+                    id=uuid.uuid4(),
+                    period_type="week",
+                    start_date=date(2026, 7, 14),
+                    end_date=date(2026, 7, 20),
+                    payroll_date=date(2026, 7, 21),
+                    status="open",
+                ),
+            ]
+        )
+        await session.commit()
+
+        rows = await upcoming_payslips(session, None, date(2026, 7, 22), count=2)
+
+    assert rows == [
+        (date(2026, 7, 14), date(2026, 7, 20), date(2026, 7, 21)),
+        (date(2026, 7, 21), date(2026, 7, 27), date(2026, 7, 28)),
+        (date(2026, 7, 28), date(2026, 8, 3), date(2026, 8, 4)),
+    ]
+
+
 def test_upcoming_half_month_payslips_by_mode() -> None:
     """Ближайшие полумесячные ведомости — с учётом режима выплат окладника."""
     from app.services.payroll_advance_availability import _upcoming_half_month_payslips

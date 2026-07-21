@@ -82,7 +82,7 @@ class AdvanceAvailabilityRead(BaseModel):
 
 
 class UpcomingPayslipRead(BaseModel):
-    """Ближайшая ведомость — куда можно завести удержание займа «через ведомость»."""
+    """Ведомость, доступная для удержания займа «через ведомость»."""
 
     period_start: date
     period_end: date
@@ -211,9 +211,11 @@ async def get_upcoming_payslips(
     employee_id: uuid.UUID | None = None,
     count: int = 2,
 ) -> list[UpcomingPayslipRead]:
-    """Ближайшие ведомости — для выбора «с какой ЗП удерживать» при выдаче займа через
-    ведомость. Без `employee_id` — недельное расписание по умолчанию; с ним — под
-    пайплайн сотрудника (недельный/полумесячный)."""
+    """Нефинализированные и ближайшие запланированные ведомости для удержания займа.
+
+    Без `employee_id` используется недельный контур по умолчанию; с ним — payroll-пайплайн
+    сотрудника.
+    """
     employee = await _require_employee(session, employee_id) if employee_id is not None else None
     rows = await upcoming_payslips(
         session, employee, datetime.now(_MOSCOW_TZ).date(), count=max(1, min(count, 6))
