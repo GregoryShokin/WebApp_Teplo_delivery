@@ -196,7 +196,10 @@ async def _sync_tbank_bearer_token() -> str:
 
 
 async def _sync_credential(
-    spec: CredentialSpec, metadata_json: dict[str, Any] | None = None
+    spec: CredentialSpec,
+    metadata_json: dict[str, Any] | None = None,
+    *,
+    preserve_database_value: bool = False,
 ) -> str:
     value = _env(spec.env_name)
     if not value:
@@ -218,6 +221,10 @@ async def _sync_credential(
         ):
             return "updated"
         status = "updated"
+    elif preserve_database_value:
+        # OAuth pairs and client secrets rotate in the application.  Deployment
+        # env is bootstrap-only; never put an older static copy back into the DB.
+        return "managed"
     else:
         status = "updated"
 
@@ -235,9 +242,15 @@ async def _sync_credential(
 async def _sync_sber_credentials() -> dict[str, str]:
     metadata = _sber_metadata()
     return {
-        SBER_ACCESS_TOKEN.kind: await _sync_credential(SBER_ACCESS_TOKEN, metadata),
-        SBER_REFRESH_TOKEN.kind: await _sync_credential(SBER_REFRESH_TOKEN),
-        SBER_CLIENT_SECRET.kind: await _sync_credential(SBER_CLIENT_SECRET),
+        SBER_ACCESS_TOKEN.kind: await _sync_credential(
+            SBER_ACCESS_TOKEN, metadata, preserve_database_value=True
+        ),
+        SBER_REFRESH_TOKEN.kind: await _sync_credential(
+            SBER_REFRESH_TOKEN, preserve_database_value=True
+        ),
+        SBER_CLIENT_SECRET.kind: await _sync_credential(
+            SBER_CLIENT_SECRET, preserve_database_value=True
+        ),
         SBER_MTLS_CERT.kind: await _sync_credential(SBER_MTLS_CERT),
         SBER_MTLS_KEY.kind: await _sync_credential(SBER_MTLS_KEY),
     }

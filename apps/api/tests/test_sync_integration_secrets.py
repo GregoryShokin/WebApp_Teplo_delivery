@@ -326,3 +326,59 @@ async def test_sync_sber_oauth_pair_and_mtls_credentials(
         "sber_mtls_key_path=created",
     ]
     _assert_no_secret_values(output)
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_rotated_sber_oauth_values_in_database(
+    monkeypatch: pytest.MonkeyPatch,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_test_session_factory(monkeypatch, async_session_factory)
+    _set_iiko_env(monkeypatch)
+    monkeypatch.setenv("TBANK_API_ACCESS_TOKEN", "first-token")
+    monkeypatch.setenv("SBER_API_ACCESS_TOKEN", "sber-access-token")
+    monkeypatch.setenv("SBER_API_REFRESH_TOKEN", "sber-refresh-token")
+    monkeypatch.setenv("SBER_API_CLIENT_SECRET", "sber-client-secret")
+    monkeypatch.setenv("SBER_API_TLS_CERT_PATH", "/run/secrets/sber/client.crt")
+    monkeypatch.setenv("SBER_API_TLS_KEY_PATH", "/run/secrets/sber/client.key")
+
+    assert await sync_integration_secrets.sync() == 0
+    capsys.readouterr()
+    async with async_session_factory() as session:
+        await sync_integration_secrets.set_credential(
+            session,
+            provider="sber",
+            kind="access_token",
+            value="rotated-access-token",
+        )
+        await sync_integration_secrets.set_credential(
+            session,
+            provider="sber",
+            kind="refresh_token",
+            value="rotated-refresh-token",
+        )
+        await sync_integration_secrets.set_credential(
+            session,
+            provider="sber",
+            kind="client_secret",
+            value="rotated-client-secret",
+        )
+
+    assert await sync_integration_secrets.sync() == 0
+    output = capsys.readouterr().out
+    rows = await _load_credentials(async_session_factory)
+    active = {
+        row.credential_kind: row.value_encrypted
+        for row in rows
+        if row.provider == "sber" and row.is_active
+    }
+
+    assert output.splitlines()[2:5] == [
+        "sber_access_token=managed",
+        "sber_refresh_token=managed",
+        "sber_client_secret=managed",
+    ]
+    assert active["access_token"] == "rotated-access-token"
+    assert active["refresh_token"] == "rotated-refresh-token"
+    assert active["client_secret"] == "rotated-client-secret"

@@ -5,7 +5,7 @@ import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -55,6 +55,56 @@ MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 LEGAL_ENTITY = "ИП Шокина Е.А."
 IIKO_COURIER_JOB_RETRIES = 3
 SUPPORTED_BANK_PROVIDERS = ("sber", "tbank")
+
+
+@scheduler.scheduled_job(
+    "cron",
+    hour=3,
+    minute=15,
+    id="maintain_sber_credentials",
+    max_instances=1,
+    coalesce=True,
+)
+async def maintain_sber_credentials() -> None:
+    """Rotate Sber's short-lived client secret and surface mTLS renewal work.
+
+    The bank does not expose a TLS-certificate renewal API: an operator obtains a
+    new certificate, while this job gives at least 30 days' notice to install it.
+    """
+    if "sber" not in _bank_sync_providers():
+        return
+
+    async with AsyncSessionLocal() as session:
+        client = SberClient(session)
+        try:
+            secret_result = await client.rotate_client_secret_if_due()
+            if secret_result["status"] == "rotated":
+                logger.info("Sber client secret rotated")
+        except BankCredentialsError as exc:
+            await session.rollback()
+            await _create_invalid_credentials_case(session, "sber", str(exc))
+            logger.warning("Sber client-secret maintenance failed: %s", exc)
+
+        try:
+            certificate_expires_at = await client.tls_certificate_expires_at()
+            alert_before = datetime.now(UTC) + timedelta(
+                days=get_settings().sber_tls_certificate_alert_before_days
+            )
+            if certificate_expires_at <= alert_before:
+                await create_or_update_reconciliation_case(
+                    session,
+                    kind="sber_tls_certificate_expiring",
+                    provider="sber",
+                    payload={"expires_at": certificate_expires_at.isoformat()},
+                )
+                logger.warning(
+                    "Sber mTLS certificate expires at %s", certificate_expires_at.isoformat()
+                )
+        except BankCredentialsError as exc:
+            await session.rollback()
+            await _create_invalid_credentials_case(session, "sber", str(exc))
+            logger.warning("Sber TLS certificate maintenance failed: %s", exc)
+        await session.commit()
 
 
 @scheduler.scheduled_job(

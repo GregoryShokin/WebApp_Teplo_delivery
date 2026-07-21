@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import ssl
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from secrets import token_urlsafe
 from typing import Any
 
 import httpx
@@ -51,6 +53,7 @@ _SBER_STATUS_FAILED = frozenset(
         "FRAUDDENY",
     }
 )
+SBER_CLIENT_SECRET_LIFETIME_DAYS = 40
 
 
 class SberClient:
@@ -315,6 +318,123 @@ class SberClient:
         # The new refresh token must survive a later statement/payment rollback.
         await self.session.commit()
         return access_token
+
+    async def rotate_client_secret_if_due(self) -> dict[str, object]:
+        """Rotate the Sber client secret before its 40-day lifetime ends.
+
+        Sber accepts the current secret and a caller-chosen replacement.  The value
+        is only persisted after the bank confirms the change, so a network failure
+        leaves the working credential untouched.
+        """
+        if self.session is None:
+            raise BankCredentialsError(
+                self.provider, "Sber client-secret rotation requires a database session"
+            )
+        if not self.settings.sber_api_client_id:
+            raise BankCredentialsError(self.provider, "missing SBER_API_CLIENT_ID")
+
+        credential = await self._active_credential("client_secret")
+        if credential is None or not credential.value_encrypted:
+            raise BankCredentialsError(self.provider, "missing active credential client_secret")
+
+        now = datetime.now(UTC)
+        expires_at = credential.expires_at
+        if expires_at is None:
+            # Secrets imported from the one-time deployment env have no explicit
+            # issue date. Their DB creation time is the only reliable local marker.
+            issued_at = credential.last_rotated_at or credential.created_at
+            if issued_at.tzinfo is None:
+                issued_at = issued_at.replace(tzinfo=UTC)
+            expires_at = issued_at + timedelta(days=SBER_CLIENT_SECRET_LIFETIME_DAYS)
+            credential.expires_at = expires_at
+            await self.session.commit()
+        elif expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+
+        threshold = now + timedelta(days=self.settings.sber_client_secret_rotate_before_days)
+        if expires_at > threshold:
+            return {"status": "not_due", "expires_at": expires_at}
+
+        new_client_secret = token_urlsafe(48)
+        lifetime_days = await self._request_client_secret_rotation(
+            access_token=await self._access_token(),
+            current_client_secret=credential.value_encrypted,
+            new_client_secret=new_client_secret,
+        )
+
+        credential.is_active = False
+        credential.status = "rotated"
+        credential.last_rotated_at = now
+        await self.session.flush()
+        self.session.add(
+            SourceCredential(
+                provider=self.provider,
+                credential_kind="client_secret",
+                value_encrypted=new_client_secret,
+                expires_at=now + timedelta(days=lifetime_days),
+                is_active=True,
+                status="active",
+                last_rotated_at=now,
+            )
+        )
+        await self.session.commit()
+        return {
+            "status": "rotated",
+            "expires_at": now + timedelta(days=lifetime_days),
+        }
+
+    async def tls_certificate_expires_at(self) -> datetime:
+        """Return the mTLS leaf certificate expiry without exposing its contents."""
+        cert_path = await required_credential(self.session, self.provider, "mtls_cert_path")
+        try:
+            certificate = await asyncio.to_thread(ssl._ssl._test_decode_cert, cert_path)
+            raw_not_after = str(certificate["notAfter"])
+            return datetime.strptime(raw_not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=UTC)
+        except (OSError, KeyError, ValueError, ssl.SSLError) as exc:
+            raise BankCredentialsError(
+                self.provider, "unable to read Sber mTLS certificate expiry"
+            ) from exc
+
+    async def _request_client_secret_rotation(
+        self,
+        *,
+        access_token: str,
+        current_client_secret: str,
+        new_client_secret: str,
+    ) -> int:
+        cert_path = await required_credential(self.session, self.provider, "mtls_cert_path")
+        key_path = await required_credential(self.session, self.provider, "mtls_key_path")
+        verify = ssl.create_default_context(cafile=self.settings.sber_api_ca_bundle_path or None)
+        verify.load_cert_chain(certfile=cert_path, keyfile=key_path)
+        async with httpx.AsyncClient(
+            timeout=self.settings.bank_client_timeout_seconds, verify=verify
+        ) as client:
+            response = await client.post(
+                self.settings.sber_api_client_secret_url,
+                params={
+                    "access_token": access_token,
+                    "client_id": self.settings.sber_api_client_id,
+                    "client_secret": current_client_secret,
+                    "new_client_secret": new_client_secret,
+                },
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+        if response.status_code >= 400:
+            raise BankCredentialsError(
+                self.provider, f"Sber client-secret endpoint returned {response.status_code}"
+            )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        expires_in_days = (
+            payload.get("clientSecretExpiration") if isinstance(payload, dict) else None
+        )
+        try:
+            expires_in_days = int(expires_in_days)
+        except (TypeError, ValueError):
+            return SBER_CLIENT_SECRET_LIFETIME_DAYS
+        return expires_in_days if expires_in_days > 0 else SBER_CLIENT_SECRET_LIFETIME_DAYS
 
     async def _request_token_refresh(
         self, *, refresh_token: str, client_secret: str

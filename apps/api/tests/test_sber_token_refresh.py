@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.models import SourceCredential
+from app.services.banking import sber as sber_module
 from app.services.banking.credentials import set_credential
 from app.services.banking.sber import SberClient
 
@@ -38,6 +39,26 @@ class RefreshingSberClient(SberClient):
             "refresh_token": "fresh-refresh-token",
             "expires_in": 3600,
         }
+
+
+class SecretRotatingSberClient(RefreshingSberClient):
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__(session)
+        self.client_secret_request: dict[str, str] | None = None
+
+    async def _request_client_secret_rotation(
+        self,
+        *,
+        access_token: str,
+        current_client_secret: str,
+        new_client_secret: str,
+    ) -> int:
+        self.client_secret_request = {
+            "access_token": access_token,
+            "current_client_secret": current_client_secret,
+            "new_client_secret": new_client_secret,
+        }
+        return 40
 
 
 async def _seed_sber_oauth_credentials(
@@ -121,3 +142,64 @@ async def test_sber_request_retries_once_after_401_with_refreshed_token(
 
     assert payload == {"transactions": []}
     assert seen_authorizations == ["Bearer old-access-token", "Bearer fresh-access-token"]
+
+
+@pytest.mark.asyncio
+async def test_sber_client_secret_is_rotated_before_expiry(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        await _seed_sber_oauth_credentials(session, access_expires_at=None)
+        secret = await session.scalar(
+            select(SourceCredential).where(
+                SourceCredential.provider == "sber",
+                SourceCredential.credential_kind == "client_secret",
+                SourceCredential.is_active.is_(True),
+            )
+        )
+        assert secret is not None
+        secret.expires_at = datetime.now(UTC) + timedelta(days=1)
+        await session.commit()
+
+        client = SecretRotatingSberClient(session)
+        result = await client.rotate_client_secret_if_due()
+        credentials = await session.scalars(
+            select(SourceCredential).where(
+                SourceCredential.provider == "sber",
+                SourceCredential.credential_kind == "client_secret",
+            )
+        )
+        secrets = credentials.all()
+
+    active = next(row for row in secrets if row.is_active)
+    inactive = next(row for row in secrets if not row.is_active)
+    assert result["status"] == "rotated"
+    assert client.client_secret_request is not None
+    assert client.client_secret_request["access_token"] == "old-access-token"
+    assert client.client_secret_request["current_client_secret"] == "client-secret"
+    assert active.value_encrypted == client.client_secret_request["new_client_secret"]
+    assert active.value_encrypted != inactive.value_encrypted
+    assert active.expires_at is not None
+    assert active.expires_at > datetime.now(UTC) + timedelta(days=39)
+
+
+@pytest.mark.asyncio
+async def test_sber_reads_mtls_certificate_expiry_without_exposing_certificate(
+    monkeypatch: pytest.MonkeyPatch,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    monkeypatch.setattr(
+        sber_module.ssl._ssl,
+        "_test_decode_cert",
+        lambda path: {"notAfter": "Aug 12 12:32:53 2027 GMT"},
+    )
+    async with async_session_factory() as session:
+        await set_credential(
+            session,
+            provider="sber",
+            kind="mtls_cert_path",
+            value="/run/secrets/sber/client.crt",
+        )
+        expires_at = await SberClient(session).tls_certificate_expires_at()
+
+    assert expires_at == datetime(2027, 8, 12, 12, 32, 53, tzinfo=UTC)

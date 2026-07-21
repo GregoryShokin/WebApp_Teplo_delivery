@@ -61,9 +61,14 @@ class Settings(BaseSettings):
 
     sber_api_base_url: str = "https://fintech.sberbank.ru:9443/fintech/api"
     sber_api_token_url: str = "https://fintech.sberbank.ru:9443/ic/sso/api/v2/oauth/token"
+    sber_api_client_secret_url: str = (
+        "https://fintech.sberbank.ru:9443/ic/sso/api/v1/change-client-secret"
+    )
     sber_api_client_id: str | None = None
     sber_api_ca_bundle_path: str | None = None
     sber_api_account_number: str | None = None
+    sber_client_secret_rotate_before_days: int = 5
+    sber_tls_certificate_alert_before_days: int = 30
 
     tbank_api_base_url: str = "https://business.tbank.ru/openapi"
     tbank_api_account_number: str | None = None
