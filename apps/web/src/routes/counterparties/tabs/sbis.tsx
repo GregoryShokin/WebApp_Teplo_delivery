@@ -35,6 +35,16 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   КоррВх: "Корреспонденция",
 };
 
+function documentTypeLabel(doc: SbisDocument): string {
+  // SABY labels unformalized invoices as incoming correspondence.  Once the backend
+  // has confirmed the invoice attachment and sent it to recognition, show the business
+  // type instead of the transport envelope type.
+  if (doc.doc_type === "КоррВх" && doc.intake_status === "sent_to_recognition") {
+    return "Счёт-письмо";
+  }
+  return DOC_TYPE_LABELS[doc.doc_type ?? ""] ?? doc.doc_type ?? "—";
+}
+
 type FilterValue =
   | "all"
   | "new_counterparty"
@@ -266,7 +276,7 @@ export function SbisTab({ canOperate }: Props) {
     {
       key: "type",
       header: "Тип",
-      cell: (doc) => DOC_TYPE_LABELS[doc.doc_type ?? ""] ?? doc.doc_type ?? "—",
+      cell: documentTypeLabel,
     },
     {
       key: "state",

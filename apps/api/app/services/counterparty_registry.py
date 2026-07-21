@@ -15,7 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,7 @@ from app.models import (
     CounterpartyRoutingRule,
     DdsArticle,
     InvoicePaymentAllocation,
+    SbisDocument,
     SupplierInvoice,
     SupplierPrepayment,
     Wallet,
@@ -670,6 +671,58 @@ async def _get_or_create_profile(
     return profile
 
 
+async def activate_configured_placeholder(
+    session: AsyncSession,
+    counterparty: Counterparty,
+    profile: CounterpartyPayableProfile,
+) -> bool:
+    """Finish setup after the manager saves the required card decision.
+
+    ``requires_setup`` is a queue state of placeholders created by source syncs.  The
+    card form used to save the payable profile without ever clearing that state, so a
+    fully configured SABY counterparty stayed blocked forever.  A pending SABY document
+    also means that SABY is the collection source the manager is configuring; attach it
+    in the same transaction so the next sync can route all accumulated documents.
+    """
+    if counterparty.status != "requires_setup":
+        return False
+    if profile.default_dds_article_id is None and not profile.confirm_no_dds_article:
+        return False
+
+    counterparty.status = "active"
+
+    document_filters = [SbisDocument.counterparty_id == counterparty.id]
+    if counterparty.inn:
+        document_filters.append(SbisDocument.counterparty_inn == counterparty.inn)
+    pending_sbis_document = await session.scalar(
+        select(SbisDocument.id)
+        .where(
+            SbisDocument.intake_status == "new_counterparty",
+            or_(*document_filters),
+        )
+        .limit(1)
+    )
+    if pending_sbis_document is None:
+        return True
+
+    sbis_source = await session.scalar(
+        select(CounterpartyCollectionSource.id).where(
+            CounterpartyCollectionSource.counterparty_id == counterparty.id,
+            CounterpartyCollectionSource.kind == "sbis",
+        )
+    )
+    if sbis_source is None:
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=counterparty.id,
+                kind="sbis",
+                value=counterparty.inn,
+                note="подключено при настройке карточки документа СБИС",
+            )
+        )
+    return True
+
+
 _UNSET = object()
 
 
@@ -812,6 +865,7 @@ async def update_profile(
         profile.default_service_period_offset_months = default_service_period_offset_months
     if status is not _UNSET and status:
         profile.status = status
+    await activate_configured_placeholder(session, counterparty, profile)
     await session.commit()
     await session.refresh(profile)
     return profile

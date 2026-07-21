@@ -48,6 +48,7 @@ from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_registry import (
     CROSS_CHANNEL_DEDUP_WINDOW_DAYS,
+    activate_configured_placeholder,
     compute_invoice_due_date,
 )
 from app.services.email_invoice_ingest import _guess_type, process_attachment
@@ -551,8 +552,25 @@ async def _route_documents(
             continue  # без ИНН идентифицировать нечем — остаётся зеркалом
         doc.counterparty_id = counterparty.id
         if counterparty.status == "requires_setup":
-            doc.intake_status = "new_counterparty"
-            continue
+            # Самовосстановление карточек, сохранённых до исправления: профиль уже
+            # настроен, но прежний PUT оставлял базовый статус requires_setup и не
+            # подключал канал. Такой документ можно обработать в этом же проходе.
+            profile = profile_cache.get(counterparty.id)
+            if profile is None:
+                profile = await session.scalar(
+                    select(CounterpartyPayableProfile).where(
+                        CounterpartyPayableProfile.counterparty_id == counterparty.id
+                    )
+                )
+                if profile is not None:
+                    profile_cache[counterparty.id] = profile
+            activated = profile is not None and await activate_configured_placeholder(
+                session, counterparty, profile
+            )
+            if not activated:
+                doc.intake_status = "new_counterparty"
+                continue
+            channel_ids.add(counterparty.id)
         if counterparty.status != "active":
             # Архив и прочие не-активные: новые счета не создаём (архив = блок накладных),
             # документы остаются видимыми в зеркале.

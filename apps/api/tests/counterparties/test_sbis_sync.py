@@ -12,7 +12,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from cp_helpers import make_counterparty, make_invoice
+from cp_helpers import make_counterparty, make_expense_article, make_invoice
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -286,6 +286,57 @@ async def test_unknown_inn_creates_requires_setup_placeholder(
         assert doc.counterparty_id == placeholder.id
         # Накопленный документ НЕ материализован — канал не включён.
         assert doc.invoice_id is None
+
+
+async def test_sync_repairs_previously_saved_sbis_placeholder(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Синк подхватывает карточку, которую старый PUT сохранил, но не активировал."""
+    from app.models import (
+        Counterparty,
+        CounterpartyCollectionSource,
+        CounterpartyPayableProfile,
+    )
+
+    async with async_session_factory() as session:
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item(doc_id="saved-placeholder")], result)
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        counterparty = await session.get(Counterparty, doc.counterparty_id)
+        assert counterparty is not None
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == counterparty.id
+            )
+        )
+        assert profile is not None
+
+        # Состояние прода до исправления: обязательное решение в профиле уже сохранено,
+        # а базовый статус и канал остались незаполненными.
+        article = await make_expense_article(session, code="saved_automation_services")
+        profile.default_dds_article_id = article.id
+        await session.commit()
+        assert counterparty.status == "requires_setup"
+
+        reroute = await _route(session)
+        await session.commit()
+
+        await session.refresh(counterparty)
+        await session.refresh(doc)
+        assert counterparty.status == "active"
+        assert doc.intake_status == "materialized"
+        assert reroute.materialized == 1
+        source = await session.scalar(
+            select(CounterpartyCollectionSource).where(
+                CounterpartyCollectionSource.counterparty_id == counterparty.id,
+                CounterpartyCollectionSource.kind == "sbis",
+            )
+        )
+        assert source is not None
 
 
 async def test_channel_counterparty_materializes_invoice_with_period(
@@ -959,3 +1010,86 @@ async def test_invoice_letter_routed_to_recognition(
         assert count == 1
         await session.refresh(doc)
         assert doc.intake_status == "sent_to_recognition"
+
+
+async def test_saving_sbis_placeholder_card_activates_channel_and_routes_pending_letter(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сохранённая карточка завершает настройку без второй, скрытой настройки канала."""
+    from app.models import Counterparty, CounterpartyCollectionSource, EmailInvoiceIntake
+    from app.services.counterparty_registry import update_profile
+    from app.services.sbis.sync import _route_documents
+
+    class FakeClient:
+        async def download_file(self, url: str) -> bytes:
+            return b"%PDF-1.7 pending invoice"
+
+    letter = {
+        "ДатаВремя": "16.07.2026 10.00.00",
+        "Состояние": {"Код": "5", "Название": "Доставлен"},
+        "Документ": {
+            "Идентификатор": "letter-pending-card-18194",
+            "Дата": "16.07.2026",
+            "Номер": "18194",
+            "Тип": "КоррВх",
+            "Удален": "Нет",
+            "Название": "Письмо № 18194 от 16.07.2026",
+            "Контрагент": {"СвЮЛ": {"ИНН": "7802193688", "Название": 'ООО "ДОКСИНБОКС"'}},
+            "Вложение": [
+                {
+                    "Служебный": "Нет",
+                    "Название": "Счет-оферта_№0006643130 _от 16.07.2026.pdf",
+                    "Файл": {
+                        "Имя": "Счет-оферта_№0006643130 _от 16.07.2026.pdf",
+                        "Ссылка": "https://disk.sbis.ru/pending-card",
+                    },
+                }
+            ],
+        },
+    }
+
+    async with async_session_factory() as session:
+        result = SbisSyncResult()
+        await _upsert_documents(session, [letter], result)
+        await session.flush()
+        await _route_documents(session, result)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        counterparty = await session.get(Counterparty, doc.counterparty_id)
+        assert counterparty is not None
+        assert counterparty.status == "requires_setup"
+        assert doc.intake_status == "new_counterparty"
+
+        article = await make_expense_article(
+            session,
+            code="automation_services",
+            name="Оплаты систем автоматизации",
+        )
+        await update_profile(
+            session,
+            counterparty.id,
+            relationship="official",
+            default_dds_article_id=article.id,
+        )
+
+        await session.refresh(counterparty)
+        assert counterparty.status == "active"
+        source = await session.scalar(
+            select(CounterpartyCollectionSource).where(
+                CounterpartyCollectionSource.counterparty_id == counterparty.id,
+                CounterpartyCollectionSource.kind == "sbis",
+            )
+        )
+        assert source is not None
+        assert source.value == "7802193688"
+
+        reroute = SbisSyncResult()
+        await _route_documents(session, reroute, FakeClient())
+        await session.commit()
+
+        await session.refresh(doc)
+        assert reroute.sent_to_recognition == 1
+        assert doc.intake_status == "sent_to_recognition"
+        intake = (await session.execute(select(EmailInvoiceIntake))).scalar_one()
+        assert intake.attachment_filename.startswith("Счет-оферта")
