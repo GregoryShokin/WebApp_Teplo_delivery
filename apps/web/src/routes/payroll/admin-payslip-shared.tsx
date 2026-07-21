@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import type { PayrollLine } from "@/lib/api";
 
 import {
+  extractPayrollRounding,
   lineOnHand,
   lineSalaryBeforeSettlement,
   lineSettlementFlows,
@@ -147,6 +148,7 @@ type PayoutFormulaTerm = { label: string; amount: number };
 export function PayoutFormula({ line }: { line: PayrollLine }) {
   const salary = lineSalaryBeforeSettlement(line);
   const flows = lineSettlementFlows(line);
+  const rounding = extractPayrollRounding(line);
   const terms: PayoutFormulaTerm[] = [
     { label: "удержание депозита", amount: -moneyValue(line.deposit_withholding) },
     { label: "выдача депозита", amount: moneyValue(line.deposit_payout) },
@@ -157,6 +159,7 @@ export function PayoutFormula({ line }: { line: PayrollLine }) {
     { label: "возврат займа", amount: -flows.loanRecovered },
     { label: "возврат аванса/займа", amount: -flows.unspecifiedRecovered },
     { label: "выплачено ранее", amount: -flows.previouslyPaid },
+    { label: "округление до 5 ₽", amount: -rounding },
   ].filter((term) => Math.abs(term.amount) >= 0.005);
 
   const explainedTotal = normalizeMoney(salary + terms.reduce((sum, term) => sum + term.amount, 0));

@@ -73,6 +73,7 @@ from app.services.payroll_freelancer_settlement import (
     apply_freelancer_cash_settlements,
     run_has_stale_freelancer_settlements,
 )
+from app.services.payroll_rounding import apply_employee_payable_rounding
 from app.services.position_registry import production_payroll_positions
 
 
@@ -541,6 +542,7 @@ async def run_payroll(
         payout_offset_summary = await apply_employee_payout_offsets(
             session, period, run, calculation.lines
         )
+        rounding_summary = apply_employee_payable_rounding(calculation.lines)
         subledger_summary = await update_deposits_and_fund(session, period, run, calculation.lines)
         paid_vacations = await vacation_service.mark_vacations_paid_for_payroll_period(
             session,
@@ -558,6 +560,7 @@ async def run_payroll(
             | advance_summary
             | advance_issue_summary
             | freelancer_cash_summary
+            | rounding_summary
             | attendance_warning_summary
             | {"vacations_marked_paid": paid_vacations}
             # Итог к выплате — ПОСЛЕ удержаний авансов/займов (перекрывает начисленный).

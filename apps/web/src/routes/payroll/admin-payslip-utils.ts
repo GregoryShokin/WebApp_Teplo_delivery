@@ -105,6 +105,18 @@ export function extractEmployeePayoutOffset(line: PayrollLine): number {
   }, 0);
 }
 
+export function extractPayrollRounding(line: PayrollLine): number {
+  const components = line.components;
+  if (!components || typeof components !== "object") {
+    return 0;
+  }
+  const raw = (components as Record<string, unknown>).payroll_rounding;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return 0;
+  }
+  return moneyValue((raw as Record<string, unknown>).amount as number | string | undefined);
+}
+
 export type Recovery = { advanceId: string; kind: string; amount: number };
 
 export function extractRecoveries(line: PayrollLine): Recovery[] {

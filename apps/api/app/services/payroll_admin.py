@@ -39,8 +39,9 @@ from app.services.payroll_advance_recovery import (
     apply_advance_issuances,
     apply_advance_recoveries,
 )
-from app.services.payroll_employee_payout_offset import apply_employee_payout_offsets
 from app.services.payroll_calculator import adjustment_component, decimal, money, money_string
+from app.services.payroll_employee_payout_offset import apply_employee_payout_offsets
+from app.services.payroll_rounding import apply_employee_payable_rounding
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import (
     admin_payroll_positions,
@@ -250,6 +251,7 @@ async def run_admin_payroll(
         advance_issue_summary = await apply_advance_issuances(session, period, run, lines)
         # «Уже выплачено банком» — привязанные к сотруднику выплаты из журнала ДДС.
         await apply_employee_payout_offsets(session, period, run, lines)
+        rounding_summary = apply_employee_payable_rounding(lines)
         for line in lines:
             session.add(line)
         # Итог к выплате — ПОСЛЕ удержаний и выдач авансов/займов (накопленный выше — начисления).
@@ -259,7 +261,12 @@ async def run_admin_payroll(
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
         run.blocking_issues = []
-        run.summary = {**summary, **advance_summary, **advance_issue_summary}
+        run.summary = {
+            **summary,
+            **advance_summary,
+            **advance_issue_summary,
+            **rounding_summary,
+        }
         await session.commit()
         await session.refresh(run)
         return run

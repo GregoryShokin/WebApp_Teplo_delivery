@@ -89,6 +89,7 @@ import {
 } from "./runs";
 import { PayrollPayoutWalletCorrectionButton } from "./payout-wallet-correction-dialog";
 import { CashPayoutSourcePicker, type PayrollCashChannelPerms } from "./cash-payout-source-picker";
+import { extractPayrollRounding } from "./admin-payslip-utils";
 
 type PayrollRunDetailRouteProps = {
   runId: string;
@@ -2571,6 +2572,7 @@ type PayoutFormulaTerm = {
 function PayoutFormula({ line }: { line: PayrollLine }) {
   const salary = lineSalaryBeforeSettlement(line);
   const flows = lineSettlementFlows(line);
+  const rounding = extractPayrollRounding(line);
   const terms: PayoutFormulaTerm[] = [
     { label: "удержание депозита", amount: -moneyValue(line.deposit_withholding) },
     { label: "выдача депозита", amount: moneyValue(line.deposit_payout) },
@@ -2581,6 +2583,7 @@ function PayoutFormula({ line }: { line: PayrollLine }) {
     { label: "возврат займа", amount: -flows.loanRecovered },
     { label: "возврат аванса/займа", amount: -flows.unspecifiedRecovered },
     { label: "выплачено ранее", amount: -flows.previouslyPaid },
+    { label: "округление до 5 ₽", amount: -rounding },
   ].filter((term) => Math.abs(term.amount) >= 0.005);
 
   const explainedTotal = normalizeMoney(salary + terms.reduce((sum, term) => sum + term.amount, 0));
@@ -2986,6 +2989,10 @@ function mergeEmployeeLines(lines: PayrollLine[]): PayrollLine {
         lines,
         (components) => components.employee_payout_offsets,
       ),
+      payroll_rounding: {
+        unit: "5.00",
+        amount: lines.reduce((sum, line) => sum + extractPayrollRounding(line), 0),
+      },
     },
   };
 }
