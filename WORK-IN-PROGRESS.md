@@ -25,6 +25,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-payroll-rounding — ветка `agent/payroll-rounding-five`
+- worktree: `../Teplo-agent-payroll-rounding`
+- compose: agent-b (API 8010 / web 5183 / pg 5442, тест `teplo_test_b`)
+- трогает: расчёт итоговой зарплаты сотрудника и связанные payroll-тесты
+- НЕ трогать другим: точку финального округления `total_payable` до 5 ₽
+- статус: в работе
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
