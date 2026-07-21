@@ -319,7 +319,12 @@ class SberClient:
     async def _request_token_refresh(
         self, *, refresh_token: str, client_secret: str
     ) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.settings.bank_client_timeout_seconds) as client:
+        verify: ssl.SSLContext | bool = True
+        if self.settings.sber_api_ca_bundle_path:
+            verify = ssl.create_default_context(cafile=self.settings.sber_api_ca_bundle_path)
+        async with httpx.AsyncClient(
+            timeout=self.settings.bank_client_timeout_seconds, verify=verify
+        ) as client:
             response = await client.post(
                 self.settings.sber_api_token_url,
                 data={
