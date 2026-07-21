@@ -2,7 +2,7 @@
 
 Поток на одно PDF-вложение (идемпотентно по SHA-256 содержимого):
   скачано → строка ``email_invoice_intake`` → распознавание (гибрид) → матч контрагента
-  (email-источник → ИНН → точное имя, иначе заглушка при наличии ИНН) → при достаточной
+  (ИНН → email-источник → точное имя, иначе заглушка при наличии ИНН) → при достаточной
   уверенности создаём ``SupplierInvoice`` (status=unpaid), иначе оставляем в needs_review для
   оператора (Фаза 2). Деньги при этом НЕ двигаются — это лишь входящий список обязательств.
 
@@ -154,9 +154,12 @@ async def _ensure_email_source(
 async def _match_or_create_counterparty(
     session: AsyncSession, rec: RecognizedInvoice, email: str | None
 ) -> uuid.UUID | None:
+    # ИНН в самом счёте — однозначный идентификатор получателя и сильнее общего
+    # адреса отправителя: бухгалтер/агрегатор может слать счета нескольких юрлиц
+    # с одного ящика (например, «Синапсис» и «О. О»).
     cp_id = (
-        await _counterparty_by_email(session, email)
-        or await _counterparty_by_inn(session, rec.inn)
+        await _counterparty_by_inn(session, rec.inn)
+        or await _counterparty_by_email(session, email)
         or await _counterparty_by_exact_name(session, rec.recipient_name)
     )
     if cp_id is not None:
