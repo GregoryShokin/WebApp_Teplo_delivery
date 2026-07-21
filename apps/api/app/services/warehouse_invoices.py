@@ -284,6 +284,7 @@ async def create_warehouse_invoice(
         source=source,
         direction=direction,
         doc_kind="closing",  # складская приходная накладная = приход товара = закрывающий
+        operational_scope="warehouse",
         barter_role=barter_role,
         barter_return_status=barter_return_status,
         number=resolved_number,
@@ -795,6 +796,7 @@ async def list_warehouse_invoices(
     query = (
         select(SupplierInvoice, Counterparty.name, allocated_subq.label("allocated"))
         .join(Counterparty, Counterparty.id == SupplierInvoice.counterparty_id)
+        .where(SupplierInvoice.operational_scope == "warehouse")
         .order_by(
             SupplierInvoice.issued_at.nulls_last(),
             SupplierInvoice.invoice_date.nulls_last(),
@@ -822,6 +824,7 @@ def _invoice_summary(
         "counterparty_id": str(invoice.counterparty_id),
         "counterparty_name": counterparty_name,
         "source": invoice.source,
+        "operational_scope": invoice.operational_scope,
         "direction": invoice.direction,
         "number": invoice.number,
         "issued_at": invoice.issued_at.isoformat() if invoice.issued_at else None,
@@ -1474,6 +1477,7 @@ async def create_barter_return(
         source="manual",
         direction="payable" if loan.direction == "receivable" else "receivable",
         doc_kind="closing",  # бартерный возврат товара = закрывающий
+        operational_scope="warehouse",
         barter_role="return",
         barter_loan_id=loan.id,
         number=number or await next_invoice_number(session),

@@ -367,6 +367,9 @@ async def _materialize_document(
         )
     )
     if existing is not None:
+        # Старые записи и данные из тестовых/ручных сценариев могли быть созданы до
+        # появления явной области документа. Канал ЭДО всегда финансовый.
+        existing.operational_scope = "finance"
         doc.invoice_id = existing.id
         doc.intake_status = "materialized"
         return
@@ -403,6 +406,7 @@ async def _materialize_document(
         source="sbis",
         direction="payable",
         doc_kind=_doc_kind_for(doc.doc_type),  # СчетВх→bill, ДокОтгрВх(УПД/акт)→closing
+        operational_scope="finance",
         external_id=doc.sbis_doc_id,
         number=doc.number,
         invoice_date=doc.doc_date,

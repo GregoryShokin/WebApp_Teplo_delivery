@@ -16,6 +16,7 @@ export type WarehouseInvoiceSummary = {
   counterparty_id: string;
   counterparty_name: string;
   source: string;
+  operational_scope: "warehouse" | "finance" | "unknown";
   direction: string;
   number: string | null;
   issued_at: string | null;

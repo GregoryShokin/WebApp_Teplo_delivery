@@ -1045,6 +1045,7 @@ async def create_manual_invoice(
         # Ручной ввод в реестр — это оприходование поставки/услуги (закрывающий документ), а не
         # счёт на оплату: он гасит дебиторку / встаёт в кредиторку.
         doc_kind="closing",
+        operational_scope="finance",
         amount=_money(amount),
         vat_total=vat_total,
         vat_breakdown=clean_vat,

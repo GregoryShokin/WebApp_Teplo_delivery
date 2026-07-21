@@ -33,6 +33,7 @@ from app.models.enums import (
     supplier_invoice_barter_role_enum,
     supplier_invoice_direction_enum,
     supplier_invoice_doc_kind_enum,
+    supplier_invoice_operational_scope_enum,
 )
 
 # Draft status mirrors PayrollBankDraft (created → updated → paid / failed) so the
@@ -381,6 +382,15 @@ class SupplierInvoice(Base):
         nullable=False,
         default="closing",
         server_default="closing",
+    )
+    # Где документ живёт операционно. Это отдельная ось от роли bill/closing:
+    # товарный closing показывается в «Управлении складом», сервисный closing — только
+    # в финансовом контуре ДЗ/КЗ; bill всегда остаётся основанием для платежа.
+    operational_scope: Mapped[str] = mapped_column(
+        supplier_invoice_operational_scope_enum,
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
     )
     # Отложенное вступление закрывающего документа в силу по ДАТЕ ДОКУМЕНТА (правило 4 канона):
     # контрагент присылает УПД заранее (ЭкоЦентр — УПД июля датирован 31.07). Будущий closing

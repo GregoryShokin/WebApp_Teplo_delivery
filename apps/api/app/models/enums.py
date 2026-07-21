@@ -144,3 +144,12 @@ supplier_invoice_doc_kind_enum = Enum(
     "closing",
     name="supplier_invoice_doc_kind",
 )
+# Операционный контур документа не выводится из source/doc_kind: закрывающим документом
+# бывает и товарная накладная, и сервисный УПД. warehouse участвует в складском UI/iiko,
+# finance живёт в оплате и ДЗ/КЗ, unknown страхует исторические неоднозначные записи.
+supplier_invoice_operational_scope_enum = Enum(
+    "warehouse",
+    "finance",
+    "unknown",
+    name="supplier_invoice_operational_scope",
+)

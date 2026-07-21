@@ -685,6 +685,7 @@ async def _ingest_documents(
                 source=IIKO_SOURCE,
                 direction=direction,
                 doc_kind="closing",  # iiko incomingInvoice — приход товара = закрывающий
+                operational_scope="warehouse",
                 external_id=external_id,
                 number=number,
                 invoice_date=invoice_date,
@@ -716,6 +717,7 @@ async def _ingest_documents(
         else:
             # Refresh source-owned fields; never override our payment_status /
             # allocations. Amount only changes while still fully unpaid.
+            existing.operational_scope = "warehouse"
             existing.number = number
             existing.invoice_date = invoice_date
             existing.counterparty_id = counterparty_id

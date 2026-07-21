@@ -375,6 +375,7 @@ async def test_channel_counterparty_materializes_invoice_with_period(
         invoice = await session.get(SupplierInvoice, doc.invoice_id)
         assert invoice is not None
         assert invoice.source == "sbis"
+        assert invoice.operational_scope == "finance"
         assert invoice.external_id == doc.sbis_doc_id
         assert invoice.amount == Decimal("121313.24")
         # Период распознан regex-слоем из названия («за июнь 2026»).

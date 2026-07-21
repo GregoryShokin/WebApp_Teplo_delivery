@@ -74,6 +74,7 @@ async def test_ingest_creates_invoice_with_gross_amount_and_grouped_vat(
         invoice = await session.scalar(select(SupplierInvoice))
         assert invoice is not None
         assert invoice.source == "iiko"
+        assert invoice.operational_scope == "warehouse"
         assert invoice.external_id == "doc-1"
         assert invoice.amount == Decimal("232.00")  # gross item sums, VAT inclusive
         assert invoice.vat_total == Decimal("32.00")
