@@ -25,6 +25,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-iiko-test — ветка `agent/iiko-test-refresh`
+- worktree: `../Teplo-agent-iiko-test`
+- compose: без отдельного стека; только изолированный pytest
+- трогает: `apps/api/tests/counterparties/test_kassa_invoice_mirror.py`
+- НЕ трогать другим: тест дробления непредставимой суммы iiko
+- статус: в работе
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
