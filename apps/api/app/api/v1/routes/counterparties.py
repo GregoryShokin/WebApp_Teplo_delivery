@@ -131,6 +131,7 @@ class InvoiceRead(BaseModel):
     counterparty_name: str
     ledger_category_id: uuid.UUID | None
     source: str
+    operational_scope: str
     direction: str
     number: str | None
     invoice_date: date | None
@@ -511,6 +512,7 @@ async def get_invoices(
     direction: str = "payable",
     relationship: str | None = None,
     source: str | None = None,
+    operational_scope: Literal["warehouse", "finance", "unknown"] | None = None,
     # Мультивыбор поставщиков передаётся CSV-строкой UUID (как status) — надёжнее, чем
     # массив в query, независимо от сериализации на клиенте.
     counterparty_ids: Annotated[str | None, Query()] = None,
@@ -544,6 +546,7 @@ async def get_invoices(
         direction=direction or None,
         relationship=relationship,
         source=source,
+        operational_scope=operational_scope,
         date_from=date_from,
         date_to=date_to,
         not_in_iiko=not_in_iiko,

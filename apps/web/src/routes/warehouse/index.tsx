@@ -48,8 +48,9 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
   const [openId, setOpenId] = useState<string | null>(null);
 
   const dashboardQuery = useQuery({
-    queryKey: ["cp", "invoices", "dashboard"],
-    queryFn: () => getInvoices({ status: "unpaid,partially_paid" }),
+    queryKey: ["cp", "invoices", "dashboard", "warehouse"],
+    queryFn: () =>
+      getInvoices({ status: "unpaid,partially_paid", operational_scope: "warehouse" }),
   });
   // Бартер в денежные плитки не входит: заём — ТОВАРНЫЙ долг, его остаток считается по
   // зачётной стоимости (кг × цена выдачи) и живёт на вкладке «Бартер». Здесь его remaining —
@@ -159,6 +160,7 @@ export function WarehouseInvoicesRoute({ activeTab, onNavigate, embedded = false
           canCreate={canCreateNormal}
           canPay={canPayNormal}
           onOpenCounterparty={setOpenId}
+          operationalScope="warehouse"
         />
       ) : null}
       {effectiveTab === "barter" ? (

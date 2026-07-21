@@ -125,6 +125,7 @@ class InvoiceItem:
     counterparty_name: str
     ledger_category_id: uuid.UUID | None
     source: str
+    operational_scope: str
     direction: str
     number: str | None
     invoice_date: date | None
@@ -236,6 +237,7 @@ async def list_invoices(
     direction: str | None = None,
     relationship: str | None = None,
     source: str | None = None,
+    operational_scope: str | None = None,
     exclude_sources: Sequence[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -261,6 +263,8 @@ async def list_invoices(
         query = query.where(SupplierInvoice.direction == direction)
     if source is not None:
         query = query.where(SupplierInvoice.source == source)
+    if operational_scope is not None:
+        query = query.where(SupplierInvoice.operational_scope == operational_scope)
     if exclude_sources:
         # Почтовые счета (непроизводственные услуги) живут на «Странице на оплату», а не
         # среди производственных накладных — исключаем их из этого списка.
@@ -362,6 +366,7 @@ def _build_invoice_item(
         counterparty_name=counterparty_name,
         ledger_category_id=ledger_category_id,
         source=invoice.source,
+        operational_scope=invoice.operational_scope,
         direction=invoice.direction,
         number=invoice.number,
         invoice_date=invoice.invoice_date,

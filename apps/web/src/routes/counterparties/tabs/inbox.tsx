@@ -77,6 +77,7 @@ export function InboxTab({
   onOpenCounterparty,
   kind,
   splitPay,
+  operationalScope,
 }: {
   // canOperate — вспомогательные операции (пуш в iiko). Создание и оплата разведены
   // на отдельные права (canCreate/canPay), чтобы доступ к обычным и бартерным
@@ -91,6 +92,9 @@ export function InboxTab({
   // splitPay: «Оплатить» открывает диалог сплит-оплаты с банк-подсказками + персонал-разнесением
   // (Фаза 4). Без него — простой диалог оплаты со счёта.
   splitPay?: boolean;
+  // Складской экран использует общий богатый реестр, но обязан запрашивать только
+  // товарный контур; финансовые УПД остаются в ДЗ/КЗ и сюда не попадают.
+  operationalScope?: "warehouse" | "finance" | "unknown";
 }) {
   const queryClient = useQueryClient();
   const [categoryId, setCategoryId] = useState<string>(ALL);
@@ -134,12 +138,14 @@ export function InboxTab({
       dateTo ?? "",
       supplierCsv,
       onlyNotIiko,
+      operationalScope ?? "all",
     ],
     queryFn: () =>
       getInvoices({
         status: statusFilter,
         category_id: categoryId === ALL ? undefined : categoryId,
         relationship: effectiveRelationship,
+        operational_scope: operationalScope,
         // Бартер двусторонний (займы нам + наши возвраты) — показываем обе стороны.
         direction: isBarter || relationship === "barter" ? "" : undefined,
         date_from: dateFrom ?? undefined,

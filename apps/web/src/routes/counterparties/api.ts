@@ -14,6 +14,7 @@ export type CounterpartyInvoice = {
   counterparty_name: string;
   ledger_category_id: string | null;
   source: string;
+  operational_scope: "warehouse" | "finance" | "unknown";
   direction: string;
   number: string | null;
   invoice_date: string | null;
@@ -165,6 +166,7 @@ export async function getInvoices(params?: {
   direction?: string;
   relationship?: string;
   source?: string;
+  operational_scope?: "warehouse" | "finance" | "unknown";
   // Диапазон по дате накладной (ISO YYYY-MM-DD), включительно.
   date_from?: string;
   date_to?: string;

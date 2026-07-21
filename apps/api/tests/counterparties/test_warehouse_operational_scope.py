@@ -5,6 +5,7 @@ from __future__ import annotations
 from cp_helpers import make_counterparty, make_invoice
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.services.counterparty_registry import list_invoices
 from app.services.warehouse_invoices import list_warehouse_invoices
 
 
@@ -41,3 +42,31 @@ async def test_warehouse_list_filters_by_explicit_operational_scope(
 
         assert [row["id"] for row in rows] == [str(warehouse.id)]
         assert rows[0]["operational_scope"] == "warehouse"
+
+
+async def test_shared_invoice_registry_can_be_limited_to_warehouse_scope(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The warehouse UI uses the shared rich registry and must pass this explicit filter."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Поставщик")
+        warehouse = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="100.00",
+            number="GOODS-1",
+            operational_scope="warehouse",
+        )
+        await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="200.00",
+            number="SERVICE-UPD-1",
+            operational_scope="finance",
+        )
+        await session.commit()
+
+        rows = await list_invoices(session, operational_scope="warehouse")
+
+        assert [row.id for row in rows] == [warehouse.id]
+        assert rows[0].operational_scope == "warehouse"
