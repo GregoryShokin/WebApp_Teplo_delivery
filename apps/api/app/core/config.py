@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     bank_client_timeout_seconds: float = 90
 
     sber_api_base_url: str = "https://fintech.sberbank.ru:9443/fintech/api"
-    sber_api_token_url: str = "https://sbi.sberbank.ru:9443/ic/sso/api/v2/oauth/token"
+    sber_api_token_url: str = "https://fintech.sberbank.ru:9443/ic/sso/api/v2/oauth/token"
     sber_api_client_id: str | None = None
     sber_api_ca_bundle_path: str | None = None
     sber_api_account_number: str | None = None

@@ -153,7 +153,7 @@ https://sbi.sberbank.ru:9443/ic/ufs/host/index.html#/main
 | Промышленный API URL | Официальная документация / промышленный стенд | Не секрет, фиксируется в документации | `SBER_API_BASE_URL=https://fintech.sberbank.ru:9443/fintech/api` |
 | Промышленный SSO URL | Официальная документация / промышленный стенд | Не секрет, фиксируется в документации | `SBER_API_AUTH_BASE_URL=https://sbi.sberbank.ru:9443` |
 | URL авторизации | Собирается из SSO URL и path `/ic/sso/api/v2/oauth/authorize` | Разработчик | `SBER_API_AUTHORIZE_URL` |
-| URL токенов | Собирается из SSO URL и path `/ic/sso/api/v2/oauth/token` | Разработчик | `SBER_API_TOKEN_URL` |
+| URL токенов | Промышленный Fintech URL + path `/ic/sso/api/v2/oauth/token` | Разработчик | `SBER_API_TOKEN_URL=https://fintech.sberbank.ru:9443/ic/sso/api/v2/oauth/token` |
 | Тестовые настройки | По документации: запрос в `supportdbo2@sberbank.ru` с указанием промышленного `client_id` | Ответственное лицо / разработчик по согласованию с владельцем | отдельный тестовый `.env`, не смешивать с боевым |
 | Access/refresh token | OAuth flow через `authorize` -> `token` или генерация пары в Личном кабинете Sber API | Пользователь/разработчик с доступом к ЛК или backend OAuth flow | `SBER_API_ACCESS_TOKEN`, `SBER_API_REFRESH_TOKEN` |
 | Номер счета | `GET /v1/client-info` после авторизации, либо СберБизнес/владелец | Владелец или API после consent пользователя | `SBER_API_ACCOUNT_NUMBER` |
