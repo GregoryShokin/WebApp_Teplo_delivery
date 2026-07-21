@@ -476,6 +476,15 @@ async def confirm_intake_with_review(
     if intake.invoice_id is not None and intake.status in ("linked", "closing"):
         inv = await session.get(SupplierInvoice, intake.invoice_id)
         if inv is not None:
+            if inv.counterparty_id != cp_id:
+                # Переназначение уже созданного счёта допустимо только пока он не ушёл
+                # в банк и не был оплачен. Иначе смена поставщика сломает историю
+                # платежа/зачётов и должна выполняться отдельной сверкой оператора.
+                if inv.draft_id is not None or inv.payment_status != "unpaid":
+                    raise ValueError(
+                        "Нельзя сменить контрагента у счёта, отправленного в банк или оплаченного"
+                    )
+                inv.counterparty_id = cp_id
             new_amount = _intake_amount(intake)
             if new_amount is not None:
                 inv.amount = new_amount
