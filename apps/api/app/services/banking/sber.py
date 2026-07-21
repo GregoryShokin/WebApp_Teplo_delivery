@@ -319,9 +319,10 @@ class SberClient:
     async def _request_token_refresh(
         self, *, refresh_token: str, client_secret: str
     ) -> dict[str, Any]:
-        verify: ssl.SSLContext | bool = True
-        if self.settings.sber_api_ca_bundle_path:
-            verify = ssl.create_default_context(cafile=self.settings.sber_api_ca_bundle_path)
+        cert_path = await required_credential(self.session, self.provider, "mtls_cert_path")
+        key_path = await required_credential(self.session, self.provider, "mtls_key_path")
+        verify = ssl.create_default_context(cafile=self.settings.sber_api_ca_bundle_path or None)
+        verify.load_cert_chain(certfile=cert_path, keyfile=key_path)
         async with httpx.AsyncClient(
             timeout=self.settings.bank_client_timeout_seconds, verify=verify
         ) as client:
