@@ -184,8 +184,8 @@ if [[ -f "$integrations_env_file" ]]; then
   require_integrations_value IIKO_SERVER_PASSWORD
   optional_integrations_number IIKO_SERVER_TIMEOUT_SECONDS
 
-  optional_integrations_value TBANK_API_BASE_URL
-  optional_integrations_value TBANK_PAYMENT_BASE_URL
+  require_integrations_value TBANK_API_BASE_URL
+  require_integrations_value TBANK_PAYMENT_BASE_URL
   require_integrations_value TBANK_API_ACCESS_TOKEN
   optional_integrations_value TBANK_API_ACCOUNT_NUMBER
   optional_integrations_number TBANK_API_TIMEOUT_SECONDS

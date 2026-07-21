@@ -56,3 +56,18 @@ def test_production_settings_accept_realistic_values() -> None:
     )
 
     assert settings.environment == "production"
+
+
+def test_production_settings_reject_empty_tbank_payment_url() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            _env_file=None,
+            environment="production",
+            jwt_secret_key="a" * 64,
+            auth_cookie_secure=True,
+            teplo_bank_client_mode="live",
+            tbank_webhook_token="a" * 32,
+            tbank_payment_base_url="",
+        )
+
+    assert "TBANK_PAYMENT_BASE_URL" in str(exc_info.value)

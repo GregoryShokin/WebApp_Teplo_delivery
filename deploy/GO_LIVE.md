@@ -154,6 +154,8 @@ cd deploy
 - `git pull --ff-only` обновил рабочее дерево без merge commit.
 - `git status --short` не показывает неожиданных локальных изменений.
 - `check-prod-secrets.sh` проходит.
+- Если T-Bank включён, `TBANK_API_BASE_URL` и `TBANK_PAYMENT_BASE_URL` не пусты.
+  Пустое значение останавливает деплой до перезапуска контейнеров.
 
 ### Вариант B: rsync
 

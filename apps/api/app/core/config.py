@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -141,6 +142,13 @@ class Settings(BaseSettings):
         # основная защита (IP по XFF за прокси ненадёжен), поэтому в проде он обязателен.
         if _looks_like_placeholder(self.tbank_webhook_token):
             errors.append("TBANK_WEBHOOK_TOKEN must be set in production")
+        if "tbank" in {item.strip() for item in self.bank_sync_providers.split(",")}:
+            payment_url = self.tbank_payment_base_url.strip()
+            parsed_payment_url = urlparse(payment_url)
+            if parsed_payment_url.scheme not in {"http", "https"} or not parsed_payment_url.netloc:
+                errors.append(
+                    "TBANK_PAYMENT_BASE_URL must be an absolute http(s) URL in production"
+                )
         if errors:
             raise ValueError("; ".join(errors))
         return self

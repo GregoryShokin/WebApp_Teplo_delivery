@@ -161,20 +161,26 @@ class TbankClient:
             requisites=requisites,
             payer_account=payer_account,
         )
-        async with httpx.AsyncClient(
-            base_url=self.settings.tbank_payment_base_url.rstrip("/"),
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            timeout=self.settings.tbank_api_timeout_seconds,
-        ) as client:
-            response = await client.post(
-                PAYMENT_DRAFT_PATH,
-                json=payload,
-                headers={"X-Request-Id": str(uuid.uuid4())},
-            )
+        try:
+            async with httpx.AsyncClient(
+                base_url=self.settings.tbank_payment_base_url.rstrip("/"),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                timeout=self.settings.tbank_api_timeout_seconds,
+            ) as client:
+                response = await client.post(
+                    PAYMENT_DRAFT_PATH,
+                    json=payload,
+                    headers={"X-Request-Id": str(uuid.uuid4())},
+                )
+        except httpx.HTTPError as exc:
+            raise BankFetchError(
+                self.provider,
+                "T-Bank payment API is unavailable or misconfigured",
+            ) from exc
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
