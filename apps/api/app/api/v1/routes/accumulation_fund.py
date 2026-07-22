@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.services.accumulation_fund_service import (
     decimal_string,
+    fund_account_visible_in_roster,
     fund_outstanding,
     payout_fund_accounts_for_year,
 )
@@ -485,6 +486,7 @@ async def list_fund_accounts(
     return [
         account_payload(account, employee, settings=settings, today=today)
         for account, employee in result.all()
+        if fund_account_visible_in_roster(account, employee)
     ]
 
 

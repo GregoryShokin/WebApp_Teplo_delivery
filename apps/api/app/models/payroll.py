@@ -564,6 +564,7 @@ class AccumulationFundAccount(Base):
     )
     forfeited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     forfeit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 

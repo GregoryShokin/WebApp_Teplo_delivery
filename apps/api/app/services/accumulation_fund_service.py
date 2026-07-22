@@ -35,6 +35,25 @@ def fund_outstanding(account: AccumulationFundAccount | None) -> Decimal:
     )
 
 
+def fund_account_visible_in_roster(
+    account: AccumulationFundAccount,
+    employee: Employee,
+) -> bool:
+    """Keep current staff and unfinished forfeitures in the operational roster."""
+    if account.settled_at is not None:
+        return False
+    if employee.status == "active" and employee.fire_date is None:
+        return True
+    return any(
+        decimal(amount) > 0
+        for amount in (
+            account.accumulated_amount,
+            account.paid_out_amount,
+            account.forfeited_amount,
+        )
+    )
+
+
 def forfeit_fund_account(
     session: AsyncSession,
     account: AccumulationFundAccount,
@@ -48,12 +67,14 @@ def forfeit_fund_account(
             account.status = "forfeited"
             account.forfeited_at = now
             account.forfeit_reason = comment
+            account.settled_at = None
         return Decimal("0")
 
     account.forfeited_amount = decimal(account.forfeited_amount) + outstanding
     account.status = "forfeited"
     account.forfeited_at = now
     account.forfeit_reason = comment
+    account.settled_at = None
     session.add(
         AccumulationFundTransaction(
             id=uuid.uuid4(),
@@ -128,6 +149,18 @@ async def payout_fund_accounts_for_year(
         if forfeited > 0:
             forfeited_total += forfeited
             forfeited_count += 1
+
+    unsettled_forfeited_result = await session.scalars(
+        select(AccumulationFundAccount)
+        .where(
+            AccumulationFundAccount.year == year,
+            AccumulationFundAccount.status == "forfeited",
+            AccumulationFundAccount.settled_at.is_(None),
+        )
+        .with_for_update()
+    )
+    for account in unsettled_forfeited_result.all():
+        account.settled_at = now
 
     result = await session.scalars(
         select(AccumulationFundAccount)

@@ -54,7 +54,10 @@ from app.scripts.import_staff_from_payroll_sheet import (
 )
 from app.services import deferred_audit_charge_service as deferred_charge_service
 from app.services import shift_ledger as shift_ledger_service
-from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
+from app.services.accumulation_fund_service import (
+    forfeit_active_fund_on_dismiss,
+    fund_account_visible_in_roster,
+)
 from app.services.attendance_loader import (
     build_attendance_entry,
     load_attendance_entries,
@@ -2145,8 +2148,15 @@ class FundFakeSession:
             return FundScalarResult(transactions)
         if entity is AccumulationFundAccount:
             accounts = list(self.accounts.values())
+            year = query_bound_value(query, "year")
+            if year is not None:
+                accounts = [account for account in accounts if account.year == year]
             if "status = 'active'" in sql:
                 accounts = [account for account in accounts if account.status == "active"]
+            if "status = 'forfeited'" in sql:
+                accounts = [account for account in accounts if account.status == "forfeited"]
+            if "settled_at IS NULL" in sql:
+                accounts = [account for account in accounts if account.settled_at is None]
             if "employee.status != 'active'" in sql or "employee.fire_date IS NOT NULL" in sql:
                 accounts = [
                     account
@@ -4722,6 +4732,42 @@ async def test_dismiss_forfeits_all_active_before_payout() -> None:
     assert [transaction.year for transaction in session.transactions] == [2025, 2026]
 
 
+def test_dismissed_employee_without_fund_history_is_hidden_from_roster() -> None:
+    employee = make_employee(status="inactive")
+    employee.fire_date = date(2026, 6, 12)
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("0"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("0"),
+        status="active",
+    )
+
+    assert fund_account_visible_in_roster(account, employee) is False
+
+
+def test_forfeited_employee_stays_visible_until_fund_settlement() -> None:
+    employee = make_employee(status="inactive")
+    employee.fire_date = date(2026, 6, 12)
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2026,
+        accumulated_amount=Decimal("5885"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("5885"),
+        status="forfeited",
+    )
+
+    assert fund_account_visible_in_roster(account, employee) is True
+
+    account.settled_at = datetime(2027, 1, 15, tzinfo=UTC)
+
+    assert fund_account_visible_in_roster(account, employee) is False
+
+
 def test_reinstate_resets_tenure_but_not_fund() -> None:
     employee = make_employee(
         status="inactive",
@@ -4817,7 +4863,44 @@ async def test_payout_january_15_forfeits_dismissed_employee() -> None:
     assert account.status == "forfeited"
     assert account.paid_out_amount == Decimal("0")
     assert account.forfeited_amount == Decimal("5000")
+    assert account.settled_at is not None
     assert session.transactions[0].transaction_type == "forfeit"
+
+
+async def test_payout_settles_existing_forfeited_account() -> None:
+    employee = make_employee(status="inactive")
+    employee.fire_date = date(2025, 12, 20)
+    account = AccumulationFundAccount(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        year=2025,
+        accumulated_amount=Decimal("5000"),
+        paid_out_amount=Decimal("0"),
+        forfeited_amount=Decimal("5000"),
+        status="forfeited",
+        forfeited_at=datetime(2025, 12, 20, tzinfo=UTC),
+    )
+    period = make_period(
+        start=date(2026, 1, 13),
+        end=date(2026, 1, 19),
+        payroll_date=date(2026, 1, 20),
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 1, 20, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    session = FundFakeSession(employees=[employee], accounts=[account])
+
+    paid = await payout_previous_year_fund_if_due(session, period, run)  # type: ignore[arg-type]
+
+    assert paid == Decimal("0")
+    assert account.status == "forfeited"
+    assert account.settled_at is not None
+    assert session.transactions == []
 
 
 async def test_january_payout_includes_pre_exclusion_accruals() -> None:
