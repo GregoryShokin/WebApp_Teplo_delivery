@@ -25,15 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-dz-kz — ветка `agent/dz-kz-manual-prepayments`
-- worktree: `../Teplo-agent-dz-kz`
-- compose: без локального стека; production только read-only до отдельной коррекции данных
-- трогает: логика ДЗ/КЗ поставщиков — `supplier_prepayments.py`, точки создания/синка
-  товарных и финансовых накладных, связанные тесты
-- НЕ трогать другим: автоматический и ручной зачёт `SupplierPrepayment` в `SupplierInvoice`
-- статус: реализовано; целевые тесты 50/50, полный контур контрагентов 708/710
-  (2 прежних несвязанных падения `test_webhook_payment_status`); готово к ревью
-
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)

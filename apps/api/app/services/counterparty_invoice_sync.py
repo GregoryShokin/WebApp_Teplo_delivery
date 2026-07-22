@@ -703,11 +703,10 @@ async def _ingest_documents(
             await _materialize_iiko_lines(session, created, doc, products, replace=True)
             if direction == "payable":
                 result.invoices_created += 1
-                # Правило 2 канона: закрывающий документ гасит открытую дебиторку контрагента
-                # зачётом (FIFO, целевые goods-авансы не трогает). Канал iiko раньше только
-                # ставил ярлык doc_kind='closing', но правило не запускал — ДЗ (аванс) и КЗ
-                # (приходная) висели параллельно на одну поставку. Бартер внутри — no-op
-                # (auto_settle его исключает); только при создании — пере-синк не трогает.
+                # Общий хук активирует закрывающий документ по дате. Для warehouse он НЕ
+                # выбирает предоплату автоматически: товарную поставку оператор связывает с
+                # конкретным авансом вручную. Бартер внутри — no-op; только при создании —
+                # пере-синк не трогает уже сложившиеся расчёты.
                 if created.barter_role is None:
                     from app.services.supplier_prepayments import apply_closing_document
 
