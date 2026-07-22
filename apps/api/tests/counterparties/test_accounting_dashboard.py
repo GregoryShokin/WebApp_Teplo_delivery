@@ -374,7 +374,7 @@ def test_staff_balance_finalized_tail_and_loan(
                 iiko_id=f"iiko-{uuid.uuid4()}",
                 category="category_2",
                 status="active",
-                admin_payroll_excluded=True,
+                admin_payroll_excluded=False,
                 is_senior=False,
                 is_deputy_senior=False,
             )
@@ -452,9 +452,9 @@ def test_staff_balance_finalized_tail_and_loan(
     payload = response.json()
     row = next(item for item in payload["items"] if item["employee_id"] == str(employee_id))
 
-    assert row["earned_to_date"] == 0.0  # «Не платить» не создаёт новую зарплату
+    assert row["earned_to_date"] == 0.0  # нет активной ставки — нет текущего начисления
     assert row["finalized_unpaid"] == 2000.0  # 5000 начислено − 3000 выплачено; легаси мимо
-    assert row["payable"] == 2000.0  # но уже начисленный исторический долг сохраняется
+    assert row["payable"] == 2000.0
     assert row["loans_outstanding"] == 6000.0  # заём 10000 − погашено 4000
     assert row["receivable"] == 6000.0
     assert payload["receivable_total"] >= 6000.0

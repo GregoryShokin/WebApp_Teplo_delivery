@@ -167,6 +167,72 @@ def test_on_demand_debt_replaces_current_half_month_proration(
     assert row["payable"] == 140000.0
 
 
+def test_no_pay_employee_is_absent_from_salary_balance(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """«Не платить» полностью исключает даже сотрудника с окладом и встречным долгом."""
+
+    async def seed() -> uuid.UUID:
+        today = date.today()
+        async with async_session_factory() as session:
+            employee = _employee(
+                "Павел Не платить",
+                position="Управляющий",
+                excluded=True,
+            )
+            session.add(employee)
+            await session.flush()
+            session.add_all(
+                [
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=employee.id,
+                        position="Управляющий",
+                        effective_from=date(today.year, 1, 1),
+                    ),
+                    PayrollRate(
+                        id=uuid.uuid4(),
+                        employee_id=employee.id,
+                        position_group="Управляющий",
+                        category="admin",
+                        station=None,
+                        rate_type="monthly",
+                        amount=Decimal("80000"),
+                        is_active=True,
+                        effective_from=date(today.year, 1, 1),
+                    ),
+                    SalaryAdvance(
+                        employee_id=employee.id,
+                        role="manager",
+                        kind="loan",
+                        amount=Decimal("10000"),
+                        per_installment_amount=Decimal("1000"),
+                        installments_count=10,
+                        recovered_amount=Decimal("0"),
+                        status="issued",
+                        issued_on=today,
+                    ),
+                    EmployeePayout(
+                        employee_id=employee.id,
+                        kind="salary",
+                        amount=Decimal("5000"),
+                        offset_amount=Decimal("0"),
+                        payout_date=today,
+                        status="paid",
+                    ),
+                ]
+            )
+            await session.commit()
+            return employee.id
+
+    employee_id = asyncio.run(seed())
+    response = client.get(f"{BASE}/staff-payable", headers=_admin(async_session_factory))
+    assert response.status_code == 200, response.text
+    assert str(employee_id) not in {
+        item["employee_id"] for item in response.json()["items"]
+    }
+
+
 def test_employee_receivables_are_broken_down_by_source(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

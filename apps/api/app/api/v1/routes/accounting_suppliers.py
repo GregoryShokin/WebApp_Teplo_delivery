@@ -1040,12 +1040,19 @@ async def list_staff_payable(
     До финализации ведомости встречные суммы показываются валово в обе стороны; после
     финализации recovery/offset уменьшает соответствующий долг. Депозиты и накопительный
     фонд намеренно не входят — это отдельные будущие субрегистры.
+
+    ``admin_payroll_excluded`` («Не платить») — абсолютное исключение из зарплатного
+    регистра ДЗ/КЗ: сотруднику не показываются ни текущий prorate, ни исторические хвосты,
+    ни встречные зарплатные расчёты.
     """
     as_of = date.today()
     employees = (
         await session.scalars(
             select(Employee)
-            .where(Employee.status.in_(("active", "dismissing")))
+            .where(
+                Employee.status.in_(("active", "dismissing")),
+                Employee.admin_payroll_excluded.is_(False),
+            )
             .order_by(Employee.full_name)
         )
     ).all()
