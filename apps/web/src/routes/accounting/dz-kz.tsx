@@ -211,6 +211,7 @@ type StaffPayable = {
     employee_id: string;
     full_name: string;
     position: string | null;
+    staff_group: "staff" | "courier";
     basis: string;
     earned_to_date: number;
     on_demand_accrued: number;
@@ -328,17 +329,43 @@ export function DzKzRoute() {
   });
 
   const supplierPayable = balances.data?.payable_total;
-  const staffPayable = staff.data?.total;
+  const staffPayable = staff.data
+    ? staff.data.items
+        .filter((item) => item.staff_group === "staff")
+        .reduce((sum, item) => sum + item.payable, 0)
+    : undefined;
+  const courierPayable = staff.data
+    ? staff.data.items
+        .filter((item) => item.staff_group === "courier")
+        .reduce((sum, item) => sum + item.payable, 0)
+    : undefined;
+  const peoplePayable =
+    staffPayable == null && courierPayable == null
+      ? undefined
+      : (staffPayable ?? 0) + (courierPayable ?? 0);
   const payableTotal =
-    supplierPayable == null && staffPayable == null
+    supplierPayable == null && peoplePayable == null
       ? undefined
-      : (supplierPayable ?? 0) + (staffPayable ?? 0);
+      : (supplierPayable ?? 0) + (peoplePayable ?? 0);
   const supplierReceivable = balances.data?.receivable_total;
-  const staffReceivable = staff.data?.receivable_total;
-  const receivableTotal =
-    supplierReceivable == null && staffReceivable == null
+  const staffReceivable = staff.data
+    ? staff.data.items
+        .filter((item) => item.staff_group === "staff")
+        .reduce((sum, item) => sum + item.receivable, 0)
+    : undefined;
+  const courierReceivable = staff.data
+    ? staff.data.items
+        .filter((item) => item.staff_group === "courier")
+        .reduce((sum, item) => sum + item.receivable, 0)
+    : undefined;
+  const peopleReceivable =
+    staffReceivable == null && courierReceivable == null
       ? undefined
-      : (supplierReceivable ?? 0) + (staffReceivable ?? 0);
+      : (staffReceivable ?? 0) + (courierReceivable ?? 0);
+  const receivableTotal =
+    supplierReceivable == null && peopleReceivable == null
+      ? undefined
+      : (supplierReceivable ?? 0) + (peopleReceivable ?? 0);
 
   const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
@@ -368,8 +395,8 @@ export function DzKzRoute() {
           value={receivableTotal}
           tone="sky"
           hint={
-            supplierReceivable != null && staffReceivable != null && staffReceivable > 0
-              ? `поставщики ${money.format(supplierReceivable)} · сотрудники ${money.format(staffReceivable)}`
+            supplierReceivable != null && peopleReceivable != null && peopleReceivable > 0
+              ? `поставщики ${money.format(supplierReceivable)} · сотрудники ${money.format(staffReceivable ?? 0)} · курьеры ${money.format(courierReceivable ?? 0)}`
               : "Открытые предоплаты: нам должны закрыть документами или вернуть"
           }
         />
@@ -378,8 +405,8 @@ export function DzKzRoute() {
           value={payableTotal}
           tone="rose"
           hint={
-            supplierPayable != null && staffPayable != null
-              ? `поставщики ${money.format(supplierPayable)} · сотрудники ${money.format(staffPayable)}`
+            supplierPayable != null && peoplePayable != null
+              ? `поставщики ${money.format(supplierPayable)} · сотрудники ${money.format(staffPayable ?? 0)} · курьеры ${money.format(courierPayable ?? 0)}`
               : "Накладные и акты к оплате + заработанное сотрудниками"
           }
         />
@@ -474,8 +501,38 @@ function TableStatus({ colSpan, state }: { colSpan: number; state: "loading" | "
   );
 }
 
-function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPayable>> }) {
+function StaffPayableCard({
+  query,
+  group,
+}: {
+  query: ReturnType<typeof useQuery<StaffPayable>>;
+  group: "staff" | "courier";
+}) {
   const [open, setOpen] = useState(false);
+  const isCourier = group === "courier";
+  const items = query.data?.items.filter((row) => row.staff_group === group) ?? [];
+  const totals = items.reduce(
+    (sum, row) => ({
+      payable: sum.payable + row.payable,
+      receivable: sum.receivable + row.receivable,
+      salary: sum.salary + row.salary_payable,
+      fund: sum.fund + row.fund_payable,
+      fundCurrentYear: sum.fundCurrentYear + row.fund_current_year_payable,
+      fundPriorYears: sum.fundPriorYears + row.fund_prior_years_payable,
+      productionDeposit: sum.productionDeposit + row.production_deposit_payable,
+      courierDeposit: sum.courierDeposit + row.courier_deposit_payable,
+    }),
+    {
+      payable: 0,
+      receivable: 0,
+      salary: 0,
+      fund: 0,
+      fundCurrentYear: 0,
+      fundPriorYears: 0,
+      productionDeposit: 0,
+      courierDeposit: 0,
+    },
+  );
   return (
     <div className="rounded-lg border bg-background">
       <button
@@ -484,19 +541,29 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
       >
         <div>
-          <div className="font-medium">Сотрудники — баланс расчётов</div>
+          <div className="font-medium">
+            {isCourier ? "Задолженность перед курьерами" : "Сотрудники — баланс расчётов"}
+          </div>
           <div className="text-xs text-muted-foreground">
-            Валовый баланс без взаимозачёта: зарплата, накопительный фонд и депозиты отдельно;
-            авансы, займы и переплаты — в дебиторской задолженности.
+            {isCourier
+              ? "Депозиты обычных курьеров. Старший курьер учитывается вместе с производственным и административным персоналом."
+              : "Производственный и административный персонал, старший курьер, мойщицы и уборщицы. Зарплата, фонд и депозиты показаны отдельно."}
           </div>
           {query.data ? (
             <div className="mt-1 text-xs text-muted-foreground">
-              зарплата {money.format(query.data.salary_total)} · фонд{" "}
-              {money.format(query.data.fund_total)} ({new Date(query.data.as_of).getFullYear()}: {" "}
-              {money.format(query.data.fund_current_year_total)} · прошлые годы: {" "}
-              {money.format(query.data.fund_prior_years_total)}) · депозиты производства{" "}
-              {money.format(query.data.production_deposit_total)} · депозиты курьеров{" "}
-              {money.format(query.data.courier_deposit_total)}
+              {isCourier ? (
+                <>депозиты курьеров {money.format(totals.courierDeposit)}</>
+              ) : (
+                <>
+                  зарплата {money.format(totals.salary)} · фонд {money.format(totals.fund)} (
+                  {new Date(query.data.as_of).getFullYear()}: {money.format(totals.fundCurrentYear)} ·{" "}
+                  прошлые годы: {money.format(totals.fundPriorYears)}) · депозиты производства{" "}
+                  {money.format(totals.productionDeposit)}
+                  {totals.courierDeposit > 0
+                    ? ` · депозит старшего курьера ${money.format(totals.courierDeposit)}`
+                    : null}
+                </>
+              )}
             </div>
           ) : null}
         </div>
@@ -510,11 +577,11 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
           ) : (
             <>
               <span className="text-rose-700" title="Мы должны сотрудникам">
-                {money.format(query.data?.total ?? 0)}
+                {money.format(totals.payable)}
               </span>
-              {(query.data?.receivable_total ?? 0) > 0 ? (
+              {totals.receivable > 0 ? (
                 <span className="text-sky-700" title="Сотрудники должны нам (займы, переавансы)">
-                  {money.format(query.data?.receivable_total ?? 0)}
+                  {money.format(totals.receivable)}
                 </span>
               ) : null}
             </>
@@ -529,16 +596,20 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
               <TableRow>
                 <TableHead>Сотрудник</TableHead>
                 <TableHead>Основа</TableHead>
-                <TableHead className="text-right">Зарплата</TableHead>
-                <TableHead className="text-right">Накопительный фонд</TableHead>
-                <TableHead className="text-right">Депозит производства</TableHead>
+                {!isCourier ? <TableHead className="text-right">Зарплата</TableHead> : null}
+                {!isCourier ? (
+                  <TableHead className="text-right">Накопительный фонд</TableHead>
+                ) : null}
+                {!isCourier ? (
+                  <TableHead className="text-right">Депозит производства</TableHead>
+                ) : null}
                 <TableHead className="text-right">Депозит курьера</TableHead>
                 <TableHead className="text-right">Мы должны</TableHead>
                 <TableHead className="text-right">Нам должны</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {query.data.items.map((row) => (
+              {items.map((row) => (
                 <TableRow key={row.employee_id}>
                   <TableCell>
                     <div className="font-medium">{row.full_name}</div>
@@ -547,45 +618,51 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                   <TableCell className="text-sm text-muted-foreground">
                     {STAFF_BASIS_LABEL[row.basis] ?? row.basis}
                   </TableCell>
-                  <TableCell
-                    className="text-right tabular-nums"
-                    title={
-                      row.salary_payable > 0
-                        ? [
-                            row.earned_to_date > 0
-                              ? `текущая ЗП ${money.format(row.earned_to_date)}`
-                              : null,
-                            row.on_demand_debt > 0
-                              ? `по востребованию ${money.format(row.on_demand_debt)}`
-                              : null,
-                            row.finalized_unpaid > 0
-                              ? `хвост ведомостей ${money.format(row.finalized_unpaid)}`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")
-                        : undefined
-                    }
-                  >
-                    {row.salary_payable > 0 ? money.format(row.salary_payable) : "—"}
-                  </TableCell>
-                  <TableCell
-                    className="text-right tabular-nums"
-                    title={
-                      row.fund_payable > 0
-                        ? `${new Date(query.data.as_of).getFullYear()}: ${money.format(
-                            row.fund_current_year_payable,
-                          )} · прошлые годы: ${money.format(row.fund_prior_years_payable)}`
-                        : undefined
-                    }
-                  >
-                    {row.fund_payable > 0 ? money.format(row.fund_payable) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.production_deposit_payable > 0
-                      ? money.format(row.production_deposit_payable)
-                      : "—"}
-                  </TableCell>
+                  {!isCourier ? (
+                    <TableCell
+                      className="text-right tabular-nums"
+                      title={
+                        row.salary_payable > 0
+                          ? [
+                              row.earned_to_date > 0
+                                ? `текущая ЗП ${money.format(row.earned_to_date)}`
+                                : null,
+                              row.on_demand_debt > 0
+                                ? `по востребованию ${money.format(row.on_demand_debt)}`
+                                : null,
+                              row.finalized_unpaid > 0
+                                ? `хвост ведомостей ${money.format(row.finalized_unpaid)}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : undefined
+                      }
+                    >
+                      {row.salary_payable > 0 ? money.format(row.salary_payable) : "—"}
+                    </TableCell>
+                  ) : null}
+                  {!isCourier ? (
+                    <TableCell
+                      className="text-right tabular-nums"
+                      title={
+                        row.fund_payable > 0
+                          ? `${new Date(query.data.as_of).getFullYear()}: ${money.format(
+                              row.fund_current_year_payable,
+                            )} · прошлые годы: ${money.format(row.fund_prior_years_payable)}`
+                          : undefined
+                      }
+                    >
+                      {row.fund_payable > 0 ? money.format(row.fund_payable) : "—"}
+                    </TableCell>
+                  ) : null}
+                  {!isCourier ? (
+                    <TableCell className="text-right tabular-nums">
+                      {row.production_deposit_payable > 0
+                        ? money.format(row.production_deposit_payable)
+                        : "—"}
+                    </TableCell>
+                  ) : null}
                   <TableCell className="text-right tabular-nums">
                     {row.courier_deposit_payable > 0
                       ? money.format(row.courier_deposit_payable)
@@ -650,7 +727,8 @@ function BalancesSection({
 
   return (
     <div className="flex flex-col gap-3">
-      <StaffPayableCard query={staffQuery} />
+      <StaffPayableCard query={staffQuery} group="staff" />
+      <StaffPayableCard query={staffQuery} group="courier" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
           value={search}

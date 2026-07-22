@@ -41,6 +41,7 @@ from app.models import (
 )
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import fund_outstanding
+from app.services.couriers.deposit_service import is_senior_courier
 from app.services.payroll_admin import compute_on_demand_debt, list_on_demand_employees
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.position_registry import eligible_for_personal_report
@@ -959,6 +960,7 @@ class StaffPayableRow(BaseModel):
     employee_id: uuid.UUID
     full_name: str
     position: str | None = None
+    staff_group: Literal["staff", "courier"]
     basis: str
     earned_to_date: float
     on_demand_accrued: float
@@ -1324,6 +1326,11 @@ async def list_staff_payable(
                 employee_id=employee.id,
                 full_name=employee.full_name,
                 position=employee.position,
+                staff_group=(
+                    "courier"
+                    if employee.id in courier_balance_cents and not is_senior_courier(employee)
+                    else "staff"
+                ),
                 basis=("on_demand" if employee.id in current_on_demand_ids else basis),
                 earned_to_date=_float(earned),
                 on_demand_accrued=_float(on_demand_accrued),

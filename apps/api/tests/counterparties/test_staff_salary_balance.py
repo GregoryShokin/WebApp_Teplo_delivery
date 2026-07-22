@@ -254,6 +254,24 @@ def test_staff_balance_combines_fund_and_both_deposit_ledgers_without_duplicate_
 
             session.add_all(
                 [
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=production.id,
+                        position="Повар",
+                        effective_from=date(2026, 1, 1),
+                    ),
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=courier.id,
+                        position="Курьер",
+                        effective_from=date(2026, 1, 1),
+                    ),
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=senior.id,
+                        position="Старший курьер",
+                        effective_from=date(2026, 1, 1),
+                    ),
                     DepositAccount(
                         id=uuid.uuid4(),
                         employee_id=production.id,
@@ -338,6 +356,7 @@ def test_staff_balance_combines_fund_and_both_deposit_ledgers_without_duplicate_
     rows = {item["employee_id"]: item for item in payload["items"]}
 
     production = rows[str(production_id)]
+    assert production["staff_group"] == "staff"
     assert production["salary_payable"] == 0.0  # «Не платить» действует только на зарплату.
     assert production["fund_payable"] == 10000.0
     assert production["fund_current_year_payable"] == 8000.0
@@ -347,12 +366,14 @@ def test_staff_balance_combines_fund_and_both_deposit_ledgers_without_duplicate_
     assert production["payable"] == 15000.0
 
     courier = rows[str(courier_id)]
+    assert courier["staff_group"] == "courier"
     assert courier["basis"] == "courier_deposit"
     assert courier["salary_payable"] == 0.0
     assert courier["courier_deposit_payable"] == 3000.0
     assert courier["payable"] == 3000.0
 
     senior = rows[str(senior_id)]
+    assert senior["staff_group"] == "staff"
     assert senior["salary_payable"] == 10000.0
     assert senior["courier_deposit_payable"] == 4000.0
     assert senior["payable"] == 14000.0
