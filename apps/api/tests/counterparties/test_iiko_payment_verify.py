@@ -114,6 +114,25 @@ async def test_verify_tolerates_kopeck_difference(
 
 
 @pytest.mark.asyncio
+async def test_verify_accepts_payment_split_across_rows(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Одна отправка может лежать в отчёте несколькими проводками (доли карта/наличные, дробление
+    непредставимой суммы) — подтверждаем по их сумме, а не по совпадению отдельной строки."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="49", amount="1815.00")
+        row = await _push_row(session, invoice, amount="1815.00")
+        _patch_olap(monkeypatch, [("49", Decimal("1515.00")), ("49", Decimal("300.00"))])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["verified"] == 1
+        assert row.verified_at is not None
+
+
+@pytest.mark.asyncio
 async def test_verify_waits_before_resending(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

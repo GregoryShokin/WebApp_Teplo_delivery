@@ -64,7 +64,9 @@ def fetch_invoice_payment_transactions(
         {
             "reportType": "TRANSACTIONS",
             "buildSummary": False,
-            "groupByRowFields": ["Document", "TransactionType"],
+            # Счёт в группировке обязателен: без него доли одного документа (карта + наличные)
+            # слиплись бы в одну строку и ни одна наша запись не совпала бы с ней.
+            "groupByRowFields": ["Document", "TransactionType", "Account.Name"],
             "groupByColFields": [],
             "aggregateFields": ["Sum.Outgoing"],
             "filters": {
@@ -107,10 +109,18 @@ def fetch_invoice_payment_transactions(
     return payments
 
 
-def _matches(payments: list[tuple[str, Decimal]], number: str, amount: Decimal) -> bool:
-    return any(
-        doc == number and abs(value - amount) <= AMOUNT_TOLERANCE for doc, value in payments
-    )
+def _covered(payments: list[tuple[str, Decimal]], number: str, amount: Decimal) -> bool:
+    """Платёж подтверждён, если проводок по документу набирается НЕ МЕНЬШЕ нашей суммы.
+
+    Сравнивать построчно нельзя: OLAP не отдаёт GUID документа, и одна наша отправка может лежать
+    там несколькими строками — смешанный чек идёт двумя долями (карта + наличные) на разные счета,
+    а непредставимая сумма дробится на части. Точное равенство отдельной строке в таких случаях не
+    достигается, и платёж выглядел бы потерянным (проверено на проде: накладная №4, доли 1515 и
+    300, наша запись на 1515). Перебор в другую сторону — подтвердить чужой проводкой при
+    совпадении номера — безопаснее: цена ложной потери всего лишь пропущенная сверка, а цена
+    ложной переотправки — задвоенная оплата в учёте iiko."""
+    total = sum((value for doc, value in payments if doc == number), Decimal("0"))
+    return total >= amount - AMOUNT_TOLERANCE and total > 0
 
 
 async def _clear_kassa_done_marker(session: AsyncSession, invoice_id) -> None:
@@ -162,7 +172,7 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
     for row in rows:
         invoice = await session.get(SupplierInvoice, row.invoice_id)
         number = (invoice.number or "") if invoice is not None else ""
-        if number and _matches(payments, number, row.amount):
+        if number and _covered(payments, number, row.amount):
             row.verified_at = now
             result["verified"] += 1
             continue
