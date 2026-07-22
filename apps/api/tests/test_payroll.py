@@ -2560,6 +2560,45 @@ async def test_build_shift_ledger_keeps_stale_current_day_iiko_entries(
     assert session.committed is True
 
 
+async def test_build_shift_ledger_keeps_past_entries_when_iiko_returns_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Пустая выгрузка iiko за прошедший день не сносит табель.
+
+    Пустой ответ приходит и когда явок правда не было, и когда выгрузка
+    сорвалась. Отличить их нельзя, поэтому уборку пропускаем — иначе один
+    сбойный ответ удалил бы все автозаписи дня.
+    """
+    employee = make_employee()
+    work_date = date(2026, 7, 5)
+    existing_entry = make_shift_ledger_entry(employee.id, work_date)
+
+    async def fake_snapshots(*_args, **_kwargs):
+        return []
+
+    async def fake_schedule(*_args, **_kwargs):
+        return {}
+
+    async def fake_roles(*_args, **_kwargs):
+        return {}
+
+    async def fake_existing(*_args, **_kwargs):
+        return {(existing_entry.employee_id, existing_entry.opened_at): existing_entry}
+
+    monkeypatch.setattr(shift_ledger_service, "load_iiko_attendance_snapshots", fake_snapshots)
+    monkeypatch.setattr(shift_ledger_service, "load_schedule_assignments", fake_schedule)
+    monkeypatch.setattr(shift_ledger_service, "load_available_role_assignments", fake_roles)
+    monkeypatch.setattr(shift_ledger_service, "load_existing_entries", fake_existing)
+    monkeypatch.setattr(shift_ledger_service, "ledger_today", lambda: date(2026, 7, 6))
+
+    session = ShiftLedgerFakeSession()
+    entries = await shift_ledger_service.build_ledger_for_date(session, work_date)  # type: ignore[arg-type]
+
+    assert entries == []
+    assert session.deleted == []
+    assert session.committed is True
+
+
 async def test_build_shift_ledger_prefers_schedule_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

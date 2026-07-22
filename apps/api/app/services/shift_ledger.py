@@ -121,7 +121,11 @@ async def build_ledger_for_date(
 
         entries.append(entry)
 
-    if work_date < ledger_today():
+    # Пустой снимок за прошедшую дату трогать нельзя: iiko отдаёт 200 с пустым
+    # телом и когда явок правда не было, и когда выгрузка сорвалась, — а второй
+    # случай снёс бы весь табель дня. Пропускаем уборку и ждём следующего
+    # пересчёта, когда iiko вернёт смены.
+    if work_date < ledger_today() and snapshots:
         for shift_key, entry in existing_by_shift.items():
             if shift_key in seen_shift_keys or entry.source == "manual_correction":
                 continue
