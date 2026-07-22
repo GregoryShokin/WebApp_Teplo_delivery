@@ -49,6 +49,15 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: пункт меню «Платежи», секция прав платежей, compose `agent-payments` и порт 7153
 - статус: в работе (разведка завершена, уточняю ТЗ)
 
+### agent-staff-exclusion — ветка `agent/staff-exclusion-no-pay-dz-kz`
+- worktree: `../Teplo-agent-staff-exclusion`
+- compose: изолированный тестовый PostgreSQL, без preview-портов
+- трогает: исключение сотрудников «Не платить» из зарплатного баланса ДЗ/КЗ:
+  - `apps/api/app/api/v1/routes/accounting_suppliers.py`
+  - связанные API-тесты
+- НЕ трогать другим: фильтр `GET /accounting/suppliers/staff-payable` до завершения хотфикса
+- статус: в работе, production hotfix
+
 ---
 
 ## Shared-ресурсы — кто сейчас держит
