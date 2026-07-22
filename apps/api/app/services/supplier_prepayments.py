@@ -43,6 +43,11 @@ SUPPLIER_REFUND_ARTICLE_CODE = "vozvrat_pereplaty_ot_postavschikov"
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 # Открытая кредиторка контрагента = неоплаченный остаток АКТИВНЫХ закрывающих документов.
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
+# Автоматический взаимозачёт ДЗ/КЗ разрешён только финансовому документообороту (УПД/акты
+# услуг). Товарные накладные operational_scope='warehouse' всегда связываются с авансом
+# вручную: одинаковый поставщик может привезти несколько независимых поставок, и FIFO без
+# решения оператора способен зачесть аванс не в ту накладную.
+AUTO_SETTLEMENT_OPERATIONAL_SCOPE = "finance"
 
 # Целевые авансы под конкретную поставку (kind='goods') гасятся ЯВНО — когда придёт накладная
 # именно этой поставки (settle_invoice_from_prepayment). Их НЕЛЬЗЯ авто-гасить FIFO любой
@@ -552,10 +557,12 @@ async def _settle_counterparty_closing_from_prepayments(
     *,
     actor_user_id: uuid.UUID | None = None,
 ) -> None:
-    """Правило 2 в обратном порядке: открытые закрывающие документы контрагента гасятся его
-    открытыми предоплатами (FIFO по дате документа). Используется, когда предоплата (напр. от
-    оплаты счёта) появилась ПОЗЖЕ уже висящей кредиторки. Закрывающие с doc_kind='closing' при
-    гашении зовут ``_recompute_status`` — он рекурсию в bill-чокпоинт не даёт (это не счёт)."""
+    """Правило 2 в обратном порядке для финансовых документов.
+
+    Открытые финансовые УПД/акты гасятся предоплатами FIFO, когда предоплата появилась позже
+    кредиторки. Складские накладные намеренно исключены: их можно зачесть только явным вызовом
+    ``settle_invoice_from_prepayment`` после выбора оператором конкретной поставки.
+    """
     closings = (
         await session.scalars(
             select(SupplierInvoice)
@@ -563,6 +570,7 @@ async def _settle_counterparty_closing_from_prepayments(
                 SupplierInvoice.counterparty_id == counterparty_id,
                 SupplierInvoice.direction == "payable",
                 SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
                 SupplierInvoice.activation_status == "active",
                 SupplierInvoice.barter_role.is_(None),
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
@@ -583,12 +591,13 @@ async def _settle_open_kz_from_transaction(
     limit: Decimal,
     actor_user_id: uuid.UUID | None = None,
 ) -> Decimal:
-    """Правило 1: деньги транзакции FIFO-гасят открытую кредиторку контрагента.
+    """Правило 1: деньги транзакции FIFO-гасят открытую финансовую кредиторку контрагента.
 
-    Открытая КЗ = неоплаченный остаток АКТИВНЫХ закрывающих документов (doc_kind='closing',
-    activation_status='active'), FIFO по дате документа (будущие 'pending' УПД не трогаем —
-    их ещё нет как обязательства). Аллокация source_kind='cash' денег НЕ двигает (они ушли
-    транзакцией). Возвращает погашенную сумму (≤ limit)."""
+    Открытая КЗ здесь = неоплаченный остаток АКТИВНЫХ финансовых УПД/актов. Складские накладные
+    не подбираются автоматически даже при совпадении поставщика: платёж без ссылки на конкретную
+    товарную поставку становится ДЗ, а ручной зачёт выполняется отдельно. Аллокация
+    source_kind='cash' денег НЕ двигает (они ушли транзакцией). Возвращает погашенную сумму
+    (≤ limit)."""
     pool = _money(limit)
     settled = Decimal("0.00")
     if pool <= 0:
@@ -600,6 +609,7 @@ async def _settle_open_kz_from_transaction(
                 SupplierInvoice.counterparty_id == transaction.counterparty_id,
                 SupplierInvoice.direction == "payable",
                 SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
                 SupplierInvoice.activation_status == "active",
                 SupplierInvoice.barter_role.is_(None),
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
@@ -669,7 +679,15 @@ async def _unwind_transaction_kz_settlements(
         ).all()
     )
     if not include_bills:
-        closing_ids = {inv.id for inv in invoices if inv.doc_kind == "closing"}
+        # Пересборка правила 1 владеет только своими финансовыми FIFO-зачётами. Складскую
+        # cash-аллокацию мог явно сделать оператор; отличительного флага у старых записей нет,
+        # поэтому трогать её при повторной классификации банковской проводки нельзя.
+        closing_ids = {
+            inv.id
+            for inv in invoices
+            if inv.doc_kind == "closing"
+            and inv.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE
+        }
         allocs = [a for a in allocs if a.invoice_id in closing_ids]
         invoices = [inv for inv in invoices if inv.id in closing_ids]
         if not allocs:
@@ -774,11 +792,10 @@ async def ensure_prepayment_from_bank_transaction(
 ) -> SupplierPrepayment | None:
     """Синхронизировать распределение банк-платежа с состоянием проводки (правило 1 канона).
 
-    Канон (владелец 17.07): «контрагентов НЕ классифицируем, правила универсальны». ЛЮБОЙ
-    свободный банк-платёж поставщику (не через счёт-черновик — те короткозамыкаются на pre-booked
-    ДО этого хука) сначала ГАСИТ его открытую кредиторку (неоплаченные АКТИВНЫЕ закрывающие
-    документы) FIFO, а ИЗЛИШЕК становится дебиторкой (предоплатой). Так закрывается контур и для
-    ПОСТОПЛАТНЫХ поставщиков (Стартер/«Назад в будущее»): УПД создаёт КЗ → платёж её гасит.
+    Свободный банк-платёж поставщику (не через счёт-черновик — те короткозамыкаются на pre-booked
+    ДО этого хука) сначала ГАСИТ открытую кредиторку только по финансовым УПД/актам, а ИЗЛИШЕК
+    становится дебиторкой (предоплатой). Товарные накладные платежом без явной ссылки не
+    закрываются: весь свободный остаток становится ДЗ до ручного зачёта конкретной поставки.
     Ограничение — только поставщики (есть payable-профиль); у сотрудников/налоговой/банков его нет,
     их платежи сюда не попадают. Флаг ``bank_payments_create_prepayment`` контур больше НЕ гейтит.
     Новую ДДС-проводку НЕ создаём — деньги уже учтены транзакцией выписки; движем только зачёты КЗ
@@ -1044,15 +1061,17 @@ async def auto_settle_invoice_from_open_prepayments(
     *,
     actor_user_id: uuid.UUID | None = None,
 ) -> Decimal:
-    """Авто-гашение счёта из ОТКРЫТЫХ предоплат контрагента (FIFO), без коммита.
+    """Авто-гашение финансового закрывающего документа из предоплат (FIFO), без коммита.
 
     Кейс владельца (2026-07-16): поставщик оплачивается авансом, закрывающий УПД из ЭДО
     не должен попадать «к оплате» — он гасит дебиторку. Деньги не двигаются (ушли при
     создании предоплаты). Возвращает суммарно погашенное (0 — если предоплат нет).
 
-    Целевые товарные авансы (kind='goods') НЕ трогаем: они привязаны к конкретной поставке
-    и гасятся явно (settle_invoice_from_prepayment), иначе посторонняя накладная списала бы
-    аванс под недопоставленный заказ."""
+    Складские накладные независимо от вида предоплаты НЕ трогаем: конкретную поставку оператор
+    связывает с авансом явно через ``settle_invoice_from_prepayment``. У финансовых документов
+    дополнительно не трогаем целевые товарные авансы (kind='goods')."""
+    if invoice.operational_scope != AUTO_SETTLEMENT_OPERATIONAL_SCOPE:
+        return Decimal("0.00")
     if invoice.draft_id is not None:
         # Документ отправлен в банк — реальный платёж в пути. Гасить его зачётом из предоплаты
         # сейчас = закрыть дважды: зачётом И платежом, который вот-вот исполнится (поставщику
@@ -1107,8 +1126,8 @@ async def apply_closing_document(
       • дата документа В БУДУЩЕМ (правило 4: ЭкоЦентр шлёт УПД июля датой 31.07) →
         activation_status='pending', обязательство пока НЕ создаём, дебиторку не гасим;
         ночная джоба ``activate_due_closing_invoices`` проведёт его в свою дату;
-      • иначе активируем сразу: FIFO-гасим открытую дебиторку контрагента (правило 2),
-        остаток становится кредиторкой.
+      • иначе активируем сразу; финансовый УПД/акт FIFO-гасит открытую дебиторку, а товарная
+        накладная остаётся отдельной КЗ до ручного зачёта конкретного аванса.
     Денег не двигает (они ушли при создании предоплаты). Возвращает погашенное авансами. Без
     коммита."""
     if invoice.doc_kind != "closing":

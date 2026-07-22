@@ -69,8 +69,13 @@ async def test_closing_amount_shrink_returns_prepayment_excess(
         assert pre is not None and pre.amount == Decimal("1000.00")
 
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="closing",
-            number="УПД-усушка", invoice_date=date(2026, 7, 12),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="УПД-усушка",
+            invoice_date=date(2026, 7, 12),
+            operational_scope="finance",
         )
         await apply_closing_document(session, upd, as_of=date(2026, 7, 13))
         await session.commit()

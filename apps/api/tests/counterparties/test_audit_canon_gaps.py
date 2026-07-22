@@ -88,15 +88,23 @@ async def test_void_bill_receivable_follows_money_not_status(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Void-счёт", inn="6155991001")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="300.00", doc_kind="bill",
-            number="СЧ-void", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="300.00",
+            doc_kind="bill",
+            number="СЧ-void",
+            invoice_date=date(2026, 7, 1),
         )
         wallet = await make_wallet(session, name="Касса-void", wallet_type="cash_safe")
         article = await make_expense_article(session)
         await session.commit()
         await pay_invoice_from_wallet(
-            session, invoice_id=bill.id, wallet_id=wallet.id, amount=Decimal("300.00"),
-            operation_date=date(2026, 7, 2), article_id=article.id,
+            session,
+            invoice_id=bill.id,
+            wallet_id=wallet.id,
+            amount=Decimal("300.00"),
+            operation_date=date(2026, 7, 2),
+            article_id=article.id,
         )
         assert await _receivable(session, cp.id) == Decimal("300.00")
 
@@ -140,12 +148,21 @@ async def test_pending_future_closing_not_matchable_by_bank(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Будущий-УПД", inn="6155991002")
         await make_invoice(
-            session, counterparty_id=cp.id, amount="900.00", doc_kind="closing",
-            activation_status="pending", number="УПД-31.07", invoice_date=date(2026, 7, 31),
+            session,
+            counterparty_id=cp.id,
+            amount="900.00",
+            doc_kind="closing",
+            activation_status="pending",
+            number="УПД-31.07",
+            invoice_date=date(2026, 7, 31),
         )
         await make_bank_operation(
-            session, amount="900.00", direction="out", inn="6155991002",
-            provider="tbank", operation_date=date(2026, 7, 10),
+            session,
+            amount="900.00",
+            direction="out",
+            inn="6155991002",
+            provider="tbank",
+            operation_date=date(2026, 7, 10),
         )
         await session.commit()
 
@@ -163,11 +180,10 @@ async def test_pending_future_closing_not_matchable_by_bank(
 # счёта постфактум. Покрыто test_audit_double_receivable.
 
 
-async def test_iiko_sync_closing_settles_open_receivable(
+async def test_iiko_sync_closing_keeps_receivable_for_manual_settlement(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Правило 2 для канала iiko (реальная дверь — ``ingest_iiko_payables``): товарник оплачен
-    авансом, приходная приходит синком → закрывающий гасит дебиторку, а не висит параллельно."""
+    """iiko-приходная не выбирает аванс автоматически: товарный зачёт решает оператор."""
     from cp_helpers import cloud_invoice_docs, suppliers_xml
 
     from app.services.counterparty_invoice_sync import ingest_iiko_payables
@@ -177,9 +193,7 @@ async def test_iiko_sync_closing_settles_open_receivable(
         cp = await make_counterparty(
             session, name="Товарник-iiko", inn="6155991004", iiko_guid=guid
         )
-        tx = await _paid_bank_tx(
-            session, counterparty_id=cp.id, amount="1000.00", inn="6155991004"
-        )
+        tx = await _paid_bank_tx(session, counterparty_id=cp.id, amount="1000.00", inn="6155991004")
         pre = await ensure_prepayment_from_bank_transaction(session, tx)
         await session.commit()
         assert pre is not None and pre.amount == Decimal("1000.00")
@@ -206,17 +220,18 @@ async def test_iiko_sync_closing_settles_open_receivable(
 
         dz = await _receivable(session, cp.id)
         kz = await _payable(session, cp.id)
-        assert (dz, kz) == (Decimal("0.00"), Decimal("0.00")), (
-            f"ДЗ {dz} и КЗ {kz} висят параллельно на одну поставку — правило 2 не отработало "
-            "для канала iiko (apply_closing_document не вызван в синке)"
+        invoice = await session.scalar(
+            select(SupplierInvoice).where(SupplierInvoice.external_id == "doc-audit-rule2")
         )
+        assert invoice is not None and invoice.operational_scope == "warehouse"
+        assert invoice.payment_status == "unpaid"
+        assert (dz, kz) == (Decimal("1000.00"), Decimal("1000.00"))
 
 
-async def test_warehouse_invoice_settles_open_receivable(
+async def test_warehouse_invoice_keeps_receivable_for_manual_settlement(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Правило 2 для канала «склад» (реальная дверь — ``create_warehouse_invoice``): аванс
-    1000, складская приходная на 750 → зачёт, ДЗ 250, КЗ 0."""
+    """Складская приходная и аванс остаются раздельно до ручного зачёта конкретной поставки."""
     from cp_helpers import make_expense_article
 
     from app.models import IikoProduct
@@ -234,9 +249,7 @@ async def test_warehouse_invoice_settles_open_receivable(
         )
         session.add(product)
         await session.flush()
-        tx = await _paid_bank_tx(
-            session, counterparty_id=cp.id, amount="1000.00", inn="6155991005"
-        )
+        tx = await _paid_bank_tx(session, counterparty_id=cp.id, amount="1000.00", inn="6155991005")
         pre = await ensure_prepayment_from_bank_transaction(session, tx)
         await session.commit()
         assert pre is not None and pre.amount == Decimal("1000.00")
@@ -257,6 +270,4 @@ async def test_warehouse_invoice_settles_open_receivable(
 
         dz = await _receivable(session, cp.id)
         kz = await _payable(session, cp.id)
-        assert (dz, kz) == (Decimal("250.00"), Decimal("0.00")), (
-            f"ДЗ {dz} / КЗ {kz}: складская приходная 750 обязана зачесть аванс 1000 → ДЗ 250, КЗ 0"
-        )
+        assert (dz, kz) == (Decimal("1000.00"), Decimal("750.00"))

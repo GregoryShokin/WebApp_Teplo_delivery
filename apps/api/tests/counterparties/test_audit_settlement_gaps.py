@@ -48,6 +48,7 @@ async def test_closing_frozen_in_bank_draft_not_settled_from_prepayment(
             doc_kind="closing",
             number="УПД-в-банке",
             invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
         upd.draft_id = draft.id  # отправлен в банк, платёж в пути

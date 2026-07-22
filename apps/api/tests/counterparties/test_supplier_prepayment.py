@@ -50,9 +50,7 @@ async def test_settle_rejects_non_open_prepayment(
         await session.commit()
 
         with pytest.raises(CounterpartyPaymentError, match="недоступна"):
-            await settle_invoice_from_prepayment(
-                session, invoice_id=inv.id, prepayment_id=pre.id
-            )
+            await settle_invoice_from_prepayment(session, invoice_id=inv.id, prepayment_id=pre.id)
 
 
 async def test_settle_open_prepayment_allocates(
@@ -115,7 +113,12 @@ async def test_opening_prepayment_no_cashflow_and_upd_settling_keeps_running_bal
 
         # Закрывающий УПД на 33 000 гасит дебиторку (FIFO: сначала начальный остаток).
         invoice = await make_invoice(
-            session, counterparty_id=cp.id, amount="33000.00", number="УПД-333", source="sbis"
+            session,
+            counterparty_id=cp.id,
+            amount="33000.00",
+            number="УПД-333",
+            source="sbis",
+            operational_scope="finance",
         )
         settled = await auto_settle_invoice_from_open_prepayments(session, invoice)
         await session.commit()
@@ -131,6 +134,44 @@ async def test_opening_prepayment_no_cashflow_and_upd_settling_keeps_running_bal
         assert top_up.status == "partially_settled"
         await session.refresh(invoice)
         assert invoice.payment_status == "paid"  # УПД закрыт дебиторкой, к оплате не попал
+
+
+async def test_warehouse_invoice_requires_manual_prepayment_settlement(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Товарная накладная не должна сама выбирать аванс даже при полном совпадении суммы."""
+    from app.services.supplier_prepayments import auto_settle_invoice_from_open_prepayments
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Товарник-ручной-зачёт")
+        pre = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="subscription",
+            amount=Decimal("600.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+        )
+        session.add(pre)
+        invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            operational_scope="warehouse",
+        )
+        await session.flush()
+
+        settled = await auto_settle_invoice_from_open_prepayments(session, invoice)
+
+        assert settled == Decimal("0.00")
+        assert invoice.payment_status == "unpaid"
+        assert pre.amount_settled == Decimal("0.00")
+
+        result = await settle_invoice_from_prepayment(
+            session, invoice_id=invoice.id, prepayment_id=pre.id
+        )
+        assert result.payment_status == "paid"
+        await session.refresh(pre)
+        assert pre.amount_settled == Decimal("600.00")
 
 
 async def test_bank_debit_creates_prepayment_for_any_supplier(

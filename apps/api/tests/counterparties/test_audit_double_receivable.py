@@ -186,6 +186,7 @@ async def test_classify_then_match_then_upd_leaves_no_phantom(
             doc_kind="closing",
             number="УПД-998",
             invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
         )
         await apply_closing_document(session, upd, as_of=date(2026, 7, 21))
         await session.commit()
@@ -306,6 +307,7 @@ async def test_one_payment_cannot_fund_more_than_itself(
             doc_kind="closing",
             number="УПД-995",
             invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         bill = await make_invoice(
             session,
@@ -356,8 +358,12 @@ async def test_bill_touched_after_upd_does_not_resurrect_receivable(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Повторное-касание", inn="6155990006")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-994", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-994",
+            invoice_date=date(2026, 7, 1),
         )
         await session.commit()
         operation, tx = await _classified_payment(
@@ -366,12 +372,20 @@ async def test_bill_touched_after_upd_does_not_resurrect_receivable(
         await ensure_prepayment_from_bank_transaction(session, tx)
         await session.commit()
         await confirm_invoice_match(
-            session, invoice_id=bill.id, bank_operation_id=operation.id,
-            enrich=False, actor_user_id=None,
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
         )
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="closing",
-            number="УПД-994", invoice_date=date(2026, 7, 20),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="УПД-994",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
         )
         await apply_closing_document(session, upd, as_of=date(2026, 7, 21))
         await session.commit()

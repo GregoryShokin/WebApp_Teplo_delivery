@@ -1,9 +1,9 @@
 """Канон учёта ДЗ/КЗ поставщиков (владелец 17.07.2026): четыре правила.
 
-1. Платёж контрагенту сначала FIFO гасит открытую кредиторку (закрывающие документы),
-   излишек становится дебиторкой (предоплатой).
-2. УПД/акт (закрывающий документ) — факт выполненных работ: гасит открытую дебиторку зачётом,
-   остаток встаёт в кредиторку.
+1. Свободный платёж контрагенту FIFO гасит только финансовую кредиторку (УПД/акты),
+   излишек становится дебиторкой (предоплатой). Товарную поставку он сам не выбирает.
+2. Финансовый УПД/акт гасит открытую дебиторку автоматически. Товарная накладная встаёт в
+   кредиторку отдельно и связывается с авансом только вручную.
 3. Счёт (bill) — НЕ долг: очередь оплат, в баланс ДЗ/КЗ не входит; дебиторку не гасит.
 4. Закрывающий документ действует ДАТОЙ ДОКУМЕНТА: будущий УПД ждёт своей даты (pending), в
    свою дату активируется джобой (гасит дебиторку / встаёт в кредиторку).
@@ -100,10 +100,18 @@ async def test_rule1_payment_settles_open_kz_fifo_then_prepayment(
         await _enable_bank_prepayment(session, cp.id)
         # Две открытые закрывающие накладные (КЗ 300+200=500), FIFO по дате.
         inv1 = await make_invoice(
-            session, counterparty_id=cp.id, amount="300.00", invoice_date=date(2026, 6, 1)
+            session,
+            counterparty_id=cp.id,
+            amount="300.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         inv2 = await make_invoice(
-            session, counterparty_id=cp.id, amount="200.00", invoice_date=date(2026, 6, 20)
+            session,
+            counterparty_id=cp.id,
+            amount="200.00",
+            invoice_date=date(2026, 6, 20),
+            operational_scope="finance",
         )
         wallet = await make_wallet(session, name="Банк-1", wallet_type="bank")
         tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="800.00")
@@ -125,7 +133,11 @@ async def test_rule1_payment_fully_absorbed_by_kz_no_prepayment(
         cp = await make_counterparty(session, name="Правило1-Б", inn="6155010102")
         await _enable_bank_prepayment(session, cp.id)
         inv = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", invoice_date=date(2026, 6, 1)
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         wallet = await make_wallet(session, name="Банк-2", wallet_type="bank")
         tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="600.00")
@@ -139,6 +151,65 @@ async def test_rule1_payment_fully_absorbed_by_kz_no_prepayment(
         assert await session.scalar(select(func.count()).select_from(SupplierPrepayment)) == 0
 
 
+async def test_rule1_unassigned_payment_does_not_settle_warehouse_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж без ссылки на поставку создаёт ДЗ и не выбирает товарную накладную сам."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-товарник", inn="6155010199")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="warehouse",
+        )
+        wallet = await make_wallet(session, name="Банк-товарник", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="600.00")
+
+        prepayment = await ensure_prepayment_from_bank_transaction(session, tx)
+
+        assert prepayment is not None and prepayment.amount == Decimal("600.00")
+        assert invoice.payment_status == "unpaid"
+        allocations = await session.scalar(
+            select(func.count())
+            .select_from(InvoicePaymentAllocation)
+            .where(InvoicePaymentAllocation.invoice_id == invoice.id)
+        )
+        assert allocations == 0
+
+
+async def test_rule1_recheck_preserves_manual_warehouse_cash_allocation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повторная классификация банка не должна снимать ручную оплату товарной накладной."""
+    from app.services.counterparty_matching import allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Ручная оплата товарника", inn="6155010198")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="warehouse",
+        )
+        wallet = await make_wallet(session, name="Банк-ручной-товарник", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="600.00")
+
+        await allocate_cash_to_invoice(
+            session,
+            invoice_id=invoice.id,
+            amount=Decimal("600.00"),
+            cashflow_transaction_id=tx.id,
+        )
+        prepayment = await ensure_prepayment_from_bank_transaction(session, tx)
+
+        assert prepayment is None
+        assert (await session.get(SupplierInvoice, invoice.id)).payment_status == "paid"
+        assert await _remaining(session, invoice.id) == Decimal("0.00")
+
+
 async def test_rule1_reclassify_unwinds_kz_settlement(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -150,7 +221,11 @@ async def test_rule1_reclassify_unwinds_kz_settlement(
         cp = await make_counterparty(session, name="Правило1-реклас", inn="6155010104")
         await _enable_bank_prepayment(session, cp.id)
         inv = await make_invoice(
-            session, counterparty_id=cp.id, amount="500.00", invoice_date=date(2026, 6, 1)
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         wallet = await make_wallet(session, name="Банк-реклас", wallet_type="bank")
         tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="800.00")
@@ -184,7 +259,11 @@ async def test_rule1_frozen_settlement_does_not_double_receivable(
         cp = await make_counterparty(session, name="Правило1-заморозка", inn="6155010105")
         await _enable_bank_prepayment(session, cp.id)
         inv = await make_invoice(
-            session, counterparty_id=cp.id, amount="600.00", invoice_date=date(2026, 6, 1)
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         wallet = await make_wallet(session, name="Банк-заморозка", wallet_type="bank")
         tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="1000.00")
@@ -215,7 +294,11 @@ async def test_rule1_frozen_kz_blocks_reclassify_cleanup(
         cp = await make_counterparty(session, name="Правило1-гард", inn="6155010106")
         await _enable_bank_prepayment(session, cp.id)
         inv = await make_invoice(
-            session, counterparty_id=cp.id, amount="600.00", invoice_date=date(2026, 6, 1)
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            invoice_date=date(2026, 6, 1),
+            operational_scope="finance",
         )
         wallet = await make_wallet(session, name="Банк-гард", wallet_type="bank")
         tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="1000.00")
@@ -238,7 +321,10 @@ async def test_rule1_bill_is_not_settled_only_closing(
         await _enable_bank_prepayment(session, cp.id)
         # Счёт (bill) — не долг: платёж его НЕ гасит, целиком уходит в предоплату.
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
             invoice_date=date(2026, 6, 1),
         )
         wallet = await make_wallet(session, name="Банк-3", wallet_type="bank")
@@ -270,8 +356,12 @@ async def test_rule2_closing_document_settles_open_prepayment(
         await session.flush()
         # Закрывающий документ (УПД) 600 — зачитывается из предоплаты, остаток КЗ = 0.
         closing = await make_invoice(
-            session, counterparty_id=cp.id, amount="600.00", doc_kind="closing",
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            doc_kind="closing",
             invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         settled = await apply_closing_document(session, closing, as_of=date(2026, 7, 2))
 
@@ -288,13 +378,19 @@ async def test_rule2_bill_does_not_settle_prepayment(
         cp = await make_counterparty(session, name="Правило2-bill", inn="6155010202")
         session.add(
             SupplierPrepayment(
-                counterparty_id=cp.id, kind="subscription", amount=Decimal("1000.00"),
-                amount_settled=Decimal("0.00"), status="open",
+                counterparty_id=cp.id,
+                kind="subscription",
+                amount=Decimal("1000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
             )
         )
         await session.flush()
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="600.00", doc_kind="bill",
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            doc_kind="bill",
             invoice_date=date(2026, 7, 1),
         )
         settled = await apply_closing_document(session, bill, as_of=date(2026, 7, 2))
@@ -316,12 +412,18 @@ def test_rule3_bill_excluded_from_kz_closing_counts(
         async with async_session_factory() as session:
             a = await make_counterparty(session, name="Канон-Closing", inn="6155010301")
             await make_invoice(
-                session, counterparty_id=a.id, amount="500.00", doc_kind="closing",
+                session,
+                counterparty_id=a.id,
+                amount="500.00",
+                doc_kind="closing",
                 invoice_date=date(2026, 6, 10),
             )
             b = await make_counterparty(session, name="Канон-Bill", inn="6155010302")
             await make_invoice(
-                session, counterparty_id=b.id, amount="800.00", doc_kind="bill",
+                session,
+                counterparty_id=b.id,
+                amount="800.00",
+                doc_kind="bill",
                 invoice_date=date(2026, 6, 12),
             )
             await session.commit()
@@ -343,12 +445,20 @@ def test_rule3_bill_absent_from_documents_register(
         async with async_session_factory() as session:
             cp = await make_counterparty(session, name="Реестр-док", inn="6155010303")
             closing = await make_invoice(
-                session, counterparty_id=cp.id, amount="500.00", doc_kind="closing",
-                number="УПД-1", invoice_date=date(2026, 6, 10),
+                session,
+                counterparty_id=cp.id,
+                amount="500.00",
+                doc_kind="closing",
+                number="УПД-1",
+                invoice_date=date(2026, 6, 10),
             )
             bill = await make_invoice(
-                session, counterparty_id=cp.id, amount="800.00", doc_kind="bill",
-                number="СЧ-1", invoice_date=date(2026, 6, 12),
+                session,
+                counterparty_id=cp.id,
+                amount="800.00",
+                doc_kind="bill",
+                number="СЧ-1",
+                invoice_date=date(2026, 6, 12),
             )
             await session.commit()
             return closing.id, bill.id
@@ -372,15 +482,22 @@ async def test_rule4_future_closing_is_pending_then_activated(
         cp = await make_counterparty(session, name="ЭкоЦентр-тест", inn="6155010401")
         session.add(
             SupplierPrepayment(
-                counterparty_id=cp.id, kind="subscription", amount=Decimal("1000.00"),
-                amount_settled=Decimal("0.00"), status="open",
+                counterparty_id=cp.id,
+                kind="subscription",
+                amount=Decimal("1000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
             )
         )
         await session.flush()
         # УПД датирован БУДУЩИМ (31.07) — приходит заранее.
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="600.00", doc_kind="closing",
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            doc_kind="closing",
             invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
         )
         settled = await apply_closing_document(session, upd, as_of=today)
 
@@ -414,8 +531,12 @@ def test_rule4_pending_closing_excluded_from_kz_dashboard(
         async with async_session_factory() as session:
             cp = await make_counterparty(session, name="Будущий-УПД", inn="6155010402")
             await make_invoice(
-                session, counterparty_id=cp.id, amount="600.00", doc_kind="closing",
-                activation_status="pending", invoice_date=date(2026, 7, 31),
+                session,
+                counterparty_id=cp.id,
+                amount="600.00",
+                doc_kind="closing",
+                activation_status="pending",
+                invoice_date=date(2026, 7, 31),
             )
             await session.commit()
             return cp.id
@@ -475,8 +596,11 @@ def test_flip_email_upd_materializes_as_closing(
             cp = await make_counterparty(session, name="Поставщик-УПД", inn="6155010501")
             session.add(
                 SupplierPrepayment(
-                    counterparty_id=cp.id, kind="subscription", amount=Decimal("1000.00"),
-                    amount_settled=Decimal("0.00"), status="open",
+                    counterparty_id=cp.id,
+                    kind="subscription",
+                    amount=Decimal("1000.00"),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
                 )
             )
             await session.commit()
@@ -522,8 +646,11 @@ def test_flip_email_invoice_materializes_as_bill(
             cp = await make_counterparty(session, name="Поставщик-Счёт", inn="6155010502")
             session.add(
                 SupplierPrepayment(
-                    counterparty_id=cp.id, kind="subscription", amount=Decimal("1000.00"),
-                    amount_settled=Decimal("0.00"), status="open",
+                    counterparty_id=cp.id,
+                    kind="subscription",
+                    amount=Decimal("1000.00"),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
                 )
             )
             await session.commit()
@@ -613,8 +740,12 @@ async def test_bill_payment_via_draft_creates_prepayment_not_debt(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Директ-счёт", inn="6155010601")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-Директ", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-Директ",
+            invoice_date=date(2026, 7, 1),
         )
         draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
         await _seed_payer_bank_wallet(session, draft)
@@ -650,8 +781,12 @@ async def test_bill_payment_then_later_upd_nets_to_zero(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Директ-цикл", inn="6155010602")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-цикл", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-цикл",
+            invoice_date=date(2026, 7, 1),
         )
         draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
         await _seed_payer_bank_wallet(session, draft)
@@ -667,8 +802,13 @@ async def test_bill_payment_then_later_upd_nets_to_zero(
 
         # Закрывающий УПД на ту же сумму приходит позже — гасит ДЗ, фантомной КЗ не образует.
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="closing",
-            number="УПД-цикл", invoice_date=date(2026, 7, 20),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="УПД-цикл",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
         )
         settled = await apply_closing_document(session, upd, as_of=date(2026, 7, 21))
 
@@ -689,16 +829,24 @@ async def test_bill_payment_from_wallet_creates_prepayment(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Кошелёк-счёт", inn="6155010603")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="500.00", doc_kind="bill",
-            number="СЧ-кошелёк", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="bill",
+            number="СЧ-кошелёк",
+            invoice_date=date(2026, 7, 1),
         )
         wallet = await make_wallet(session, name="Касса-счёт", wallet_type="cash_safe")
         article = await make_expense_article(session)
         await session.commit()
 
         await pay_invoice_from_wallet(
-            session, invoice_id=bill.id, wallet_id=wallet.id, amount=Decimal("500.00"),
-            operation_date=date(2026, 7, 2), article_id=article.id,
+            session,
+            invoice_id=bill.id,
+            wallet_id=wallet.id,
+            amount=Decimal("500.00"),
+            operation_date=date(2026, 7, 2),
+            article_id=article.id,
         )
 
         assert (await session.get(SupplierInvoice, bill.id)).payment_status == "paid"
@@ -723,8 +871,12 @@ async def test_bill_settled_via_reconcile_matcher_creates_prepayment(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Автоматч-счёт", inn="6155010604")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-автоматч", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-автоматч",
+            invoice_date=date(2026, 7, 1),
         )
         draft = await make_draft(session, counterparty_id=cp.id, amount="1000.00")
         bill.draft_id = draft.id
@@ -755,8 +907,12 @@ async def test_bill_settled_via_allocate_cash_creates_prepayment(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Кэш-аллок-счёт", inn="6155010605")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="400.00", doc_kind="bill",
-            number="СЧ-кэшаллок", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="400.00",
+            doc_kind="bill",
+            number="СЧ-кэшаллок",
+            invoice_date=date(2026, 7, 1),
         )
         await session.commit()
 
@@ -783,8 +939,13 @@ async def test_reverse_order_upd_before_payment_nets_via_chokepoint(
         cp = await make_counterparty(session, name="Обратный-порядок", inn="6155010606")
         # 1) Закрывающий УПД приходит первым — открытых предоплат нет → висит КЗ=1000.
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="closing",
-            number="УПД-обр", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="УПД-обр",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         settled_now = await apply_closing_document(session, upd, as_of=date(2026, 7, 2))
         assert settled_now == Decimal("0.00")
@@ -792,8 +953,12 @@ async def test_reverse_order_upd_before_payment_nets_via_chokepoint(
 
         # 2) Затем оплачивается счёт того же контрагента → чокпоинт заводит ДЗ и сразу неттит КЗ.
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-обр", invoice_date=date(2026, 7, 3),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-обр",
+            invoice_date=date(2026, 7, 3),
         )
         await session.commit()
         await allocate_cash_to_invoice(session, invoice_id=bill.id, amount=Decimal("1000.00"))
@@ -808,6 +973,47 @@ async def test_reverse_order_upd_before_payment_nets_via_chokepoint(
         assert pre.amount_settled == Decimal("1000.00")  # ДЗ полностью зачтена в КЗ УПД
 
 
+async def test_paid_bill_does_not_net_existing_warehouse_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Даже в обратном порядке ДЗ по счёту не выбирает товарную поставку автоматически."""
+    from app.services.counterparty_matching import allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Обратный-порядок-товарник", inn="6155010699")
+        warehouse_invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="Приход-обр",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="warehouse",
+        )
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-товарник",
+            invoice_date=date(2026, 7, 3),
+        )
+        await session.commit()
+
+        await allocate_cash_to_invoice(session, invoice_id=bill.id, amount=Decimal("1000.00"))
+
+        assert (
+            await session.get(SupplierInvoice, warehouse_invoice.id)
+        ).payment_status == "unpaid"
+        prepayment = (
+            await session.scalars(
+                select(SupplierPrepayment).where(SupplierPrepayment.counterparty_id == cp.id)
+            )
+        ).one()
+        assert prepayment.amount_settled == Decimal("0.00")
+        assert prepayment.status == "open"
+
+
 def test_prepaid_bill_visible_in_dz_tile_not_recognition_queue(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -820,8 +1026,12 @@ def test_prepaid_bill_visible_in_dz_tile_not_recognition_queue(
         async with async_session_factory() as session:
             cp = await make_counterparty(session, name="Видимость-ДЗ", inn="6155010607")
             bill = await make_invoice(
-                session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-                number="СЧ-вид", invoice_date=date(2026, 7, 1),
+                session,
+                counterparty_id=cp.id,
+                amount="1000.00",
+                doc_kind="bill",
+                number="СЧ-вид",
+                invoice_date=date(2026, 7, 1),
             )
             await session.commit()
             await allocate_cash_to_invoice(session, invoice_id=bill.id, amount=Decimal("1000.00"))
@@ -855,13 +1065,22 @@ async def test_bill_payment_reduction_unwinds_closing_settlement(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Откат-оплаты", inn="6155010608")
         upd = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="closing",
-            number="УПД-откат", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="closing",
+            number="УПД-откат",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         await apply_closing_document(session, upd, as_of=date(2026, 7, 2))
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-откат", invoice_date=date(2026, 7, 3),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-откат",
+            invoice_date=date(2026, 7, 3),
         )
         await session.commit()
         # Оплатили счёт → ДЗ зачла открытый УПД (обратный порядок).
@@ -909,13 +1128,22 @@ async def test_bill_reduction_with_frozen_closing_no_check_violation(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Заморозка-усадка", inn="6155010610")
         closing = await make_invoice(
-            session, counterparty_id=cp.id, amount="1500.00", doc_kind="closing",
-            number="УПД-фриз", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="1500.00",
+            doc_kind="closing",
+            number="УПД-фриз",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         await apply_closing_document(session, closing, as_of=date(2026, 7, 2))
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            number="СЧ-фриз", invoice_date=date(2026, 7, 3),
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            number="СЧ-фриз",
+            invoice_date=date(2026, 7, 3),
         )
         await session.commit()
         # Оплата счёта 1000 → ДЗ зачла 1000 из УПД (остаток УПД 500).
@@ -963,12 +1191,20 @@ async def test_barter_netting_excludes_bill(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Бартер-счёт", inn="6155010609")
         bill = await make_invoice(
-            session, counterparty_id=cp.id, amount="1000.00", doc_kind="bill",
-            direction="payable", number="СЧ-бартер",
+            session,
+            counterparty_id=cp.id,
+            amount="1000.00",
+            doc_kind="bill",
+            direction="payable",
+            number="СЧ-бартер",
         )
         closing = await make_invoice(
-            session, counterparty_id=cp.id, amount="500.00", doc_kind="closing",
-            direction="payable", number="УПД-бартер",
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="closing",
+            direction="payable",
+            number="УПД-бартер",
         )
         await session.flush()
 
@@ -990,8 +1226,12 @@ async def test_closing_via_draft_still_settles_as_debt_no_prepayment(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Склад-закрыв", inn="6155010605")
         closing = await make_invoice(
-            session, counterparty_id=cp.id, amount="700.00", doc_kind="closing",
-            number="Прих-1", invoice_date=date(2026, 7, 1),
+            session,
+            counterparty_id=cp.id,
+            amount="700.00",
+            doc_kind="closing",
+            number="Прих-1",
+            invoice_date=date(2026, 7, 1),
         )
         draft = await make_draft(session, counterparty_id=cp.id, amount="700.00")
         await _seed_payer_bank_wallet(session, draft)
