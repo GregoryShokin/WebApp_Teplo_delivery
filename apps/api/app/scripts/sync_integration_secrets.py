@@ -18,6 +18,15 @@ IIKO_ENV_KEYS = (
     "IIKO_SERVER_LOGIN",
     "IIKO_SERVER_PASSWORD",
 )
+# Cloud-приложение (api-ru.iiko.services) — на нём ВЕСЬ контур накладных: create/update/
+# post/unpost/cancel, add_payment и Cloud-синк. Пустые значения роняют пуш в KeyError
+# («auth: 'IIKO_CLOUD_APP_ID'» в карточке накладной) — держим их в проверке, чтобы
+# деплой падал сразу, а не через первую же накладную.
+IIKO_CLOUD_ENV_KEYS = (
+    "IIKO_CLOUD_APP_ID",
+    "IIKO_CLOUD_API_LOGIN",
+    "IIKO_CLOUD_CLIENT_SECRET",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +45,7 @@ class ActiveCredential:
 @dataclass(frozen=True)
 class CheckStatus:
     iiko_state: str
+    iiko_cloud_state: str
     tbank_env_state: str
     tbank_db_state: str
 
@@ -44,6 +54,7 @@ class CheckStatus:
         return (
             0
             if self.iiko_state == "set"
+            and self.iiko_cloud_state == "set"
             and self.tbank_env_state == "set"
             and self.tbank_db_state == "set"
             else 1
@@ -81,6 +92,10 @@ def _is_present(name: str) -> bool:
 
 def _iiko_is_configured() -> bool:
     return all(_is_present(key) for key in IIKO_ENV_KEYS)
+
+
+def _iiko_cloud_is_configured() -> bool:
+    return all(_is_present(key) for key in IIKO_CLOUD_ENV_KEYS)
 
 
 async def _active_credential_values(session: AsyncSession) -> dict[tuple[str, str], str]:
@@ -237,12 +252,14 @@ async def _check_status() -> CheckStatus:
         active = await _active_credential_values(session)
 
     iiko_state = "set" if _iiko_is_configured() else "missing"
+    iiko_cloud_state = "set" if _iiko_cloud_is_configured() else "missing"
     env_state = "set" if _env(TBANK_BEARER_TOKEN.env_name) else "missing"
     db_state = (
         "set" if active.get((TBANK_BEARER_TOKEN.provider, TBANK_BEARER_TOKEN.kind)) else "missing"
     )
     return CheckStatus(
         iiko_state=iiko_state,
+        iiko_cloud_state=iiko_cloud_state,
         tbank_env_state=env_state,
         tbank_db_state=db_state,
     )
@@ -251,6 +268,7 @@ async def _check_status() -> CheckStatus:
 async def check() -> int:
     status = await _check_status()
     print(f"iiko_env={status.iiko_state}")
+    print(f"iiko_cloud_env={status.iiko_cloud_state}")
     print(f"tbank_bearer_token=env:{status.tbank_env_state} db:{status.tbank_db_state}")
     # SBER выводим, только когда настроен ПОЛНОСТЬЮ (все 3 кредала): частичная настройка
     # бесполезна (mTLS нужен весь), а канал раскатывается «тихо» до готовности.
@@ -266,6 +284,7 @@ async def check() -> int:
 
 async def sync() -> int:
     print(f"iiko_env={'set' if _iiko_is_configured() else 'missing'}")
+    print(f"iiko_cloud_env={'set' if _iiko_cloud_is_configured() else 'missing'}")
     print(f"tbank_bearer_token={await _sync_tbank_bearer_token()}")
     # SBER синкаем/печатаем только при полной настройке (см. check()).
     if _sber_is_configured():

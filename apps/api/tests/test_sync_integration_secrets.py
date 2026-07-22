@@ -9,6 +9,7 @@ from app.scripts import sync_integration_secrets
 
 SECRET_ENV_KEYS = (
     *sync_integration_secrets.IIKO_ENV_KEYS,
+    *sync_integration_secrets.IIKO_CLOUD_ENV_KEYS,
     sync_integration_secrets.TBANK_BEARER_TOKEN.env_name,
     sync_integration_secrets.TBANK_ACCOUNT_NUMBER_ENV,
     *(spec.env_name for spec in sync_integration_secrets.SBER_CREDENTIALS),
@@ -33,6 +34,13 @@ def _set_iiko_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IIKO_SERVER_BASE_URL", "https://iiko.example.test")
     monkeypatch.setenv("IIKO_SERVER_LOGIN", "iiko-login")
     monkeypatch.setenv("IIKO_SERVER_PASSWORD", "iiko-password")
+    _set_iiko_cloud_env(monkeypatch)
+
+
+def _set_iiko_cloud_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IIKO_CLOUD_APP_ID", "cloud-app-id")
+    monkeypatch.setenv("IIKO_CLOUD_API_LOGIN", "cloud-api-login")
+    monkeypatch.setenv("IIKO_CLOUD_CLIENT_SECRET", "cloud-client-secret")
 
 
 async def _load_credentials(
@@ -55,6 +63,9 @@ def _assert_no_secret_values(output: str) -> None:
         "https://iiko.example.test",
         "iiko-login",
         "iiko-password",
+        "cloud-app-id",
+        "cloud-api-login",
+        "cloud-client-secret",
         "first-token",
         "second-token",
         "unused-sber-token",
@@ -81,6 +92,7 @@ async def test_check_missing_all_required_env_fails_without_secret_values(
     assert code == 1
     assert output.splitlines() == [
         "iiko_env=missing",
+        "iiko_cloud_env=missing",
         "tbank_bearer_token=env:missing db:missing",
     ]
     _assert_no_secret_values(output)
@@ -102,9 +114,37 @@ async def test_check_iiko_set_and_tbank_env_missing_fails(
     assert code == 1
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=env:missing db:missing",
     ]
     assert "sber" not in output.casefold()
+    _assert_no_secret_values(output)
+
+
+@pytest.mark.asyncio
+async def test_check_iiko_cloud_env_missing_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Cloud-кред нет, всё остальное на месте → деплой обязан упасть здесь, а не на
+    первой накладной с «auth: 'IIKO_CLOUD_APP_ID'»."""
+
+    _use_test_session_factory(monkeypatch, async_session_factory)
+    _set_iiko_env(monkeypatch)
+    for key in sync_integration_secrets.IIKO_CLOUD_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("TBANK_API_ACCESS_TOKEN", "first-token")
+
+    code = await sync_integration_secrets.check()
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert output.splitlines() == [
+        "iiko_env=set",
+        "iiko_cloud_env=missing",
+        "tbank_bearer_token=env:set db:missing",
+    ]
     _assert_no_secret_values(output)
 
 
@@ -124,6 +164,7 @@ async def test_check_tbank_env_set_and_db_missing_fails(
     assert code == 1
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=env:set db:missing",
     ]
     _assert_no_secret_values(output)
@@ -147,6 +188,7 @@ async def test_sync_tbank_env_creates_bearer_token_and_does_not_store_iiko_env(
     assert code == 0
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=created",
     ]
     assert [(row.provider, row.credential_kind, row.is_active) for row in rows] == [
@@ -177,6 +219,7 @@ async def test_sync_same_tbank_token_is_unchanged_without_duplicate_active(
     active_rows = [row for row in rows if row.is_active]
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=unchanged",
     ]
     assert len(rows) == 1
@@ -207,6 +250,7 @@ async def test_sync_new_tbank_token_deactivates_old_active_token(
     inactive_values = [row.value_encrypted for row in rows if not row.is_active]
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=updated",
     ]
     assert active_values == ["second-token"]
@@ -233,6 +277,7 @@ async def test_sber_missing_does_not_break_minimal_check(
     assert code == 0
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=env:set db:set",
     ]
     assert "sber" not in output.casefold()
@@ -272,6 +317,7 @@ async def test_sync_sber_oauth_pair_and_mtls_credentials(
     assert active_sber["access_token"].metadata_json == {"account_number": "40702810900000000001"}
     assert output.splitlines() == [
         "iiko_env=set",
+        "iiko_cloud_env=set",
         "tbank_bearer_token=created",
         "sber_access_token=created",
         "sber_refresh_token=created",

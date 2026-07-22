@@ -184,6 +184,13 @@ if [[ -f "$integrations_env_file" ]]; then
   require_integrations_value IIKO_SERVER_PASSWORD
   optional_integrations_number IIKO_SERVER_TIMEOUT_SECONDS
 
+  # Cloud app — every invoice push/update/payment goes through it; without these the
+  # invoice card shows "auth: 'IIKO_CLOUD_APP_ID'".
+  require_integrations_value IIKO_CLOUD_APP_ID
+  require_integrations_value IIKO_CLOUD_API_LOGIN
+  require_integrations_value IIKO_CLOUD_CLIENT_SECRET
+  optional_integrations_value IIKO_WEBHOOK_TOKEN
+
   require_integrations_value TBANK_API_BASE_URL
   require_integrations_value TBANK_PAYMENT_BASE_URL
   require_integrations_value TBANK_API_ACCESS_TOKEN

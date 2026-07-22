@@ -21,7 +21,8 @@ history, audit log или список процессов.
 - Таблица `source_credential` - активный T-Bank credential
   `tbank/bearer_token`, синхронизированный из `TBANK_API_ACCESS_TOKEN`.
 - IIKO credentials не сохраняются в БД. IIKO-клиент читает `IIKO_SERVER_*` из
-  env и сам получает токен по логину и паролю.
+  env и сам получает токен по логину и паролю; Cloud-контур накладных (пуш,
+  `add_payment`, Cloud-синк) читает оттуда же `IIKO_CLOUD_*`.
 - Внешний password manager - источник правды для значений, которые нужно знать
   людям: пароль админа, JWT recovery-процедуры, банковский bearer token.
 
@@ -49,6 +50,10 @@ IIKO_SERVER_BASE_URL=
 IIKO_SERVER_LOGIN=
 IIKO_SERVER_PASSWORD=
 IIKO_SERVER_TIMEOUT_SECONDS=90
+
+IIKO_CLOUD_APP_ID=
+IIKO_CLOUD_API_LOGIN=
+IIKO_CLOUD_CLIENT_SECRET=
 
 TBANK_API_BASE_URL=https://business.tbank.ru/openapi
 TBANK_PAYMENT_BASE_URL=https://secured-openapi.tbank.ru
