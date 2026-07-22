@@ -25,6 +25,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-procurement-ordering — ветка `agent/procurement-ordering-procurement-ordering`
+- worktree: `../Teplo-agent-procurement-ordering`
+- compose: не используется (read-only iikoServer API)
+- трогает: `integrations/iiko/procurement/` — таблица политик поставщиков, расчёт заказа и результаты в `research/processed/iiko/procurement/`
+- НЕ трогать другим: новые файлы контура закупки до завершения расчёта
+- статус: в работе
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
