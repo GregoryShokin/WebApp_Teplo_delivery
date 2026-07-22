@@ -86,7 +86,8 @@ async def build_ledger_for_date(
             else await load_available_role_assignments(session, work_date, employee_ids)
         )
 
-    existing_by_shift = await load_existing_entries(session, work_date, employee_ids)
+    existing_by_shift = await load_existing_entries(session, work_date)
+    seen_shift_keys = {(snapshot.employee_id, snapshot.opened_at) for snapshot in snapshots}
     entries: list[ShiftLedgerEntry] = []
 
     for snapshot in sorted(snapshots, key=lambda item: (item.opened_at, str(item.employee_id))):
@@ -119,6 +120,12 @@ async def build_ledger_for_date(
             entry.is_resolved = bool(entry.payroll_role and entry.category)
 
         entries.append(entry)
+
+    if work_date < ledger_today():
+        for shift_key, entry in existing_by_shift.items():
+            if shift_key in seen_shift_keys or entry.source == "manual_correction":
+                continue
+            await session.delete(entry)
 
     await session.flush()
     await session.commit()
@@ -400,15 +407,15 @@ async def load_iiko_attendance_snapshots(
 async def load_existing_entries(
     session: AsyncSession,
     work_date: date,
-    employee_ids: set[uuid.UUID],
+    employee_ids: set[uuid.UUID] | None = None,
 ) -> dict[tuple[uuid.UUID, datetime], ShiftLedgerEntry]:
-    if not employee_ids:
+    if employee_ids is not None and not employee_ids:
         return {}
+    statement = select(ShiftLedgerEntry).where(ShiftLedgerEntry.work_date == work_date)
+    if employee_ids is not None:
+        statement = statement.where(ShiftLedgerEntry.employee_id.in_(employee_ids))
     result = await session.scalars(
-        select(ShiftLedgerEntry).where(
-            ShiftLedgerEntry.work_date == work_date,
-            ShiftLedgerEntry.employee_id.in_(employee_ids),
-        )
+        statement
     )
     return {(entry.employee_id, entry.opened_at): entry for entry in result.all()}
 

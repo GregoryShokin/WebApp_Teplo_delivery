@@ -1432,10 +1432,15 @@ async def _compute_penalties(
         period_end=period_end,
     )
     penalty_work_date = effective_penalty_work_date(audit)
-    payout_period_start, payout_period_end, _payout = payroll_period_for_date(penalty_work_date)
+    _payout_period_start, payout_period_end, _payout = payroll_period_for_date(penalty_work_date)
+    # Окно матчинга ручных «Штраф по ревизии» уволенных: от начала периода
+    # ревизии (period_start = ap_start) ДО конца её выплатного периода (pp_end)
+    # включительно. Ловит и штраф, поставленный в ту же выплату, и штраф в
+    # финалке уволенного на выплату РАНЬШЕ — его дата списания лежит внутри
+    # периода ревизии, до начала выплатного периода.
     prepaid_charges = await _load_prepaid_revision_charges(
         session,
-        period_start=payout_period_start,
+        period_start=period_start,
         period_end=payout_period_end,
     )
     computation = build_penalty_computation(

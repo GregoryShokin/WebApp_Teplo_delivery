@@ -489,6 +489,160 @@ def test_build_penalty_computation_prepaid_default_none_keeps_previous_behavior(
 
 
 @pytest.mark.asyncio
+async def test_compute_penalties_matches_prepaid_window_audit_start_to_payout_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Окно матчинга ручных изъятий = [начало периода ревизии .. конец выплаты].
+
+    Ловит штраф, поставленный уволенному в финалку на выплату РАНЬШЕ (его дата
+    внутри периода ревизии, до начала выплатного периода) — прежнее окно
+    [начало выплаты .. конец выплаты] его пропускало.
+    """
+    business_date = date(2026, 6, 15)  # понедельник-ревизия
+    audit = SimpleNamespace(
+        id=uuid.uuid4(),
+        business_date=business_date,
+        previous_audit_date=date(2026, 6, 8),
+        penalty_work_date_override=None,
+        items=[],
+        employee_exclusions=[],
+        item_exclusions=[],
+    )
+    captured: dict[str, date] = {}
+
+    async def fake_load_audit(_session: Any, _audit_id: uuid.UUID) -> SimpleNamespace:
+        return audit
+
+    async def fake_settings(_session: Any) -> dict[str, Decimal]:
+        return {}
+
+    async def fake_load_period_employees(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return []
+
+    async def fake_load_prepaid(
+        _session: Any, *, period_start: date, period_end: date
+    ) -> list[dict]:
+        captured["period_start"] = period_start
+        captured["period_end"] = period_end
+        return []
+
+    monkeypatch.setattr(inventory_audit_service, "_load_audit_or_404", fake_load_audit)
+    monkeypatch.setattr(inventory_audit_service, "_inventory_settings", fake_settings)
+    monkeypatch.setattr(
+        inventory_audit_service, "_load_period_employees", fake_load_period_employees
+    )
+    monkeypatch.setattr(
+        inventory_audit_service, "_load_prepaid_revision_charges", fake_load_prepaid
+    )
+
+    class _FlushSession:
+        async def flush(self) -> None: ...
+
+        async def commit(self) -> None: ...
+
+    await inventory_audit_service._compute_penalties(
+        _FlushSession(),  # type: ignore[arg-type]
+        audit.id,
+        commit=False,
+    )
+
+    ap_start, _ap_end = inventory_audit_service.audit_period(audit)
+    pp_start, pp_end, _payout = inventory_audit_service.payroll_period_for_date(
+        inventory_audit_service.effective_penalty_work_date(audit)
+    )
+    assert ap_start < pp_start  # окно реально шире прежнего [выплата..выплата]
+    assert captured["period_start"] == ap_start
+    assert captured["period_end"] == pp_end
+
+
+@pytest.mark.asyncio
+async def test_load_prepaid_revision_charges_excludes_auto_comment_in_manual_category(
+    async_session_factory: Any,
+) -> None:
+    """Авто-штраф ревизии (comment с префиксом) не считается ручным изъятием,
+    даже если попал в ручную категорию audit_penalty."""
+    async with async_session_factory() as session:
+        employee_row = Employee(
+            id=uuid.uuid4(),
+            full_name="Auto Comment Cook",
+            iiko_id=f"iiko-{uuid.uuid4()}",
+            category="category_2",
+            status="inactive",
+            fire_date=date(2026, 6, 15),
+            is_senior=False,
+            is_deputy_senior=False,
+            pin_hash="hashed-pin",
+            pin_set_at=datetime(2026, 5, 1, tzinfo=UTC),
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        session.add(employee_row)
+        session.add(
+            EmployeePositionAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee_row.id,
+                position="Повар",
+                effective_from=date(2026, 1, 1),
+                effective_to=None,
+                comment="test",
+            )
+        )
+        manual_category = await session.scalar(
+            select(PayrollAdjustmentCategory).where(
+                PayrollAdjustmentCategory.code
+                == inventory_audit_service.MANUAL_INVENTORY_ADJUSTMENT_CATEGORY_CODE
+            )
+        )
+        if manual_category is None:
+            manual_category = PayrollAdjustmentCategory(
+                id=uuid.uuid4(),
+                type="penalty",
+                code=inventory_audit_service.MANUAL_INVENTORY_ADJUSTMENT_CATEGORY_CODE,
+                display_name="Штраф по ревизии",
+                is_active=True,
+                sort_order=45,
+            )
+            session.add(manual_category)
+            await session.flush()
+        session.add_all(
+            [
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 12),
+                    type="penalty",
+                    category_id=manual_category.id,
+                    amount=Decimal("500.00"),
+                    comment="Ручной выкуп ревизии",
+                ),
+                PayrollAdjustment(
+                    id=uuid.uuid4(),
+                    employee_id=employee_row.id,
+                    work_date=date(2026, 6, 12),
+                    type="penalty",
+                    category_id=manual_category.id,
+                    amount=Decimal("700.00"),
+                    comment=(
+                        f"{inventory_audit_service.INVENTORY_ADJUSTMENT_COMMENT_PREFIX}"
+                        " 2026-06-10"
+                    ),
+                ),
+            ]
+        )
+        await session.flush()
+
+        rows = await inventory_audit_service._load_prepaid_revision_charges(
+            session,
+            period_start=date(2026, 6, 9),
+            period_end=date(2026, 6, 22),
+        )
+
+    assert [(row["amount"], row["comment"]) for row in rows] == [
+        (Decimal("500.00"), "Ручной выкуп ревизии")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_load_prepaid_revision_charges_uses_manual_revision_category(
     async_session_factory: Any,
 ) -> None:

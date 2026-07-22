@@ -1770,10 +1770,14 @@ class ShiftLedgerFakeSession:
         self.entry = entry
         self.role_assignments = role_assignments or []
         self.added: list[Any] = []
+        self.deleted: list[Any] = []
         self.committed = False
 
     def add(self, item: Any) -> None:
         self.added.append(item)
+
+    async def delete(self, item: Any) -> None:
+        self.deleted.append(item)
 
     async def flush(self) -> None:
         return None
@@ -2450,6 +2454,109 @@ async def test_build_shift_ledger_creates_entries_from_iiko_attendance(
     assert isinstance(session.added[0], ShiftLedgerEntry)
     assert entries[0].employee_id == employee.id
     assert entries[0].opened_at == datetime(2026, 5, 28, 8, 0, tzinfo=UTC)
+    assert session.committed is True
+
+
+async def test_build_shift_ledger_removes_stale_past_iiko_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee()
+    stale_employee = make_employee()
+    work_date = date(2026, 7, 5)
+    current_entry = make_shift_ledger_entry(
+        employee.id,
+        work_date,
+        payroll_role="pizza",
+        category="intern",
+        is_resolved=True,
+    )
+    stale_entry = make_shift_ledger_entry(
+        stale_employee.id,
+        work_date,
+        payroll_role="sushi",
+        category="freelancer",
+        is_resolved=True,
+    )
+    stale_entry.source = "fallback_primary"
+    stale_entry.opened_at = datetime(2026, 7, 5, 8, 1, tzinfo=UTC)
+
+    async def fake_snapshots(*_args, **_kwargs):
+        return [
+            AttendanceSnapshot(
+                employee_id=employee.id,
+                opened_at=current_entry.opened_at,
+                closed_at=datetime(2026, 7, 5, 17, 0, tzinfo=UTC),
+            )
+        ]
+
+    async def fake_schedule(*_args, **_kwargs):
+        return {}
+
+    async def fake_roles(*_args, **_kwargs):
+        return {employee.id: [LedgerAssignment("pizza", "intern")]}
+
+    async def fake_existing(*_args, **_kwargs):
+        return {
+            (current_entry.employee_id, current_entry.opened_at): current_entry,
+            (stale_entry.employee_id, stale_entry.opened_at): stale_entry,
+        }
+
+    monkeypatch.setattr(shift_ledger_service, "load_iiko_attendance_snapshots", fake_snapshots)
+    monkeypatch.setattr(shift_ledger_service, "load_schedule_assignments", fake_schedule)
+    monkeypatch.setattr(shift_ledger_service, "load_available_role_assignments", fake_roles)
+    monkeypatch.setattr(shift_ledger_service, "load_existing_entries", fake_existing)
+    monkeypatch.setattr(shift_ledger_service, "ledger_today", lambda: date(2026, 7, 6))
+
+    session = ShiftLedgerFakeSession()
+    entries = await shift_ledger_service.build_ledger_for_date(session, work_date)  # type: ignore[arg-type]
+
+    assert entries == [current_entry]
+    assert current_entry.closed_at == datetime(2026, 7, 5, 17, 0, tzinfo=UTC)
+    assert session.deleted == [stale_entry]
+    assert session.committed is True
+
+
+async def test_build_shift_ledger_keeps_stale_current_day_iiko_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    employee = make_employee()
+    stale_employee = make_employee()
+    work_date = date(2026, 7, 6)
+    current_entry = make_shift_ledger_entry(employee.id, work_date)
+    stale_entry = make_shift_ledger_entry(stale_employee.id, work_date)
+    stale_entry.opened_at = datetime(2026, 7, 6, 8, 1, tzinfo=UTC)
+
+    async def fake_snapshots(*_args, **_kwargs):
+        return [
+            AttendanceSnapshot(
+                employee_id=employee.id,
+                opened_at=current_entry.opened_at,
+                closed_at=datetime(2026, 7, 6, 17, 0, tzinfo=UTC),
+            )
+        ]
+
+    async def fake_schedule(*_args, **_kwargs):
+        return {}
+
+    async def fake_roles(*_args, **_kwargs):
+        return {employee.id: [LedgerAssignment("pizza", "intern")]}
+
+    async def fake_existing(*_args, **_kwargs):
+        return {
+            (current_entry.employee_id, current_entry.opened_at): current_entry,
+            (stale_entry.employee_id, stale_entry.opened_at): stale_entry,
+        }
+
+    monkeypatch.setattr(shift_ledger_service, "load_iiko_attendance_snapshots", fake_snapshots)
+    monkeypatch.setattr(shift_ledger_service, "load_schedule_assignments", fake_schedule)
+    monkeypatch.setattr(shift_ledger_service, "load_available_role_assignments", fake_roles)
+    monkeypatch.setattr(shift_ledger_service, "load_existing_entries", fake_existing)
+    monkeypatch.setattr(shift_ledger_service, "ledger_today", lambda: work_date)
+
+    session = ShiftLedgerFakeSession()
+    await shift_ledger_service.build_ledger_for_date(session, work_date)  # type: ignore[arg-type]
+
+    assert session.deleted == []
     assert session.committed is True
 
 
