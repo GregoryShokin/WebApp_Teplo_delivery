@@ -374,10 +374,15 @@ async def test_sync_keeps_rotated_sber_oauth_values_in_database(
         if row.provider == "sber" and row.is_active
     }
 
-    assert output.splitlines()[2:5] == [
+    assert output.splitlines() == [
+        "iiko_env=set",
+        "iiko_cloud_env=set",
+        "tbank_bearer_token=unchanged",
         "sber_access_token=managed",
         "sber_refresh_token=managed",
         "sber_client_secret=managed",
+        "sber_mtls_cert_path=unchanged",
+        "sber_mtls_key_path=unchanged",
     ]
     assert active["access_token"] == "rotated-access-token"
     assert active["refresh_token"] == "rotated-refresh-token"
