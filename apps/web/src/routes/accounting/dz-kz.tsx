@@ -200,6 +200,13 @@ type StaffPayable = {
   as_of: string;
   total: number;
   receivable_total: number;
+  salary_total: number;
+  fund_total: number;
+  fund_current_year_total: number;
+  fund_prior_years_total: number;
+  production_deposit_total: number;
+  courier_deposit_total: number;
+  deposit_total: number;
   items: {
     employee_id: string;
     full_name: string;
@@ -214,6 +221,13 @@ type StaffPayable = {
     finalized_unpaid: number;
     loans_outstanding: number;
     salary_payouts_outstanding: number;
+    salary_payable: number;
+    fund_payable: number;
+    fund_current_year_payable: number;
+    fund_prior_years_payable: number;
+    production_deposit_payable: number;
+    courier_deposit_payable: number;
+    deposit_payable: number;
     payable: number;
     receivable: number;
   }[];
@@ -223,6 +237,8 @@ const STAFF_BASIS_LABEL: Record<string, string> = {
   okladnik: "оклад",
   on_demand: "по востребованию",
   dishwasher: "смены",
+  courier_deposit: "курьерский депозит",
+  none: "прочие расчёты",
   production: "выработка",
 };
 
@@ -470,9 +486,19 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
         <div>
           <div className="font-medium">Сотрудники — баланс расчётов</div>
           <div className="text-xs text-muted-foreground">
-            Вся зарплатная задолженность в обе стороны. Депозиты и накопительный фонд здесь не
-            учитываются — для них будут отдельные регистры.
+            Валовый баланс без взаимозачёта: зарплата, накопительный фонд и депозиты отдельно;
+            авансы, займы и переплаты — в дебиторской задолженности.
           </div>
+          {query.data ? (
+            <div className="mt-1 text-xs text-muted-foreground">
+              зарплата {money.format(query.data.salary_total)} · фонд{" "}
+              {money.format(query.data.fund_total)} ({new Date(query.data.as_of).getFullYear()}: {" "}
+              {money.format(query.data.fund_current_year_total)} · прошлые годы: {" "}
+              {money.format(query.data.fund_prior_years_total)}) · депозиты производства{" "}
+              {money.format(query.data.production_deposit_total)} · депозиты курьеров{" "}
+              {money.format(query.data.courier_deposit_total)}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-3 text-lg font-semibold tabular-nums">
           {query.isLoading ? (
@@ -503,11 +529,10 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
               <TableRow>
                 <TableHead>Сотрудник</TableHead>
                 <TableHead>Основа</TableHead>
-                <TableHead className="text-right">Текущая ЗП</TableHead>
-                <TableHead className="text-right">По востребованию</TableHead>
-                <TableHead className="text-right">Хвост ведомостей</TableHead>
-                <TableHead className="text-right">Авансы</TableHead>
-                <TableHead className="text-right">Займы / выплаты</TableHead>
+                <TableHead className="text-right">Зарплата</TableHead>
+                <TableHead className="text-right">Накопительный фонд</TableHead>
+                <TableHead className="text-right">Депозит производства</TableHead>
+                <TableHead className="text-right">Депозит курьера</TableHead>
                 <TableHead className="text-right">Мы должны</TableHead>
                 <TableHead className="text-right">Нам должны</TableHead>
               </TableRow>
@@ -522,37 +547,48 @@ function StaffPayableCard({ query }: { query: ReturnType<typeof useQuery<StaffPa
                   <TableCell className="text-sm text-muted-foreground">
                     {STAFF_BASIS_LABEL[row.basis] ?? row.basis}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.earned_to_date > 0 ? money.format(row.earned_to_date) : "—"}
+                  <TableCell
+                    className="text-right tabular-nums"
+                    title={
+                      row.salary_payable > 0
+                        ? [
+                            row.earned_to_date > 0
+                              ? `текущая ЗП ${money.format(row.earned_to_date)}`
+                              : null,
+                            row.on_demand_debt > 0
+                              ? `по востребованию ${money.format(row.on_demand_debt)}`
+                              : null,
+                            row.finalized_unpaid > 0
+                              ? `хвост ведомостей ${money.format(row.finalized_unpaid)}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : undefined
+                    }
+                  >
+                    {row.salary_payable > 0 ? money.format(row.salary_payable) : "—"}
                   </TableCell>
                   <TableCell
                     className="text-right tabular-nums"
                     title={
-                      row.on_demand_accrued > 0 || row.on_demand_paid > 0
-                        ? `начислено ${money.format(row.on_demand_accrued)} · выплачено/включено ${money.format(row.on_demand_paid)}`
+                      row.fund_payable > 0
+                        ? `${new Date(query.data.as_of).getFullYear()}: ${money.format(
+                            row.fund_current_year_payable,
+                          )} · прошлые годы: ${money.format(row.fund_prior_years_payable)}`
                         : undefined
                     }
                   >
-                    {row.on_demand_debt !== 0 ? money.format(row.on_demand_debt) : "—"}
+                    {row.fund_payable > 0 ? money.format(row.fund_payable) : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {row.finalized_unpaid > 0 ? money.format(row.finalized_unpaid) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.advances_outstanding > 0
-                      ? money.format(row.advances_outstanding)
+                    {row.production_deposit_payable > 0
+                      ? money.format(row.production_deposit_payable)
                       : "—"}
                   </TableCell>
-                  <TableCell
-                    className="text-right tabular-nums"
-                    title={
-                      row.loans_outstanding > 0 || row.salary_payouts_outstanding > 0
-                        ? `займы ${money.format(row.loans_outstanding)} · выплаты вне ведомости ${money.format(row.salary_payouts_outstanding)}`
-                        : undefined
-                    }
-                  >
-                    {row.loans_outstanding + row.salary_payouts_outstanding > 0
-                      ? money.format(row.loans_outstanding + row.salary_payouts_outstanding)
+                  <TableCell className="text-right tabular-nums">
+                    {row.courier_deposit_payable > 0
+                      ? money.format(row.courier_deposit_payable)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right font-semibold tabular-nums text-rose-700">

@@ -15,11 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
+    AccumulationFundAccount,
     BarterReturnLine,
     CashflowTransaction,
     Counterparty,
     CounterpartyPaymentDraft,
+    CourierDepositAccount,
+    CourierDepositTransaction,
+    CourierDepositTransactionType,
     DdsArticle,
+    DepositAccount,
     Employee,
     EmployeePayout,
     InvoiceLineItem,
@@ -35,8 +40,10 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as periods
+from app.services.accumulation_fund_service import fund_outstanding
 from app.services.payroll_admin import compute_on_demand_debt, list_on_demand_employees
 from app.services.payroll_advance_availability import available_to_advance
+from app.services.position_registry import eligible_for_personal_report
 
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
@@ -962,6 +969,13 @@ class StaffPayableRow(BaseModel):
     finalized_unpaid: float
     loans_outstanding: float
     salary_payouts_outstanding: float
+    salary_payable: float
+    fund_payable: float
+    fund_current_year_payable: float
+    fund_prior_years_payable: float
+    production_deposit_payable: float
+    courier_deposit_payable: float
+    deposit_payable: float
     payable: float
     receivable: float
 
@@ -970,6 +984,13 @@ class StaffPayableList(BaseModel):
     as_of: date
     total: float
     receivable_total: float
+    salary_total: float
+    fund_total: float
+    fund_current_year_total: float
+    fund_prior_years_total: float
+    production_deposit_total: float
+    courier_deposit_total: float
+    deposit_total: float
     items: list[StaffPayableRow]
 
 
@@ -1028,25 +1049,27 @@ async def _finalized_unpaid_by_employee(session: AsyncSession) -> dict[uuid.UUID
 async def list_staff_payable(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> StaffPayableList:
-    """Полный ВАЛОВЫЙ зарплатный баланс с сотрудниками.
+    """Полный ВАЛОВЫЙ баланс расчётов с сотрудниками по независимым субрегистрам.
 
-    Кредиторка (мы должны) складывается из текущего заработка обычных сотрудников,
-    невыплаченных хвостов финализированных ведомостей и накопленного долга сотрудников
-    в режиме ``on_demand``. Для ``on_demand`` синтетический earned-to-date не используется:
-    тот же оклад уже целиком живёт в ``compute_on_demand_debt``.
+    Кредиторка (мы должны) складывается из зарплаты, накопительного фонда и депозитов.
+    Зарплата включает текущий заработок, хвосты финализированных ведомостей и долг
+    ``on_demand``. Фонд и два депозитных контура не переносятся в зарплату, а показываются
+    отдельными компонентами: производственный депозит берётся из ``DepositAccount.balance``,
+    курьерский — из ``opening + top_up - return - forfeit``.
 
     Дебиторка (нам должны) — все фактически выданные и ещё не погашенные авансы/займы,
     зарплатные выплаты вне ведомости (``EmployeePayout``) и переплата ``on_demand``.
     До финализации ведомости встречные суммы показываются валово в обе стороны; после
-    финализации recovery/offset уменьшает соответствующий долг. Депозиты и накопительный
-    фонд намеренно не входят — это отдельные будущие субрегистры.
+    финализации recovery/offset уменьшает соответствующий долг. Встречные суммы не гасят
+    фонд или депозит автоматически: все компоненты остаются валовыми.
 
-    ``admin_payroll_excluded`` («Не платить») — абсолютное исключение из зарплатного
-    регистра ДЗ/КЗ: сотруднику не показываются ни текущий prorate, ни исторические хвосты,
-    ни встречные зарплатные расчёты.
+    ``admin_payroll_excluded`` («Не платить») — абсолютное исключение только из зарплатного
+    субрегистра. Уже накопленный фонд или депозит остаётся обязательством компании. Обычный
+    курьер поэтому может присутствовать самостоятельной строкой только с курьерским
+    депозитом; старший курьер объединяется по ``employee_id`` со своей зарплатой.
     """
     as_of = date.today()
-    employees = (
+    salary_candidates = (
         await session.scalars(
             select(Employee)
             .where(
@@ -1056,12 +1079,116 @@ async def list_staff_payable(
             .order_by(Employee.full_name)
         )
     ).all()
+    salary_employees = list(salary_candidates)
+    salary_employee_ids = {employee.id for employee in salary_employees}
+    salary_earning_ids = {
+        employee.id
+        for employee in salary_employees
+        if eligible_for_personal_report(
+            employee.position,
+            admin_payroll_excluded=employee.admin_payroll_excluded,
+        )
+    }
 
-    employee_ids = [employee.id for employee in employees]
-    on_demand_balances = await compute_on_demand_debt(session, employee_ids)
+    fund_by_emp: dict[uuid.UUID, Decimal] = {}
+    fund_current_year_by_emp: dict[uuid.UUID, Decimal] = {}
+    fund_prior_years_by_emp: dict[uuid.UUID, Decimal] = {}
+    fund_accounts = (
+        await session.scalars(
+            select(AccumulationFundAccount)
+            .join(Employee, Employee.id == AccumulationFundAccount.employee_id)
+            .where(Employee.is_freelancer_placeholder.is_(False))
+        )
+    ).all()
+    for account in fund_accounts:
+        if account.year > as_of.year:
+            continue
+        outstanding = max(periods.money(fund_outstanding(account)), Decimal("0.00"))
+        if outstanding > 0:
+            fund_by_emp[account.employee_id] = (
+                fund_by_emp.get(account.employee_id, Decimal("0.00")) + outstanding
+            )
+            year_target = (
+                fund_current_year_by_emp
+                if account.year == as_of.year
+                else fund_prior_years_by_emp
+            )
+            year_target[account.employee_id] = (
+                year_target.get(account.employee_id, Decimal("0.00")) + outstanding
+            )
+
+    production_deposit_by_emp = {
+        employee_id: max(periods.money(balance), Decimal("0.00"))
+        for employee_id, balance in (
+            await session.execute(
+                select(DepositAccount.employee_id, DepositAccount.balance)
+                .join(Employee, Employee.id == DepositAccount.employee_id)
+                .where(
+                    DepositAccount.balance > 0,
+                    Employee.is_freelancer_placeholder.is_(False),
+                )
+            )
+        ).all()
+    }
+
+    courier_accounts = (
+        await session.scalars(
+            select(CourierDepositAccount)
+            .join(Employee, Employee.id == CourierDepositAccount.employee_id)
+            .where(Employee.is_freelancer_placeholder.is_(False))
+        )
+    ).all()
+    courier_balance_cents = {
+        account.employee_id: int(account.opening_balance_cents) for account in courier_accounts
+    }
+    if courier_balance_cents:
+        courier_transactions = (
+            await session.execute(
+                select(
+                    CourierDepositTransaction.account_employee_id,
+                    CourierDepositTransaction.transaction_type,
+                    CourierDepositTransaction.amount_cents,
+                ).where(
+                    CourierDepositTransaction.account_employee_id.in_(courier_balance_cents),
+                    CourierDepositTransaction.transaction_date <= as_of,
+                )
+            )
+        ).all()
+        for employee_id, transaction_type, amount_cents in courier_transactions:
+            if transaction_type == CourierDepositTransactionType.TOP_UP:
+                courier_balance_cents[employee_id] += int(amount_cents)
+            else:
+                courier_balance_cents[employee_id] -= int(amount_cents)
+    courier_deposit_by_emp = {
+        employee_id: periods.money(Decimal(max(balance_cents, 0)) / Decimal("100"))
+        for employee_id, balance_cents in courier_balance_cents.items()
+        if balance_cents > 0
+    }
+
+    employee_ids = (
+        salary_employee_ids
+        | set(fund_by_emp)
+        | set(production_deposit_by_emp)
+        | set(courier_deposit_by_emp)
+    )
+    employees_by_id = {employee.id: employee for employee in salary_employees}
+    missing_employee_ids = employee_ids - set(employees_by_id)
+    if missing_employee_ids:
+        for employee in (
+            await session.scalars(
+                select(Employee)
+                .where(Employee.id.in_(missing_employee_ids))
+                .order_by(Employee.full_name)
+            )
+        ).all():
+            employees_by_id[employee.id] = employee
+    employees = list(employees_by_id.values())
+
+    salary_ids = list(salary_employee_ids)
+    on_demand_balances = await compute_on_demand_debt(session, salary_ids)
     current_on_demand_ids = {
         employee.id for employee in await list_on_demand_employees(session)
-    }
+    } & salary_employee_ids
 
     finalized_unpaid = await _finalized_unpaid_by_employee(session)
     advances_by_emp: dict[uuid.UUID, Decimal] = {}
@@ -1119,35 +1246,63 @@ async def list_staff_payable(
     items: list[StaffPayableRow] = []
     payable_total = Decimal("0.00")
     receivable_total = Decimal("0.00")
+    salary_total = Decimal("0.00")
+    fund_total = Decimal("0.00")
+    fund_current_year_total = Decimal("0.00")
+    fund_prior_years_total = Decimal("0.00")
+    production_deposit_total = Decimal("0.00")
+    courier_deposit_total = Decimal("0.00")
     for employee in employees:
-        availability = await available_to_advance(session, employee, as_of)
-        earned = periods.money(availability.earned_to_date)
-        tail = finalized_unpaid.get(employee.id, Decimal("0"))
-        period_start = availability.period_start
-        # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail),
-        # поэтому синтетический earned обнуляем.
-        period_settled = (
-            period_start is not None
-            and availability.period_end is not None
-            and (period_start, availability.period_end) in finalized_bounds
-        )
-        if period_settled:
+        if employee.id in salary_employee_ids:
+            tail = finalized_unpaid.get(employee.id, Decimal("0"))
+            on_demand = on_demand_balances.get(employee.id, {})
+            on_demand_accrued = periods.money(on_demand.get("accrued", 0))
+            on_demand_paid = periods.money(on_demand.get("paid", 0))
+            on_demand_debt = periods.money(on_demand.get("debt", 0))
+            advances = advances_by_emp.get(employee.id, Decimal("0.00"))
+            loans = loans_by_emp.get(employee.id, Decimal("0.00"))
+            salary_payouts = salary_payouts_by_emp.get(employee.id, Decimal("0.00"))
+
+        if employee.id in salary_earning_ids:
+            availability = await available_to_advance(session, employee, as_of)
+            basis = availability.basis
+            earned = periods.money(availability.earned_to_date)
+            period_start = availability.period_start
+            # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail),
+            # поэтому синтетический earned обнуляем.
+            period_settled = (
+                period_start is not None
+                and availability.period_end is not None
+                and (period_start, availability.period_end) in finalized_bounds
+            )
+            if period_settled:
+                earned = Decimal("0.00")
+
+            if employee.id in current_on_demand_ids:
+                # 52 500 ₽ у оклада 140 000 ₽ на 21 июля — это именно этот синтетический прорейт.
+                # Он не является отдельной кредиторкой поверх накопленного on_demand-долга.
+                earned = Decimal("0.00")
+
+        else:
+            basis = "courier_deposit" if employee.id in courier_deposit_by_emp else "none"
             earned = Decimal("0.00")
+            if employee.id not in salary_employee_ids:
+                tail = Decimal("0.00")
+                on_demand_accrued = Decimal("0.00")
+                on_demand_paid = Decimal("0.00")
+                on_demand_debt = Decimal("0.00")
+                advances = Decimal("0.00")
+                loans = Decimal("0.00")
+                salary_payouts = Decimal("0.00")
 
-        on_demand = on_demand_balances.get(employee.id, {})
-        on_demand_accrued = periods.money(on_demand.get("accrued", 0))
-        on_demand_paid = periods.money(on_demand.get("paid", 0))
-        on_demand_debt = periods.money(on_demand.get("debt", 0))
-        if employee.id in current_on_demand_ids:
-            # 52 500 ₽ у оклада 140 000 ₽ на 21 июля — это именно этот синтетический прорейт.
-            # Он не является отдельной кредиторкой поверх накопленного on_demand-долга.
-            earned = Decimal("0.00")
-
-        advances = advances_by_emp.get(employee.id, Decimal("0.00"))
-        loans = loans_by_emp.get(employee.id, Decimal("0.00"))
-        salary_payouts = salary_payouts_by_emp.get(employee.id, Decimal("0.00"))
-
-        payable = earned + tail + _clamp_money(on_demand_debt)
+        salary_payable = earned + tail + _clamp_money(on_demand_debt)
+        fund_payable = fund_by_emp.get(employee.id, Decimal("0.00"))
+        fund_current_year = fund_current_year_by_emp.get(employee.id, Decimal("0.00"))
+        fund_prior_years = fund_prior_years_by_emp.get(employee.id, Decimal("0.00"))
+        production_deposit = production_deposit_by_emp.get(employee.id, Decimal("0.00"))
+        courier_deposit = courier_deposit_by_emp.get(employee.id, Decimal("0.00"))
+        deposit_payable = production_deposit + courier_deposit
+        payable = salary_payable + fund_payable + deposit_payable
         receivable = (
             advances
             + loans
@@ -1158,12 +1313,18 @@ async def list_staff_payable(
             continue
         payable_total += payable
         receivable_total += receivable
+        salary_total += salary_payable
+        fund_total += fund_payable
+        fund_current_year_total += fund_current_year
+        fund_prior_years_total += fund_prior_years
+        production_deposit_total += production_deposit
+        courier_deposit_total += courier_deposit
         items.append(
             StaffPayableRow(
                 employee_id=employee.id,
                 full_name=employee.full_name,
                 position=employee.position,
-                basis=("on_demand" if employee.id in current_on_demand_ids else availability.basis),
+                basis=("on_demand" if employee.id in current_on_demand_ids else basis),
                 earned_to_date=_float(earned),
                 on_demand_accrued=_float(on_demand_accrued),
                 on_demand_paid=_float(on_demand_paid),
@@ -1173,6 +1334,13 @@ async def list_staff_payable(
                 finalized_unpaid=_float(tail),
                 loans_outstanding=_float(loans),
                 salary_payouts_outstanding=_float(salary_payouts),
+                salary_payable=_float(salary_payable),
+                fund_payable=_float(fund_payable),
+                fund_current_year_payable=_float(fund_current_year),
+                fund_prior_years_payable=_float(fund_prior_years),
+                production_deposit_payable=_float(production_deposit),
+                courier_deposit_payable=_float(courier_deposit),
+                deposit_payable=_float(deposit_payable),
                 payable=_float(payable),
                 receivable=_float(receivable),
             )
@@ -1182,5 +1350,12 @@ async def list_staff_payable(
         as_of=as_of,
         total=_float(payable_total),
         receivable_total=_float(receivable_total),
+        salary_total=_float(salary_total),
+        fund_total=_float(fund_total),
+        fund_current_year_total=_float(fund_current_year_total),
+        fund_prior_years_total=_float(fund_prior_years_total),
+        production_deposit_total=_float(production_deposit_total),
+        courier_deposit_total=_float(courier_deposit_total),
+        deposit_total=_float(production_deposit_total + courier_deposit_total),
         items=items,
     )

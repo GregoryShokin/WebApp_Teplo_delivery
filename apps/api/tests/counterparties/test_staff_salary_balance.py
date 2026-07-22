@@ -12,7 +12,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    AccumulationFundAccount,
     AppSetting,
+    CourierDepositAccount,
+    DepositAccount,
     Employee,
     EmployeePayout,
     EmployeePositionAssignment,
@@ -231,6 +234,141 @@ def test_no_pay_employee_is_absent_from_salary_balance(
     assert str(employee_id) not in {
         item["employee_id"] for item in response.json()["items"]
     }
+
+
+def test_staff_balance_combines_fund_and_both_deposit_ledgers_without_duplicate_senior_courier(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Производство объединяется с фондом, обычный курьер идёт отдельной строкой,
+    а старший курьер получает одну строку с зарплатой и курьерским депозитом.
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+        current_year = date.today().year
+        async with async_session_factory() as session:
+            production = _employee("Повар с обязательствами", position="Повар", excluded=True)
+            courier = _employee("Обычный курьер с депозитом", position="Курьер")
+            senior = _employee("Старший курьер с зарплатой", position="Старший курьер")
+            session.add_all([production, courier, senior])
+            await session.flush()
+
+            session.add_all(
+                [
+                    DepositAccount(
+                        id=uuid.uuid4(),
+                        employee_id=production.id,
+                        balance=Decimal("5000"),
+                        initial_balance=Decimal("5000"),
+                    ),
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=production.id,
+                        year=current_year,
+                        accumulated_amount=Decimal("10000"),
+                        paid_out_amount=Decimal("1000"),
+                        forfeited_amount=Decimal("1000"),
+                        status="active",
+                    ),
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=production.id,
+                        year=current_year - 1,
+                        accumulated_amount=Decimal("2000"),
+                        paid_out_amount=Decimal("0"),
+                        forfeited_amount=Decimal("0"),
+                        status="active",
+                    ),
+                    CourierDepositAccount(
+                        employee_id=courier.id,
+                        target_amount_cents=500_000,
+                        opening_balance_cents=300_000,
+                        opening_date=date(2026, 1, 1),
+                    ),
+                    CourierDepositAccount(
+                        employee_id=senior.id,
+                        target_amount_cents=500_000,
+                        opening_balance_cents=400_000,
+                        opening_date=date(2026, 1, 1),
+                    ),
+                ]
+            )
+
+            period = PayrollPeriod(
+                id=uuid.uuid4(),
+                period_type="half_month",
+                start_date=date(2026, 1, 1),
+                end_date=date(2026, 1, 15),
+                payroll_date=date(2026, 1, 15),
+                status="finalized",
+            )
+            run = PayrollRun(
+                id=uuid.uuid4(),
+                period_id=period.id,
+                status="completed",
+                is_imported_legacy=False,
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add_all([period, run])
+            await session.flush()
+            session.add(
+                PayrollLine(
+                    id=uuid.uuid4(),
+                    run_id=run.id,
+                    employee_id=senior.id,
+                    role="Старший курьер",
+                    base_pay=Decimal("10000"),
+                    premium=Decimal("0"),
+                    percent_pay=Decimal("0"),
+                    vacation_pay=Decimal("0"),
+                    ndfl_withheld=Decimal("0"),
+                    fund_accrual=Decimal("0"),
+                    deduction=Decimal("0"),
+                    total_payable=Decimal("10000"),
+                    deposit_excluded_for_run=False,
+                    components={},
+                )
+            )
+            await session.commit()
+            return production.id, courier.id, senior.id
+
+    production_id, courier_id, senior_id = asyncio.run(seed())
+    response = client.get(f"{BASE}/staff-payable", headers=_admin(async_session_factory))
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    rows = {item["employee_id"]: item for item in payload["items"]}
+
+    production = rows[str(production_id)]
+    assert production["salary_payable"] == 0.0  # «Не платить» действует только на зарплату.
+    assert production["fund_payable"] == 10000.0
+    assert production["fund_current_year_payable"] == 8000.0
+    assert production["fund_prior_years_payable"] == 2000.0
+    assert production["production_deposit_payable"] == 5000.0
+    assert production["courier_deposit_payable"] == 0.0
+    assert production["payable"] == 15000.0
+
+    courier = rows[str(courier_id)]
+    assert courier["basis"] == "courier_deposit"
+    assert courier["salary_payable"] == 0.0
+    assert courier["courier_deposit_payable"] == 3000.0
+    assert courier["payable"] == 3000.0
+
+    senior = rows[str(senior_id)]
+    assert senior["salary_payable"] == 10000.0
+    assert senior["courier_deposit_payable"] == 4000.0
+    assert senior["payable"] == 14000.0
+    assert [item["employee_id"] for item in payload["items"]].count(str(senior_id)) == 1
+
+    assert payload["fund_total"] >= 10000.0
+    assert payload["fund_current_year_total"] >= 8000.0
+    assert payload["fund_prior_years_total"] >= 2000.0
+    assert payload["fund_total"] == (
+        payload["fund_current_year_total"] + payload["fund_prior_years_total"]
+    )
+    assert payload["production_deposit_total"] >= 5000.0
+    assert payload["courier_deposit_total"] >= 7000.0
+    assert payload["deposit_total"] == (
+        payload["production_deposit_total"] + payload["courier_deposit_total"]
+    )
 
 
 def test_employee_receivables_are_broken_down_by_source(
