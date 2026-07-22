@@ -387,8 +387,8 @@ def _wire_contour_mocks(monkeypatch, calls):
         calls["return"] = body
         return _CloudPushOutcome("RET-DOC-1", posted=True)
 
-    def fake_incoming(direction, org, body, *, existing_document_id):
-        calls["incoming"] = {"body": body, "existing": existing_document_id}
+    def fake_incoming(direction, org, body):
+        calls["incoming"] = {"body": body}
         return _CloudPushOutcome("NEW-DOC-Y", posted=True, created=True)
 
     monkeypatch.setattr(wip, "_cloud_create_and_post_return", fake_return)
@@ -445,8 +445,9 @@ async def test_book_correction_full_contour_success(async_session_factory, monke
     # Возврат — на ВСЕ старые товары (2 шт) со ссылкой на оригинал X.
     assert calls["return"]["incomingInvoiceId"] == "IIKO-DOC-X"
     assert calls["return"]["items"][0]["amount"] == 2.0
-    # Новая приходная — форс create (existing=None). Зачёта в контуре нет — Y остаётся неоплаченной.
-    assert calls["incoming"]["existing"] is None
+    # Новая приходная — именно create (documentId в теле обнулён). Зачёта в контуре нет —
+    # Y остаётся неоплаченной.
+    assert calls["incoming"]["body"].get("documentId") is None
     assert "zachet" not in calls
 
 
@@ -493,7 +494,7 @@ async def test_book_correction_resumes_after_return(async_session_factory, monke
         assert inv.iiko_return_lines == []
     # Шаг 1 пропущен (возврат не пересоздан), шаг 2 отработал.
     assert "return" not in calls
-    assert calls["incoming"]["existing"] is None
+    assert calls["incoming"]["body"].get("documentId") is None
 
 
 async def test_book_correction_new_invoice_step_fails(async_session_factory, monkeypatch):
@@ -506,7 +507,7 @@ async def test_book_correction_new_invoice_step_fails(async_session_factory, mon
         )
         monkeypatch.setattr(
             wip, "_cloud_create_and_post",
-            lambda direction, org, body, *, existing_document_id: _CloudPushOutcome(
+            lambda direction, org, body: _CloudPushOutcome(
                 None, posted=False, error="create HTTP 500"
             ),
         )

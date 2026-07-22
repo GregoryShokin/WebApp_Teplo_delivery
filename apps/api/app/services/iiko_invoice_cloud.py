@@ -237,6 +237,15 @@ def extract_document_id(response: dict | list | None) -> str | None:
     return None
 
 
+def extract_document_status(response: dict | list | None) -> str | None:
+    """``status`` документа из ответа ``get`` (``NEW`` / ``PROCESSED`` / ...). Тело ПЛОСКОЕ —
+    поля документа лежат на верхнем уровне (проверено на живом API 22.07)."""
+    if isinstance(response, dict):
+        status = response.get("status")
+        return str(status).strip() if status else None
+    return None
+
+
 def business_error_message(response: dict | list | None) -> str | None:
     """Текст бизнес-ошибки iiko. Cloud отдаёт бизнес-отказ КОДОМ 500/409 с ``message`` —
     парсить его, а не полагаться на HTTP-статус."""

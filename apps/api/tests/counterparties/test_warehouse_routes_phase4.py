@@ -219,8 +219,8 @@ def test_kassa_invoice_auto_pushes_to_iiko_on_create(
 
     calls: list[dict] = []
 
-    def _fake(direction, org, body, *, existing_document_id):
-        calls.append({"direction": direction, "existing": existing_document_id})
+    def _fake(direction, org, body):
+        calls.append({"direction": direction})
         return _CloudPushOutcome("IIKO-KASSA-1", posted=True, created=True)
 
     monkeypatch.setattr(wip, "_cloud_create_and_post", _fake)
@@ -251,9 +251,8 @@ def test_kassa_invoice_auto_pushes_to_iiko_on_create(
     data = resp.json()
     assert data["iiko_push_status"] == "pushed"
     assert data["external_id"] == "IIKO-KASSA-1"
-    # Ровно один create→post, без дубля; existing=None → именно create, не re-post.
+    # Ровно один create→post, без дубля: документа в iiko ещё не было.
     assert len(calls) == 1
-    assert calls[0]["existing"] is None
 
 
 def test_manual_invoice_also_auto_pushes_to_iiko(
@@ -268,8 +267,8 @@ def test_manual_invoice_also_auto_pushes_to_iiko(
 
     calls: list[dict] = []
 
-    def _fake(direction, org, body, *, existing_document_id):
-        calls.append({"existing": existing_document_id})
+    def _fake(direction, org, body):
+        calls.append({"direction": direction})
         return _CloudPushOutcome("IIKO-MANUAL-1", posted=True, created=True)
 
     monkeypatch.setattr(wip, "_cloud_create_and_post", _fake)
@@ -300,7 +299,6 @@ def test_manual_invoice_also_auto_pushes_to_iiko(
     assert data["iiko_push_status"] == "pushed"
     assert data["external_id"] == "IIKO-MANUAL-1"
     assert len(calls) == 1
-    assert calls[0]["existing"] is None
 
 
 def test_edit_invoice_lines_recomputes_totals(

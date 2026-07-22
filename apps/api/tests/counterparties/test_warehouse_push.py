@@ -159,11 +159,8 @@ def _patch_cloud(monkeypatch, outcome: _CloudPushOutcome) -> list[dict]:
     """Замокать сетевой ``_cloud_create_and_post``; вернуть список зафиксированных вызовов."""
     calls: list[dict] = []
 
-    def fake(direction, organization_id, body, *, existing_document_id):
-        calls.append(
-            {"direction": direction, "org": organization_id, "body": body,
-             "existing_document_id": existing_document_id}
-        )
+    def fake(direction, organization_id, body):
+        calls.append({"direction": direction, "org": organization_id, "body": body})
         return outcome
 
     monkeypatch.setattr(wip, "_cloud_create_and_post", fake)
@@ -188,8 +185,8 @@ async def test_push_success_sets_external_id_and_pushed(
         assert result.external_id == "IIKO-DOC-1"
         assert result.iiko_pushed_at is not None
         assert result.iiko_push_error is None
-        # create-путь: без существующего documentId
-        assert len(calls) == 1 and calls[0]["existing_document_id"] is None
+        # create-путь: документа в iiko ещё нет
+        assert len(calls) == 1
 
 
 async def test_push_idempotent_when_already_pushed(
@@ -212,28 +209,34 @@ async def test_push_idempotent_when_already_pushed(
         assert calls == []  # сеть не дёргали
 
 
-async def test_push_reposts_created_but_not_posted(
+async def test_push_syncs_existing_document_via_update(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Документ создан, но прошлый post упал (external_id есть, failed) → повторный пуш только
-    ПРОВОДИТ его (create не повторяем)."""
+    """Документ в iiko уже есть (external_id, failed) → повтор идёт update→post: create не
+    повторяем (дубль), а голый post не донёс бы локальную правку — например смену поставщика."""
     async with async_session_factory() as session:
         cp = await make_counterparty(
-            session, name="Поставщик", inn="7710000062", iiko_guid="SUP-GUID-1"
+            session, name="Поставщик", inn="7710000062", iiko_guid="SUP-GUID-NEW"
         )
         invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
         invoice.external_id = "IIKO-DOC-7"
         invoice.iiko_push_status = "failed"
         await session.commit()
-        calls = _patch_cloud(
-            monkeypatch, _CloudPushOutcome("IIKO-DOC-7", posted=True, created=False)
+        create_calls = _patch_cloud(
+            monkeypatch, _CloudPushOutcome("IIKO-DOC-7", posted=True, created=True)
+        )
+        update_calls = _patch_cloud_update(
+            monkeypatch, _CloudPushOutcome("IIKO-DOC-7", posted=True)
         )
 
         result = await push_invoice_to_iiko(session, invoice.id)
         assert result.iiko_push_status == "pushed"
-        assert len(calls) == 1
-        assert calls[0]["existing_document_id"] == "IIKO-DOC-7"  # create пропущен
+        assert create_calls == []
+        assert len(update_calls) == 1
+        assert update_calls[0]["document_id"] == "IIKO-DOC-7"
+        # тело несёт актуального поставщика — ровно то, чего не делал прежний голый post
+        assert update_calls[0]["body"]["counteragent"] == "SUP-GUID-NEW"
 
 
 async def test_push_records_business_error_and_keeps_external_id(
@@ -258,6 +261,30 @@ async def test_push_records_business_error_and_keeps_external_id(
         assert "проводки оплаты" in result.iiko_push_error
         # документ создан → id сохранён, чтобы повторно не создавать (только re-post)
         assert result.external_id == "IIKO-DOC-2"
+
+
+def test_post_document_accepts_already_processed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Прошлый post дошёл до iiko, а ответ до нас — нет: повтор ловит «status mismatch», но
+    документ уже PROCESSED → это успех, иначе накладная залипла бы в failed навсегда."""
+    monkeypatch.setattr(
+        wip, "post_invoice",
+        lambda *a, **kw: (500, {"message": "document status mismatch: expected NEW, got PROCESSED"}),
+    )
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {"status": "PROCESSED"}))
+
+    assert wip._post_document("payable", "ORG", "DOC", token="t", opener=None) is None
+
+
+def test_post_document_keeps_mismatch_when_not_processed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Тот же mismatch, но документ НЕ проведён (например, отменён) → это настоящая ошибка."""
+    monkeypatch.setattr(
+        wip, "post_invoice",
+        lambda *a, **kw: (500, {"message": "document status mismatch: expected NEW, got DELETED"}),
+    )
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {"status": "DELETED"}))
+
+    error = wip._post_document("payable", "ORG", "DOC", token="t", opener=None)
+    assert error is not None and "status mismatch" in error
 
 
 async def test_push_skips_without_iiko_guid(

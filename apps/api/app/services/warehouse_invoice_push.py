@@ -20,6 +20,7 @@ payable → ``incoming_invoice`` (``counteragent`` = поставщик), receiv
 
 from __future__ import annotations
 
+import urllib.request
 import uuid
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
@@ -46,6 +47,8 @@ from app.services.iiko_invoice_cloud import (
     cancel_invoice,
     create_invoice,
     extract_document_id,
+    extract_document_status,
+    get_invoice,
     post_invoice,
     unpost_invoice,
     update_invoice,
@@ -190,40 +193,61 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
     )
 
 
+def _post_document(
+    direction: str,
+    organization_id: str,
+    document_id: str,
+    *,
+    token: str,
+    opener: urllib.request.OpenerDirector,
+) -> str | None:
+    """``post`` документа. None — проведён, иначе текст ошибки.
+
+    Идемпотентность: «status mismatch» означает, что документ уже НЕ в ``NEW``. Если он при этом
+    ``PROCESSED`` — цель достигнута (прошлый ``post`` дошёл до iiko, а ответ до нас — нет), и
+    считать это ошибкой нельзя: накладная залипала бы в ``failed`` навсегда, потому что каждый
+    повтор бьётся в тот же mismatch."""
+    pstatus, presp = post_invoice(
+        direction, organization_id, document_id, token=token, opener=opener
+    )
+    if 200 <= pstatus < 300:
+        return None
+    message = business_error_message(presp) or f"post HTTP {pstatus}"
+    if "status mismatch" in message:
+        gstatus, gresp = get_invoice(
+            direction, organization_id, document_id, token=token, opener=opener
+        )
+        if 200 <= gstatus < 300 and extract_document_status(gresp) == "PROCESSED":
+            return None
+    return message
+
+
 def _cloud_create_and_post(
-    direction: str, organization_id: str, body: dict, *, existing_document_id: str | None
+    direction: str, organization_id: str, body: dict
 ) -> _CloudPushOutcome:
-    """Синхронно (в треде): один auth → (create, если документа ещё нет) → post. Не бросает —
-    ошибки транспорта/бизнеса возвращаются в ``error``. iiko отдаёт бизнес-отказ кодом 500/409 с
+    """Синхронно (в треде): один auth → create → post. Только для документа, которого в iiko ещё
+    нет; существующий синхронизирует :func:`_cloud_update_and_post`. Не бросает — ошибки
+    транспорта/бизнеса возвращаются в ``error``. iiko отдаёт бизнес-отказ кодом 500/409 с
     ``message`` — парсим его."""
     opener = iiko_opener()
     try:
         token = iiko_auth_token(opener)
     except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
-        return _CloudPushOutcome(existing_document_id, False, f"auth: {exc}"[:400])
+        return _CloudPushOutcome(None, False, f"auth: {exc}"[:400])
 
-    document_id = existing_document_id
-    created = False
+    status, resp = create_invoice(direction, body, token=token, opener=opener)
+    if not (200 <= status < 300):
+        return _CloudPushOutcome(
+            None, False, business_error_message(resp) or f"create HTTP {status}"
+        )
+    document_id = extract_document_id(resp)
     if not document_id:
-        status, resp = create_invoice(direction, body, token=token, opener=opener)
-        if not (200 <= status < 300):
-            return _CloudPushOutcome(
-                None, False, business_error_message(resp) or f"create HTTP {status}"
-            )
-        document_id = extract_document_id(resp)
-        if not document_id:
-            return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
-        created = True
+        return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
 
-    pstatus, presp = post_invoice(
+    error = _post_document(
         direction, organization_id, document_id, token=token, opener=opener
     )
-    if not (200 <= pstatus < 300):
-        return _CloudPushOutcome(
-            document_id, False, business_error_message(presp) or f"post HTTP {pstatus}",
-            created=created,
-        )
-    return _CloudPushOutcome(document_id, True, None, created=created)
+    return _CloudPushOutcome(document_id, error is None, error, created=True)
 
 
 def _cloud_delete_document(direction: str, organization_id: str, document_id: str) -> str | None:
@@ -277,14 +301,10 @@ def _cloud_update_and_post(
         return _CloudPushOutcome(
             document_id, False, business_error_message(resp) or f"update HTTP {status}"
         )
-    pstatus, presp = post_invoice(
+    error = _post_document(
         direction, organization_id, document_id, token=token, opener=opener
     )
-    if not (200 <= pstatus < 300):
-        return _CloudPushOutcome(
-            document_id, False, business_error_message(presp) or f"post HTTP {pstatus}"
-        )
-    return _CloudPushOutcome(document_id, True, None)
+    return _CloudPushOutcome(document_id, error is None, error)
 
 
 async def _external_id_owner(
@@ -305,9 +325,10 @@ async def _external_id_owner(
 
 
 async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> SupplierInvoice:
-    """Отправить накладную в iiko (РЕАЛЬНЫЙ документ) через Cloud ``create`` → ``post``. Обновляет
-    push-статус; никогда не бросает на ошибках iiko — оставляет накладную со статусом
-    ``failed``/``skipped`` и текстом ошибки."""
+    """Отправить накладную в iiko (РЕАЛЬНЫЙ документ) через Cloud ``create`` → ``post``; если
+    документ там уже есть (``external_id``) — ``update`` → ``post``, чтобы повтор догонял локальные
+    правки, а не только проводил. Обновляет push-статус; никогда не бросает на ошибках iiko —
+    оставляет накладную со статусом ``failed``/``skipped`` и текстом ошибки."""
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
         raise WarehousePushError("Накладная не найдена")
@@ -329,17 +350,25 @@ async def push_invoice_to_iiko(session: AsyncSession, invoice_id: uuid.UUID) -> 
     await _load_source_credential_env(session)
 
     body = build_invoice_body(prepared.doc)
-    # Есть external_id, но не pushed → документ создан, но не проведён (прошлый post упал) → только
-    # re-post (create НЕ повторяем — иначе дубль). Нет external_id → create + post.
+    # Есть external_id → документ в iiko уже есть: повтор СИНХРОНИЗИРУЕТ его (update→post), а не
+    # просто проводит. Голый post не переносит локальные правки (смена поставщика, строки, суммы) —
+    # расхождение жило бы вечно, сколько ни жми «Переотправить». create НЕ повторяем — дубль.
+    # Нет external_id → create + post.
     existing_document_id = invoice.external_id or None
 
     try:
         outcome = await anyio.to_thread.run_sync(
-            lambda: _cloud_create_and_post(
+            lambda: _cloud_update_and_post(
                 invoice.direction,
                 prepared.doc.organization_id,
                 body,
-                existing_document_id=existing_document_id,
+                document_id=existing_document_id,
+            )
+            if existing_document_id
+            else _cloud_create_and_post(
+                invoice.direction,
+                prepared.doc.organization_id,
+                body,
             )
         )
     except Exception as exc:  # noqa: BLE001 — держим накладную, пишем ошибку
@@ -625,7 +654,6 @@ async def book_correction_in_iiko(
                     inv_direction,
                     prepared.doc.organization_id,
                     new_body,
-                    existing_document_id=None,
                 )
             )
         except Exception as exc:  # noqa: BLE001
