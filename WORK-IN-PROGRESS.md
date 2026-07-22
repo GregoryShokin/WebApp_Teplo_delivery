@@ -49,6 +49,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: пункт меню «Платежи», секция прав платежей, compose `agent-payments` и порт 7153
 - статус: в работе (разведка завершена, уточняю ТЗ)
 
+### agent-finance-workbench — ветка `agent/finance-workbench-proddata-preview`
+- worktree: `../Teplo-agent-finance-workbench`
+- compose: `teplo-finance-workbench` (web 5203 / api 8050 / pg 5482)
+- трогает: дальнейшая доработка финансового функционала на изолированной копии production-БД
+- НЕ трогать другим: контейнеры/порты 5203, 8050, 5482 и локальный prod-data snapshot
+- статус: долгоживущее превью по запросу пользователя
+
 ---
 
 ## Shared-ресурсы — кто сейчас держит
