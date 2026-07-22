@@ -234,6 +234,27 @@ async def test_verify_skips_fresh_and_exhausted_rows(
 
 
 @pytest.mark.asyncio
+async def test_verify_ignores_push_of_unpaid_invoice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Оплату накладной откатили → проводки в iiko быть и не должно; переотправлять нельзя."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="48", amount="3443.00")
+        row = await _push_row(session, invoice, amount="3443.00")
+        invoice.payment_status = "unpaid"
+        await session.commit()
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["checked"] == 0
+        assert row.status == "ok"
+        assert row.verify_attempts == 0
+
+
+@pytest.mark.asyncio
 async def test_verify_no_rows_does_not_call_iiko(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

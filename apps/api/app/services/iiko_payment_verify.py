@@ -131,6 +131,7 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
     rows = (
         await session.scalars(
             select(IikoInvoicePaymentPush)
+            .join(SupplierInvoice, SupplierInvoice.id == IikoInvoicePaymentPush.invoice_id)
             .where(
                 IikoInvoicePaymentPush.status == "ok",
                 IikoInvoicePaymentPush.amount > 0,
@@ -139,6 +140,10 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
                 IikoInvoicePaymentPush.created_at <= now - VERIFY_GRACE,
                 IikoInvoicePaymentPush.created_at >= now - VERIFY_MAX_AGE,
                 IikoInvoicePaymentPush.resend_count < MAX_RESENDS,
+                # Накладная перестала быть оплаченной (оплату откатили) — отсутствие проводки в
+                # iiko теперь НОРМА, а не потеря: переотправлять платёж нельзя, он вернул бы
+                # ошибочную оплату. Такие пуши просто оставляем как есть.
+                SupplierInvoice.payment_status == "paid",
             )
             .order_by(IikoInvoicePaymentPush.created_at)
             .limit(limit)
