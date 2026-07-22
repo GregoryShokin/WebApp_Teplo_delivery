@@ -607,6 +607,32 @@ async def push_iiko_invoice_payments() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=30,
+    id="verify_iiko_invoice_payments",
+    max_instances=1,
+    coalesce=True,
+)
+async def verify_iiko_invoice_payments() -> None:
+    """Подтвердить, что отправленные в iiko оплаты реально стали проводками.
+
+    ``add_payment`` отвечает 201 с ``accountingTransactionId`` даже когда проводка не создаётся
+    (сверка 22.07.2026: 4 «тихие потери» из 55 отправок), поэтому статус ``ok`` в журнале сам по
+    себе ничего не доказывает. Джоб сверяет журнал с OLAP-отчётом iiko и переотправляет платежи,
+    которых в учёте нет."""
+    from app.services.iiko_payment_verify import verify_mirrored_payments
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await verify_mirrored_payments(session)
+        except Exception:  # noqa: BLE001 — недоступный OLAP не должен ронять планировщик
+            logger.warning("verify_iiko_invoice_payments: сверка не удалась", exc_info=True)
+            return
+    if result.get("verified") or result.get("resent") or result.get("manual"):
+        logger.info("verify_iiko_invoice_payments: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=get_settings().mail_poll_interval_minutes,
     id="poll_mail_invoices",
     max_instances=1,

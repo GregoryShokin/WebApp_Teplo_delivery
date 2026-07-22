@@ -68,6 +68,18 @@ WALLET_TO_IIKO_ACCOUNT: dict[str, str] = {
 # автоматически (нужен ручной разбор), чтобы не долбить iiko бесконечно.
 MAX_PUSH_ATTEMPTS = 6
 
+# Пауза между add_payment внутри одного прохода. iiko троттлит серию (429), а 20.07.2026 плотная
+# пачка (19 вызовов за секунду) дала три «тихие потери»: ответ 201 с accountingTransactionId, а
+# проводки в учёте нет. Разреживаем серию; джоб редкий (5 мин) и накладных за проход единицы,
+# поэтому задержка ничего не тормозит. См. iiko_payment_verify — оно же ловит потери постфактум.
+ADD_PAYMENT_INTERVAL_SECONDS = 1.5
+
+
+async def _throttle_add_payment(sent_in_pass: int) -> None:
+    """Разредить серию ``add_payment``: пауза перед каждой отправкой, кроме первой в проходе."""
+    if sent_in_pass > 0 and ADD_PAYMENT_INTERVAL_SECONDS > 0:
+        await anyio.sleep(ADD_PAYMENT_INTERVAL_SECONDS)
+
 
 def _amount_iiko_representable(amount: Decimal) -> bool:
     """iiko парсит ``amount`` JSON-числом в double и валидирует целость копеек (``amount*100`` —
@@ -785,6 +797,7 @@ async def mirror_paid_iiko_invoices(
     ).all()
 
     result = {"eligible": len(rows), "ok": 0, "skipped": 0, "error": 0, "skipped_multi": 0}
+    sent_in_pass = 0  # счётчик отправок за проход — по нему разрежаем серию add_payment
     multi_draft_ids = {draft_id for _, draft_id, _, siblings, _, _ in rows if siblings > 1}
     multi_shares, multi_totals = await _multi_draft_bank_shares(session, multi_draft_ids)
     multi_draft_meta: dict[uuid.UUID, tuple[Decimal, bool, tuple[uuid.UUID, str] | None]] = {}
@@ -837,6 +850,8 @@ async def mirror_paid_iiko_invoices(
             )
             continue
         try:
+            await _throttle_add_payment(sent_in_pass)
+            sent_in_pass += 1
             res = await push_invoice_payment_to_iiko(
                 session,
                 external_id=external_id,
@@ -1282,6 +1297,7 @@ async def mirror_paid_kassa_invoices(
         "eligible": len(rows), "ok": 0, "skipped": 0, "error": 0,
         "no_goods": 0, "backlog": 0, "manual": 0,
     }
+    sent_in_pass = 0  # счётчик отправок за проход — по нему разрежаем серию add_payment
     for invoice in rows:
         # Поля в локали ДО пуша: после commit/rollback доступ к ORM-инстансу мог бы поднять
         # MissingGreenlet (lazy-IO в async) и оборвать батч.
@@ -1334,6 +1350,8 @@ async def mirror_paid_kassa_invoices(
                 terminal_fail.append(f"{src}: {existing.error or 'исчерпан кап попыток'}")
                 continue
             try:
+                await _throttle_add_payment(sent_in_pass)
+                sent_in_pass += 1
                 res = await push_invoice_payment_to_iiko(
                     session,
                     external_id=external_id,

@@ -935,6 +935,17 @@ class IikoInvoicePaymentPush(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     iiko_document_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Пост-проверка: ответ add_payment (201 + accountingTransactionId) НЕ доказывает проводку —
+    # подтверждаем её отдельно по OLAP-отчёту iiko. ``verified_at`` — когда проводка найдена;
+    # ``verify_attempts`` — сколько раз искали и не нашли; ``resend_count`` — сколько раз после
+    # этого переотправляли платёж.
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verify_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    resend_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     request_payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
