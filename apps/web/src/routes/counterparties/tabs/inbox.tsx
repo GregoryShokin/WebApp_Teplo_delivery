@@ -302,22 +302,9 @@ export function InboxTab({
       className: "text-center",
       headerClassName: "text-center",
       cell: (invoice) => {
-        // Накладная «в iiko»: пришла оттуда (source=iiko) или выгружена (pushed/external_id).
-        const inIiko =
-          invoice.source === "iiko" ||
-          invoice.iiko_push_status === "pushed" ||
-          Boolean(invoice.external_id);
-        if (inIiko) {
-          return (
-            <CheckCircle2
-              size={18}
-              className="inline-block text-emerald-600"
-              aria-label="Отправлено в iiko"
-            />
-          );
-        }
         if (invoice.iiko_push_status === "failed") {
-          // Красный крестик: пуш упал — клик показывает детализацию ошибки.
+          // create мог вернуть external_id, а следующий post — упасть. Такой черновик ещё не
+          // считается отправленной накладной: ошибка важнее наличия технического documentId.
           return (
             <button
               type="button"
@@ -330,6 +317,18 @@ export function InboxTab({
             >
               <CircleX size={18} className="text-red-600" aria-label="Ошибка отправки в iiko" />
             </button>
+          );
+        }
+        // Зелёная галочка — только подтверждённо проведённая накладная: пришла из iiko либо
+        // наш create+post завершился статусом pushed. Один external_id этого не доказывает.
+        const inIiko = invoice.source === "iiko" || invoice.iiko_push_status === "pushed";
+        if (inIiko) {
+          return (
+            <CheckCircle2
+              size={18}
+              className="inline-block text-emerald-600"
+              aria-label="Отправлено в iiko"
+            />
           );
         }
         if (invoice.iiko_push_status === "skipped") {
