@@ -25,13 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-iiko-status — ветка `agent/iiko-status-truth`
-- worktree: `../Teplo-agent-iiko-status`
-- compose: без отдельного стека; frontend lint/build локально
-- трогает: `apps/web/src/routes/counterparties/tabs/inbox.tsx`, статус наличия накладной в iiko
-- НЕ трогать другим: порядок отображения `iiko_push_status` / `external_id` в инбоксе накладных
-- статус: в работе, исправление ложной зелёной галочки после failed post
-
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
