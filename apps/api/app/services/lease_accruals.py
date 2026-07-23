@@ -46,20 +46,17 @@ def month_bounds(month: date) -> tuple[date, date]:
     return first, last
 
 
-def _clamp_day(year: int, month: int, day: int) -> date:
-    """Кламп числа платежа по длине месяца: в БД payment_day допускает 31, а февраль короче."""
-    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
-
-
 def invoice_date_for(lease: LocationLease, month: date) -> date:
-    """Дата обязательства: постоплата — конец месяца, предоплата — платёжный день до него."""
-    first, last = month_bounds(month)
-    if lease.payment_mode == "postpaid":
-        return last
-    if lease.payment_day is None:
-        return first
-    previous_month = (first.replace(day=1) - date.resolution).replace(day=1)
-    return _clamp_day(previous_month.year, previous_month.month, lease.payment_day)
+    """Дата обязательства — всегда конец периода аренды: тогда услуга и оказана.
+
+    Порядок расчётов (``payment_mode``) на эту дату не влияет — он про то, КОГДА платят, а не
+    когда возникает долг. Иначе предоплата ломала бы канон: владелец платит 1 июля за июль,
+    и если датировать обязательство июнем, платёж просто закрыл бы уже висящий долг. На деле
+    1 июля услуга ещё не оказана — деньги вперёд дают дебиторку (правило 1), а закрывающий
+    документ 31 июля её гасит (правило 2). Ровно так это описал владелец 23.07.2026.
+    """
+    _first, last = month_bounds(month)
+    return last
 
 
 def lease_covers_month(lease: LocationLease, month: date) -> bool:

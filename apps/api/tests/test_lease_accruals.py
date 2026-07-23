@@ -156,17 +156,27 @@ def test_future_dated_obligation_waits_for_its_date(async_session_factory) -> No
     asyncio.run(run())
 
 
-def test_prepaid_obligation_lands_on_payment_day_of_previous_month(async_session_factory) -> None:
-    """Предоплату признаём днём платежа месяцем раньше, с клампом по длине месяца."""
+def test_obligation_is_dated_by_period_end_regardless_of_payment_mode(
+    async_session_factory,
+) -> None:
+    """Долг возникает, когда услуга оказана, а не когда за неё платят.
+
+    Кейс владельца 23.07.2026: аренда за июль оплачена 1 июля вперёд. Если датировать
+    обязательство июнем, платёж закрыл бы уже висящий долг и дебиторка не возникла бы. На
+    деле 1 июля услуга ещё не оказана: деньги вперёд дают ДЗ, а закрывающий документ 31 июля
+    её гасит.
+    """
 
     async def run() -> None:
         async with async_session_factory() as session:
-            lease = await _lease(session, payment_mode="prepaid", payment_day=5)
-            assert invoice_date_for(lease, date(2026, 7, 1)) == date(2026, 6, 5)
+            prepaid = await _lease(session, payment_mode="prepaid", payment_day=1)
+            assert invoice_date_for(prepaid, date(2026, 7, 1)) == date(2026, 7, 31)
 
-            lease.payment_day = 31
-            # Платёж «31-го» за март приходится на февраль — 28-е, а не несуществующее 31-е.
-            assert invoice_date_for(lease, date(2026, 3, 1)) == date(2026, 2, 28)
+            postpaid = await _lease(session, payment_mode="postpaid")
+            assert invoice_date_for(postpaid, date(2026, 7, 1)) == date(2026, 7, 31)
+
+            # Февраль короче — конец периода берётся по длине месяца, а не «31-м».
+            assert invoice_date_for(prepaid, date(2026, 2, 1)) == date(2026, 2, 28)
             await session.rollback()
 
     asyncio.run(run())
