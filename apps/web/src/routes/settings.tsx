@@ -76,6 +76,7 @@ type SettingsRouteProps = {
 
 const CATEGORY_ORDER = [
   "positions",
+  "locations",
   "schedule",
   "payroll",
   "payment_calendar",
@@ -89,6 +90,10 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
   positions: {
     label: "Должности",
     description: "Реестр должностей: архетип оплаты, права, допуски и синхронизация с iiko.",
+  },
+  locations: {
+    label: "Помещения",
+    description: "Филиалы, склады и офисы: аренда, расходы точки и привязка к iiko.",
   },
   schedule: {
     label: "График сотрудников",
@@ -254,12 +259,15 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
     if (canViewPositions) {
       found.add("positions");
     }
+    if (canViewLocations) {
+      found.add("locations");
+    }
     return Array.from(found).sort(
       (a, b) =>
         categoryIndex(a) - categoryIndex(b) ||
         labelForCategory(a).localeCompare(labelForCategory(b), "ru"),
     );
-  }, [canViewPositions, settings]);
+  }, [canViewLocations, canViewPositions, settings]);
 
   const groupedSettings = useMemo(() => {
     const groups = new Map<string, AppSetting[]>();
@@ -389,9 +397,9 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
       ) : null}
 
       <div className="space-y-6">
-        {showPositionsPanel ? <PositionsPanel canEdit={canEditPositions} /> : null}
-
         {showLocationsPanel ? <LocationsPanel canEdit={canEditLocations} /> : null}
+
+        {showPositionsPanel ? <PositionsPanel canEdit={canEditPositions} /> : null}
 
         {showSubstitutePairsPanel ? (
             <SubstitutePairsPanel
