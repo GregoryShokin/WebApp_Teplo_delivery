@@ -40,11 +40,17 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as periods
-from app.services.accumulation_fund_service import fund_outstanding
+from app.services.accumulation_fund_service import (
+    fund_account_visible_in_roster,
+    fund_outstanding,
+)
 from app.services.couriers.deposit_service import is_senior_courier
 from app.services.payroll_admin import compute_on_demand_debt, list_on_demand_employees
 from app.services.payroll_advance_availability import available_to_advance
-from app.services.position_registry import eligible_for_personal_report
+from app.services.position_registry import (
+    eligible_for_personal_report,
+    production_payroll_positions,
+)
 
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
@@ -1059,6 +1065,12 @@ async def list_staff_payable(
     отдельными компонентами: производственный депозит берётся из ``DepositAccount.balance``,
     курьерский — из ``opening + top_up - return - forfeit``.
 
+    Накопительный фонд берётся ровно тем же срезом, что страница «Расчёты → Накопительный
+    фонд», и она здесь единственный источник истины: копят его только кассиры и повара
+    (``production_payroll_positions``), обязательством считаются лишь ``active``-счета,
+    видимые в операционном ростере. Списанный фонд уволенных — прибыль компании, а не долг;
+    выплаченный за год фонд закрыт статусом ``paid_out`` и в кредиторку не возвращается.
+
     Дебиторка (нам должны) — все фактически выданные и ещё не погашенные авансы/займы,
     зарплатные выплаты вне ведомости (``EmployeePayout``) и переплата ``on_demand``.
     До финализации ведомости встречные суммы показываются валово в обе стороны; после
@@ -1095,15 +1107,24 @@ async def list_staff_payable(
     fund_by_emp: dict[uuid.UUID, Decimal] = {}
     fund_current_year_by_emp: dict[uuid.UUID, Decimal] = {}
     fund_prior_years_by_emp: dict[uuid.UUID, Decimal] = {}
-    fund_accounts = (
-        await session.scalars(
-            select(AccumulationFundAccount)
+    fund_rows = (
+        await session.execute(
+            select(AccumulationFundAccount, Employee)
             .join(Employee, Employee.id == AccumulationFundAccount.employee_id)
-            .where(Employee.is_freelancer_placeholder.is_(False))
+            .where(
+                Employee.is_freelancer_placeholder.is_(False),
+                # Тот же срез, что и страница «Расчёты → Накопительный фонд»: фонд копят
+                # только кассиры и повара, а обязательством остаются лишь active-счета.
+                # Списанный (forfeited) фонд — прибыль компании, выплаченный закрыт.
+                Employee.position.in_(production_payroll_positions()),
+                AccumulationFundAccount.status == "active",
+            )
         )
     ).all()
-    for account in fund_accounts:
+    for account, fund_employee in fund_rows:
         if account.year > as_of.year:
+            continue
+        if not fund_account_visible_in_roster(account, fund_employee):
             continue
         outstanding = max(periods.money(fund_outstanding(account)), Decimal("0.00"))
         if outstanding > 0:

@@ -459,3 +459,99 @@ def test_employee_receivables_are_broken_down_by_source(
     payout = rows[str(payout_employee_id)]
     assert payout["salary_payouts_outstanding"] == 2000.0
     assert payout["receivable"] == 2000.0
+
+
+def test_fund_payable_mirrors_the_fund_page_scope(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """В кредиторку попадает ровно то, что показывает страница «Накопительный фонд».
+
+    Фонд копят только кассиры и повара; выплаченный за год и списанный уволенным фонд —
+    закрытая история (списанный вообще прибыль компании), а не долг перед сотрудником.
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+        current_year = date.today().year
+        async with async_session_factory() as session:
+            cook = _employee("Повар с активным фондом", position="Повар")
+            manager = _employee("Управляющий с фондом из прошлого", position="Управляющий")
+            dismissed = _employee("Уволенный со списанным фондом", position="Повар")
+            dismissed.status = "inactive"
+            session.add_all([cook, manager, dismissed])
+            await session.flush()
+
+            session.add_all(
+                [
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=cook.id,
+                        position="Повар",
+                        effective_from=date(current_year, 1, 1),
+                    ),
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=manager.id,
+                        position="Управляющий",
+                        effective_from=date(current_year, 1, 1),
+                    ),
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=dismissed.id,
+                        position="Повар",
+                        effective_from=date(current_year, 1, 1),
+                    ),
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=cook.id,
+                        year=current_year,
+                        accumulated_amount=Decimal("9000"),
+                        paid_out_amount=Decimal("0"),
+                        forfeited_amount=Decimal("0"),
+                        status="active",
+                    ),
+                    # Прошлый год выплачен целиком — в кредиторку он вернуться не должен.
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=cook.id,
+                        year=current_year - 1,
+                        accumulated_amount=Decimal("50000"),
+                        paid_out_amount=Decimal("50000"),
+                        forfeited_amount=Decimal("0"),
+                        status="paid_out",
+                    ),
+                    # Управляющий фонд не копит: исторический счёт долгом не считается.
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=manager.id,
+                        year=current_year,
+                        accumulated_amount=Decimal("3751"),
+                        paid_out_amount=Decimal("0"),
+                        forfeited_amount=Decimal("0"),
+                        status="active",
+                    ),
+                    # Списание уволенному — прибыль компании.
+                    AccumulationFundAccount(
+                        id=uuid.uuid4(),
+                        employee_id=dismissed.id,
+                        year=current_year,
+                        accumulated_amount=Decimal("15000"),
+                        paid_out_amount=Decimal("0"),
+                        forfeited_amount=Decimal("15000"),
+                        status="forfeited",
+                        forfeited_at=datetime.now(UTC),
+                    ),
+                ]
+            )
+            await session.commit()
+            return cook.id, manager.id, dismissed.id
+
+    cook_id, manager_id, dismissed_id = asyncio.run(seed())
+    response = client.get(f"{BASE}/staff-payable", headers=_admin(async_session_factory))
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    rows = {item["employee_id"]: item for item in payload["items"]}
+
+    assert rows[str(cook_id)]["fund_payable"] == 9000.0
+    assert rows[str(cook_id)]["fund_prior_years_payable"] == 0.0
+    assert rows.get(str(manager_id), {}).get("fund_payable", 0.0) == 0.0
+    assert rows.get(str(dismissed_id), {}).get("fund_payable", 0.0) == 0.0
