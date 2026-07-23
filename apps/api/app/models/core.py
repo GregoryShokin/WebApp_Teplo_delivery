@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,6 +24,16 @@ class Organization(Base):
 
 
 class Location(Base):
+    """Помещение (филиал, склад, офис) — ось аналитики «где» и точка привязки к iiko.
+
+    В iiko одному помещению соответствуют ТРИ разные сущности, и путать их нельзя:
+    ``iiko_organization_id`` — организация облачного API (накладные, платежи поставщикам),
+    ``iiko_department_id`` — подразделение RMS (выручка OLAP, кассовые смены, выплаты),
+    ``iiko_store_ids`` — склады (остатки и инвентаризации), их на помещение обычно несколько.
+    Пустые идентификаторы означают, что помещение к iiko не подключено (склад в аренде,
+    офис) — такое помещение остаётся полноценным адресатом аренды и расходов.
+    """
+
     __tablename__ = "location"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -35,6 +45,17 @@ class Location(Base):
     status: Mapped[str] = mapped_column(
         location_status_enum, nullable=False, default="active", server_default="active"
     )
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="point", server_default="point"
+    )
+    iiko_organization_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    iiko_department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    iiko_store_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    opened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    closed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class User(Base):

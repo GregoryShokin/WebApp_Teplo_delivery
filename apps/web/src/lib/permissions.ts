@@ -240,6 +240,7 @@ export const PERMISSION_GROUPS = {
   ],
   settingsRead: [
     "settings.general.read",
+    "source.locations.read",
     "settings.positions.read",
     "settings.users.read",
     "settings.access_audit.read",
@@ -247,6 +248,7 @@ export const PERMISSION_GROUPS = {
   ],
   settingsWrite: [
     "settings.general.edit",
+    "source.locations.edit",
     "settings.positions.edit",
     "settings.integrations.configure",
     "settings.users.create",

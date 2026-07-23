@@ -3247,6 +3247,54 @@ export async function updateSubstitutePairs(
   return response.data;
 }
 
+export type LocationKind = "point" | "warehouse" | "office";
+
+export type LocationRecord = {
+  id: string;
+  name: string;
+  kind: LocationKind;
+  status: "active" | "inactive";
+  address: string | null;
+  iiko_organization_id: string | null;
+  iiko_department_id: string | null;
+  iiko_store_ids: string[];
+  opened_on: string | null;
+  closed_on: string | null;
+  note: string | null;
+  iiko_linked: boolean;
+};
+
+export type LocationPayload = {
+  name: string;
+  kind: LocationKind;
+  address?: string | null;
+  iiko_organization_id?: string | null;
+  iiko_department_id?: string | null;
+  iiko_store_ids?: string[];
+  opened_on?: string | null;
+  closed_on?: string | null;
+  note?: string | null;
+  status?: "active" | "inactive";
+};
+
+export async function getLocations(): Promise<LocationRecord[]> {
+  const response = await api.get<{ items: LocationRecord[] }>("/locations");
+  return response.data.items;
+}
+
+export async function createLocation(payload: LocationPayload): Promise<LocationRecord> {
+  const response = await api.post<LocationRecord>("/locations", payload);
+  return response.data;
+}
+
+export async function updateLocation(
+  id: string,
+  payload: LocationPayload,
+): Promise<LocationRecord> {
+  const response = await api.patch<LocationRecord>(`/locations/${id}`, payload);
+  return response.data;
+}
+
 export async function getPositions(): Promise<Position[]> {
   const response = await api.get<{ positions: Position[] }>("/settings/positions");
   return response.data.positions;

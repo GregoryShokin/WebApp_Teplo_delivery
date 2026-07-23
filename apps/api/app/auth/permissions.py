@@ -259,6 +259,8 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Исходные данные",
         "Редактировать настройки накопительного фонда",
     ),
+    ("source.locations.read", "Исходные данные", "Смотреть реестр помещений"),
+    ("source.locations.edit", "Исходные данные", "Редактировать реестр помещений"),
     ("source.deposit_settings.read", "Исходные данные", "Смотреть настройки депозитов"),
     (
         "source.deposit_settings.edit",

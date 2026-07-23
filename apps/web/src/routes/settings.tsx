@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/sheet";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { PayinPresetsPanel } from "@/routes/settings-payin-presets";
+import { LocationsPanel } from "@/routes/settings-locations";
 import { PositionsPanel } from "@/routes/settings-positions";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -244,6 +245,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
   }, []);
 
   const canViewPositions = permissions.hasPermission("settings.positions.read");
+  const canViewLocations = permissions.hasPermission("source.locations.read");
+  const canEditLocations = permissions.hasPermission("source.locations.edit");
   const canEditPositions = permissions.hasPermission("settings.positions.edit");
 
   const categories = useMemo(() => {
@@ -289,6 +292,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
   const canWriteSettings = permissions.canPerformAction("settings.edit");
   const showPositionsPanel =
     canViewPositions && (!selectedCategory || selectedCategory === "positions");
+  const showLocationsPanel =
+    canViewLocations && (!selectedCategory || selectedCategory === "locations");
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
   const showPayinPresetsPanel = !selectedCategory || selectedCategory === "kassa";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
@@ -386,6 +391,8 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
       <div className="space-y-6">
         {showPositionsPanel ? <PositionsPanel canEdit={canEditPositions} /> : null}
 
+        {showLocationsPanel ? <LocationsPanel canEdit={canEditLocations} /> : null}
+
         {showSubstitutePairsPanel ? (
             <SubstitutePairsPanel
             canWrite={canWriteSettings}
@@ -455,7 +462,10 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
           </section>
         ))}
 
-        {!settingsQuery.isLoading && groupedSettings.length === 0 && !showPositionsPanel ? (
+        {!settingsQuery.isLoading &&
+        groupedSettings.length === 0 &&
+        !showPositionsPanel &&
+        !showLocationsPanel ? (
           <div className="rounded-lg border bg-card px-4 py-8 text-sm text-muted-foreground">
             Настройки в этом разделе пока не заданы.
           </div>
