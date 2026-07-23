@@ -3312,12 +3312,18 @@ export type LeaseRecord = {
   is_active: boolean;
 };
 
-export type LeasePayload = {
-  /** Существующий арендодатель — когда его выбрали явно. */
+/** Данные арендодателя. Для официальной аренды реквизиты обязательны. */
+export type LandlordInput = {
   counterparty_id?: string | null;
-  /** Новый арендодатель заводится по названию прямо из карточки помещения. */
-  landlord_name?: string | null;
-  landlord_inn?: string | null;
+  name?: string | null;
+  inn?: string | null;
+  bank_bik?: string | null;
+  bank_account?: string | null;
+  corr_account?: string | null;
+};
+
+/** Условия аренды с ТЕМ ЖЕ арендодателем — смена собственника идёт отдельным действием. */
+export type LeaseTermsPayload = {
   monthly_amount: number;
   payment_day?: number | null;
   payment_mode: "prepaid" | "postpaid";
@@ -3326,6 +3332,14 @@ export type LeasePayload = {
   started_on: string;
   ended_on?: string | null;
   note?: string | null;
+};
+
+export type LeasePayload = LeaseTermsPayload & { landlord: LandlordInput };
+
+export type LandlordReplacement = {
+  previous: LeaseRecord;
+  current: LeaseRecord;
+  previous_archived: boolean;
 };
 
 export async function getLocationLeases(locationId: string): Promise<LeaseRecord[]> {
@@ -3344,7 +3358,7 @@ export async function createLocationLease(
 export async function updateLocationLease(
   locationId: string,
   leaseId: string,
-  payload: LeasePayload,
+  payload: LeaseTermsPayload,
 ): Promise<LeaseRecord> {
   const response = await api.patch<LeaseRecord>(
     `/locations/${locationId}/leases/${leaseId}`,
@@ -3362,6 +3376,19 @@ export async function closeLocationLease(
   const response = await api.post<LeaseRecord>(
     `/locations/${locationId}/leases/${leaseId}/close`,
     { ended_on: endedOn },
+  );
+  return response.data;
+}
+
+/** Смена собственника: прежняя аренда закрывается, новая заводится отдельной строкой. */
+export async function replaceLeaseLandlord(
+  locationId: string,
+  leaseId: string,
+  payload: { landlord: LandlordInput; terms: LeaseTermsPayload; previous_ended_on: string },
+): Promise<LandlordReplacement> {
+  const response = await api.post<LandlordReplacement>(
+    `/locations/${locationId}/leases/${leaseId}/replace-landlord`,
+    payload,
   );
   return response.data;
 }

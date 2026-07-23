@@ -137,7 +137,7 @@ def test_lease_creates_landlord_from_form(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "landlord_name": "ИП Иванов И. И.",
+            "landlord": {"name": "ИП Иванов И. И."},
             "monthly_amount": 100000,
             "payment_day": 1,
             "documents_mode": "informal",
@@ -177,7 +177,7 @@ def test_same_landlord_is_reused_across_locations(
         f"{BASE}/{first_location}/leases",
         headers=headers,
         json={
-            "landlord_name": "ИП Общий Собственник",
+            "landlord": {"name": "ИП Общий Собственник"},
             "monthly_amount": 100000,
             "started_on": "2026-01-01",
         },
@@ -189,7 +189,7 @@ def test_same_landlord_is_reused_across_locations(
         headers=headers,
         # Регистр другой — для человека это тот же собственник, дубля быть не должно.
         json={
-            "landlord_name": "ип общий собственник",
+            "landlord": {"name": "ип общий собственник"},
             "monthly_amount": 10000,
             "started_on": "2026-02-01",
         },
@@ -206,17 +206,21 @@ def test_same_landlord_is_reused_across_locations(
     ]
 
 
-def test_changing_landlord_keeps_history(
+def test_closing_lease_leaves_location_without_landlord(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Смена собственника не переписывает прошлые месяцы на нового арендодателя."""
+    """«Съехали» без замены: активных арендодателей нет, история остаётся.
+
+    Смену собственника проверяет test_replacing_landlord_archives_the_previous_one — здесь
+    именно случай, когда помещение освободилось и новый договор ещё не заключён.
+    """
     headers = _admin(async_session_factory)
-    location_id = _make_location(client, headers, "Точка со сменой собственника")
+    location_id = _make_location(client, headers, "Точка, которую освободили")
     created = client.post(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "landlord_name": "Прежний собственник",
+            "landlord": {"name": "Собственник до переезда"},
             "monthly_amount": 100000,
             "started_on": "2026-01-01",
         },
@@ -230,26 +234,11 @@ def test_changing_landlord_keeps_history(
     assert closed.status_code == 200, closed.text
     assert closed.json()["is_active"] is False
 
-    client.post(
-        f"{BASE}/{location_id}/leases",
-        headers=headers,
-        json={
-            "landlord_name": "Новый собственник",
-            "monthly_amount": 110000,
-            "documents_mode": "official",
-            "started_on": "2026-07-01",
-        },
-    )
-
     leases = client.get(f"{BASE}/{location_id}/leases", headers=headers).json()["items"]
-    assert len(leases) == 2
-    active = [item for item in leases if item["is_active"]]
-    assert len(active) == 1
-    assert active[0]["counterparty_name"] == "Новый собственник"
-    assert active[0]["monthly_amount"] == 110000.0
-    history = [item for item in leases if not item["is_active"]]
-    assert history[0]["counterparty_name"] == "Прежний собственник"
-    assert history[0]["ended_on"] == "2026-06-30"
+    assert len(leases) == 1
+    assert [item["is_active"] for item in leases] == [False]
+    assert leases[0]["counterparty_name"] == "Собственник до переезда"
+    assert leases[0]["ended_on"] == "2026-06-30"
 
 
 def test_two_landlords_can_share_one_location(
@@ -263,7 +252,7 @@ def test_two_landlords_can_share_one_location(
             f"{BASE}/{location_id}/leases",
             headers=headers,
             json={
-                "landlord_name": landlord,
+                "landlord": {"name": landlord},
                 "monthly_amount": amount,
                 "started_on": "2026-01-01",
             },
@@ -285,10 +274,185 @@ def test_lease_period_order_is_validated(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "landlord_name": "Собственник с датами",
+            "landlord": {"name": "Собственник с датами"},
             "monthly_amount": 50000,
             "started_on": "2026-07-01",
             "ended_on": "2026-06-01",
         },
     )
     assert response.status_code == 422, response.text
+
+
+def test_editing_terms_never_swaps_landlord(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Правка суммы — это договорённость с тем же собственником, а не его замена."""
+    headers = _admin(async_session_factory)
+    location_id = _make_location(client, headers, "Точка с правкой условий")
+    created = client.post(
+        f"{BASE}/{location_id}/leases",
+        headers=headers,
+        json={
+            "landlord": {"name": "Собственник условий"},
+            "monthly_amount": 100000,
+            "started_on": "2026-01-01",
+        },
+    ).json()
+
+    updated = client.patch(
+        f"{BASE}/{location_id}/leases/{created['id']}",
+        headers=headers,
+        json={"monthly_amount": 120000, "started_on": "2026-01-01"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["counterparty_id"] == created["counterparty_id"]
+    assert updated.json()["monthly_amount"] == 120000.0
+
+    # Попытка подсунуть арендодателя в правку условий должна отлетать, а не менять его молча.
+    sneaky = client.patch(
+        f"{BASE}/{location_id}/leases/{created['id']}",
+        headers=headers,
+        json={
+            "monthly_amount": 120000,
+            "started_on": "2026-01-01",
+            "landlord": {"name": "Подменённый собственник"},
+        },
+    )
+    assert sneaky.status_code == 422, sneaky.text
+
+
+def test_official_lease_requires_landlord_requisites(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Официальная аренда без реквизитов бессмысленна: платёж по УПД некуда отправить."""
+    headers = _admin(async_session_factory)
+    location_id = _make_location(client, headers, "Точка с официальной арендой")
+
+    refused = client.post(
+        f"{BASE}/{location_id}/leases",
+        headers=headers,
+        json={
+            "landlord": {"name": "ООО Без Реквизитов"},
+            "monthly_amount": 100000,
+            "documents_mode": "official",
+            "started_on": "2026-01-01",
+        },
+    )
+    assert refused.status_code == 422, refused.text
+    assert "реквизиты" in refused.json()["detail"].lower()
+
+    accepted = client.post(
+        f"{BASE}/{location_id}/leases",
+        headers=headers,
+        json={
+            "landlord": {
+                "name": "ООО С Реквизитами",
+                "inn": "7707083893",
+                "bank_bik": "044525225",
+                "bank_account": "40702810900000000001",
+                "corr_account": "30101810400000000225",
+            },
+            "monthly_amount": 100000,
+            "documents_mode": "official",
+            "started_on": "2026-01-01",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+
+
+def test_replacing_landlord_archives_the_previous_one(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Смена собственника: прежняя аренда закрывается, прежний арендодатель уходит в архив."""
+    headers = _admin(async_session_factory)
+    location_id = _make_location(client, headers, "Точка со сменой владельца")
+    created = client.post(
+        f"{BASE}/{location_id}/leases",
+        headers=headers,
+        json={
+            "landlord": {"name": "Уходящий собственник"},
+            "monthly_amount": 100000,
+            "started_on": "2026-01-01",
+        },
+    ).json()
+
+    replaced = client.post(
+        f"{BASE}/{location_id}/leases/{created['id']}/replace-landlord",
+        headers=headers,
+        json={
+            "landlord": {"name": "Пришедший собственник"},
+            "terms": {"monthly_amount": 130000, "started_on": "2026-07-01"},
+            "previous_ended_on": "2026-06-30",
+        },
+    )
+    assert replaced.status_code == 201, replaced.text
+    body = replaced.json()
+    assert body["previous"]["ended_on"] == "2026-06-30"
+    assert body["previous"]["is_active"] is False
+    assert body["current"]["counterparty_name"] == "Пришедший собственник"
+    assert body["current"]["monthly_amount"] == 130000.0
+    assert body["previous_archived"] is True
+
+    leases = client.get(f"{BASE}/{location_id}/leases", headers=headers).json()["items"]
+    assert [item["is_active"] for item in leases].count(True) == 1
+
+
+def test_landlord_renting_another_location_is_not_archived(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Тот же собственник сдаёт вторую точку — в архив ему рано."""
+    headers = _admin(async_session_factory)
+    first = _make_location(client, headers, "Первая точка общего владельца")
+    second = _make_location(client, headers, "Вторая точка общего владельца")
+    landlord = {"name": "Собственник двух точек"}
+
+    client.post(
+        f"{BASE}/{second}/leases",
+        headers=headers,
+        json={"landlord": landlord, "monthly_amount": 10000, "started_on": "2026-01-01"},
+    )
+    created = client.post(
+        f"{BASE}/{first}/leases",
+        headers=headers,
+        json={"landlord": landlord, "monthly_amount": 50000, "started_on": "2026-01-01"},
+    ).json()
+
+    replaced = client.post(
+        f"{BASE}/{first}/leases/{created['id']}/replace-landlord",
+        headers=headers,
+        json={
+            "landlord": {"name": "Сменщик на первой точке"},
+            "terms": {"monthly_amount": 60000, "started_on": "2026-08-01"},
+            "previous_ended_on": "2026-07-31",
+        },
+    )
+    assert replaced.status_code == 201, replaced.text
+    assert replaced.json()["previous_archived"] is False
+
+
+def test_replacing_with_the_same_landlord_is_rejected(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """«Смена» на самого себя — это правка условий, а не новая строка аренды."""
+    headers = _admin(async_session_factory)
+    location_id = _make_location(client, headers, "Точка с мнимой сменой")
+    created = client.post(
+        f"{BASE}/{location_id}/leases",
+        headers=headers,
+        json={
+            "landlord": {"name": "Тот же самый собственник"},
+            "monthly_amount": 100000,
+            "started_on": "2026-01-01",
+        },
+    ).json()
+
+    response = client.post(
+        f"{BASE}/{location_id}/leases/{created['id']}/replace-landlord",
+        headers=headers,
+        json={
+            "landlord": {"name": "тот же самый собственник"},
+            "terms": {"monthly_amount": 110000, "started_on": "2026-07-01"},
+            "previous_ended_on": "2026-06-30",
+        },
+    )
+    assert response.status_code == 409, response.text

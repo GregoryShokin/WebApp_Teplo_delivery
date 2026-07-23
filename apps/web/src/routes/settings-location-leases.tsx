@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, LogOut, Pencil, Plus } from "lucide-react";
+import { LoaderCircle, LogOut, Pencil, Plus, Repeat } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,9 +27,11 @@ import {
   closeLocationLease,
   createLocationLease,
   getLocationLeases,
+  replaceLeaseLandlord,
   updateLocationLease,
-  type LeasePayload,
+  type LandlordInput,
   type LeaseRecord,
+  type LeaseTermsPayload,
 } from "@/lib/api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -42,6 +44,9 @@ type LeaseForm = {
   counterpartyId: string;
   landlordName: string;
   landlordInn: string;
+  bankBik: string;
+  bankAccount: string;
+  corrAccount: string;
   monthlyAmount: string;
   paymentDay: string;
   paymentMode: "prepaid" | "postpaid";
@@ -55,6 +60,9 @@ const EMPTY_LEASE: LeaseForm = {
   counterpartyId: "",
   landlordName: "",
   landlordInn: "",
+  bankBik: "",
+  bankAccount: "",
+  corrAccount: "",
   monthlyAmount: "",
   paymentDay: "",
   paymentMode: "prepaid",
@@ -69,6 +77,9 @@ function toForm(lease: LeaseRecord): LeaseForm {
     counterpartyId: lease.counterparty_id,
     landlordName: lease.counterparty_name,
     landlordInn: "",
+    bankBik: "",
+    bankAccount: "",
+    corrAccount: "",
     monthlyAmount: String(lease.monthly_amount),
     paymentDay: lease.payment_day ? String(lease.payment_day) : "",
     paymentMode: lease.payment_mode,
@@ -79,14 +90,8 @@ function toForm(lease: LeaseRecord): LeaseForm {
   };
 }
 
-function toPayload(form: LeaseForm, editing: LeaseRecord | null): LeasePayload {
-  // Имя не меняли — оставляем прежнего арендодателя по id; изменили — заведём/найдём нового.
-  const keepExisting =
-    editing !== null && form.landlordName.trim() === editing.counterparty_name.trim();
+function toTerms(form: LeaseForm): LeaseTermsPayload {
   return {
-    counterparty_id: keepExisting ? form.counterpartyId : null,
-    landlord_name: keepExisting ? null : form.landlordName.trim(),
-    landlord_inn: keepExisting ? null : form.landlordInn.trim() || null,
     monthly_amount: Number(form.monthlyAmount.replace(",", ".")) || 0,
     payment_day: form.paymentDay ? Number(form.paymentDay) : null,
     payment_mode: form.paymentMode,
@@ -95,6 +100,85 @@ function toPayload(form: LeaseForm, editing: LeaseRecord | null): LeasePayload {
     started_on: form.startedOn,
     note: form.note.trim() || null,
   };
+}
+
+function toLandlord(form: LeaseForm): LandlordInput {
+  return {
+    name: form.landlordName.trim(),
+    inn: form.landlordInn.trim() || null,
+    bank_bik: form.bankBik.trim() || null,
+    bank_account: form.bankAccount.trim() || null,
+    corr_account: form.corrAccount.trim() || null,
+  };
+}
+
+
+/** Данные арендодателя. Реквизиты показываем только официальной аренде — по ним и платят. */
+function LandlordFields({
+  form,
+  setForm,
+  idPrefix,
+}: {
+  form: LeaseForm;
+  setForm: (next: LeaseForm) => void;
+  idPrefix: string;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}-landlord`}>Арендодатель</Label>
+          <Input
+            id={`${idPrefix}-landlord`}
+            value={form.landlordName}
+            onChange={(event) => setForm({ ...form, landlordName: event.target.value })}
+            placeholder="ИП Иванов И. И."
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`${idPrefix}-inn`}>ИНН</Label>
+          <Input
+            id={`${idPrefix}-inn`}
+            inputMode="numeric"
+            value={form.landlordInn}
+            onChange={(event) => setForm({ ...form, landlordInn: event.target.value })}
+            placeholder={form.documentsMode === "official" ? "обязательно" : "необязательно"}
+          />
+        </div>
+      </div>
+      {form.documentsMode === "official" ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-bik`}>БИК банка</Label>
+            <Input
+              id={`${idPrefix}-bik`}
+              inputMode="numeric"
+              value={form.bankBik}
+              onChange={(event) => setForm({ ...form, bankBik: event.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-acc`}>Расчётный счёт</Label>
+            <Input
+              id={`${idPrefix}-acc`}
+              inputMode="numeric"
+              value={form.bankAccount}
+              onChange={(event) => setForm({ ...form, bankAccount: event.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-corr`}>Корр. счёт</Label>
+            <Input
+              id={`${idPrefix}-corr`}
+              inputMode="numeric"
+              value={form.corrAccount}
+              onChange={(event) => setForm({ ...form, corrAccount: event.target.value })}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -132,16 +216,40 @@ export function LocationLeases({
     await queryClient.invalidateQueries({ queryKey: ["location-leases", locationId] });
   }
 
+  const [replacing, setReplacing] = useState<LeaseRecord | null>(null);
+  const [replaceForm, setReplaceForm] = useState<LeaseForm>(EMPTY_LEASE);
+  const [previousEndedOn, setPreviousEndedOn] = useState("");
+
   const saveMutation = useMutation({
-    mutationFn: async (payload: LeasePayload) =>
+    mutationFn: async (form: LeaseForm) =>
       editing
-        ? updateLocationLease(locationId, editing.id, payload)
-        : createLocationLease(locationId, payload),
+        ? updateLocationLease(locationId, editing.id, toTerms(form))
+        : createLocationLease(locationId, { ...toTerms(form), landlord: toLandlord(form) }),
     onSuccess: async () => {
       await refresh();
       toast.success(editing ? "Аренда обновлена" : "Аренда добавлена");
       setDialogOpen(false);
       setEditing(null);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error)),
+  });
+
+  const replaceMutation = useMutation({
+    mutationFn: async ({ lease, form, endedOn }: { lease: LeaseRecord; form: LeaseForm; endedOn: string }) =>
+      replaceLeaseLandlord(locationId, lease.id, {
+        landlord: toLandlord(form),
+        terms: toTerms(form),
+        previous_ended_on: endedOn,
+      }),
+    onSuccess: async (result) => {
+      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ["counterparty-leases"] });
+      toast.success(
+        result.previous_archived
+          ? "Арендодатель сменён, прежний убран в архив"
+          : "Арендодатель сменён — прежний остаётся, он сдаёт другое помещение",
+      );
+      setReplacing(null);
     },
     onError: (error) => toast.error(apiErrorMessage(error)),
   });
@@ -160,7 +268,7 @@ export function LocationLeases({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!form.landlordName.trim()) {
+    if (!editing && !form.landlordName.trim()) {
       toast.error("Укажите название арендодателя");
       return;
     }
@@ -168,7 +276,7 @@ export function LocationLeases({
       toast.error("Укажите дату начала аренды");
       return;
     }
-    saveMutation.mutate(toPayload(form, editing));
+    saveMutation.mutate(form);
   }
 
   const leases = leasesQuery.data ?? [];
@@ -249,6 +357,18 @@ export function LocationLeases({
                     variant="ghost"
                     size="sm"
                     onClick={() => {
+                      setReplacing(lease);
+                      setReplaceForm({ ...EMPTY_LEASE, monthlyAmount: String(lease.monthly_amount) });
+                      setPreviousEndedOn("");
+                    }}
+                  >
+                    <Repeat className="mr-1 h-4 w-4" />
+                    Сменить арендодателя
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
                       setClosingLease(lease);
                       setClosingDate("");
                     }}
@@ -295,27 +415,17 @@ export function LocationLeases({
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-              <div className="space-y-1">
-                <Label htmlFor="lease-landlord">Арендодатель</Label>
-                <Input
-                  id="lease-landlord"
-                  value={form.landlordName}
-                  onChange={(event) => setForm({ ...form, landlordName: event.target.value })}
-                  placeholder="ИП Иванов И. И."
-                />
+            {editing ? (
+              <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                Арендодатель: <span className="font-medium">{editing.counterparty_name}</span>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Здесь меняются только условия. Сменить собственника — кнопка «Сменить
+                  арендодателя»; фамилию, ИНН и реквизиты правят в карточке контрагента.
+                </p>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="lease-inn">ИНН</Label>
-                <Input
-                  id="lease-inn"
-                  inputMode="numeric"
-                  value={form.landlordInn}
-                  onChange={(event) => setForm({ ...form, landlordInn: event.target.value })}
-                  placeholder="необязательно"
-                />
-              </div>
-            </div>
+            ) : (
+              <LandlordFields form={form} setForm={setForm} idPrefix="lease" />
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1">
@@ -425,6 +535,113 @@ export function LocationLeases({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={replacing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReplacing(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Сменить арендодателя</DialogTitle>
+            <DialogDescription>
+              Прежняя аренда с «{replacing?.counterparty_name}» закроется указанной датой, а
+              новая заведётся отдельной строкой — платежи прошлых месяцев останутся за прежним
+              собственником. Если он больше ничего не сдаёт, его карточка уйдёт в архив.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="replace-prev-end">Прежняя аренда до</Label>
+                <Input
+                  id="replace-prev-end"
+                  type="date"
+                  value={previousEndedOn}
+                  onChange={(event) => setPreviousEndedOn(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="replace-start">Новая аренда с</Label>
+                <Input
+                  id="replace-start"
+                  type="date"
+                  value={replaceForm.startedOn}
+                  onChange={(event) =>
+                    setReplaceForm({ ...replaceForm, startedOn: event.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="replace-amount">Стоимость в месяц, ₽</Label>
+                <Input
+                  id="replace-amount"
+                  inputMode="decimal"
+                  value={replaceForm.monthlyAmount}
+                  onChange={(event) =>
+                    setReplaceForm({ ...replaceForm, monthlyAmount: event.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Документы</Label>
+                <Select
+                  value={replaceForm.documentsMode}
+                  onValueChange={(value) =>
+                    setReplaceForm({
+                      ...replaceForm,
+                      documentsMode: value as "official" | "informal",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="official">Официально, с УПД</SelectItem>
+                    <SelectItem value="informal">Без документов</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <LandlordFields form={replaceForm} setForm={setReplaceForm} idPrefix="replace" />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReplacing(null)}>
+              Отмена
+            </Button>
+            <Button
+              disabled={
+                !previousEndedOn ||
+                !replaceForm.startedOn ||
+                !replaceForm.landlordName.trim() ||
+                replaceMutation.isPending
+              }
+              onClick={() => {
+                if (replacing) {
+                  replaceMutation.mutate({
+                    lease: replacing,
+                    form: replaceForm,
+                    endedOn: previousEndedOn,
+                  });
+                }
+              }}
+            >
+              {replaceMutation.isPending ? (
+                <LoaderCircle className="mr-1 h-4 w-4 animate-spin" />
+              ) : null}
+              Сменить
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
