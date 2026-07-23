@@ -249,6 +249,19 @@ async def pay_allocation(
     )
     await session.flush()
 
+    # Аренда: наличная оплата гасит обязательство этого договора. Банковский платёж
+    # закрывает его сам (правило 1), а наличный контур правило 1 не зовёт.
+    if allocation.lease_id is not None:
+        from app.services.lease_accruals import settle_lease_invoice_from_cash
+
+        await settle_lease_invoice_from_cash(
+            session,
+            lease_id=allocation.lease_id,
+            transaction_id=leg.id,
+            amount=amount,
+            operation_date=operation_date,
+        )
+
     # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
     # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
     # Код статьи продублирован из supplier_prepayments (циклический импорт через kassa).

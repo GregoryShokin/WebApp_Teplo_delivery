@@ -15,7 +15,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,6 +52,11 @@ class LocationLease(Base):
     # именно этого помещения при разборе платежа.
     dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Выключатель ежемесячного начисления: не всякий договор должен порождать обязательство
+    # (разовая аренда, договор, который ведут вне системы).
+    accrual_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
     started_on: Mapped[date] = mapped_column(Date, nullable=False)
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)

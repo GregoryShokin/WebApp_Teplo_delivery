@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.core.config import get_settings
 from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync_job
 from app.jobs.employee_sync_job import run_employee_sync_job
+from app.jobs.lease_accrual_job import run_lease_accrual_job
 from app.jobs.sbis_sync_job import run_sbis_sync_job
 from app.jobs.supplier_closing_activation_job import run_supplier_closing_activation_job
 from app.jobs.supplier_service_period_job import run_supplier_service_period_job
@@ -28,6 +29,18 @@ def get_scheduler() -> BackgroundScheduler:
 
 def register_jobs(scheduler: BackgroundScheduler) -> None:
     settings = get_settings()
+    # Аренда за месяц — ДО признания расходов и активации закрывающих: свежесозданное
+    # обязательство должно попасть в тот же ночной проход, а не ждать сутки.
+    scheduler.add_job(
+        run_lease_accrual_job,
+        "cron",
+        hour=0,
+        minute=3,
+        id="lease_monthly_accrual",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         run_supplier_service_period_job,
         "cron",

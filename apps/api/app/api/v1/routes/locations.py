@@ -24,7 +24,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.db.session import get_session
-from app.models import Counterparty, CounterpartyRole, Location, LocationLease, Organization
+from app.models import (
+    Counterparty,
+    CounterpartyRole,
+    Location,
+    LocationLease,
+    Organization,
+    SupplierInvoice,
+    SupplierPrepayment,
+)
+from app.services import counterparty_matching, lease_accruals
 from app.services import counterparty_registry as registry
 from app.services.location_analytics import leases_for_location
 
@@ -778,6 +787,126 @@ async def list_location_options(
             )
         )
     return LocationOptionListRead(items=items)
+
+
+class LeaseAccrualRead(BaseModel):
+    invoice_id: uuid.UUID
+    number: str | None
+    invoice_date: date | None
+    amount: float
+    paid_amount: float
+    payment_status: str
+    activation_status: str
+    period_start: date | None
+    period_end: date | None
+
+
+class LeaseLedgerRead(BaseModel):
+    accruals: list[LeaseAccrualRead]
+    accrued_total: float
+    paid_total: float
+    outstanding_total: float
+    deposit_outstanding: float
+
+
+@router.post(
+    "/{location_id}/leases/{lease_id}/accruals/rebuild",
+    response_model=LeaseLedgerRead,
+    dependencies=LOCATIONS_EDIT_ACCESS,
+)
+async def rebuild_lease_accrual(
+    location_id: uuid.UUID,
+    lease_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    month: date | None = None,
+) -> LeaseLedgerRead:
+    """Начислить аренду за месяц вручную, не дожидаясь ночной джобы.
+
+    Идемпотентно: повторный вызов за тот же месяц ничего не задваивает — ключ
+    ``lease:{id}:{YYYY-MM}`` лежит под уникальным индексом.
+    """
+    location = await _location_or_404(session, location_id)
+    lease = await _lease_or_404(session, lease_id)
+    if lease.location_id != location.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
+        )
+    await lease_accruals.ensure_lease_invoice(session, lease, month or date.today())
+    await session.commit()
+    return await _lease_ledger(session, lease)
+
+
+@router.get(
+    "/{location_id}/leases/{lease_id}/ledger",
+    response_model=LeaseLedgerRead,
+    dependencies=LOCATIONS_READ_ACCESS,
+)
+async def get_lease_ledger(
+    location_id: uuid.UUID,
+    lease_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseLedgerRead:
+    """Начисления и оплаты по договору: что начислено, что оплачено, сколько висит залога."""
+    location = await _location_or_404(session, location_id)
+    lease = await _lease_or_404(session, lease_id)
+    if lease.location_id != location.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
+        )
+    return await _lease_ledger(session, lease)
+
+
+async def _lease_ledger(session: AsyncSession, lease: LocationLease) -> LeaseLedgerRead:
+    invoices = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .where(
+                SupplierInvoice.source == lease_accruals.LEASE_INVOICE_SOURCE,
+                SupplierInvoice.external_id.like(f"lease:{lease.id}:%"),
+            )
+            .order_by(SupplierInvoice.invoice_date)
+        )
+    ).all()
+
+    rows: list[LeaseAccrualRead] = []
+    accrued_total = Decimal("0")
+    paid_total = Decimal("0")
+    for invoice in invoices:
+        paid = await counterparty_matching._allocated_amount(session, invoice.id)
+        accrued_total += Decimal(invoice.amount)
+        paid_total += paid
+        rows.append(
+            LeaseAccrualRead(
+                invoice_id=invoice.id,
+                number=invoice.number,
+                invoice_date=invoice.invoice_date,
+                amount=float(invoice.amount),
+                paid_amount=float(paid),
+                payment_status=invoice.payment_status,
+                activation_status=invoice.activation_status,
+                period_start=invoice.service_period_start,
+                period_end=invoice.service_period_end,
+            )
+        )
+
+    deposit = await session.scalar(
+        select(
+            func.coalesce(
+                func.sum(SupplierPrepayment.amount - SupplierPrepayment.amount_settled), 0
+            )
+        )
+        .where(
+            SupplierPrepayment.lease_id == lease.id,
+            SupplierPrepayment.status.in_(("open", "partially_settled")),
+        )
+    )
+    return LeaseLedgerRead(
+        accruals=rows,
+        accrued_total=float(accrued_total),
+        paid_total=float(paid_total),
+        outstanding_total=float(accrued_total - paid_total),
+        deposit_outstanding=float(deposit or 0),
+    )
 
 
 @router.get(

@@ -871,6 +871,10 @@ class SupplierPrepayment(Base):
     )
     # Тип аванса для строки баланса «Выданные авансы»: goods/rent/ad/subscription/tax/other.
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="goods")
+    # Договор аренды, за который внесён залог: залог возвращают или зачитывают именно по нему.
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location_lease.id", ondelete="SET NULL"), nullable=True
+    )
     wallet_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("wallet.id", ondelete="SET NULL"), nullable=True
     )

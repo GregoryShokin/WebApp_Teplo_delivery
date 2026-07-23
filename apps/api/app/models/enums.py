@@ -76,6 +76,9 @@ counterparty_invoice_source_enum = Enum(
     # sbis = счёт/УПД/акт сервисного поставщика, материализованный из СБИС ЭДО
     # (только для контрагентов с каналом сбора 'sbis'; производственные — зеркало).
     "sbis",
+    # lease = ежемесячное обязательство по договору аренды (генератор lease_accruals):
+    # документов арендодатель не выставляет, долг считаем сами по договору.
+    "lease",
     name="counterparty_invoice_source",
 )
 counterparty_invoice_status_enum = Enum(
