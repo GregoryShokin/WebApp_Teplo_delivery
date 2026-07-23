@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { LoaderCircle, LogOut, Pencil, Plus, Repeat } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,10 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   apiErrorMessage,
   closeLocationLease,
   createLocationLease,
+  getDdsArticles,
   getLocationLeases,
   replaceLeaseLandlord,
   updateLocationLease,
@@ -54,6 +57,7 @@ type LeaseForm = {
   depositAmount: string;
   startedOn: string;
   note: string;
+  ddsArticleId: string;
 };
 
 const EMPTY_LEASE: LeaseForm = {
@@ -70,6 +74,7 @@ const EMPTY_LEASE: LeaseForm = {
   depositAmount: "",
   startedOn: "",
   note: "",
+  ddsArticleId: "",
 };
 
 function toForm(lease: LeaseRecord): LeaseForm {
@@ -87,6 +92,7 @@ function toForm(lease: LeaseRecord): LeaseForm {
     depositAmount: lease.deposit_amount ? String(lease.deposit_amount) : "",
     startedOn: lease.started_on,
     note: lease.note ?? "",
+    ddsArticleId: lease.dds_article_id ?? "",
   };
 }
 
@@ -99,6 +105,7 @@ function toTerms(form: LeaseForm): LeaseTermsPayload {
     deposit_amount: Number(form.depositAmount.replace(",", ".")) || 0,
     started_on: form.startedOn,
     note: form.note.trim() || null,
+    dds_article_id: form.ddsArticleId || null,
   };
 }
 
@@ -206,6 +213,18 @@ export function LocationLeases({
     queryKey: ["location-leases", locationId],
     queryFn: () => getLocationLeases(locationId),
   });
+  const articlesQuery = useQuery({
+    queryKey: ["dds-articles"],
+    queryFn: getDdsArticles,
+    enabled: canEdit,
+  });
+  const rentArticles = useMemo(
+    () =>
+      (articlesQuery.data ?? [])
+        .filter((article) => article.location_required && article.is_active)
+        .map((article) => ({ id: article.id, name: article.name })),
+    [articlesQuery.data],
+  );
   useEffect(() => {
     if (dialogOpen) {
       setForm(editing ? toForm(editing) : EMPTY_LEASE);
@@ -507,6 +526,20 @@ export function LocationLeases({
                   placeholder="0"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label>Статья ДДС аренды</Label>
+              <ArticleCombobox
+                articles={rentArticles}
+                value={form.ddsArticleId}
+                onChange={(id) => setForm({ ...form, ddsArticleId: id })}
+                placeholder="Выберите статью аренды"
+              />
+              <p className="text-xs text-muted-foreground">
+                По этой статье платят аренду. Платёж по ней предложит арендодателей именно этого
+                помещения.
+              </p>
             </div>
 
             <div className="space-y-1">

@@ -597,6 +597,8 @@ class NewPaymentArticleRead(BaseModel):
     ]
     # Вид деятельности статьи — для леджер-фильтра палитры (operating/financing/investing).
     activity: str | None = None
+    # Статье нужна аналитика по помещению: форма требует помещение и предлагает арендодателей.
+    location_required: bool = False
     # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
     counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
 

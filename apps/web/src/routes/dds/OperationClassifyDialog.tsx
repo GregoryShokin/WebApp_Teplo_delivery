@@ -25,9 +25,11 @@ import {
   getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   getDdsWallets,
+  getLocationOptionsForArticle,
   getPayrollAdvanceAvailability,
   type CashflowClassifyPayload,
   type JournalRow,
+  type LocationOption,
   type OperationClassifyPayload,
 } from "@/lib/api";
 import { getCounterpartyDirectory } from "@/routes/counterparties/api";
@@ -69,6 +71,9 @@ type SplitRow = {
   counterpartyId: string;
   // Контрагента этой строки создаём из распознанных данных операции (его нет в реестре).
   createNewCounterparty: boolean;
+  // Аналитика «где»: помещение обязательно для арендных статей, аренда подставляет арендодателя.
+  locationId: string;
+  leaseId: string;
 };
 
 const ACTION_TOAST: Record<string, string> = {
@@ -143,6 +148,8 @@ export function OperationClassifyDialog({
           transferWalletId: "",
           counterpartyId: row.counterparty_id ?? matchedByInn?.id ?? "",
           createNewCounterparty: false,
+          locationId: "",
+          leaseId: "",
         },
       ]);
       setRememberAsRule(false);
@@ -171,6 +178,8 @@ export function OperationClassifyDialog({
         transferWalletId: "",
         counterpartyId: line.counterparty_id ?? "",
         createNewCounterparty: false,
+        locationId: line.location_id ?? "",
+        leaseId: line.lease_id ?? "",
       })),
     );
   }, [splitQuery.data]);
@@ -317,6 +326,8 @@ export function OperationClassifyDialog({
         // строки, а если платёж покрывает разных — правится точечно в самой строке.
         counterpartyId: current[current.length - 1]?.counterpartyId ?? "",
         createNewCounterparty: current[current.length - 1]?.createNewCounterparty ?? false,
+        locationId: current[current.length - 1]?.locationId ?? "",
+        leaseId: current[current.length - 1]?.leaseId ?? "",
       },
     ]);
   }
@@ -336,6 +347,10 @@ export function OperationClassifyDialog({
     }
     if (rowMissingCounterparty) {
       toast.error("Для статей «Оплата поставщикам» и «Авансы поставщикам» выберите контрагента");
+      return;
+    }
+    if (rowMissingLocation) {
+      toast.error("Для арендной статьи укажите помещение");
       return;
     }
     if (rows.some((item) => salaryArticleIds.has(item.articleId) && !item.employeeId)) {
@@ -363,6 +378,8 @@ export function OperationClassifyDialog({
             salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
           counterparty_id: item.createNewCounterparty ? null : item.counterpartyId || null,
           create_counterparty: item.createNewCounterparty,
+          location_id: item.locationId || null,
+          lease_id: item.leaseId || null,
         })),
         counterparty_id: null,
         new_counterparty_name: createsCounterparty ? row?.counterparty_name_raw ?? null : null,
@@ -382,6 +399,8 @@ export function OperationClassifyDialog({
           employee_id:
             salaryArticleIds.has(item.articleId) && item.employeeId ? item.employeeId : null,
           counterparty_id: item.counterpartyId || null,
+          location_id: item.locationId || null,
+          lease_id: item.leaseId || null,
         })),
         counterparty_id: null,
       });
@@ -454,6 +473,13 @@ export function OperationClassifyDialog({
   // Статьи, где контрагент обязателен: «Авансы поставщикам» рождает дебиторку (чья предоплата?),
   // «Оплата поставщикам» — расход в карточку и в ДЗ/КЗ (без контрагента платёж повисает в никуда).
   // Те же гарды продублированы на бэке.
+  const rentArticleIds = new Set(
+    articles.filter((a) => a.location_required).map((a) => a.id),
+  );
+  const requiresLocation = (item: SplitRow) => rentArticleIds.has(item.articleId);
+  const rowMissingLocation = rows.some(
+    (item) => requiresLocation(item) && !item.locationId,
+  );
   const requiresCounterparty = (item: SplitRow) =>
     item.articleId === advanceArticleId || item.articleId === supplierPaymentArticleId;
   const counterpartyNameOf = (item: SplitRow) =>
@@ -678,6 +704,7 @@ export function OperationClassifyDialog({
                   isBusy ||
                   !balanced ||
                   rowMissingCounterparty ||
+                  rowMissingLocation ||
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
                   usesAdvanceArticle ||
@@ -864,6 +891,14 @@ export function OperationClassifyDialog({
             ) : null}
             {rowDetailKind(detailRow) === "counterparty" ? (
               <>
+                {requiresLocation(detailRow) ? (
+                  <OperationLocationPicker
+                    articleId={detailRow.articleId}
+                    locationId={detailRow.locationId}
+                    leaseId={detailRow.leaseId}
+                    onChange={(patch) => updateRow(detailRow.key, patch)}
+                  />
+                ) : null}
                 {isOperation && detailRow.createNewCounterparty ? (
                   <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
                     <span>
@@ -954,5 +989,80 @@ export function OperationClassifyDialog({
       </Dialog>
     ) : null}
     </>
+  );
+}
+
+/**
+ * Выбор помещения и договора аренды в под-модалке разбора арендной операции. Свой запрос:
+ * список зависит от статьи строки. Выбор договора подставляет его арендодателя в контрагента.
+ */
+function OperationLocationPicker({
+  articleId,
+  locationId,
+  leaseId,
+  onChange,
+}: {
+  articleId: string;
+  locationId: string;
+  leaseId: string;
+  onChange: (patch: { locationId: string; leaseId: string; counterpartyId?: string }) => void;
+}) {
+  const optionsQuery = useQuery({
+    queryKey: ["location-options", articleId],
+    queryFn: () => getLocationOptionsForArticle(articleId),
+    enabled: Boolean(articleId),
+  });
+  const options: LocationOption[] = optionsQuery.data ?? [];
+  const selected = options.find((item) => item.location_id === locationId) ?? null;
+
+  const locationOptions: ComboboxOption[] = options.map((item) => ({
+    value: item.location_id,
+    label: item.status === "inactive" ? `${item.location_name} (закрыто)` : item.location_name,
+    keywords: item.location_name,
+  }));
+  const leaseOptions: ComboboxOption[] = (selected?.leases ?? []).map((lease) => ({
+    value: lease.lease_id,
+    label: `${lease.counterparty_name} · ${Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес`,
+    keywords: lease.counterparty_name,
+  }));
+
+  return (
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="space-y-1">
+        <Label className="text-sm">Помещение</Label>
+        <InlineOptionList
+          options={locationOptions}
+          value={locationId}
+          onChange={(value) => onChange({ locationId: value, leaseId: "" })}
+          searchPlaceholder="Поиск помещения…"
+          emptyMessage="Помещения не найдены"
+          listClassName="max-h-40"
+        />
+      </div>
+      {selected && leaseOptions.length > 0 ? (
+        <div className="space-y-1">
+          <Label className="text-sm">Договор аренды</Label>
+          <InlineOptionList
+            options={leaseOptions}
+            value={leaseId}
+            onChange={(value) => {
+              const lease = selected.leases.find((item) => item.lease_id === value);
+              onChange({
+                locationId,
+                leaseId: value,
+                counterpartyId: lease?.counterparty_id ?? "",
+              });
+            }}
+            searchPlaceholder="Поиск арендодателя…"
+            emptyMessage="Договоров нет"
+            listClassName="max-h-40"
+            autoFocus={false}
+          />
+          <p className="text-xs text-muted-foreground">
+            Без договора — прочий расход по помещению (мусор, охрана): выберите контрагента ниже.
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }

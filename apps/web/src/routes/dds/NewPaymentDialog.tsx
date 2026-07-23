@@ -47,6 +47,7 @@ import {
   createExpenseCashReserves,
   createInternalTransfer,
   createNewPaymentExpenseDraft,
+  getLocationOptionsForArticle,
   createNewPaymentIncome,
   createNewPaymentInternalTransfer,
   createPayrollAdvance,
@@ -57,6 +58,7 @@ import {
   type EmployeePayout,
   type NewPaymentArticle,
   type NewPaymentEmployee,
+  type LocationOption,
   type NewPaymentExpenseLine,
   type NewPaymentWallet,
 } from "@/lib/api";
@@ -135,6 +137,8 @@ type ExpenseRow = {
   counterpartyId: string; // «кому платим» — статьи с закреплёнными контрагентами
   servicePeriodStart: string;
   servicePeriodEnd: string;
+  locationId: string; // помещение — для статей с location_required (аренда, коммуналка)
+  leaseId: string; // договор аренды — подставляет арендодателя в counterpartyId
 };
 
 function dateInput(year: number, month: number, day: number): string {
@@ -279,6 +283,8 @@ export function NewPaymentDialog({
       counterpartyId,
       servicePeriodStart: "",
       servicePeriodEnd: "",
+      locationId: "",
+      leaseId: "",
     };
   }
   function updateExpenseRow(key: string, patch: Partial<ExpenseRow>) {
@@ -310,6 +316,8 @@ export function NewPaymentDialog({
       articleId,
       counterpartyId,
       purpose: "",
+      locationId: "",
+      leaseId: "",
       ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
     });
   }
@@ -1139,6 +1147,10 @@ function ExpenseForm({
         : null;
     })
     .find(Boolean);
+  const missingLocationRow = rows.find((row) => {
+    const article = articleById.get(row.articleId);
+    return article?.location_required && !row.locationId;
+  });
   const requiresRequisites = Boolean(requisitesRecipient);
   const directRouteBlocked =
     requiresRequisites &&
@@ -1156,7 +1168,8 @@ function ExpenseForm({
       const periodReady =
         !counterparty?.service_period_required ||
         Boolean(row.servicePeriodStart && row.servicePeriodEnd);
-      return row.articleId && amountOf(row.amount) > 0 && periodReady;
+      const locationReady = !article?.location_required || Boolean(row.locationId);
+      return row.articleId && amountOf(row.amount) > 0 && periodReady && locationReady;
     }) &&
     !directRouteBlocked &&
     !fallbackRouteBlocked;
@@ -1169,6 +1182,8 @@ function ExpenseForm({
       counterparty_id: row.counterpartyId || null,
       service_period_start: row.servicePeriodStart || null,
       service_period_end: row.servicePeriodEnd || null,
+      location_id: row.locationId || null,
+      lease_id: row.leaseId || null,
     }));
 
   const mutation = useMutation({
@@ -1223,6 +1238,9 @@ function ExpenseForm({
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт списания.";
+  } else if (missingLocationRow) {
+    tone = "warning";
+    summary = "Укажите помещение для арендного платежа.";
   } else if (missingServicePeriodRecipient) {
     tone = "warning";
     summary = `Укажите период оказания услуги для ${shortName(missingServicePeriodRecipient.name)}.`;
@@ -1391,6 +1409,14 @@ function ExpenseForm({
                     </Select>
                   ) : null}
                 </div>
+                {article?.location_required ? (
+                  <ExpenseLocationPicker
+                    articleId={article.id}
+                    locationId={row.locationId}
+                    leaseId={row.leaseId}
+                    onChange={(patch) => onUpdateRow(row.key, patch)}
+                  />
+                ) : null}
                 {selectedCounterparty?.service_period_required ? (
                   <div className="rounded-md bg-muted/40 p-2">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -2648,6 +2674,92 @@ function TransferPlainForm({
         disabled={!canSubmit}
         pending={mutation.isPending}
       />
+    </div>
+  );
+}
+
+/**
+ * Выбор помещения и арендодателя для строки арендного платежа. Свой запрос, потому что
+ * список зависит от статьи строки, а строки рендерятся в цикле. Выбор аренды подставляет
+ * её арендодателя в получателя строки; «просто помещение» (мусор, охрана) — без аренды.
+ */
+function ExpenseLocationPicker({
+  articleId,
+  locationId,
+  leaseId,
+  onChange,
+}: {
+  articleId: string;
+  locationId: string;
+  leaseId: string;
+  onChange: (patch: { locationId: string; leaseId: string; counterpartyId?: string }) => void;
+}) {
+  const optionsQuery = useQuery({
+    queryKey: ["location-options", articleId],
+    queryFn: () => getLocationOptionsForArticle(articleId),
+    enabled: Boolean(articleId),
+  });
+  const options: LocationOption[] = optionsQuery.data ?? [];
+  const selected = options.find((item) => item.location_id === locationId) ?? null;
+  const leases = selected?.leases ?? [];
+
+  return (
+    <div className="rounded-md bg-muted/40 p-2">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <Label className="text-xs font-medium">Помещение</Label>
+        <span className="text-[11px] text-muted-foreground">обязательное поле</span>
+      </div>
+      <div className="grid gap-2">
+        <Select
+          value={locationId || "none"}
+          onValueChange={(value) =>
+            onChange({ locationId: value === "none" ? "" : value, leaseId: "" })
+          }
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue placeholder="Выберите помещение" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Помещение: не выбрано</SelectItem>
+            {options.map((item) => (
+              <SelectItem key={item.location_id} value={item.location_id}>
+                {item.location_name}
+                {item.status === "inactive" ? " (закрыто)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {leases.length > 0 ? (
+          <Select
+            value={leaseId || "none"}
+            onValueChange={(value) => {
+              if (value === "none") {
+                onChange({ locationId, leaseId: "" });
+                return;
+              }
+              const lease = leases.find((item) => item.lease_id === value);
+              onChange({
+                locationId,
+                leaseId: value,
+                counterpartyId: lease?.counterparty_id ?? "",
+              });
+            }}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Договор аренды" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Без договора (прочий расход по помещению)</SelectItem>
+              {leases.map((lease) => (
+                <SelectItem key={lease.lease_id} value={lease.lease_id}>
+                  {lease.counterparty_name} · {Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
     </div>
   );
 }

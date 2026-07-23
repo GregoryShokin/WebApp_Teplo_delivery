@@ -2314,6 +2314,9 @@ export type DdsArticleRead = {
   is_active: boolean;
   // Доступна администратору в «Выплате из кассы» (только расходные, без движковых).
   kassa_enabled: boolean;
+  // Расход по статье обязан указывать помещение (аренда, коммуналка): фронт требует его в
+  // строке разбора и в окне платежа, а для аренды предлагает арендодателей помещения.
+  location_required: boolean;
   description: string | null;
   aliases: DdsAliasRead[];
 };
@@ -2420,6 +2423,10 @@ export type OperationSplitItem = {
   employee_id?: string | null;
   // Контрагент ЭТОЙ строки: один платёж часто покрывает расходы разных контрагентов.
   counterparty_id?: string | null;
+  // Аналитика «где»: помещение обязательно для статей с location_required, аренда — когда
+  // платёж закрывает договор (арендодатель подставится в контрагента).
+  location_id?: string | null;
+  lease_id?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2449,6 +2456,8 @@ export type CashflowSplitItem = {
   employee_id?: string | null;
   // Контрагент ЭТОЙ строки (см. OperationSplitItem).
   counterparty_id?: string | null;
+  location_id?: string | null;
+  lease_id?: string | null;
 };
 
 // Полный разбор РУЧНОЙ проводки ДДС (без bank-операции), сохраняющий баланс кошелька.
@@ -2735,6 +2744,8 @@ export type NewPaymentArticle = {
   activity?: string | null;
   // Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
   counterparties?: NewPaymentArticleCounterparty[];
+  // Статье нужна аналитика по помещению (аренда): форма требует помещение и арендодателя.
+  location_required?: boolean;
 };
 
 export type NewPaymentWallet = {
@@ -2769,6 +2780,8 @@ export type NewPaymentExpenseLine = {
   counterparty_id?: string | null;
   service_period_start?: string | null;
   service_period_end?: string | null;
+  location_id?: string | null;
+  lease_id?: string | null;
 };
 
 export type NewPaymentExpenseDraftPayload = {
@@ -2948,6 +2961,8 @@ export type DdsOperationSplitLine = {
   counterparty_id: string | null;
   invoice_id: string | null;
   employee_id: string | null;
+  location_id: string | null;
+  lease_id: string | null;
 };
 
 export type DdsOperationSplit = {
@@ -3309,6 +3324,7 @@ export type LeaseRecord = {
   started_on: string;
   ended_on: string | null;
   note: string | null;
+  dds_article_id: string | null;
   is_active: boolean;
 };
 
@@ -3332,6 +3348,7 @@ export type LeaseTermsPayload = {
   started_on: string;
   ended_on?: string | null;
   note?: string | null;
+  dds_article_id?: string | null;
 };
 
 export type LeasePayload = LeaseTermsPayload & { landlord: LandlordInput };
@@ -3391,6 +3408,35 @@ export async function replaceLeaseLandlord(
     payload,
   );
   return response.data;
+}
+
+export type LocationLeaseOption = {
+  lease_id: string;
+  counterparty_id: string;
+  counterparty_name: string;
+  monthly_amount: number;
+  payment_day: number | null;
+  documents_mode: "official" | "informal";
+};
+
+export type LocationOption = {
+  location_id: string;
+  location_name: string;
+  kind: LocationKind;
+  status: "active" | "inactive";
+  leases: LocationLeaseOption[];
+};
+
+/** Помещения и их арендодатели для платежа по статье с аналитикой по помещению. */
+export async function getLocationOptionsForArticle(
+  articleId: string,
+  onDate?: string,
+): Promise<LocationOption[]> {
+  const response = await api.get<{ items: LocationOption[] }>(
+    `/locations/options/for-article/${articleId}`,
+    { params: onDate ? { on_date: onDate } : undefined },
+  );
+  return response.data.items;
 }
 
 export async function getCounterpartyLeases(counterpartyId: string): Promise<LeaseRecord[]> {
