@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.db.session import get_session
-from app.models import Location, Organization
+from app.models import Counterparty, CounterpartyRole, Location, LocationLease, Organization
 
 router = APIRouter()
 LOCATIONS_READ_ACCESS = (Depends(require_permission("source.locations.read")),)
@@ -211,3 +212,252 @@ async def update_location(
     await session.commit()
     await session.refresh(location)
     return _payload(location)
+
+
+# --- аренда -------------------------------------------------------------------
+#
+# Арендодатель — контрагент с ролью landlord: от него по факту нужно только название, а
+# реквизиты добавляются по желанию в обычной карточке контрагента. Роль проставляется
+# автоматически при первой же аренде, чтобы владельцу не приходилось помнить про справочник.
+
+
+class LeaseRead(BaseModel):
+    id: uuid.UUID
+    location_id: uuid.UUID
+    location_name: str
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    monthly_amount: float
+    payment_day: int | None
+    payment_mode: Literal["prepaid", "postpaid"]
+    documents_mode: Literal["official", "informal"]
+    deposit_amount: float
+    started_on: date
+    ended_on: date | None
+    note: str | None
+    is_active: bool
+
+
+class LeaseListRead(BaseModel):
+    items: list[LeaseRead]
+
+
+class LeaseWriteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    counterparty_id: uuid.UUID
+    monthly_amount: Decimal = Field(ge=0)
+    payment_day: int | None = Field(default=None, ge=1, le=31)
+    payment_mode: Literal["prepaid", "postpaid"] = "prepaid"
+    documents_mode: Literal["official", "informal"] = "informal"
+    deposit_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    started_on: date
+    ended_on: date | None = None
+    note: str | None = None
+
+
+class LeaseCloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ended_on: date
+
+
+def _lease_payload(lease: LocationLease, location_name: str, counterparty_name: str) -> LeaseRead:
+    return LeaseRead(
+        id=lease.id,
+        location_id=lease.location_id,
+        location_name=location_name,
+        counterparty_id=lease.counterparty_id,
+        counterparty_name=counterparty_name,
+        monthly_amount=float(lease.monthly_amount),
+        payment_day=lease.payment_day,
+        payment_mode=lease.payment_mode,  # type: ignore[arg-type]
+        documents_mode=lease.documents_mode,  # type: ignore[arg-type]
+        deposit_amount=float(lease.deposit_amount),
+        started_on=lease.started_on,
+        ended_on=lease.ended_on,
+        note=lease.note,
+        is_active=lease.ended_on is None,
+    )
+
+
+async def _leases_with_names(
+    session: AsyncSession,
+    *,
+    location_id: uuid.UUID | None = None,
+    counterparty_id: uuid.UUID | None = None,
+) -> list[LeaseRead]:
+    query = (
+        select(LocationLease, Location.name, Counterparty.name)
+        .join(Location, Location.id == LocationLease.location_id)
+        .join(Counterparty, Counterparty.id == LocationLease.counterparty_id)
+        .order_by(LocationLease.ended_on.is_not(None), LocationLease.started_on.desc())
+    )
+    if location_id is not None:
+        query = query.where(LocationLease.location_id == location_id)
+    if counterparty_id is not None:
+        query = query.where(LocationLease.counterparty_id == counterparty_id)
+    rows = (await session.execute(query)).all()
+    return [_lease_payload(lease, location_name, cp_name) for lease, location_name, cp_name in rows]
+
+
+async def _counterparty_or_404(session: AsyncSession, counterparty_id: uuid.UUID) -> Counterparty:
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
+    return counterparty
+
+
+async def _ensure_landlord_role(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
+    existing = await session.scalar(
+        select(CounterpartyRole).where(
+            CounterpartyRole.counterparty_id == counterparty_id,
+            CounterpartyRole.role == "landlord",
+        )
+    )
+    if existing is None:
+        session.add(CounterpartyRole(counterparty_id=counterparty_id, role="landlord"))
+
+
+async def _lease_or_404(session: AsyncSession, lease_id: uuid.UUID) -> LocationLease:
+    lease = await session.get(LocationLease, lease_id)
+    if lease is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не найдена")
+    return lease
+
+
+@router.get(
+    "/{location_id}/leases",
+    response_model=LeaseListRead,
+    dependencies=LOCATIONS_READ_ACCESS,
+)
+async def list_location_leases(
+    location_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseListRead:
+    await _location_or_404(session, location_id)
+    return LeaseListRead(items=await _leases_with_names(session, location_id=location_id))
+
+
+@router.post(
+    "/{location_id}/leases",
+    response_model=LeaseRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=LOCATIONS_EDIT_ACCESS,
+)
+async def create_location_lease(
+    location_id: uuid.UUID,
+    payload: LeaseWriteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseRead:
+    location = await _location_or_404(session, location_id)
+    counterparty = await _counterparty_or_404(session, payload.counterparty_id)
+    if payload.ended_on is not None and payload.ended_on < payload.started_on:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата окончания раньше начала аренды",
+        )
+
+    lease = LocationLease(
+        location_id=location.id,
+        counterparty_id=counterparty.id,
+        monthly_amount=payload.monthly_amount,
+        payment_day=payload.payment_day,
+        payment_mode=payload.payment_mode,
+        documents_mode=payload.documents_mode,
+        deposit_amount=payload.deposit_amount,
+        started_on=payload.started_on,
+        ended_on=payload.ended_on,
+        note=(payload.note or "").strip() or None,
+    )
+    session.add(lease)
+    await _ensure_landlord_role(session, counterparty.id)
+    await session.commit()
+    await session.refresh(lease)
+    return _lease_payload(lease, location.name, counterparty.name)
+
+
+@router.patch(
+    "/{location_id}/leases/{lease_id}",
+    response_model=LeaseRead,
+    dependencies=LOCATIONS_EDIT_ACCESS,
+)
+async def update_location_lease(
+    location_id: uuid.UUID,
+    lease_id: uuid.UUID,
+    payload: LeaseWriteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseRead:
+    location = await _location_or_404(session, location_id)
+    lease = await _lease_or_404(session, lease_id)
+    if lease.location_id != location.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
+        )
+    counterparty = await _counterparty_or_404(session, payload.counterparty_id)
+    if payload.ended_on is not None and payload.ended_on < payload.started_on:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата окончания раньше начала аренды",
+        )
+
+    lease.counterparty_id = counterparty.id
+    lease.monthly_amount = payload.monthly_amount
+    lease.payment_day = payload.payment_day
+    lease.payment_mode = payload.payment_mode
+    lease.documents_mode = payload.documents_mode
+    lease.deposit_amount = payload.deposit_amount
+    lease.started_on = payload.started_on
+    lease.ended_on = payload.ended_on
+    lease.note = (payload.note or "").strip() or None
+    await _ensure_landlord_role(session, counterparty.id)
+    await session.commit()
+    await session.refresh(lease)
+    return _lease_payload(lease, location.name, counterparty.name)
+
+
+@router.post(
+    "/{location_id}/leases/{lease_id}/close",
+    response_model=LeaseRead,
+    dependencies=LOCATIONS_EDIT_ACCESS,
+)
+async def close_location_lease(
+    location_id: uuid.UUID,
+    lease_id: uuid.UUID,
+    payload: LeaseCloseRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseRead:
+    """Закрыть аренду — так оформляется смена арендодателя.
+
+    Прошлые месяцы остаются за прежним собственником: новая аренда заводится отдельной
+    строкой, а не правкой этой.
+    """
+    location = await _location_or_404(session, location_id)
+    lease = await _lease_or_404(session, lease_id)
+    if lease.location_id != location.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
+        )
+    if payload.ended_on < lease.started_on:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Дата окончания раньше начала аренды",
+        )
+    lease.ended_on = payload.ended_on
+    await session.commit()
+    await session.refresh(lease)
+    counterparty = await _counterparty_or_404(session, lease.counterparty_id)
+    return _lease_payload(lease, location.name, counterparty.name)
+
+
+@router.get(
+    "/leases/by-counterparty/{counterparty_id}",
+    response_model=LeaseListRead,
+    dependencies=LOCATIONS_READ_ACCESS,
+)
+async def list_counterparty_leases(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeaseListRead:
+    """Что сдаёт этот контрагент — блок «Аренда» в его карточке."""
+    return LeaseListRead(items=await _leases_with_names(session, counterparty_id=counterparty_id))

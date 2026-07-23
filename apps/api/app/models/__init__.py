@@ -108,6 +108,7 @@ from app.models.kassa import (
     KassaPayinPreset,
     KassaShiftPenalty,
 )
+from app.models.lease import LocationLease
 from app.models.payroll import (
     AccumulationFundAccount,
     AccumulationFundTransaction,
@@ -239,6 +240,7 @@ __all__ = [
     "KassaPayinPreset",
     "KassaShiftPenalty",
     "Location",
+    "LocationLease",
     "Organization",
     "OwnAccountsRegistry",
     "ParsedDocument",

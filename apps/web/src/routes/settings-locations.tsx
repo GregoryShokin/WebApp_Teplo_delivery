@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { LocationLeases } from "@/routes/settings-location-leases";
 import {
   apiErrorMessage,
   createLocation,
@@ -219,6 +220,14 @@ export function LocationsPanel({ canEdit }: { canEdit: boolean }) {
                 Изменить
               </Button>
             ) : null}
+
+            <div className="w-full">
+              <LocationLeases
+                locationId={location.id}
+                locationName={location.name}
+                canEdit={canEdit}
+              />
+            </div>
           </div>
         ))}
       </CardContent>

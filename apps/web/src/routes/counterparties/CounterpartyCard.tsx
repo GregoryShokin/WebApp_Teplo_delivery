@@ -37,6 +37,7 @@ import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 
 import { BarterSection } from "./BarterSection";
+import { LeasedLocationsSection } from "./LeasedLocationsSection";
 import {
   addCollectionSource,
   addRoutingRule,
@@ -203,6 +204,7 @@ function CardBody({
           {card.relationship === "barter" ? (
             <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
           ) : null}
+          <LeasedLocationsSection counterpartyId={card.counterparty_id} />
         </TabsContent>
         <TabsContent
           value="requisites"

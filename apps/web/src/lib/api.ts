@@ -3295,6 +3295,80 @@ export async function updateLocation(
   return response.data;
 }
 
+export type LeaseRecord = {
+  id: string;
+  location_id: string;
+  location_name: string;
+  counterparty_id: string;
+  counterparty_name: string;
+  monthly_amount: number;
+  payment_day: number | null;
+  payment_mode: "prepaid" | "postpaid";
+  documents_mode: "official" | "informal";
+  deposit_amount: number;
+  started_on: string;
+  ended_on: string | null;
+  note: string | null;
+  is_active: boolean;
+};
+
+export type LeasePayload = {
+  counterparty_id: string;
+  monthly_amount: number;
+  payment_day?: number | null;
+  payment_mode: "prepaid" | "postpaid";
+  documents_mode: "official" | "informal";
+  deposit_amount: number;
+  started_on: string;
+  ended_on?: string | null;
+  note?: string | null;
+};
+
+export async function getLocationLeases(locationId: string): Promise<LeaseRecord[]> {
+  const response = await api.get<{ items: LeaseRecord[] }>(`/locations/${locationId}/leases`);
+  return response.data.items;
+}
+
+export async function createLocationLease(
+  locationId: string,
+  payload: LeasePayload,
+): Promise<LeaseRecord> {
+  const response = await api.post<LeaseRecord>(`/locations/${locationId}/leases`, payload);
+  return response.data;
+}
+
+export async function updateLocationLease(
+  locationId: string,
+  leaseId: string,
+  payload: LeasePayload,
+): Promise<LeaseRecord> {
+  const response = await api.patch<LeaseRecord>(
+    `/locations/${locationId}/leases/${leaseId}`,
+    payload,
+  );
+  return response.data;
+}
+
+/** Закрытие аренды — так оформляется смена арендодателя, прошлые месяцы остаются за прежним. */
+export async function closeLocationLease(
+  locationId: string,
+  leaseId: string,
+  endedOn: string,
+): Promise<LeaseRecord> {
+  const response = await api.post<LeaseRecord>(
+    `/locations/${locationId}/leases/${leaseId}/close`,
+    { ended_on: endedOn },
+  );
+  return response.data;
+}
+
+export async function getCounterpartyLeases(counterpartyId: string): Promise<LeaseRecord[]> {
+  const response = await api.get<{ items: LeaseRecord[] }>(
+    `/locations/leases/by-counterparty/${counterpartyId}`,
+  );
+  return response.data.items;
+}
+
 export async function getPositions(): Promise<Position[]> {
   const response = await api.get<{ positions: Position[] }>("/settings/positions");
   return response.data.positions;
