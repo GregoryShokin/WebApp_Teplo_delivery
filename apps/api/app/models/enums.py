@@ -15,6 +15,7 @@ counterparty_type_enum = Enum(
 )
 counterparty_role_enum = Enum(
     "supplier",
+    "landlord",
     "customer",
     "bank",
     "employee",

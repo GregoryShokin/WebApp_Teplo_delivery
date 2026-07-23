@@ -18,13 +18,14 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.db.session import get_session
 from app.models import Counterparty, CounterpartyRole, Location, LocationLease, Organization
+from app.services import counterparty_registry as registry
 
 router = APIRouter()
 LOCATIONS_READ_ACCESS = (Depends(require_permission("source.locations.read")),)
@@ -243,9 +244,19 @@ class LeaseListRead(BaseModel):
 
 
 class LeaseWriteRequest(BaseModel):
+    """Арендодатель заводится прямо здесь: в списке контрагентов его обычно ещё нет.
+
+    От собственника по факту нужно только название, ИНН — по желанию. Существующего
+    контрагента переиспользуем (ищем по ИНН, затем по названию), иначе плодились бы дубли,
+    когда один и тот же собственник сдаёт и точку, и склад. ``counterparty_id`` остаётся для
+    случая, когда арендодатель уже есть в системе и его выбирают явно.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    counterparty_id: uuid.UUID
+    counterparty_id: uuid.UUID | None = None
+    landlord_name: str | None = Field(default=None, max_length=255)
+    landlord_inn: str | None = Field(default=None, max_length=12)
     monthly_amount: Decimal = Field(ge=0)
     payment_day: int | None = Field(default=None, ge=1, le=31)
     payment_mode: Literal["prepaid", "postpaid"] = "prepaid"
@@ -254,6 +265,12 @@ class LeaseWriteRequest(BaseModel):
     started_on: date
     ended_on: date | None = None
     note: str | None = None
+
+    @model_validator(mode="after")
+    def _landlord_is_set(self) -> LeaseWriteRequest:
+        if self.counterparty_id is None and not (self.landlord_name or "").strip():
+            raise ValueError("Укажите название арендодателя")
+        return self
 
 
 class LeaseCloseRequest(BaseModel):
@@ -308,6 +325,56 @@ async def _counterparty_or_404(session: AsyncSession, counterparty_id: uuid.UUID
     return counterparty
 
 
+async def _resolve_landlord(
+    session: AsyncSession,
+    payload: LeaseWriteRequest,
+) -> Counterparty:
+    """Найти арендодателя или завести его по названию из формы аренды.
+
+    Порядок поиска — ИНН, затем название без учёта регистра: собственник, сдающий и точку, и
+    склад, должен остаться одной карточкой, иначе долг и залог разъедутся по дублям.
+    """
+    if payload.counterparty_id is not None:
+        counterparty = await _counterparty_or_404(session, payload.counterparty_id)
+        await _ensure_landlord_role(session, counterparty.id)
+        return counterparty
+
+    name = (payload.landlord_name or "").strip()
+    inn = (payload.landlord_inn or "").strip() or None
+
+    if inn:
+        found = await session.scalar(select(Counterparty).where(Counterparty.inn == inn))
+        if found is not None:
+            await _ensure_landlord_role(session, found.id)
+            return found
+
+    found = await session.scalar(
+        select(Counterparty).where(func.lower(Counterparty.name) == name.lower())
+    )
+    if found is not None:
+        await _ensure_landlord_role(session, found.id)
+        return found
+
+    try:
+        counterparty = await registry.create_counterparty(
+            session,
+            name=name,
+            inn=inn,
+            # Физлицо — обычный случай для аренды: собственники часто сдают как частные лица.
+            cp_type="individual" if not inn or len(inn) == 12 else "legal_entity",
+            # Отношения берём из порядка документов аренды: без УПД это informal-канал,
+            # и требовать банковские реквизиты в этот момент не нужно.
+            relationship="official" if payload.documents_mode == "official" else "informal",
+            confirm_no_dds_article=True,
+            role="landlord",
+        )
+    except registry.CounterpartyRegistryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    return counterparty
+
+
 async def _ensure_landlord_role(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
     existing = await session.scalar(
         select(CounterpartyRole).where(
@@ -351,12 +418,12 @@ async def create_location_lease(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> LeaseRead:
     location = await _location_or_404(session, location_id)
-    counterparty = await _counterparty_or_404(session, payload.counterparty_id)
     if payload.ended_on is not None and payload.ended_on < payload.started_on:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Дата окончания раньше начала аренды",
         )
+    counterparty = await _resolve_landlord(session, payload)
 
     lease = LocationLease(
         location_id=location.id,
@@ -371,7 +438,6 @@ async def create_location_lease(
         note=(payload.note or "").strip() or None,
     )
     session.add(lease)
-    await _ensure_landlord_role(session, counterparty.id)
     await session.commit()
     await session.refresh(lease)
     return _lease_payload(lease, location.name, counterparty.name)
@@ -394,12 +460,12 @@ async def update_location_lease(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
         )
-    counterparty = await _counterparty_or_404(session, payload.counterparty_id)
     if payload.ended_on is not None and payload.ended_on < payload.started_on:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Дата окончания раньше начала аренды",
         )
+    counterparty = await _resolve_landlord(session, payload)
 
     lease.counterparty_id = counterparty.id
     lease.monthly_amount = payload.monthly_amount
@@ -410,7 +476,6 @@ async def update_location_lease(
     lease.started_on = payload.started_on
     lease.ended_on = payload.ended_on
     lease.note = (payload.note or "").strip() or None
-    await _ensure_landlord_role(session, counterparty.id)
     await session.commit()
     await session.refresh(lease)
     return _lease_payload(lease, location.name, counterparty.name)

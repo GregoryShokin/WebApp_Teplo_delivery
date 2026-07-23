@@ -126,31 +126,18 @@ def _make_location(client: TestClient, headers: dict[str, str], name: str) -> st
     return response.json()["id"]
 
 
-def _make_landlord(async_session_factory: async_sessionmaker[AsyncSession], name: str) -> str:
-    from cp_helpers import make_counterparty  # noqa: PLC0415
-
-    async def seed() -> str:
-        async with async_session_factory() as session:
-            counterparty = await make_counterparty(session, name=name)
-            await session.commit()
-            return str(counterparty.id)
-
-    return asyncio.run(seed())
-
-
-def test_lease_marks_counterparty_as_landlord(
+def test_lease_creates_landlord_from_form(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Роль арендодателя проставляется сама: владельцу не нужно помнить про справочник ролей."""
+    """Арендодателя заводим прямо из карточки помещения: в справочнике его ещё нет."""
     headers = _admin(async_session_factory)
-    location_id = _make_location(client, headers, "Точка с арендой")
-    landlord_id = _make_landlord(async_session_factory, "Арендодатель Иванов")
+    location_id = _make_location(client, headers, "Точка с новым арендодателем")
 
     response = client.post(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "counterparty_id": landlord_id,
+            "landlord_name": "ИП Иванов И. И.",
             "monthly_amount": 100000,
             "payment_day": 1,
             "documents_mode": "informal",
@@ -160,15 +147,62 @@ def test_lease_marks_counterparty_as_landlord(
     )
     assert response.status_code == 201, response.text
     lease = response.json()
-    assert lease["counterparty_name"] == "Арендодатель Иванов"
+    assert lease["counterparty_name"] == "ИП Иванов И. И."
     assert lease["monthly_amount"] == 100000.0
     assert lease["deposit_amount"] == 100000.0
     assert lease["is_active"] is True
 
+    landlord_id = lease["counterparty_id"]
     by_counterparty = client.get(f"{BASE}/leases/by-counterparty/{landlord_id}", headers=headers)
     assert by_counterparty.status_code == 200, by_counterparty.text
     assert [item["location_name"] for item in by_counterparty.json()["items"]] == [
-        "Точка с арендой"
+        "Точка с новым арендодателем"
+    ]
+
+
+def test_same_landlord_is_reused_across_locations(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Один собственник сдаёт и точку, и склад — карточка должна остаться одна.
+
+    Регрессия: чтение уже существующей роли ``landlord`` падало LookupError, потому что
+    значение добавили в тип PostgreSQL, но не в Python-описание enum. Первая аренда проходила,
+    вторая на того же собственника — нет.
+    """
+    headers = _admin(async_session_factory)
+    first_location = _make_location(client, headers, "Зал у общего собственника")
+    second_location = _make_location(client, headers, "Склад у общего собственника")
+
+    first = client.post(
+        f"{BASE}/{first_location}/leases",
+        headers=headers,
+        json={
+            "landlord_name": "ИП Общий Собственник",
+            "monthly_amount": 100000,
+            "started_on": "2026-01-01",
+        },
+    )
+    assert first.status_code == 201, first.text
+
+    second = client.post(
+        f"{BASE}/{second_location}/leases",
+        headers=headers,
+        # Регистр другой — для человека это тот же собственник, дубля быть не должно.
+        json={
+            "landlord_name": "ип общий собственник",
+            "monthly_amount": 10000,
+            "started_on": "2026-02-01",
+        },
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["counterparty_id"] == first.json()["counterparty_id"]
+
+    leases = client.get(
+        f"{BASE}/leases/by-counterparty/{first.json()['counterparty_id']}", headers=headers
+    ).json()["items"]
+    assert sorted(item["location_name"] for item in leases) == [
+        "Зал у общего собственника",
+        "Склад у общего собственника",
     ]
 
 
@@ -178,14 +212,11 @@ def test_changing_landlord_keeps_history(
     """Смена собственника не переписывает прошлые месяцы на нового арендодателя."""
     headers = _admin(async_session_factory)
     location_id = _make_location(client, headers, "Точка со сменой собственника")
-    first = _make_landlord(async_session_factory, "Прежний собственник")
-    second = _make_landlord(async_session_factory, "Новый собственник")
-
     created = client.post(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "counterparty_id": first,
+            "landlord_name": "Прежний собственник",
             "monthly_amount": 100000,
             "started_on": "2026-01-01",
         },
@@ -203,7 +234,7 @@ def test_changing_landlord_keeps_history(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "counterparty_id": second,
+            "landlord_name": "Новый собственник",
             "monthly_amount": 110000,
             "documents_mode": "official",
             "started_on": "2026-07-01",
@@ -227,15 +258,12 @@ def test_two_landlords_can_share_one_location(
     """Площадь бывает поделена: зал и склад в одном адресе сдают разные лица."""
     headers = _admin(async_session_factory)
     location_id = _make_location(client, headers, "Точка на двух собственников")
-    first = _make_landlord(async_session_factory, "Собственник зала")
-    second = _make_landlord(async_session_factory, "Собственник склада")
-
-    for landlord, amount in ((first, 70000), (second, 30000)):
+    for landlord, amount in (("Собственник зала", 70000), ("Собственник склада", 30000)):
         response = client.post(
             f"{BASE}/{location_id}/leases",
             headers=headers,
             json={
-                "counterparty_id": landlord,
+                "landlord_name": landlord,
                 "monthly_amount": amount,
                 "started_on": "2026-01-01",
             },
@@ -253,13 +281,11 @@ def test_lease_period_order_is_validated(
 ) -> None:
     headers = _admin(async_session_factory)
     location_id = _make_location(client, headers, "Точка с кривыми датами")
-    landlord = _make_landlord(async_session_factory, "Собственник с датами")
-
     response = client.post(
         f"{BASE}/{location_id}/leases",
         headers=headers,
         json={
-            "counterparty_id": landlord,
+            "landlord_name": "Собственник с датами",
             "monthly_amount": 50000,
             "started_on": "2026-07-01",
             "ended_on": "2026-06-01",

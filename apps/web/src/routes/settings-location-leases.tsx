@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, LogOut, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   apiErrorMessage,
   closeLocationLease,
@@ -32,7 +31,6 @@ import {
   type LeasePayload,
   type LeaseRecord,
 } from "@/lib/api";
-import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 
 const money = new Intl.NumberFormat("ru-RU", {
   style: "currency",
@@ -42,6 +40,8 @@ const money = new Intl.NumberFormat("ru-RU", {
 
 type LeaseForm = {
   counterpartyId: string;
+  landlordName: string;
+  landlordInn: string;
   monthlyAmount: string;
   paymentDay: string;
   paymentMode: "prepaid" | "postpaid";
@@ -53,6 +53,8 @@ type LeaseForm = {
 
 const EMPTY_LEASE: LeaseForm = {
   counterpartyId: "",
+  landlordName: "",
+  landlordInn: "",
   monthlyAmount: "",
   paymentDay: "",
   paymentMode: "prepaid",
@@ -65,6 +67,8 @@ const EMPTY_LEASE: LeaseForm = {
 function toForm(lease: LeaseRecord): LeaseForm {
   return {
     counterpartyId: lease.counterparty_id,
+    landlordName: lease.counterparty_name,
+    landlordInn: "",
     monthlyAmount: String(lease.monthly_amount),
     paymentDay: lease.payment_day ? String(lease.payment_day) : "",
     paymentMode: lease.payment_mode,
@@ -75,9 +79,14 @@ function toForm(lease: LeaseRecord): LeaseForm {
   };
 }
 
-function toPayload(form: LeaseForm): LeasePayload {
+function toPayload(form: LeaseForm, editing: LeaseRecord | null): LeasePayload {
+  // Имя не меняли — оставляем прежнего арендодателя по id; изменили — заведём/найдём нового.
+  const keepExisting =
+    editing !== null && form.landlordName.trim() === editing.counterparty_name.trim();
   return {
-    counterparty_id: form.counterpartyId,
+    counterparty_id: keepExisting ? form.counterpartyId : null,
+    landlord_name: keepExisting ? null : form.landlordName.trim(),
+    landlord_inn: keepExisting ? null : form.landlordInn.trim() || null,
     monthly_amount: Number(form.monthlyAmount.replace(",", ".")) || 0,
     payment_day: form.paymentDay ? Number(form.paymentDay) : null,
     payment_mode: form.paymentMode,
@@ -113,17 +122,6 @@ export function LocationLeases({
     queryKey: ["location-leases", locationId],
     queryFn: () => getLocationLeases(locationId),
   });
-  const directoryQuery = useQuery({
-    queryKey: ["counterparty-directory"],
-    queryFn: getCounterpartyDirectory,
-    enabled: canEdit,
-  });
-
-  const counterparties = useMemo(
-    () => (directoryQuery.data ?? []).map((item) => ({ id: item.id, name: item.name })),
-    [directoryQuery.data],
-  );
-
   useEffect(() => {
     if (dialogOpen) {
       setForm(editing ? toForm(editing) : EMPTY_LEASE);
@@ -162,15 +160,15 @@ export function LocationLeases({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!form.counterpartyId) {
-      toast.error("Выберите арендодателя");
+    if (!form.landlordName.trim()) {
+      toast.error("Укажите название арендодателя");
       return;
     }
     if (!form.startedOn) {
       toast.error("Укажите дату начала аренды");
       return;
     }
-    saveMutation.mutate(toPayload(form));
+    saveMutation.mutate(toPayload(form, editing));
   }
 
   const leases = leasesQuery.data ?? [];
@@ -291,19 +289,32 @@ export function LocationLeases({
               {editing ? "Изменить аренду" : `Аренда помещения «${locationName}»`}
             </DialogTitle>
             <DialogDescription>
-              Арендодатель — обычный контрагент: роль «арендодатель» проставится сама. Долг за
-              аренду считается по этой сумме, даже если арендодатель не выставляет документов.
+              Арендодателя заводим прямо здесь: достаточно названия, ИНН — по желанию.
+              Карточка контрагента создастся сама, а если такой уже есть — возьмём его.
+              Долг считается по этой сумме, даже если арендодатель не выставляет документов.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={handleSubmit}>
-            <div className="space-y-1">
-              <Label>Арендодатель</Label>
-              <ArticleCombobox
-                articles={counterparties}
-                value={form.counterpartyId}
-                onChange={(id) => setForm({ ...form, counterpartyId: id })}
-                placeholder="Выберите контрагента"
-              />
+            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+              <div className="space-y-1">
+                <Label htmlFor="lease-landlord">Арендодатель</Label>
+                <Input
+                  id="lease-landlord"
+                  value={form.landlordName}
+                  onChange={(event) => setForm({ ...form, landlordName: event.target.value })}
+                  placeholder="ИП Иванов И. И."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="lease-inn">ИНН</Label>
+                <Input
+                  id="lease-inn"
+                  inputMode="numeric"
+                  value={form.landlordInn}
+                  onChange={(event) => setForm({ ...form, landlordInn: event.target.value })}
+                  placeholder="необязательно"
+                />
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">

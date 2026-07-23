@@ -3313,7 +3313,11 @@ export type LeaseRecord = {
 };
 
 export type LeasePayload = {
-  counterparty_id: string;
+  /** Существующий арендодатель — когда его выбрали явно. */
+  counterparty_id?: string | null;
+  /** Новый арендодатель заводится по названию прямо из карточки помещения. */
+  landlord_name?: string | null;
+  landlord_inn?: string | null;
   monthly_amount: number;
   payment_day?: number | null;
   payment_mode: "prepaid" | "postpaid";
