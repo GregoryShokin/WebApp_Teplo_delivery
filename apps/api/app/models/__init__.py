@@ -153,6 +153,14 @@ from app.models.revenue_forecast import RevenueForecast
 from app.models.sbis_document import SbisDocument
 from app.models.settings import AppSetting, AppSettingHistory
 from app.models.shift_schedule import ScheduledShift, ShiftAllowanceOverride, ShiftSchedule
+from app.models.tax import (
+    IikoRevenuePeriod,
+    IikoRevenueRevision,
+    TaxDocumentIntake,
+    TaxManualObligation,
+    TaxPayment,
+    TaxPeriodClose,
+)
 from app.models.vacation import VacationPeriod
 from app.models.wallet import Wallet
 
@@ -230,6 +238,8 @@ __all__ = [
     "IikoCashShiftPayout",
     "IikoInvoicePaymentPush",
     "IikoProduct",
+    "IikoRevenuePeriod",
+    "IikoRevenueRevision",
     "InventoryAudit",
     "InventoryAuditEmployeeExclusion",
     "InventoryAuditItem",
@@ -292,6 +302,10 @@ __all__ = [
     "User",
     "UserRole",
     "UserRoleEvent",
+    "TaxDocumentIntake",
+    "TaxManualObligation",
+    "TaxPayment",
+    "TaxPeriodClose",
     "VacationPeriod",
     "Wallet",
     "WalletBalanceSnapshot",

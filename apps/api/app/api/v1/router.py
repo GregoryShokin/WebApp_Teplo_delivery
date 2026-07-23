@@ -26,6 +26,7 @@ from app.api.v1.routes.sbis import router as sbis_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.shift_schedule import router as shift_schedule_router
 from app.api.v1.routes.shifts import router as shifts_router
+from app.api.v1.routes.taxes import router as taxes_router
 from app.api.v1.routes.vacations import router as vacations_router
 from app.api.v1.routes.warehouse import router as warehouse_router
 from app.api.v1.routes.webhooks import router as webhooks_router
@@ -58,6 +59,7 @@ api_router.include_router(settings_router, prefix="/settings", tags=["settings"]
 api_router.include_router(locations_router, prefix="/locations", tags=["locations"])
 api_router.include_router(shift_schedule_router, prefix="/schedule", tags=["schedule"])
 api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])
+api_router.include_router(taxes_router, prefix="/taxes", tags=["taxes"])
 api_router.include_router(vacations_router, prefix="/vacations", tags=["vacations"])
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])

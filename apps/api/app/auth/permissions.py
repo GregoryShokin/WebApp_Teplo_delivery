@@ -342,6 +342,12 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Переносить период уже признанного расхода поставщика",
     ),
     ("accounting.periods.close", "Учёт", "Закрывать учётный период"),
+    ("accounting.taxes.read", "Учёт", "Смотреть налоги (расчёт, сверка, календарь сроков)"),
+    (
+        "accounting.taxes.manage",
+        "Учёт",
+        "Вести налоги: продвигать документы бухгалтера в обязательства, вносить платежи",
+    ),
     ("counterparties.read", "Контрагенты", "Смотреть контрагентов и счета к оплате"),
     (
         "counterparties.operate",

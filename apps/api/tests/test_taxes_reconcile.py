@@ -1,0 +1,319 @@
+"""Сверка трёх слоёв: расчёт vs документ vs факт.
+
+Ядро — воспроизведение реальной ситуации 22.07.2026: бухгалтер прислала нулевую платёжку
+по УСН при расчёте 478 376. Сверка обязана поймать это как ALERT автоматически.
+
+Данные строятся из настоящих величин 2026 года (выручка iiko, платежи из выписки).
+"""
+
+from __future__ import annotations
+
+import calendar
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.tax import IikoRevenuePeriod, TaxDocumentIntake, TaxPayment
+from app.services.taxes.reconcile import build_reconciliation
+from app.services.taxes.repository import DEFAULT_DEPARTMENT
+
+# Выручка со скидками, iiko, помесячно (сверено с платёжками).
+REVENUE_2026 = {
+    1: Decimal("4095915.11"),
+    2: Decimal("3833597.82"),
+    3: Decimal("4006534.78"),
+    4: Decimal("3326144.31"),
+    5: Decimal("4013871.62"),
+    6: Decimal("3222736.00"),  # выведен из платёжки на 1% (полугодие 22 498 800)
+}
+
+
+async def _seed_revenue(session: AsyncSession, upto_month: int) -> None:
+    for m in range(1, upto_month + 1):
+        session.add(
+            IikoRevenuePeriod(
+                id=uuid.uuid4(),
+                period_start=date(2026, m, 1),
+                period_end=date(2026, m, calendar.monthrange(2026, m)[1]),
+                granularity="month",
+                department=DEFAULT_DEPARTMENT,
+                revenue_net=REVENUE_2026[m],
+                source="iiko_olap",
+            )
+        )
+    await session.flush()
+
+
+def _payment_order_intake(
+    *, tax_kind: str, period: str, amount: str, due: date, received: datetime, filename: str
+) -> TaxDocumentIntake:
+    return TaxDocumentIntake(
+        id=uuid.uuid4(),
+        mailbox="corporate",
+        from_addr="Бухгалтер <askad02@mail.ru>",
+        attachment_sha256=(uuid.uuid4().hex + uuid.uuid4().hex),  # 64-символьный уникальный
+        received_at=received,
+        filename=filename,
+        document_type="payment_order",
+        status="parsed",
+        recognition={
+            "tax_kind": tax_kind,
+            "period_hint": period,
+            "amount": amount,
+            "due_date": due.isoformat(),
+        },
+    )
+
+
+def _usn_paid(amount: str, period: str, paid_on: date, doc: str) -> TaxPayment:
+    return TaxPayment(
+        id=uuid.uuid4(),
+        bundle_id=uuid.uuid4(),
+        paid_on=paid_on,
+        kind="usn_advance",
+        amount=Decimal(amount),
+        recipient="fns",
+        for_year=2026,
+        for_period=period,
+        status="paid",
+        document_number=doc,
+        source_kind="bank_statement",
+        quality_status="confirmed",
+    )
+
+
+def _tax_payment(kind: str, amount: str, paid_on: date, recipient: str = "fns") -> TaxPayment:
+    return TaxPayment(
+        id=uuid.uuid4(),
+        bundle_id=uuid.uuid4(),
+        paid_on=paid_on,
+        kind=kind,
+        amount=Decimal(amount),
+        recipient=recipient,
+        for_year=2026,
+        status="paid",
+        source_kind="bank_statement",
+        quality_status="reconstructed",
+    )
+
+
+async def _seed_deductions(session: AsyncSession) -> None:
+    """Взносы, дающие вычет, — чтобы расчёт движка совпал с реальными платёжками.
+
+    Q1 вычет = 41 539 (фикс 14 347,50 + взносы 26 891,50 + травма 300);
+    H1 добавляет взносы Q2 (39 029) и допвзнос 116 360 → H1 вычет 196 928.
+    """
+    session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+    session.add(_tax_payment("contrib_employees", "26891.50", date(2026, 3, 26)))
+    session.add(_tax_payment("contrib_injury", "300", date(2026, 3, 26), recipient="sfr"))
+    session.add(_tax_payment("contrib_employees", "39029.00", date(2026, 6, 23)))
+    session.add(_tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9)))
+    await session.flush()
+
+
+def _line(recon, tax_kind, period_code):
+    return next(
+        ln for ln in recon.lines if ln.tax_kind == tax_kind and ln.period_code == period_code
+    )
+
+
+async def test_zero_payment_order_is_caught_as_alert(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """РЕАЛЬНАЯ ситуация 22.07: нулевая платёжка УСН при расчёте 478 376 → ALERT."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_deductions(session)
+        # Аванс Q1 уплачен (674 624) — чтобы полугодовой расчёт дал именно 478 376.
+        session.add(
+            _usn_paid("674624", "q1", date(2026, 4, 20), "287")
+        )
+        # Нулевая платёжка-заглушка на полугодие.
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance",
+                period="h1",
+                amount="0",
+                due=date(2026, 7, 28),
+                received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 23))
+
+    line = _line(recon, "usn_advance", "h1")
+    assert line.calculated == Decimal("478376")
+    assert line.documented == Decimal("0")
+    assert line.verdict == "doc_mismatch"
+    assert line.severity == "alert"
+    assert recon.has_alerts
+    assert any("расходится с расчётом" in m for m in line.messages)
+
+
+async def test_corrected_payment_order_reconciles_ok(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Исправленная платёжка 478 376, уплачено — сверка тихая."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_deductions(session)
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+        # Нулевая, затем исправленная — сверка берёт САМУЮ СВЕЖУЮ.
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance", period="h1", amount="0",
+                due=date(2026, 7, 28), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance", period="h1", amount="478376",
+                due=date(2026, 7, 28), received=datetime(2026, 7, 23, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        session.add(_usn_paid("478376", "h1", date(2026, 7, 24), "301"))
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 25))
+
+    line = _line(recon, "usn_advance", "h1")
+    assert line.documented == Decimal("478376")  # свежая победила нулевую
+    assert line.paid == Decimal("478376")
+    assert line.verdict == "ok"
+    assert line.severity == "ok"
+    assert not recon.has_alerts
+
+
+async def test_overdue_when_unpaid_past_due(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ есть, срок прошёл, не оплачено → просрочка (alert)."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_deductions(session)
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance", period="h1", amount="478376",
+                due=date(2026, 7, 28), received=datetime(2026, 7, 23, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 8, 1))
+
+    line = _line(recon, "usn_advance", "h1")
+    assert line.paid is None
+    assert line.verdict == "overdue"
+    assert line.severity == "alert"
+
+
+async def test_q1_reconciles_against_actual_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Q1: расчёт 674 624, уплачено 674 624 — сверка ok."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        await _seed_deductions(session)
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 4, 30))
+
+    line = _line(recon, "usn_advance", "q1")
+    assert line.calculated == Decimal("674624")
+    assert line.paid == Decimal("674624")
+    assert line.verdict == "ok"
+
+
+async def test_extra_1pct_increment_is_not_a_false_alert(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёжка на 1% ПРИРОСТНАЯ — сверять её с накопленным начислением нельзя.
+
+    Реальные данные: начислено нарастающим итогом 221 988, уплачено 116 360 (09.06),
+    платёжка на остаток 105 628 (срок 25.09). 116 360 + 105 628 = 221 988 — расхождения НЕТ,
+    и сверка обязана молчать, а не поднимать тревогу.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(_tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9)))
+        session.add(
+            _payment_order_intake(
+                tax_kind="contrib_extra_1pct", period="h1", amount="105628",
+                due=date(2026, 9, 25), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="1% за 2 кв 2026.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 23))
+
+    line = _line(recon, "contrib_extra_1pct", "year")
+    assert line.calculated == Decimal("221988.00")
+    assert line.documented == Decimal("105628")
+    assert line.paid == Decimal("116360")
+    assert line.verdict == "due"  # остаток к доплате, не расхождение
+    assert line.severity != "alert"
+    assert not recon.has_alerts
+
+
+async def test_extra_1pct_real_shortfall_still_alerts(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Поправка на приростность не должна глушить НАСТОЯЩУЮ недоплату.
+
+    Если платёжка выписана на 50 000 при остатке 105 628 — это реальное расхождение,
+    и тревога обязана сработать.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(_tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9)))
+        session.add(
+            _payment_order_intake(
+                tax_kind="contrib_extra_1pct", period="h1", amount="50000",
+                due=date(2026, 9, 25), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="1% за 2 кв 2026.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 23))
+
+    line = _line(recon, "contrib_extra_1pct", "year")
+    assert line.verdict == "doc_mismatch"
+    assert line.severity == "alert"
+    assert any("остатком к доплате" in m for m in line.messages)
+
+
+async def test_extra_1pct_matches_payment_order(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Допвзнос 1%: расчёт нарастающим итогом сходится с платёжкой бухгалтера."""
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        # Платёжка на 1% за полугодие: 221 988 нарастающим итогом.
+        session.add(
+            _payment_order_intake(
+                tax_kind="contrib_extra_1pct", period="h1", amount="221988",
+                due=date(2026, 9, 25), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="1% за 2 кв 2026.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 6, 30))
+
+    line = _line(recon, "contrib_extra_1pct", "year")
+    # (22 498 800 − 300 000) × 1% = 221 988.
+    assert line.calculated == Decimal("221988.00")
+    assert line.documented == Decimal("221988")
+    assert line.verdict in ("due", "ok")  # срок 25.09 ещё не наступил → due
+    assert line.severity != "alert"

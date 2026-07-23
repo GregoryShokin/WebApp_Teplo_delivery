@@ -37,6 +37,7 @@ export type AppSection =
   | "accounting"
   | "accounting.fixed-assets"
   | "accounting.dz-kz"
+  | "accounting.taxes"
   | "settings"
   | "access-control";
 
@@ -231,12 +232,14 @@ export const PERMISSION_GROUPS = {
   accountingRead: [
     "accounting.fixed_assets.read",
     "accounting.suppliers.read",
+    "accounting.taxes.read",
   ],
   accountingWrite: [
     "accounting.fixed_assets.edit",
     "accounting.suppliers.edit",
     "accounting.service_periods.correct_recognized",
     "accounting.periods.close",
+    "accounting.taxes.manage",
   ],
   settingsRead: [
     "settings.general.read",
@@ -301,6 +304,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   accounting: [...PERMISSION_GROUPS.accountingRead, ...PERMISSION_GROUPS.accountingWrite],
   "accounting.fixed-assets": ["accounting.fixed_assets.read", "accounting.fixed_assets.edit"],
   "accounting.dz-kz": ["accounting.suppliers.read", "accounting.suppliers.edit"],
+  "accounting.taxes": ["accounting.taxes.read", "accounting.taxes.manage"],
   settings: [...PERMISSION_GROUPS.settingsRead, ...PERMISSION_GROUPS.settingsWrite],
   "access-control": [
     "settings.users.read",

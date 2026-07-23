@@ -1,0 +1,1304 @@
+/** Страница «Налоги» — УСН «Доходы» 6% для ИП-общепита.
+ *
+ * Главное на странице — СВЕРКА, а не расчёт: три независимых слоя (наш расчёт из выручки
+ * iiko, платёжка бухгалтера, факт из банка) сводятся в одну таблицу, и расхождение видно
+ * на первом экране. Реальный случай, ради которого всё строилось: платёжка по УСН на 0 ₽
+ * при расчёте 478 376 ₽ — такая строка обязана быть красной и первой.
+ *
+ * Расчёт и сверка берутся ОДНИМ запросом (`/taxes/overview`) намеренно: два отдельных
+ * запроса могут разъехаться по дате среза и показать владельцу расхождение, которого нет.
+ */
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
+  FileText,
+  Info,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui-app/EmptyState";
+import { PageHeader } from "@/components/ui-app/PageHeader";
+import { apiErrorMessage } from "@/lib/api";
+import { todayIso } from "@/lib/date";
+import { usePermissions } from "@/lib/permissions";
+import {
+  getTaxCalendar,
+  getTaxDocuments,
+  getTaxOverview,
+  getTaxPayments,
+  getTaxSources,
+  promoteTaxDocuments,
+  type Money,
+  type Reconciliation,
+  type ReconLine,
+  type ReconSeverity,
+  type ReconVerdict,
+  type TaxCalendarItem,
+  type TaxDocumentRow,
+  type TaxPaymentRow,
+  type TaxPromotionSummary,
+  type TaxSource,
+  type TaxState,
+} from "@/routes/taxes/api";
+
+type TaxesTab = "summary" | "calendar" | "payments" | "documents";
+
+// ── форматирование ─────────────────────────────────────────────────────────────
+
+const moneyFormatter = new Intl.NumberFormat("ru-RU", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const dateFormatter = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** «478 376,00 ₽» — неразрывные пробелы, запятая в дробной части. */
+function formatMoney(value: Money | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+  // U+00A0 — неразрывный пробел перед знаком рубля (Intl ставит такие же внутри разрядов).
+  return `${moneyFormatter.format(numeric)}\u00A0₽`;
+}
+
+/** Движок отдаёт ДОЛЮ (0,0512), а не проценты — приводим сами, точность не теряем.
+ *
+ * Доля бывает и больше единицы: в январе уплаченные взносы «за себя» легко перекрывают
+ * выручку, и нагрузка выходит 268%. Поэтому умножаем всегда, без «похоже на проценты» —
+ * такая догадка превратила бы 2,68 (268%) в «2,68%» и спрятала бы аномалию.
+ */
+function formatRate(value: Money | null | undefined): string {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+  return `${(numeric * 100).toFixed(2).replace(".", ",")}%`;
+}
+
+/** Дата `YYYY-MM-DD`: собираем локальный полдень-полночь, чтобы не уехать на день назад. */
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  return Number.isNaN(parsed.getTime()) ? value : dateFormatter.format(parsed);
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return "—";
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : dateTimeFormatter.format(parsed);
+}
+
+function toNumber(value: Money | null | undefined): number {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+// ── словари ────────────────────────────────────────────────────────────────────
+
+const PERIOD_TITLES: Record<string, string> = {
+  q1: "I квартал",
+  h1: "полугодие",
+  "9m": "9 месяцев",
+  year: "год",
+};
+
+const TAX_KIND_LABELS: Record<string, string> = {
+  usn_advance: "УСН, авансовый платёж",
+  usn_year: "УСН за год",
+  contrib_fixed: "Фиксированные взносы ИП «за себя»",
+  contrib_extra_1pct: "Допвзнос 1%",
+  contrib_employees: "Взносы за работников",
+  ndfl: "НДФЛ за работников",
+  enp_payroll: "Зарплатный ЕНП (НДФЛ + взносы)",
+  injury: "Взносы на травматизм",
+  other: "Прочее",
+};
+
+const VERDICT_LABELS: Record<ReconVerdict, string> = {
+  ok: "Сходится",
+  doc_mismatch: "Документ ≠ расчёт",
+  payment_mismatch: "Оплата ≠ документ",
+  overdue: "Просрочено",
+  due: "К уплате",
+  no_data: "Нет данных",
+};
+
+const SEVERITY_ORDER: Record<ReconSeverity, number> = {
+  alert: 0,
+  warning: 1,
+  info: 2,
+  ok: 3,
+};
+
+const SEVERITY_BADGE: Record<ReconSeverity, string> = {
+  alert: "border-rose-200 bg-rose-50 text-rose-700",
+  warning: "border-amber-200 bg-amber-50 text-amber-800",
+  info: "border-sky-200 bg-sky-50 text-sky-700",
+  ok: "border-emerald-200 bg-emerald-50 text-emerald-700",
+};
+
+const SEVERITY_ROW: Record<ReconSeverity, string> = {
+  alert: "bg-rose-50/70 hover:bg-rose-50",
+  warning: "bg-amber-50/50 hover:bg-amber-50",
+  info: "",
+  ok: "",
+};
+
+/** Какая из трёх колонок «виновата» в вердикте — её и подсвечиваем.
+ *
+ * Подсвечивать всегда «Документ» нельзя: при `payment_mismatch` бумага как раз верна, а
+ * разошёлся факт, а при `overdue` документа может не быть вовсе — жирный прочерк в чужой
+ * колонке уводит взгляд не туда.
+ */
+const VERDICT_HIGHLIGHT: Record<ReconVerdict, "documented" | "paid" | null> = {
+  ok: null,
+  doc_mismatch: "documented",
+  payment_mismatch: "paid",
+  overdue: "paid",
+  due: null,
+  no_data: null,
+};
+
+/** Неизвестная severity с бэкенда не должна ломать сортировку (NaN) — уводим в конец. */
+function severityRank(severity: string): number {
+  return SEVERITY_ORDER[severity as ReconSeverity] ?? 9;
+}
+
+const NEUTRAL_BADGE = "border-border bg-muted text-muted-foreground";
+
+const PAYMENT_STATUS: Record<string, { label: string; className: string }> = {
+  planned: { label: "Запланировано", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  paid: { label: "Оплачено", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  cancelled: { label: "Отменено", className: NEUTRAL_BADGE },
+};
+
+const OVERDUE_BADGE = "border-rose-200 bg-rose-50 text-rose-700";
+
+const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
+  parsed: { label: "Распознан", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  needs_review: {
+    label: "Нужна проверка",
+    className: "border-amber-200 bg-amber-50 text-amber-800",
+  },
+  promoted: { label: "Продвинут", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  unsupported: { label: "Не поддержан", className: NEUTRAL_BADGE },
+  error: { label: "Ошибка разбора", className: OVERDUE_BADGE },
+  ignored: { label: "Игнорируем", className: NEUTRAL_BADGE },
+};
+
+const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+  payment_order: "Платёжное поручение",
+  payroll_statement: "Зарплатная ведомость",
+  unknown: "Тип не определён",
+};
+
+const SOURCE_METHOD_LABELS: Record<string, string> = {
+  api: "запрос к системе",
+  file_cache: "выгрузка файлом",
+  derived: "выводится расчётом",
+  manual: "вводит человек",
+  code_constant: "константа в коде",
+};
+
+const SOURCE_CONFIDENCE: Record<string, { label: string; className: string }> = {
+  verified: {
+    label: "подтверждён",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  reconstructed: {
+    label: "восстановлен расчётом",
+    className: "border-amber-200 bg-amber-50 text-amber-800",
+  },
+  unverified: { label: "не сверялся", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  missing: { label: "источника нет", className: OVERDUE_BADGE },
+};
+
+function periodTitle(code: string | null | undefined): string {
+  if (!code) return "—";
+  return PERIOD_TITLES[code] ?? code;
+}
+
+function taxKindLabel(kind: string | null | undefined): string {
+  if (!kind) return "—";
+  return TAX_KIND_LABELS[kind] ?? kind;
+}
+
+// ── мелкие блоки ───────────────────────────────────────────────────────────────
+
+function LoadingBlock({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: rows }).map((_, index) => (
+        <Skeleton className="h-10 w-full" key={index} />
+      ))}
+    </div>
+  );
+}
+
+function ErrorBlock({
+  error,
+  onRetry,
+  fallback,
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  fallback?: string;
+}) {
+  return (
+    <Card className="border-rose-200 bg-rose-50/60 shadow-none">
+      <CardContent className="flex flex-col gap-3 p-5 text-sm text-rose-900 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{apiErrorMessage(error, fallback ?? "Не удалось загрузить данные")}</span>
+        </div>
+        {onRetry ? (
+          <Button onClick={onRetry} size="sm" variant="outline">
+            <RefreshCw aria-hidden="true" />
+            Повторить
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  hint,
+  tone = "default",
+}: {
+  title: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "danger" | "success";
+}) {
+  const valueTone =
+    tone === "danger"
+      ? "text-rose-700"
+      : tone === "success"
+        ? "text-emerald-700"
+        : "text-foreground";
+  return (
+    <Card className="shadow-none">
+      <CardContent className="flex flex-col gap-1 p-5">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {title}
+        </div>
+        <div className={`text-2xl font-semibold tabular-nums ${valueTone}`}>{value}</div>
+        {hint ? <div className="text-xs leading-5 text-muted-foreground">{hint}</div> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NoticeList({
+  items,
+  tone,
+  title,
+}: {
+  items: string[];
+  tone: "warning" | "danger";
+  title: string;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+  const className =
+    tone === "danger"
+      ? "border-rose-200 bg-rose-50/70 text-rose-900"
+      : "border-amber-200 bg-amber-50/70 text-amber-900";
+  return (
+    <Card className={`shadow-none ${className}`}>
+      <CardContent className="flex gap-3 p-4 text-sm">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <div className="space-y-1">
+          <div className="font-semibold">{title}</div>
+          <ul className="list-disc space-y-1 pl-4 leading-6">
+            {items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-dashed border-border py-1.5 last:border-0">
+      <div className="min-w-0">
+        <div className="text-muted-foreground">{label}</div>
+        {hint ? <div className="text-xs leading-5 text-muted-foreground/80">{hint}</div> : null}
+      </div>
+      <div className="shrink-0 font-medium tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+// ── вкладка «Сводка»: сверка ───────────────────────────────────────────────────
+
+function ReconciliationBlock({
+  reconciliation,
+  isBlocked,
+}: {
+  reconciliation: Reconciliation;
+  isBlocked: boolean;
+}) {
+  // Красные — наверх: владелец должен увидеть расхождение, не листая таблицу.
+  const lines = useMemo(
+    () =>
+      [...reconciliation.lines].sort((a, b) => {
+        const bySeverity = severityRank(a.severity) - severityRank(b.severity);
+        if (bySeverity !== 0) return bySeverity;
+        return (a.due_date ?? "9999-12-31").localeCompare(b.due_date ?? "9999-12-31");
+      }),
+    [reconciliation.lines],
+  );
+
+  const alertCount =
+    reconciliation.alert_count ?? lines.filter((line) => line.severity === "alert").length;
+
+  if (lines.length === 0) {
+    return (
+      <EmptyState
+        description="На выбранную дату среза нет ни одного закрывшегося отчётного периода — сверять расчёт с платёжками бухгалтера пока не с чем. Первая строка появится после 31 марта, когда закроется I квартал (сам аванс по УСН за него платится до 28 апреля)."
+        icon={<ShieldCheck size={18} aria-hidden="true" />}
+        title="Сверять пока нечего"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {alertCount > 0 ? (
+        <Card className="border-rose-200 bg-rose-50/70 shadow-none">
+          <CardContent className="flex gap-3 p-4 text-sm text-rose-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div>
+              <div className="font-semibold">Расхождений, требующих решения: {alertCount}</div>
+              <p className="mt-1 leading-6">
+                Ниже красным — обязательства, где платёжка бухгалтера или факт из банка не
+                совпали с нашим расчётом. Пока причина не выяснена, платить по такому
+                документу нельзя.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : isBlocked ? (
+        // Зелёное «всё сходится» на неполной выручке — прямой обман: расчёт, с которым
+        // сравнивают платёжку, сам занижен. Пока база не догружена, честный ответ — жёлтый.
+        <Card className="border-amber-200 bg-amber-50/70 shadow-none">
+          <CardContent className="flex gap-3 p-4 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div>
+              <div className="font-semibold">Расхождений не видно, но проверять рано</div>
+              <p className="mt-1 leading-6">
+                Выручка загружена не за весь период (причина указана выше), поэтому «сходится»
+                здесь значит лишь «не расходится с неполной цифрой». Вернитесь к сверке после
+                догрузки выручки.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-emerald-200 bg-emerald-50/70 shadow-none">
+          <CardContent className="flex gap-3 p-4 text-sm text-emerald-900">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div>
+              <div className="font-semibold">Расхождений нет</div>
+              <p className="mt-1 leading-6">
+                Расчёт, платёжки бухгалтера и факт из банка сходятся по всем обязательствам
+                на выбранную дату.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
+            Сверка: расчёт ↔ документ ↔ факт
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Прочерк значит «источника нет»: платёжку не присылали или платёж не проходил.
+            Это не то же самое, что ноль в документе.
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[220px]">Обязательство</TableHead>
+                <TableHead className="text-right">Расчёт</TableHead>
+                <TableHead className="text-right">Документ</TableHead>
+                <TableHead className="text-right">Факт</TableHead>
+                <TableHead className="min-w-[200px]">Вердикт</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lines.map((line) => (
+                <ReconRow key={`${line.tax_kind}-${line.period_code}`} line={line} />
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ReconRow({ line }: { line: ReconLine }) {
+  const isAlert = line.severity === "alert";
+  const isCalm = line.severity === "ok" || line.severity === "info";
+  const highlighted = isCalm ? null : VERDICT_HIGHLIGHT[line.verdict];
+  const emphasis = isAlert ? "font-semibold text-rose-700" : "font-semibold text-amber-800";
+  return (
+    <TableRow className={SEVERITY_ROW[line.severity] ?? ""}>
+      <TableCell className="align-top">
+        <div className={`font-medium ${isAlert ? "text-rose-900" : ""}`}>{line.label}</div>
+        <div className="text-xs text-muted-foreground">
+          {taxKindLabel(line.tax_kind)}
+          {line.due_date ? ` · срок ${formatDate(line.due_date)}` : ""}
+        </div>
+      </TableCell>
+      <TableCell className="text-right align-top tabular-nums">
+        {formatMoney(line.calculated)}
+      </TableCell>
+      <TableCell
+        className={`text-right align-top tabular-nums ${
+          highlighted === "documented" ? emphasis : ""
+        }`}
+      >
+        {formatMoney(line.documented)}
+      </TableCell>
+      <TableCell
+        className={`text-right align-top tabular-nums ${highlighted === "paid" ? emphasis : ""}`}
+      >
+        {formatMoney(line.paid)}
+      </TableCell>
+      <TableCell className="align-top">
+        <Badge className={SEVERITY_BADGE[line.severity] ?? NEUTRAL_BADGE} variant="outline">
+          {VERDICT_LABELS[line.verdict] ?? line.verdict}
+        </Badge>
+        {line.messages.length > 0 ? (
+          <ul
+            className={`mt-1.5 space-y-1 text-xs leading-5 ${
+              isAlert ? "text-rose-800" : "text-muted-foreground"
+            }`}
+          >
+            {line.messages.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── вкладка «Сводка» ───────────────────────────────────────────────────────────
+
+function SummaryTab({ asOf }: { asOf: string }) {
+  const query = useQuery({
+    queryKey: ["taxes", "overview", asOf],
+    queryFn: () => getTaxOverview(asOf),
+  });
+
+  if (query.isLoading) {
+    return <LoadingBlock rows={6} />;
+  }
+  if (query.isError) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось получить расчёт и сверку"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+  if (!query.data) {
+    return null;
+  }
+
+  const { state, reconciliation, is_blocked: isBlocked } = query.data;
+
+  return (
+    <div className="space-y-5">
+      {/* Блокирующие причины — ВЫШЕ вердикта сверки: иначе владелец сначала читает
+          «расхождений нет», а уже потом узнаёт, что сравнивали с неполной цифрой. */}
+      <NoticeList
+        items={state.blocking}
+        title="Расчёт неполный — верить цифрам и вердикту сверки нельзя"
+        tone="danger"
+      />
+
+      <ReconciliationBlock isBlocked={isBlocked} reconciliation={reconciliation} />
+
+      <NoticeList items={state.warnings} title="На что обратить внимание" tone="warning" />
+
+      <TaxMetrics isBlocked={isBlocked} state={state} />
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Как сложился вычет</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Взносы уменьшают налог, но не более чем наполовину. Всё, что не влезло в
+            половину, — сгорает и никуда не переносится.
+          </p>
+        </CardHeader>
+        <CardContent className="grid gap-x-8 gap-y-2 p-6 pt-0 text-sm sm:grid-cols-2">
+          <DetailRow
+            hint="Только по факту уплаты (кассовый принцип)"
+            label="Взносы за работников"
+            value={formatMoney(state.employees_paid)}
+          />
+          <DetailRow
+            hint={`Доступно ${formatMoney(state.fixed_available)}`}
+            label="Фиксированные взносы ИП — заявлено"
+            value={formatMoney(state.fixed_claimed)}
+          />
+          <DetailRow label="Допвзнос 1% — начислено" value={formatMoney(state.extra_accrued)} />
+          <DetailRow
+            hint={`Доступно ${formatMoney(state.extra_available)}`}
+            label="Допвзнос 1% — заявлено"
+            value={formatMoney(state.extra_claimed)}
+          />
+          <DetailRow
+            hint="Срезано лимитом 50% — потеряно навсегда"
+            label="Сгорело"
+            value={formatMoney(state.deduction_burned)}
+          />
+          <DetailRow
+            hint="Начислено, но не уплачено — уйдёт в вычет следующих периодов года"
+            label="Отложено"
+            value={formatMoney(state.deduction_deferred)}
+          />
+          <DetailRow
+            hint="Внутри года ещё можно использовать"
+            label="Не заявлено"
+            value={formatMoney(state.deduction_unclaimed)}
+          />
+          <DetailRow
+            hint="Налог плюс взносы к доходу нарастающим итогом"
+            label="Итоговая нагрузка"
+            value={`${formatMoney(state.total_burden)} · ${formatRate(state.effective_rate)}`}
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function TaxMetrics({ state, isBlocked }: { state: TaxState; isBlocked: boolean }) {
+  const overpayment = toNumber(state.overpayment);
+  const amountDue = toNumber(state.amount_due);
+  // Зелёный ноль на неполной выручке читается как «платить нечего» — при блокировке
+  // оставляем нейтральный цвет, чтобы цифра не выглядела закрытым вопросом.
+  const dueTone = amountDue > 0 ? "danger" : isBlocked ? "default" : "success";
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricCard
+        hint={`Нарастающим итогом с 1 января, ${periodTitle(state.period_code)} ${state.year}`}
+        title="Доход"
+        value={formatMoney(state.income_ytd)}
+      />
+      <MetricCard
+        hint="6% от дохода, в полных рублях (п. 6 ст. 52 НК)"
+        title="Налог исчисленный"
+        value={formatMoney(state.tax_computed)}
+      />
+      <MetricCard
+        hint={`Потолок 50% — ${formatMoney(state.deduction_limit)}. Всего взносов заявлено ${formatMoney(
+          state.deduction_total,
+        )}`}
+        title="Вычет применён"
+        value={formatMoney(state.deduction_applied)}
+      />
+      <MetricCard
+        hint={
+          overpayment > 0
+            ? `Переплата ${formatMoney(state.overpayment)}: авансы больше начисленного`
+            : `Уже уплачено авансами ${formatMoney(state.advances_paid)}`
+        }
+        title="К уплате"
+        tone={dueTone}
+        value={formatMoney(state.amount_due)}
+      />
+    </div>
+  );
+}
+
+// ── вкладка «Календарь» ────────────────────────────────────────────────────────
+
+function CalendarTab({ year }: { year: number }) {
+  const query = useQuery({
+    queryKey: ["taxes", "calendar", year],
+    queryFn: () => getTaxCalendar(year),
+  });
+
+  if (query.isLoading) {
+    return <LoadingBlock rows={5} />;
+  }
+  if (query.isError) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось загрузить календарь сроков"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const data = query.data;
+  if (!data || data.items.length === 0) {
+    return (
+      <EmptyState
+        description={`За ${year} год обязательств не заведено. Они появляются двумя путями: платёжка бухгалтера продвигается во вкладке «Документы» либо платёж приходит фактом из банковской выписки.`}
+        icon={<CalendarClock size={18} aria-hidden="true" />}
+        title="Сроков пока нет"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          Уплачено:{" "}
+          <span className="font-semibold tabular-nums text-foreground">
+            {formatMoney(data.paid_total)}
+          </span>
+        </span>
+        <span>
+          Запланировано:{" "}
+          <span className="font-semibold tabular-nums text-foreground">
+            {formatMoney(data.planned_total)}
+          </span>
+        </span>
+        {data.overdue_count > 0 ? (
+          <span className="text-rose-700">
+            Просрочено: {data.overdue_count} на{" "}
+            <span className="font-semibold tabular-nums">{formatMoney(data.overdue_total)}</span>
+          </span>
+        ) : (
+          <span className="text-emerald-700">Просроченных сроков нет</span>
+        )}
+      </div>
+
+      <Card className="shadow-none">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[130px]">Дата</TableHead>
+                <TableHead className="min-w-[240px]">Что платим</TableHead>
+                <TableHead className="text-right">Сумма</TableHead>
+                <TableHead className="w-[180px]">Статус</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((item) => (
+                <CalendarRow item={item} key={item.id} />
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CalendarRow({ item }: { item: TaxCalendarItem }) {
+  const status = PAYMENT_STATUS[item.status] ?? { label: item.status, className: NEUTRAL_BADGE };
+  return (
+    <TableRow className={item.is_overdue ? "bg-rose-50/70 hover:bg-rose-50" : undefined}>
+      <TableCell
+        className={`whitespace-nowrap align-top tabular-nums ${
+          item.is_overdue ? "font-semibold text-rose-700" : ""
+        }`}
+      >
+        {formatDate(item.due_date ?? item.paid_on)}
+        <div className="text-xs font-normal text-muted-foreground">
+          {item.status === "planned" ? "срок уплаты" : "дата списания"}
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="font-medium">{taxKindLabel(item.kind)}</div>
+        <div className="text-xs text-muted-foreground">
+          {[
+            item.for_period ? periodTitle(item.for_period) : null,
+            item.recipient,
+            item.note ?? item.purpose,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "—"}
+        </div>
+      </TableCell>
+      <TableCell className="text-right align-top tabular-nums">{formatMoney(item.amount)}</TableCell>
+      <TableCell className="align-top">
+        <Badge
+          className={item.is_overdue ? OVERDUE_BADGE : status.className}
+          variant="outline"
+        >
+          {item.is_overdue ? "Просрочено" : status.label}
+        </Badge>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── вкладка «Платежи» ──────────────────────────────────────────────────────────
+
+function PaymentsTab({ year }: { year: number }) {
+  const query = useQuery({
+    queryKey: ["taxes", "payments", year],
+    queryFn: () => getTaxPayments({ year }),
+  });
+
+  if (query.isLoading) {
+    return <LoadingBlock rows={5} />;
+  }
+  if (query.isError) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось загрузить реестр платежей"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const data = query.data;
+  if (!data || data.items.length === 0) {
+    return (
+      <EmptyState
+        description={`За ${year} год платежей в бюджет не зарегистрировано. Факт приходит из выписки T-Bank, план — из платёжек бухгалтера, продвинутых во вкладке «Документы».`}
+        icon={<FileText size={18} aria-hidden="true" />}
+        title="Платежей нет"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          Уплачено за {year} год:{" "}
+          <span className="font-semibold tabular-nums text-foreground">
+            {formatMoney(data.paid_total)}
+          </span>
+        </span>
+        <span>
+          В плане:{" "}
+          <span className="font-semibold tabular-nums text-foreground">
+            {formatMoney(data.planned_total)}
+          </span>
+        </span>
+        <span>строк: {data.total}</span>
+      </div>
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <p className="text-sm text-muted-foreground">
+            Одна строка — одно назначение внутри перевода, а не один перевод: ЕНП уходит
+            единой суммой, но внутри и НДФЛ (в вычет не идёт), и взносы за работников (идут).
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[120px]">Дата</TableHead>
+                <TableHead className="min-w-[220px]">Вид платежа</TableHead>
+                <TableHead className="text-right">Сумма</TableHead>
+                <TableHead className="min-w-[200px]">Получатель и документ</TableHead>
+                <TableHead className="w-[160px]">Статус</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((row) => (
+                <PaymentRow key={row.id} row={row} />
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PaymentRow({ row }: { row: TaxPaymentRow }) {
+  const status = PAYMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
+  const reconstructed = row.quality_status === "reconstructed";
+  return (
+    <TableRow>
+      <TableCell className="whitespace-nowrap align-top tabular-nums">
+        {formatDate(row.paid_on)}
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="font-medium">{taxKindLabel(row.kind)}</div>
+        <div className="text-xs text-muted-foreground">
+          {[row.for_period ? periodTitle(row.for_period) : null, row.purpose]
+            .filter(Boolean)
+            .join(" · ") || "—"}
+        </div>
+      </TableCell>
+      <TableCell className="text-right align-top tabular-nums">{formatMoney(row.amount)}</TableCell>
+      <TableCell className="align-top">
+        <div className="truncate">{row.recipient || "—"}</div>
+        <div className="text-xs text-muted-foreground">
+          {row.document_number ? `№ ${row.document_number}` : "без номера документа"}
+        </div>
+        {reconstructed ? (
+          <div className="mt-1 text-xs text-amber-800">
+            Сумма назначения выведена расчётом: банк отдаёт бюджетные платежи одним КБК.
+          </div>
+        ) : null}
+      </TableCell>
+      <TableCell className="align-top">
+        <Badge className={status.className} variant="outline">
+          {status.label}
+        </Badge>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── вкладка «Документы» ────────────────────────────────────────────────────────
+
+function DocumentsTab({ canManage }: { canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["taxes", "documents"],
+    queryFn: () => getTaxDocuments(),
+  });
+
+  // Наверх — то, что ждёт человека: сначала needs_review, потом ошибки разбора.
+  const rows = useMemo(() => {
+    const source = query.data?.items ?? [];
+    const rank: Record<string, number> = { needs_review: 0, error: 1, parsed: 2 };
+    return [...source].sort((a, b) => {
+      const byStatus = (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+      if (byStatus !== 0) return byStatus;
+      return (b.received_at ?? "").localeCompare(a.received_at ?? "");
+    });
+  }, [query.data]);
+
+  const readyCount = rows.filter(
+    (row) => row.status === "parsed" && row.document_type === "payment_order",
+  ).length;
+
+  const promoteMutation = useMutation({
+    mutationFn: promoteTaxDocuments,
+    onSuccess: (summary: TaxPromotionSummary) => {
+      setConfirmOpen(false);
+      const reasons = summary.results
+        .filter((item) => item.action === "skipped")
+        .map((item) => item.reason)
+        .filter((reason): reason is string => Boolean(reason));
+      const description = reasons.length > 0 ? reasons.join("; ") : undefined;
+
+      if (summary.created === 0 && summary.updated === 0) {
+        toast.info("Ни один документ не продвинут", {
+          description: description ?? "Готовых к продвижению платёжек не нашлось.",
+        });
+      } else {
+        toast.success(
+          `Продвинуто: создано ${summary.created}, обновлено ${summary.updated}` +
+            (summary.skipped > 0 ? `, пропущено ${summary.skipped}` : ""),
+          { description },
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось продвинуть документы")),
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          Что пришло от бухгалтера на почту. Продвижение превращает уверенно распознанную
+          платёжку в плановое обязательство: оно попадает в календарь и в сверку ещё до того,
+          как деньги ушли из банка. Документы со статусом «Нужна проверка» автоматика не
+          трогает — их разбирает человек.
+        </p>
+        {canManage ? (
+          <Button
+            disabled={promoteMutation.isPending || readyCount === 0}
+            onClick={() => setConfirmOpen(true)}
+          >
+            {promoteMutation.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw aria-hidden="true" />
+            )}
+            Продвинуть готовые{readyCount > 0 ? ` (${readyCount})` : ""}
+          </Button>
+        ) : null}
+      </div>
+
+      {query.isLoading ? <LoadingBlock rows={5} /> : null}
+      {query.isError ? (
+        <ErrorBlock
+          error={query.error}
+          fallback="Не удалось загрузить документы"
+          onRetry={() => void query.refetch()}
+        />
+      ) : null}
+
+      {!query.isLoading && !query.isError && rows.length === 0 ? (
+        <EmptyState
+          description="Почтовый разбор ещё ничего не положил в очередь: писем с платёжками от бухгалтера не приходило либо разбор почты выключен в настройках."
+          icon={<FileText size={18} aria-hidden="true" />}
+          title="Документов пока нет"
+        />
+      ) : null}
+
+      {rows.length > 0 ? (
+        <Card className="shadow-none">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[220px]">Файл</TableHead>
+                  <TableHead className="w-[190px]">Тип</TableHead>
+                  <TableHead className="min-w-[260px]">Распознано</TableHead>
+                  <TableHead className="w-[200px]">Статус</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((row) => (
+                  <DocumentRow key={row.id} row={row} />
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Продвинуть готовые документы?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Из уверенно распознанных платёжек ({readyCount} шт.) будут созданы плановые
+              обязательства. Нулевые платёжки-заглушки и зарплатный ЕНП без разноса система
+              пропустит с причиной, документы со статусом «Нужна проверка» не тронет.
+              Повторное продвижение обновит уже созданный план, а не задвоит его.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={promoteMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                promoteMutation.mutate();
+              }}
+            >
+              Продвинуть
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function DocumentRow({ row }: { row: TaxDocumentRow }) {
+  const status = DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
+  const recognition = row.recognition ?? {};
+  const reasons = recognition.review_reasons ?? [];
+  const needsReview = row.status === "needs_review";
+  const hasFields =
+    Boolean(recognition.tax_kind) ||
+    recognition.amount !== undefined ||
+    Boolean(recognition.due_date);
+
+  return (
+    <TableRow className={needsReview ? "bg-amber-50/50 hover:bg-amber-50" : undefined}>
+      <TableCell className="align-top">
+        <div className="font-medium">{row.filename ?? "Без имени файла"}</div>
+        <div className="text-xs text-muted-foreground">
+          {[formatDateTime(row.received_at ?? row.created_at), row.from_addr]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        {DOCUMENT_TYPE_LABELS[row.document_type] ?? row.document_type}
+      </TableCell>
+      <TableCell className="align-top">
+        {hasFields ? (
+          <div className="space-y-0.5">
+            <div className="font-medium">{taxKindLabel(recognition.tax_kind)}</div>
+            <div className="text-xs text-muted-foreground">
+              {[
+                recognition.amount !== undefined && recognition.amount !== null
+                  ? formatMoney(recognition.amount)
+                  : null,
+                recognition.period_hint ? periodTitle(recognition.period_hint) : null,
+                recognition.due_date ? `срок ${formatDate(recognition.due_date)}` : null,
+                recognition.kbk ? `КБК ${recognition.kbk}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "—"}
+            </div>
+          </div>
+        ) : (
+          <span className="text-sm text-muted-foreground">Поля не распознаны</span>
+        )}
+        {row.error ? <div className="mt-1 text-xs text-rose-700">{row.error}</div> : null}
+      </TableCell>
+      <TableCell className="align-top">
+        <Badge className={status.className} variant="outline">
+          {status.label}
+        </Badge>
+        {reasons.length > 0 ? (
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs leading-5 text-amber-800">
+            {reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ── блок «Источники данных» ────────────────────────────────────────────────────
+
+function SourcesBlock() {
+  const query = useQuery({ queryKey: ["taxes", "sources"], queryFn: getTaxSources });
+
+  if (query.isLoading) {
+    return <LoadingBlock rows={2} />;
+  }
+  if (query.isError) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось загрузить реестр источников"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const sources = query.data?.sources ?? [];
+  if (sources.length === 0) {
+    return null;
+  }
+
+  const weakKeys = new Set((query.data?.weakest_links ?? []).map((item) => item.key));
+  const ordered = [...sources].sort((a, b) => {
+    const weak = Number(weakKeys.has(b.key)) - Number(weakKeys.has(a.key));
+    if (weak !== 0) return weak;
+    return a.title.localeCompare(b.title, "ru");
+  });
+
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold">Источники данных</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Где цифра взята из документа, а где выведена расчётом. Слабые звенья — вверху: их
+          нельзя считать первичными, и расхождение по ним объясняется методикой, а не ошибкой.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-2 p-6 pt-0 md:grid-cols-2">
+        {ordered.map((source) => (
+          <SourceItem isWeak={weakKeys.has(source.key)} key={source.key} source={source} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SourceItem({ source, isWeak }: { source: TaxSource; isWeak: boolean }) {
+  const confidence = SOURCE_CONFIDENCE[source.confidence] ?? {
+    label: source.confidence,
+    className: NEUTRAL_BADGE,
+  };
+  return (
+    <div
+      className={`rounded-md border p-3 text-sm ${
+        isWeak ? "border-amber-200 bg-amber-50/50" : "border-border bg-card"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">{source.title}</span>
+        <Badge className={confidence.className} variant="outline">
+          {confidence.label}
+        </Badge>
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {source.system} · {SOURCE_METHOD_LABELS[source.method] ?? source.method}
+      </div>
+      {isWeak ? <p className="mt-1.5 text-xs leading-5 text-amber-900">{source.note}</p> : null}
+      {isWeak && source.target ? (
+        <p className="mt-1 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+          <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+          Куда движемся: {source.target}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ── страница ───────────────────────────────────────────────────────────────────
+
+/** Счётчик на корешке вкладки: сколько там ждёт человека. Ноль не рисуем. */
+function TabCount({ value, tone }: { value: number; tone: "danger" | "warning" }) {
+  if (value <= 0) {
+    return null;
+  }
+  const className =
+    tone === "danger" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800";
+  return <span className={`ml-1.5 rounded-full px-1.5 text-xs ${className}`}>{value}</span>;
+}
+
+export function TaxesRoute() {
+  const permissions = usePermissions();
+  const queryClient = useQueryClient();
+  const canManage = permissions.hasPermission("accounting.taxes.manage");
+
+  const [tab, setTab] = useState<TaxesTab>("summary");
+  // Срез расчёта. По умолчанию — сегодня по ЛОКАЛЬНОЙ зоне: `toISOString().slice(0, 10)`
+  // ночью по МСК дал бы вчерашний день, а с ним и другой отчётный период.
+  const [asOf, setAsOf] = useState(todayIso());
+  const year = Number(asOf.slice(0, 4)) || new Date().getFullYear();
+
+  // Ключи и функции здесь ДОСЛОВНО те же, что во вкладках, — react-query отдаёт один кэш,
+  // так что счётчики не стоят лишних запросов. Нужны они потому, что просроченный срок и
+  // документ «на проверку» — тоже сигналы к действию, а из «Сводки» их не видно.
+  const overviewQuery = useQuery({
+    queryKey: ["taxes", "overview", asOf],
+    queryFn: () => getTaxOverview(asOf),
+  });
+  const calendarQuery = useQuery({
+    queryKey: ["taxes", "calendar", year],
+    queryFn: () => getTaxCalendar(year),
+  });
+  const documentsQuery = useQuery({
+    queryKey: ["taxes", "documents"],
+    queryFn: () => getTaxDocuments(),
+  });
+
+  const alertCount = overviewQuery.data?.alert_count ?? 0;
+  const overdueCount = calendarQuery.data?.overdue_count ?? 0;
+  const reviewCount = documentsQuery.data?.status_counts?.needs_review ?? 0;
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        action={
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground" htmlFor="taxes-as-of">
+              Срез на
+            </label>
+            <Input
+              className="w-[165px]"
+              id="taxes-as-of"
+              onChange={(event) => setAsOf(event.target.value || todayIso())}
+              type="date"
+              value={asOf}
+            />
+            <Button
+              onClick={() => void queryClient.invalidateQueries({ queryKey: ["taxes"] })}
+              variant="outline"
+            >
+              <RefreshCw aria-hidden="true" />
+              Обновить
+            </Button>
+          </div>
+        }
+        description="УСН «Доходы» 6% нарастающим итогом: сверка расчёта с платёжками бухгалтера и фактом из банка, сроки уплаты, реестр платежей и документы."
+        title="Налоги"
+      />
+
+      <Tabs onValueChange={(value) => setTab(value as TaxesTab)} value={tab}>
+        <TabsList>
+          <TabsTrigger value="summary">
+            Сводка
+            <TabCount tone="danger" value={alertCount} />
+          </TabsTrigger>
+          <TabsTrigger value="calendar">
+            Календарь
+            <TabCount tone="danger" value={overdueCount} />
+          </TabsTrigger>
+          <TabsTrigger value="payments">Платежи</TabsTrigger>
+          <TabsTrigger value="documents">
+            Документы
+            <TabCount tone="warning" value={reviewCount} />
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {tab === "summary" ? <SummaryTab asOf={asOf} /> : null}
+      {tab === "calendar" ? <CalendarTab year={year} /> : null}
+      {tab === "payments" ? <PaymentsTab year={year} /> : null}
+      {tab === "documents" ? <DocumentsTab canManage={canManage} /> : null}
+
+      <SourcesBlock />
+    </div>
+  );
+}

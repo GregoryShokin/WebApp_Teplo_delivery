@@ -17,6 +17,7 @@ import email
 import hashlib
 import imaplib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.header import decode_header, make_header
@@ -110,8 +111,31 @@ def _is_pdf_part(part: Message) -> bool:
     return decoded_name.endswith(".pdf")
 
 
-def _pdf_attachments_from_message(
-    account: MailAccount, uid: str, message: Message
+# Тип предиката, отбирающего вложения по MIME/имени. Позволяет одному fetch-коду тянуть
+# и PDF-счета, и налоговые docx/xls, не дублируя IMAP-логику.
+AttachmentPredicate = Callable[[Message], bool]
+
+# Расширения офисных документов налогового агента.
+_TAX_DOC_EXTENSIONS = (".docx", ".xls", ".xlsx", ".doc")
+_TAX_DOC_MIMES = (
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/msword",
+)
+
+
+def _is_tax_document_part(part: Message) -> bool:
+    """docx/xls/doc/xlsx — по MIME или расширению имени файла."""
+    content_type = (part.get_content_type() or "").casefold()
+    if content_type in _TAX_DOC_MIMES:
+        return True
+    decoded_name = (_decode(part.get_filename()) or "").casefold()
+    return decoded_name.endswith(_TAX_DOC_EXTENSIONS)
+
+
+def _attachments_from_message(
+    account: MailAccount, uid: str, message: Message, accept: AttachmentPredicate
 ) -> list[FetchedAttachment]:
     message_id = _decode(message.get("Message-ID"))
     from_addr = _decode(message.get("From"))
@@ -121,7 +145,7 @@ def _pdf_attachments_from_message(
     for part in message.walk():
         if part.is_multipart():
             continue
-        if not _is_pdf_part(part):
+        if not accept(part):
             continue
         try:
             payload = part.get_payload(decode=True)
@@ -138,17 +162,22 @@ def _pdf_attachments_from_message(
                 subject=subject,
                 received_at=received_at,
                 filename=_decode(part.get_filename()),
-                mime=part.get_content_type() or "application/pdf",
+                mime=part.get_content_type() or "application/octet-stream",
                 content=payload,
             )
         )
     return found
 
 
-def fetch_pdf_attachments(
-    account: MailAccount, *, host: str, port: int, lookback_days: int
+def fetch_attachments(
+    account: MailAccount,
+    *,
+    host: str,
+    port: int,
+    lookback_days: int,
+    accept: AttachmentPredicate,
 ) -> list[FetchedAttachment]:
-    """Скачать PDF-вложения писем из INBOX за окно ``lookback_days``.
+    """Скачать вложения писем из INBOX за окно ``lookback_days``, отобранные ``accept``.
 
     Бросает наружу только фатальные ошибки логина/соединения; ошибки разбора отдельных писем
     изолированы (логируются, проход продолжается). Дедуп по содержимому — выше по стеку.
@@ -175,7 +204,7 @@ def fetch_pdf_attachments(
                 if typ != "OK" or not msg_data or not isinstance(msg_data[0], tuple):
                     continue
                 message = email.message_from_bytes(msg_data[0][1])
-                attachments.extend(_pdf_attachments_from_message(account, uid, message))
+                attachments.extend(_attachments_from_message(account, uid, message, accept))
             except Exception:  # noqa: BLE001 - одно письмо не должно валить весь проход
                 logger.warning("mail %s: ошибка разбора письма uid=%s", account.label, uid,
                                exc_info=True)
@@ -184,3 +213,25 @@ def fetch_pdf_attachments(
         with contextlib.suppress(Exception):
             imap.logout()
     return attachments
+
+
+def fetch_pdf_attachments(
+    account: MailAccount, *, host: str, port: int, lookback_days: int
+) -> list[FetchedAttachment]:
+    """PDF-вложения из INBOX. Тонкая обёртка над ``fetch_attachments`` — контур счетов."""
+    return fetch_attachments(
+        account, host=host, port=port, lookback_days=lookback_days, accept=_is_pdf_part
+    )
+
+
+def fetch_tax_document_attachments(
+    account: MailAccount, *, host: str, port: int, lookback_days: int
+) -> list[FetchedAttachment]:
+    """docx/xls-вложения из INBOX — налоговые документы от бухгалтера."""
+    return fetch_attachments(
+        account,
+        host=host,
+        port=port,
+        lookback_days=lookback_days,
+        accept=_is_tax_document_part,
+    )

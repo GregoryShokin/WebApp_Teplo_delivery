@@ -26,6 +26,7 @@ import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
 import { DzKzRoute } from "@/routes/accounting/dz-kz";
+import { TaxesRoute } from "@/routes/taxes";
 
 type Navigate = (path: string) => void;
 
@@ -485,6 +486,10 @@ const routes: AppRoute[] = [
   {
     path: "/dz-kz",
     render: () => <DzKzRoute />,
+  },
+  {
+    path: "/taxes",
+    render: () => <TaxesRoute />,
   },
   {
     path: "/settings",

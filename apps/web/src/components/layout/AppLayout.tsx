@@ -16,6 +16,7 @@ import {
   Flame,
   Home,
   Inbox,
+  Landmark,
   LogOut,
   Menu,
   PiggyBank,
@@ -140,6 +141,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Учёт ОС", href: "/fixed-assets", icon: Boxes, section: "accounting.fixed-assets" },
       { label: "Учёт ДЗ/КЗ", href: "/dz-kz", icon: ArrowLeftRight, section: "accounting.dz-kz" },
+      { label: "Налоги", href: "/taxes", icon: Landmark, section: "accounting.taxes" },
     ],
   },
   {
