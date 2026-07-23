@@ -275,3 +275,72 @@ def test_leases_for_location_filters_by_article_and_date(async_session_factory) 
             await session.rollback()
 
     asyncio.run(run())
+
+
+def test_cash_payout_carries_location_into_transaction(async_session_factory) -> None:
+    """Кассовая аренда доносит помещение и арендодателя до проводки ДДС.
+
+    Аренда склада платится через кассу (kassa_enabled), поэтому вход обязан заполнять
+    аналитику наравне с банковским.
+    """
+
+    async def run() -> None:
+        from decimal import Decimal as D
+
+        from app.models import CashflowTransaction, Wallet
+        from app.services.kassa.payouts import create_payout
+
+        async with async_session_factory() as session:
+            rent, _other, location, landlord = await _fixture(session)
+            rent.kassa_enabled = True
+            # Профиль контрагента обязателен: касса проверяет его для informal-получателя.
+            from app.models import CounterpartyPayableProfile, CounterpartyRole
+
+            session.add_all(
+                [
+                    CounterpartyPayableProfile(
+                        id=uuid.uuid4(), counterparty_id=landlord.id, relationship="informal"
+                    ),
+                    CounterpartyRole(counterparty_id=landlord.id, role="landlord"),
+                ]
+            )
+            lease = LocationLease(
+                id=uuid.uuid4(),
+                location_id=location.id,
+                counterparty_id=landlord.id,
+                monthly_amount=D("10000"),
+                started_on=date(2026, 1, 1),
+                documents_mode="informal",
+                dds_article_id=rent.id,
+            )
+            session.add(lease)
+            # Кассовый кошелёк должен существовать.
+            existing_kassa = await session.scalar(
+                select(Wallet).where(Wallet.type == "store_cash").limit(1)
+            )
+            if existing_kassa is None:
+                session.add(
+                    Wallet(
+                        id=uuid.uuid4(),
+                        name="Касса",
+                        type="store_cash",
+                        status="active",
+                    )
+                )
+            await session.flush()
+
+            result = await create_payout(
+                session,
+                article_id=rent.id,
+                amount=D("10000"),
+                location_id=location.id,
+                lease_id=lease.id,
+            )
+            txn = await session.get(CashflowTransaction, result.transaction_id)
+            assert txn is not None
+            assert txn.location_id == location.id
+            assert txn.lease_id == lease.id
+            assert txn.counterparty_id == landlord.id
+            await session.rollback()
+
+    asyncio.run(run())

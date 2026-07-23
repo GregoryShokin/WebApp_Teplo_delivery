@@ -150,6 +150,11 @@ from app.services.kassa.payouts import (
     ensure_article_kassa_eligible,
     kassa_pending_payload,
 )
+from app.services.location_analytics import (
+    LocationAnalyticsError,
+    LocationContext,
+    resolve_location_context,
+)
 from app.services.new_payment import (
     NEW_PAYMENT_PERMISSION_CODES,
     build_new_payment_context,
@@ -674,6 +679,8 @@ async def post_new_payment_expense_draft(
             counterparty_id=line.counterparty_id,
             service_period_start=line.service_period_start,
             service_period_end=line.service_period_end,
+            location_id=line.location_id,
+            lease_id=line.lease_id,
         )
         for line in payload.normalized_lines()
     ]
@@ -726,7 +733,7 @@ async def post_new_payment_expense_cash(
         )
     location = "safe" if wallet.type == "cash_safe" else "kassa"
 
-    prepared: list[tuple[DdsArticle, Decimal, str, UUID | None]] = []
+    prepared: list[tuple[DdsArticle, Decimal, str, UUID | None, LocationContext]] = []
     total = Decimal("0")
     for line in payload.lines:
         article = await session.get(DdsArticle, line.article_id)
@@ -742,8 +749,21 @@ async def post_new_payment_expense_cash(
             )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-        if line.counterparty_id is not None:
-            cp = await session.get(Counterparty, line.counterparty_id)
+        try:
+            location_context = await resolve_location_context(
+                session,
+                article=article,
+                location_id=line.location_id,
+                lease_id=line.lease_id,
+                counterparty_id=line.counterparty_id,
+                on_date=datetime.now(MOSCOW_TZ).date(),
+            )
+        except LocationAnalyticsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Аренда знает арендодателя — он и есть получатель наличной аренды.
+        effective_counterparty_id = location_context.counterparty_id
+        if effective_counterparty_id is not None:
+            cp = await session.get(Counterparty, effective_counterparty_id)
             # in ARCHIVED_...: легаси-статус 'inactive' — тоже архив, иначе гард дыряв.
             if cp is None or cp.status in ARCHIVED_COUNTERPARTY_STATUSES:
                 raise HTTPException(
@@ -769,7 +789,9 @@ async def post_new_payment_expense_cash(
                 )
         amount = Decimal(line.amount)
         line_purpose = " ".join((line.purpose or "").split()) or article.name
-        prepared.append((article, amount, line_purpose, line.counterparty_id))
+        prepared.append(
+            (article, amount, line_purpose, effective_counterparty_id, location_context)
+        )
         total += amount
 
     # Сейф: суммарный резерв не должен превышать свободный остаток.
@@ -784,7 +806,7 @@ async def post_new_payment_expense_cash(
             )
 
     today_msk = datetime.now(MOSCOW_TZ).date()
-    for article, amount, line_purpose, cp_id in prepared:
+    for article, amount, line_purpose, cp_id, ctx in prepared:
         allocation = await create_allocation(
             session,
             wallet_id=wallet.id,
@@ -793,6 +815,8 @@ async def post_new_payment_expense_cash(
             article_id=article.id,
             counterparty_id=cp_id,
             purpose=line_purpose,
+            location_id=ctx.location_id,
+            lease_id=ctx.lease_id,
             created_by_user_id=actor.user_id,
         )
         if location == "kassa":
@@ -2072,10 +2096,26 @@ async def classify_transaction(
         ensure_cashflow_reclassifiable(txn)
     except CashflowClassificationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-    if payload.article_id is not None and await session.get(DdsArticle, payload.article_id) is None:
-        raise HTTPException(status_code=400, detail="Статья не найдена")
+    article = None
+    if payload.article_id is not None:
+        article = await session.get(DdsArticle, payload.article_id)
+        if article is None:
+            raise HTTPException(status_code=400, detail="Статья не найдена")
+    try:
+        context = await resolve_location_context(
+            session,
+            article=article,
+            location_id=payload.location_id,
+            lease_id=payload.lease_id,
+            counterparty_id=payload.counterparty_id,
+            on_date=txn.operation_date,
+        )
+    except LocationAnalyticsError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     txn.article_id = payload.article_id
-    txn.counterparty_id = payload.counterparty_id
+    txn.counterparty_id = context.counterparty_id
+    txn.location_id = context.location_id
+    txn.lease_id = context.lease_id
     txn.quality_status = "manual_override"
     # Проводка из выписки (кейс Манго — предоплатная модель по банк-фиду): смена контрагента
     # обязана привести привязанную автопредоплату в соответствие, иначе фантомная дебиторка
@@ -2087,6 +2127,8 @@ async def classify_transaction(
         "id": txn.id,
         "article_id": txn.article_id,
         "counterparty_id": txn.counterparty_id,
+        "location_id": txn.location_id,
+        "lease_id": txn.lease_id,
     }
 
 
@@ -2128,6 +2170,8 @@ async def classify_transaction_full(
                         transfer_wallet_id=item.transfer_wallet_id,
                         employee_id=item.employee_id,
                         counterparty_id=item.counterparty_id,
+                        location_id=item.location_id,
+                        lease_id=item.lease_id,
                     )
                     for item in payload.splits
                 ],

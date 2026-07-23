@@ -240,6 +240,9 @@ async def _settle_draft_via_safe(
                 purpose=line.purpose,
                 source_draft_id=draft.id,
                 source_draft_line_id=line.id,
+                # Аналитика «где» доезжает до проводки через оплату резерва.
+                location_id=line.location_id,
+                lease_id=line.lease_id,
             )
         return
 

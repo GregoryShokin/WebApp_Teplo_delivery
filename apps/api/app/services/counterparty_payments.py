@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -45,6 +45,10 @@ from app.services.banking.payout import (
 )
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+from app.services.location_analytics import (
+    LocationAnalyticsError,
+    resolve_location_context,
+)
 from app.services.new_payment import ensure_expense_article_allowed
 
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
@@ -466,6 +470,8 @@ class ExpenseLineInput:
     counterparty_id: uuid.UUID | None = None
     service_period_start: date | None = None
     service_period_end: date | None = None
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -476,6 +482,8 @@ class PreparedExpenseLine:
     counterparty_id: uuid.UUID | None
     service_period_start: date | None
     service_period_end: date | None
+    location_id: uuid.UUID | None
+    lease_id: uuid.UUID | None
 
 
 async def create_expense_payment_draft(
@@ -531,6 +539,19 @@ async def create_expense_payment_draft(
             ensure_expense_article_allowed(article)
         except ValueError as exc:
             raise CounterpartyPaymentError(str(exc)) from exc
+        try:
+            location_context = await resolve_location_context(
+                session,
+                article=article,
+                location_id=line.location_id,
+                lease_id=line.lease_id,
+                counterparty_id=line.counterparty_id,
+                on_date=date.today(),
+            )
+        except LocationAnalyticsError as exc:
+            raise CounterpartyPaymentError(str(exc)) from exc
+        # Аренда знает арендодателя — он и определяет маршрут (informal → Сейф).
+        line = replace(line, counterparty_id=location_context.counterparty_id)
         # Назначение необязательно: пустое → имя статьи (в банк и в целёвку Сейфа).
         line_purpose = " ".join((line.purpose or "").split()) or article.name
         if line.counterparty_id is not None:
@@ -578,6 +599,8 @@ async def create_expense_payment_draft(
                 counterparty_id=line.counterparty_id,
                 service_period_start=line.service_period_start,
                 service_period_end=line.service_period_end,
+                location_id=location_context.location_id,
+                lease_id=location_context.lease_id,
             )
         )
         total += line_amount
@@ -689,6 +712,8 @@ async def create_expense_payment_draft(
             service_period_source=(
                 "manual" if prepared_line.service_period_start is not None else None
             ),
+            location_id=prepared_line.location_id,
+            lease_id=prepared_line.lease_id,
         )
         session.add(line)
         await session.flush()

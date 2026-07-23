@@ -52,6 +52,10 @@ from app.services.banking.safe_allocations import (
     kassa_targets_total,
     pay_allocation,
 )
+from app.services.location_analytics import (
+    LocationAnalyticsError,
+    resolve_location_context,
+)
 from app.services.wallets import CashWalletError, resolve_cash_wallet
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -272,6 +276,8 @@ async def create_payout(
     comment: str | None = None,
     employee_id: uuid.UUID | None = None,
     counterparty_id: uuid.UUID | None = None,
+    location_id: uuid.UUID | None = None,
+    lease_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> KassaPayoutResult:
     """Выдать наличные из кассы по разрешённой статье (дата — всегда сегодня).
@@ -285,6 +291,19 @@ async def create_payout(
         raise KassaPayoutError("Сумма должна быть больше нуля")
     wallet = await get_kassa_wallet(session)
     today = kassa_today()
+    try:
+        location_context = await resolve_location_context(
+            session,
+            article=article,
+            location_id=location_id,
+            lease_id=lease_id,
+            counterparty_id=counterparty_id,
+            on_date=today,
+        )
+    except LocationAnalyticsError as exc:
+        raise KassaPayoutError(str(exc)) from exc
+    if location_context.counterparty_id is not None:
+        counterparty_id = location_context.counterparty_id
     flow = article_kassa_flow(article)
 
     if flow in ("employee_advance", "employee_loan"):
@@ -351,6 +370,9 @@ async def create_payout(
         amount=amount,
         operation_date=today,
         article_id=article.id,
+        counterparty_id=counterparty_id,
+        location_id=location_context.location_id,
+        lease_id=location_context.lease_id,
         source_kind=KASSA_PAYOUT_SOURCE_KIND,
         payment_purpose=comment,
         quality_status="final",

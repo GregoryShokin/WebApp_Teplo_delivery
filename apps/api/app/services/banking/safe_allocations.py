@@ -102,6 +102,8 @@ async def create_allocation(
     source_operation_id: UUID | None = None,
     source_run_id: UUID | None = None,
     location: str = "safe",
+    location_id: UUID | None = None,
+    lease_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
     """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
@@ -134,6 +136,8 @@ async def create_allocation(
         source_run_id=source_run_id,
         status="reserved",
         location=location,
+        location_id=location_id,
+        lease_id=lease_id,
         created_by_user_id=created_by_user_id,
     )
     session.add(allocation)
@@ -230,6 +234,8 @@ async def pay_allocation(
         operation_date=operation_date,
         article_id=allocation.article_id,
         counterparty_id=allocation.counterparty_id,
+        location_id=allocation.location_id,
+        lease_id=allocation.lease_id,
         source_kind=source_kind,
         source_id=allocation.id,
         payment_purpose=allocation.purpose,

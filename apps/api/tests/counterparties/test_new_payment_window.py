@@ -88,11 +88,19 @@ def test_route_codes_match_source_services() -> None:
 
 
 async def _free_expense_article(session: AsyncSession) -> DdsArticle:
-    """Любая засеянная статья свободного вывода (не маршрут/не защищённая/не кассовая)."""
+    """Любая засеянная статья свободного вывода (не маршрут/не защищённая/не кассовая).
+
+    Исключаем location_required: такая статья (аренда) требует помещение, а тесты этого
+    хелпера платят «просто трату» без обязательных атрибутов.
+    """
     articles = (
         await session.scalars(
             select(DdsArticle)
-            .where(DdsArticle.is_active.is_(True), DdsArticle.movement_type == "outflow")
+            .where(
+                DdsArticle.is_active.is_(True),
+                DdsArticle.movement_type == "outflow",
+                DdsArticle.location_required.is_(False),
+            )
             .order_by(DdsArticle.code)
         )
     ).all()
@@ -270,7 +278,11 @@ async def _two_free_expense_articles(session: AsyncSession) -> tuple[DdsArticle,
     articles = (
         await session.scalars(
             select(DdsArticle)
-            .where(DdsArticle.is_active.is_(True), DdsArticle.movement_type == "outflow")
+            .where(
+                DdsArticle.is_active.is_(True),
+                DdsArticle.movement_type == "outflow",
+                DdsArticle.location_required.is_(False),
+            )
             .order_by(DdsArticle.code)
         )
     ).all()

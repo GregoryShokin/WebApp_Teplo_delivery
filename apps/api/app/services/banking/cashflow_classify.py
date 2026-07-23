@@ -33,6 +33,11 @@ from app.services.banking.classifier import (
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
+from app.services.location_analytics import (
+    LocationAnalyticsError,
+    LocationContext,
+    resolve_location_context,
+)
 
 # Наличные (не банковские) кошельки не имеют выписки — их баланс = Σ cashflow-проводок; для
 # них при переводе нужно дорисовать встречную ногу. Банковские получают in-ногу из выписки.
@@ -153,6 +158,9 @@ class CashflowSplitLine(NamedTuple):
     transfer_wallet_id: UUID | None = None
     employee_id: UUID | None = None
     counterparty_id: UUID | None = None
+    # Аналитика «где» — строго последние поля (строка собирается и из голых кортежей).
+    location_id: UUID | None = None
+    lease_id: UUID | None = None
 
 
 async def apply_cashflow_split(
@@ -198,6 +206,22 @@ async def apply_cashflow_split(
     for line in splits:
         if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
+
+    # Аналитика по помещению — то же правило, что у разбора банк-операции.
+    location_context: dict[int, LocationContext] = {}
+    for index, line in enumerate(splits):
+        article = await session.get(DdsArticle, line.article_id)
+        try:
+            location_context[index] = await resolve_location_context(
+                session,
+                article=article,
+                location_id=line.location_id,
+                lease_id=line.lease_id,
+                counterparty_id=line.counterparty_id or counterparty_id,
+                on_date=txn.operation_date,
+            )
+        except LocationAnalyticsError as exc:
+            raise ValueError(str(exc)) from exc
 
     # «Оплата поставщикам» без контрагента — расход в никуда: платёж не попадает в карточку и в
     # ДЗ/КЗ (правило 1 считает от контрагента проводки). Решение владельца 20.07.2026.
@@ -270,12 +294,17 @@ async def apply_cashflow_split(
     for index, line in enumerate(splits):
         article_id, amount, employee_id = line.article_id, line.amount, line.employee_id
         transfer_wallet_id = line.transfer_wallet_id
+        context = location_context.get(index)
         line_counterparty_id = line.counterparty_id or counterparty_id
+        if context is not None and context.counterparty_id is not None:
+            line_counterparty_id = context.counterparty_id
         if index == 0:
             txn.article_id = article_id
             txn.amount = amount
             txn.comment = line.comment
             txn.counterparty_id = line_counterparty_id
+            txn.location_id = context.location_id if context else None
+            txn.lease_id = context.lease_id if context else None
             txn.quality_status = MANUAL_QUALITY
             leg = txn
         else:
@@ -286,6 +315,8 @@ async def apply_cashflow_split(
                 operation_date=txn.operation_date,
                 article_id=article_id,
                 counterparty_id=line_counterparty_id,
+                location_id=context.location_id if context else None,
+                lease_id=context.lease_id if context else None,
                 source_kind=SPLIT_SOURCE_KIND,
                 source_id=txn.id,
                 payment_purpose=txn.payment_purpose,

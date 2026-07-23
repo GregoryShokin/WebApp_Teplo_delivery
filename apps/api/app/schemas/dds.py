@@ -369,6 +369,8 @@ class TransactionClassifyRequest(BaseModel):
 
     article_id: uuid.UUID | None = None
     counterparty_id: uuid.UUID | None = None
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
 
 
 class CashflowSplitItem(BaseModel):
@@ -385,6 +387,8 @@ class CashflowSplitItem(BaseModel):
     employee_id: uuid.UUID | None = None
     # Контрагент ЭТОЙ доли (см. OperationSplitItem). Пусто — общий ``counterparty_id`` запроса.
     counterparty_id: uuid.UUID | None = None
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
 
 
 class CashflowClassifyRequest(BaseModel):
@@ -653,6 +657,10 @@ class NewPaymentExpenseLineIn(BaseModel):
     counterparty_id: uuid.UUID | None = None
     service_period_start: date | None = None
     service_period_end: date | None = None
+    # Аналитика «где»: помещение обязательно для статей с location_required, аренда — когда
+    # платёж закрывает конкретный договор (арендодатель подставится в получателя).
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _complete_service_period(self) -> NewPaymentExpenseLineIn:

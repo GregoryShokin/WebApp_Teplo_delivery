@@ -413,6 +413,8 @@ class KassaPayoutCreate(BaseModel):
     comment: str | None = None
     employee_id: uuid.UUID | None = None  # обязателен для статей аванса/займа
     counterparty_id: uuid.UUID | None = None  # обязателен для предоплаты поставщику
+    location_id: uuid.UUID | None = None  # обязателен для статей с аналитикой по помещению
+    lease_id: uuid.UUID | None = None
 
 
 class KassaPayoutResultRead(BaseModel):
