@@ -335,6 +335,14 @@ class ExpenseDraftLine(Base):
     service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Аналитика «где»: строка знает помещение (и договор аренды, если платёж закрывает его),
+    # а paid-переход переносит пару в целёвку Сейфа и в проводку.
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="RESTRICT"), nullable=True
+    )
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location_lease.id", ondelete="RESTRICT"), nullable=True
+    )
 
 
 class SupplierInvoice(Base):

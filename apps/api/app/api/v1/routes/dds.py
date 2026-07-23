@@ -1815,6 +1815,8 @@ async def read_operation_split(
                 "counterparty_id": tx.counterparty_id,
                 "invoice_id": invoice_by_tx.get(tx.id),
                 "employee_id": employee_by_tx.get(tx.id),
+                "location_id": tx.location_id,
+                "lease_id": tx.lease_id,
             }
             for tx in transactions
         ],
@@ -1895,6 +1897,8 @@ async def classify_operation(
                             if item.create_counterparty
                             else item.counterparty_id
                         ),
+                        location_id=item.location_id,
+                        lease_id=item.lease_id,
                     )
                     for item in payload.splits
                 ],
@@ -2647,6 +2651,7 @@ async def _article_payloads(
             "parent_id": article.parent_id,
             "is_active": article.is_active,
             "kassa_enabled": article.kassa_enabled,
+            "location_required": article.location_required,
             "description": article.description,
             "aliases": aliases_by_article.get(article.id, []),
         }

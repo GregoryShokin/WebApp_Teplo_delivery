@@ -107,6 +107,8 @@ class DdsArticleRead(BaseModel):
     parent_id: uuid.UUID | None = None
     is_active: bool
     kassa_enabled: bool = False
+    # Фронт по этому флагу требует помещение в строке разбора и в окне платежа.
+    location_required: bool = False
     description: str | None = None
     aliases: list[DdsAliasRead] = Field(default_factory=list)
 
@@ -319,6 +321,10 @@ class OperationSplitItem(BaseModel):
     # Контрагент ЭТОЙ доли: один платёж часто покрывает расходы разных контрагентов («овощи +
     # коробки + мусорщики» одним переводом). Пусто — берётся общий ``counterparty_id`` запроса.
     counterparty_id: uuid.UUID | None = None
+    # Аналитика «где»: помещение обязательно для статей с ``location_required``, аренда —
+    # когда платёж закрывает конкретный договор (её арендодатель подставится в контрагента).
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
     # Контрагент этой доли — тот, кого создаём из распознанных данных операции
     # (``new_counterparty_name``/``_inn``). Без флага новый контрагент остаётся лишь общим
     # дефолтом и в доли, где контрагент осознанно не указан, не протекает.
@@ -410,6 +416,9 @@ class OperationSplitLineRead(BaseModel):
     counterparty_id: uuid.UUID | None = None
     invoice_id: uuid.UUID | None = None
     employee_id: uuid.UUID | None = None
+    # Без этих полей повторное открытие диалога затёрло бы помещение пустым значением.
+    location_id: uuid.UUID | None = None
+    lease_id: uuid.UUID | None = None
 
 
 class OperationSplitRead(BaseModel):

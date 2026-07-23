@@ -48,6 +48,11 @@ class LocationLease(Base):
     deposit_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=Decimal("0"), server_default="0"
     )
+    # Статья ДДС этой аренды: по ней платят и по ней же система предложит арендодателей
+    # именно этого помещения при разборе платежа.
+    dds_article_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("dds_articles.id", ondelete="RESTRICT"), nullable=True
+    )
     started_on: Mapped[date] = mapped_column(Date, nullable=False)
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

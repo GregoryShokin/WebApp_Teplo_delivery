@@ -104,6 +104,11 @@ class DdsArticle(Base):
     kassa_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Расход по статье обязан указывать помещение (аренда, коммуналка, охрана): без него
+    # нельзя ответить, сколько стоит точка. Флаг, а не список кодов, — каталог правит владелец.
+    location_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -167,6 +172,7 @@ class CashflowTransaction(Base):
         Index("ix_cashflow_transactions_operation_date", "operation_date"),
         Index("ix_cashflow_transactions_wallet_id", "wallet_id"),
         Index("ix_cashflow_transactions_article_id", "article_id"),
+        Index("ix_cashflow_transactions_location_id", "location_id", "operation_date"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -181,6 +187,14 @@ class CashflowTransaction(Base):
     )
     counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty.id"), nullable=True
+    )
+    # Аналитика «где»: помещение обязательно для статей с location_required, аренда —
+    # когда платёж закрывает конкретный договор (её арендодатель и попадает в контрагента).
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="RESTRICT"), nullable=True
+    )
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location_lease.id", ondelete="RESTRICT"), nullable=True
     )
     transfer_group_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("transfer_groups.id"), nullable=True
@@ -273,6 +287,11 @@ class ClassificationRule(Base):
     )
     counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("counterparty.id"), nullable=True
+    )
+    # Помещение правила: без него авто-разметка по статье с location_required оставляла бы
+    # операцию без аналитики, и разбирать её пришлось бы руками каждый месяц.
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="RESTRICT"), nullable=True
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -423,6 +442,14 @@ class SafeAllocation(Base):
     # выплачено». NULL — не зарплатный резерв.
     employee_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("employee.id", ondelete="SET NULL"), nullable=True
+    )
+    # Аналитика «где» — та же пара, что на проводке: резерв Сейфа переносит её в проводку
+    # при оплате (pay_allocation), иначе наличная аренда осталась бы без помещения.
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="RESTRICT"), nullable=True
+    )
+    lease_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location_lease.id", ondelete="RESTRICT"), nullable=True
     )
     # Банковская операция, из разбора которой «через Сейф» заведён резерв — для
     # идемпотентности повторного разбора (снять прежний неоплаченный резерв этой операции).

@@ -25,6 +25,11 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.base import clean_digits
+from app.services.location_analytics import (
+    LocationAnalyticsError,
+    LocationContext,
+    resolve_location_context,
+)
 
 # Статья ДДС «Авансы поставщикам»: строка сплита с ней рождает дебиторку
 # (supplier_prepayment) на выбранного контрагента, а не просто расход.
@@ -785,6 +790,9 @@ class OperationSplitLine(NamedTuple):
     invoice_id: UUID | None = None
     employee_id: UUID | None = None
     counterparty_id: UUID | None = None
+    # Аналитика «где». Новые поля строго последние: строка собирается и из голых кортежей.
+    location_id: UUID | None = None
+    lease_id: UUID | None = None
 
 
 async def apply_operation_split(
@@ -876,6 +884,23 @@ async def apply_operation_split(
     for line in lines:
         if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
+
+    # Аналитика по помещению: правило одно на все входы ДДС (см. location_analytics).
+    # Контрагент строки может достроиться из выбранной аренды — поэтому считаем ДО записей.
+    location_context: dict[int, LocationContext] = {}
+    for index, line in enumerate(lines):
+        article = await session.get(DdsArticle, line.article_id)
+        try:
+            location_context[index] = await resolve_location_context(
+                session,
+                article=article,
+                location_id=line.location_id,
+                lease_id=line.lease_id,
+                counterparty_id=line_counterparty(line),
+                on_date=operation.operation_date,
+            )
+        except LocationAnalyticsError as exc:
+            raise ValueError(str(exc)) from exc
 
     # Привязки накладных: валидируем статью и пригодность ДО любых записей.
     supplier_payment_article_id = await session.scalar(
@@ -976,6 +1001,11 @@ async def apply_operation_split(
     free_line_txns: list[CashflowTransaction] = []
     for index, line in enumerate(lines):
         article_id, amount, employee_id = line.article_id, line.amount, line.employee_id
+        context = location_context.get(index)
+        if context is not None and context.counterparty_id is not None:
+            # Аренда знает своего арендодателя — доля наследует его, как наследует
+            # контрагента от привязанной накладной.
+            resolved_counterparty[index] = context.counterparty_id
         transaction = CashflowTransaction(
             wallet_id=wallet.id,
             direction=operation.direction,
@@ -983,6 +1013,8 @@ async def apply_operation_split(
             operation_date=operation.operation_date,
             article_id=article_id,
             counterparty_id=resolved_counterparty[index],
+            location_id=context.location_id if context else None,
+            lease_id=context.lease_id if context else None,
             source_kind="bank_operation",
             source_id=operation.id,
             payment_purpose=operation.payment_purpose,

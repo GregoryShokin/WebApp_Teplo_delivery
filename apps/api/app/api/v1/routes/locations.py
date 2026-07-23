@@ -26,6 +26,7 @@ from app.api.deps import require_permission
 from app.db.session import get_session
 from app.models import Counterparty, CounterpartyRole, Location, LocationLease, Organization
 from app.services import counterparty_registry as registry
+from app.services.location_analytics import leases_for_location
 
 router = APIRouter()
 LOCATIONS_READ_ACCESS = (Depends(require_permission("source.locations.read")),)
@@ -236,6 +237,7 @@ class LeaseRead(BaseModel):
     started_on: date
     ended_on: date | None
     note: str | None
+    dds_article_id: uuid.UUID | None
     is_active: bool
 
 
@@ -262,6 +264,8 @@ class LeaseTermsRequest(BaseModel):
     started_on: date
     ended_on: date | None = None
     note: str | None = None
+    # Статья ДДС, по которой платят эту аренду: по ней платёж и найдёт этот договор.
+    dds_article_id: uuid.UUID | None = None
 
 
 class LandlordInput(BaseModel):
@@ -331,6 +335,7 @@ def _lease_payload(lease: LocationLease, location_name: str, counterparty_name: 
         started_on=lease.started_on,
         ended_on=lease.ended_on,
         note=lease.note,
+        dds_article_id=lease.dds_article_id,
         is_active=lease.ended_on is None,
     )
 
@@ -527,6 +532,7 @@ async def create_location_lease(
         started_on=payload.started_on,
         ended_on=payload.ended_on,
         note=(payload.note or "").strip() or None,
+        dds_article_id=payload.dds_article_id,
     )
     session.add(lease)
     await session.commit()
@@ -572,6 +578,7 @@ async def update_location_lease(
     lease.started_on = payload.started_on
     lease.ended_on = payload.ended_on
     lease.note = (payload.note or "").strip() or None
+    lease.dds_article_id = payload.dds_article_id
     await session.commit()
     await session.refresh(lease)
     return _lease_payload(lease, location.name, counterparty.name)
@@ -680,6 +687,7 @@ async def replace_lease_landlord(
         started_on=payload.terms.started_on,
         ended_on=payload.terms.ended_on,
         note=(payload.terms.note or "").strip() or None,
+        dds_article_id=payload.terms.dds_article_id,
     )
     session.add(current)
     await session.flush()
@@ -698,6 +706,78 @@ async def replace_lease_landlord(
         current=_lease_payload(current, location.name, new_landlord.name),
         previous_archived=archived,
     )
+
+
+class LocationLeaseOptionRead(BaseModel):
+    lease_id: uuid.UUID
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    monthly_amount: float
+    payment_day: int | None
+    documents_mode: Literal["official", "informal"]
+
+
+class LocationOptionRead(BaseModel):
+    location_id: uuid.UUID
+    location_name: str
+    kind: LocationKind
+    status: LocationStatus
+    leases: list[LocationLeaseOptionRead]
+
+
+class LocationOptionListRead(BaseModel):
+    items: list[LocationOptionRead]
+
+
+@router.get(
+    "/options/for-article/{article_id}",
+    response_model=LocationOptionListRead,
+    dependencies=LOCATIONS_READ_ACCESS,
+)
+async def list_location_options(
+    article_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    on_date: date | None = None,
+) -> LocationOptionListRead:
+    """Помещения и их арендодатели для платежа по статье с аналитикой по помещению.
+
+    Отдаём ВСЕ помещения, включая закрытые: по закрытой точке приходят исторические выписки,
+    и разобрать их должно быть можно. Аренды — только действовавшие на дату платежа, иначе
+    оператору предложили бы собственника, которому в этом месяце уже не платят.
+    """
+    effective_date = on_date or date.today()
+    locations = (
+        await session.scalars(select(Location).order_by(Location.status, Location.name))
+    ).all()
+
+    items: list[LocationOptionRead] = []
+    for location in locations:
+        leases = await leases_for_location(
+            session, location.id, article_id=article_id, on_date=effective_date
+        )
+        options: list[LocationLeaseOptionRead] = []
+        for lease in leases:
+            counterparty = await session.get(Counterparty, lease.counterparty_id)
+            options.append(
+                LocationLeaseOptionRead(
+                    lease_id=lease.id,
+                    counterparty_id=lease.counterparty_id,
+                    counterparty_name=counterparty.name if counterparty else "—",
+                    monthly_amount=float(lease.monthly_amount),
+                    payment_day=lease.payment_day,
+                    documents_mode=lease.documents_mode,  # type: ignore[arg-type]
+                )
+            )
+        items.append(
+            LocationOptionRead(
+                location_id=location.id,
+                location_name=location.name,
+                kind=location.kind,  # type: ignore[arg-type]
+                status=location.status,  # type: ignore[arg-type]
+                leases=options,
+            )
+        )
+    return LocationOptionListRead(items=items)
 
 
 @router.get(
