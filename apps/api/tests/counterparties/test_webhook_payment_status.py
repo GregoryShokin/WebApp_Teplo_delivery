@@ -1,14 +1,20 @@
 """Webhook «Статус платежа» T-Банка: авторизация, сопоставление по provider_ref, гашение.
 
-Оплату черновика фиксирует ТОЛЬКО статус платёжного документа (по ``provider_ref``). Тело с
-``operationId`` (операция по счёту) на этом URL игнорируется — не гасит черновик и не пишется
-в ДДС, чтобы выписка не задваивала статусную оплату.
+Статус платёжного документа доводит черновик по ``provider_ref`` — это основной путь.
+
+На тот же URL приходит и тело «операция по счёту» (с ``operationId``): оно уходит в общий
+ингест выписки (``ingested=true``) — иначе card-операции выпадают из баланса банка и пикера
+карт-оплат Кассы (84406d4 после разворота 59b1451). Черновик такая операция закрывает только
+при точном многофакторном матче в ``settle_counterparty_draft_from_operation`` (сумма,
+назначение, счёт, documentNumber) — near-realtime доводка оплаты (8b91bc6). Анти-дубль ДДС —
+prebooked-механизм классификатора.
 """
 
 from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from cp_helpers import make_counterparty, make_draft, make_invoice
@@ -18,6 +24,7 @@ from test_payroll_payouts import create_payroll_run
 
 from app.core.config import Settings, get_settings
 from app.models import CounterpartyPaymentDraft, PayrollBankDraft, SupplierInvoice
+from app.services.banking.tbank import _document_number
 
 BASE = "/api/v1/webhooks/tbank/payment-status"
 
@@ -140,11 +147,25 @@ def test_webhook_deleted_payroll_draft_becomes_retriable(
 
 
 _PAYER_ACCOUNT = "40802810000000012345"
+_DRAFT_PURPOSE = "Оплата поставщику по счёту 1"
 
 
-def _debit_body(operation_id: str, *, doc_number: str = "654321", amount: str = "1000.00") -> dict:
-    """Расходная операция по счёту (формат выписки T-Банка). На статусный контур такое тело
-    приходит как выписка — раньше гасило черновик по documentNumber, теперь игнорируется."""
+def _debit_body(
+    operation_id: str,
+    *,
+    doc_number: str = "654321",
+    amount: str = "1000.00",
+    purpose: str = _DRAFT_PURPOSE,
+) -> dict:
+    """Расходная операция по счёту (формат выписки T-Банка). На статусный URL такое тело
+    приходит как строка выписки: вливается в bank_operations, а черновик доводит только при
+    точном матче по сумме/назначению/счёту/documentNumber.
+
+    Назначение кладём и в ``payPurpose``, и в ``description`` — банк в живых телах шлёт оба
+    (в переводах они различаются только типографикой). Матч читает ``description``:
+    ``normalize_tbank_statement_row`` берёт ``paymentPurpose|purpose|description``,
+    ``payPurpose`` в этом списке нет.
+    """
     return {
         "operationId": operation_id,
         "typeOfOperation": "Debit",
@@ -154,40 +175,48 @@ def _debit_body(operation_id: str, *, doc_number: str = "654321", amount: str = 
         "accountAmount": amount,
         "rubleAmount": amount,
         "operationStatus": "Transaction",
-        "operationDate": "2026-06-25T10:00:00Z",
-        "payPurpose": "Оплата поставщику по счёту",
-        "description": "Оплата поставщику",
+        # Дата не раньше created_at черновика — иначе матч отсекается как «операция до платежа».
+        "operationDate": f"{date.today().isoformat()}T10:00:00Z",
+        "payPurpose": purpose,
+        "description": purpose,
         "payer": {"account": _PAYER_ACCOUNT, "name": "ИП Шокина Е.А."},
         "receiver": {"account": "40702810900000099999", "name": "Поставщик", "inn": "7700000000"},
     }
 
 
 async def _seed_op(
-    factory, *, doc_number: str = "654321", amount: str = "1000.00"
-) -> tuple[uuid.UUID, uuid.UUID]:
-    """Открытый черновик «банк по реквизитам» с накладной; documentNumber в payload."""
+    factory, *, amount: str = "1000.00", purpose: str = _DRAFT_PURPOSE
+) -> tuple[uuid.UUID, uuid.UUID, str]:
+    """Открытый черновик «банк по реквизитам» с накладной.
+
+    Возвращает и его documentNumber: матч операции идёт по номеру, детерминированному из
+    ``document_id`` (тот же ``_document_number``, что уходит в банк), а не по payload.
+    """
     async with factory() as session:
         cp = await make_counterparty(session, name="Поставщик", inn="7700000000")
         draft = await make_draft(session, counterparty_id=cp.id, amount=amount)
         draft.provider_ref = "bank-doc-id-1"
-        draft.payload = {"documentNumber": doc_number, "accountNumber": _PAYER_ACCOUNT}
+        draft.payload = {"paymentPurpose": purpose, "accountNumber": _PAYER_ACCOUNT}
         await session.flush()
         inv = await make_invoice(session, counterparty_id=cp.id, amount=amount, draft_id=draft.id)
         await session.commit()
-        return draft.id, inv.id
+        return draft.id, inv.id, _document_number(draft.document_id)
 
 
-def test_operation_like_body_ignored_not_settled(
+def test_operation_like_body_ingested_but_draft_untouched_without_match(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Операция по счёту (есть operationId) на статусном URL игнорируется, НЕ гасит черновик:
-    оплату фиксирует только статус платёжного документа. Регресс: раньше документ-матч гасил."""
-    draft_id, invoice_id = _run(_seed_op(async_session_factory))
-    resp = client.post(BASE, json=_debit_body("op-settle-1"))
+    """Операция по счёту (есть operationId) на статусном URL вливается в выписку, но черновик
+    без точного матча не трогает: назначение операции чужое → ждём статус документа/поллинг."""
+    draft_id, invoice_id, doc_number = _run(_seed_op(async_session_factory))
+    resp = client.post(
+        BASE, json=_debit_body("op-settle-1", doc_number=doc_number, purpose="Оплата по счёту 42")
+    )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["ingested"] is False and body["settled_draft"] is None
-    assert body["reason"] == "account_operation_ignored"
+    # Выписка наполняется всегда: иначе пустой баланс банка и пикер карт-оплат Кассы.
+    assert body["ingested"] is True and body["stage"] == "transaction"
+    assert body["inserted"] == 1
 
     async def _check() -> tuple[str, str]:
         async with async_session_factory() as session:
@@ -196,21 +225,39 @@ def test_operation_like_body_ignored_not_settled(
             return inv.payment_status, draft.status
 
     inv_status, draft_status = _run(_check())
-    # Черновик и накладная не двинулись — ждут статусный webhook платёжного документа.
     assert inv_status != "paid"
     assert draft_status in ("created", "updated")
 
 
-def test_operation_like_body_without_account_still_acked(
+def test_operation_like_body_settles_draft_on_exact_match(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Тело-операция без accountNumber тоже просто подтверждается (счёт больше не нужен —
-    в ДДС не пишем), 200 + reason=account_operation_ignored, без 422."""
+    """Near-realtime доводка через HTTP-вход: сумма + назначение + счёт + documentNumber сошлись
+    → черновик и накладная закрываются сразу, не дожидаясь статуса платёжного документа."""
+    draft_id, invoice_id, doc_number = _run(_seed_op(async_session_factory))
+    resp = client.post(BASE, json=_debit_body("op-settle-2", doc_number=doc_number))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ingested"] is True
+
+    async def _check() -> tuple[str, str]:
+        async with async_session_factory() as session:
+            inv = await session.get(SupplierInvoice, invoice_id)
+            draft = await session.get(CounterpartyPaymentDraft, draft_id)
+            return inv.payment_status, draft.status
+
+    assert _run(_check()) == ("paid", "paid")
+
+
+def test_operation_like_body_without_account_is_422(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Тело-операция без accountNumber отвергается ингестом выписки (иначе account_id=NULL и
+    операция выпадает из баланса). 422 именно из ингест-ветки — тело не ушло в статусную."""
     body = _debit_body("op-nomatch-1", doc_number="999999")
     del body["accountNumber"]
     resp = client.post(BASE, json=body)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["reason"] == "account_operation_ignored"
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Нет номера счёта в операции"
 
 
 def test_webhook_token_enforced_when_configured(
