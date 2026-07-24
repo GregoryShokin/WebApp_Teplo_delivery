@@ -15,7 +15,13 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.tax import IikoRevenuePeriod, TaxDocumentIntake, TaxPayment
+from app.models.tax import (
+    IikoRevenuePeriod,
+    TaxDocumentIntake,
+    TaxPayment,
+    TaxPayrollLedger,
+)
+from app.services.taxes.enp_split import rebuild_payroll_enp_split
 from app.services.taxes.reconcile import build_reconciliation
 from app.services.taxes.repository import DEFAULT_DEPARTMENT
 
@@ -317,3 +323,46 @@ async def test_extra_1pct_matches_payment_order(
     assert line.documented == Decimal("221988")
     assert line.verdict in ("due", "ok")  # срок 25.09 ещё не наступил → due
     assert line.severity != "alert"
+
+
+async def test_payroll_enp_split_line_shows_breakdown(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Зарплатный ЕНП: строка сверки показывает разнос НДФЛ + взносы из оборотки.
+
+    Платёжка ЕНП (14 902,30) с помесячным начислением НЕ совпадает — НДФЛ платится «окнами»,
+    поэтому она справочная, а строка сверяет начислено ↔ разнос (взносы в вычет, НДФЛ нет).
+    """
+    async with async_session_factory() as session:
+        session.add(
+            TaxPayrollLedger(
+                id=uuid.uuid4(),
+                year=2026,
+                month=6,
+                tab_number="206",
+                employee="ИВАНОВА И.И.",
+                contributions=Decimal("8571.30"),
+                ndfl=Decimal("3532.00"),
+            )
+        )
+        await session.flush()
+        await rebuild_payroll_enp_split(session, year=2026)
+        session.add(
+            _payment_order_intake(
+                tax_kind="enp_payroll", period="2026-06", amount="14902.30",
+                due=date(2026, 7, 28), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="ЕНП до 28.07.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 31))
+
+    line = _line(recon, "enp_payroll", "2026-06")
+    assert line.calculated == Decimal("12103.30")  # 8571.30 + 3532.00 начислено
+    assert line.paid == Decimal("12103.30")  # разнос уплачен к сроку 28.07 ≤ среза
+    assert line.documented == Decimal("14902.30")  # платёжка ЕНП справочно
+    assert line.verdict == "ok"
+    assert line.severity == "ok"
+    assert any("в вычет УСН" in m for m in line.messages)
+    assert not recon.has_alerts

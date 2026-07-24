@@ -331,3 +331,42 @@ class TaxSourcesRead(BaseModel):
     version: int = 1
     sources: list[TaxSourceRead]
     weakest_links: list[TaxSourceRead]
+
+
+# ── Зарплатный критерий льготы по НДС ────────────────────────────────────────
+
+
+class VatMonthAccrualRead(BaseModel):
+    """Начисления действующего работника за один месяц (из оборотки)."""
+
+    month: int
+    accrued: Decimal
+    oklad: Decimal | None
+    full_month: bool  # начислено = оклад → месяц отработан полностью
+
+
+class VatWageCriterionRead(BaseModel):
+    """Зарплатный критерий льготы по НДС (подп. 38 п. 3 ст. 149 НК).
+
+    Показатель — среднемесячное начисление ДЕЙСТВУЮЩЕГО работника; сравнивается с региональным
+    порогом (Росстат/ЕМИСС), который вводится вручную по годам. ``passes = None`` — порога нет.
+    """
+
+    year: int
+    active_employee: str | None
+    active_tab: str | None
+    months: list[VatMonthAccrualRead]
+    # Средняя по ПОЛНЫМ месяцам (основной показатель) и по всем месяцам с выплатами.
+    indicator_full: Decimal | None
+    indicator_all: Decimal | None
+    threshold: Decimal | None
+    passes: bool | None
+    margin: Decimal | None
+    messages: list[str]
+
+
+class VatThresholdInput(BaseModel):
+    """Ввод регионального порога за год (Росстат/ЕМИСС отстаёт — вводит человек)."""
+
+    year: int
+    amount: Decimal

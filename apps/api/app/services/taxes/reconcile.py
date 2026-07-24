@@ -19,16 +19,17 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.tax import TaxDocumentIntake, TaxPayment
+from app.models.tax import TaxDocumentIntake, TaxPayment, TaxPayrollLedger
 from app.services.taxes.engine import (
     PERIOD_SEQ,
     compute_tax_state,
     fmt_money,
     period_end_date,
 )
+from app.services.taxes.enp_split import payroll_enp_due
 from app.services.taxes.repository import load_tax_inputs
 
 ZERO = Decimal("0")
@@ -41,6 +42,11 @@ PERIOD_TITLES = {
     "9m": "9 месяцев",
     "year": "год",
 }
+
+_MONTHS_RU_GENITIVE = [
+    "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+]
 
 
 @dataclass(frozen=True)
@@ -210,6 +216,61 @@ async def _paid_amount(
     return value if value > 0 else None
 
 
+async def _payroll_accruals(
+    session: AsyncSession, *, year: int
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """Начисления из оборотк по месяцам: ``month -> (взносы за работников, НДФЛ)``."""
+    rows = (
+        await session.execute(
+            select(
+                TaxPayrollLedger.month,
+                func.coalesce(func.sum(TaxPayrollLedger.contributions), 0),
+                func.coalesce(func.sum(TaxPayrollLedger.ndfl), 0),
+            )
+            .where(TaxPayrollLedger.year == year)
+            .group_by(TaxPayrollLedger.month)
+        )
+    ).all()
+    return {int(m): (Decimal(str(c)), Decimal(str(n))) for m, c, n in rows}
+
+
+async def _enp_payroll_documents(session: AsyncSession) -> dict[date, Decimal]:
+    """Платёжки зарплатного ЕНП: ``срок уплаты -> сумма`` (НДФЛ и взносы одной суммой)."""
+    rows = (
+        await session.execute(
+            select(TaxDocumentIntake).where(
+                TaxDocumentIntake.document_type == "payment_order",
+                TaxDocumentIntake.status.in_(("parsed", "needs_review", "promoted")),
+            )
+        )
+    ).scalars().all()
+    out: dict[date, Decimal] = {}
+    for row in rows:
+        rec = row.recognition or {}
+        if rec.get("tax_kind") != "enp_payroll":
+            continue
+        raw_due, raw_amount = rec.get("due_date"), rec.get("amount")
+        if raw_due and raw_amount is not None:
+            out[date.fromisoformat(raw_due)] = Decimal(str(raw_amount))
+    return out
+
+
+async def _payroll_split_paid(
+    session: AsyncSession, *, year: int, period: str
+) -> Decimal | None:
+    """Сколько разнесено по месяцу (НДФЛ + взносы) как уплаченное."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+            TaxPayment.status == "paid",
+            TaxPayment.for_year == year,
+            TaxPayment.for_period == period,
+            TaxPayment.kind.in_(("contrib_employees", "ndfl")),
+        )
+    )
+    value = Decimal(str(total or 0))
+    return value if value > 0 else None
+
+
 async def build_reconciliation(
     session: AsyncSession, *, as_of: date
 ) -> Reconciliation:
@@ -284,5 +345,56 @@ async def build_reconciliation(
             messages=messages,
         )
     )
+
+    # ── Зарплатный ЕНП: разнос из оборотки (НДФЛ + взносы за работников) ──────
+    # Сверяем НАЧИСЛЕНО (оборотка) с фактом разноса и показываем платёжку справочно.
+    # Помесячно платёжка ЕНП с начислением НЕ совпадает — НДФЛ платится «окнами» (за месяц N
+    # частями до 28 N и до 5 N+1), поэтому платёжку не сверяем жёстко, а показываем состав.
+    accruals = await _payroll_accruals(session, year=year)
+    enp_docs = await _enp_payroll_documents(session)
+    for month in sorted(accruals):
+        contributions, ndfl = accruals[month]
+        accrued = contributions + ndfl
+        if accrued <= ZERO:
+            continue
+        period = f"{year}-{month:02d}"
+        month_due = payroll_enp_due(year, month)
+        documented = enp_docs.get(month_due)
+        paid = (
+            await _payroll_split_paid(session, year=year, period=period)
+            if month_due <= as_of
+            else None
+        )
+
+        messages = [
+            f"Разнос: взносы за работников {fmt_money(contributions)} ₽ (идут в вычет УСН) "
+            f"+ НДФЛ {fmt_money(ndfl)} ₽ (в вычет не идёт)."
+        ]
+        if month_due <= as_of:
+            verdict, severity = "ok", "ok"
+            messages.append(f"Уплачено в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
+        else:
+            verdict, severity = "due", "info"
+            messages.append(f"К уплате в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
+        if documented is not None:
+            messages.append(
+                f"Платёжка ЕНП за этот срок: {fmt_money(documented)} ₽ "
+                f"(НДФЛ и взносы одной суммой)."
+            )
+
+        lines.append(
+            ReconLine(
+                label=f"Зарплатный ЕНП за {_MONTHS_RU_GENITIVE[month - 1]}",
+                tax_kind="enp_payroll",
+                period_code=period,
+                due_date=month_due,
+                calculated=accrued,
+                documented=documented,
+                paid=paid,
+                verdict=verdict,
+                severity=severity,
+                messages=messages,
+            )
+        )
 
     return Reconciliation(year=year, as_of=as_of, lines=lines)

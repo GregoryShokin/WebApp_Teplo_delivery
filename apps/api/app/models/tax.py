@@ -386,7 +386,8 @@ TAX_INTAKE_STATUSES: tuple[str, ...] = (
 
 TAX_DOCUMENT_TYPES: tuple[str, ...] = (
     "payment_order",  # платёжка (форма 0401060)
-    "payroll_statement",  # ведомость (форма Т-53)
+    "payroll_statement",  # платёжная ведомость (форма Т-53)
+    "turnover_statement",  # сальдо-оборотная ведомость по зарплате (эталон разноса ЕНП)
     "unknown",
 )
 
@@ -408,7 +409,8 @@ class TaxDocumentIntake(Base):
             name="ck_tax_document_intake_status",
         ),
         CheckConstraint(
-            "document_type in ('payment_order', 'payroll_statement', 'unknown')",
+            "document_type in ('payment_order', 'payroll_statement', "
+            "'turnover_statement', 'unknown')",
             name="ck_tax_document_intake_type",
         ),
         Index("ix_tax_document_intake_status", "status"),
@@ -441,6 +443,60 @@ class TaxDocumentIntake(Base):
         UUID(as_uuid=True), nullable=True
     )
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TaxPayrollLedger(Base):
+    """Помесячная раскладка зарплаты по сотруднику из сальдо-оборотной ведомости.
+
+    Канон для двух потребителей: (1) РАЗНОС зарплатного ЕНП — НДФЛ и взносы за работника
+    берутся отсюда как эталон, а не реконструируются из травматизма; (2) МОНИТОР зарплатного
+    критерия льготы по НДС — фактические месячные начисления действующего работника.
+
+    Одна строка = один сотрудник за один месяц; источник — конкретная оборотка (``intake_id``).
+    Суммы соответствуют колонкам листа 'л1'; ``None`` там, где ячейка пуста (≠ 0). Начислений
+    в налоговый расчёт эта таблица НЕ создаёт — это справочные факты для разноса и монитора.
+    """
+
+    __tablename__ = "tax_payroll_ledger"
+    __table_args__ = (
+        # Один сотрудник × месяц = одна строка: повторная оборотка обновляет, а не плодит.
+        UniqueConstraint("year", "month", "tab_number", name="uq_tax_payroll_ledger_slot"),
+        CheckConstraint("month between 1 and 12", name="ck_tax_payroll_ledger_month"),
+        CheckConstraint(
+            "accrued is null or accrued >= 0", name="ck_tax_payroll_ledger_accrued"
+        ),
+        Index("ix_tax_payroll_ledger_period", "year", "month"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    tab_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    employee: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    oklad: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    days: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    accrued: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # начислено
+    ndfl: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    advance: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    contributions: Mapped[Decimal | None] = mapped_column(  # взносы за работника (СФР)
+        Numeric(14, 2), nullable=True
+    )
+    injury: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # травматизм
+    deduction: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # вычеты
+    to_pay: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)  # к выплате
+
+    intake_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tax_document_intake.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

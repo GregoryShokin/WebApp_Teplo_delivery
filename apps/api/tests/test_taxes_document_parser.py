@@ -15,6 +15,7 @@ from pathlib import Path
 from app.services.taxes.document_parser import (
     parse_payment_order,
     parse_payroll_statement,
+    parse_turnover_statement,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "taxes"
@@ -28,6 +29,11 @@ def _po(name: str, filename: str, year: int = 2026):
 def _ved(name: str, filename: str):
     data = (FIXTURES / name).read_bytes()
     return parse_payroll_statement(data, filename=filename)
+
+
+def _osv(name: str, filename: str):
+    data = (FIXTURES / name).read_bytes()
+    return parse_turnover_statement(data, filename=filename)
 
 
 # ── платёжные поручения ──────────────────────────────────────────────────────
@@ -111,3 +117,69 @@ def test_advance_plus_salary_equals_net_pay() -> None:
     sal = _ved("vedomost_salary_22696.xls", "ВЕД-14 ЗП 05.08.xls")
 
     assert adv.total + sal.total == Decimal("43682")
+
+
+# ── сальдо-оборотные ведомости по зарплате (лист 'л1') ────────────────────────
+
+
+def test_turnover_july_full_breakdown() -> None:
+    """Оборотка июля: полная раскладка одной строки. Позиции колонок читаются несмотря на то,
+    что подпись позиции «аванс» в июле — «УДЕРЖАНИЯ ПО КАССЕ» (заголовки «плавают»)."""
+    doc = _osv("oborotka_07.xls", "ОБОРОТКА 07.xls")
+
+    assert (doc.year, doc.month, doc.period_code) == (2026, 7, "2026-07")
+    assert len(doc.rows) == 1
+    row = doc.rows[0]
+    assert row.tab_number == "206"
+    assert row.employee == "ИВАНОВА И.И."
+    assert row.oklad == Decimal("50000.00")
+    assert row.ndfl == Decimal("6318.00")
+    assert row.advance == Decimal("20986.00")
+    assert row.contributions == Decimal("13595.93")
+    assert row.injury == Decimal("100.00")
+    assert row.deduction == Decimal("1400")
+    assert row.to_pay == Decimal("22696.00")
+    # Связность: начислено − НДФЛ − аванс = к выплате → разбор не жалуется.
+    assert row.accrued - row.ndfl - row.advance == row.to_pay
+    assert doc.needs_review is False
+
+
+def test_turnover_may_two_employees_with_empty_cells() -> None:
+    """Переходный май: две сотрудницы; у первой вычет и «к выплате» пусты (None ≠ 0)."""
+    doc = _osv("oborotka_05.xls", "ОБОРОТКА 05.xls")
+
+    assert doc.period_code == "2026-05"
+    assert [r.tab_number for r in doc.rows] == ["205", "206"]
+    first, second = doc.rows
+    assert first.deduction is None and first.to_pay is None  # пустые ячейки, не нули
+    assert first.ndfl == Decimal("1711.00")
+    assert second.to_pay == Decimal("23077.00")
+    assert doc.needs_review is False
+
+
+def test_turnover_totals_sum_the_column() -> None:
+    """Итоги по колонкам суммируют строки (строка «Итого» из файла в подсчёт не берётся)."""
+    doc = _osv("oborotka_05.xls", "ОБОРОТКА 05.xls")
+
+    assert doc.accrued_total == Decimal("39474.00")  # 13158 + 26316
+    assert doc.ndfl_total == Decimal("4950.00")  # 1711 + 3239
+    assert doc.contributions_total == Decimal("11842.20")  # 3947.40 + 7894.80
+
+
+def test_turnover_enp_reference_matches_payment() -> None:
+    """Оборотка июня — эталон для разноса зарплатного ЕНП: взносы за месяц уходят целиком,
+    и вместе с НДФЛ образуют базу зарплатного ЕНП (травматизм платится отдельно в СФР)."""
+    doc = _osv("oborotka_06.xls", "ОБОРОТКА 06.xls")
+
+    assert doc.contributions_total == Decimal("8571.30")
+    assert doc.ndfl_total == Decimal("3532.00")
+    assert doc.injury_total == Decimal("57.14")  # мимо ЕНС, отдельным платежом в СФР
+
+
+def test_non_turnover_xls_is_flagged_not_misread() -> None:
+    """Платёжную ведомость Т-53 (лист 'T') парсер оборотки не принимает молча за оборотку."""
+    doc = _osv("vedomost_advance_20986.xls", "ВЕД-13 АВАНС 20.07.xls")
+
+    assert doc.rows == []
+    assert doc.needs_review is True
+    assert any("л1" in r for r in doc.review_reasons)

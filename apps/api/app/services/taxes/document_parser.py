@@ -339,3 +339,164 @@ def _row_tab_number(row: list[str]) -> str | None:
         if m and 100 <= int(m.group(1)) <= 9999:
             return m.group(1)
     return None
+
+
+# ── xls (сальдо-оборотная ведомость по зарплате, лист 'л1') ───────────────────
+
+# Оборотка — не платёжная ведомость Т-53, а РАСЧЁТНАЯ: помесячная раскладка начислений и
+# удержаний по каждому сотруднику (оклад → НДФЛ → аванс → взносы → травматизм → вычет → к
+# выплате). Это эталон для разноса зарплатного ЕНП (НДФЛ vs взносы за работников) и для
+# монитора зарплатного критерия льготы по НДС. Значимый лист называется 'л1'.
+#
+# Колонки формы стабильны ПО ПОЗИЦИЯМ, а подписи «плавают» (в июле поз. «аванс» подписана
+# «УДЕРЖАНИЯ ПО КАССЕ»), поэтому читаем по ИНДЕКСУ колонки, а не по тексту заголовка. Все
+# значения в файле хранятся ТЕКСТОМ («50000.00», «13595.93»), поэтому парсим Decimal из строки.
+_TURNOVER_SHEET = "л1"
+# Индексы колонок листа 'л1' (проверено на файлах мая/июня/июля 2026).
+_TCOL_TAB = 1  # табельный номер
+_TCOL_NAME = 2  # ФИО
+_TCOL_OKLAD = 4  # оклад (тариф)
+_TCOL_DAYS = 5  # отработано дней
+_TCOL_ACCRUED = 6  # начислено всего
+_TCOL_NDFL = 8  # НДФЛ («налог на доходы»)
+_TCOL_ADVANCE = 9  # аванс / «удержания по кассе»
+_TCOL_CONTRIB = 10  # страховые взносы за работника (СФР)
+_TCOL_INJURY = 11  # травматизм 0,2 %
+_TCOL_DEDUCTION = 12  # налоговые вычеты (напр. на ребёнка)
+_TCOL_TOPAY = 13  # к выплате
+
+_MONTHS_RU: dict[str, int] = {
+    "ЯНВАРЬ": 1, "ФЕВРАЛЬ": 2, "МАРТ": 3, "АПРЕЛЬ": 4, "МАЙ": 5, "ИЮНЬ": 6,
+    "ИЮЛЬ": 7, "АВГУСТ": 8, "СЕНТЯБРЬ": 9, "ОКТЯБРЬ": 10, "НОЯБРЬ": 11, "ДЕКАБРЬ": 12,
+}
+
+
+@dataclass(frozen=True)
+class TurnoverRow:
+    """Строка сотрудника оборотки — суммы за расчётный месяц. None ≠ 0 («ячейка пуста»)."""
+
+    tab_number: str | None
+    employee: str
+    oklad: Decimal | None
+    days: Decimal | None
+    accrued: Decimal | None  # начислено
+    ndfl: Decimal | None
+    advance: Decimal | None  # уже выплаченный аванс / удержания по кассе
+    contributions: Decimal | None  # страховые взносы за работника (СФР)
+    injury: Decimal | None  # травматизм
+    deduction: Decimal | None  # налоговые вычеты
+    to_pay: Decimal | None  # к выплате
+
+
+@dataclass(frozen=True)
+class TurnoverStatementDoc:
+    """Разобранная сальдо-оборотная ведомость по зарплате за один месяц."""
+
+    year: int | None
+    month: int | None
+    period_code: str | None  # 'YYYY-MM'
+    rows: list[TurnoverRow]
+    accrued_total: Decimal
+    ndfl_total: Decimal
+    contributions_total: Decimal
+    injury_total: Decimal
+    needs_review: bool
+    review_reasons: list[str] = field(default_factory=list)
+    source_filename: str | None = None
+
+
+def _turnover_decimal(value: object) -> Decimal | None:
+    """Число из ячейки оборотки. Значения — текст «50000.00»/«13595,93», иногда пусто/float."""
+    text = repr(value) if isinstance(value, (int, float)) else str(value)
+    text = text.strip().replace("\xa0", "").replace(" ", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except (ArithmeticError, ValueError):
+        return None
+
+
+def _turnover_value(sheet: object, row: int, col: int) -> Decimal | None:
+    if col >= sheet.ncols:  # type: ignore[attr-defined]
+        return None
+    return _turnover_decimal(sheet.cell_value(row, col))  # type: ignore[attr-defined]
+
+
+def _turnover_period(grid: list[list[str]]) -> tuple[int | None, int | None]:
+    """Месяц и год из заголовка «Сальдо-оборотная ведомость по з/плате ИЮЛЬ 2026»."""
+    header = " ".join(cell for line in grid[:3] for cell in line).upper()
+    month = next((m for name, m in _MONTHS_RU.items() if name in header), None)
+    ym = re.search(r"\b(20\d{2})\b", header)
+    year = int(ym.group(1)) if ym else None
+    return year, month
+
+
+def parse_turnover_statement(data: bytes, *, filename: str = "") -> TurnoverStatementDoc:
+    """Разобрать сальдо-оборотную ведомость по зарплате (xls, лист 'л1')."""
+    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
+
+    wb = xlrd.open_workbook(file_contents=data)
+    if _TURNOVER_SHEET not in wb.sheet_names():
+        return TurnoverStatementDoc(
+            year=None, month=None, period_code=None, rows=[],
+            accrued_total=Decimal("0"), ndfl_total=Decimal("0"),
+            contributions_total=Decimal("0"), injury_total=Decimal("0"),
+            needs_review=True,
+            review_reasons=[f"не найден лист '{_TURNOVER_SHEET}' — это не оборотка"],
+            source_filename=filename or None,
+        )
+
+    sheet = wb.sheet_by_name(_TURNOVER_SHEET)
+    grid = [
+        [str(sheet.cell_value(r, c)).strip() for c in range(sheet.ncols)]
+        for r in range(sheet.nrows)
+    ]
+    year, month = _turnover_period(grid)
+    period_code = f"{year}-{month:02d}" if (year and month) else None
+
+    rows: list[TurnoverRow] = []
+    for r in range(sheet.nrows):
+        name = grid[r][_TCOL_NAME] if sheet.ncols > _TCOL_NAME else ""
+        if not _NAME_RE.match(name):  # строка «Итого» и шапки сюда не попадают
+            continue
+        rows.append(
+            TurnoverRow(
+                tab_number=(grid[r][_TCOL_TAB] or None) if sheet.ncols > _TCOL_TAB else None,
+                employee=name,
+                oklad=_turnover_value(sheet, r, _TCOL_OKLAD),
+                days=_turnover_value(sheet, r, _TCOL_DAYS),
+                accrued=_turnover_value(sheet, r, _TCOL_ACCRUED),
+                ndfl=_turnover_value(sheet, r, _TCOL_NDFL),
+                advance=_turnover_value(sheet, r, _TCOL_ADVANCE),
+                contributions=_turnover_value(sheet, r, _TCOL_CONTRIB),
+                injury=_turnover_value(sheet, r, _TCOL_INJURY),
+                deduction=_turnover_value(sheet, r, _TCOL_DEDUCTION),
+                to_pay=_turnover_value(sheet, r, _TCOL_TOPAY),
+            )
+        )
+
+    reasons: list[str] = []
+    if not rows:
+        reasons.append("не найдено ни одной строки сотрудника")
+    if period_code is None:
+        reasons.append("не распознан месяц/год из заголовка")
+    # Контроль связности: начислено − НДФЛ − аванс = к выплате (если к выплате заполнена).
+    for row in rows:
+        if row.to_pay is not None and None not in (row.accrued, row.ndfl, row.advance):
+            residual = row.accrued - row.ndfl - row.advance
+            if abs(residual - row.to_pay) > Decimal("0.01"):
+                reasons.append(
+                    f"{row.employee}: начислено−НДФЛ−аванс ({residual}) ≠ к выплате ({row.to_pay})"
+                )
+
+    def _total(attr: str) -> Decimal:
+        return sum((getattr(row, attr) or Decimal("0") for row in rows), Decimal("0"))
+
+    return TurnoverStatementDoc(
+        year=year, month=month, period_code=period_code, rows=rows,
+        accrued_total=_total("accrued"), ndfl_total=_total("ndfl"),
+        contributions_total=_total("contributions"), injury_total=_total("injury"),
+        needs_review=bool(reasons), review_reasons=reasons,
+        source_filename=filename or None,
+    )

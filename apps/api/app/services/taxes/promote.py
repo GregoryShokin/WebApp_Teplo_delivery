@@ -26,7 +26,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.tax import TAX_PAYMENT_KINDS, TaxDocumentIntake, TaxPayment
+from app.models.tax import (
+    TAX_PAYMENT_KINDS,
+    TaxDocumentIntake,
+    TaxPayment,
+    TaxPayrollLedger,
+)
+from app.services.taxes.enp_split import rebuild_payroll_enp_split
 
 logger = logging.getLogger(__name__)
 
@@ -158,26 +164,123 @@ async def promote_intake(
     return PromotionResult(intake.id, payment.id, "created")
 
 
+def _ledger_decimal(value: object) -> Decimal | None:
+    return Decimal(str(value)) if value not in (None, "") else None
+
+
+async def promote_turnover_intake(
+    session: AsyncSession,
+    intake: TaxDocumentIntake,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> PromotionResult:
+    """Продвинуть оборотку в канон ``tax_payroll_ledger`` (эталон разноса ЕНП и НДС-монитора).
+
+    Оборотка НЕ становится платежом — это справочная раскладка. Одна строка сотрудника →
+    одна строка ledger за (год, месяц, таб. номер). Идемпотентно: повторная оборотка того же
+    месяца обновляет строки, а не плодит.
+    """
+    if intake.document_type != "turnover_statement":
+        raise PromotionError(
+            f"Через этот путь продвигаются только оборотки, а это {intake.document_type}."
+        )
+    if intake.status == "promoted":
+        raise PromotionError("Документ уже продвинут.")
+    if intake.status != "parsed":
+        raise PromotionError(
+            f"Продвигаются только уверенно распознанные оборотки (parsed), "
+            f"текущий — {intake.status}."
+        )
+
+    rec = intake.recognition or {}
+    year, month = rec.get("year"), rec.get("month")
+    if not year or not month:
+        raise PromotionError("В оборотке не распознан месяц/год — продвигать нечего.")
+    rows = rec.get("rows") or []
+    if not rows:
+        raise PromotionError("В оборотке нет строк сотрудников.")
+
+    created_n = updated_n = 0
+    for row in rows:
+        tab = row.get("tab_number")
+        values = {
+            "employee": row.get("employee") or "",
+            "oklad": _ledger_decimal(row.get("oklad")),
+            "days": _ledger_decimal(row.get("days")),
+            "accrued": _ledger_decimal(row.get("accrued")),
+            "ndfl": _ledger_decimal(row.get("ndfl")),
+            "advance": _ledger_decimal(row.get("advance")),
+            "contributions": _ledger_decimal(row.get("contributions")),
+            "injury": _ledger_decimal(row.get("injury")),
+            "deduction": _ledger_decimal(row.get("deduction")),
+            "to_pay": _ledger_decimal(row.get("to_pay")),
+            "intake_id": intake.id,
+        }
+        existing = (
+            await session.execute(
+                select(TaxPayrollLedger).where(
+                    TaxPayrollLedger.year == year,
+                    TaxPayrollLedger.month == month,
+                    TaxPayrollLedger.tab_number == tab,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            for field_name, field_value in values.items():
+                setattr(existing, field_name, field_value)
+            updated_n += 1
+        else:
+            session.add(TaxPayrollLedger(year=year, month=month, tab_number=tab, **values))
+            created_n += 1
+
+    intake.status = "promoted"
+    await session.flush()
+    action = "updated" if updated_n and not created_n else "created"
+    return PromotionResult(
+        intake.id, None, action, f"строк раскладки: +{created_n} / обновлено {updated_n}"
+    )
+
+
 async def promote_ready_intakes(
     session: AsyncSession, *, actor_user_id: uuid.UUID | None = None
 ) -> list[PromotionResult]:
-    """Продвинуть все готовые документы. Непригодные пропускаются с причиной, не падают."""
+    """Продвинуть все готовые документы. Непригодные пропускаются с причиной, не падают.
+
+    Платёжки идут в плановые обязательства (``tax_payment``), оборотки — в раскладку
+    (``tax_payroll_ledger``). Тип определяет целевой контур.
+    """
     rows = (
         await session.execute(
             select(TaxDocumentIntake)
             .where(
                 TaxDocumentIntake.status == "parsed",
-                TaxDocumentIntake.document_type == "payment_order",
+                TaxDocumentIntake.document_type.in_(
+                    ("payment_order", "turnover_statement")
+                ),
             )
             .order_by(TaxDocumentIntake.received_at.asc())
         )
     ).scalars().all()
 
     results: list[PromotionResult] = []
+    split_years: set[int] = set()
     for intake in rows:
         try:
-            results.append(await promote_intake(session, intake, actor_user_id=actor_user_id))
+            if intake.document_type == "turnover_statement":
+                result = await promote_turnover_intake(
+                    session, intake, actor_user_id=actor_user_id
+                )
+                year = (intake.recognition or {}).get("year")
+                if isinstance(year, int):
+                    split_years.add(year)
+            else:
+                result = await promote_intake(session, intake, actor_user_id=actor_user_id)
+            results.append(result)
         except PromotionError as exc:
             logger.info("promote: пропуск %s — %s", intake.filename, exc)
             results.append(PromotionResult(intake.id, None, "skipped", str(exc)))
+
+    # Продвинулись оборотки — пересобираем разнос зарплатного ЕНП (НДФЛ + взносы в вычет).
+    for year in sorted(split_years):
+        await rebuild_payroll_enp_split(session, year=year)
     return results

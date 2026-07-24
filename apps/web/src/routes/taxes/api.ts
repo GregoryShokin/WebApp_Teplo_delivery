@@ -186,7 +186,28 @@ export type TaxDocumentStatus =
   | "error"
   | "ignored";
 
-export type TaxDocumentType = "payment_order" | "payroll_statement" | "unknown";
+export type TaxDocumentType =
+  | "payment_order"
+  | "payroll_statement"
+  | "turnover_statement"
+  | "unknown";
+
+/** Строка сотрудника в раскладке оборотки (лист 'л1'). `null` ≠ 0 — ячейка пуста. */
+export type TaxTurnoverRow = {
+  tab_number?: string | null;
+  employee?: string | null;
+  oklad?: Money | null;
+  days?: Money | null;
+  accrued?: Money | null;
+  ndfl?: Money | null;
+  advance?: Money | null;
+  contributions?: Money | null;
+  injury?: Money | null;
+  deduction?: Money | null;
+  to_pay?: Money | null;
+  /** Для платёжной ведомости Т-53 строка несёт одну сумму `amount`. */
+  amount?: Money | null;
+};
 
 /** Результат разбора отдаётся как есть (JSONB) — фиксируем только читаемые нами поля. */
 export type TaxRecognition = {
@@ -197,6 +218,14 @@ export type TaxRecognition = {
   kbk?: string | null;
   recipient?: string | null;
   document_number?: string | null;
+  /** Оборотка: месяц/год и помесячные итоги по колонкам. */
+  year?: number | null;
+  month?: number | null;
+  accrued_total?: Money | null;
+  ndfl_total?: Money | null;
+  contributions_total?: Money | null;
+  injury_total?: Money | null;
+  rows?: TaxTurnoverRow[];
   /** Почему документ ушёл в needs_review — русский текст, показываем владельцу. */
   review_reasons?: string[];
   [key: string]: unknown;
@@ -312,5 +341,48 @@ export async function promoteTaxDocuments(): Promise<TaxPromotionSummary> {
 
 export async function getTaxSources(): Promise<TaxSources> {
   const response = await api.get<TaxSources>(`${BASE}/sources`);
+  return response.data;
+}
+
+// ── Зарплатный критерий льготы по НДС ──────────────────────────────────────────
+
+export type VatMonthAccrual = {
+  month: number;
+  accrued: Money;
+  oklad: Money | null;
+  /** Начислено = оклад → месяц отработан полностью (репрезентативен для показателя). */
+  full_month: boolean;
+};
+
+export type VatWageCriterion = {
+  year: number;
+  active_employee: string | null;
+  active_tab: string | null;
+  months: VatMonthAccrual[];
+  /** Средняя по полным месяцам (основной показатель) и по всем месяцам с выплатами. */
+  indicator_full: Money | null;
+  indicator_all: Money | null;
+  threshold: Money | null;
+  /** Проходит ли критерий. null — порог не введён или показателя нет. */
+  passes: boolean | null;
+  margin: Money | null;
+  messages: string[];
+};
+
+export async function getVatCriterion(year?: number): Promise<VatWageCriterion> {
+  const response = await api.get<VatWageCriterion>(`${BASE}/vat-criterion`, {
+    params: year ? { year } : undefined,
+  });
+  return response.data;
+}
+
+export async function setVatThreshold(
+  year: number,
+  amount: number,
+): Promise<VatWageCriterion> {
+  const response = await api.post<VatWageCriterion>(`${BASE}/vat-criterion/threshold`, {
+    year,
+    amount,
+  });
   return response.data;
 }

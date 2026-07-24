@@ -45,6 +45,9 @@ from app.schemas.taxes import (
     TaxSourceRead,
     TaxSourcesRead,
     TaxStateRead,
+    VatMonthAccrualRead,
+    VatThresholdInput,
+    VatWageCriterionRead,
 )
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
 from app.services.taxes.promote import promote_ready_intakes
@@ -54,6 +57,12 @@ from app.services.taxes.sources import (
     load_source_registry,
     registry_to_payload,
     weakest_links,
+)
+from app.services.taxes.vat_monitor import (
+    VatWageCriterion,
+    evaluate_vat_wage_criterion,
+    load_regional_wage,
+    save_regional_wage,
 )
 
 router = APIRouter()
@@ -454,3 +463,60 @@ async def get_sources(
             TaxSourceRead.model_validate(item) for item in weakest_links({"sources": rows})
         ],
     )
+
+
+def _vat_read(criterion: VatWageCriterion) -> VatWageCriterionRead:
+    return VatWageCriterionRead(
+        year=criterion.year,
+        active_employee=criterion.active_employee,
+        active_tab=criterion.active_tab,
+        months=[
+            VatMonthAccrualRead(
+                month=m.month, accrued=m.accrued, oklad=m.oklad, full_month=m.full_month
+            )
+            for m in criterion.months
+        ],
+        indicator_full=criterion.indicator_full,
+        indicator_all=criterion.indicator_all,
+        threshold=criterion.threshold,
+        passes=criterion.passes,
+        margin=criterion.margin,
+        messages=criterion.messages,
+    )
+
+
+@router.get("/vat-criterion", response_model=VatWageCriterionRead, dependencies=TAXES_READ)
+async def get_vat_criterion(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    year: Annotated[int | None, Query(ge=2000, le=2100)] = None,
+) -> VatWageCriterionRead:
+    """Зарплатный критерий льготы по НДС: средние начисления действующего работника ↔ порог."""
+    resolved = year or date.today().year
+    threshold = await load_regional_wage(session, year=resolved)
+    criterion = await evaluate_vat_wage_criterion(
+        session, year=resolved, threshold=threshold
+    )
+    return _vat_read(criterion)
+
+
+@router.post(
+    "/vat-criterion/threshold",
+    response_model=VatWageCriterionRead,
+    dependencies=TAXES_MANAGE,
+)
+async def set_vat_threshold(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    body: VatThresholdInput,
+) -> VatWageCriterionRead:
+    """Ввести региональный порог за год (Росстат/ЕМИСС) и пересчитать критерий."""
+    if body.amount <= ZERO:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Порог должен быть больше нуля."
+        )
+    await save_regional_wage(session, year=body.year, amount=body.amount)
+    await session.commit()
+    threshold = await load_regional_wage(session, year=body.year)
+    criterion = await evaluate_vat_wage_criterion(
+        session, year=body.year, threshold=threshold
+    )
+    return _vat_read(criterion)

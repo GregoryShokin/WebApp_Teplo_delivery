@@ -57,7 +57,9 @@ import {
   getTaxOverview,
   getTaxPayments,
   getTaxSources,
+  getVatCriterion,
   promoteTaxDocuments,
+  setVatThreshold,
   type Money,
   type Reconciliation,
   type ReconLine,
@@ -69,9 +71,10 @@ import {
   type TaxPromotionSummary,
   type TaxSource,
   type TaxState,
+  type VatWageCriterion,
 } from "@/routes/taxes/api";
 
-type TaxesTab = "summary" | "calendar" | "payments" | "documents";
+type TaxesTab = "summary" | "calendar" | "payments" | "documents" | "vat";
 
 // ── форматирование ─────────────────────────────────────────────────────────────
 
@@ -242,8 +245,23 @@ const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   payment_order: "Платёжное поручение",
   payroll_statement: "Зарплатная ведомость",
+  turnover_statement: "Оборотно-сальдовая ведомость",
   unknown: "Тип не определён",
 };
+
+const MONTHS_RU_NOMINATIVE = [
+  "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+  "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+];
+
+/** Заголовок периода оборотки: «Июль 2026», иначе — как есть из period_hint. */
+function turnoverPeriodLabel(recognition: TaxRecognition): string {
+  const { year, month, period_hint } = recognition;
+  if (year && month && month >= 1 && month <= 12) {
+    return `${MONTHS_RU_NOMINATIVE[month - 1]} ${year}`;
+  }
+  return period_hint ?? "Оборотка";
+}
 
 const SOURCE_METHOD_LABELS: Record<string, string> = {
   api: "запрос к системе",
@@ -943,7 +961,10 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
   }, [query.data]);
 
   const readyCount = rows.filter(
-    (row) => row.status === "parsed" && row.document_type === "payment_order",
+    (row) =>
+      row.status === "parsed" &&
+      (row.document_type === "payment_order" ||
+        row.document_type === "turnover_statement"),
   ).length;
 
   const promoteMutation = useMutation({
@@ -1040,10 +1061,11 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Продвинуть готовые документы?</AlertDialogTitle>
             <AlertDialogDescription>
-              Из уверенно распознанных платёжек ({readyCount} шт.) будут созданы плановые
-              обязательства. Нулевые платёжки-заглушки и зарплатный ЕНП без разноса система
-              пропустит с причиной, документы со статусом «Нужна проверка» не тронет.
-              Повторное продвижение обновит уже созданный план, а не задвоит его.
+              Из уверенно распознанных документов ({readyCount} шт.) платёжки станут плановыми
+              обязательствами, а оборотно-сальдовые ведомости — помесячной раскладкой зарплаты
+              (эталон для разноса ЕНП). Нулевые платёжки-заглушки и зарплатный ЕНП без разноса
+              система пропустит с причиной, документы со статусом «Нужна проверка» не тронет.
+              Повторное продвижение обновит уже созданное, а не задвоит его.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1069,10 +1091,14 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
   const recognition = row.recognition ?? {};
   const reasons = recognition.review_reasons ?? [];
   const needsReview = row.status === "needs_review";
+  const isTurnover = row.document_type === "turnover_statement";
+  const turnoverRows = recognition.rows ?? [];
   const hasFields =
     Boolean(recognition.tax_kind) ||
     recognition.amount !== undefined ||
     Boolean(recognition.due_date);
+  const m = (value: Money | null | undefined) =>
+    value === undefined || value === null ? "—" : formatMoney(value);
 
   return (
     <TableRow className={needsReview ? "bg-amber-50/50 hover:bg-amber-50" : undefined}>
@@ -1088,7 +1114,33 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
         {DOCUMENT_TYPE_LABELS[row.document_type] ?? row.document_type}
       </TableCell>
       <TableCell className="align-top">
-        {hasFields ? (
+        {isTurnover ? (
+          <div className="space-y-1">
+            <div className="font-medium">Зарплата · {turnoverPeriodLabel(recognition)}</div>
+            {turnoverRows.length > 0 ? (
+              <div className="space-y-1 text-xs text-muted-foreground">
+                {turnoverRows.map((person, index) => (
+                  <div key={person.tab_number ?? index}>
+                    <span className="font-medium text-foreground">
+                      {person.employee ?? "—"}
+                    </span>
+                    {" — "}
+                    начислено {m(person.accrued)} · НДФЛ {m(person.ndfl)} · аванс{" "}
+                    {m(person.advance)} · взносы {m(person.contributions)} · к выплате{" "}
+                    {m(person.to_pay)}
+                  </div>
+                ))}
+                <div className="pt-0.5 text-foreground">
+                  Итого за месяц: НДФЛ {m(recognition.ndfl_total)} · взносы{" "}
+                  {m(recognition.contributions_total)} · травматизм{" "}
+                  {m(recognition.injury_total)}
+                </div>
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">Строки не распознаны</span>
+            )}
+          </div>
+        ) : hasFields ? (
           <div className="space-y-0.5">
             <div className="font-medium">{taxKindLabel(recognition.tax_kind)}</div>
             <div className="text-xs text-muted-foreground">
@@ -1122,6 +1174,186 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
         ) : null}
       </TableCell>
     </TableRow>
+  );
+}
+
+// ── вкладка «НДС-льгота»: зарплатный критерий ───────────────────────────────────
+
+function VatTab({ year, canManage }: { year: number; canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const query = useQuery({
+    queryKey: ["taxes", "vat", year],
+    queryFn: () => getVatCriterion(year),
+  });
+  const mutation = useMutation({
+    mutationFn: (amount: number) => setVatThreshold(year, amount),
+    onSuccess: () => {
+      setDraft("");
+      toast.success("Региональный порог сохранён");
+      void queryClient.invalidateQueries({ queryKey: ["taxes", "vat"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить порог")),
+  });
+
+  if (query.isLoading) {
+    return <LoadingBlock rows={4} />;
+  }
+  if (query.isError || !query.data) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось загрузить зарплатный критерий"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const data: VatWageCriterion = query.data;
+  const indicator = data.indicator_full ?? data.indicator_all;
+  const verdict =
+    data.passes === null
+      ? { label: "порог не введён", className: NEUTRAL_BADGE }
+      : data.passes
+        ? {
+            label: "критерий проходит",
+            className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+          }
+        : { label: "критерий НЕ проходит", className: OVERDUE_BADGE };
+
+  const submit = () => {
+    const amount = Number(draft.replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(amount) && amount > 0) {
+      mutation.mutate(amount);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
+            Зарплатный критерий льготы по НДС
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Одно из условий освобождения общепита от НДС (подп. 38 п. 3 ст. 149 НК) —
+            среднемесячная зарплата не ниже среднеотраслевой по региону (ОКВЭД класс 56).
+            Считаем по действующему штатному сотруднику из оборотк бухгалтера; ушедшие в декрет
+            и уволенные в расчёт не берутся.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4 p-6 pt-0">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <div className="text-xs text-muted-foreground">Действующий сотрудник</div>
+              <div className="font-medium">{data.active_employee ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Показатель (по полным месяцам)
+              </div>
+              <div className="font-medium">
+                {indicator != null ? formatMoney(indicator) : "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Региональный порог</div>
+              <div className="font-medium">
+                {data.threshold != null ? formatMoney(data.threshold) : "не введён"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Вердикт</div>
+              <Badge className={verdict.className} variant="outline">
+                {verdict.label}
+              </Badge>
+              {data.margin != null ? (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {data.passes ? "запас" : "дефицит"} {formatMoney(data.margin)}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {data.messages.length > 0 ? (
+            <ul className="list-disc space-y-0.5 pl-4 text-sm text-muted-foreground">
+              {data.messages.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {canManage ? (
+            <div className="flex flex-wrap items-end gap-2 border-t pt-3">
+              <div>
+                <label className="text-xs text-muted-foreground" htmlFor="vat-threshold">
+                  Региональный порог за {year} год, ₽ (Росстат / ЕМИСС)
+                </label>
+                <Input
+                  className="mt-1 w-48"
+                  id="vat-threshold"
+                  inputMode="decimal"
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder={
+                    data.threshold != null ? String(data.threshold) : "напр. 57000"
+                  }
+                  value={draft}
+                />
+              </div>
+              <Button disabled={mutation.isPending || draft.trim() === ""} onClick={submit}>
+                {mutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : null}
+                Сохранить порог
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-none">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Начисления по месяцам</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Из оборотк. «Полный месяц» — где начислено равно окладу; месяц приёма или ухода
+            неполный и занижает среднее, поэтому основной показатель считается по полным.
+          </p>
+        </CardHeader>
+        <CardContent className="p-6 pt-0">
+          {data.months.length === 0 ? (
+            <EmptyState
+              description="Оборотки за год ещё не загружены."
+              title="Нет начислений"
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Месяц</TableHead>
+                  <TableHead className="text-right">Начислено</TableHead>
+                  <TableHead>Отработка</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.months.map((row) => (
+                  <TableRow key={row.month}>
+                    <TableCell>{MONTHS_RU_NOMINATIVE[row.month - 1] ?? row.month}</TableCell>
+                    <TableCell className="text-right">{formatMoney(row.accrued)}</TableCell>
+                    <TableCell>
+                      {row.full_month ? (
+                        <span className="text-muted-foreground">полный месяц</span>
+                      ) : (
+                        <span className="text-amber-700">неполный</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -1290,6 +1522,7 @@ export function TaxesRoute() {
             Документы
             <TabCount tone="warning" value={reviewCount} />
           </TabsTrigger>
+          <TabsTrigger value="vat">НДС-льгота</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -1297,6 +1530,7 @@ export function TaxesRoute() {
       {tab === "calendar" ? <CalendarTab year={year} /> : null}
       {tab === "payments" ? <PaymentsTab year={year} /> : null}
       {tab === "documents" ? <DocumentsTab canManage={canManage} /> : null}
+      {tab === "vat" ? <VatTab canManage={canManage} year={year} /> : null}
 
       <SourcesBlock />
     </div>

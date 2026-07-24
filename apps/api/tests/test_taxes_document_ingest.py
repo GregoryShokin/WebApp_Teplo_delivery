@@ -80,6 +80,19 @@ def test_parse_attachment_routes_payroll_statement() -> None:
     assert rec["rows"][0]["employee"] == "ИВАНОВА И.И."
 
 
+def test_parse_attachment_routes_turnover_statement() -> None:
+    """Оборотка распознаётся отдельным типом (не Т-53) с помесячной раскладкой в recognition."""
+    dtype, status, rec, err = parse_attachment(_att("oborotka_07.xls", "ОБОРОТКА 07.xls"))
+    assert dtype == "turnover_statement"
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-07"
+    assert rec["rows"][0]["employee"] == "ИВАНОВА И.И."
+    assert rec["rows"][0]["ndfl"] == "6318.00"
+    assert rec["rows"][0]["contributions"] == "13595.93"
+    assert rec["contributions_total"] == "13595.93"
+    assert err is None
+
+
 def test_parse_attachment_marks_kadr_unsupported() -> None:
     dtype, status, _, _ = parse_attachment(
         _att("vedomost_salary_22696.xls", "Приказ об отпуске.xls")

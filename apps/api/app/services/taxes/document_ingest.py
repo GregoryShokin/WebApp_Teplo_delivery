@@ -29,8 +29,10 @@ from app.services.mail.imap_client import (
 from app.services.taxes.document_parser import (
     PaymentOrderDoc,
     PayrollStatementDoc,
+    TurnoverStatementDoc,
     parse_payment_order,
     parse_payroll_statement,
+    parse_turnover_statement,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,9 @@ def _classify_document(filename: str) -> str:
     if low.endswith(".docx") or low.endswith(".doc"):
         # Платёжки приходят в docx; приказы/договоры тоже бывают docx, но обычно .xls.
         return "payment_order"
+    # Оборотка — раньше «вед» и раньше общего .xls-фолбэка: иначе уедет в Т-53-парсер.
+    if "оборот" in low or "сальдо" in low:
+        return "turnover_statement"
     if "вед" in low or "ведомост" in low:
         return "payroll_statement"
     if any(k in low for k in ("приказ", "договор", "тд", "т-1", "т-6", "св о рожд")):
@@ -89,6 +94,39 @@ def _payroll_recognition(doc: PayrollStatementDoc) -> dict:
     }
 
 
+def _money_or_none(value: object) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _turnover_recognition(doc: TurnoverStatementDoc) -> dict:
+    return {
+        "year": doc.year,
+        "month": doc.month,
+        "period_hint": doc.period_code,
+        "accrued_total": str(doc.accrued_total),
+        "ndfl_total": str(doc.ndfl_total),
+        "contributions_total": str(doc.contributions_total),
+        "injury_total": str(doc.injury_total),
+        "rows": [
+            {
+                "tab_number": r.tab_number,
+                "employee": r.employee,
+                "oklad": _money_or_none(r.oklad),
+                "days": _money_or_none(r.days),
+                "accrued": _money_or_none(r.accrued),
+                "ndfl": _money_or_none(r.ndfl),
+                "advance": _money_or_none(r.advance),
+                "contributions": _money_or_none(r.contributions),
+                "injury": _money_or_none(r.injury),
+                "deduction": _money_or_none(r.deduction),
+                "to_pay": _money_or_none(r.to_pay),
+            }
+            for r in doc.rows
+        ],
+        "review_reasons": doc.review_reasons,
+    }
+
+
 def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None]:
     """Разобрать вложение. Возвращает (document_type, status, recognition, error).
 
@@ -110,6 +148,11 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
             recognition = _payroll_recognition(doc)
             status = "needs_review" if doc.needs_review else "parsed"
             return "payroll_statement", status, recognition, None
+        if kind == "turnover_statement":
+            turnover = parse_turnover_statement(att.content, filename=att.filename or "")
+            recognition = _turnover_recognition(turnover)
+            status = "needs_review" if turnover.needs_review else "parsed"
+            return "turnover_statement", status, recognition, None
     except Exception as exc:  # noqa: BLE001 - разбор одного файла не валит проход
         logger.warning("tax ingest: разбор упал sha=%s", att.sha256[:12], exc_info=True)
         return "unknown", "error", {}, str(exc)[:500]
