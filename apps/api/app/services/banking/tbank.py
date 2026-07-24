@@ -501,7 +501,17 @@ def build_payment_draft_api_payload(
             )
         ),
     }
-    payload.update(DEFAULT_TAX_FIELDS)
+    # Налоговый блок платёжки (поля 101–109 + УИН). По умолчанию все «0» — обычный платёж
+    # поставщику НЕ налоговый, но банк требует присутствия этих полей. Если реквизиты несут
+    # налоговые поля (КБК и др.), они ПЕРЕКРЫВАЮТ дефолт — так контур ЕНП/УСН кладёт реальный
+    # КБК и статус плательщика, а платёжки поставщиков/ЗП/депозитов остаются байт-в-байт теми же
+    # (их реквизиты этих ключей не содержат).
+    tax_fields = {
+        key: str(requisites[key])
+        for key in DEFAULT_TAX_FIELDS
+        if requisites.get(key) not in (None, "")
+    }
+    payload.update({**DEFAULT_TAX_FIELDS, **tax_fields})
     _validate_payment_draft_payload(payload)
     return payload
 

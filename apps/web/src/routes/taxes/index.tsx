@@ -8,7 +8,7 @@
  * Расчёт и сверка берутся ОДНИМ запросом (`/taxes/overview`) намеренно: два отдельных
  * запроса могут разъехаться по дате среза и показать владельцу расхождение, которого нет.
  */
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -52,6 +52,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import {
+  createTaxBankDraft,
   getTaxCalendar,
   getTaxDocuments,
   getTaxOverview,
@@ -59,6 +60,8 @@ import {
   getTaxSources,
   getVatCriterion,
   promoteTaxDocuments,
+  refreshTaxDocuments,
+  reviewTaxDocument,
   setVatThreshold,
   type Money,
   type Reconciliation,
@@ -74,7 +77,11 @@ import {
   type VatWageCriterion,
 } from "@/routes/taxes/api";
 
-type TaxesTab = "summary" | "calendar" | "payments" | "documents" | "vat";
+type TaxesTab = "summary" | "calendar" | "payments" | "documents" | "vat" | "sources";
+
+// Источники, которые не показываем в реестре: это ручной ввод, живущий в других местах
+// (порог НДС-льготы вводится на своей вкладке, сальдо ЕНС — из личного кабинета ФНС).
+const HIDDEN_SOURCE_KEYS = new Set(["ens_balance", "regional_wage"]);
 
 // ── форматирование ─────────────────────────────────────────────────────────────
 
@@ -521,11 +528,53 @@ function ReconciliationBlock({
   );
 }
 
+/** Иконка «i» со всплывающей подсказкой по наведению/фокусу (без внешних зависимостей). */
+function InfoHint({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "alert" }) {
+  return (
+    <span className="group relative inline-flex align-middle">
+      <button
+        aria-label="Пояснение"
+        className={`inline-flex size-4 items-center justify-center rounded-full ${
+          tone === "alert"
+            ? "text-rose-500 hover:text-rose-700"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+        type="button"
+      >
+        <Info className="size-3.5" aria-hidden="true" />
+      </button>
+      <span
+        className="pointer-events-none absolute right-0 top-5 z-30 hidden w-72 rounded-md border bg-card p-2.5 text-left text-xs font-normal leading-5 text-card-foreground shadow-md group-focus-within:block group-hover:block"
+        role="tooltip"
+      >
+        {children}
+      </span>
+    </span>
+  );
+}
+
 function ReconRow({ line }: { line: ReconLine }) {
   const isAlert = line.severity === "alert";
   const isCalm = line.severity === "ok" || line.severity === "info";
   const highlighted = isCalm ? null : VERDICT_HIGHLIGHT[line.verdict];
   const emphasis = isAlert ? "font-semibold text-rose-700" : "font-semibold text-amber-800";
+
+  const queryClient = useQueryClient();
+  const canManage = usePermissions().hasPermission("accounting.taxes.manage");
+  const [payOpen, setPayOpen] = useState(false);
+  const payable = line.payable_amount;
+  const draftMutation = useMutation({
+    mutationFn: () => createTaxBankDraft(toNumber(payable), "Единый налоговый платеж"),
+    onSuccess: (result) => {
+      setPayOpen(false);
+      toast.success("Черновик платёжки создан в Т-Банке", {
+        description: `Это ещё не оплата — подтвердите её в банк-клиенте. Статус: ${result.status}.`,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Банк отклонил платёж")),
+  });
+
   return (
     <TableRow className={SEVERITY_ROW[line.severity] ?? ""}>
       <TableCell className="align-top">
@@ -551,20 +600,74 @@ function ReconRow({ line }: { line: ReconLine }) {
         {formatMoney(line.paid)}
       </TableCell>
       <TableCell className="align-top">
-        <Badge className={SEVERITY_BADGE[line.severity] ?? NEUTRAL_BADGE} variant="outline">
-          {VERDICT_LABELS[line.verdict] ?? line.verdict}
-        </Badge>
-        {line.messages.length > 0 ? (
-          <ul
-            className={`mt-1.5 space-y-1 text-xs leading-5 ${
-              isAlert ? "text-rose-800" : "text-muted-foreground"
+        <div className="flex items-center gap-1.5">
+          <Badge className={SEVERITY_BADGE[line.severity] ?? NEUTRAL_BADGE} variant="outline">
+            {VERDICT_LABELS[line.verdict] ?? line.verdict}
+          </Badge>
+          {line.messages.length > 0 ? (
+            <InfoHint tone={isAlert ? "alert" : "muted"}>
+              <ul className="space-y-1">
+                {line.messages.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </InfoHint>
+          ) : null}
+        </div>
+        {line.action ? (
+          <div
+            className={`mt-1.5 text-xs leading-5 ${
+              isAlert ? "text-rose-700" : "text-muted-foreground"
             }`}
           >
-            {line.messages.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
+            <span className="font-medium">Что делать:</span> {line.action}
+          </div>
         ) : null}
+        {payable != null && canManage ? (
+          <Button
+            className="mt-2"
+            onClick={() => setPayOpen(true)}
+            size="sm"
+            variant="outline"
+          >
+            Отправить в банк ({formatMoney(payable)})
+          </Button>
+        ) : null}
+        <AlertDialog onOpenChange={setPayOpen} open={payOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Создать черновик платёжки в Т-Банке?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    Черновик на <b>{formatMoney(payable)} ₽</b> — «{line.label}». Это ещё не
+                    оплата: платёжка появится в Т-Банке, деньги уйдут только после вашего
+                    подтверждения в банк-клиенте.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Получатель: Казначейство России (ФНС России), КБК 18201061201010000510,
+                    назначение «Единый налоговый платеж».
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Отмена</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={draftMutation.isPending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  draftMutation.mutate();
+                }}
+              >
+                {draftMutation.isPending ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : null}
+                Создать черновик
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </TableCell>
     </TableRow>
   );
@@ -993,6 +1096,22 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось продвинуть документы")),
   });
 
+  const refreshMutation = useMutation({
+    mutationFn: refreshTaxDocuments,
+    onSuccess: (result) => {
+      const added = Number(result.parsed ?? 0) + Number(result.needs_review ?? 0);
+      if (result.status === "not_configured") {
+        toast.info("Почта не настроена на этом стенде");
+      } else if (added === 0) {
+        toast.info("Новых документов в почте нет");
+      } else {
+        toast.success(`Забрано новых документов: ${added}`);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось проверить почту")),
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1000,20 +1119,32 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
           Что пришло от бухгалтера на почту. Продвижение превращает уверенно распознанную
           платёжку в плановое обязательство: оно попадает в календарь и в сверку ещё до того,
           как деньги ушли из банка. Документы со статусом «Нужна проверка» автоматика не
-          трогает — их разбирает человек.
+          трогает — их проверяете вы: кнопками в строке.
         </p>
         {canManage ? (
-          <Button
-            disabled={promoteMutation.isPending || readyCount === 0}
-            onClick={() => setConfirmOpen(true)}
-          >
-            {promoteMutation.isPending ? (
-              <Loader2 className="animate-spin" aria-hidden="true" />
-            ) : (
-              <RefreshCw aria-hidden="true" />
-            )}
-            Продвинуть готовые{readyCount > 0 ? ` (${readyCount})` : ""}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={refreshMutation.isPending}
+              onClick={() => refreshMutation.mutate()}
+              variant="outline"
+            >
+              {refreshMutation.isPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw aria-hidden="true" />
+              )}
+              Проверить почту
+            </Button>
+            <Button
+              disabled={promoteMutation.isPending || readyCount === 0}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {promoteMutation.isPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : null}
+              Продвинуть готовые{readyCount > 0 ? ` (${readyCount})` : ""}
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -1087,6 +1218,16 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
 }
 
 function DocumentRow({ row }: { row: TaxDocumentRow }) {
+  const queryClient = useQueryClient();
+  const canManage = usePermissions().hasPermission("accounting.taxes.manage");
+  const reviewMutation = useMutation({
+    mutationFn: (status: "parsed" | "ignored") => reviewTaxDocument(row.id, status),
+    onSuccess: (_result, status) => {
+      toast.success(status === "parsed" ? "Отмечено проверенным" : "Документ отклонён");
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить статус")),
+  });
   const status = DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
   const recognition = row.recognition ?? {};
   const reasons = recognition.review_reasons ?? [];
@@ -1171,6 +1312,26 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               <li key={reason}>{reason}</li>
             ))}
           </ul>
+        ) : null}
+        {needsReview && canManage ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Button
+              disabled={reviewMutation.isPending}
+              onClick={() => reviewMutation.mutate("parsed")}
+              size="sm"
+              variant="outline"
+            >
+              Проверено
+            </Button>
+            <Button
+              disabled={reviewMutation.isPending}
+              onClick={() => reviewMutation.mutate("ignored")}
+              size="sm"
+              variant="ghost"
+            >
+              Игнорировать
+            </Button>
+          </div>
         ) : null}
       </TableCell>
     </TableRow>
@@ -1375,7 +1536,9 @@ function SourcesBlock() {
     );
   }
 
-  const sources = query.data?.sources ?? [];
+  const sources = (query.data?.sources ?? []).filter(
+    (item) => !HIDDEN_SOURCE_KEYS.has(item.key),
+  );
   if (sources.length === 0) {
     return null;
   }
@@ -1523,6 +1686,7 @@ export function TaxesRoute() {
             <TabCount tone="warning" value={reviewCount} />
           </TabsTrigger>
           <TabsTrigger value="vat">НДС-льгота</TabsTrigger>
+          <TabsTrigger value="sources">Источники</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -1531,8 +1695,7 @@ export function TaxesRoute() {
       {tab === "payments" ? <PaymentsTab year={year} /> : null}
       {tab === "documents" ? <DocumentsTab canManage={canManage} /> : null}
       {tab === "vat" ? <VatTab canManage={canManage} year={year} /> : null}
-
-      <SourcesBlock />
+      {tab === "sources" ? <SourcesBlock /> : null}
     </div>
   );
 }

@@ -158,6 +158,8 @@ async def test_zero_payment_order_is_caught_as_alert(
     assert line.severity == "alert"
     assert recon.has_alerts
     assert any("расходится с расчётом" in m for m in line.messages)
+    # Красному — конкретный следующий шаг для владельца.
+    assert line.action is not None and "нулевую" in line.action
 
 
 async def test_corrected_payment_order_reconciles_ok(
@@ -361,8 +363,10 @@ async def test_payroll_enp_split_line_shows_breakdown(
     line = _line(recon, "enp_payroll", "2026-06")
     assert line.calculated == Decimal("12103.30")  # 8571.30 + 3532.00 начислено
     assert line.paid == Decimal("12103.30")  # разнос уплачен к сроку 28.07 ≤ среза
-    assert line.documented == Decimal("14902.30")  # платёжка ЕНП справочно
+    assert line.documented is None  # платёжка ушла в справку, не в колонку «Документ»
     assert line.verdict == "ok"
     assert line.severity == "ok"
     assert any("в вычет УСН" in m for m in line.messages)
+    # Платёжка показана справочно с пояснением про «окна» НДФЛ, а не как расхождение.
+    assert any("Справочно" in m and "окнами" in m for m in line.messages)
     assert not recon.has_alerts

@@ -165,6 +165,23 @@ def _sender_matches(from_addr: str | None, senders: tuple[str, ...]) -> bool:
     return any(s in low for s in senders)
 
 
+# Статусы, которые владелец может выставить документу вручную из интерфейса.
+INTAKE_REVIEW_STATUSES: tuple[str, ...] = ("parsed", "ignored")
+
+
+async def set_intake_review(
+    session: AsyncSession, intake: TaxDocumentIntake, *, status: str
+) -> None:
+    """Владелец проверил документ: пометить готовым к продвижению (``parsed``) или отклонить
+    (``ignored``). Уже продвинутый документ не трогаем — он породил обязательство."""
+    if status not in INTAKE_REVIEW_STATUSES:
+        raise ValueError(f"Недопустимый статус проверки: {status!r}.")
+    if intake.status == "promoted":
+        raise ValueError("Документ уже продвинут в обязательство — статус менять нельзя.")
+    intake.status = status
+    await session.flush()
+
+
 async def ingest_tax_documents(
     session: AsyncSession,
     *,

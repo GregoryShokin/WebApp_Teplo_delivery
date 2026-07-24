@@ -63,6 +63,10 @@ class ReconLine:
     verdict: str
     severity: str  # 'ok' | 'info' | 'warning' | 'alert'
     messages: list[str] = field(default_factory=list)
+    # Конкретный следующий шаг для владельца — что делать с этим красным/жёлтым.
+    action: str | None = None
+    # Сколько платить по этому обязательству (для кнопки «Отправить в банк»); None — платить нечего.
+    payable_amount: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +166,36 @@ def _classify(
 
     # 5. Нет ни расчёта, ни документа, ни факта.
     return "no_data", "info", ["Нет данных по этому обязательству."]
+
+
+def _payable(
+    verdict: str, *, documented: Decimal | None, calculated: Decimal | None
+) -> Decimal | None:
+    """Сколько платить по обязательству — для кнопки «Отправить в банк». Только когда ждём
+    уплаты (due/overdue): берём сумму из документа бухгалтера, иначе из расчёта."""
+    if verdict not in ("due", "overdue"):
+        return None
+    if documented is not None and documented > ZERO:
+        return documented
+    if calculated is not None and calculated > ZERO:
+        return calculated
+    return None
+
+
+def _action_for(verdict: str, *, documented: Decimal | None = None) -> str | None:
+    """Что делать владельцу с этим обязательством. None — действий не требуется."""
+    if verdict == "doc_mismatch":
+        if documented is not None and documented == ZERO:
+            return (
+                "Бухгалтер прислала нулевую платёжку — запросите корректную "
+                "и не платите по этой."
+            )
+        return "Платить по этому документу нельзя: уточните сумму у бухгалтера."
+    if verdict == "overdue":
+        return "Срок уплаты прошёл — оплатите скорее, иначе начнут капать пени."
+    if verdict == "payment_mismatch":
+        return "Факт из банка не сошёлся с документом — проверьте, сколько и по чему заплатили."
+    return None
 
 
 async def _documented_amount(
@@ -310,6 +344,10 @@ async def build_reconciliation(
                 verdict=verdict,
                 severity=severity,
                 messages=messages,
+                action=_action_for(verdict, documented=documented),
+                payable_amount=_payable(
+                    verdict, documented=documented, calculated=calculated
+                ),
             )
         )
 
@@ -343,6 +381,10 @@ async def build_reconciliation(
             verdict=verdict,
             severity=severity,
             messages=messages,
+            action=_action_for(verdict, documented=documented),
+            payable_amount=_payable(
+                verdict, documented=documented, calculated=state.extra_accrued
+            ),
         )
     )
 
@@ -366,34 +408,49 @@ async def build_reconciliation(
             else None
         )
 
+        month_name = _MONTHS_RU_GENITIVE[month - 1]
         messages = [
-            f"Разнос: взносы за работников {fmt_money(contributions)} ₽ (идут в вычет УСН) "
-            f"+ НДФЛ {fmt_money(ndfl)} ₽ (в вычет не идёт)."
+            f"«Расчёт» — это начислено за {month_name}: взносы за работников "
+            f"{fmt_money(contributions)} ₽ (идут в вычет УСН) + НДФЛ {fmt_money(ndfl)} ₽ "
+            f"(в вычет не идёт)."
         ]
+        action: str | None = None
         if month_due <= as_of:
             verdict, severity = "ok", "ok"
             messages.append(f"Уплачено в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
         else:
             verdict, severity = "due", "info"
-            messages.append(f"К уплате в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
+            messages.append(
+                f"Уплачивается в составе ЕНП до {month_due.strftime('%d.%m.%Y')}."
+            )
+            action = f"Оплатите в составе ближайшего ЕНП к сроку {month_due.strftime('%d.%m.%Y')}."
+        # Платёжку показываем СПРАВОЧНО (не в колонке «Документ»), чтобы её сумма не читалась
+        # как расхождение: помесячно она больше начисления из-за «окон» уплаты НДФЛ — это норма.
         if documented is not None:
             messages.append(
-                f"Платёжка ЕНП за этот срок: {fmt_money(documented)} ₽ "
-                f"(НДФЛ и взносы одной суммой)."
+                f"Справочно: платёжка бухгалтера ЕНП на этот срок — {fmt_money(documented)} ₽. "
+                f"Она больше начисления, потому что НДФЛ платится по датам выплат («окнами»), "
+                f"а не ровно по месяцу. Расхождения тут нет."
             )
 
         lines.append(
             ReconLine(
-                label=f"Зарплатный ЕНП за {_MONTHS_RU_GENITIVE[month - 1]}",
+                label=f"Зарплатный ЕНП за {month_name}",
                 tax_kind="enp_payroll",
                 period_code=period,
                 due_date=month_due,
                 calculated=accrued,
-                documented=documented,
+                documented=None,
                 paid=paid,
                 verdict=verdict,
                 severity=severity,
                 messages=messages,
+                action=action,
+                # Платить нужно сумму платёжки бухгалтера (она учитывает «окна» НДФЛ),
+                # иначе — начисленное за месяц.
+                payable_amount=_payable(
+                    verdict, documented=documented, calculated=accrued
+                ),
             )
         )
 

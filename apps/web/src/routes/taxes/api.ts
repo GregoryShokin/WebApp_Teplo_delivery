@@ -86,6 +86,10 @@ export type ReconLine = {
   verdict: ReconVerdict;
   severity: ReconSeverity;
   messages: string[];
+  /** Конкретный следующий шаг для владельца (что делать), если есть. */
+  action?: string | null;
+  /** Сколько платить по обязательству (для кнопки «Отправить в банк»); null — платить нечего. */
+  payable_amount?: Money | null;
 };
 
 export type Reconciliation = {
@@ -339,6 +343,24 @@ export async function promoteTaxDocuments(): Promise<TaxPromotionSummary> {
   return response.data;
 }
 
+export async function refreshTaxDocuments(): Promise<Record<string, number | string>> {
+  const response = await api.post<Record<string, number | string>>(
+    `${BASE}/documents/refresh`,
+  );
+  return response.data;
+}
+
+export async function reviewTaxDocument(
+  intakeId: string,
+  status: "parsed" | "ignored",
+): Promise<TaxDocumentRow> {
+  const response = await api.post<TaxDocumentRow>(
+    `${BASE}/documents/${intakeId}/review`,
+    { status },
+  );
+  return response.data;
+}
+
 export async function getTaxSources(): Promise<TaxSources> {
   const response = await api.get<TaxSources>(`${BASE}/sources`);
   return response.data;
@@ -383,6 +405,25 @@ export async function setVatThreshold(
   const response = await api.post<VatWageCriterion>(`${BASE}/vat-criterion/threshold`, {
     year,
     amount,
+  });
+  return response.data;
+}
+
+// ── Черновик платёжки в банк ───────────────────────────────────────────────────
+
+export type TaxBankDraftResult = {
+  document_id: string;
+  status: string;
+  provider_ref: string | null;
+};
+
+export async function createTaxBankDraft(
+  amount: number,
+  purpose?: string,
+): Promise<TaxBankDraftResult> {
+  const response = await api.post<TaxBankDraftResult>(`${BASE}/bank-draft`, {
+    amount,
+    purpose,
   });
   return response.data;
 }

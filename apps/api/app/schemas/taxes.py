@@ -109,6 +109,10 @@ class ReconLineRead(BaseModel):
     # 'ok' | 'info' | 'warning' | 'alert' — цвет строки на первом экране.
     severity: str
     messages: list[str] = []
+    # Конкретный следующий шаг для владельца (что делать с красным/жёлтым), если есть.
+    action: str | None = None
+    # Сколько платить по обязательству (для кнопки «Отправить в банк»); None — платить нечего.
+    payable_amount: Decimal | None = None
 
 
 class ReconciliationRead(BaseModel):
@@ -370,3 +374,27 @@ class VatThresholdInput(BaseModel):
 
     year: int
     amount: Decimal
+
+
+# ── Черновик платёжки в банк ─────────────────────────────────────────────────
+
+
+class TaxDocumentReviewInput(BaseModel):
+    """Ручная отметка документа: проверен (``parsed``) или отклонён (``ignored``)."""
+
+    status: str
+
+
+class TaxBankDraftInput(BaseModel):
+    """Запрос на создание черновика платёжки ЕНП в банк."""
+
+    amount: Decimal
+    purpose: str | None = None
+
+
+class TaxBankDraftResultRead(BaseModel):
+    """Итог создания черновика: он готов в банк-клиенте, но деньги ещё не ушли."""
+
+    document_id: str
+    status: str
+    provider_ref: str | None = None

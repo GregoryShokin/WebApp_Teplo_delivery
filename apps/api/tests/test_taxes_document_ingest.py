@@ -13,10 +13,18 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import uuid
+
+import pytest
+
 from app.core.config import get_settings
 from app.models.tax import TaxDocumentIntake
 from app.services.mail.imap_client import FetchedAttachment
-from app.services.taxes.document_ingest import ingest_tax_documents, parse_attachment
+from app.services.taxes.document_ingest import (
+    ingest_tax_documents,
+    parse_attachment,
+    set_intake_review,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "taxes"
 
@@ -170,3 +178,48 @@ def test_content_sha_is_stable() -> None:
     """Дедуп опирается на SHA содержимого — он детерминирован."""
     att = _att("usn_h1_478376.docx", "УСН 2 кв до 28.07.docx")
     assert att.sha256 == hashlib.sha256(att.content).hexdigest()
+
+
+# ── ручная проверка документа владельцем ──────────────────────────────────────
+
+
+def _needs_review_intake(status: str = "needs_review") -> TaxDocumentIntake:
+    return TaxDocumentIntake(
+        id=uuid.uuid4(),
+        mailbox="corporate",
+        attachment_sha256=(uuid.uuid4().hex + uuid.uuid4().hex),
+        filename="ЕНП_до 28.07.docx",
+        document_type="payment_order",
+        status=status,
+        recognition={},
+    )
+
+
+async def test_review_marks_parsed_then_ignored(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        intake = _needs_review_intake()
+        session.add(intake)
+        await session.flush()
+
+        await set_intake_review(session, intake, status="parsed")
+        assert intake.status == "parsed"  # проверено → готово к продвижению
+
+        await set_intake_review(session, intake, status="ignored")
+        assert intake.status == "ignored"  # передумал → отклонено
+
+
+async def test_review_rejects_promoted_and_bad_status(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        promoted = _needs_review_intake(status="promoted")
+        session.add(promoted)
+        await session.flush()
+        with pytest.raises(ValueError, match="продвинут"):
+            await set_intake_review(session, promoted, status="parsed")
+
+        intake = _needs_review_intake()
+        with pytest.raises(ValueError, match="статус"):
+            await set_intake_review(session, intake, status="deleted")

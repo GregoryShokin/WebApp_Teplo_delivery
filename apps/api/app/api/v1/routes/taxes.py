@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Annotated
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.api.deps import CurrentActor, get_current_actor, require_any_permission
+from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models.tax import (
     TAX_INTAKE_STATUSES,
@@ -33,10 +35,13 @@ from app.models.tax import (
 from app.schemas.taxes import (
     ReconciliationRead,
     ReconLineRead,
+    TaxBankDraftInput,
+    TaxBankDraftResultRead,
     TaxCalendarItemRead,
     TaxCalendarRead,
     TaxDocumentListRead,
     TaxDocumentRead,
+    TaxDocumentReviewInput,
     TaxOverviewRead,
     TaxPaymentListRead,
     TaxPaymentRead,
@@ -49,6 +54,9 @@ from app.schemas.taxes import (
     VatThresholdInput,
     VatWageCriterionRead,
 )
+from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.taxes.bank_draft import TaxDraftError, create_tax_bank_draft
+from app.services.taxes.document_ingest import ingest_tax_documents, set_intake_review
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
@@ -427,6 +435,41 @@ async def promote_documents(
     )
 
 
+@router.post("/documents/refresh", dependencies=TAXES_MANAGE)
+async def refresh_documents(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, int | str]:
+    """Забрать новые документы из почты бухгалтера в staging «Документы».
+
+    На проде почта забирается фоново по расписанию; эта кнопка — «проверить прямо сейчас».
+    Если почта не настроена (превью), вернётся статус ``not_configured``.
+    """
+    return await ingest_tax_documents(session)
+
+
+@router.post(
+    "/documents/{intake_id}/review",
+    response_model=TaxDocumentRead,
+    dependencies=TAXES_MANAGE,
+)
+async def review_document(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: uuid.UUID,
+    body: TaxDocumentReviewInput,
+) -> TaxDocumentRead:
+    """Отметить документ проверенным (``parsed`` — готов к продвижению) или отклонить
+    (``ignored``). Так владелец подтверждает то, что автоматика оставила на проверку."""
+    intake = await session.get(TaxDocumentIntake, intake_id)
+    if intake is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден.")
+    try:
+        await set_intake_review(session, intake, status=body.status)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    return TaxDocumentRead.model_validate(intake)
+
+
 @router.get("/sources", response_model=TaxSourcesRead, dependencies=TAXES_READ)
 async def get_sources(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -520,3 +563,52 @@ async def set_vat_threshold(
         session, year=body.year, threshold=threshold
     )
     return _vat_read(criterion)
+
+
+def _tax_bank_rejected(exc: BankFetchError) -> HTTPException:
+    """Отказ банка при создании черновика → осмысленный HTTP вместо голой 500."""
+    if isinstance(exc, BankCredentialsError):
+        return HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Ошибка авторизации в банке — обратитесь к администратору",
+        )
+    if exc.status_code is not None and 400 <= exc.status_code < 500:
+        message = "Банк отклонил платёж по реквизитам получателя"
+        if exc.detail:
+            message = f"{message}: {exc.detail}"
+        return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Банк временно недоступен — попробуйте позже",
+    )
+
+
+@router.post("/bank-draft", response_model=TaxBankDraftResultRead, dependencies=TAXES_MANAGE)
+async def create_bank_draft(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    body: TaxBankDraftInput,
+) -> TaxBankDraftResultRead:
+    """Создать черновик платёжки ЕНП в Т-Банк. Черновик ≠ оплата — подтвердить в банк-клиенте.
+
+    Получатель — фиксированные реквизиты ФНС; сумму подтверждает владелец. Отказ банка по
+    реквизитам маппится в 422 с причиной, а не в голую 500.
+    """
+    if body.amount <= ZERO:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Сумма платежа должна быть больше нуля."
+        )
+    try:
+        result = await create_tax_bank_draft(
+            session, settings=settings, amount=body.amount, purpose=body.purpose
+        )
+    except TaxDraftError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except BankFetchError as exc:
+        raise _tax_bank_rejected(exc) from exc
+
+    return TaxBankDraftResultRead(
+        document_id=result.document_id,
+        status=result.status,
+        provider_ref=result.provider_ref,
+    )
