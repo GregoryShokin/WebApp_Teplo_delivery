@@ -125,6 +125,51 @@ async def ensure_lease_invoice(
     return invoice
 
 
+async def rebuild_lease_invoice(
+    session: AsyncSession,
+    lease: LocationLease,
+    month: date,
+    *,
+    create_if_missing: bool = True,
+) -> tuple[SupplierInvoice | None, str]:
+    """Пересобрать обязательство за месяц под ТЕКУЩИЕ условия договора. Не коммитит.
+
+    Прошлый месяц в силе не переписываем — это история: правим только ОТКРЫТОЕ обязательство
+    (будущий УПД, ``activation_status='pending'``, ещё не долг и без оплат). Так смена ставки в
+    текущем месяце доходит до ДЗ/КЗ, а закрытые месяцы остаются как были.
+
+    ``create_if_missing=False`` — только обновить существующее, не заводить новое (вызов из
+    правки договора не должен неожиданно начислять там, где начисления ещё не было).
+
+    Возвращает ``(invoice, action)`` с action ``created`` | ``updated`` | ``kept`` | ``skipped``.
+    """
+    from app.services import counterparty_matching
+
+    external_id = lease_external_id(lease.id, month)
+    existing = await session.scalar(
+        select(SupplierInvoice).where(
+            SupplierInvoice.source == LEASE_INVOICE_SOURCE,
+            SupplierInvoice.external_id == external_id,
+        )
+    )
+    if existing is None:
+        if not create_if_missing:
+            return None, "skipped"
+        created = await ensure_lease_invoice(session, lease, month)
+        return created, "created" if created is not None else "skipped"
+
+    paid = await counterparty_matching._allocated_amount(session, existing.id)
+    if existing.activation_status != "pending" or paid > 0:
+        return existing, "kept"
+
+    new_amount = Decimal(lease.monthly_amount)
+    if Decimal(existing.amount) != new_amount:
+        existing.amount = new_amount
+        await session.flush()
+        await supplier_service_periods.sync_invoice_accrual(session, existing)
+    return existing, "updated"
+
+
 async def accrue_month(session: AsyncSession, month: date) -> list[SupplierInvoice]:
     """Начислить аренду за месяц по всем действующим договорам. Не коммитит."""
     leases = (

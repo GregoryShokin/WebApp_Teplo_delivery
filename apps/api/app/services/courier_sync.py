@@ -23,6 +23,7 @@ from app.models import (
     Employee,
     ShiftLedgerEntry,
 )
+from app.services.iiko_location import get_department_id
 from app.services.iiko_sync import (
     _candidate_project_roots,
     _load_source_credential_env,
@@ -31,7 +32,6 @@ from app.services.iiko_sync import (
 from app.services.position_registry import courier_positions
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
-ACTIVE_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
 ACTIVE_DEPARTMENT_MARKER = "черников"
 COURIER_SERVICE_TYPE = "COURIER"
 VALID_RUN_REASONS = {"manual", "hot", "cold_backfill"}
@@ -578,7 +578,7 @@ def serialize_courier_attendance_shift(
 def is_active_department_row(row: Mapping[str, Any]) -> bool:
     department_id = first_text(row, "Department.Id", "department_id")
     department = first_text(row, "Department", "department")
-    if department_id and department_id.casefold() == ACTIVE_DEPARTMENT_ID.casefold():
+    if department_id and department_id.casefold() == get_department_id().casefold():
         return True
     if department:
         return ACTIVE_DEPARTMENT_MARKER in department.casefold()

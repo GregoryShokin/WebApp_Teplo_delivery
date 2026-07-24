@@ -2696,6 +2696,7 @@ async def _article_payloads(
             "is_active": article.is_active,
             "kassa_enabled": article.kassa_enabled,
             "location_required": article.location_required,
+            "lease_bound": article.lease_bound,
             "description": article.description,
             "aliases": aliases_by_article.get(article.id, []),
         }

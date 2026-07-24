@@ -109,6 +109,9 @@ class DdsArticleRead(BaseModel):
     kassa_enabled: bool = False
     # Фронт по этому флагу требует помещение в строке разбора и в окне платежа.
     location_required: bool = False
+    # Статья-аренда помещения: фронт скрывает свободный выбор контрагента и требует арендодателя
+    # из договора аренды.
+    lease_bound: bool = False
     description: str | None = None
     aliases: list[DdsAliasRead] = Field(default_factory=list)
 
@@ -599,6 +602,8 @@ class NewPaymentArticleRead(BaseModel):
     activity: str | None = None
     # Статье нужна аналитика по помещению: форма требует помещение и предлагает арендодателей.
     location_required: bool = False
+    # Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
+    lease_bound: bool = False
     # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
     counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
 

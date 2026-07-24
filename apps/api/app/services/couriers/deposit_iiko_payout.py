@@ -27,6 +27,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.models import CourierDepositTransaction, CourierDepositTransactionType
+from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque_payout_push import _build_payout_type_index
 from app.services.kassa.iiko_cashshift_sync import (
     _auth_token,
@@ -37,8 +38,6 @@ from app.services.kassa.iiko_cashshift_sync import (
 
 logger = logging.getLogger(__name__)
 
-# Подразделение проводки — «Foodmarket Тепло Черникова».
-CHERNIKOVA_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
 PAYOUT_TYPES_PATH = "/resto/api/v2/entities/payInOutTypes/list"
 # Единственный метод записи payInOut'ов — addPayOut (отдельного addPayIn в этом API нет);
 # направление берётся из самого типа, поэтому им же проводим и внесение (PAYIN-тип).
@@ -97,7 +96,7 @@ def post_deposit_return_to_iiko(transaction: CourierDepositTransaction) -> None:
         body = {
             "payOutTypeId": type_id,
             "payOutDate": transaction.transaction_date.isoformat(),
-            "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(amount)},
+            "departmentSumMap": {get_department_id(): float(amount)},
             "comment": f"Возврат депозита курьеру (операция #{transaction.id})",
         }
         data = _iiko_post(token, ADD_PAYOUT_PATH, body)
@@ -146,7 +145,7 @@ def post_deposit_topup_to_iiko(transaction: CourierDepositTransaction) -> None:
         body = {
             "payOutTypeId": type_id,
             "payOutDate": transaction.transaction_date.isoformat(),
-            "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(amount)},
+            "departmentSumMap": {get_department_id(): float(amount)},
             "comment": f"Пополнение депозита курьера (операция #{transaction.id})",
         }
         data = _iiko_post(token, ADD_PAYOUT_PATH, body)

@@ -19,6 +19,7 @@ import uuid
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque_payout_push import _build_payout_type_index
 from app.services.kassa.iiko_cashshift_sync import (
     _auth_token,
@@ -29,7 +30,6 @@ from app.services.kassa.iiko_cashshift_sync import (
 
 logger = logging.getLogger(__name__)
 
-CHERNIKOVA_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
 PAYOUT_TYPES_PATH = "/resto/api/v2/entities/payInOutTypes/list"
 ADD_PAYOUT_PATH = "/resto/api/v2/payInOuts/addPayOut"
 # Тип изъятия «Приложение/Выдача депозита сотруднику» по (chiefAccount, account, cfc.code).
@@ -57,7 +57,7 @@ def post_production_deposit_payout_to_iiko(
         body = {
             "payOutTypeId": type_id,
             "payOutDate": payout_date.isoformat(),
-            "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(value)},
+            "departmentSumMap": {get_department_id(): float(value)},
             "comment": f"Выдача депозита сотруднику (операция {source_id})",
         }
         data = _iiko_post(token, ADD_PAYOUT_PATH, body)

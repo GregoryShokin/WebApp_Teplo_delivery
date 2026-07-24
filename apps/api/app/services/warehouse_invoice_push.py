@@ -38,7 +38,7 @@ from app.models import (
     SupplierInvoice,
     SupplierInvoiceTombstone,
 )
-from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_auth_token, iiko_opener
+from app.services.iiko_cloud_client import iiko_auth_token, iiko_opener
 from app.services.iiko_invoice_cloud import (
     CloudInvoiceDoc,
     CloudInvoiceLine,
@@ -53,6 +53,7 @@ from app.services.iiko_invoice_cloud import (
     unpost_invoice,
     update_invoice,
 )
+from app.services.iiko_location import get_organization_id
 from app.services.iiko_returned_cloud import (
     build_returned_invoice_body,
     create_returned_invoice,
@@ -280,7 +281,7 @@ async def delete_invoice_in_iiko(invoice: SupplierInvoice) -> str | None:
         return None
     return await anyio.to_thread.run_sync(
         lambda: _cloud_delete_document(
-            invoice.direction, IIKO_ORGANIZATION_ID, invoice.external_id
+            invoice.direction, get_organization_id(), invoice.external_id
         )
     )
 
@@ -616,7 +617,7 @@ async def book_correction_in_iiko(
         )
         try:
             outcome = await anyio.to_thread.run_sync(
-                lambda: _cloud_create_and_post_return(IIKO_ORGANIZATION_ID, return_body)
+                lambda: _cloud_create_and_post_return(get_organization_id(), return_body)
             )
         except Exception as exc:  # noqa: BLE001 — держим коррекцию, пишем ошибку
             invoice.iiko_return_status = "failed"

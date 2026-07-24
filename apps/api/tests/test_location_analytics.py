@@ -121,6 +121,62 @@ def test_location_without_lease_is_allowed(async_session_factory) -> None:
     asyncio.run(run())
 
 
+def test_lease_bound_article_demands_landlord(async_session_factory) -> None:
+    """Статья-аренда помещения: помещение выбрано, а договор — нет. Получателя у такой статьи
+    нет иначе как через арендодателя, поэтому платёж без договора отклоняется (в отличие от
+    коммуналки/охраны, где помещение без аренды допустимо — см. тест выше)."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            rent, _other, location, landlord = await _fixture(session)
+            rent.lease_bound = True
+            with pytest.raises(LocationAnalyticsError, match="выберите арендодателя"):
+                await resolve_location_context(
+                    session,
+                    article=rent,
+                    location_id=location.id,
+                    lease_id=None,
+                    counterparty_id=landlord.id,
+                    on_date=TODAY,
+                )
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_lease_bound_article_accepts_registered_landlord(async_session_factory) -> None:
+    """С выбранным договором аренды статья-аренда пропускает платёж и подставляет арендодателя."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            rent, _other, location, landlord = await _fixture(session)
+            rent.lease_bound = True
+            lease = LocationLease(
+                id=uuid.uuid4(),
+                location_id=location.id,
+                counterparty_id=landlord.id,
+                monthly_amount=Decimal("50000"),
+                started_on=date(2026, 1, 1),
+                dds_article_id=rent.id,
+            )
+            session.add(lease)
+            await session.flush()
+
+            context = await resolve_location_context(
+                session,
+                article=rent,
+                location_id=location.id,
+                lease_id=lease.id,
+                counterparty_id=None,
+                on_date=TODAY,
+            )
+            assert context.lease_id == lease.id
+            assert context.counterparty_id == landlord.id
+            await session.rollback()
+
+    asyncio.run(run())
+
+
 def test_lease_fills_landlord_and_rejects_alien_counterparty(async_session_factory) -> None:
     """Договор знает своего арендодателя — чужой контрагент по нему платить не может."""
 

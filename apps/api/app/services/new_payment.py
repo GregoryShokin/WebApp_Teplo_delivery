@@ -305,6 +305,7 @@ async def list_new_payment_articles(
             # Вид деятельности — для леджер-фильтра палитры (операционная/финансовая/…).
             "activity": article.activity_type,
             "location_required": article.location_required,
+            "lease_bound": article.lease_bound,
         }
         for article in articles
         if (flow := new_payment_article_flow(article)) is not None and flow in allowed

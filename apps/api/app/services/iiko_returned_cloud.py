@@ -18,8 +18,9 @@ from __future__ import annotations
 import urllib.request
 from datetime import datetime
 
-from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_cloud_call
+from app.services.iiko_cloud_client import iiko_cloud_call
 from app.services.iiko_invoice_cloud import format_iiko_invoice_datetime
+from app.services.iiko_location import get_organization_id
 
 _RETURNED = "/api/inventory/v1/returned_invoice"
 
@@ -33,11 +34,12 @@ def build_returned_invoice_body(
     default_store: str | None = None,
     number: str | None = None,
     comment: str | None = None,
-    organization_id: str = IIKO_ORGANIZATION_ID,
+    organization_id: str | None = None,
 ) -> dict:
     """JSON-тело ``returned_invoice/create``. ``items`` — позиции возврата
     ({num, product, store, amount, price[, sum]}). Дата — ISO с ТОЧКОЙ (как у накладных).
     ``expenseAccount`` не шлём: iiko проставляет счёт расхода сам."""
+    organization_id = organization_id or get_organization_id()
     body: dict = {
         "organizationId": organization_id,
         "counteragent": counteragent,

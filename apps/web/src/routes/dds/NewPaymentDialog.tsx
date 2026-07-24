@@ -59,6 +59,7 @@ import {
   type NewPaymentArticle,
   type NewPaymentEmployee,
   type LocationOption,
+  type LocationLeaseOption,
   type NewPaymentExpenseLine,
   type NewPaymentWallet,
 } from "@/lib/api";
@@ -129,6 +130,17 @@ const LEDGERS: Array<{ key: LedgerKey; label: string; title: string }> = [
  *  группы влезали в окно без скролла. */
 const EXPENSE_COLLAPSED_COUNT = 5;
 
+// Снимок арендодателя выбранного договора: несёт реквизитный контур, чтобы окно выбрало канал
+// платежа (банк по реквизитам / карта ИП → Сейф / наличные) той же логикой, что у контрагента,
+// и месячную ставку — для мягкого предупреждения о переплате (не блокирует отправку).
+type LeaseRecipient = {
+  name: string;
+  relationship: string;
+  has_requisites: boolean;
+  requisites_verified: boolean;
+  monthlyAmount: number;
+};
+
 type ExpenseRow = {
   key: string;
   articleId: string;
@@ -139,6 +151,7 @@ type ExpenseRow = {
   servicePeriodEnd: string;
   locationId: string; // помещение — для статей с location_required (аренда, коммуналка)
   leaseId: string; // договор аренды — подставляет арендодателя в counterpartyId
+  leaseRecipient: LeaseRecipient | null; // арендодатель договора для реквизитной маршрутизации
 };
 
 function dateInput(year: number, month: number, day: number): string {
@@ -285,12 +298,16 @@ export function NewPaymentDialog({
       servicePeriodEnd: "",
       locationId: "",
       leaseId: "",
+      leaseRecipient: null,
     };
   }
   function updateExpenseRow(key: string, patch: Partial<ExpenseRow>) {
     setExpenseRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
   function presetCounterparty(article: NewPaymentArticle | null): string {
+    // На арендной статье получатель — только арендодатель из договора, свободного/закреплённого
+    // контрагента тут нет: подставлять нечего.
+    if (article?.lease_bound) return "";
     return article && (article.counterparties?.length ?? 0) === 1
       ? article.counterparties![0].counterparty_id
       : "";
@@ -318,6 +335,7 @@ export function NewPaymentDialog({
       purpose: "",
       locationId: "",
       leaseId: "",
+      leaseRecipient: null,
       ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
     });
   }
@@ -1123,6 +1141,26 @@ function ExpenseForm({
   );
   const selectedCounterparties = rows.flatMap((row) => {
     const article = articleById.get(row.articleId);
+    // Арендная статья: получатель — арендодатель договора. Его реквизитный контур ведём через
+    // тот же список, что и закреплённых контрагентов, чтобы маршрут (банк по реквизитам / карта
+    // ИП → Сейф / наличные) выбрался уже готовой логикой ниже.
+    if (article?.lease_bound) {
+      const recipient = row.leaseRecipient;
+      return recipient && row.counterpartyId
+        ? [
+            {
+              counterparty_id: row.counterpartyId,
+              name: recipient.name,
+              inn: null,
+              relationship: recipient.relationship as "official" | "informal" | "barter",
+              has_requisites: recipient.has_requisites,
+              requisites_verified: recipient.requisites_verified,
+              service_period_required: false,
+              default_service_period_offset_months: null,
+            },
+          ]
+        : [];
+    }
     const counterparty = article?.counterparties?.find(
       (item) => item.counterparty_id === row.counterpartyId,
     );
@@ -1149,7 +1187,17 @@ function ExpenseForm({
     .find(Boolean);
   const missingLocationRow = rows.find((row) => {
     const article = articleById.get(row.articleId);
-    return article?.location_required && !row.locationId;
+    if (!article?.location_required) return false;
+    if (!row.locationId) return true;
+    // Арендная статья: без выбранного арендодателя (договора) платёж некому направить.
+    return Boolean(article.lease_bound) && !row.leaseId;
+  });
+  // Мягкая проверка: сумма арендной строки больше месячной ставки договора. Предупреждаем, но
+  // НЕ блокируем отправку — платёж может закрывать несколько месяцев или включать доплату.
+  const rentOverpayRows = rows.filter((row) => {
+    const article = articleById.get(row.articleId);
+    const cap = row.leaseRecipient?.monthlyAmount ?? 0;
+    return Boolean(article?.lease_bound) && cap > 0 && amountOf(row.amount) > cap;
   });
   const requiresRequisites = Boolean(requisitesRecipient);
   const directRouteBlocked =
@@ -1168,7 +1216,9 @@ function ExpenseForm({
       const periodReady =
         !counterparty?.service_period_required ||
         Boolean(row.servicePeriodStart && row.servicePeriodEnd);
-      const locationReady = !article?.location_required || Boolean(row.locationId);
+      const locationReady =
+        !article?.location_required ||
+        (Boolean(row.locationId) && (!article.lease_bound || Boolean(row.leaseId)));
       return row.articleId && amountOf(row.amount) > 0 && periodReady && locationReady;
     }) &&
     !directRouteBlocked &&
@@ -1240,7 +1290,10 @@ function ExpenseForm({
     summary = "Выберите счёт списания.";
   } else if (missingLocationRow) {
     tone = "warning";
-    summary = "Укажите помещение для арендного платежа.";
+    summary =
+      articleById.get(missingLocationRow.articleId)?.lease_bound && missingLocationRow.locationId
+        ? "Выберите арендодателя для арендного платежа."
+        : "Укажите помещение для арендного платежа.";
   } else if (missingServicePeriodRecipient) {
     tone = "warning";
     summary = `Укажите период оказания услуги для ${shortName(missingServicePeriodRecipient.name)}.`;
@@ -1341,6 +1394,9 @@ function ExpenseForm({
             const selectedCounterparty = pinned.find(
               (item) => item.counterparty_id === row.counterpartyId,
             );
+            // Свободный «кому платим» — только у неарендных статей: у аренды получатель приходит
+            // из договора (блок «Помещение» ниже), а не из закреплённого списка контрагентов.
+            const showPinned = pinned.length > 0 && !article?.lease_bound;
             return (
               <div className="space-y-1.5 rounded-md border p-2.5" key={row.key}>
                 <div className="grid grid-cols-[minmax(0,1fr)_130px_auto] items-center gap-2">
@@ -1369,7 +1425,7 @@ function ExpenseForm({
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <div className={cn("gap-2", pinned.length > 0 ? "grid grid-cols-2" : "")}>
+                <div className={cn("gap-2", showPinned ? "grid grid-cols-2" : "")}>
                   <Input
                     className="h-8 text-sm"
                     maxLength={210}
@@ -1377,7 +1433,7 @@ function ExpenseForm({
                     placeholder="Назначение (необязательно)"
                     value={row.purpose}
                   />
-                  {pinned.length > 0 ? (
+                  {showPinned ? (
                     <Select
                       onValueChange={(value) =>
                         (() => {
@@ -1412,6 +1468,7 @@ function ExpenseForm({
                 {article?.location_required ? (
                   <ExpenseLocationPicker
                     articleId={article.id}
+                    leaseBound={Boolean(article.lease_bound)}
                     locationId={row.locationId}
                     leaseId={row.leaseId}
                     onChange={(patch) => onUpdateRow(row.key, patch)}
@@ -1467,6 +1524,17 @@ function ExpenseForm({
         <SummaryPanel tone={tone} total={total}>
           {summary}
         </SummaryPanel>
+        {rentOverpayRows.length > 0 ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            {rentOverpayRows.length === 1 && rentOverpayRows[0].leaseRecipient
+              ? `Сумма больше месячной аренды по договору с ${shortName(
+                  rentOverpayRows[0].leaseRecipient.name,
+                )} — ${formatRub(
+                  rentOverpayRows[0].leaseRecipient.monthlyAmount,
+                )}. Проверьте: отправить всё равно можно.`
+              : `В ${rentOverpayRows.length} строках сумма больше месячной аренды по договору. Проверьте: отправить всё равно можно.`}
+          </div>
+        ) : null}
         {missingRequisitesRecipient && !requiresRequisites ? (
           <Button
             onClick={() =>
@@ -2679,20 +2747,30 @@ function TransferPlainForm({
 }
 
 /**
- * Выбор помещения и арендодателя для строки арендного платежа. Свой запрос, потому что
- * список зависит от статьи строки, а строки рендерятся в цикле. Выбор аренды подставляет
- * её арендодателя в получателя строки; «просто помещение» (мусор, охрана) — без аренды.
+ * Выбор помещения и арендодателя для строки объектного платежа. Свой запрос, потому что
+ * список зависит от статьи строки, а строки рендерятся в цикле.
+ *
+ * Арендная статья (``leaseBound``): арендодатель обязателен, свободного контрагента нет —
+ * выбор договора подставляет арендодателя и его реквизитный контур. Прочие объектные статьи
+ * (коммуналка, охрана): аренда опциональна, «Без договора» оставляет свободного контрагента.
  */
 function ExpenseLocationPicker({
   articleId,
+  leaseBound,
   locationId,
   leaseId,
   onChange,
 }: {
   articleId: string;
+  leaseBound: boolean;
   locationId: string;
   leaseId: string;
-  onChange: (patch: { locationId: string; leaseId: string; counterpartyId?: string }) => void;
+  onChange: (patch: {
+    locationId: string;
+    leaseId: string;
+    counterpartyId?: string;
+    leaseRecipient?: LeaseRecipient | null;
+  }) => void;
 }) {
   const optionsQuery = useQuery({
     queryKey: ["location-options", articleId],
@@ -2700,51 +2778,139 @@ function ExpenseLocationPicker({
     enabled: Boolean(articleId),
   });
   const options: LocationOption[] = optionsQuery.data ?? [];
-  const selected = options.find((item) => item.location_id === locationId) ?? null;
+  // Новый платёж создаётся только по действующей точке: закрытые (по ним разбирают исторические
+  // выписки в окне разбора операции) в выборе не показываем.
+  const activeOptions = options.filter((item) => item.status === "active");
+  const selected = activeOptions.find((item) => item.location_id === locationId) ?? null;
   const leases = selected?.leases ?? [];
+
+  const recipientOf = (lease: LocationLeaseOption): LeaseRecipient => ({
+    name: lease.counterparty_name,
+    relationship: lease.relationship,
+    has_requisites: lease.has_requisites,
+    requisites_verified: lease.requisites_verified,
+    monthlyAmount: lease.monthly_amount,
+  });
+
+  const pickLocation = (value: string) =>
+    leaseBound
+      ? onChange({ locationId: value, leaseId: "", counterpartyId: "", leaseRecipient: null })
+      : onChange({ locationId: value, leaseId: "" });
+
+  const pickLandlord = (value: string) => {
+    const lease = leases.find((item) => item.lease_id === value);
+    onChange({
+      locationId,
+      leaseId: value,
+      counterpartyId: lease?.counterparty_id ?? "",
+      leaseRecipient: lease ? recipientOf(lease) : null,
+    });
+  };
+
+  // Не заставляем выбирать там, где вариант один: единственную действующую точку и (для аренды)
+  // её единственного арендодателя подставляем сами — селект остаётся только когда есть из чего
+  // выбирать. Guard на пустое поле делает эффект идемпотентным.
+  useEffect(() => {
+    if (!optionsQuery.isSuccess) return;
+    if (!locationId && activeOptions.length === 1) {
+      const only = activeOptions[0];
+      const singleLease = leaseBound && only.leases.length === 1 ? only.leases[0] : null;
+      if (leaseBound) {
+        onChange({
+          locationId: only.location_id,
+          leaseId: singleLease?.lease_id ?? "",
+          counterpartyId: singleLease?.counterparty_id ?? "",
+          leaseRecipient: singleLease ? recipientOf(singleLease) : null,
+        });
+      } else {
+        onChange({ locationId: only.location_id, leaseId: "" });
+      }
+      return;
+    }
+    if (leaseBound && locationId && !leaseId && leases.length === 1) {
+      const only = leases[0];
+      onChange({
+        locationId,
+        leaseId: only.lease_id,
+        counterpartyId: only.counterparty_id,
+        leaseRecipient: recipientOf(only),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsQuery.isSuccess, locationId, leaseId, leaseBound]);
 
   return (
     <div className="rounded-md bg-muted/40 p-2">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <Label className="text-xs font-medium">Помещение</Label>
+        <Label className="text-xs font-medium">
+          {leaseBound ? "Помещение и арендодатель" : "Помещение"}
+        </Label>
         <span className="text-[11px] text-muted-foreground">обязательное поле</span>
       </div>
       <div className="grid gap-2">
-        <Select
-          value={locationId || "none"}
-          onValueChange={(value) =>
-            onChange({ locationId: value === "none" ? "" : value, leaseId: "" })
-          }
-        >
-          <SelectTrigger className="h-8 text-sm">
-            <SelectValue placeholder="Выберите помещение" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Помещение: не выбрано</SelectItem>
-            {options.map((item) => (
-              <SelectItem key={item.location_id} value={item.location_id}>
-                {item.location_name}
-                {item.status === "inactive" ? " (закрыто)" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {activeOptions.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground">
+            Нет действующих помещений. Заведите его в Настройках → Помещения.
+          </p>
+        ) : activeOptions.length > 1 ? (
+          <Select
+            value={locationId || "none"}
+            onValueChange={(value) => pickLocation(value === "none" ? "" : value)}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Выберите помещение" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Помещение: не выбрано</SelectItem>
+              {activeOptions.map((item) => (
+                <SelectItem key={item.location_id} value={item.location_id}>
+                  {item.location_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Помещение:{" "}
+            <span className="font-medium text-foreground">{activeOptions[0]?.location_name}</span>
+          </p>
+        )}
 
-        {leases.length > 0 ? (
+        {leaseBound && selected ? (
+          leases.length > 1 ? (
+            <Select value={leaseId || undefined} onValueChange={pickLandlord}>
+              <SelectTrigger className="h-8 text-sm">
+                <SelectValue placeholder="Выберите арендодателя" />
+              </SelectTrigger>
+              <SelectContent>
+                {leases.map((lease) => (
+                  <SelectItem key={lease.lease_id} value={lease.lease_id}>
+                    {lease.counterparty_name} ·{" "}
+                    {Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : leases.length === 1 ? (
+            <p className="text-xs text-muted-foreground">
+              Арендодатель:{" "}
+              <span className="font-medium text-foreground">{leases[0].counterparty_name}</span> ·{" "}
+              {Math.round(leases[0].monthly_amount).toLocaleString("ru-RU")} ₽/мес
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              У помещения нет арендодателей. Заведите аренду в карточке помещения (Настройки →
+              Помещения).
+            </p>
+          )
+        ) : null}
+
+        {!leaseBound && selected && leases.length > 0 ? (
           <Select
             value={leaseId || "none"}
-            onValueChange={(value) => {
-              if (value === "none") {
-                onChange({ locationId, leaseId: "" });
-                return;
-              }
-              const lease = leases.find((item) => item.lease_id === value);
-              onChange({
-                locationId,
-                leaseId: value,
-                counterpartyId: lease?.counterparty_id ?? "",
-              });
-            }}
+            onValueChange={(value) =>
+              value === "none" ? onChange({ locationId, leaseId: "" }) : pickLandlord(value)
+            }
           >
             <SelectTrigger className="h-8 text-sm">
               <SelectValue placeholder="Договор аренды" />

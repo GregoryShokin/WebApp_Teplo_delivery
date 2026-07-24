@@ -26,6 +26,7 @@ from app.api.deps import require_permission
 from app.db.session import get_session
 from app.models import (
     Counterparty,
+    CounterpartyPayableProfile,
     CounterpartyRole,
     Location,
     LocationLease,
@@ -33,7 +34,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
-from app.services import counterparty_matching, lease_accruals
+from app.services import counterparty_matching, iiko_directory, lease_accruals
 from app.services import counterparty_registry as registry
 from app.services.location_analytics import leases_for_location
 
@@ -150,6 +151,37 @@ async def list_locations(
         await session.scalars(select(Location).order_by(Location.status, Location.name))
     ).all()
     return LocationListRead(items=[_payload(item) for item in locations])
+
+
+class IikoDirectoryItemRead(BaseModel):
+    id: str
+    name: str
+
+
+class IikoDirectoryRead(BaseModel):
+    # 'live' — данные из iiko; 'mock' — демо для стенда без iiko; 'unavailable' — iiko не ответил
+    # (на проде), фронт покажет ручной ввод.
+    source: Literal["live", "mock", "unavailable"]
+    organizations: list[IikoDirectoryItemRead]
+    departments: list[IikoDirectoryItemRead]
+    stores: list[IikoDirectoryItemRead]
+
+
+@router.get(
+    "/iiko-directory", response_model=IikoDirectoryRead, dependencies=LOCATIONS_READ_ACCESS
+)
+async def get_iiko_directory_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IikoDirectoryRead:
+    """Организации/подразделения/склады из iiko для выбора привязки помещения — вместо ручного
+    ввода UUID. Маршрут стоит ДО ``/{location_id}``, иначе слаг перехватится как id."""
+    directory = await iiko_directory.get_iiko_directory(session)
+    return IikoDirectoryRead(
+        source=directory.source,  # type: ignore[arg-type]
+        organizations=[IikoDirectoryItemRead(**item) for item in directory.organizations],
+        departments=[IikoDirectoryItemRead(**item) for item in directory.departments],
+        stores=[IikoDirectoryItemRead(**item) for item in directory.stores],
+    )
 
 
 @router.get("/{location_id}", response_model=LocationRead, dependencies=LOCATIONS_READ_ACCESS)
@@ -588,6 +620,12 @@ async def update_location_lease(
     lease.ended_on = payload.ended_on
     lease.note = (payload.note or "").strip() or None
     lease.dds_article_id = payload.dds_article_id
+    # Смена ставки/условий доходит до ДЗ/КЗ: пересобираем открытое обязательство текущего месяца
+    # (прошлые — в силе, их не трогаем). Новое здесь не заводим — начисление стартует джобой или
+    # кнопкой пересбора, а правка договора не должна начислять там, где начисления ещё не было.
+    await lease_accruals.rebuild_lease_invoice(
+        session, lease, date.today(), create_if_missing=False
+    )
     await session.commit()
     await session.refresh(lease)
     return _lease_payload(lease, location.name, counterparty.name)
@@ -724,6 +762,11 @@ class LocationLeaseOptionRead(BaseModel):
     monthly_amount: float
     payment_day: int | None
     documents_mode: Literal["official", "informal"]
+    # Реквизитный контур арендодателя — чтобы окно платежа выбрало канал само (банк по
+    # реквизитам / карта ИП → Сейф / наличные), той же логикой, что и для контрагента.
+    relationship: str
+    has_requisites: bool
+    requisites_verified: bool
 
 
 class LocationOptionRead(BaseModel):
@@ -767,6 +810,11 @@ async def list_location_options(
         options: list[LocationLeaseOptionRead] = []
         for lease in leases:
             counterparty = await session.get(Counterparty, lease.counterparty_id)
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == lease.counterparty_id
+                )
+            )
             options.append(
                 LocationLeaseOptionRead(
                     lease_id=lease.id,
@@ -775,6 +823,11 @@ async def list_location_options(
                     monthly_amount=float(lease.monthly_amount),
                     payment_day=lease.payment_day,
                     documents_mode=lease.documents_mode,  # type: ignore[arg-type]
+                    # Профиля может не быть у только что заведённого арендодателя — тогда без
+                    # реквизитов (informal): платёж пойдёт через Сейф/наличные, а не в банк.
+                    relationship=profile.relationship if profile else "informal",
+                    has_requisites=bool(profile.requisites) if profile else False,
+                    requisites_verified=bool(profile.requisites_verified) if profile else False,
                 )
             )
         items.append(
@@ -831,7 +884,7 @@ async def rebuild_lease_accrual(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
         )
-    await lease_accruals.ensure_lease_invoice(session, lease, month or date.today())
+    await lease_accruals.rebuild_lease_invoice(session, lease, month or date.today())
     await session.commit()
     return await _lease_ledger(session, lease)
 

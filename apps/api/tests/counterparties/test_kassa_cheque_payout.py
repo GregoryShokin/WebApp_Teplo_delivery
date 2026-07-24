@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.kassa.cheque_payout_push as payout
 from app.models import ChequeIikoPayout, InvoiceLineItem, InvoicePaymentAllocation, Wallet
+from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque import ChequeBankPart, ChequeLineInput, create_cheque
 from app.services.kassa.cheque_payout_push import (
     _build_payout_type_index,
@@ -219,7 +220,7 @@ async def test_posts_card_only_expense(
         assert report.posted == 1 and report.failed == 0
         assert len(calls) == 1
         assert calls[0]["payOutTypeId"] == "T_FOOD_CARD"
-        assert calls[0]["departmentSumMap"][payout.CHERNIKOVA_DEPARTMENT_ID] == 300.0
+        assert calls[0]["departmentSumMap"][get_department_id()] == 300.0
         rows = await _payouts(session, cheque.id)
         assert len(rows) == 1
         assert rows[0].status == "posted" and rows[0].source == "card"
@@ -259,7 +260,7 @@ async def test_splits_expense_between_card_and_cash(
 
         assert report.posted == 2
         by_type = {
-            c["payOutTypeId"]: c["departmentSumMap"][payout.CHERNIKOVA_DEPARTMENT_ID] for c in calls
+            c["payOutTypeId"]: c["departmentSumMap"][get_department_id()] for c in calls
         }
         assert by_type == {"T_FOOD_CARD": 300.0, "T_FOOD_CASH": 200.0}
         rows = {(r.source, r.status) for r in await _payouts(session, cheque.id)}
@@ -436,7 +437,7 @@ async def test_invoice_goods_and_staff_split_by_article(
 
         assert report.posted == 2 and report.failed == 0
         by_type = {
-            c["payOutTypeId"]: c["departmentSumMap"][payout.CHERNIKOVA_DEPARTMENT_ID] for c in calls
+            c["payOutTypeId"]: c["departmentSumMap"][get_department_id()] for c in calls
         }
         # товар → оплата поставщикам (эквайринг), персонал → своя статья (эквайринг)
         assert by_type == {"T_SUP_CARD": 200.0, "T_FOOD_CARD": 100.0}

@@ -477,8 +477,16 @@ export function OperationClassifyDialog({
     articles.filter((a) => a.location_required).map((a) => a.id),
   );
   const requiresLocation = (item: SplitRow) => rentArticleIds.has(item.articleId);
+  // Статьи-аренды помещения: получатель — только арендодатель договора, свободный контрагент
+  // скрыт, а арендодатель обязателен (в отличие от коммуналки/охраны — там помещение без аренды).
+  const leaseBoundArticleIds = new Set(
+    articles.filter((a) => a.lease_bound).map((a) => a.id),
+  );
+  const isLeaseBoundRow = (item: SplitRow) => leaseBoundArticleIds.has(item.articleId);
   const rowMissingLocation = rows.some(
-    (item) => requiresLocation(item) && !item.locationId,
+    (item) =>
+      requiresLocation(item) &&
+      (!item.locationId || (isLeaseBoundRow(item) && !item.leaseId)),
   );
   const requiresCounterparty = (item: SplitRow) =>
     item.articleId === advanceArticleId || item.articleId === supplierPaymentArticleId;
@@ -894,12 +902,14 @@ export function OperationClassifyDialog({
                 {requiresLocation(detailRow) ? (
                   <OperationLocationPicker
                     articleId={detailRow.articleId}
+                    leaseBound={isLeaseBoundRow(detailRow)}
                     locationId={detailRow.locationId}
                     leaseId={detailRow.leaseId}
                     onChange={(patch) => updateRow(detailRow.key, patch)}
                   />
                 ) : null}
-                {isOperation && detailRow.createNewCounterparty ? (
+                {isLeaseBoundRow(detailRow) ? null : isOperation &&
+                  detailRow.createNewCounterparty ? (
                   <div className="flex items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
                     <span>
                       Будет создан: <span className="font-medium">{row.counterparty_name_raw}</span>
@@ -998,11 +1008,13 @@ export function OperationClassifyDialog({
  */
 function OperationLocationPicker({
   articleId,
+  leaseBound,
   locationId,
   leaseId,
   onChange,
 }: {
   articleId: string;
+  leaseBound: boolean;
   locationId: string;
   leaseId: string;
   onChange: (patch: { locationId: string; leaseId: string; counterpartyId?: string }) => void;
@@ -1020,11 +1032,31 @@ function OperationLocationPicker({
     label: item.status === "inactive" ? `${item.location_name} (закрыто)` : item.location_name,
     keywords: item.location_name,
   }));
-  const leaseOptions: ComboboxOption[] = (selected?.leases ?? []).map((lease) => ({
+  const leases = selected?.leases ?? [];
+  const leaseOptions: ComboboxOption[] = leases.map((lease) => ({
     value: lease.lease_id,
     label: `${lease.counterparty_name} · ${Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес`,
     keywords: lease.counterparty_name,
   }));
+
+  // Не заставляем выбирать там, где вариант один. Закрытые точки тут НЕ прячем — по ним разбирают
+  // исторические выписки, — поэтому помещение подставляется само лишь при единственной точке во
+  // всём списке; единственного арендодателя выбранной точки подставляем для арендной статьи.
+  useEffect(() => {
+    if (!optionsQuery.isSuccess) return;
+    if (!locationId && options.length === 1) {
+      onChange({ locationId: options[0].location_id, leaseId: "" });
+      return;
+    }
+    if (leaseBound && locationId && !leaseId && leases.length === 1) {
+      onChange({
+        locationId,
+        leaseId: leases[0].lease_id,
+        counterpartyId: leases[0].counterparty_id,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionsQuery.isSuccess, locationId, leaseId, leaseBound]);
 
   return (
     <div className="space-y-2 rounded-md border p-2">
@@ -1041,7 +1073,7 @@ function OperationLocationPicker({
       </div>
       {selected && leaseOptions.length > 0 ? (
         <div className="space-y-1">
-          <Label className="text-sm">Договор аренды</Label>
+          <Label className="text-sm">{leaseBound ? "Арендодатель" : "Договор аренды"}</Label>
           <InlineOptionList
             options={leaseOptions}
             value={leaseId}
@@ -1058,10 +1090,17 @@ function OperationLocationPicker({
             listClassName="max-h-40"
             autoFocus={false}
           />
-          <p className="text-xs text-muted-foreground">
-            Без договора — прочий расход по помещению (мусор, охрана): выберите контрагента ниже.
-          </p>
+          {leaseBound ? null : (
+            <p className="text-xs text-muted-foreground">
+              Без договора — прочий расход по помещению (мусор, охрана): выберите контрагента ниже.
+            </p>
+          )}
         </div>
+      ) : selected && leaseBound ? (
+        <p className="text-xs text-muted-foreground">
+          У помещения нет арендодателей. Заведите аренду в карточке помещения (Настройки →
+          Помещения).
+        </p>
       ) : null}
     </div>
   );

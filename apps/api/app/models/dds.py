@@ -109,6 +109,13 @@ class DdsArticle(Base):
     location_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Статья-аренда помещения: получатель — ТОЛЬКО арендодатель из договора аренды помещения,
+    # свободный выбор «кому платим» на такой статье скрыт (иначе платёж уехал бы чужому лицу под
+    # видом аренды). Подмножество ``location_required``: у коммуналки/охраны помещение есть, а
+    # зарегистрированного арендодателя нет — там свободный контрагент остаётся.
+    lease_bound: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

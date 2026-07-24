@@ -29,7 +29,9 @@ import {
   closeLocationLease,
   createLocationLease,
   getDdsArticles,
+  getLeaseLedger,
   getLocationLeases,
+  rebuildLeaseAccrual,
   replaceLeaseLandlord,
   updateLocationLease,
   type LandlordInput,
@@ -182,6 +184,119 @@ function LandlordFields({
               onChange={(event) => setForm({ ...form, corrAccount: event.target.value })}
             />
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Начисления и долг по одному договору: раскрывающийся блок в карточке аренды. Данные тянем
+ * лениво — только когда оператор раскрыл. Кнопка «Пересобрать» гонит обязательство текущего
+ * месяца под текущие условия договора (открытое обновит, прошлое в силе не тронет).
+ */
+function LeaseLedgerPanel({
+  locationId,
+  lease,
+  canEdit,
+}: {
+  locationId: string;
+  lease: LeaseRecord;
+  canEdit: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const ledgerQuery = useQuery({
+    queryKey: ["lease-ledger", locationId, lease.id],
+    queryFn: () => getLeaseLedger(locationId, lease.id),
+    enabled: open,
+  });
+  const rebuildMutation = useMutation({
+    mutationFn: () => rebuildLeaseAccrual(locationId, lease.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["lease-ledger", locationId, lease.id] });
+      toast.success("Начисления пересобраны за текущий месяц");
+    },
+    onError: (error) => toast.error(apiErrorMessage(error)),
+  });
+  const ledger = ledgerQuery.data;
+
+  return (
+    <div className="mt-2 border-t pt-2">
+      <button
+        type="button"
+        className="text-xs text-muted-foreground hover:underline"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Скрыть начисления" : "Начисления и долг"}
+      </button>
+      {open ? (
+        <div className="mt-2 space-y-2">
+          {ledgerQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+              Загружаем начисления…
+            </div>
+          ) : ledger ? (
+            <>
+              {ledger.accruals.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Начислений пока нет — они появятся ночной джобой или по кнопке «Пересобрать».
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {ledger.accruals.map((accrual) => (
+                    <div
+                      key={accrual.invoice_id}
+                      className="flex flex-wrap items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="text-muted-foreground">
+                        {accrual.period_start && accrual.period_end
+                          ? `${accrual.period_start} — ${accrual.period_end}`
+                          : accrual.number}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-medium">{money.format(accrual.amount)}</span>
+                        <Badge variant={accrual.activation_status === "active" ? "secondary" : "outline"}>
+                          {accrual.activation_status === "active" ? "в силе" : "ждёт даты"}
+                        </Badge>
+                        <Badge variant={accrual.payment_status === "paid" ? "secondary" : "outline"}>
+                          {accrual.payment_status === "paid"
+                            ? "оплачено"
+                            : accrual.paid_amount > 0
+                              ? `частично ${money.format(accrual.paid_amount)}`
+                              : "не оплачено"}
+                        </Badge>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>Начислено: {money.format(ledger.accrued_total)}</span>
+                <span>Оплачено: {money.format(ledger.paid_total)}</span>
+                <span className="font-medium text-foreground">
+                  Долг: {money.format(ledger.outstanding_total)}
+                </span>
+                {ledger.deposit_outstanding > 0 ? (
+                  <span>Залог: {money.format(ledger.deposit_outstanding)}</span>
+                ) : null}
+              </div>
+              {canEdit ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={rebuildMutation.isPending}
+                  onClick={() => rebuildMutation.mutate()}
+                >
+                  {rebuildMutation.isPending ? (
+                    <LoaderCircle className="mr-1 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Пересобрать текущий месяц
+                </Button>
+              ) : null}
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -398,6 +513,7 @@ export function LocationLeases({
                 </div>
               ) : null}
             </div>
+            <LeaseLedgerPanel locationId={locationId} lease={lease} canEdit={canEdit} />
           </div>
         ))}
 

@@ -23,9 +23,9 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from app.services.deposit_iiko_payout_production import (
     ADD_PAYOUT_PATH,
-    CHERNIKOVA_DEPARTMENT_ID,
     PAYOUT_TYPES_PATH,
 )
+from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque_payout_push import _build_payout_type_index
 from app.services.kassa.iiko_cashshift_sync import (
     _auth_token,
@@ -40,7 +40,11 @@ logger = logging.getLogger(__name__)
 # банковская выдача (эквайринг, Фаза 2) — под «Денежные средства, эквайринг». Счёт и код
 # статьи одинаковые («Текущие расчёты с сотрудниками» / 39), различается только корсчёт.
 ADVANCE_CASH_PAYOUT_TYPE_KEY = ("Главная касса", "Текущие расчеты с сотрудниками", "39")
-ADVANCE_BANK_PAYOUT_TYPE_KEY = ("Денежные средства, эквайринг", "Текущие расчеты с сотрудниками", "39")
+ADVANCE_BANK_PAYOUT_TYPE_KEY = (
+    "Денежные средства, эквайринг",
+    "Текущие расчеты с сотрудниками",
+    "39",
+)
 
 
 def post_advance_payout_to_iiko(
@@ -76,7 +80,7 @@ def post_advance_payout_to_iiko(
         body = {
             "payOutTypeId": type_id,
             "payOutDate": payout_date.isoformat(),
-            "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(value)},
+            "departmentSumMap": {get_department_id(): float(value)},
             "comment": f"Выдача {kind_label} сотруднику (операция {source_id})",
         }
         data = _iiko_post(token, ADD_PAYOUT_PATH, body)

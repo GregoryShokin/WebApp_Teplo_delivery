@@ -2317,6 +2317,8 @@ export type DdsArticleRead = {
   // Расход по статье обязан указывать помещение (аренда, коммуналка): фронт требует его в
   // строке разбора и в окне платежа, а для аренды предлагает арендодателей помещения.
   location_required: boolean;
+  // Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
+  lease_bound: boolean;
   description: string | null;
   aliases: DdsAliasRead[];
 };
@@ -2746,6 +2748,8 @@ export type NewPaymentArticle = {
   counterparties?: NewPaymentArticleCounterparty[];
   // Статье нужна аналитика по помещению (аренда): форма требует помещение и арендодателя.
   location_required?: boolean;
+  // Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
+  lease_bound?: boolean;
 };
 
 export type NewPaymentWallet = {
@@ -3297,6 +3301,22 @@ export async function getLocations(): Promise<LocationRecord[]> {
   return response.data.items;
 }
 
+export type IikoDirectoryItem = { id: string; name: string };
+
+export type IikoDirectory = {
+  // live — данные из iiko; mock — демо на стенде без iiko; unavailable — iiko не ответил (прод).
+  source: "live" | "mock" | "unavailable";
+  organizations: IikoDirectoryItem[];
+  departments: IikoDirectoryItem[];
+  stores: IikoDirectoryItem[];
+};
+
+/** Организации/подразделения/склады из iiko — чтобы выбрать привязку помещения, а не вводить ID. */
+export async function getIikoDirectory(): Promise<IikoDirectory> {
+  const response = await api.get<IikoDirectory>("/locations/iiko-directory");
+  return response.data;
+}
+
 export async function createLocation(payload: LocationPayload): Promise<LocationRecord> {
   const response = await api.post<LocationRecord>("/locations", payload);
   return response.data;
@@ -3364,6 +3384,53 @@ export async function getLocationLeases(locationId: string): Promise<LeaseRecord
   return response.data.items;
 }
 
+export type LeaseAccrual = {
+  invoice_id: string;
+  number: string | null;
+  invoice_date: string | null;
+  amount: number;
+  paid_amount: number;
+  // 'unpaid' | 'partially_paid' | 'paid' | …
+  payment_status: string;
+  // 'active' — обязательство в силе (в КЗ); 'pending' — будущий документ, ждёт своей даты.
+  activation_status: string;
+  period_start: string | null;
+  period_end: string | null;
+};
+
+export type LeaseLedger = {
+  accruals: LeaseAccrual[];
+  accrued_total: number;
+  paid_total: number;
+  outstanding_total: number;
+  deposit_outstanding: number;
+};
+
+/** Начисления и оплаты по договору аренды: что начислено, что оплачено, сколько висит залога. */
+export async function getLeaseLedger(
+  locationId: string,
+  leaseId: string,
+): Promise<LeaseLedger> {
+  const response = await api.get<LeaseLedger>(
+    `/locations/${locationId}/leases/${leaseId}/ledger`,
+  );
+  return response.data;
+}
+
+/** Пересобрать обязательство за месяц (по умолчанию текущий) под текущие условия договора. */
+export async function rebuildLeaseAccrual(
+  locationId: string,
+  leaseId: string,
+  month?: string,
+): Promise<LeaseLedger> {
+  const response = await api.post<LeaseLedger>(
+    `/locations/${locationId}/leases/${leaseId}/accruals/rebuild`,
+    undefined,
+    { params: month ? { month } : undefined },
+  );
+  return response.data;
+}
+
 export async function createLocationLease(
   locationId: string,
   payload: LeasePayload,
@@ -3417,6 +3484,10 @@ export type LocationLeaseOption = {
   monthly_amount: number;
   payment_day: number | null;
   documents_mode: "official" | "informal";
+  // Реквизитный контур арендодателя — окно платежа выбирает канал (банк / карта ИП / наличные).
+  relationship: string;
+  has_requisites: boolean;
+  requisites_verified: boolean;
 };
 
 export type LocationOption = {

@@ -25,6 +25,7 @@ from app.models import (
 from app.services.lease_accruals import (
     ensure_lease_invoice,
     invoice_date_for,
+    rebuild_lease_invoice,
     settle_lease_invoice_from_cash,
 )
 
@@ -210,6 +211,76 @@ def test_lease_not_active_in_month_does_not_accrue(async_session_factory) -> Non
             assert await ensure_lease_invoice(session, lease, date(2026, 4, 1)) is None
             assert await ensure_lease_invoice(session, lease, date(2026, 7, 1)) is None
             assert await ensure_lease_invoice(session, lease, date(2026, 6, 1)) is not None
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_rebuild_updates_open_pending_obligation(async_session_factory) -> None:
+    """Смена ставки доходит до открытого (pending) обязательства — и до строки P&L."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, amount="100000")
+            future = date(2099, 1, 1)
+            invoice = await ensure_lease_invoice(session, lease, future)
+            assert invoice is not None
+            assert invoice.activation_status == "pending"
+
+            lease.monthly_amount = Decimal("50000")
+            result, action = await rebuild_lease_invoice(session, lease, future)
+            assert action == "updated"
+            assert result is not None
+            assert result.amount == Decimal("50000")
+
+            accrual = await session.scalar(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.invoice_id == invoice.id
+                )
+            )
+            assert accrual is not None
+            assert accrual.amount == Decimal("50000")
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_rebuild_keeps_obligation_in_force(async_session_factory) -> None:
+    """Обязательство в силе — история: пересбор его не переписывает даже при смене ставки."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, amount="100000")
+            invoice = await ensure_lease_invoice(session, lease, date(2099, 1, 1))
+            assert invoice is not None
+            invoice.activation_status = "active"  # документ уже вступил в силу
+            await session.flush()
+
+            lease.monthly_amount = Decimal("50000")
+            result, action = await rebuild_lease_invoice(session, lease, date(2099, 1, 1))
+            assert action == "kept"
+            assert result is not None
+            assert result.amount == Decimal("100000")
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_rebuild_without_create_skips_missing(async_session_factory) -> None:
+    """Правка договора не заводит обязательство там, где начисления ещё не было."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session)
+            result, action = await rebuild_lease_invoice(
+                session, lease, date(2099, 1, 1), create_if_missing=False
+            )
+            assert result is None
+            assert action == "skipped"
+            created = await session.scalar(
+                select(SupplierInvoice).where(SupplierInvoice.source == "lease")
+            )
+            assert created is None
             await session.rollback()
 
     asyncio.run(run())

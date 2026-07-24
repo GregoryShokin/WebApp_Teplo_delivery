@@ -43,6 +43,7 @@ from app.models import (
     ReconciliationCase,
     SupplierInvoice,
 )
+from app.services.iiko_location import get_organization_id
 
 logger = logging.getLogger(__name__)
 _MSK = ZoneInfo("Europe/Moscow")
@@ -50,9 +51,6 @@ _MSK = ZoneInfo("Europe/Moscow")
 _IIKO_BASE = "https://api-ru.iiko.services"
 _ACCESS_TOKEN_PATH = "/api/v2/access_token"
 _ADD_PAYMENT_PATH = "/api/inventory/v1/incoming_invoice/modify/add_payment"
-
-# Организация Cloud — «Foodmarket Тепло Черникова» (получено из /api/1/organizations).
-IIKO_ORGANIZATION_ID = "5c7e51f9-93c6-450c-9299-440ac1c889e8"
 # Счёт-источник денег для зеркала банковской оплаты — «Денежные средства, эквайринг» (решение
 # владельца: расчёты по банку iiko ведёт через эквайринг, НЕ через «Денежные средства, банк»).
 IIKO_ACQUIRING_ACCOUNT = "3f261590-f208-2970-1300-95d2493a3c28"
@@ -399,7 +397,7 @@ def build_add_payment_payload(
     *, external_id: str, amount: Decimal, account_id: str, payment_dt: datetime
 ) -> dict:
     return {
-        "organizationId": IIKO_ORGANIZATION_ID,
+        "organizationId": get_organization_id(),
         "documentId": external_id,
         "paymentDate": format_iiko_payment_date(payment_dt),
         "accountId": account_id,

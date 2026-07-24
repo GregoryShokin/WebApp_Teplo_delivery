@@ -49,8 +49,9 @@ from app.models import (
     SupplierInvoiceTombstone,
 )
 from app.services.counterparty_registry import compute_invoice_due_date
-from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_auth_token, iiko_opener
+from app.services.iiko_cloud_client import iiko_auth_token, iiko_opener
 from app.services.iiko_invoice_cloud import get_invoice, list_invoices
+from app.services.iiko_location import get_organization_id
 
 # Reuse the iiko credential loader (DB SourceCredential -> env) used by employee sync.
 from app.services.iiko_sync import _load_source_credential_env
@@ -811,7 +812,7 @@ def _fetch_cloud_document(direction: str, document_id: str, *, token, opener) ->
     delays = iter(_CLOUD_GET_RETRY_DELAYS)
     while True:
         status, resp = get_invoice(
-            direction, IIKO_ORGANIZATION_ID, document_id, token=token, opener=opener
+            direction, get_organization_id(), document_id, token=token, opener=opener
         )
         if status == 429:
             delay = next(delays, None)
@@ -837,7 +838,7 @@ def _fetch_cloud_documents(
     while True:
         status, resp = list_invoices(
             direction,
-            IIKO_ORGANIZATION_ID,
+            get_organization_id(),
             date_from=date_from.isoformat(),
             date_to=date_to.isoformat(),
             token=token,

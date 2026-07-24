@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from app.services.iiko_cloud_client import IIKO_ORGANIZATION_ID, iiko_cloud_call
+from app.services.iiko_cloud_client import iiko_cloud_call
+from app.services.iiko_location import get_organization_id
 
 _MSK = ZoneInfo("Europe/Moscow")
 ZERO_GUID = "00000000-0000-0000-0000-000000000000"
@@ -128,7 +129,7 @@ class CloudInvoiceDoc:
     default_store: str | None = None
     incoming_date: datetime | None = None  # только incoming (дата поступления)
     document_id: str | None = None       # обязателен для update
-    organization_id: str = IIKO_ORGANIZATION_ID
+    organization_id: str = field(default_factory=get_organization_id)
     extra: dict = field(default_factory=dict)  # необязательные поля (dueDate, comment, ...)
 
 

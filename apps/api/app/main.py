@@ -10,7 +10,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.db.session import AsyncSessionLocal
 from app.jobs.scheduler import get_scheduler
-from app.services import position_registry
+from app.services import iiko_location, position_registry
 
 
 @asynccontextmanager
@@ -18,6 +18,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         async with AsyncSessionLocal() as session:
             await position_registry.refresh_position_registry(session)
+            # Прогреваем id основной точки из реестра для синхронных iiko-контуров (выплаты,
+            # накладные). Без БД остаёмся на fallback-константах — поведение прежнее.
+            await iiko_location.warm_iiko_location_cache(session)
     except Exception:  # noqa: BLE001 - без БД работаем на встроенном каноне
         pass
     scheduler = get_scheduler()

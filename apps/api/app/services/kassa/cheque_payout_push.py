@@ -38,6 +38,7 @@ from app.models import (
     SupplierInvoice,
     Wallet,
 )
+from app.services.iiko_location import get_department_id
 from app.services.kassa.iiko_cashshift_sync import (
     _auth_token,
     _fetch_accounts_map,
@@ -47,9 +48,6 @@ from app.services.kassa.iiko_cashshift_sync import (
 from app.services.wallets import CASH_WALLET_TYPES
 
 logger = logging.getLogger(__name__)
-
-# Подразделение проводки — «Foodmarket Тепло Черникова» (departmentSumMap).
-CHERNIKOVA_DEPARTMENT_ID = "d8d4a22e-3abd-4f02-b82d-7d4712f32729"
 
 # Счёт-источник изъятия по способу оплаты доли. Резолвится по ИМЕНИ (id dev/prod различны).
 CHIEF_ACCOUNT_NAME_BY_SOURCE = {
@@ -142,7 +140,7 @@ def _add_pay_out(
     body: dict[str, Any] = {
         "payOutTypeId": pay_out_type_id,
         "payOutDate": pay_out_date,
-        "departmentSumMap": {CHERNIKOVA_DEPARTMENT_ID: float(amount)},
+        "departmentSumMap": {get_department_id(): float(amount)},
         "comment": comment,
     }
     # Корсчёт «Задолженность перед поставщиками» (оплата поставок) требует контрагента.

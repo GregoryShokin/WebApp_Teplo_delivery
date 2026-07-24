@@ -8,6 +8,7 @@ from typing import Any
 import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.iiko_location import get_revenue_department_name
 from app.services.iiko_sync import (
     _load_export_employees_module,
     _load_source_credential_env,
@@ -15,7 +16,6 @@ from app.services.iiko_sync import (
 )
 
 IIKO_REVENUE_ENDPOINT = "/v2/reports/olap"
-IIKO_REVENUE_DEPARTMENT = "Foodmarket Тепло Черникова"
 IIKO_REVENUE_GROUP_BY_ROW_FIELDS = ["OpenDate.Typed"]
 IIKO_REVENUE_AGGREGATE_FIELDS = ["DishDiscountSumInt"]
 IIKO_REVENUE_DATE_FIELD = "OpenDate.Typed"
@@ -68,7 +68,7 @@ def build_daily_revenue_olap_body(date_from: dt.date, date_to: dt.date) -> dict[
             },
             "Department": {
                 "filterType": "IncludeValues",
-                "values": [IIKO_REVENUE_DEPARTMENT],
+                "values": [get_revenue_department_name()],
             },
         },
     }

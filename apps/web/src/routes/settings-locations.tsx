@@ -28,6 +28,7 @@ import { LocationLeases } from "@/routes/settings-location-leases";
 import {
   apiErrorMessage,
   createLocation,
+  getIikoDirectory,
   getLocations,
   updateLocation,
   type LocationKind,
@@ -105,15 +106,31 @@ export function LocationsPanel({ canEdit }: { canEdit: boolean }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LocationRecord | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  // Ручной ввод iiko-ID — запасной путь: помещение без iiko или когда справочник недоступен.
+  const [manualIiko, setManualIiko] = useState(false);
 
   const locationsQuery = useQuery({ queryKey: ["locations"], queryFn: getLocations });
+  const iikoDirQuery = useQuery({
+    queryKey: ["iiko-directory"],
+    queryFn: getIikoDirectory,
+    enabled: dialogOpen,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     if (!dialogOpen) {
       return;
     }
     setForm(editing ? toForm(editing) : EMPTY_FORM);
+    setManualIiko(false);
   }, [dialogOpen, editing]);
+
+  const iikoDir = iikoDirQuery.data;
+  const hasIikoDirectory =
+    !!iikoDir &&
+    iikoDir.source !== "unavailable" &&
+    iikoDir.organizations.length + iikoDir.departments.length + iikoDir.stores.length > 0;
+  const showManualIiko = manualIiko || !hasIikoDirectory;
 
   const saveMutation = useMutation({
     mutationFn: async (payload: LocationPayload) =>
@@ -323,42 +340,108 @@ export function LocationsPanel({ canEdit }: { canEdit: boolean }) {
             </div>
 
             <div className="rounded-md border p-3">
-              <div className="text-sm font-medium">Привязка к iiko</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Организация нужна для накладных и платежей поставщикам, подразделение — для
-                выручки и кассовых смен, склады — для остатков и инвентаризаций.
-              </p>
-              <div className="mt-3 space-y-3">
-                <div className="space-y-1">
-                  <Label htmlFor="location-org">Организация (organizationId)</Label>
-                  <Input
-                    id="location-org"
-                    value={form.iikoOrganizationId}
-                    onChange={(event) =>
-                      setForm({ ...form, iikoOrganizationId: event.target.value })
-                    }
-                    placeholder="5c7e51f9-…"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="location-dep">Подразделение (departmentId)</Label>
-                  <Input
-                    id="location-dep"
-                    value={form.iikoDepartmentId}
-                    onChange={(event) => setForm({ ...form, iikoDepartmentId: event.target.value })}
-                    placeholder="d8d4a22e-…"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="location-stores">Склады (storeId через запятую)</Label>
-                  <Input
-                    id="location-stores"
-                    value={form.iikoStoreIds}
-                    onChange={(event) => setForm({ ...form, iikoStoreIds: event.target.value })}
-                    placeholder="склад кухни, склад бара"
-                  />
-                </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-medium">Привязка к iiko</div>
+                {hasIikoDirectory ? (
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => setManualIiko((value) => !value)}
+                  >
+                    {showManualIiko ? "Выбрать из iiko" : "Ввести ID вручную"}
+                  </button>
+                ) : null}
               </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Организация — для накладных и платежей поставщикам, подразделение — для выручки и
+                смен, склады — для остатков и инвентаризаций.
+              </p>
+
+              {iikoDirQuery.isLoading ? (
+                <p className="mt-3 text-xs text-muted-foreground">Загрузка справочника iiko…</p>
+              ) : showManualIiko ? (
+                <div className="mt-3 space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="location-org">Организация (organizationId)</Label>
+                    <Input
+                      id="location-org"
+                      autoComplete="off"
+                      value={form.iikoOrganizationId}
+                      onChange={(event) =>
+                        setForm({ ...form, iikoOrganizationId: event.target.value })
+                      }
+                      placeholder="5c7e51f9-…"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="location-dep">Подразделение (departmentId)</Label>
+                    <Input
+                      id="location-dep"
+                      autoComplete="off"
+                      value={form.iikoDepartmentId}
+                      onChange={(event) =>
+                        setForm({ ...form, iikoDepartmentId: event.target.value })
+                      }
+                      placeholder="d8d4a22e-…"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {iikoDir?.source === "mock" ? (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+                      Демонстрационные данные iiko — стенд без подключения. На проде подтянутся
+                      реальные организации и подразделения.
+                    </p>
+                  ) : null}
+                  <div className="space-y-1">
+                    <Label>Организация</Label>
+                    <Select
+                      value={form.iikoOrganizationId || "none"}
+                      onValueChange={(value) =>
+                        setForm({ ...form, iikoOrganizationId: value === "none" ? "" : value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите организацию" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не выбрано</SelectItem>
+                        {iikoDir!.organizations.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Подразделение</Label>
+                    <Select
+                      value={form.iikoDepartmentId || "none"}
+                      onValueChange={(value) =>
+                        setForm({ ...form, iikoDepartmentId: value === "none" ? "" : value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите подразделение" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не выбрано</SelectItem>
+                        {iikoDir!.departments.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Организация открывает доступ ко всем складам — конкретные склады выбираются
+                    в модуле остатков и ревизий, не здесь.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
