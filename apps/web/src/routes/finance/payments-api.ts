@@ -3,7 +3,16 @@ import { api } from "@/lib/api";
 // Одна нормализованная строка платежа из агрегатора (см. finance_payments.py).
 export type PaymentRow = {
   id: string;
-  source: "invoice" | "draft" | "reserve" | "payroll_draft" | "deposit_draft" | "advance_draft";
+  source:
+    | "invoice"
+    | "draft"
+    | "reserve"
+    | "payroll_draft"
+    | "deposit_draft"
+    | "advance_draft"
+    // Разовая выплата сотруднику (окно «Новый платёж» по зарплатной статье): ждёт исполнения
+    // в банке, подтверждается статусом платёжного документа или привязкой операции выписки.
+    | "employee_payout";
   kind: string;
   ref_id: string;
   title: string;

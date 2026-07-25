@@ -16,6 +16,9 @@
 4. **Банк-черновики выплаты ЗП** — ``PayrollBankDraft`` в статусе «Отправлен в банк»;
    удалённый в банке черновик возвращается в «Готовы к отправке». После оплаты выполняется
    транзит на Сейф-резерв, а черновик уходит в историю.
+5. **Разовые выплаты сотрудникам** — ``EmployeePayout`` банковского контура (окно «Новый
+   платёж» по зарплатной статье): ``pending`` — «Отправлен в банк». Зеркало депозита/аванса —
+   после оплаты деньги транзитом уходят на Сейф и представлены Сейф-резервом.
 
 Нормализованное состояние и раскладка по 4 корзинам активной модалки FAB:
 
@@ -41,7 +44,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -53,6 +56,7 @@ from app.models import (
     DepositBankDraft,
     EmailInvoiceIntake,
     Employee,
+    EmployeePayout,
     PayrollBankDraft,
     PayrollLine,
     PayrollPayment,
@@ -631,6 +635,77 @@ async def _deposit_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     return items
 
 
+async def _employee_payout_items(session: AsyncSession) -> list[PaymentItem]:
+    """Разовые выплаты сотрудникам — «Отправлен в банк» (``pending``).
+
+    Окно «Новый платёж» → зарплатная статья: черновик Т-Банка на карту ИП. После оплаты
+    (вебхук/поллинг) деньги транзитом уходят на Сейф и представлены Сейф-резервом — сама
+    выплата уходит в историю, чтобы одна выдача не висела двумя строками. Ошибка банка
+    (``failed``) корзины не имеет, но в истории видна с причиной.
+
+    Берём только платёжный контур: ``pending``/``failed`` (в т.ч. Сбер — там черновика нет,
+    выплата ждёт ручной привязки операции) и исполненные банковские. Наличная выплата
+    создаётся сразу ``paid`` без ``document_id`` — это мгновенный факт, а не платёж витрины;
+    ``draft``/``included`` — контур ведомости («Включить в выплату»).
+    """
+    rows = (
+        await session.execute(
+            select(EmployeePayout, Employee.full_name)
+            .outerjoin(Employee, Employee.id == EmployeePayout.employee_id)
+            .where(
+                or_(
+                    EmployeePayout.status.in_(("pending", "failed")),
+                    and_(
+                        EmployeePayout.status == "paid",
+                        EmployeePayout.document_id.is_not(None),
+                    ),
+                )
+            )
+        )
+    ).all()
+    article_names = await _article_names(session, {p.article_id for p, _n in rows})
+
+    items: list[PaymentItem] = []
+    for payout, employee_name in rows:
+        state = {"pending": "in_bank", "failed": "failed", "paid": "paid"}[payout.status]
+        recipient = employee_name or "сотрудник"
+        items.append(
+            PaymentItem(
+                id=f"employee_payout:{payout.id}",
+                source="employee_payout",
+                kind="employee_payout",
+                ref_id=payout.id,
+                title=f"Выплата сотруднику — {recipient} · {_fmt_money(Decimal(payout.amount))}",
+                counterparty_id=None,
+                counterparty_name=None,
+                amount=Decimal(payout.amount),
+                amount_paid=None,
+                article_id=payout.article_id,
+                article_name=article_names.get(payout.article_id) if payout.article_id else None,
+                method="bank",
+                bank_channel="tbank",
+                state=state,
+                bucket=BUCKET_BY_STATE.get(state),
+                created_at=payout.created_at,
+                can_edit=False,
+                can_send_to_bank=False,
+                # Оплату подтверждает банк; привязка операции выписки — запасной ручной путь
+                # (кнопка «Привязать операцию» на карточке, см. can_link_operation).
+                can_pay=False,
+                can_cancel=False,
+                extra={
+                    "employee_payout": True,
+                    "employee_id": str(payout.employee_id),
+                    "employee_name": employee_name,
+                    "payout_date": payout.payout_date.isoformat(),
+                    "can_link_operation": True,
+                    "last_error": payout.last_error,
+                },
+            )
+        )
+    return items
+
+
 async def _advance_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     """Банк-черновики выдачи аванса/займа — «Отправлен в банк».
 
@@ -708,7 +783,16 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     payroll_drafts = await _payroll_bank_draft_items(session)
     deposit_drafts = await _deposit_bank_draft_items(session)
     advance_drafts = await _advance_bank_draft_items(session)
-    items = invoices + drafts + reserves + payroll_drafts + deposit_drafts + advance_drafts
+    employee_payouts = await _employee_payout_items(session)
+    items = (
+        invoices
+        + drafts
+        + reserves
+        + payroll_drafts
+        + deposit_drafts
+        + advance_drafts
+        + employee_payouts
+    )
 
     if scope == "active":
         items = [i for i in items if i.state in _ACTIVE_STATES]

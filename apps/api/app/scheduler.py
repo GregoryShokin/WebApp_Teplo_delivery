@@ -19,6 +19,7 @@ from app.models import (
     BankOperation,
     CounterpartyPaymentDraft,
     DepositBankDraft,
+    EmployeePayout,
     OwnAccountsRegistry,
     PayrollBankDraft,
     ReconciliationCase,
@@ -43,6 +44,7 @@ from app.services.couriers.iiko_olap_sync import sync_courier_olap_deliveries
 from app.services.couriers.shift_matching import recalculate_matches
 from app.services.deposit_bank_draft import apply_deposit_draft_status
 from app.services.dismissal_reconciliation_service import reconcile_all_dismissing
+from app.services.employee_payouts import apply_employee_payout_status
 from app.services.kassa.iiko_cashshift_sync import sync_iiko_cashshifts
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
@@ -412,6 +414,45 @@ async def run_payment_status_poll(
         if deposit_status == "paid":
             result["paid"] += 1
         elif deposit_status == "failed":
+            result["failed"] += 1
+
+    # Те же статусы для разовых выплат сотрудникам (окно «Новый платёж», ЗП собственника):
+    # при «исполнен» — транзит р/с→Сейф + резерв Сейфа под выдачу. Черновик выписывается только
+    # Т-Банком (см. create_bank_employee_payout), поэтому провайдер здесь фиксированный.
+    employee_payouts = (
+        await session.scalars(
+            select(EmployeePayout).where(
+                EmployeePayout.status == "pending",
+                EmployeePayout.provider_ref.is_not(None),
+            )
+        )
+    ).all()
+    for employee_payout in employee_payouts:
+        try:
+            raw = await status_client_for("tbank").get_payment_status(
+                employee_payout.provider_ref or ""
+            )
+        except BankCredentialsError:
+            logger.warning("payment-status poll: credentials error, прерываю опрос", exc_info=True)
+            result["errors"] += 1
+            break
+        except Exception:  # noqa: BLE001 - сетевая/банк-ошибка одного платежа не валит весь проход
+            logger.warning(
+                "payment-status poll: ошибка по выплате сотруднику %s",
+                employee_payout.id,
+                exc_info=True,
+            )
+            result["errors"] += 1
+            continue
+        result["checked"] += 1
+        if raw is None:
+            continue
+        payout_status = await apply_employee_payout_status(
+            session, payout=employee_payout, raw_status=raw, commit=False
+        )
+        if payout_status == "paid":
+            result["paid"] += 1
+        elif payout_status == "failed":
             result["failed"] += 1
 
     # Статус черновика T-Банка может застрять на SUBMITTED уже после фактического списания.

@@ -26,6 +26,7 @@ from app.models import (
     SafeAllocation,
     Wallet,
 )
+from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
@@ -409,3 +410,54 @@ async def confirm_employee_payout_by_operation(
     payout.synced_at = datetime.now(UTC)
     await session.flush()
     return payout
+
+
+async def apply_employee_payout_status(
+    session: AsyncSession,
+    *,
+    payout: EmployeePayout,
+    raw_status: str | None,
+    operation_date: date | None = None,
+    commit: bool = True,
+) -> str:
+    """Продвинуть банковскую выплату сотруднику по статусу платёжного документа.
+
+    Зеркало ``apply_payroll_draft_status``: вебхук/поллинг доводят выплату до ``paid``, заводя
+    транзит р/с→Сейф и резерв Сейфа (см. ``_book_employee_payout_transit_and_reserve``) — дальше
+    деньги выдаются по «Выплатить» с резерва. Ручное подтверждение операцией выписки
+    (``confirm_employee_payout_by_operation``) остаётся запасным путём для Сбера и пропущенных
+    вебхуков; оба идемпотентны по ``safe_allocation_id``/``source_kind``.
+
+    Кошельки банк/Сейф не заведены → выплата ОСТАЁТСЯ ``pending`` с ``last_error``: молчаливый
+    переход в ``paid`` без резерва спрятал бы деньги (обязательство перед сотрудником исчезло
+    бы из витрины). Следующий опрос повторит попытку.
+    """
+    outcome = classify_payment_status(raw_status)
+    payout = await session.get(EmployeePayout, payout.id, with_for_update=True)
+    if payout is None:
+        return "pending"
+
+    if outcome == "paid" and payout.status in ("pending", "failed"):
+        booked = await _book_employee_payout_transit_and_reserve(
+            session, payout=payout, operation_date=operation_date
+        )
+        if booked:
+            payout.status = "paid"
+            payout.last_error = None
+        else:
+            payout.last_error = (
+                "Не заведены кошельки банк/Сейф — транзит под выплату создать нельзя"
+            )
+        payout.synced_at = datetime.now(UTC)
+    elif outcome in ("failed", "deleted") and payout.status == "pending":
+        payout.status = "failed"
+        payout.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
+        payout.synced_at = datetime.now(UTC)
+
+    if commit:
+        await session.commit()
+    return payout.status

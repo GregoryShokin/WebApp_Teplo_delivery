@@ -27,6 +27,7 @@ from app.db.session import get_session
 from app.models import (
     CounterpartyPaymentDraft,
     DepositBankDraft,
+    EmployeePayout,
     PayrollBankDraft,
     SalaryAdvanceBankDraft,
 )
@@ -36,6 +37,7 @@ from app.services.banking.tbank import is_tbank_operation_hold, normalize_tbank_
 from app.services.couriers.cloud_shift_ingest import ingest_cloud_shift_event
 from app.services.couriers.shift_matching import recalculate_matches
 from app.services.deposit_bank_draft import apply_deposit_draft_status
+from app.services.employee_payouts import apply_employee_payout_status
 from app.services.payroll_advance_service import apply_advance_draft_status
 from app.services.payroll_payouts import apply_payroll_draft_status
 
@@ -270,6 +272,18 @@ async def tbank_payment_status(
     if deposit_draft is not None:
         new_status = await apply_deposit_draft_status(
             session, draft=deposit_draft, raw_status=raw_status
+        )
+        return {"ok": True, "matched": True, "draft_status": new_status}
+
+    # Разовая выплата сотруднику из окна «Новый платёж» (ЗП собственника по востребованию и
+    # прочие разовые): при «исполнен» — транзит р/с→Сейф + резерв Сейфа, откуда выплата
+    # выдаётся по «Выплатить». Без этой ветки выплата навсегда висела бы в pending.
+    employee_payout = await session.scalar(
+        select(EmployeePayout).where(EmployeePayout.provider_ref == payment_id)
+    )
+    if employee_payout is not None:
+        new_status = await apply_employee_payout_status(
+            session, payout=employee_payout, raw_status=raw_status
         )
         return {"ok": True, "matched": True, "draft_status": new_status}
 
