@@ -42,7 +42,6 @@ import {
 } from "@/components/ui/select";
 import {
   apiErrorMessage,
-  confirmEmployeePayout,
   createEmployeePayout,
   createExpenseCashReserves,
   createInternalTransfer,
@@ -51,11 +50,9 @@ import {
   createNewPaymentIncome,
   createNewPaymentInternalTransfer,
   createPayrollAdvance,
-  getDdsBankOperations,
   getNewPaymentContext,
   getOnDemandEmployees,
   getPayrollAdvanceAvailability,
-  type EmployeePayout,
   type NewPaymentArticle,
   type NewPaymentEmployee,
   type LocationOption,
@@ -206,14 +203,6 @@ function todayInput(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
-function daysAgoInput(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${month}-${day}`;
-}
-
 export function NewPaymentDialog({
   open,
   onOpenChange,
@@ -239,9 +228,6 @@ export function NewPaymentDialog({
   const [sessionKey, setSessionKey] = useState(0);
   // Группа «Расходы» схлопнута — раскрывается кнопкой «Ещё…» или поиском.
   const [expenseExpanded, setExpenseExpanded] = useState(false);
-  // Активный шаг привязки банковской операции («Долг по ЗП»): палитра скрыта, чтобы
-  // черновик не потерялся от случайного переключения — выйти можно только явно.
-  const [linkPending, setLinkPending] = useState(false);
   // Эпоха формы: бамп пересоздаёт отправленную форму, когда окно остаётся открытым.
   const [formEpoch, setFormEpoch] = useState<Partial<Record<DirtyKind, number>>>({});
   // Реестр «в форме есть неотправленный ввод» — гард от молчаливой потери при закрытии
@@ -399,7 +385,6 @@ export function NewPaymentDialog({
       setExpenseRows([emptyExpenseRow()]);
       setSessionKey((key) => key + 1);
       setExpenseExpanded(false);
-      setLinkPending(false);
       setFormEpoch({});
       dirtyRef.current = {};
     }
@@ -510,161 +495,157 @@ export function NewPaymentDialog({
         <DialogHeader className="shrink-0 space-y-0 border-b py-4 pl-6 pr-14">
           <DialogTitle>Новый платёж</DialogTitle>
           {/* Обычная подпись «Выберите операцию…» дублирует пустое состояние справа —
-              визуально скрыта (a11y-описание остаётся), кроме шага привязки. */}
-          <DialogDescription className={cn("mt-0.5", !linkPending && "sr-only")}>
-            {linkPending
-              ? "Завершите привязку операции — или «Позже», чтобы привязать при разборе выписки."
-              : "Выберите операцию — форма подстроится."}
+              визуально скрыта, a11y-описание остаётся. */}
+          <DialogDescription className="mt-0.5 sr-only">
+            Выберите операцию — форма подстроится.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
-          {/* Палитра операций; на шаге привязки скрыта — черновик нельзя потерять случайно */}
-          {linkPending ? null : (
-            <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
-              <div className="shrink-0 p-2.5 pb-1">
-                <div className="relative">
-                  <Search
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    size={14}
-                  />
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Статья или операция…"
-                    className="h-8 pl-8 text-sm"
-                  />
-                </div>
-                <div className="mt-1.5 flex gap-1">
-                  {LEDGERS.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      title={item.title}
-                      onClick={() => setLedger(item.key)}
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                        ledger === item.key && !q
-                          ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                          : "border-input text-muted-foreground hover:bg-muted",
-                        q && "opacity-50",
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+          {/* Палитра операций */}
+          <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
+            <div className="shrink-0 p-2.5 pb-1">
+              <div className="relative">
+                <Search
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  size={14}
+                />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Статья или операция…"
+                  className="h-8 pl-8 text-sm"
+                />
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
-                {contextQuery.isLoading ? (
-                  <div className="flex items-center gap-2 px-2 py-4 text-sm text-muted-foreground">
-                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    Загрузка…
+              <div className="mt-1.5 flex gap-1">
+                {LEDGERS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    title={item.title}
+                    onClick={() => setLedger(item.key)}
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                      ledger === item.key && !q
+                        ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                        : "border-input text-muted-foreground hover:bg-muted",
+                      q && "opacity-50",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+              {contextQuery.isLoading ? (
+                <div className="flex items-center gap-2 px-2 py-4 text-sm text-muted-foreground">
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Загрузка…
+                </div>
+              ) : contextQuery.isError ? (
+                <div className="space-y-2 px-2 py-4">
+                  <div className="text-sm text-muted-foreground">
+                    Не удалось загрузить операции.
                   </div>
-                ) : contextQuery.isError ? (
-                  <div className="space-y-2 px-2 py-4">
-                    <div className="text-sm text-muted-foreground">
-                      Не удалось загрузить операции.
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => contextQuery.refetch()}>
-                      Повторить
-                    </Button>
-                  </div>
-                ) : nothingFound ? (
-                  <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
-                ) : (
-                  <>
-                    {expenseGroupVisible ? (
-                      <PaletteGroup title="Расходы">
-                        {visibleExpense.map((article) => (
-                          <PaletteItem
-                            key={article.id}
-                            icon={Receipt}
-                            label={article.name}
-                            active={
-                              mode === "expense" &&
-                              expenseRows.some((row) => row.articleId === article.id)
-                            }
-                            onClick={() => selectArticle(article)}
-                          />
-                        ))}
-                        {hiddenExpenseCount > 0 ? (
-                          <button
-                            type="button"
-                            onClick={() => setExpenseExpanded(true)}
-                            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
-                          >
-                            <Plus size={15} className="shrink-0" aria-hidden="true" />
-                            Ещё {hiddenExpenseCount} статей…
-                          </button>
-                        ) : null}
-                        {showPrepayment && prepaymentArticle ? (
-                          <PaletteItem
-                            icon={Building2}
-                            label={prepaymentArticle.name}
-                            active={mode === "supplier_prepayment"}
-                            onClick={() => selectArticle(prepaymentArticle)}
-                          />
-                        ) : null}
-                      </PaletteGroup>
-                    ) : null}
-                    {incomeGroupVisible ? (
-                      <PaletteGroup title="Поступления">
-                        {matchedIncome.map((article) => (
-                          <PaletteItem
-                            key={article.id}
-                            icon={Banknote}
-                            label={article.name}
-                            active={mode === "income" && incomeArticleId === article.id}
-                            onClick={() => selectArticle(article)}
-                          />
-                        ))}
-                      </PaletteGroup>
-                    ) : null}
-                    {employeeGroupVisible ? (
-                      <PaletteGroup title="Сотрудникам">
-                        {showAdvance && advanceArticle ? (
-                          <PaletteItem
-                            icon={HandCoins}
-                            label={advanceLabel}
-                            active={mode === "employee_advance"}
-                            onClick={() => selectArticle(advanceArticle)}
-                          />
-                        ) : null}
-                        {showLoan && loanArticle ? (
-                          <PaletteItem
-                            icon={HandCoins}
-                            label={loanLabel}
-                            active={mode === "employee_loan"}
-                            onClick={() => selectArticle(loanArticle)}
-                          />
-                        ) : null}
-                        {showPayout ? (
-                          <PaletteItem
-                            icon={User}
-                            label={payoutLabel}
-                            title="Выплата долга по ЗП (оклад «по требованию»)"
-                            active={mode === "employee_payout"}
-                            onClick={() => setMode("employee_payout")}
-                          />
-                        ) : null}
-                      </PaletteGroup>
-                    ) : null}
-                    {showTransfer && transferArticle ? (
-                      <PaletteGroup title="Переводы">
+                  <Button size="sm" variant="outline" onClick={() => contextQuery.refetch()}>
+                    Повторить
+                  </Button>
+                </div>
+              ) : nothingFound ? (
+                <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
+              ) : (
+                <>
+                  {expenseGroupVisible ? (
+                    <PaletteGroup title="Расходы">
+                      {visibleExpense.map((article) => (
                         <PaletteItem
-                          icon={ArrowLeftRight}
-                          label={transferLabel}
-                          active={mode === "transfer_plain"}
-                          onClick={() => selectArticle(transferArticle)}
+                          key={article.id}
+                          icon={Receipt}
+                          label={article.name}
+                          active={
+                            mode === "expense" &&
+                            expenseRows.some((row) => row.articleId === article.id)
+                          }
+                          onClick={() => selectArticle(article)}
                         />
-                      </PaletteGroup>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </aside>
-          )}
+                      ))}
+                      {hiddenExpenseCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpenseExpanded(true)}
+                          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
+                        >
+                          <Plus size={15} className="shrink-0" aria-hidden="true" />
+                          Ещё {hiddenExpenseCount} статей…
+                        </button>
+                      ) : null}
+                      {showPrepayment && prepaymentArticle ? (
+                        <PaletteItem
+                          icon={Building2}
+                          label={prepaymentArticle.name}
+                          active={mode === "supplier_prepayment"}
+                          onClick={() => selectArticle(prepaymentArticle)}
+                        />
+                      ) : null}
+                    </PaletteGroup>
+                  ) : null}
+                  {incomeGroupVisible ? (
+                    <PaletteGroup title="Поступления">
+                      {matchedIncome.map((article) => (
+                        <PaletteItem
+                          key={article.id}
+                          icon={Banknote}
+                          label={article.name}
+                          active={mode === "income" && incomeArticleId === article.id}
+                          onClick={() => selectArticle(article)}
+                        />
+                      ))}
+                    </PaletteGroup>
+                  ) : null}
+                  {employeeGroupVisible ? (
+                    <PaletteGroup title="Сотрудникам">
+                      {showAdvance && advanceArticle ? (
+                        <PaletteItem
+                          icon={HandCoins}
+                          label={advanceLabel}
+                          active={mode === "employee_advance"}
+                          onClick={() => selectArticle(advanceArticle)}
+                        />
+                      ) : null}
+                      {showLoan && loanArticle ? (
+                        <PaletteItem
+                          icon={HandCoins}
+                          label={loanLabel}
+                          active={mode === "employee_loan"}
+                          onClick={() => selectArticle(loanArticle)}
+                        />
+                      ) : null}
+                      {showPayout ? (
+                        <PaletteItem
+                          icon={User}
+                          label={payoutLabel}
+                          title="Выплата долга по ЗП (оклад «по требованию»)"
+                          active={mode === "employee_payout"}
+                          onClick={() => setMode("employee_payout")}
+                        />
+                      ) : null}
+                    </PaletteGroup>
+                  ) : null}
+                  {showTransfer && transferArticle ? (
+                    <PaletteGroup title="Переводы">
+                      <PaletteItem
+                        icon={ArrowLeftRight}
+                        label={transferLabel}
+                        active={mode === "transfer_plain"}
+                        onClick={() => selectArticle(transferArticle)}
+                      />
+                    </PaletteGroup>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </aside>
 
           {/* Форма выбранной операции. Формы смонтированы постоянно (скрыты классом) —
               состояние переживает переключение операций внутри одной сессии окна. */}
@@ -763,7 +744,6 @@ export function NewPaymentDialog({
                       employees={employees}
                       invalidate={invalidateAll}
                       onDirty={(value) => setDirty("payout", value)}
-                      onLinkPending={setLinkPending}
                       onClose={close}
                     />
                   </div>
@@ -2287,7 +2267,6 @@ function PayoutDebtForm({
   employees,
   invalidate,
   onDirty,
-  onLinkPending,
   onClose,
 }: {
   active: boolean;
@@ -2296,7 +2275,6 @@ function PayoutDebtForm({
   employees: NewPaymentEmployee[];
   invalidate: () => Promise<void>;
   onDirty: (value: boolean) => void;
-  onLinkPending: (value: boolean) => void;
   onClose: () => void;
 }) {
   const [articleId, setArticleId] = useState("");
@@ -2305,11 +2283,8 @@ function PayoutDebtForm({
   const [amount, setAmount] = useState("");
   const [payoutDate, setPayoutDate] = useState(todayInput());
   const [note, setNote] = useState("");
-  const [step, setStep] = useState<"form" | "link">("form");
-  const [pendingPayout, setPendingPayout] = useState<EmployeePayout | null>(null);
-  const [operationId, setOperationId] = useState("");
 
-  const dirty = step === "form" && (amountOf(amount) > 0 || Boolean(employeeId));
+  const dirty = amountOf(amount) > 0 || Boolean(employeeId);
   useEffect(() => {
     onDirty(dirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2358,107 +2333,24 @@ function PayoutDebtForm({
       }),
     onSuccess: async (payout) => {
       await invalidate();
-      if (payout.status === "pending") {
-        setPendingPayout(payout);
-        setStep("link");
-        onLinkPending(true);
-        toast.success(
-          selectedWallet?.bank_code === "tbank"
-            ? "Черновик платежа создан — привяжите операцию из выписки"
-            : "Выплата сохранена — привяжите операцию из выписки",
-        );
-        return;
-      }
       if (payout.status === "failed") {
         toast.error("Банк отклонил черновик платежа");
         onClose();
         return;
       }
-      toast.success("Выплата проведена");
+      // Ожидающая выплата дальше живёт строкой в «Активных платежах»: оплату доводит статус
+      // платёжного документа (вебхук/поллинг), который сам заводит перевод на Сейф с резервом.
+      // Привязка операции выписки осталась ручным запасным путём — кнопкой на той карточке,
+      // поэтому гнать владельца через отдельный экран сразу после создания больше не нужно.
+      toast.success(
+        payout.status === "pending"
+          ? "Черновик отправлен в банк — платёж в «Активных платежах»"
+          : "Выплата проведена",
+      );
       onClose();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось создать выплату")),
   });
-
-  const operationsQuery = useQuery({
-    queryKey: ["new-payment", "payout-operations"],
-    queryFn: () => getDdsBankOperations({ from: daysAgoInput(45), to: todayInput(), limit: 100 }),
-    enabled: active && step === "link",
-  });
-  const operations = useMemo(
-    () =>
-      (operationsQuery.data?.items ?? []).filter(
-        (op) => op.direction === "out" && op.cashflow_transaction_id === null,
-      ),
-    [operationsQuery.data],
-  );
-  const confirmMutation = useMutation({
-    mutationFn: () => confirmEmployeePayout(pendingPayout?.id ?? "", operationId),
-    onSuccess: async () => {
-      await invalidate();
-      onLinkPending(false);
-      toast.success("Выплата подтверждена и привязана к операции");
-      onClose();
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось подтвердить выплату")),
-  });
-
-  if (step === "link") {
-    return (
-      <div>
-        <FormHeader
-          title="Привязать операцию"
-          description="Выберите исходящую операцию из выписки, чтобы подтвердить выплату (заведёт перевод на Сейф с резервом)."
-        />
-        <div className="max-h-[340px] space-y-2 overflow-y-auto">
-          {operationsQuery.isLoading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Загрузка операций…
-            </div>
-          ) : operationsQuery.isError ? (
-            <div className="py-6 text-sm text-muted-foreground">
-              Не удалось загрузить операции из выписки (возможно, нет права просмотра ДДС). Черновик
-              сохранён — привязать можно позже при разборе выписки.
-            </div>
-          ) : operations.length === 0 ? (
-            <div className="py-6 text-sm text-muted-foreground">
-              Нет несопоставленных исходящих операций за последние 45 дней. Операция появится после
-              импорта выписки — привяжите позже.
-            </div>
-          ) : (
-            operations.map((op) => (
-              <button
-                className={cn(
-                  "w-full rounded-md border p-2 text-left text-sm transition hover:bg-muted/50",
-                  operationId === op.id ? "border-primary bg-muted/50" : "border-border",
-                )}
-                key={op.id}
-                onClick={() => setOperationId(op.id)}
-                type="button"
-              >
-                <div className="flex justify-between gap-2">
-                  <span className="font-medium tabular-nums">{op.amount} ₽</span>
-                  <span className="text-muted-foreground">{op.operation_date}</span>
-                </div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {op.counterparty_name_raw || op.payment_purpose || "—"}
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-        <FormFooter
-          cancel={onClose}
-          cancelLabel="Позже"
-          submit={() => confirmMutation.mutate()}
-          submitLabel="Подтвердить выплату"
-          disabled={!operationId}
-          pending={confirmMutation.isPending}
-        />
-      </div>
-    );
-  }
 
   // Панель «Что произойдёт»: маршрут по счёту; переплата — предупреждением в той же панели.
   let tone: SummaryTone;
@@ -2473,12 +2365,15 @@ function PayoutDebtForm({
     tone = "instant";
     summary = `Спишется с ${selectedWallet.location === "kassa" ? "Кассы" : "Сейфа"} сразу — долг уменьшится.`;
   } else if (selectedWallet.bank_code === "tbank") {
-    // Черновик идёт на реквизиты ИП; деньги встанут резервом на Сейфе.
+    // Черновик идёт на реквизиты ИП; после оплаты в банке деньги встанут резервом на Сейфе —
+    // перевод заводит статус платёжного документа, руками подтверждать не нужно.
     tone = "draft";
-    summary = "Черновик в Т-Банк на счёт ИП → Сейф. После оплаты подтвердите по выписке.";
+    summary = "Черновик в Т-Банк на счёт ИП → Сейф. Платёж — в «Активных платежах».";
   } else {
+    // У Сбера черновиков нет: платёж ждёт в «Активных платежах», где его закрывает
+    // поллинг статуса или кнопка «Привязать» (операция из выписки).
     tone = "draft";
-    summary = "Этот банк не создаёт черновики — подтвердите привязкой операции из выписки.";
+    summary = "Этот банк не создаёт черновики — платёж будет ждать в «Активных платежах».";
   }
 
   return (
@@ -2919,7 +2814,8 @@ function ExpenseLocationPicker({
               <SelectItem value="none">Без договора (прочий расход по помещению)</SelectItem>
               {leases.map((lease) => (
                 <SelectItem key={lease.lease_id} value={lease.lease_id}>
-                  {lease.counterparty_name} · {Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес
+                  {lease.counterparty_name} ·{" "}
+                  {Math.round(lease.monthly_amount).toLocaleString("ru-RU")} ₽/мес
                 </SelectItem>
               ))}
             </SelectContent>
