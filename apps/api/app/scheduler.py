@@ -417,19 +417,23 @@ async def run_payment_status_poll(
             result["failed"] += 1
 
     # Те же статусы для разовых выплат сотрудникам (окно «Новый платёж», ЗП собственника):
-    # при «исполнен» — транзит р/с→Сейф + резерв Сейфа под выдачу. Черновик выписывается только
-    # Т-Банком (см. create_bank_employee_payout), поэтому провайдер здесь фиксированный.
-    employee_payouts = (
-        await session.scalars(
-            select(EmployeePayout).where(
+    # при «исполнен» — транзит р/с→Сейф + резерв Сейфа под выдачу. Провайдер берётся по СЧЁТУ
+    # СПИСАНИЯ выплаты (Т-Банк или Сбер): у Сбера вебхука нет, и этот опрос — единственный путь
+    # довести его черновик до paid.
+    employee_payout_rows = (
+        await session.execute(
+            select(EmployeePayout, Account.bank_code)
+            .join(Wallet, Wallet.id == EmployeePayout.wallet_id)
+            .join(Account, Account.id == Wallet.account_id)
+            .where(
                 EmployeePayout.status == "pending",
                 EmployeePayout.provider_ref.is_not(None),
             )
         )
     ).all()
-    for employee_payout in employee_payouts:
+    for employee_payout, payout_provider in employee_payout_rows:
         try:
-            raw = await status_client_for("tbank").get_payment_status(
+            raw = await status_client_for(payout_provider or "tbank").get_payment_status(
                 employee_payout.provider_ref or ""
             )
         except BankCredentialsError:

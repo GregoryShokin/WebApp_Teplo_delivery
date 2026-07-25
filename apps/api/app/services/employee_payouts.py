@@ -27,13 +27,14 @@ from app.models import (
     Wallet,
 )
 from app.services.bank_payment_status import classify_payment_status
-from app.services.banking import BankClient, TbankClient
+from app.services.banking import BankClient
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_calculator import decimal
 from app.services.payroll_payouts import _bank_payout_requisites, _payer_account
@@ -61,6 +62,9 @@ CASH_PAYOUT_WALLET_TYPES = (
 )
 # Банковские счета — выплата через черновик Т-Банк + транзит на Сейф (Track B2).
 BANK_PAYOUT_WALLET_TYPES = ("bank", "bank_account")
+# Банки, умеющие платёжный черновик по API (тот же список, что у ведомости ЗП и свободных
+# расходов). Т-Банк доводит статус вебхуком + поллингом, Сбер — только поллингом.
+SUPPORTED_DRAFT_PROVIDERS = ("tbank", "sber")
 # Транзит банк→Сейф под банковскую выплату; банк-нога prebooked (см. classifier).
 EMPLOYEE_PAYOUT_BANK_TO_SAFE_SOURCE_KIND = "employee_payout_bank_to_safe"
 
@@ -173,13 +177,16 @@ async def create_bank_employee_payout(
     created_by_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> EmployeePayout:
-    """Банковская выплата сотруднику: черновик Т-Банк по реквизитам ИП (``status='pending'``).
+    """Банковская выплата сотруднику: платёжный черновик по реквизитам ИП (``status='pending'``).
 
-    Деньги мгновенно НЕ уходят: заводится платёжный черновик в Т-Банке (реквизиты получателя —
-    общие ``payroll.bank_payout_requisites``, плательщик — расчётный счёт ИП). Подтверждение и
-    транзит банк→Сейф с резервом выполняются при привязке к реальной операции выписки
-    (``confirm_employee_payout_by_operation``). При сетевой/банк-ошибке черновик сохраняется со
-    статусом ``failed`` (выплату не валим — можно повторить/отменить).
+    Деньги мгновенно НЕ уходят: заводится платёжный черновик в банке счёта списания — Т-Банк или
+    Сбер (реквизиты получателя — общие ``payroll.bank_payout_requisites``, плательщик — расчётный
+    счёт ИП этого банка). Оплату доводит статус платёжного документа: у Т-Банка вебхук
+    ``/webhooks/tbank/payment-status``, у Сбера — поллинг ``poll_payment_statuses``; переход в
+    ``paid`` заводит транзит банк→Сейф с резервом (см. ``apply_employee_payout_status``). Ручная
+    привязка к операции выписки (``confirm_employee_payout_by_operation``) осталась запасным
+    путём для банка без API-черновика. При сетевой/банк-ошибке черновик сохраняется со статусом
+    ``failed`` (выплату не валим — можно повторить/отменить).
 
     Возвращает созданный ``EmployeePayout``. Не коммитит — коммит на вызывающем.
     """
@@ -230,14 +237,18 @@ async def create_bank_employee_payout(
     session.add(payout)
     await session.flush()
 
-    # Черновик платежа умеет создавать только Т-Банк. Для прочих банков (Сбербанк) черновик
-    # не заводим — выплата остаётся ``pending`` и подтверждается привязкой к операции выписки.
+    # Провайдер — по счёту списания: черновики выписывают и Т-Банк, и Сбер (тот же интерфейс
+    # BankClient, что у ведомости ЗП и свободных расходов). Банк вне этих двух черновика не
+    # создаёт — такая выплата остаётся ``pending`` до разбора операции выписки.
     account = await session.get(Account, wallet.account_id) if wallet.account_id else None
-    if account is None or account.bank_code != "tbank":
+    provider = account.bank_code if account is not None else None
+    if provider not in SUPPORTED_DRAFT_PROVIDERS:
         return payout
 
     settings = get_settings()
-    payer_account = _payer_account(settings)
+    payer_account = payer_account_for(settings, provider)
+    if not payer_account:
+        raise PayrollConflictError(f"Не настроен расчётный счёт плательщика ({provider})")
     requisites = await _bank_payout_requisites(session)
     document_id = _employee_payout_document_id(payout.id)
     purpose = f"Выплата сотруднику — {employee.full_name}"
@@ -253,7 +264,7 @@ async def create_bank_employee_payout(
         raise PayrollConflictError(str(exc)) from exc
 
     stored_payload = {"accountNumber": payer_account, "request": api_payload}
-    client = bank_client or TbankClient(session)
+    client = bank_client or payout_client_for(provider, session)
     payout.document_id = document_id[:64]
     payout.payload = stored_payload
     payout.synced_at = datetime.now(UTC)
@@ -303,13 +314,18 @@ async def _book_employee_payout_transit_and_reserve(
         return True
 
     amount = decimal(payout.amount).quantize(_CENTS)
-    settings = get_settings()
-    payer_account = _payer_account(settings)
-    bank_wallet = await session.scalar(
-        select(Wallet)
-        .join(Account, Account.id == Wallet.account_id)
-        .where(Account.account_number == payer_account, Wallet.status == "active")
-    )
+    # Банк-нога садится на СЧЁТ СПИСАНИЯ самой выплаты, а не на счёт Т-Банка из настроек:
+    # выплата может уйти из Сбера, и тогда транзит обязан списаться со сберовского кошелька,
+    # иначе баланс не того банка уехал бы вниз. Настройки — лишь фоллбэк для старых записей
+    # без кошелька (наличные корректировки его не имеют).
+    bank_wallet = await session.get(Wallet, payout.wallet_id) if payout.wallet_id else None
+    if bank_wallet is None or bank_wallet.status != "active":
+        payer_account = _payer_account(get_settings())
+        bank_wallet = await session.scalar(
+            select(Wallet)
+            .join(Account, Account.id == Wallet.account_id)
+            .where(Account.account_number == payer_account, Wallet.status == "active")
+        )
     safe_wallet = await session.scalar(
         select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
     )

@@ -19,12 +19,14 @@ from app.models import (
     SafeAllocation,
     Wallet,
 )
+from app.services.banking.base import PaymentDraftResult
 from app.services.banking.classifier import SAFE_WALLET_CODE
 from app.services.employee_payouts import (
     EMPLOYEE_PAYOUT_BANK_TO_SAFE_SOURCE_KIND,
     EMPLOYEE_PAYOUT_SOURCE_KIND,
     apply_employee_payout_status,
     confirm_employee_payout_by_operation,
+    create_bank_employee_payout,
     create_cash_employee_payout,
 )
 from app.services.payments_aggregator import list_payments
@@ -325,11 +327,42 @@ async def test_bank_payout_confirm_books_transit_and_reserve(
         assert len(legs_after) == 2
 
 
-async def _bank_and_safe_wallets(session: AsyncSession) -> Wallet:
-    """Счёт-плательщик (Т-Банк, ``MOCK_PAYER_ACCOUNT``) + активный Сейф. Возвращает банк-кошелёк."""
+class _RecordingBankClient:
+    """Фейковый банк-клиент: запоминает выписанные черновики (зеркало RecordingBankClient ЗП)."""
+
+    provider = "sber"
+
+    def __init__(self) -> None:
+        self.drafts: list[dict[str, object]] = []
+
+    async def create_payment_draft(
+        self,
+        *,
+        document_id: str,
+        amount: Decimal,
+        purpose: str,
+        requisites: dict[str, object],
+        payer_account: str,
+    ) -> PaymentDraftResult:
+        self.drafts.append(
+            {
+                "document_id": document_id,
+                "amount": amount,
+                "purpose": purpose,
+                "requisites": requisites,
+                "payer_account": payer_account,
+            }
+        )
+        return PaymentDraftResult(
+            document_id=document_id, status="created", provider_ref=f"sber-{document_id[:8]}"
+        )
+
+
+async def _bank_and_safe_wallets(session: AsyncSession, *, bank_code: str = "tbank") -> Wallet:
+    """Счёт-плательщик (``MOCK_PAYER_ACCOUNT``) + активный Сейф. Возвращает банк-кошелёк."""
     account = Account(
         id=uuid.uuid4(),
-        bank_code="tbank",
+        bank_code=bank_code,
         account_number=MOCK_PAYER_ACCOUNT,
         bic="044525974",
         legal_entity="ИП Тест",
@@ -340,7 +373,7 @@ async def _bank_and_safe_wallets(session: AsyncSession) -> Wallet:
     bank_wallet = Wallet(
         id=uuid.uuid4(),
         code=f"bank-{uuid.uuid4().hex[:6]}",
-        name="Банк (плательщик)",
+        name=f"Банк (плательщик, {bank_code})",
         type="bank",
         status="active",
         account_id=account.id,
@@ -365,9 +398,11 @@ async def _bank_and_safe_wallets(session: AsyncSession) -> Wallet:
     return bank_wallet
 
 
-async def _pending_bank_payout(session: AsyncSession, *, with_draft: bool = True) -> EmployeePayout:
+async def _pending_bank_payout(
+    session: AsyncSession, *, with_draft: bool = True, bank_code: str = "tbank"
+) -> EmployeePayout:
     employee = await _make_employee(session)
-    bank_wallet = await _bank_and_safe_wallets(session)
+    bank_wallet = await _bank_and_safe_wallets(session, bank_code=bank_code)
     payout = EmployeePayout(
         id=uuid.uuid4(),
         employee_id=employee.id,
@@ -376,7 +411,7 @@ async def _pending_bank_payout(session: AsyncSession, *, with_draft: bool = True
         payout_date=date(2026, 5, 20),
         wallet_id=bank_wallet.id,
         status="pending",
-        # Черновик Т-Банка: document_id/provider_ref заполняет create_bank_employee_payout.
+        # Черновик банка: document_id/provider_ref заполняет create_bank_employee_payout.
         document_id=f"teplo-emppayout-{uuid.uuid4()}" if with_draft else None,
         provider_ref=f"ref-{uuid.uuid4().hex[:8]}" if with_draft else None,
     )
@@ -410,8 +445,24 @@ async def test_pending_payout_visible_in_active_payments(
         assert row.amount == Decimal("40000.00")
         assert row.method == "bank"
         assert "Собственник Тест" in row.title
-        # Кнопка «Привязать операцию» на карточке — запасной ручной путь подтверждения.
-        assert row.extra["can_link_operation"] is True
+        # Ручных действий по строке нет: оплату доводит статус платёжного документа.
+        assert row.can_pay is False
+        assert row.can_send_to_bank is False
+        assert "can_link_operation" not in row.extra
+
+
+async def test_payout_card_shows_bank_of_debit_account(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Канал в карточке — банк счёта списания: сберовская выплата не должна выглядеть Т-Банком."""
+    async with async_session_factory() as session:
+        sber_payout = await _pending_bank_payout(session, bank_code="sber")
+        await session.commit()
+
+        row = next(
+            item for item in await _payout_rows(session) if item.ref_id == sber_payout.id
+        )
+        assert row.bank_channel == "sber"
 
 
 async def test_cash_payout_not_in_payments(
@@ -534,23 +585,18 @@ async def test_apply_status_rejected_marks_failed(
 
 async def test_apply_status_paid_without_wallets_keeps_pending(
     async_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Нет кошельков банк/Сейф → выплата остаётся pending с ошибкой, а не «оплачена» без резерва.
+    """Нет кошелька Сейфа → выплата остаётся pending с ошибкой, а не «оплачена» без резерва.
 
     Молчаливый paid спрятал бы обязательство перед сотрудником: строка ушла бы из витрины,
     а резерва под выдачу не появилось бы.
     """
-    monkeypatch.setattr(
-        "app.services.employee_payouts.get_settings",
-        lambda: SimpleNamespace(
-            # Счёта с таким номером нет → банк-кошелёк не найдётся.
-            tbank_api_account_number="40802810100000000000",
-            teplo_bank_client_mode="mock",
-        ),
-    )
     async with async_session_factory() as session:
         payout = await _pending_bank_payout(session)
+        # Сейф в архиве — транзит завести некуда.
+        safe_wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
+        if safe_wallet is not None:
+            safe_wallet.status = "archived"
         await session.commit()
 
         status = await apply_employee_payout_status(
@@ -564,3 +610,85 @@ async def test_apply_status_paid_without_wallets_keeps_pending(
         assert refreshed.last_error is not None
         # Строка осталась активной — владелец видит зависший платёж.
         assert any(item.ref_id == payout.id for item in await _payout_rows(session))
+
+        # Сейф вернули в работу — повторный опрос статуса доводит выплату до конца.
+        safe_wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
+        assert safe_wallet is not None
+        safe_wallet.status = "active"
+        await session.commit()
+        assert (
+            await apply_employee_payout_status(
+                session, payout=refreshed, raw_status="executed", commit=True
+            )
+            == "paid"
+        )
+
+
+async def test_sber_debit_account_creates_draft(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сбер как счёт списания выписывает черновик тем же интерфейсом, что Т-Банк.
+
+    Раньше гард ``bank_code != "tbank"`` возвращал выплату без черновика, и довести её до Сейфа
+    можно было только руками — хотя SberClient.create_payment_draft существует и используется
+    ведомостью ЗП и свободными расходами.
+    """
+    recorder = _RecordingBankClient()
+    monkeypatch.setattr(
+        "app.services.employee_payouts.get_settings",
+        lambda: SimpleNamespace(
+            sber_api_account_number=MOCK_PAYER_ACCOUNT,
+            tbank_api_account_number=MOCK_PAYER_ACCOUNT,
+            teplo_bank_client_mode="mock",
+        ),
+    )
+    async with async_session_factory() as session:
+        employee = await _make_employee(session)
+        bank_wallet = await _bank_and_safe_wallets(session, bank_code="sber")
+        article = await session.scalar(select(DdsArticle.id).limit(1))
+        await session.commit()
+
+        payout = await create_bank_employee_payout(
+            session,
+            employee_id=employee.id,
+            amount=Decimal("30000"),
+            wallet_id=bank_wallet.id,
+            payout_date=date(2026, 5, 20),
+            article_id=article,
+            bank_client=recorder,
+        )
+        await session.commit()
+
+        assert payout.status == "pending"
+        assert payout.document_id is not None
+        assert payout.provider_ref is not None  # есть чем опрашивать статус в поллинге
+        assert len(recorder.drafts) == 1
+        assert recorder.drafts[0]["amount"] == Decimal("30000.00")
+
+
+async def test_transit_debits_the_account_money_left_from(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Транзит на Сейф списывает СЧЁТ СПИСАНИЯ выплаты, а не счёт Т-Банка из настроек."""
+    async with async_session_factory() as session:
+        payout = await _pending_bank_payout(session, bank_code="sber")
+        sber_wallet_id = payout.wallet_id
+        await session.commit()
+
+        assert (
+            await apply_employee_payout_status(
+                session, payout=payout, raw_status="executed", commit=True
+            )
+            == "paid"
+        )
+
+        out_leg = await session.scalar(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == EMPLOYEE_PAYOUT_BANK_TO_SAFE_SOURCE_KIND,
+                CashflowTransaction.source_id == payout.id,
+                CashflowTransaction.direction == "out",
+            )
+        )
+        assert out_leg is not None
+        assert out_leg.wallet_id == sber_wallet_id

@@ -34,7 +34,6 @@ import { SendDialog } from "@/routes/payment-page/SendDialog";
 import { getIntake, type PaymentIntake } from "@/routes/payment-page/api";
 import { navigateTo } from "@/router";
 
-import { LinkPayoutOperationDialog } from "./LinkPayoutOperationDialog";
 import { PayPayrollReserveDialog } from "./PayPayrollReserveDialog";
 import { BUCKET_ORDER, getPayments, type PaymentRow } from "./payments-api";
 
@@ -147,7 +146,6 @@ export function ActivePaymentsModal({
   const [sendIntake, setSendIntake] = useState<PaymentIntake | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [payrollRow, setPayrollRow] = useState<PaymentRow | null>(null);
-  const [linkPayoutRow, setLinkPayoutRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<string>("all");
 
@@ -266,18 +264,6 @@ export function ActivePaymentsModal({
       return (
         <Button size="sm" variant="outline" className="h-8" onClick={goReview}>
           Разобрать
-        </Button>
-      );
-    }
-    // Выплата сотруднику ждёт исполнения в банке: штатно её закроет статус платёжного
-    // документа, но привязка операции выписки остаётся ручным запасным путём (Сбер, пропущенный
-    // вебхук) — без кнопки в строку привязки было не попасть.
-    if (row.extra.can_link_operation === true) {
-      return (
-        <Button size="sm" variant="outline" className="h-8" onClick={() => setLinkPayoutRow(row)}>
-          {/* Коротко: «Привязать операцию» не влезает в строку рядом с суммой и обрезается —
-              полная формулировка стоит заголовком открывшегося диалога. */}
-          Привязать
         </Button>
       );
     }
@@ -530,14 +516,6 @@ export function ActivePaymentsModal({
           if (!next) setPayrollRow(null);
         }}
         onPaid={refetchAll}
-      />
-
-      <LinkPayoutOperationDialog
-        row={linkPayoutRow}
-        onOpenChange={(next) => {
-          if (!next) setLinkPayoutRow(null);
-        }}
-        onDone={refetchAll}
       />
     </>
   );

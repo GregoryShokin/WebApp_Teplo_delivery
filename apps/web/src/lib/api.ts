@@ -109,9 +109,18 @@ export type SubstitutePairsResponse = {
 };
 
 export type PositionArchetype =
-  "okladnik" | "production_percent" | "shift_pool" | "courier" | "none";
+  | "okladnik"
+  | "production_percent"
+  | "shift_pool"
+  | "courier"
+  | "none";
 export type PositionPermissionGroup =
-  "administration" | "cooks" | "cashiers" | "auxiliary" | "couriers" | "none";
+  | "administration"
+  | "cooks"
+  | "cashiers"
+  | "auxiliary"
+  | "couriers"
+  | "none";
 export type PositionScheduleType = "SESSION" | "FIXED" | "HOURS";
 export type PositionStatus = "active" | "excluded";
 
@@ -148,7 +157,12 @@ export type PositionsSyncResult = {
 
 export type EmployeeStatus = "active" | "inactive" | "requires_setup" | "dismissing";
 export type EmployeeCategory =
-  "category_1" | "category_2" | "category_3" | "category_4" | "intern" | "freelancer";
+  | "category_1"
+  | "category_2"
+  | "category_3"
+  | "category_4"
+  | "intern"
+  | "freelancer";
 export type CookingStation = "sushi" | "pizza" | "shawarma";
 export type PayrollRole = CookingStation | "prep" | "administrator";
 
@@ -311,7 +325,11 @@ export type EmployeePositionAssignmentDeletePayload = {
 };
 
 export type DepositDismissAction =
-  "payout_full" | "payout_partial" | "write_off" | "schedule_payout" | "none";
+  | "payout_full"
+  | "payout_partial"
+  | "write_off"
+  | "schedule_payout"
+  | "none";
 
 export type DepositPayoutMethod = "cash_tk" | "cash_safe" | "bank_draft" | "bank_draft_sber";
 
@@ -1480,7 +1498,11 @@ export type PayrollForecastRunRead = {
 };
 
 export type PlanFactDeviationStatus =
-  "no_data" | "within_threshold" | "over_threshold" | "plan_no_fact" | "fact_no_plan";
+  | "no_data"
+  | "within_threshold"
+  | "over_threshold"
+  | "plan_no_fact"
+  | "fact_no_plan";
 
 export type PlanFactDayRowRead = {
   business_date: string;
@@ -2222,7 +2244,11 @@ export type CourierScheduleUpsertPayload = {
 export type DdsProvider = "sber" | "tbank";
 export type DdsDirection = "in" | "out";
 export type DdsClassificationStatus =
-  "pending" | "classified" | "internal_transfer" | "needs_review" | "excluded";
+  | "pending"
+  | "classified"
+  | "internal_transfer"
+  | "needs_review"
+  | "excluded";
 
 export type WalletRead = {
   id: string;
@@ -2473,7 +2499,11 @@ export type CredentialRead = {
   id: string;
   provider: DdsProvider;
   credential_kind:
-    "access_token" | "client_secret" | "bearer_token" | "mtls_cert_path" | "mtls_key_path";
+    | "access_token"
+    | "client_secret"
+    | "bearer_token"
+    | "mtls_cert_path"
+    | "mtls_key_path";
   is_active: boolean;
   expires_at: string | null;
   metadata: Record<string, unknown> | null;
@@ -3407,13 +3437,8 @@ export type LeaseLedger = {
 };
 
 /** Начисления и оплаты по договору аренды: что начислено, что оплачено, сколько висит залога. */
-export async function getLeaseLedger(
-  locationId: string,
-  leaseId: string,
-): Promise<LeaseLedger> {
-  const response = await api.get<LeaseLedger>(
-    `/locations/${locationId}/leases/${leaseId}/ledger`,
-  );
+export async function getLeaseLedger(locationId: string, leaseId: string): Promise<LeaseLedger> {
+  const response = await api.get<LeaseLedger>(`/locations/${locationId}/leases/${leaseId}/ledger`);
   return response.data;
 }
 
@@ -3457,10 +3482,9 @@ export async function closeLocationLease(
   leaseId: string,
   endedOn: string,
 ): Promise<LeaseRecord> {
-  const response = await api.post<LeaseRecord>(
-    `/locations/${locationId}/leases/${leaseId}/close`,
-    { ended_on: endedOn },
-  );
+  const response = await api.post<LeaseRecord>(`/locations/${locationId}/leases/${leaseId}/close`, {
+    ended_on: endedOn,
+  });
   return response.data;
 }
 
@@ -4335,16 +4359,6 @@ export type EmployeePayout = {
 
 export async function createEmployeePayout(payload: EmployeePayoutCreate): Promise<EmployeePayout> {
   const response = await api.post<EmployeePayout>("/payroll/employee-payouts", payload);
-  return response.data;
-}
-
-export async function confirmEmployeePayout(
-  payoutId: string,
-  bankOperationId: string,
-): Promise<EmployeePayout> {
-  const response = await api.post<EmployeePayout>(`/payroll/employee-payouts/${payoutId}/confirm`, {
-    bank_operation_id: bankOperationId,
-  });
   return response.data;
 }
 
