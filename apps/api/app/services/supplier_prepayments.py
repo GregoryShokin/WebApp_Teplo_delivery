@@ -28,6 +28,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
     _recompute_status,
@@ -964,6 +965,82 @@ async def refund_counterparty_prepayments(
     if settled_total > 0:
         await session.flush()
     return settled_total
+
+
+async def resync_counterparty_refunds(
+    session: AsyncSession, counterparty_id: uuid.UUID | None
+) -> None:
+    """Привести зачёты возвратов контрагента в соответствие с его проводками-возвратами.
+
+    Возврат денег от поставщика гасит его дебиторку (``refund_counterparty_prepayments``), но —
+    в отличие от гашения накладной — делает это БЕЗ аллокации: просто растит ``amount_settled``.
+    Поэтому у зачёта не было обратного хода. ``refund_...`` зовётся ровно один раз, при СОЗДАНИИ
+    прихода, и последующая переразметка проводки в учёте не отражалась: сняли возвратную статью
+    или перевесили приход на другого контрагента — дебиторка оставалась списанной навсегда;
+    наоборот, пометили обычный приход возвратной статьёй — зачёт не применялся вовсе.
+
+    Здесь зачёт пересобирается из фактов. «Сколько всего вернул контрагент» берётся из его
+    проводок с возвратной статьёй, а ``amount_settled`` каждой предоплаты сбрасывается до её
+    АЛЛОКАЦИОННОЙ части (гашения накладными хранятся строками — их трогать нельзя) и затем
+    добирается возвратами по FIFO, как это делает сам ``refund_counterparty_prepayments``.
+    Идемпотентно: повторный вызов на неизменных данных ничего не меняет. Без commit.
+
+    ДЗ по оплаченному счёту (``prepaid_bill``) исключена — её ``amount_settled`` обязан приходить
+    ТОЛЬКО от зачётов закрывающих (см. гард в ``refund_counterparty_prepayments``).
+    """
+    if counterparty_id is None:
+        return
+    prepayments = list(
+        (
+            await session.scalars(
+                select(SupplierPrepayment)
+                .where(
+                    SupplierPrepayment.counterparty_id == counterparty_id,
+                    SupplierPrepayment.kind != BILL_PREPAYMENT_KIND,
+                )
+                .order_by(SupplierPrepayment.created_at)
+            )
+        ).all()
+    )
+    if not prepayments:
+        return
+    # Мягко исключённая проводка выпадает из баланса кошелька — значит и дебиторку гасить не
+    # должна, иначе возврат «действует» деньгами, которых в учёте нет.
+    remaining = _money(
+        await session.scalar(
+            select(func.coalesce(func.sum(CashflowTransaction.amount), 0))
+            .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
+            .where(
+                CashflowTransaction.counterparty_id == counterparty_id,
+                CashflowTransaction.direction == "in",
+                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+            )
+        )
+    )
+    for prepayment in prepayments:
+        allocated = _money(
+            await session.scalar(
+                select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+                    InvoicePaymentAllocation.prepayment_id == prepayment.id
+                )
+            )
+        )
+        amount = _money(prepayment.amount)
+        # Сброс к аллокационной части: всё, что сверх неё, — след прежнего распределения возвратов.
+        prepayment.amount_settled = allocated
+        if allocated <= 0:
+            prepayment.status = "open"
+        elif allocated >= amount:
+            prepayment.status = "settled"
+        else:
+            prepayment.status = "partially_settled"
+        rest = amount - allocated
+        if rest > 0 and remaining > 0:
+            take = min(rest, remaining)
+            _consume_prepayment(prepayment, take, full_status="refunded")
+            remaining -= take
+    await session.flush()
 
 
 async def cancel_supplier_prepayment(session: AsyncSession, prepayment_id: uuid.UUID) -> None:

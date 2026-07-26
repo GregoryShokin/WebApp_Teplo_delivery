@@ -172,6 +172,7 @@ from app.services.supplier_prepayments import (
     SUPPLIER_REFUND_ARTICLE_CODE,
     ensure_prepayment_from_bank_transaction,
     refund_counterparty_prepayments,
+    resync_counterparty_refunds,
 )
 from app.services.warehouse_invoices import invoice_permission_kind
 
@@ -2096,6 +2097,11 @@ async def classify_transaction(
         ensure_cashflow_reclassifiable(txn)
     except CashflowClassificationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    previous_counterparty_id = txn.counterparty_id
+    previous_article_code: str | None = None
+    if txn.article_id is not None:
+        previous_article = await session.get(DdsArticle, txn.article_id)
+        previous_article_code = previous_article.code if previous_article is not None else None
     article = None
     if payload.article_id is not None:
         article = await session.get(DdsArticle, payload.article_id)
@@ -2122,6 +2128,18 @@ async def classify_transaction(
     # осталась бы на прежнем контрагенте.
     if txn.source_kind == "bank_operation":
         await ensure_prepayment_from_bank_transaction(session, txn)
+    # Возврат переплаты гасит дебиторку без аллокации, поэтому сам за переразметкой не следует:
+    # снятая возвратная статья оставляла бы дебиторку списанной навсегда, а поставленная — не
+    # гасила бы её вовсе. Пересобираем зачёт у ОБОИХ контрагентов (проводку могли перевесить).
+    # Трогаем только когда возвратная статья участвует — иначе пересчёт ходил бы по предоплатам
+    # контрагентов, к возвратам отношения не имеющих.
+    new_article_code = article.code if article is not None else None
+    if txn.direction == "in" and SUPPLIER_REFUND_ARTICLE_CODE in {
+        previous_article_code,
+        new_article_code,
+    }:
+        for cp_id in {previous_counterparty_id, txn.counterparty_id}:
+            await resync_counterparty_refunds(session, cp_id)
     await session.commit()
     return {
         "id": txn.id,
