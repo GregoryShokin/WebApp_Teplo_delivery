@@ -613,3 +613,59 @@ def test_ens_offset_leaves_other_verdicts_alone() -> None:
         warning_line, expected=Decimal("478376"), wallet_balance=Decimal("99999")
     )
     assert line == warning_line
+
+
+async def test_doc_mismatch_names_unallocated_payments_as_cause(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Документ меньше расчёта» называет причину: неразнесённые платежи в ФНС.
+
+    Вопрос владельца 27.07.2026 («почему сходиться перестало?»): платёжка бухгалтера
+    меньше нашего расчёта, потому что январско-февральские ЕНП не разнесены (нет
+    обороток) и их взносная часть не в вычете. Сверка обязана говорить это сама.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        # Платёжка бухгалтера меньше расчёта (вычет неполный) → doc_mismatch.
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance",
+                period="h1",
+                amount="478376",
+                due=date(2026, 7, 28),
+                received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        # Неразнесённый платёж в ФНС (нет оборотки месяца) — вероятная причина.
+        session.add(
+            TaxPayment(
+                id=uuid.uuid4(),
+                bundle_id=uuid.uuid4(),
+                paid_on=date(2026, 2, 25),
+                kind="other",
+                amount=Decimal("21783.93"),
+                recipient="fns",
+                for_year=2026,
+                for_period="2026-01",
+                status="paid",
+                source_kind="bank_statement",
+                quality_status="requires_review",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 15))
+
+    usn = next(
+        line
+        for line in recon.lines
+        if line.tax_kind == "usn_advance"
+        and line.verdict == "doc_mismatch"
+        and line.documented is not None
+        and line.calculated is not None
+        and line.documented < line.calculated
+    )
+    assert any("неразнесённые платежи" in m for m in usn.messages)
+    # fmt_money ставит неразрывный пробел между разрядами.
+    assert any("21\u00a0783,93" in m for m in usn.messages)

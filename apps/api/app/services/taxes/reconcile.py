@@ -431,6 +431,27 @@ async def _payroll_split_paid(
     return value if value > 0 else None
 
 
+async def _unallocated_fns_facts(session: AsyncSession, *, year: int, as_of: date) -> Decimal:
+    """Платежи в ФНС, которые факт-слой не смог разнести по видам (нет оборотки месяца).
+
+    Их взносная часть НЕ попадает в вычет (консервативно), поэтому расчётный УСН выше,
+    чем у бухгалтера, у которой разнос есть. Сверка обязана называть эту причину — иначе
+    «документ ≠ расчёт» выглядит ошибкой бухгалтера, хотя это дыра в наших данных
+    (вопрос владельца 27.07.2026: «почему сходиться перестало?»).
+    """
+    total = await session.scalar(
+        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+            TaxPayment.status == "paid",
+            TaxPayment.kind == "other",
+            TaxPayment.quality_status == "requires_review",
+            TaxPayment.source_kind == "bank_statement",
+            TaxPayment.for_year == year,
+            TaxPayment.paid_on <= as_of,
+        )
+    )
+    return Decimal(str(total or 0))
+
+
 async def build_reconciliation(
     session: AsyncSession, *, as_of: date
 ) -> Reconciliation:
@@ -440,6 +461,7 @@ async def build_reconciliation(
     # Расчётная переплата на ЕНС — для смягчения «документ меньше начисленного»:
     # бухгалтер может законно тратить переплату, присылая платёжку меньше расчёта.
     wallet = await compute_ens_wallet(session, as_of=as_of)
+    unallocated = await _unallocated_fns_facts(session, year=year, as_of=as_of)
 
     # ── УСН по каждому закрывшемуся отчётному периоду ────────────────────────
     for period_code in PERIOD_SEQ:
@@ -632,4 +654,25 @@ async def build_reconciliation(
         replace(line, draft_status=_draft_status(line.tax_kind, line.period_code))
         for line in lines
     ]
+
+    # Неразнесённые платежи в ФНС — вероятная ПРИЧИНА «документ меньше расчёта» по УСН:
+    # их взносная часть не в вычете, расчёт завышен, а платёжка бухгалтера (у неё разнос
+    # есть) выглядит заниженной. Называем причину прямо в строке расхождения.
+    if unallocated > ZERO:
+        hint = (
+            f"Возможная причина: в банке есть неразнесённые платежи в ФНС на "
+            f"{fmt_money(unallocated)} ₽ (нет оборотки за их месяцы) — их взносная часть "
+            f"не в вычете, и наш расчёт завышен. Пришлите оборотки — расхождение, "
+            f"скорее всего, уйдёт."
+        )
+        lines = [
+            replace(line, messages=[*line.messages, hint])
+            if line.tax_kind == "usn_advance"
+            and line.verdict == "doc_mismatch"
+            and line.documented is not None
+            and line.calculated is not None
+            and line.documented < line.calculated
+            else line
+            for line in lines
+        ]
     return Reconciliation(year=year, as_of=as_of, lines=lines)

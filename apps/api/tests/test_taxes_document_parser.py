@@ -187,3 +187,18 @@ def test_non_turnover_xls_is_flagged_not_misread() -> None:
     assert doc.rows == []
     assert doc.needs_review is True
     assert any("л1" in r for r in doc.review_reasons)
+
+
+def test_ens_filename_is_payroll_enp_not_extra_contribution() -> None:
+    """«ЕНС до 27.03» — зарплатный ЕНП, а не допвзнос 1%.
+
+    Сверка с выпиской 27.07.2026: платёжке соответствует реальный платёж 26.03 на
+    19 460,93 ₽ — зарплатный ЕНП за февраль. Классификатор относил её к допвзносу 1%
+    («ЕНС» не было в паттернах), что исказило бы вычет УСН при продвижении.
+    """
+    from app.services.taxes.document_parser import _classify_kind
+
+    assert _classify_kind("ЕНС до 27.03.docx", "") == "enp_payroll"
+    assert _classify_kind("ЕНП до 28.05.docx", "") == "enp_payroll"
+    # Допвзнос 1% по-прежнему узнаётся своим паттерном и не перехватывается «ЕНС».
+    assert _classify_kind("1% за 2 кв 2026.docx", "") == "contrib_extra_1pct"
