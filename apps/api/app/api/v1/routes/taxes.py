@@ -39,6 +39,8 @@ from app.schemas.taxes import (
     AiAuditReportRead,
     AiDocumentReviewRead,
     EnsWalletRead,
+    LedgerRowRead,
+    LedgerSummaryRead,
     ReconciliationRead,
     ReconLineRead,
     TaxBankDraftInput,
@@ -82,6 +84,7 @@ from app.services.taxes.document_ingest import (
 )
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
 from app.services.taxes.ens_wallet import compute_ens_wallet
+from app.services.taxes.ledger_summary import LedgerSummary, build_ledger_summary
 from app.services.taxes.obligations import is_settled, list_payable_obligations
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
@@ -141,6 +144,22 @@ async def _load_state(session: AsyncSession, as_of: date) -> TaxState:
         ) from exc
 
 
+async def _load_ledger(
+    session: AsyncSession, as_of: date, state: TaxState
+) -> LedgerSummary:
+    """Сводка «начислено / уплачено / осталось» на дату среза."""
+    try:
+        inputs = await load_tax_inputs(session, as_of=as_of)
+        cfg = inputs.config
+        return await build_ledger_summary(
+            session, state=state, inputs=inputs, cfg=cfg, as_of=as_of
+        )
+    except TaxComputationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
 async def _load_reconciliation(session: AsyncSession, as_of: date) -> Reconciliation:
     """Собрать сверку на дату среза, переведя доменную ошибку в 422."""
     try:
@@ -191,6 +210,7 @@ async def get_overview(
     moment = _resolve_as_of(as_of)
     state = await _load_state(session, moment)
     recon = await _load_reconciliation(session, moment)
+    ledger = await _load_ledger(session, moment, state)
     return TaxOverviewRead(
         as_of=moment,
         year=state.year,
@@ -199,6 +219,14 @@ async def get_overview(
         reconciliation=_reconciliation_read(recon),
         alert_count=len(recon.alerts),
         is_blocked=bool(state.blocking),
+        ledger=LedgerSummaryRead(
+            year=ledger.year,
+            as_of=ledger.as_of,
+            rows=[LedgerRowRead.model_validate(row) for row in ledger.rows],
+            accrued_total=ledger.accrued_total,
+            paid_total=ledger.paid_total,
+            left_total=ledger.left_total,
+        ),
     )
 
 

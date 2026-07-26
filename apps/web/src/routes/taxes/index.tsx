@@ -78,6 +78,7 @@ import {
   reviewTaxDocument,
   setVatThreshold,
   type AiAuditReport,
+  type LedgerSummary,
   type Money,
   type Reconciliation,
   type ReconLine,
@@ -798,68 +799,118 @@ function SummaryTab({ asOf }: { asOf: string }) {
 
       <TaxMetrics isBlocked={isBlocked} state={state} />
 
-      <Card className="shadow-none">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">
-            Как сложился вычет
-            <InfoHint label="правило вычета">
-              Уплаченные взносы уменьшают налог, но не более чем наполовину. Всё, что не
-              влезло в половину, сгорает: на следующий период и на следующий год не
-              переносится. «За себя» — взносы ИП за самого себя (фиксированный платёж за год
-              плюс 1% с дохода свыше 300 000 ₽); взносы за работников — отдельная строка.
-            </InfoHint>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-x-8 gap-y-2 p-6 pt-0 text-sm sm:grid-cols-2">
-          <DetailRow
-            hint="Только по факту уплаты (кассовый принцип)"
-            label="Взносы за работников"
-            value={formatMoney(state.employees_paid)}
-          />
-          <DetailRow
-            hint={`Доступно ${formatMoney(state.fixed_available)}`}
-            label="Взносы ИП «за себя», фиксированные — заявлено"
-            value={formatMoney(state.fixed_claimed)}
-          />
-          <DetailRow
-            hint="Взносы ИП «за себя» с дохода свыше 300 000 ₽"
-            label="Допвзнос 1% — начислено"
-            value={formatMoney(state.extra_accrued)}
-          />
-          <DetailRow
-            hint={`Доступно ${formatMoney(state.extra_available)}`}
-            label="Допвзнос 1% — заявлено"
-            value={formatMoney(state.extra_claimed)}
-          />
-          {/* Нулевые строки не показываем: это не деньги, а шум (дизайн-ревизия 27.07.2026).
-              При значении > 0 строка обязана остаться — это потерянные/отложенные деньги. */}
-          {Number(state.deduction_burned ?? 0) > 0 ? (
-            <DetailRow
-              hint="Срезано лимитом 50% — потеряно навсегда"
-              label="Сгорело"
-              value={formatMoney(state.deduction_burned)}
-            />
-          ) : null}
-          {Number(state.deduction_deferred ?? 0) > 0 ? (
-            <DetailRow
-              hint="Взносы ИП «за себя» (фиксированные + 1%) начислены, но не уплачены — уйдут в вычет, когда заплатите"
-              label="Отложено"
-              value={formatMoney(state.deduction_deferred)}
-            />
-          ) : null}
-          <DetailRow
-            hint="Внутри года ещё можно использовать"
-            label="Не заявлено"
-            value={formatMoney(state.deduction_unclaimed)}
-          />
-          <DetailRow
-            hint="Налог плюс взносы к доходу нарастающим итогом"
-            label="Итоговая нагрузка"
-            value={`${formatMoney(state.total_burden)} · ${formatRate(state.effective_rate)}`}
-          />
-        </CardContent>
-      </Card>
+      <LedgerBlock ledger={query.data.ledger} state={state} />
     </div>
+  );
+}
+
+/** Сводка «начислено / уплачено / осталось» по всем налогам и взносам за год.
+ *
+ * Пришла на смену блоку «Как сложился вычет» (решение владельца 27.07.2026): тот
+ * показывал внутреннюю кухню («заявлено», «не заявлено») и не отвечал на вопрос
+ * «сколько начислено, сколько заплатили, сколько осталось». Вычет остался, но одной
+ * строкой под таблицей — он объясняет ровно одно: насколько взносы уменьшили налог.
+ */
+function LedgerBlock({ ledger, state }: { ledger: LedgerSummary; state: TaxState }) {
+  const burned = toNumber(state.deduction_burned);
+  const unclaimed = toNumber(state.deduction_unclaimed);
+  return (
+    <Card className="shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-base font-semibold">
+          Начислено и уплачено за {ledger.year} год
+          <InfoHint label="как читать таблицу">
+            «Начислено» — сколько должно быть по расчёту и документам нарастающим итогом
+            с 1 января. «Уплачено» — сколько реально ушло из банка. «Осталось» — разница;
+            прочерк значит, что сравнивать не с чем: бухгалтер прислала оборотку не за все
+            месяцы.
+          </InfoHint>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[240px]">Налог или взнос</TableHead>
+              <TableHead className="text-right">Начислено</TableHead>
+              <TableHead className="text-right">Уплачено</TableHead>
+              <TableHead className="text-right">Осталось</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ledger.rows.map((row) => {
+              const left = row.left === null || row.left === undefined ? null : toNumber(row.left);
+              return (
+                <TableRow key={row.kind}>
+                  <TableCell className="align-top">
+                    <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                      {row.title}
+                      {row.recipient === "sfr" ? (
+                        <Badge className={NEUTRAL_BADGE} variant="outline">
+                          СФР
+                        </Badge>
+                      ) : null}
+                      {!row.reduces_tax && row.kind !== "usn_advance" ? (
+                        <Badge className={NEUTRAL_BADGE} variant="outline">
+                          не уменьшает налог
+                        </Badge>
+                      ) : null}
+                      {row.note ? <InfoHint label={row.title}>{row.note}</InfoHint> : null}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right align-top tabular-nums">
+                    {row.accrued === null || row.accrued === undefined
+                      ? <span className="text-muted-foreground">нет данных</span>
+                      : formatMoney(row.accrued)}
+                  </TableCell>
+                  <TableCell className="text-right align-top tabular-nums">
+                    {formatMoney(row.paid)}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right align-top tabular-nums ${
+                      left !== null && left > 0 ? "font-semibold text-rose-700" : ""
+                    }`}
+                  >
+                    {left === null ? <span className="text-muted-foreground">—</span> : formatMoney(row.left)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            <TableRow className="bg-muted/40 font-semibold">
+              <TableCell>Итого</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatMoney(ledger.accrued_total)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {formatMoney(ledger.paid_total)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-rose-700">
+                {formatMoney(ledger.left_total)}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-4 py-3 text-sm">
+          <span className="text-muted-foreground">
+            Уплаченные взносы уменьшили налог на{" "}
+            <span className="font-semibold text-foreground">
+              {formatMoney(state.deduction_applied)}
+            </span>{" "}
+            из возможных {formatMoney(state.deduction_limit)} (лимит — половина налога)
+          </span>
+          {burned > 0 ? (
+            <span className="text-rose-700">
+              {formatMoney(state.deduction_burned)} сгорело — сверх лимита
+            </span>
+          ) : null}
+          {unclaimed > 0 ? (
+            <span className="text-amber-800">
+              {formatMoney(state.deduction_unclaimed)} ещё можно использовать в этом году
+            </span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

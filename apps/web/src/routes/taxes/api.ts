@@ -114,6 +114,31 @@ export type TaxOverview = {
   alert_count: number;
   /** Выручка загружена не за весь период — цифра не окончательная. */
   is_blocked: boolean;
+  ledger: LedgerSummary;
+};
+
+/** Один вид платежа в трёх числах — ответ на «сколько начислено, уплачено, осталось». */
+export type LedgerRow = {
+  kind: string;
+  title: string;
+  /** null — начисление посчитать не из чего (нет оборотки). */
+  accrued?: Money | null;
+  paid: Money;
+  /** null — сравнивать не с чем: начисления известны не за весь период. */
+  left?: Money | null;
+  /** Уменьшает ли платёж налог УСН (НДФЛ — никогда). */
+  reduces_tax: boolean;
+  recipient: string;
+  note?: string | null;
+};
+
+export type LedgerSummary = {
+  year: number;
+  as_of: string;
+  rows: LedgerRow[];
+  accrued_total: Money;
+  paid_total: Money;
+  left_total: Money;
 };
 
 // ── Календарь: TaxCalendarRead ─────────────────────────────────────────────────

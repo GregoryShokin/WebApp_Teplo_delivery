@@ -146,6 +146,38 @@ class TaxOverviewRead(BaseModel):
     alert_count: int
     # Расчёт нельзя показывать как окончательный: база загружена не за весь период.
     is_blocked: bool
+    # Сводка «начислено / уплачено / осталось» по всем видам — ответ на вопрос
+    # «сколько мы должны и сколько уже заплатили» (решение владельца 27.07.2026).
+    ledger: LedgerSummaryRead
+
+
+class LedgerRowRead(BaseModel):
+    """Один вид платежа в трёх числах: начислено, уплачено, осталось."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    title: str
+    # None — начисление посчитать не из чего (нет оборотки за период).
+    accrued: Decimal | None = None
+    paid: Decimal
+    # None — сравнивать не с чем: начисления известны не за весь период.
+    left: Decimal | None = None
+    # Уменьшает ли платёж налог УСН (НДФЛ — никогда: это налог работника).
+    reduces_tax: bool
+    recipient: str
+    note: str | None = None
+
+
+class LedgerSummaryRead(BaseModel):
+    """Сводка по всем налогам и взносам за год."""
+
+    year: int
+    as_of: date
+    rows: list[LedgerRowRead]
+    accrued_total: Decimal
+    paid_total: Decimal
+    left_total: Decimal
 
 
 # ── Календарь и платежи ──────────────────────────────────────────────────────
