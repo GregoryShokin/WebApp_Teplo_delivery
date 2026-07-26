@@ -153,16 +153,16 @@ def _turnover_recognition(doc: TurnoverStatementDoc) -> dict:
 def _humanize_parse_error(exc: Exception) -> str:
     """Ошибка разбора — по-русски и с подсказкой, а не голым исключением библиотеки."""
     if isinstance(exc, zipfile.BadZipFile):
-        # python-docx открывает .docx как zip-архив; сюда попадает битый или чужой файл.
+        # .docx и .xlsx — zip-контейнеры; сюда попадает битый или чужой файл.
         return (
-            "Файл не читается как документ Word (.docx): внутри не zip-архив — "
-            "файл повреждён или расширение не соответствует содержимому. Откройте вручную."
+            "Файл повреждён или расширение не соответствует содержимому "
+            "(не открывается как документ Word/Excel). Откройте вручную."
         )
     text = str(exc)
-    if "xlsx" in text and "not supported" in text:
+    if "not supported" in text or "Unsupported format" in text:
         return (
-            "Новый формат Excel (.xlsx) — автоматика читает только старый .xls. "
-            "Откройте файл вручную или попросите бухгалтера пересохранить в .xls."
+            "Формат файла не поддерживается автоматикой — откройте вручную "
+            "или попросите бухгалтера пересохранить в .docx / .xls / .xlsx."
         )
     return f"Не удалось разобрать файл: {text}"[:500]
 
@@ -175,19 +175,14 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
     kind = _classify_document(att.filename or "")
     if kind == "unsupported_kadr":
         return "unknown", "unsupported", {"reason": "кадровый документ, не платёжный"}, None
-    # Форматы, которые автоматика читать не умеет, отсекаем ДО разбора — с понятной
-    # причиной вместо английского исключения из недр библиотек.
+    # Старый Word (.doc, OLE2) автоматика читать не умеет — отсекаем ДО разбора с понятной
+    # причиной вместо английского исключения из недр библиотек. Excel читается весь:
+    # .xls через xlrd, .xlsx через openpyxl (см. document_parser.open_workbook).
     name = (att.filename or "").lower()
     if name.endswith(".doc"):
         reason = (
             "Старый формат Word (.doc) — автоматика читает только .docx. "
             "Откройте файл вручную или попросите бухгалтера пересохранить в .docx."
-        )
-        return "unknown", "unsupported", {"reason": reason}, None
-    if name.endswith(".xlsx"):
-        reason = (
-            "Новый формат Excel (.xlsx) — автоматика читает только старый .xls. "
-            "Откройте файл вручную или попросите бухгалтера пересохранить в .xls."
         )
         return "unknown", "unsupported", {"reason": reason}, None
     year = _received_year(att)

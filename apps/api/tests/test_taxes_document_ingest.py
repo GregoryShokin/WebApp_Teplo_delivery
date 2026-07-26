@@ -160,15 +160,94 @@ def test_old_doc_format_unsupported_with_russian_reason() -> None:
     assert err is None
 
 
-def test_xlsx_format_unsupported_with_russian_reason() -> None:
-    """Новый Excel (.xlsx) xlrd не читает — статус «не поддержан» с русской причиной,
-    а не «Excel xlsx file; not supported» из недр библиотеки."""
-    dtype, status, rec, err = parse_attachment(
-        _att("oborotka_07.xls", "Документы в ответ на Требование №1161 от 19.03.26.xlsx")
+def _xlsx_bytes(rows: list[list[object]], sheet_name: str = "Лист1") -> bytes:
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name
+    for row in rows:
+        ws.append(row)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _xls_fixture_as_xlsx(name: str) -> bytes:
+    """Существующая xls-фикстура, пересохранённая в .xlsx, — сетка та же."""
+    from io import BytesIO
+
+    import xlrd
+    from openpyxl import Workbook
+
+    src = xlrd.open_workbook(file_contents=(FIXTURES / name).read_bytes())
+    wb = Workbook()
+    wb.remove(wb.active)
+    for sheet in src.sheets():
+        ws = wb.create_sheet(title=sheet.name)
+        for r in range(sheet.nrows):
+            ws.append([sheet.cell_value(r, c) for c in range(sheet.ncols)])
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_xlsx_injury_payment_parsed() -> None:
+    """Платёжка травматизма в .xlsx читается openpyxl так же, как .xls."""
+    from dataclasses import replace
+
+    content = _xlsx_bytes(
+        [
+            ["Форма ПД (налог)"],
+            ["Сумма", "100.00"],
+            ["КБК", "79710212000061000160"],
+            ["Получатель", "ОСФР по Ростовской области"],
+        ]
     )
-    assert dtype == "unknown"
-    assert status == "unsupported"
-    assert ".xls" in rec["reason"] and "вручную" in rec["reason"]
+    att = replace(_att("oborotka_07.xls", "0,2 %.xlsx"), content=content)
+    dtype, status, rec, err = parse_attachment(att)
+    assert dtype == "payment_order"
+    assert status == "parsed"
+    assert rec["tax_kind"] == "contrib_injury"
+    assert rec["amount"] == "100.00"
+    assert rec["kbk"] == "79710212000061000160"
+    assert err is None
+
+
+def test_xlsx_turnover_statement_parsed_same_as_xls() -> None:
+    """Оборотка в .xlsx даёт ту же раскладку, что и .xls (общий интерфейс книги)."""
+    from dataclasses import replace
+
+    att = replace(
+        _att("oborotka_07.xls", "ОБОРОТКА 07.xlsx"),
+        content=_xls_fixture_as_xlsx("oborotka_07.xls"),
+    )
+    dtype, status, rec, err = parse_attachment(att)
+    assert dtype == "turnover_statement"
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-07"
+    assert rec["rows"][0]["employee"] == "ИВАНОВА И.И."
+    assert rec["rows"][0]["ndfl"] == "6318.00"
+    assert rec["contributions_total"] == "13595.93"
+    assert err is None
+
+
+def test_unknown_xlsx_needs_review_not_error() -> None:
+    """Произвольный .xlsx (опись, не ведомость) — «нужна проверка», а не ошибка разбора."""
+    from dataclasses import replace
+
+    content = _xlsx_bytes(
+        [["Опись документов"], ["Договор аренды", 1], ["Пояснение", 2]]
+    )
+    att = replace(
+        _att("oborotka_07.xls", "Документы в ответ на Требование №1161 от 19.03.26.xlsx"),
+        content=content,
+    )
+    dtype, status, _, err = parse_attachment(att)
+    assert dtype == "payroll_statement"
+    assert status == "needs_review"
     assert err is None
 
 

@@ -209,10 +209,10 @@ def _extract_text(intake: TaxDocumentIntake) -> str | None:
     try:
         if name.endswith(".docx"):
             return _docx_text(data)[:_MAX_DOC_CHARS]
-        if name.endswith(".xls"):
-            import xlrd  # локальный импорт: тяжёлый только для .xls-веток
+        if name.endswith((".xls", ".xlsx")):
+            from app.services.taxes.document_parser import open_workbook
 
-            book = xlrd.open_workbook(file_contents=data)
+            book = open_workbook(data)
             lines: list[str] = []
             for sheet in book.sheets():
                 lines.append(f"=== лист «{sheet.name}» ===")

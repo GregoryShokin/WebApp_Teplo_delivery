@@ -9,7 +9,8 @@
 * **ПД (налог)** (``.xls``, «0,2 %»): взнос на травматизм в СФР.
 
 ``.docx`` — это zip+xml, читается стандартной библиотекой без зависимостей. ``.xls`` (старый
-бинарный BIFF) требует ``xlrd``.
+бинарный BIFF) требует ``xlrd``; ``.xlsx`` читается через ``openpyxl`` — формат выбирается
+по сигнатуре содержимого в :func:`open_workbook`.
 
 ВАЖНО про доверие: сумма и КБК из платёжки достоверны. Тип платежа (``tax_kind``) выводится
 из ИМЕНИ ФАЙЛА, которое агент пишет вручную — формат стабильный, но человеческий. Поэтому
@@ -22,7 +23,7 @@ import contextlib
 import re
 import zipfile
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 
@@ -79,6 +80,63 @@ class PayrollStatementDoc:
     needs_review: bool
     review_reasons: list[str] = field(default_factory=list)
     source_filename: str | None = None
+
+
+# ── книги Excel: .xls (xlrd) и .xlsx (openpyxl) под одним интерфейсом ────────
+
+
+class _XlsxSheet:
+    """Лист .xlsx под интерфейс листа xlrd (name/nrows/ncols/cell_value)."""
+
+    def __init__(self, name: str, rows: list[tuple]) -> None:
+        self.name = name
+        self._rows = rows
+        self.nrows = len(rows)
+        self.ncols = max((len(r) for r in rows), default=0)
+
+    def cell_value(self, row: int, col: int) -> object:
+        cells = self._rows[row]
+        value = cells[col] if col < len(cells) else None
+        if value is None:  # xlrd отдаёт пустую строку, openpyxl — None
+            return ""
+        if isinstance(value, datetime):  # даты — текстом, как пишут в наших документах
+            return value.strftime("%d.%m.%Y")
+        return value
+
+
+class _XlsxWorkbook:
+    """Книга .xlsx под интерфейс xlrd (sheets/sheet_names/sheet_by_name)."""
+
+    def __init__(self, data: bytes) -> None:
+        from openpyxl import load_workbook  # локальный импорт: тяжёлый только для Excel
+
+        wb = load_workbook(BytesIO(data), read_only=True, data_only=True)
+        try:
+            self._sheets = [
+                _XlsxSheet(ws.title, [tuple(row) for row in ws.iter_rows(values_only=True)])
+                for ws in wb.worksheets
+            ]
+        finally:
+            wb.close()
+
+    def sheets(self) -> list[_XlsxSheet]:
+        return list(self._sheets)
+
+    def sheet_names(self) -> list[str]:
+        return [s.name for s in self._sheets]
+
+    def sheet_by_name(self, name: str) -> _XlsxSheet:
+        return next(s for s in self._sheets if s.name == name)
+
+
+def open_workbook(data: bytes) -> object:
+    """Книга Excel по СИГНАТУРЕ содержимого (не по расширению — имена рукописные):
+    zip (PK) → .xlsx через openpyxl, иначе → .xls через xlrd."""
+    if data[:4] == b"PK\x03\x04":
+        return _XlsxWorkbook(data)
+    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
+
+    return xlrd.open_workbook(file_contents=data)
 
 
 # ── docx ─────────────────────────────────────────────────────────────────────
@@ -212,9 +270,7 @@ def parse_injury_payment(
     внутри — сумма, КБК травматизма (797…), получатель ОСФР по региону. Раньше такой .xls
     молча уходил в Т-53-парсер, где «не находил сотрудников» и вис в «нужна проверка».
     """
-    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
-
-    wb = xlrd.open_workbook(file_contents=data)
+    wb = open_workbook(data)
     cells: list[str] = []
     for sheet in wb.sheets():
         for r in range(sheet.nrows):
@@ -304,10 +360,8 @@ _NAME_RE = re.compile(
 
 
 def parse_payroll_statement(data: bytes, *, filename: str = "") -> PayrollStatementDoc:
-    """Разобрать платёжную ведомость (xls, форма Т-53)."""
-    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
-
-    wb = xlrd.open_workbook(file_contents=data)
+    """Разобрать платёжную ведомость (xls/xlsx, форма Т-53)."""
+    wb = open_workbook(data)
     grid: list[list[str]] = []
     for sheet in wb.sheets():
         for r in range(sheet.nrows):
@@ -503,10 +557,8 @@ def _turnover_period(grid: list[list[str]]) -> tuple[int | None, int | None]:
 
 
 def parse_turnover_statement(data: bytes, *, filename: str = "") -> TurnoverStatementDoc:
-    """Разобрать сальдо-оборотную ведомость по зарплате (xls, лист 'л1')."""
-    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
-
-    wb = xlrd.open_workbook(file_contents=data)
+    """Разобрать сальдо-оборотную ведомость по зарплате (xls/xlsx, лист 'л1')."""
+    wb = open_workbook(data)
     if _TURNOVER_SHEET not in wb.sheet_names():
         return TurnoverStatementDoc(
             year=None, month=None, period_code=None, rows=[],
