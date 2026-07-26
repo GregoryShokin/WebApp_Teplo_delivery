@@ -3619,8 +3619,12 @@ export interface OfficialProfile {
   official_full_name: string | null;
   official_tab_number: string | null;
   official_salary: string | null;
-  official_ndfl_deduction: string;
+  /** Вычет НДФЛ не вводится руками: считается из числа детей (ст. 218 НК). */
+  official_children_count: number;
+  official_single_parent: boolean;
   official_status: "working" | "maternity_leave";
+  /** Посчитанный сервером вычет, ₽/мес — только для показа. */
+  ndfl_deduction_monthly?: string;
 }
 
 export async function fetchOfficialProfile(employeeId: string): Promise<OfficialProfile> {

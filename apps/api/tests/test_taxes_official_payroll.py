@@ -19,6 +19,7 @@ from app.models.tax import TaxPayment, TaxPayrollLedger
 from app.services.taxes.engine import YEAR_CONFIGS
 from app.services.taxes.obligations import list_payable_obligations
 from app.services.taxes.official_payroll import (
+    child_deduction_monthly,
     fixed_contribution_remainder,
     month_contributions,
     month_ndfl,
@@ -32,7 +33,8 @@ CFG = YEAR_CONFIGS[2026]
 def _official_employee(
     *,
     salary: str = "50000",
-    deduction: str = "1400",
+    children: int = 1,
+    single_parent: bool = False,
     status: str = "working",
     hire: date | None = date(2026, 5, 18),
     fire: date | None = None,
@@ -45,7 +47,8 @@ def _official_employee(
         official_full_name="Водолазова Виктория Сергеевна",
         official_tab_number="206",
         official_salary=Decimal(salary),
-        official_ndfl_deduction=Decimal(deduction),
+        official_children_count=children,
+        official_single_parent=single_parent,
         official_status=status,
         hire_date=hire,
         fire_date=fire,
@@ -76,6 +79,36 @@ def test_month_math_matches_accountant_turnover() -> None:
     assert month_ndfl(Decimal("50000"), Decimal("1400"), CFG) == Decimal("6318")
     # Под порогом 1,5 МРОТ — чистые 30% (июнь: начислено 28 571 → 8 571,30).
     assert month_contributions(Decimal("28571"), CFG) == Decimal("8571.30")
+
+
+def test_child_deduction_sums_per_child() -> None:
+    """Вычеты СУММИРУЮТСЯ по детям (не «на семью»): 2 детей → 4 200, 3 → 10 200."""
+    assert child_deduction_monthly(0, False, CFG) == Decimal("0")
+    assert child_deduction_monthly(1, False, CFG) == Decimal("1400.00")
+    assert child_deduction_monthly(2, False, CFG) == Decimal("4200.00")
+    assert child_deduction_monthly(3, False, CFG) == Decimal("10200.00")
+    assert child_deduction_monthly(4, False, CFG) == Decimal("16200.00")
+    # Единственный родитель — в двойном размере.
+    assert child_deduction_monthly(1, True, CFG) == Decimal("2800.00")
+
+
+async def test_deduction_stops_over_income_limit(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Доход свыше 450 000 нарастающим итогом — вычет с этого месяца не применяется.
+
+    Оклад 50 000, работает с января: сентябрь — доход ровно 450 000 (вычет ещё есть,
+    НДФЛ 6 318), октябрь — 500 000 (вычета нет, НДФЛ 6 500).
+    """
+    async with async_session_factory() as session:
+        session.add(_official_employee(hire=date(2025, 1, 1)))
+        await session.commit()
+
+        september = await official_month_accrual(session, year=2026, month=9, cfg=CFG)
+        october = await official_month_accrual(session, year=2026, month=10, cfg=CFG)
+
+    assert september is not None and september.ndfl == Decimal("6318")
+    assert october is not None and october.ndfl == Decimal("6500")
 
 
 # ── прогнозное начисление месяца ─────────────────────────────────────────────

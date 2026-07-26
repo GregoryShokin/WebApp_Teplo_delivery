@@ -79,6 +79,10 @@ class Employee(Base):
             "official_salary is null or official_salary > 0",
             name="ck_employee_official_salary_positive",
         ),
+        CheckConstraint(
+            "official_children_count >= 0",
+            name="ck_employee_official_children_non_negative",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -186,12 +190,22 @@ class Employee(Base):
         nullable=True,
         comment="source=app_managed; официальный оклад по трудовому договору, ₽/мес",
     )
-    official_ndfl_deduction: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
+    official_children_count: Mapped[int] = mapped_column(
+        Integer,
         nullable=False,
-        default=Decimal("0"),
+        default=0,
         server_default="0",
-        comment="source=app_managed; стандартный вычет НДФЛ (детский и т.п.), ₽/мес",
+        comment=(
+            "source=app_managed; несовершеннолетних детей — вычет НДФЛ считается сам "
+            "(ст. 218 НК: 1-й 1400, 2-й 2800, 3-й+ 6000, суммируются)"
+        ),
+    )
+    official_single_parent: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed; единственный родитель — детский вычет в двойном размере",
     )
     official_status: Mapped[str] = mapped_column(
         String(16),

@@ -72,6 +72,26 @@ def month_ndfl(base: Decimal, deduction: Decimal, cfg: YearConfig) -> Decimal:
     return rub(taxable * cfg.ndfl_rate)
 
 
+def child_deduction_monthly(children: int, single_parent: bool, cfg: YearConfig) -> Decimal:
+    """Детский вычет НДФЛ в месяц из вопросов «сколько детей» и «единственный родитель».
+
+    Ст. 218 НК (размеры с 2025): 1-й ребёнок 1 400, 2-й 2 800, 3-й и каждый следующий
+    6 000 — вычеты СУММИРУЮТСЯ (двое детей → 4 200, трое → 10 200). Единственному
+    родителю — в двойном размере. Ручной ввод суммы убран решением владельца 26.07.2026:
+    вопросы конкретные, ошибиться сложнее.
+    """
+    total = ZERO
+    if children >= 1:
+        total += cfg.child_deduction_first
+    if children >= 2:
+        total += cfg.child_deduction_second
+    if children >= 3:
+        total += cfg.child_deduction_next * (children - 2)
+    if single_parent:
+        total *= 2
+    return total
+
+
 def month_injury(base: Decimal, cfg: YearConfig) -> Decimal:
     """Взнос на травматизм за месяц: база × 0,2 % (I класс риска)."""
     return money(base * cfg.injury_rate)
@@ -107,6 +127,42 @@ def _worked_full_month(emp: Employee, year: int, month: int) -> bool:
     return not (emp.fire_date is not None and emp.fire_date < month_end)
 
 
+async def _cumulative_official_income(
+    session: AsyncSession, emp: Employee, *, year: int, month: int, cfg: YearConfig
+) -> Decimal:
+    """Официальный доход сотрудника с начала года ПО КОНЕЦ месяца ``month``.
+
+    Гибрид: месяцы, покрытые обороткой, берём фактом (``TaxPayrollLedger.accrued`` по
+    табельному — там отпускные/премии/неполные месяцы уже правильные); непокрытые полные
+    месяцы добираем окладом. Нужен для лимита детского вычета (450 000 нарастающим
+    итогом): с месяца превышения вычет не применяется.
+    """
+    covered: set[int] = set()
+    fact = ZERO
+    if emp.official_tab_number:
+        rows = (
+            await session.scalars(
+                select(TaxPayrollLedger).where(
+                    TaxPayrollLedger.year == year,
+                    TaxPayrollLedger.month <= month,
+                    TaxPayrollLedger.tab_number == emp.official_tab_number,
+                )
+            )
+        ).all()
+        for row in rows:
+            covered.add(row.month)
+            fact += row.accrued or ZERO
+    projected = sum(
+        (
+            Decimal(emp.official_salary)
+            for m in range(1, month + 1)
+            if m not in covered and _worked_full_month(emp, year, m)
+        ),
+        ZERO,
+    )
+    return fact + projected
+
+
 async def official_month_accrual(
     session: AsyncSession, *, year: int, month: int, cfg: YearConfig
 ) -> OfficialMonthAccrual | None:
@@ -124,7 +180,16 @@ async def official_month_accrual(
             continue
         base = Decimal(emp.official_salary)
         base_total += base
-        ndfl_total += month_ndfl(base, Decimal(emp.official_ndfl_deduction or 0), cfg)
+        deduction = child_deduction_monthly(
+            emp.official_children_count or 0, bool(emp.official_single_parent), cfg
+        )
+        if deduction > 0:
+            income = await _cumulative_official_income(
+                session, emp, year=year, month=month, cfg=cfg
+            )
+            if income > cfg.ndfl_deduction_income_limit:
+                deduction = ZERO  # лимит 450 000 превышен — вычет с этого месяца не действует
+        ndfl_total += month_ndfl(base, deduction, cfg)
         contrib_total += month_contributions(base, cfg)
         injury_total += month_injury(base, cfg)
         count += 1

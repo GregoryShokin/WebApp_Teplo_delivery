@@ -4357,6 +4357,22 @@ async def _close_active_shift_entries_on_dismiss(
 # модуль прогнозирует начисления (НДФЛ, взносы МСП, травматизм) до прихода оборотки.
 
 
+def _official_profile_read(employee: Employee) -> OfficialProfileRead:
+    """Ответ субресурса: входные данные + вычет НДФЛ, посчитанный из числа детей."""
+    from app.services.taxes.engine import YEAR_CONFIGS
+    from app.services.taxes.official_payroll import child_deduction_monthly
+
+    read = OfficialProfileRead.model_validate(employee)
+    cfg = YEAR_CONFIGS.get(date.today().year)
+    if cfg is not None:
+        read.ndfl_deduction_monthly = child_deduction_monthly(
+            employee.official_children_count or 0,
+            bool(employee.official_single_parent),
+            cfg,
+        )
+    return read
+
+
 @router.get(
     "/{employee_id}/official",
     response_model=OfficialProfileRead,
@@ -4367,7 +4383,7 @@ async def get_official_profile(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> OfficialProfileRead:
     employee = await _get_employee_or_404(session, employee_id)
-    return OfficialProfileRead.model_validate(employee)
+    return _official_profile_read(employee)
 
 
 @router.put(
@@ -4394,7 +4410,8 @@ async def put_official_profile(
         "official_full_name",
         "official_tab_number",
         "official_salary",
-        "official_ndfl_deduction",
+        "official_children_count",
+        "official_single_parent",
         "official_status",
     )
 
@@ -4409,7 +4426,8 @@ async def put_official_profile(
     employee.official_full_name = payload.official_full_name
     employee.official_tab_number = payload.official_tab_number
     employee.official_salary = payload.official_salary
-    employee.official_ndfl_deduction = payload.official_ndfl_deduction
+    employee.official_children_count = payload.official_children_count
+    employee.official_single_parent = payload.official_single_parent
     employee.official_status = payload.official_status
     after = _snapshot()
 
@@ -4432,4 +4450,4 @@ async def put_official_profile(
         )
     await session.commit()
     await session.refresh(employee)
-    return OfficialProfileRead.model_validate(employee)
+    return _official_profile_read(employee)

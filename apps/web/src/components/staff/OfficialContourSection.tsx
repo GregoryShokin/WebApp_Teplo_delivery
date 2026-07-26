@@ -155,17 +155,43 @@ export function OfficialContourSection({ employeeId }: { employeeId: string }) {
               ) : null}
             </Label>
             <Label className="grid gap-1.5">
-              <span>Вычет НДФЛ, ₽/мес</span>
+              <span>Несовершеннолетних детей</span>
               <Input
                 disabled={busy}
-                inputMode="decimal"
+                inputMode="numeric"
+                min={0}
                 onChange={(event) =>
-                  setDraft({ ...draft, official_ndfl_deduction: event.target.value })
+                  setDraft({
+                    ...draft,
+                    official_children_count: Math.max(0, Number(event.target.value) || 0),
+                  })
                 }
-                placeholder="1400"
-                value={draft.official_ndfl_deduction}
+                type="number"
+                value={draft.official_children_count}
               />
+              <span className="text-xs text-muted-foreground">
+                Вычет НДФЛ считается сам: 1-й ребёнок 1 400, 2-й 2 800, 3-й и далее 6 000
+                ₽/мес (суммируются){draft.ndfl_deduction_monthly
+                  ? ` — сейчас ${draft.ndfl_deduction_monthly} ₽/мес`
+                  : ""}. Отключается сам при доходе свыше 450 000 ₽ с начала года.
+              </span>
             </Label>
+            <label className="flex items-center gap-2 self-end pb-2 text-sm">
+              <input
+                checked={draft.official_single_parent}
+                disabled={busy}
+                onChange={(event) =>
+                  setDraft({ ...draft, official_single_parent: event.target.checked })
+                }
+                type="checkbox"
+              />
+              <span>
+                Единственный родитель
+                <span className="block text-xs text-muted-foreground">
+                  вычет в двойном размере
+                </span>
+              </span>
+            </label>
             <Label className="grid gap-1.5">
               <span>Статус</span>
               <select
@@ -201,7 +227,6 @@ export function OfficialContourSection({ employeeId }: { employeeId: string }) {
                 official_full_name: draft.official_full_name?.trim() || null,
                 official_tab_number: draft.official_tab_number?.trim() || null,
                 official_salary: draft.official_salary || null,
-                official_ndfl_deduction: draft.official_ndfl_deduction || "0",
               })
             }
             size="sm"

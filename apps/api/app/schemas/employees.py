@@ -689,8 +689,12 @@ class OfficialProfileRead(BaseModel):
     official_full_name: str | None = None
     official_tab_number: str | None = None
     official_salary: Decimal | None = None
-    official_ndfl_deduction: Decimal = Decimal("0")
+    official_children_count: int = 0
+    official_single_parent: bool = False
     official_status: str = "working"
+    # Считается сервером из числа детей (ст. 218 НК) — показываем владельцу, руками
+    # не вводится. Лимит 450 000 нарастающим итогом применяется в прогнозе начислений.
+    ndfl_deduction_monthly: Decimal = Decimal("0")
 
 
 class OfficialProfileUpdate(BaseModel):
@@ -698,15 +702,17 @@ class OfficialProfileUpdate(BaseModel):
 
     При включённом флаге официальные ФИО и оклад ОБЯЗАТЕЛЬНЫ (решение владельца
     26.07.2026): без них не сматчить сотрудника с документами ФНС и не посчитать
-    прогнозные начисления. Табельный номер желателен, но его присваивает бухгалтер —
-    не блокируем.
+    прогнозные начисления. Вычет НДФЛ руками не вводится — только вопросы «сколько
+    детей» и «единственный родитель», сумма считается сама (решение владельца тем же
+    вечером: конкретные вопросы вместо суммы — ошибиться сложнее).
     """
 
     is_official: bool
     official_full_name: str | None = Field(default=None, max_length=255)
     official_tab_number: str | None = Field(default=None, max_length=16)
     official_salary: Decimal | None = None
-    official_ndfl_deduction: Decimal = Decimal("0")
+    official_children_count: int = Field(default=0, ge=0, le=20)
+    official_single_parent: bool = False
     official_status: str = "working"
 
     @field_validator("official_full_name", "official_tab_number")
@@ -722,13 +728,6 @@ class OfficialProfileUpdate(BaseModel):
     def _validate_status(cls, value: str) -> str:
         if value not in OFFICIAL_STATUSES:
             raise ValueError("Статус: working (работает) или maternity_leave (декрет)")
-        return value
-
-    @field_validator("official_ndfl_deduction")
-    @classmethod
-    def _validate_deduction(cls, value: Decimal) -> Decimal:
-        if value < 0:
-            raise ValueError("Вычет НДФЛ не может быть отрицательным")
         return value
 
     @model_validator(mode="after")
