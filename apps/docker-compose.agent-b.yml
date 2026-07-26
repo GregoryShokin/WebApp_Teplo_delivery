@@ -38,6 +38,10 @@ services:
       # В ../.env лежит live-режим с боевыми кредами: без этой строки стенд выпишет
       # настоящий платёж в T-Bank. environment перебивает env_file — не убирать.
       TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko: в общем ../.env стоит боевой сервер, а превью не должно писать
+      # во внешние системы. Без переменной IikoClient.__init__ бросает SystemExit и роняет
+      # uvicorn (один заход на «График» кладёт стенд). С заглушкой запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me

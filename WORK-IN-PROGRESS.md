@@ -27,7 +27,7 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
-- compose: agent-c (API 8020 / web 5193 / pg 5452, БД `teplo`, тест `teplo_test_c`)
+- compose: agent-c (web 5203 / api 8030 / pg 5462, БД `teplo`, тест `teplo_test_c`)
 - трогает: модуль «Курьеры» — объединённая страница «Смена» (инбокс + депозиты + оценки):
   - back: `app/models/courier_shift_day.py`, `app/services/couriers/shift_day_service.py`,
     `app/api/v1/routes/couriers.py` (shift-day роуты), `app/schemas/couriers.py`,
@@ -79,3 +79,19 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
   Слот 4 держат сразу два стенда (agent-payments и preview-taxes) — одновременно не поднять,
   согласуйте очередь. Следующий свободный слот — 8 (web 5253 / api 8080 / pg 5512).
+
+  **Живые контейнеры расходятся с таблицей — сверено `docker ps` 26.07:**
+
+  - `teplo-web-finance-workbench` держит **web 5203**, а по таблице это порт agent-c (слот 3).
+    Стенд долгоживущий, на копии прод-БД, порты зафиксированы владельцем — двигать его не надо;
+    поднимать agent-c с web 5203 сейчас нельзя, берите свободный слот 8.
+    Api/pg этого стенда (8050/5482) — из `agent-partial`, то есть он сидит на двух слотах разом.
+  - `teplo-*-taxes` поднят из `apps/docker-compose.preview-taxes.yml`, который **не в git**
+    (untracked у `Teplo-agent-tax`) и занимает api 8040 / pg 5472 — порты agent-payments.
+  - Контейнер, поднятый до правки compose-файла, сохраняет СТАРЫЙ маппинг портов и старое
+    окружение: изменения подхватятся только при пересоздании (`up -d --force-recreate`).
+
+  **iiko: заглушка `IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid` стоит во всех стендах,
+  кроме `preview-ic` и основного `docker-compose.yml`.** В общем `../.env` прописан боевой сервер
+  iiko, поэтому без заглушки превью умеет писать в боевую систему. У `preview-ic` живой iiko —
+  назначение ветки (унификация накладных на iiko Cloud), там это осознанно.
