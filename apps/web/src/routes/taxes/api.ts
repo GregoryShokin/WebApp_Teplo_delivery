@@ -90,6 +90,8 @@ export type ReconLine = {
   action?: string | null;
   /** Сколько платить по обязательству (для кнопки «Отправить в банк»); null — платить нечего. */
   payable_amount?: Money | null;
+  /** Платёж уже в работе: 'ready_to_send' | 'in_bank' — кнопка отправки не показывается. */
+  draft_status?: string | null;
 };
 
 export type Reconciliation = {

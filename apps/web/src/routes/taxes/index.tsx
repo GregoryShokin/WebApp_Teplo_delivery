@@ -174,10 +174,12 @@ function toNumber(value: Money | null | undefined): number {
 
 // ── словари ────────────────────────────────────────────────────────────────────
 
+// Владелец думает кварталами: «полугодие»/«9 месяцев» — язык деклараций, а платёж за
+// полугодие — это доплата за II квартал. Показываем кварталы.
 const PERIOD_TITLES: Record<string, string> = {
   q1: "I квартал",
-  h1: "полугодие",
-  "9m": "9 месяцев",
+  h1: "II квартал",
+  "9m": "III квартал",
   year: "год",
 };
 
@@ -674,7 +676,18 @@ function ReconRow({ line }: { line: ReconLine }) {
             <span className="font-medium">Что делать:</span> {line.action}
           </div>
         ) : null}
-        {payable != null && canManage ? (
+        {/* Платёж уже в работе — кнопку гасим и показываем состояние: повторная отправка
+            плодила бы дубли платёжек. Синхронизировано с окном «Активные платежи». */}
+        {line.draft_status === "in_bank" ? (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-sky-700">
+            <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+            Отправлен в банк — подтвердите платёжку в банк-клиенте
+          </div>
+        ) : line.draft_status === "ready_to_send" ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Платёж подготовлен — отправьте его из окна «Активные платежи»
+          </div>
+        ) : payable != null && canManage ? (
           <Button
             className="mt-2"
             onClick={() => setPayOpen(true)}

@@ -76,12 +76,13 @@ async def create_tax_payment_draft(
     reqs = treasury_enp_requisites()
     resolved_purpose = (purpose or "").strip() or str(reqs["paymentPurpose"])
 
-    # Дедуп по (вид налога, год, период) среди ещё не отправленных — сравнение в Python
-    # null-безопасно (у части обязательств период отсутствует).
+    # Идемпотентность по (вид налога, год, период), сравнение в Python — null-безопасно.
+    # Неотправленный черновик обновляется; УЖЕ ОТПРАВЛЕННЫЙ — не дублируется: повторный
+    # клик «Отправить в банк» не должен плодить вторую платёжку в Т-Банке.
     candidates = (
         await session.scalars(
             select(TaxBankDraft).where(
-                TaxBankDraft.status == "ready_to_send",
+                TaxBankDraft.status.in_(("ready_to_send", "in_bank")),
                 TaxBankDraft.tax_kind == tax_kind,
             )
         )
@@ -91,6 +92,11 @@ async def create_tax_payment_draft(
         None,
     )
     if existing is not None:
+        if existing.status == "in_bank":
+            raise TaxDraftError(
+                "Платёж по этому обязательству уже отправлен в банк — подтвердите его "
+                "в банк-клиенте или удалите черновик там."
+            )
         existing.amount = amount
         existing.purpose = resolved_purpose
         existing.due_date = due_date

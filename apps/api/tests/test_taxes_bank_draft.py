@@ -85,3 +85,41 @@ async def test_create_tax_bank_draft_in_mock(
         )
     assert result.document_id
     assert result.status  # mock-клиент возвращает статус черновика без похода в сеть
+
+
+async def test_prepare_draft_is_idempotent_and_guards_in_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повторная подготовка обновляет неотправленный черновик, а отправленный — не дублирует."""
+    import pytest
+
+    from app.services.taxes.bank_draft import TaxDraftError, create_tax_payment_draft
+
+    async with async_session_factory() as session:
+        first = await create_tax_payment_draft(
+            session,
+            tax_kind="usn_advance",
+            amount=Decimal("478376"),
+            for_year=2026,
+            for_period="h1",
+        )
+        again = await create_tax_payment_draft(
+            session,
+            tax_kind="usn_advance",
+            amount=Decimal("478319"),
+            for_year=2026,
+            for_period="h1",
+        )
+        assert again.id == first.id  # обновился, а не задвоился
+        assert again.amount == Decimal("478319")
+
+        first.status = "in_bank"
+        await session.flush()
+        with pytest.raises(TaxDraftError, match="уже отправлен в банк"):
+            await create_tax_payment_draft(
+                session,
+                tax_kind="usn_advance",
+                amount=Decimal("478376"),
+                for_year=2026,
+                for_period="h1",
+            )

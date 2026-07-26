@@ -435,3 +435,44 @@ async def test_calendar_settles_periodless_fact_by_amount(
     assert ("paid", "contrib_fixed") in by_status
     assert ("planned", "contrib_injury") in by_status  # не закрыт — факта нет
     assert ("planned", "contrib_fixed") not in by_status  # закрыт фактом по сумме
+
+
+async def test_recon_line_shows_active_draft_status(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Строка сверки знает, что платёж уже в работе: кнопка «Отправить в банк» гаснет.
+
+    Синхронизация с окном «Активные платежи» (решение владельца 26.07.2026): отправленный
+    черновик по виду+периоду переводит строку в состояние draft_status='in_bank'.
+    """
+    from app.models.tax import TaxBankDraft
+
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        await _seed_deductions(session)
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance", period="h1", amount="478376",
+                due=date(2026, 7, 28), received=datetime(2026, 7, 23, tzinfo=UTC),
+                filename="УСН 2 кв до 28.07.docx",
+            )
+        )
+        session.add(
+            TaxBankDraft(
+                tax_kind="usn_advance",
+                for_year=2026,
+                for_period="h1",
+                amount=Decimal("478376"),
+                purpose="Единый налоговый платеж",
+                status="in_bank",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 25))
+
+    line = _line(recon, "usn_advance", "h1")
+    assert line.draft_status == "in_bank"
+    # А у строки без черновика статуса нет.
+    assert _line(recon, "usn_advance", "q1").draft_status is None

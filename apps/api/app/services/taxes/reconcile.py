@@ -15,14 +15,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.tax import TaxDocumentIntake, TaxPayment, TaxPayrollLedger
+from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayrollLedger
 from app.services.taxes.engine import (
     PERIOD_SEQ,
     compute_tax_state,
@@ -36,10 +36,12 @@ ZERO = Decimal("0")
 # Допуск сверки: налог округляется до рубля, поэтому расхождение ≤ 1 ₽ — не сигнал.
 TOLERANCE = Decimal("1")
 
+# Владелец думает кварталами (26.07.2026): «полугодие»/«9 месяцев» — язык деклараций,
+# а платёж за полугодие — это доплата за II квартал. Показываем кварталы.
 PERIOD_TITLES = {
     "q1": "I квартал",
-    "h1": "полугодие",
-    "9m": "9 месяцев",
+    "h1": "II квартал",
+    "9m": "III квартал",
     "year": "год",
 }
 
@@ -67,6 +69,10 @@ class ReconLine:
     action: str | None = None
     # Сколько платить по этому обязательству (для кнопки «Отправить в банк»); None — платить нечего.
     payable_amount: Decimal | None = None
+    # Платёж по обязательству уже в работе: 'ready_to_send' (подготовлен в окне активных
+    # платежей) или 'in_bank' (отправлен в банк). Кнопка «Отправить в банк» при этом не
+    # показывается — иначе она плодила бы дубли и врала о состоянии.
+    draft_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -503,4 +509,28 @@ async def build_reconciliation(
             )
         )
 
+    # Синхронизация с окном «Активные платежи»: если по обязательству уже есть живой
+    # черновик платёжки, строка сверки это знает — кнопка «Отправить в банк» гаснет и
+    # сменяется статусом. Допвзнос 1% матчим по одному виду: сверка кодирует его годом,
+    # платёжка приходит на прирост квартала — сравнивать периоды напрямую нельзя.
+    active_drafts = (
+        await session.scalars(
+            select(TaxBankDraft).where(
+                TaxBankDraft.status.in_(("ready_to_send", "in_bank"))
+            )
+        )
+    ).all()
+
+    def _draft_status(tax_kind: str, period_code: str) -> str | None:
+        for draft in active_drafts:
+            if draft.tax_kind != tax_kind:
+                continue
+            if draft.for_period == period_code or tax_kind == "contrib_extra_1pct":
+                return draft.status
+        return None
+
+    lines = [
+        replace(line, draft_status=_draft_status(line.tax_kind, line.period_code))
+        for line in lines
+    ]
     return Reconciliation(year=year, as_of=as_of, lines=lines)

@@ -113,6 +113,8 @@ class ReconLineRead(BaseModel):
     action: str | None = None
     # Сколько платить по обязательству (для кнопки «Отправить в банк»); None — платить нечего.
     payable_amount: Decimal | None = None
+    # Платёж уже в работе: 'ready_to_send' | 'in_bank' — кнопка отправки не показывается.
+    draft_status: str | None = None
 
 
 class ReconciliationRead(BaseModel):
