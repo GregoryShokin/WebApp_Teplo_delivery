@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import zipfile
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,9 +65,6 @@ def _received_year(att: FetchedAttachment) -> int:
 def _classify_document(filename: str) -> str:
     """Тип документа по имени файла, до разбора содержимого."""
     low = (filename or "").lower()
-    if low.endswith(".docx") or low.endswith(".doc"):
-        # Платёжки приходят в docx; приказы/договоры тоже бывают docx, но обычно .xls.
-        return "payment_order"
     # Платёжка взноса на травматизм (ПД-налог, .xls «0,2 %» / «травматизм») — тоже платёжка,
     # но со своим разбором (.xls). Раньше уходила в Т-53-парсер и висла в «нужна проверка».
     if re.search(r"0[.,]2\s*%|травматизм|несчастн", low):
@@ -76,8 +74,15 @@ def _classify_document(filename: str) -> str:
         return "turnover_statement"
     if "вед" in low or "ведомост" in low:
         return "payroll_statement"
-    if any(k in low for k in ("приказ", "договор", "тд", "т-1", "т-6", "св о рожд")):
+    # Кадровое — раньше расширений: «Приказ … .doc» — это приказ, а не платёжка
+    # (раньше .doc уводил его в разбор платёжек, где он падал нечитаемым zip'ом).
+    if any(k in low for k in ("приказ", "договор", "т-1", "т-6", "св о рожд")) or re.search(
+        r"\bтд\b", low
+    ):
         return "unsupported_kadr"
+    if low.endswith(".docx") or low.endswith(".doc"):
+        # Платёжки приходят в docx; приказы/договоры тоже бывают docx, но обычно .xls.
+        return "payment_order"
     if low.endswith((".xls", ".xlsx")):
         # xls без явных признаков — пробуем как ведомость, разбор покажет.
         return "payroll_statement"
@@ -145,6 +150,23 @@ def _turnover_recognition(doc: TurnoverStatementDoc) -> dict:
     }
 
 
+def _humanize_parse_error(exc: Exception) -> str:
+    """Ошибка разбора — по-русски и с подсказкой, а не голым исключением библиотеки."""
+    if isinstance(exc, zipfile.BadZipFile):
+        # python-docx открывает .docx как zip-архив; сюда попадает битый или чужой файл.
+        return (
+            "Файл не читается как документ Word (.docx): внутри не zip-архив — "
+            "файл повреждён или расширение не соответствует содержимому. Откройте вручную."
+        )
+    text = str(exc)
+    if "xlsx" in text and "not supported" in text:
+        return (
+            "Новый формат Excel (.xlsx) — автоматика читает только старый .xls. "
+            "Откройте файл вручную или попросите бухгалтера пересохранить в .xls."
+        )
+    return f"Не удалось разобрать файл: {text}"[:500]
+
+
 def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None]:
     """Разобрать вложение. Возвращает (document_type, status, recognition, error).
 
@@ -153,6 +175,21 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
     kind = _classify_document(att.filename or "")
     if kind == "unsupported_kadr":
         return "unknown", "unsupported", {"reason": "кадровый документ, не платёжный"}, None
+    # Форматы, которые автоматика читать не умеет, отсекаем ДО разбора — с понятной
+    # причиной вместо английского исключения из недр библиотек.
+    name = (att.filename or "").lower()
+    if name.endswith(".doc"):
+        reason = (
+            "Старый формат Word (.doc) — автоматика читает только .docx. "
+            "Откройте файл вручную или попросите бухгалтера пересохранить в .docx."
+        )
+        return "unknown", "unsupported", {"reason": reason}, None
+    if name.endswith(".xlsx"):
+        reason = (
+            "Новый формат Excel (.xlsx) — автоматика читает только старый .xls. "
+            "Откройте файл вручную или попросите бухгалтера пересохранить в .xls."
+        )
+        return "unknown", "unsupported", {"reason": reason}, None
     year = _received_year(att)
 
     try:
@@ -182,7 +219,7 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
             return "turnover_statement", status, recognition, None
     except Exception as exc:  # noqa: BLE001 - разбор одного файла не валит проход
         logger.warning("tax ingest: разбор упал sha=%s", att.sha256[:12], exc_info=True)
-        return "unknown", "error", {}, str(exc)[:500]
+        return "unknown", "error", {}, _humanize_parse_error(exc)
 
     return "unknown", "unsupported", {"reason": "неопознанный тип документа"}, None
 

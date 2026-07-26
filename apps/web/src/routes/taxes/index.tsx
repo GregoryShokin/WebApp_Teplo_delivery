@@ -289,8 +289,8 @@ const DOCUMENT_STATUS_HINT: Record<string, string> = {
   promoted:
     "Уже продвинут: из документа создано налоговое обязательство или строка расчёта — данные ушли в контур. Делать с ним больше ничего не нужно.",
   unsupported:
-    "Вложение не из платёжного контура (приказ, договор, кадровый документ) — в налоги не идёт.",
-  error: "Файл не удалось разобрать. Причина — под статусом.",
+    "Документ не разобран автоматикой: либо он не из платёжного контура (приказ, договор, кадровый), либо формат файла не читается (.doc, .xlsx). Конкретная причина написана под статусом; в налоги документ не идёт.",
+  error: "Файл не удалось разобрать. Причина — красным текстом в колонке полей.",
   ignored: "Вы отклонили документ вручную — в расчёт и сверку он не попадёт.",
 };
 
@@ -1856,6 +1856,11 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               <li key={reason}>{reason}</li>
             ))}
           </ul>
+        ) : null}
+        {recognition.reason ? (
+          <div className="mt-1.5 max-w-56 text-xs leading-5 text-muted-foreground">
+            {recognition.reason}
+          </div>
         ) : null}
         {(needsAttention || recognition.ai_review) && canManage ? (
           <div className="mt-2 flex flex-wrap gap-1.5">

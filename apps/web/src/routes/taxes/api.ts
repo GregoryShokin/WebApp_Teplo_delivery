@@ -240,6 +240,8 @@ export type TaxRecognition = {
   rows?: TaxTurnoverRow[];
   /** Почему документ ушёл в needs_review — русский текст, показываем владельцу. */
   review_reasons?: string[];
+  /** Почему документ «не поддержан» (кадровый, нечитаемый формат) — русский текст. */
+  reason?: string | null;
   /** След ИИ-разбора: объяснение и ПРЕДЛОЖЕНИЕ полей (ИИ сам ничего не применяет). */
   ai_review?: {
     summary: string;

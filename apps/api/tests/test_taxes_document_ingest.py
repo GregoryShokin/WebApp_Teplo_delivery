@@ -138,6 +138,56 @@ def test_parse_attachment_marks_kadr_unsupported() -> None:
     assert status == "unsupported"
 
 
+def test_kadr_doc_wins_over_extension() -> None:
+    """«Приказ … .doc» — кадровый документ, а не платёжка: раньше .doc уводил его в разбор
+    docx, где он падал английским «File is not a zip file»."""
+    from app.services.taxes.document_ingest import _classify_document
+
+    assert _classify_document("Приказ № 1 12.01.2026 повыш.ЗП.doc") == "unsupported_kadr"
+    # Слово «тд» — по границам слова: «отдых» кадровым не считается.
+    assert _classify_document("ТД.xls") == "unsupported_kadr"
+    assert _classify_document("отдых команды.xls") != "unsupported_kadr"
+
+
+def test_old_doc_format_unsupported_with_russian_reason() -> None:
+    """Старый Word (.doc) не читается автоматикой — статус «не поддержан» с русской причиной."""
+    dtype, status, rec, err = parse_attachment(
+        _att("usn_h1_478376.docx", "Платёжка старая.doc")
+    )
+    assert dtype == "unknown"
+    assert status == "unsupported"
+    assert ".docx" in rec["reason"] and "вручную" in rec["reason"]
+    assert err is None
+
+
+def test_xlsx_format_unsupported_with_russian_reason() -> None:
+    """Новый Excel (.xlsx) xlrd не читает — статус «не поддержан» с русской причиной,
+    а не «Excel xlsx file; not supported» из недр библиотеки."""
+    dtype, status, rec, err = parse_attachment(
+        _att("oborotka_07.xls", "Документы в ответ на Требование №1161 от 19.03.26.xlsx")
+    )
+    assert dtype == "unknown"
+    assert status == "unsupported"
+    assert ".xls" in rec["reason"] and "вручную" in rec["reason"]
+    assert err is None
+
+
+def test_corrupt_docx_error_is_russian() -> None:
+    """Битый .docx падает по-русски с подсказкой, а не «File is not a zip file»."""
+    from dataclasses import replace
+
+    att = replace(
+        _att("usn_h1_478376.docx", "УСН 2 кв до 28.07.docx"),
+        content=b"\x00\x01 not a real docx",
+    )
+    dtype, status, _, err = parse_attachment(att)
+    assert dtype == "unknown"
+    assert status == "error"
+    assert err is not None
+    assert "zip file" not in err
+    assert "повреждён" in err
+
+
 # ── приём в staging ──────────────────────────────────────────────────────────
 
 
