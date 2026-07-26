@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { apiErrorMessage } from "@/lib/api";
-import { sendTaxPaymentDraftToBank } from "@/routes/taxes/api";
+import { createTaxPaymentDraft, sendTaxPaymentDraftToBank } from "@/routes/taxes/api";
 
 import type { PaymentRow } from "./payments-api";
 
@@ -67,7 +67,24 @@ export function TaxSendDialog({
     if (!row || !valid) return;
     setSubmitting(true);
     try {
-      await sendTaxPaymentDraftToBank(row.ref_id, {
+      // Виртуальное обязательство «к уплате» (tax_due): платёжного черновика ещё нет —
+      // создаём его здесь и сразу отправляем. Дедуп по виду+периоду на бэкенде не даст
+      // задвоить, если черновик уже существовал.
+      let draftId = row.ref_id;
+      if (row.source === "tax_due") {
+        const draft = await createTaxPaymentDraft({
+          tax_kind: String(row.extra.tax_kind),
+          amount: value,
+          purpose: purpose.trim() || undefined,
+          for_year: typeof row.extra.for_year === "number" ? row.extra.for_year : undefined,
+          for_period:
+            typeof row.extra.for_period === "string" ? row.extra.for_period : undefined,
+          due_date: typeof row.extra.due_date === "string" ? row.extra.due_date : undefined,
+          title: typeof row.extra.title === "string" ? row.extra.title : undefined,
+        });
+        draftId = draft.id;
+      }
+      await sendTaxPaymentDraftToBank(draftId, {
         amount: value,
         purpose: purpose.trim() || undefined,
       });

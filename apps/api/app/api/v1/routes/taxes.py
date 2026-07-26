@@ -73,6 +73,7 @@ from app.services.taxes.document_ingest import (
     set_intake_review,
 )
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
+from app.services.taxes.obligations import is_settled
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
 from app.services.taxes.repository import load_tax_inputs
@@ -240,21 +241,8 @@ async def get_calendar(
 
     # Обязательство, по которому уже есть ФАКТ уплаты, закрыто: плановая строка-«близнец»
     # (создана продвижением платёжки) — шум и ложная «просрочка», её не показываем — уплату
-    # уже представляет paid-строка. Матчим по виду и периоду; факт без периода (реконструкция
-    # из выписки не знает, за какой период платёж) — по совпадению суммы.
+    # уже представляет paid-строка. Правило матчинга общее с окном «Активные платежи».
     paid_rows = [r for r in rows if r.status == "paid"]
-
-    def _is_settled(planned: TaxPayment) -> bool:
-        for fact in paid_rows:
-            if fact.kind != planned.kind:
-                continue
-            if fact.for_period is not None:
-                if fact.for_period == planned.for_period:
-                    return True
-                continue
-            if abs(fact.amount - planned.amount) <= Decimal("1"):
-                return True
-        return False
 
     items: list[TaxCalendarItemRead] = []
     planned_total = ZERO
@@ -264,7 +252,7 @@ async def get_calendar(
 
     for row in rows:
         is_planned = row.status == "planned"
-        if is_planned and _is_settled(row):
+        if is_planned and is_settled(row, paid_rows):
             continue
         # У плановой строки в `paid_on` лежит СРОК уплаты (так её заполняет продвижение
         # документа), у уплаченной — фактическая дата списания. Раскладываем явно.

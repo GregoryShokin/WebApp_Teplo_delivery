@@ -206,7 +206,8 @@ export function ActivePaymentsModal({
   async function openSendDialog(row: PaymentRow) {
     // Налоговый платёж отправляется своим диалогом: реквизиты получателя ФНС фиксированы,
     // редактируемы только сумма и назначение (не банковские реквизиты, как у поставщика).
-    if (row.source === "tax_draft") {
+    // tax_due — виртуальное обязательство «к уплате»: черновик создастся в момент отправки.
+    if (row.source === "tax_draft" || row.source === "tax_due") {
       setTaxRow(row);
       return;
     }

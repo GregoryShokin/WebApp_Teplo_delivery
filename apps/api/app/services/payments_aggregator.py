@@ -39,9 +39,10 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import and_, func, or_, select
@@ -74,6 +75,8 @@ from app.services.payroll_reserves import (
     PAYROLL_RESERVE_LABEL_ADMIN,
     PAYROLL_RESERVE_LABEL_PRODUCTION,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _fmt_money(value: Decimal) -> str:
@@ -849,6 +852,101 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     return items
 
 
+async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
+    """Налоговые обязательства «К уплате» — виртуальные строки без клика на «Налогах».
+
+    Решение владельца 26.07.2026: окно активных платежей само показывает всё, что надо
+    платить (УСН, ЕНП, допвзнос, травматизм), а не только подготовленное вручную. Строка
+    виртуальная — черновик ``TaxBankDraft`` создаётся в момент «В банк» (TaxSendDialog).
+    Обязательства, по которым черновик уже есть, пропускаются — их несёт источник
+    ``tax_draft``. Травматизм показывается БЕЗ кнопки: он платится в СФР по своим
+    реквизитам, контур ЕНП его отправить не может.
+    """
+    from app.services.taxes.engine import TaxComputationError
+    from app.services.taxes.obligations import list_payable_obligations
+
+    try:
+        obligations = await list_payable_obligations(session, today=date.today())
+    except TaxComputationError:
+        # Нет параметров налогового года и т.п. — окно платежей от этого не ломаем.
+        return []
+    except Exception:  # noqa: BLE001 - расчёт налогов не должен ронять витрину платежей
+        logger.warning("payments: не удалось собрать налоговые обязательства", exc_info=True)
+        return []
+
+    existing_drafts = (
+        (await session.execute(select(TaxBankDraft))).scalars().all()
+    )
+    draft_keys = {
+        (d.tax_kind, d.for_period)
+        for d in existing_drafts
+        if d.status in ("ready_to_send", "in_bank", "failed")
+    }
+    reqs = treasury_enp_requisites()
+
+    items: list[PaymentItem] = []
+    for ob in obligations:
+        if (ob.kind, ob.for_period) in draft_keys:
+            continue
+        due_dt = datetime.combine(ob.due_date, time.min, tzinfo=UTC) if ob.due_date else None
+        extra: dict = {
+            "tax": True,
+            "virtual": True,
+            "tax_kind": ob.kind,
+            "for_period": ob.for_period,
+            "for_year": ob.for_year,
+            "due_date": ob.due_date.isoformat() if ob.due_date else None,
+            "purpose": str(reqs["paymentPurpose"]),
+            "title": ob.title,
+        }
+        if ob.sendable_via_enp:
+            extra["kbk"] = str(reqs["kbk"])
+            extra["requisites"] = {
+                "recipientName": str(reqs["recipientName"]),
+                "inn": str(reqs["inn"]),
+                "kpp": str(reqs["kpp"]),
+                "bankAcnt": str(reqs["bankAcnt"]),
+                "bankBik": str(reqs["bankBik"]),
+                "bankName": str(reqs.get("bankName", "")),
+                "kbk": str(reqs["kbk"]),
+            }
+        items.append(
+            PaymentItem(
+                # Детерминированный id: то же обязательство — та же строка между опросами.
+                id=f"tax_due:{ob.kind}:{ob.for_period or 'year'}",
+                source="tax_due",
+                kind="tax_obligation",
+                ref_id=uuid.uuid5(
+                    uuid.NAMESPACE_URL, f"tax_due:{ob.kind}:{ob.for_period or 'year'}"
+                ),
+                title=f"{ob.title} · {_fmt_money(Decimal(ob.amount))}",
+                counterparty_id=None,
+                counterparty_name=(
+                    str(reqs["recipientName"]) if ob.sendable_via_enp else "СФР"
+                ),
+                amount=Decimal(ob.amount),
+                amount_paid=None,
+                article_id=None,
+                article_name=(
+                    "Налоги — ЕНП"
+                    if ob.sendable_via_enp
+                    else "СФР — отдельная платёжка (не ЕНП)"
+                ),
+                method="bank",
+                bank_channel="tbank" if ob.sendable_via_enp else None,
+                state="ready_to_send",
+                bucket=BUCKET_BY_STATE.get("ready_to_send"),
+                created_at=due_dt or datetime.now(UTC),
+                can_edit=False,
+                can_send_to_bank=ob.sendable_via_enp,
+                can_pay=False,
+                can_cancel=False,  # обязательство из расчёта/платёжки — отменять нечего
+                extra=extra,
+            )
+        )
+    return items
+
+
 # --- публичный API -------------------------------------------------------------
 
 
@@ -866,6 +964,7 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     advance_drafts = await _advance_bank_draft_items(session)
     employee_payouts = await _employee_payout_items(session)
     tax_drafts = await _tax_bank_draft_items(session)
+    tax_dues = await _tax_due_items(session)
     items = (
         invoices
         + drafts
@@ -875,6 +974,7 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
         + advance_drafts
         + employee_payouts
         + tax_drafts
+        + tax_dues
     )
 
     if scope == "active":
