@@ -283,22 +283,30 @@ function OfficialContourDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Label className="grid content-start gap-1.5">
                     <span>Несовершеннолетних детей</span>
-                    <Input
+                    <Select
                       disabled={busy}
-                      inputMode="numeric"
-                      min={0}
-                      onChange={(event) =>
-                        setDraft({
-                          ...draft,
-                          official_children_count: Math.max(
-                            0,
-                            Number(event.target.value) || 0,
-                          ),
-                        })
+                      onValueChange={(value) =>
+                        setDraft({ ...draft, official_children_count: Number(value) })
                       }
-                      type="number"
-                      value={draft.official_children_count}
-                    />
+                      value={String(draft.official_children_count)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">Нет</SelectItem>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                        <SelectItem value="3">3</SelectItem>
+                        <SelectItem value="4">4</SelectItem>
+                        <SelectItem value="5">5</SelectItem>
+                        {draft.official_children_count > 5 ? (
+                          <SelectItem value={String(draft.official_children_count)}>
+                            {draft.official_children_count}
+                          </SelectItem>
+                        ) : null}
+                      </SelectContent>
+                    </Select>
                   </Label>
                   <label className="flex items-center gap-2 self-end pb-2 text-sm">
                     <Checkbox
