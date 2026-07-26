@@ -1090,11 +1090,23 @@ async def ingest_operations(
         )
     ).all()
     classification = await run_classification_rules(session, pending_operations)
+    # Налоговый факт-слой: списания на реквизиты ФНС/СФР → tax_payment (слой «Факт»
+    # вычета и сверки). Отдельно от классификатора ДДС намеренно: факт нужен независимо
+    # от того, размечена ли операция статьёй. Ошибка здесь не должна ронять ингест —
+    # выписка важнее, недоделанное доберёт следующий прогон (сервис идемпотентен).
+    tax_facts: dict | None = None
+    try:
+        from app.services.taxes.bank_facts import sync_tax_facts_from_bank
+
+        tax_facts = (await sync_tax_facts_from_bank(session)).as_dict()
+    except Exception:  # noqa: BLE001 - факт-слой не должен останавливать приём выписки
+        logger.warning("bank ingest: налоговый факт-слой не отработал", exc_info=True)
     return {
         "inserted": inserted,
         "updated": updated,
         "own_accounts_added": own_accounts_added,
         "classification": classification.__dict__,
+        "tax_facts": tax_facts,
     }
 
 
