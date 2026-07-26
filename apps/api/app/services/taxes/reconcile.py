@@ -66,8 +66,10 @@ class ReconLine:
     verdict: str
     severity: str  # 'ok' | 'info' | 'warning' | 'alert'
     messages: list[str] = field(default_factory=list)
-    # Конкретный следующий шаг для владельца — что делать с этим красным/жёлтым.
+    # Конкретный следующий шаг для владельца — ИМПЕРАТИВ до 60 знаков (в строке таблицы).
     action: str | None = None
+    # Почему так: причина, суммы, методика. Уезжает под иконку «i» (дизайн-ревизия 27.07.2026).
+    action_why: str | None = None
     # Сколько платить по этому обязательству (для кнопки «Отправить в банк»); None — платить нечего.
     payable_amount: Decimal | None = None
     # Платёж по обязательству уже в работе: 'ready_to_send' (подготовлен в окне активных
@@ -212,8 +214,12 @@ def _action_for(
     *,
     documented: Decimal | None = None,
     expected: Decimal | None = None,
-) -> str | None:
-    """Что делать владельцу с этим обязательством. None — действий не требуется.
+) -> tuple[str | None, str | None]:
+    """Что делать владельцу — КОРОТКО и ПОЧЕМУ. ``(None, None)`` — действий не требуется.
+
+    Разделение по решению владельца 27.07.2026 (дизайн-ревизия): в строке таблицы стоит
+    императив до 60 знаков, а причина, суммы и методика уезжают под иконку «i» — иначе
+    колонка «Вердикт» превращается в абзац и владелец её не читает.
 
     ``expected`` — сумма, с которой сверяли документ (расчёт либо остаток к доплате).
     Направление расхождения решает всё: документ МЕНЬШЕ ожидаемого — риск недоимки и пеней,
@@ -223,24 +229,28 @@ def _action_for(
     if verdict == "doc_mismatch":
         if documented is not None and documented == ZERO:
             return (
-                "Бухгалтер прислала нулевую платёжку — запросите корректную "
-                "и не платите по этой."
+                "Не платите — запросите корректную платёжку",
+                "Бухгалтер прислала нулевую платёжку.",
             )
         if documented is not None and expected is not None and documented > expected:
             return (
-                f"Документ на {fmt_money(documented - expected)} ₽ больше расчёта — платить "
-                "по нему можно: небольшая переплата зачтётся на ЕНС. Расхождение обычно в "
-                "составе вычета, при желании сверьте с бухгалтером."
+                "Платить можно — переплата зачтётся",
+                f"Документ на {fmt_money(documented - expected)} ₽ больше расчёта; "
+                "небольшая переплата зачтётся на ЕНС. Расхождение обычно в составе "
+                "вычета — при желании сверьте с бухгалтером.",
             )
         return (
-            "Платить по этому документу нельзя — в нём меньше, чем начислено: возникнет "
-            "недоимка и пени. Уточните сумму у бухгалтера."
+            "Платить нельзя — уточните сумму",
+            "В документе меньше, чем начислено: возникнет недоимка и пени.",
         )
     if verdict == "overdue":
-        return "Срок уплаты прошёл — оплатите скорее, иначе начнут капать пени."
+        return "Оплатите — идут пени", "Срок уплаты прошёл."
     if verdict == "payment_mismatch":
-        return "Факт из банка не сошёлся с документом — проверьте, сколько и по чему заплатили."
-    return None
+        return (
+            "Проверьте платёж",
+            "Факт из банка не сошёлся с документом — проверьте, сколько и по чему заплатили.",
+        )
+    return None, None
 
 
 def _offset_by_ens(
@@ -270,9 +280,10 @@ def _offset_by_ens(
                 f"Разница {fmt_money(gap)} ₽ покрыта расчётной переплатой на ЕНС "
                 f"({fmt_money(wallet_balance)} ₽): налоговая доберёт её из кошелька.",
             ],
-            action=(
-                f"Платить по документу можно: недостающие {fmt_money(gap)} ₽ спишутся "
-                f"из переплаты на ЕНС. Если хотите — сверьте остаток кошелька с бухгалтером."
+            action="Платить можно — добор из переплаты ЕНС",
+            action_why=(
+                f"Недостающие {fmt_money(gap)} ₽ спишутся из переплаты на ЕНС. "
+                f"Если хотите — сверьте остаток кошелька с бухгалтером."
             ),
             payable_amount=line.documented,
         )
@@ -450,6 +461,7 @@ async def build_reconciliation(
             due_date=due,
             as_of=as_of,
         )
+        _usn_action = _action_for(verdict, documented=documented, expected=calculated)
         lines.append(
             _offset_by_ens(
                 ReconLine(
@@ -463,7 +475,8 @@ async def build_reconciliation(
                     verdict=verdict,
                     severity=severity,
                     messages=messages,
-                    action=_action_for(verdict, documented=documented, expected=calculated),
+                    action=_usn_action[0],
+                    action_why=_usn_action[1],
                     payable_amount=_payable(
                         verdict,
                         documented=documented,
@@ -494,6 +507,10 @@ async def build_reconciliation(
         # нарастающим итогом за год: 116 360 уплачено + 105 628 по платёжке = 221 988.
         documented_is_increment=True,
     )
+    # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
+    _extra_action = _action_for(
+        verdict, documented=documented, expected=state.extra_accrued - (paid or ZERO)
+    )
     lines.append(
         _offset_by_ens(
             ReconLine(
@@ -508,11 +525,8 @@ async def build_reconciliation(
                 severity=severity,
                 messages=messages,
                 # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
-                action=_action_for(
-                    verdict,
-                    documented=documented,
-                    expected=state.extra_accrued - (paid or ZERO),
-                ),
+                action=_extra_action[0],
+                action_why=_extra_action[1],
                 payable_amount=_payable(
                     verdict,
                     documented=documented,
@@ -552,6 +566,7 @@ async def build_reconciliation(
             f"(в вычет не идёт)."
         ]
         action: str | None = None
+        action_why: str | None = None
         if month_due <= as_of:
             verdict, severity = "ok", "ok"
             messages.append(f"Уплачено в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
@@ -560,7 +575,8 @@ async def build_reconciliation(
             messages.append(
                 f"Уплачивается в составе ЕНП до {month_due.strftime('%d.%m.%Y')}."
             )
-            action = f"Оплатите в составе ближайшего ЕНП к сроку {month_due.strftime('%d.%m.%Y')}."
+            action = "Оплатите с ближайшим ЕНП"
+            action_why = f"Срок уплаты — {month_due.strftime('%d.%m.%Y')}."
         # Платёжку показываем СПРАВОЧНО (не в колонке «Документ»), чтобы её сумма не читалась
         # как расхождение: помесячно она больше начисления из-за «окон» уплаты НДФЛ — это норма.
         if documented is not None:
@@ -583,6 +599,7 @@ async def build_reconciliation(
                 severity=severity,
                 messages=messages,
                 action=action,
+                action_why=action_why,
                 # Платить нужно сумму платёжки бухгалтера (она учитывает «окна» НДФЛ),
                 # иначе — начисленное за месяц.
                 payable_amount=_payable(

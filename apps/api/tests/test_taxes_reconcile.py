@@ -159,7 +159,9 @@ async def test_zero_payment_order_is_caught_as_alert(
     assert recon.has_alerts
     assert any("расходится с расчётом" in m for m in line.messages)
     # Красному — конкретный следующий шаг для владельца.
-    assert line.action is not None and "нулевую" in line.action
+    # Действие — короткий императив, причина уехала в action_why (дизайн-ревизия 27.07).
+    assert line.action is not None and "Не платите" in line.action
+    assert line.action_why is not None and "нулевую" in line.action_why
 
 
 async def test_corrected_payment_order_reconciles_ok(
@@ -567,7 +569,8 @@ def test_ens_offset_softens_covered_gap() -> None:
     assert line.severity == "warning"
     assert line.payable_amount == Decimal("463376")
     assert any("покрыта расчётной переплатой" in m for m in line.messages)
-    assert "спишутся" in (line.action or "")
+    assert "переплаты ЕНС" in (line.action or "")
+    assert "спишутся" in (line.action_why or "")
 
 
 def test_ens_offset_partial_coverage_keeps_alert() -> None:

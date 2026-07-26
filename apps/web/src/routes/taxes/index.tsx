@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui-app/EmptyState";
+import { InfoHint } from "@/components/ui-app/InfoHint";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
@@ -274,7 +275,7 @@ const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
     label: "Нужна проверка",
     className: "border-amber-200 bg-amber-50 text-amber-800",
   },
-  promoted: { label: "Продвинут", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  promoted: { label: "В плане", className: "border-sky-200 bg-sky-50 text-sky-700" },
   unsupported: { label: "Не поддержан", className: NEUTRAL_BADGE },
   error: { label: "Ошибка разбора", className: OVERDUE_BADGE },
   ignored: { label: "Игнорируем", className: NEUTRAL_BADGE },
@@ -282,16 +283,12 @@ const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
 
 /** Что означает каждый статус — показываем по «i», чтобы не гадать. */
 const DOCUMENT_STATUS_HINT: Record<string, string> = {
-  parsed:
-    "Распознан уверенно и готов к продвижению. Кнопка «Продвинуть готовые» превратит платёжку в плановое обязательство (попадёт в календарь и сверку), а оборотку — в помесячную раскладку зарплаты.",
-  needs_review:
-    "Распознан частично — автоматика не уверена (например, смешанный ЕНП или нечитаемая сумма). Проверьте вручную кнопками «Проверено» / «Игнорировать» в строке.",
-  promoted:
-    "Уже продвинут: из документа создано налоговое обязательство или строка расчёта — данные ушли в контур. Делать с ним больше ничего не нужно.",
-  unsupported:
-    "Документ не разобран автоматикой: либо он не из платёжного контура (приказ, договор, кадровый), либо формат файла не читается (например, старый Word .doc). Конкретная причина написана под статусом; в налоги документ не идёт.",
-  error: "Файл не удалось разобрать. Причина — красным текстом в колонке полей.",
-  ignored: "Вы отклонили документ вручную — в расчёт и сверку он не попадёт.",
+  parsed: "Готов: кнопка «Поставить в план» сделает из него обязательство.",
+  needs_review: "Автоматика не уверена — подтвердите поля кнопками в строке.",
+  promoted: "Уже в плане, делать ничего не нужно.",
+  unsupported: "Не платёжный документ или файл не читается — в налоги не идёт.",
+  error: "Файл не прочитался.",
+  ignored: "Вы отклонили — в расчёт не идёт.",
 };
 
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
@@ -310,6 +307,15 @@ const PAYOUT_KIND_LABELS: Record<string, string> = {
 function payoutKindLabel(kind: string | null | undefined): string {
   if (!kind) return "Ведомость";
   return PAYOUT_KIND_LABELS[kind] ?? "Ведомость";
+}
+
+/** «3 человека» — счёт людей в сводной строке документа. */
+function peopleLabel(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} человек`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} человека`;
+  return `${count} человек`;
 }
 
 const MONTHS_RU_NOMINATIVE = [
@@ -516,7 +522,7 @@ function ReconciliationBlock({
   if (lines.length === 0) {
     return (
       <EmptyState
-        description="На выбранную дату среза нет ни одного закрывшегося отчётного периода — сверять расчёт с платёжками бухгалтера пока не с чем. Первая строка появится после 31 марта, когда закроется I квартал (сам аванс по УСН за него платится до 28 апреля)."
+        description="Первый отчётный период закроется 31 марта — тогда и появится первая строка."
         icon={<ShieldCheck size={18} aria-hidden="true" />}
         title="Сверять пока нечего"
       />
@@ -525,60 +531,42 @@ function ReconciliationBlock({
 
   return (
     <div className="space-y-3">
+      {/* Один статус строкой вместо трёх карточек-абзацев: методика — под «i»,
+          на экране — факт и кнопка (дизайн-ревизия 27.07.2026). */}
       {alertCount > 0 ? (
-        <Card className="border-rose-200 bg-rose-50/70 shadow-none">
-          <CardContent className="flex gap-3 p-4 text-sm text-rose-900">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <div>
-              <div className="font-semibold">Расхождений, требующих решения: {alertCount}</div>
-              <p className="mt-1 leading-6">
-                Ниже красным — обязательства, где платёжка бухгалтера или факт из банка не
-                совпали с нашим расчётом. Пока причина не выяснена, платить по такому
-                документу нельзя.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <AlertTriangle className="size-4 shrink-0 text-rose-600" aria-hidden="true" />
+          <span className="font-semibold text-rose-700">
+            Расхождений: {alertCount} — платить по ним нельзя
+          </span>
+          <InfoHint label="что значит расхождение" tone="alert">
+            Платёжка бухгалтера или факт из банка не совпали с нашим расчётом. Пока причина
+            не выяснена, платить по такому документу нельзя: рискуете недоимкой и пенями.
+          </InfoHint>
+        </div>
       ) : isBlocked ? (
         // Зелёное «всё сходится» на неполной выручке — прямой обман: расчёт, с которым
         // сравнивают платёжку, сам занижен. Пока база не догружена, честный ответ — жёлтый.
-        <Card className="border-amber-200 bg-amber-50/70 shadow-none">
-          <CardContent className="flex gap-3 p-4 text-sm text-amber-900">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <div>
-              <div className="font-semibold">Расхождений не видно, но проверять рано</div>
-              <p className="mt-1 leading-6">
-                Выручка загружена не за весь период (причина указана выше), поэтому «сходится»
-                здесь значит лишь «не расходится с неполной цифрой». Вернитесь к сверке после
-                догрузки выручки.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border-emerald-200 bg-emerald-50/70 shadow-none">
-          <CardContent className="flex gap-3 p-4 text-sm text-emerald-900">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <div>
-              <div className="font-semibold">Расхождений нет</div>
-              <p className="mt-1 leading-6">
-                Расчёт, платёжки бухгалтера и факт из банка сходятся по всем обязательствам
-                на выбранную дату.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <AlertTriangle className="size-4 shrink-0 text-amber-600" aria-hidden="true" />
+          <span className="font-semibold text-amber-800">Выручка неполная — сверке верить рано</span>
+          <InfoHint label="почему нельзя верить сверке">
+            Выручка загружена не за весь период, поэтому «сходится» здесь значит лишь «не
+            расходится с неполной цифрой». Вернитесь к сверке после догрузки выручки.
+          </InfoHint>
+        </div>
+      ) : null}
 
       <Card className="shadow-none">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base font-semibold">
             Сверка: расчёт ↔ документ ↔ факт
+            {alertCount === 0 && !isBlocked ? (
+              <Badge className={SEVERITY_BADGE.ok} variant="outline">
+                расхождений нет
+              </Badge>
+            ) : null}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Прочерк значит «источника нет»: платёжку не присылали или платёж не проходил.
-            Это не то же самое, что ноль в документе.
-          </p>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -586,8 +574,20 @@ function ReconciliationBlock({
               <TableRow>
                 <TableHead className="min-w-[220px]">Обязательство</TableHead>
                 <TableHead className="text-right">Расчёт</TableHead>
-                <TableHead className="text-right">Документ</TableHead>
-                <TableHead className="text-right">Факт</TableHead>
+                {/* Правило колонки — в шапке один раз, а не абзацем над таблицей. */}
+                <TableHead className="text-right">
+                  Документ
+                  <InfoHint label="колонка «Документ»">
+                    Сумма из платёжки бухгалтера. «нет» значит, что платёжку не присылали —
+                    это не то же самое, что ноль в документе.
+                  </InfoHint>
+                </TableHead>
+                <TableHead className="text-right">
+                  Факт
+                  <InfoHint label="колонка «Факт»">
+                    Реальное списание по выписке банка. «нет» — деньги ещё не уходили.
+                  </InfoHint>
+                </TableHead>
                 <TableHead className="min-w-[200px]">Вердикт</TableHead>
               </TableRow>
             </TableHeader>
@@ -600,31 +600,6 @@ function ReconciliationBlock({
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-/** Иконка «i» со всплывающей подсказкой по наведению/фокусу (без внешних зависимостей). */
-function InfoHint({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "alert" }) {
-  return (
-    <span className="group relative inline-flex align-middle">
-      <button
-        aria-label="Пояснение"
-        className={`inline-flex size-4 items-center justify-center rounded-full ${
-          tone === "alert"
-            ? "text-rose-500 hover:text-rose-700"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-        type="button"
-      >
-        <Info className="size-3.5" aria-hidden="true" />
-      </button>
-      <span
-        className="pointer-events-none absolute right-0 top-5 z-30 hidden w-72 rounded-md border bg-card p-2.5 text-left text-xs font-normal leading-5 text-card-foreground shadow-md group-focus-within:block group-hover:block"
-        role="tooltip"
-      >
-        {children}
-      </span>
-    </span>
   );
 }
 
@@ -689,9 +664,13 @@ function ReconRow({ line }: { line: ReconLine }) {
           <Badge className={SEVERITY_BADGE[line.severity] ?? NEUTRAL_BADGE} variant="outline">
             {VERDICT_LABELS[line.verdict] ?? line.verdict}
           </Badge>
-          {line.messages.length > 0 ? (
-            <InfoHint tone={isAlert ? "alert" : "muted"}>
+          {/* Причина и методика — под «i», в строке остаётся только действие. */}
+          {line.messages.length > 0 || line.action_why ? (
+            <InfoHint label={line.label} tone={isAlert ? "alert" : "muted"}>
               <ul className="space-y-1">
+                {line.action_why ? (
+                  <li className="font-medium">{line.action_why}</li>
+                ) : null}
                 {line.messages.map((message) => (
                   <li key={message}>{message}</li>
                 ))}
@@ -702,10 +681,10 @@ function ReconRow({ line }: { line: ReconLine }) {
         {line.action ? (
           <div
             className={`mt-1.5 text-xs leading-5 ${
-              isAlert ? "text-rose-700" : "text-muted-foreground"
+              isAlert ? "font-medium text-rose-700" : "text-muted-foreground"
             }`}
           >
-            <span className="font-medium">Что делать:</span> {line.action}
+            {line.action}
           </div>
         ) : null}
         {/* Платёж уже в работе — кнопку гасим и показываем состояние: повторная отправка
@@ -713,11 +692,15 @@ function ReconRow({ line }: { line: ReconLine }) {
         {line.draft_status === "in_bank" ? (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-sky-700">
             <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
-            Отправлен в банк — подтвердите платёжку в банк-клиенте
+            В банке — подтвердите платёжку
+            <InfoHint label="платёж в банке">
+              Платёжка создана в банк-клиенте, но деньги ещё НЕ ушли: списание произойдёт
+              только после вашего подтверждения в банке.
+            </InfoHint>
           </div>
         ) : line.draft_status === "ready_to_send" ? (
           <div className="mt-2 text-xs text-muted-foreground">
-            Платёж подготовлен — отправьте его из окна «Активные платежи»
+            Подготовлен — в окне «Активные платежи»
           </div>
         ) : payable != null && canManage ? (
           <Button
@@ -726,25 +709,28 @@ function ReconRow({ line }: { line: ReconLine }) {
             size="sm"
             variant="outline"
           >
-            Отправить в банк ({formatMoney(payable)})
+            Подготовить платёж ({formatMoney(payable)})
           </Button>
         ) : null}
         <AlertDialog onOpenChange={setPayOpen} open={payOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Подготовить платёж к отправке в банк?</AlertDialogTitle>
+              <AlertDialogTitle>Подготовить платёж на {formatMoney(payable)}?</AlertDialogTitle>
               <AlertDialogDescription asChild>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-2.5 text-sm">
                   <p>
-                    Платёж на <b>{formatMoney(payable)}</b> — «{line.label}» — появится в окне
-                    «Активные платежи». Там вы сверите реквизиты и суммы и отправите его в банк
-                    одной кнопкой. Это ещё не оплата: деньги уйдут только после подтверждения
+                    Появится в «Активных платежах». Деньги уйдут только после подтверждения
                     платёжки в банк-клиенте.
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Получатель: Казначейство России (ФНС России), КБК 18201061201010000510,
-                    назначение «Единый налоговый платеж».
-                  </p>
+                  {/* Реквизиты сверяют глазами перед отправкой — парами, не абзацем. */}
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md bg-muted/50 p-2.5 text-xs">
+                    <dt className="text-muted-foreground">Получатель</dt>
+                    <dd>Казначейство России (ФНС)</dd>
+                    <dt className="text-muted-foreground">КБК</dt>
+                    <dd className="tabular-nums">18201061201010000510</dd>
+                    <dt className="text-muted-foreground">Назначение</dt>
+                    <dd>Единый налоговый платеж</dd>
+                  </dl>
                 </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -814,11 +800,14 @@ function SummaryTab({ asOf }: { asOf: string }) {
 
       <Card className="shadow-none">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Как сложился вычет</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Взносы уменьшают налог, но не более чем наполовину. Всё, что не влезло в
-            половину, — сгорает и никуда не переносится.
-          </p>
+          <CardTitle className="text-base font-semibold">
+            Как сложился вычет
+            <InfoHint label="правило вычета">
+              Уплаченные взносы уменьшают налог, но не более чем наполовину. Всё, что не
+              влезло в половину, сгорает: на следующий период и на следующий год не
+              переносится.
+            </InfoHint>
+          </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-x-8 gap-y-2 p-6 pt-0 text-sm sm:grid-cols-2">
           <DetailRow
@@ -837,16 +826,22 @@ function SummaryTab({ asOf }: { asOf: string }) {
             label="Допвзнос 1% — заявлено"
             value={formatMoney(state.extra_claimed)}
           />
-          <DetailRow
-            hint="Срезано лимитом 50% — потеряно навсегда"
-            label="Сгорело"
-            value={formatMoney(state.deduction_burned)}
-          />
-          <DetailRow
-            hint="Начислено, но не уплачено — уйдёт в вычет следующих периодов года"
-            label="Отложено"
-            value={formatMoney(state.deduction_deferred)}
-          />
+          {/* Нулевые строки не показываем: это не деньги, а шум (дизайн-ревизия 27.07.2026).
+              При значении > 0 строка обязана остаться — это потерянные/отложенные деньги. */}
+          {Number(state.deduction_burned ?? 0) > 0 ? (
+            <DetailRow
+              hint="Срезано лимитом 50% — потеряно навсегда"
+              label="Сгорело"
+              value={formatMoney(state.deduction_burned)}
+            />
+          ) : null}
+          {Number(state.deduction_deferred ?? 0) > 0 ? (
+            <DetailRow
+              hint="Начислено, но не уплачено — уйдёт в вычет следующих периодов года"
+              label="Отложено"
+              value={formatMoney(state.deduction_deferred)}
+            />
+          ) : null}
           <DetailRow
             hint="Внутри года ещё можно использовать"
             label="Не заявлено"
@@ -927,7 +922,7 @@ function CalendarTab({ year }: { year: number }) {
   if (!data || data.items.length === 0) {
     return (
       <EmptyState
-        description={`За ${year} год обязательств не заведено. Они появляются двумя путями: платёжка бухгалтера продвигается во вкладке «Документы» либо платёж приходит фактом из банковской выписки.`}
+        description="Срок появится, когда вы поставите платёжку в план — или когда налог спишется в банке."
         icon={<CalendarClock size={18} aria-hidden="true" />}
         title="Сроков пока нет"
       />
@@ -964,7 +959,12 @@ function CalendarTab({ year }: { year: number }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[130px]">Дата</TableHead>
+                <TableHead className="w-[130px]">
+                  Дата
+                  <InfoHint label="колонка «Дата»">
+                    У запланированных — срок уплаты, у оплаченных — дата списания.
+                  </InfoHint>
+                </TableHead>
                 <TableHead className="min-w-[240px]">Что платим</TableHead>
                 <TableHead className="text-right">Сумма</TableHead>
                 <TableHead className="w-[180px]">Статус</TableHead>
@@ -992,9 +992,6 @@ function CalendarRow({ item }: { item: TaxCalendarItem }) {
         }`}
       >
         {formatDate(item.due_date ?? item.paid_on)}
-        <div className="text-xs font-normal text-muted-foreground">
-          {item.status === "planned" ? "срок уплаты" : "дата списания"}
-        </div>
       </TableCell>
       <TableCell className="align-top">
         <div className="font-medium">{taxKindLabel(item.kind)}</div>
@@ -1046,7 +1043,7 @@ function PaymentsTab({ year }: { year: number }) {
   if (!data || data.items.length === 0) {
     return (
       <EmptyState
-        description={`За ${year} год фактических уплат в бюджет не зарегистрировано. Здесь только реальные списания из банка; планы и сроки — во вкладке «Календарь».`}
+        description="Платёж появится здесь, когда деньги уйдут из банка."
         icon={<FileText size={18} aria-hidden="true" />}
         title="Уплат пока нет"
       />
@@ -1066,20 +1063,18 @@ function PaymentsTab({ year }: { year: number }) {
       </div>
 
       <Card className="shadow-none">
-        <CardHeader className="pb-3">
-          <p className="text-sm text-muted-foreground">
-            Только реальные списания: что и когда фактически ушло в бюджет. Будущие сроки и
-            планы — во вкладке «Календарь», помесячная разбивка ЕНП — в «Сводке». Одна
-            строка — одно назначение внутри перевода: ЕНП уходит единой суммой, но внутри и
-            НДФЛ (в вычет не идёт), и взносы за работников (идут).
-          </p>
-        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[120px]">Дата</TableHead>
-                <TableHead className="min-w-[220px]">Вид платежа</TableHead>
+                <TableHead className="min-w-[220px]">
+                  Что платим
+                  <InfoHint label="колонка «Что платим»">
+                    ЕНП уходит в банк одной суммой, а внутри — НДФЛ (в вычет не идёт) и
+                    взносы за работников (идут). Поэтому строк больше, чем переводов.
+                  </InfoHint>
+                </TableHead>
                 <TableHead className="text-right">Сумма</TableHead>
                 <TableHead className="min-w-[200px]">Получатель и документ</TableHead>
                 <TableHead className="w-[160px]">Статус</TableHead>
@@ -1113,17 +1108,30 @@ function PaymentRow({ row }: { row: TaxPaymentRow }) {
             .join(" · ") || "—"}
         </div>
       </TableCell>
-      <TableCell className="text-right align-top tabular-nums">{formatMoney(row.amount)}</TableCell>
+      <TableCell className="text-right align-top tabular-nums">
+        <div className="flex items-center justify-end gap-1.5">
+          {formatMoney(row.amount)}
+          {/* Свойство строки — бейджем, а не абзацем в каждой строке (дизайн-ревизия
+              27.07.2026): раньше это пояснение печаталось у КАЖДОГО платежа. */}
+          {reconstructed ? (
+            <Badge
+              className="border-amber-200 bg-amber-50 font-normal text-amber-800"
+              variant="outline"
+            >
+              расчёт
+              <InfoHint label="как получена сумма">
+                Банк отдаёт бюджетные платежи одним КБК: сколько внутри перевода пришлось
+                на этот вид, выведено расчётом по оборотке, а не взято из документа.
+              </InfoHint>
+            </Badge>
+          ) : null}
+        </div>
+      </TableCell>
       <TableCell className="align-top">
         <div className="truncate">{recipientLabel(row.recipient)}</div>
         <div className="text-xs text-muted-foreground">
-          {row.document_number ? `№ ${row.document_number}` : "без номера документа"}
+          {row.document_number ? `№ ${row.document_number}` : "—"}
         </div>
-        {reconstructed ? (
-          <div className="mt-1 text-xs text-amber-800">
-            Сумма назначения выведена расчётом: банк отдаёт бюджетные платежи одним КБК.
-          </div>
-        ) : null}
       </TableCell>
       <TableCell className="align-top">
         <Badge className={status.className} variant="outline">
@@ -1177,19 +1185,19 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
       const description = reasons.length > 0 ? reasons.join("; ") : undefined;
 
       if (summary.created === 0 && summary.updated === 0) {
-        toast.info("Ни один документ не продвинут", {
-          description: description ?? "Готовых к продвижению платёжек не нашлось.",
+        toast.info("Ничего не поставлено в план", {
+          description: description ?? "Готовых документов не нашлось.",
         });
       } else {
         toast.success(
-          `Продвинуто: создано ${summary.created}, обновлено ${summary.updated}` +
+          `В план: создано ${summary.created}, обновлено ${summary.updated}` +
             (summary.skipped > 0 ? `, пропущено ${summary.skipped}` : ""),
           { description },
         );
       }
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось продвинуть документы")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось поставить в план")),
   });
 
   const refreshMutation = useMutation({
@@ -1228,11 +1236,13 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Что пришло от бухгалтера на почту. Продвижение превращает уверенно распознанную
-          платёжку в плановое обязательство: оно попадает в календарь и в сверку ещё до того,
-          как деньги ушли из банка. Документы со статусом «Нужна проверка» автоматика не
-          трогает — их проверяете вы: кнопками в строке.
+        <p className="text-sm text-muted-foreground">
+          Что пришло от бухгалтера на почту
+          <InfoHint label="что делает «Поставить в план»">
+            Платёжка становится обязательством в календаре и сверке ещё до того, как деньги
+            ушли из банка; оборотка — помесячной раскладкой зарплаты. Документы со статусом
+            «Нужна проверка» автоматика не трогает — их подтверждаете вы.
+          </InfoHint>
         </p>
         {canManage ? (
           <div className="flex flex-wrap gap-2">
@@ -1268,7 +1278,7 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
               {promoteMutation.isPending ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
               ) : null}
-              Продвинуть готовые{readyCount > 0 ? ` (${readyCount})` : ""}
+              Поставить в план{readyCount > 0 ? ` (${readyCount})` : ""}
             </Button>
           </div>
         ) : null}
@@ -1331,7 +1341,7 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
 
       {!query.isLoading && !query.isError && rows.length === 0 ? (
         <EmptyState
-          description="Почтовый разбор ещё ничего не положил в очередь: писем с платёжками от бухгалтера не приходило либо разбор почты выключен в настройках."
+          description="Писем с документами от бухгалтера не приходило."
           icon={<FileText size={18} aria-hidden="true" />}
           title="Документов пока нет"
         />
@@ -1362,13 +1372,16 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
       <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Продвинуть готовые документы?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Из уверенно распознанных документов ({readyCount} шт.) платёжки станут плановыми
-              обязательствами, а оборотно-сальдовые ведомости — помесячной раскладкой зарплаты
-              (эталон для разноса ЕНП). Нулевые платёжки-заглушки и зарплатный ЕНП без разноса
-              система пропустит с причиной, документы со статусом «Нужна проверка» не тронет.
-              Повторное продвижение обновит уже созданное, а не задвоит его.
+            <AlertDialogTitle>
+              Поставить в план {readyCount} {readyCount === 1 ? "документ" : "документа"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1.5">
+                <div>Платёжки станут обязательствами в календаре, оборотки — раскладкой зарплаты.</div>
+                <div className="text-xs">
+                  Повторный запуск обновит уже созданное, не задвоит.
+                </div>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1380,7 +1393,7 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
                 promoteMutation.mutate();
               }}
             >
-              Продвинуть
+              Поставить в план
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1421,7 +1434,7 @@ function ReviewPaymentDialog({
       }),
     onSuccess: () => {
       toast.success("Документ проверен", {
-        description: "Поля сохранены — «Продвинуть готовые» создаст обязательство по ним.",
+        description: "Поля сохранены — «Поставить в план» создаст обязательство.",
       });
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
       onClose();
@@ -1556,7 +1569,7 @@ function AiReviewDialog({
     mutationFn: () => aiApplyTaxProposal(row.id),
     onSuccess: () => {
       toast.success("Предложение ИИ применено", {
-        description: "Документ распознан — «Продвинуть готовые» создаст обязательство.",
+        description: "Документ распознан — «Поставить в план» создаст обязательство.",
       });
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
       onClose();
@@ -1769,26 +1782,47 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
       <TableCell className="align-top">
         {isTurnover ? (
           <div className="space-y-1">
-            <div className="font-medium">Зарплата · {turnoverPeriodLabel(recognition)}</div>
+            <div className="font-medium">
+              Зарплата · {turnoverPeriodLabel(recognition)}
+              {turnoverRows.length > 0 ? ` · ${peopleLabel(turnoverRows.length)}` : ""}
+            </div>
             {turnoverRows.length > 0 ? (
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {turnoverRows.map((person, index) => (
-                  <div key={person.tab_number ?? index}>
-                    <span className="font-medium text-foreground">
-                      {person.employee ?? "—"}
-                    </span>
-                    {" — "}
-                    начислено {m(person.accrued)} · НДФЛ {m(person.ndfl)} · аванс{" "}
-                    {m(person.advance)} · взносы {m(person.contributions)} · к выплате{" "}
-                    {m(person.to_pay)}
-                  </div>
-                ))}
-                <div className="pt-0.5 text-foreground">
-                  Итого за месяц: НДФЛ {m(recognition.ndfl_total)} · взносы{" "}
+              <>
+                <div className="text-xs text-muted-foreground">
+                  Итого: НДФЛ {m(recognition.ndfl_total)} · взносы{" "}
                   {m(recognition.contributions_total)} · травматизм{" "}
                   {m(recognition.injury_total)}
                 </div>
-              </div>
+                {/* Пофамильная раскладка — по клику: на трёх оборотках это была самая
+                    длинная простыня страницы (дизайн-ревизия 27.07.2026). */}
+                <details className="group/details">
+                  <summary className="cursor-pointer list-none text-xs text-muted-foreground underline-offset-2 hover:underline">
+                    По сотрудникам ({turnoverRows.length})
+                  </summary>
+                  <table className="mt-1.5 w-full text-xs tabular-nums">
+                    <thead className="text-muted-foreground">
+                      <tr>
+                        <th className="pr-2 text-left font-normal">Сотрудник</th>
+                        <th className="px-1 text-right font-normal">Начислено</th>
+                        <th className="px-1 text-right font-normal">НДФЛ</th>
+                        <th className="px-1 text-right font-normal">Взносы</th>
+                        <th className="pl-1 text-right font-normal">К выплате</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {turnoverRows.map((person, index) => (
+                        <tr key={person.tab_number ?? index}>
+                          <td className="pr-2">{person.employee ?? "—"}</td>
+                          <td className="px-1 text-right">{m(person.accrued)}</td>
+                          <td className="px-1 text-right">{m(person.ndfl)}</td>
+                          <td className="px-1 text-right">{m(person.contributions)}</td>
+                          <td className="pl-1 text-right">{m(person.to_pay)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              </>
             ) : (
               <span className="text-sm text-muted-foreground">Строки не распознаны</span>
             )}
@@ -1798,20 +1832,27 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             <div className="font-medium">
               {payoutKindLabel(recognition.payout_kind)}
               {payrollPeriod ? ` · ${payrollPeriod}` : ""}
+              {turnoverRows.length > 0 ? ` · ${peopleLabel(turnoverRows.length)}` : ""}
             </div>
             {turnoverRows.length > 0 ? (
-              <div className="space-y-0.5 text-xs text-muted-foreground">
-                {turnoverRows.map((person, index) => (
-                  <div key={person.tab_number ?? index}>
-                    <span className="font-medium text-foreground">
-                      {person.employee ?? "—"}
-                    </span>
-                    {" — "}
-                    {m(person.amount)}
+              <>
+                <div className="text-xs text-muted-foreground">
+                  Итого: {m(recognition.total)}
+                </div>
+                <details>
+                  <summary className="cursor-pointer list-none text-xs text-muted-foreground underline-offset-2 hover:underline">
+                    По сотрудникам ({turnoverRows.length})
+                  </summary>
+                  <div className="mt-1.5 space-y-0.5 text-xs tabular-nums text-muted-foreground">
+                    {turnoverRows.map((person, index) => (
+                      <div className="flex justify-between gap-3" key={person.tab_number ?? index}>
+                        <span>{person.employee ?? "—"}</span>
+                        <span>{m(person.amount)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                <div className="pt-0.5 text-foreground">Итого: {m(recognition.total)}</div>
-              </div>
+                </details>
+              </>
             ) : (
               <span className="text-sm text-muted-foreground">Строки не распознаны</span>
             )}
@@ -1831,11 +1872,19 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 .filter(Boolean)
                 .join(" · ") || "—"}
             </div>
+            {/* Свойство строки — бейджем: раньше это пояснение печаталось у каждой
+                ЕНП-платёжки (дизайн-ревизия 27.07.2026). */}
             {recognition.tax_kind === "enp_payroll" ? (
-              <div className="text-xs leading-5 text-emerald-700">
-                Разнос НДФЛ и взносов берётся из оборотки за месяц — отдельного подтверждения
-                не нужно.
-              </div>
+              <Badge
+                className="border-emerald-200 bg-emerald-50 font-normal text-emerald-700"
+                variant="outline"
+              >
+                разнос из оборотки
+                <InfoHint label="разнос зарплатного ЕНП">
+                  НДФЛ и взносы внутри платежа раскладываются по оборотке за месяц —
+                  подтверждать эту платёжку отдельно не нужно.
+                </InfoHint>
+              </Badge>
             ) : null}
           </div>
         ) : (
@@ -1848,17 +1897,16 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
           <Badge className={status.className} variant="outline">
             {status.label}
           </Badge>
-          {statusHint ? <InfoHint>{statusHint}</InfoHint> : null}
+          {statusHint ? <InfoHint label={row.filename ?? undefined}>{statusHint}</InfoHint> : null}
         </div>
+        {/* Причина — ОДНОЙ строкой и в одном месте: раньше троилась (список причин,
+            row.error, recognition.reason) и ложилась в 7 строк (дизайн-ревизия 27.07.2026). */}
         {reasons.length > 0 ? (
-          <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs leading-5 text-amber-800">
-            {reasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        ) : null}
-        {recognition.reason ? (
-          <div className="mt-1.5 max-w-56 text-xs leading-5 text-muted-foreground">
+          <div className="mt-1.5 text-xs leading-5 text-amber-800">
+            Не распознано: {reasons.join(", ")}
+          </div>
+        ) : recognition.reason ? (
+          <div className="mt-1.5 text-xs leading-5 text-muted-foreground">
             {recognition.reason}
           </div>
         ) : null}
@@ -1932,6 +1980,33 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
 
 // ── вкладка «НДС-льгота»: зарплатный критерий ───────────────────────────────────
 
+/** Ответ вкладки одной строкой: цифры и вердикт вместо пересказа методики. */
+function vatVerdictLine(data: VatWageCriterion): string {
+  const indicator = data.indicator_full ?? data.indicator_all;
+  if (indicator === null || indicator === undefined) {
+    return "Оборотки за год не загружены — показатель считать не из чего.";
+  }
+  if (data.threshold === null || data.threshold === undefined) {
+    return `Средняя зарплата ${formatMoney(indicator)} — введите порог, чтобы увидеть вердикт.`;
+  }
+  const margin = data.margin !== null && data.margin !== undefined ? formatMoney(data.margin) : null;
+  const base = `${formatMoney(indicator)} против порога ${formatMoney(data.threshold)}`;
+  if (data.passes === true) {
+    return `${base} — проходим${margin ? ` с запасом ${margin}` : ""}.`;
+  }
+  if (data.passes === false) {
+    return `${base} — НЕ проходим${margin ? `, не хватает ${margin}` : ""}.`;
+  }
+  return base;
+}
+
+/** Сообщения, кроме вердикта: он уже стоит подзаголовком карточки. */
+function vatOtherMessages(data: VatWageCriterion): string[] {
+  return data.messages.filter(
+    (message) => !message.startsWith("Критерий проходит") && !message.startsWith("Критерий НЕ"),
+  );
+}
+
 function VatTab({ year, canManage }: { year: number; canManage: boolean }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -1987,13 +2062,15 @@ function VatTab({ year, canManage }: { year: number; canManage: boolean }) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">
             Зарплатный критерий льготы по НДС
+            <InfoHint label="как считаем критерий">
+              Одно из условий освобождения общепита от НДС (подп. 38 п. 3 ст. 149 НК):
+              среднемесячная зарплата не ниже среднеотраслевой по региону (ОКВЭД класс 56).
+              Считаем по действующему штатному сотруднику из оборотки бухгалтера; ушедшие в
+              декрет и уволенные в расчёт не берутся.
+            </InfoHint>
           </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Одно из условий освобождения общепита от НДС (подп. 38 п. 3 ст. 149 НК) —
-            среднемесячная зарплата не ниже среднеотраслевой по региону (ОКВЭД класс 56).
-            Считаем по действующему штатному сотруднику из оборотк бухгалтера; ушедшие в декрет
-            и уволенные в расчёт не берутся.
-          </p>
+          {/* Ответ вкладки — цифрами в подзаголовке, а не абзацем методики. */}
+          <p className="text-sm text-muted-foreground">{vatVerdictLine(data)}</p>
         </CardHeader>
         <CardContent className="space-y-4 p-6 pt-0">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -2028,9 +2105,11 @@ function VatTab({ year, canManage }: { year: number; canManage: boolean }) {
             </div>
           </div>
 
-          {data.messages.length > 0 ? (
+          {/* Вердикт-сообщение не рендерим: оно повторяет подзаголовок карточки. Остальные
+              сообщения (аномалии, отсутствие данных) показываем (дизайн-ревизия 27.07.2026). */}
+          {vatOtherMessages(data).length > 0 ? (
             <ul className="list-disc space-y-0.5 pl-4 text-sm text-muted-foreground">
-              {data.messages.map((message) => (
+              {vatOtherMessages(data).map((message) => (
                 <li key={message}>{message}</li>
               ))}
             </ul>
@@ -2066,11 +2145,14 @@ function VatTab({ year, canManage }: { year: number; canManage: boolean }) {
 
       <Card className="shadow-none">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Начисления по месяцам</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Из оборотк. «Полный месяц» — где начислено равно окладу; месяц приёма или ухода
-            неполный и занижает среднее, поэтому основной показатель считается по полным.
-          </p>
+          <CardTitle className="text-base font-semibold">
+            Начисления по месяцам
+            <InfoHint label="полные и неполные месяцы">
+              Из оборотки бухгалтера. «Полный месяц» — где начислено равно окладу; месяц
+              приёма или ухода неполный и занижает среднее, поэтому основной показатель
+              считается по полным месяцам.
+            </InfoHint>
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-6 pt-0">
           {data.months.length === 0 ? (
@@ -2145,10 +2227,17 @@ function SourcesBlock() {
   return (
     <Card className="shadow-none">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold">Источники данных</CardTitle>
+        <CardTitle className="text-base font-semibold">
+          Откуда берётся каждая цифра
+          <InfoHint label="как читать источники">
+            Где цифра взята из документа, а где выведена расчётом. Слабые звенья — вверху:
+            их нельзя считать первичными, и расхождение по ним объясняется методикой, а не
+            ошибкой.
+          </InfoHint>
+        </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Где цифра взята из документа, а где выведена расчётом. Слабые звенья — вверху: их
-          нельзя считать первичными, и расхождение по ним объясняется методикой, а не ошибкой.
+          {sources.length} источников · {sources.length - weakKeys.size} подтверждено ·{" "}
+          {weakKeys.size} требуют внимания
         </p>
       </CardHeader>
       <CardContent className="grid gap-2 p-6 pt-0 md:grid-cols-2">
@@ -2258,7 +2347,7 @@ export function TaxesRoute() {
             </Button>
           </div>
         }
-        description="УСН «Доходы» 6% нарастающим итогом: сверка расчёта с платёжками бухгалтера и фактом из банка, сроки уплаты, реестр платежей и документы."
+        description="УСН «Доходы» 6% · ИП"
         title="Налоги"
       />
 
