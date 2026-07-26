@@ -35,6 +35,7 @@ import { getIntake, type PaymentIntake } from "@/routes/payment-page/api";
 import { navigateTo } from "@/router";
 
 import { PayPayrollReserveDialog } from "./PayPayrollReserveDialog";
+import { TaxSendDialog } from "./TaxSendDialog";
 import { BUCKET_ORDER, getPayments, type PaymentRow } from "./payments-api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -146,6 +147,7 @@ export function ActivePaymentsModal({
   const [sendIntake, setSendIntake] = useState<PaymentIntake | null>(null);
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [payrollRow, setPayrollRow] = useState<PaymentRow | null>(null);
+  const [taxRow, setTaxRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<string>("all");
 
@@ -202,6 +204,12 @@ export function ActivePaymentsModal({
   }, [items, bucketFilter, q]);
 
   async function openSendDialog(row: PaymentRow) {
+    // Налоговый платёж отправляется своим диалогом: реквизиты получателя ФНС фиксированы,
+    // редактируемы только сумма и назначение (не банковские реквизиты, как у поставщика).
+    if (row.source === "tax_draft") {
+      setTaxRow(row);
+      return;
+    }
     setSendingId(row.id);
     try {
       if (row.source === "payroll_draft") {
@@ -516,6 +524,14 @@ export function ActivePaymentsModal({
           if (!next) setPayrollRow(null);
         }}
         onPaid={refetchAll}
+      />
+
+      <TaxSendDialog
+        row={taxRow}
+        onClose={() => {
+          setTaxRow(null);
+          void refetchAll();
+        }}
       />
     </>
   );

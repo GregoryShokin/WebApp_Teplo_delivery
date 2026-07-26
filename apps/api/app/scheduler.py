@@ -704,6 +704,36 @@ async def poll_mail_invoices() -> None:
 
 
 @scheduler.scheduled_job(
+    "interval",
+    minutes=get_settings().tax_document_poll_interval_minutes,
+    id="poll_tax_documents",
+    max_instances=1,
+    coalesce=True,
+)
+async def poll_tax_documents() -> None:
+    """Модуль «Налоги»: циклический забор документов бухгалтера из почты (платёжки/ведомости/
+    оборотки) → staging ``tax_document_intake``. Дублирует ручную кнопку «Проверить почту»,
+    чтобы свежие документы подтягивались сами. Денег не двигает; идемпотентно по SHA-256."""
+    settings = get_settings()
+    if not settings.tax_document_poll_enabled:
+        return
+    from app.services.taxes.document_ingest import (
+        ingest_tax_documents,
+        resolve_tax_senders,
+    )
+
+    senders = resolve_tax_senders(settings.tax_document_senders)
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await ingest_tax_documents(session, settings=settings, senders=senders)
+        except Exception:  # noqa: BLE001 - проход почты не должен ронять планировщик
+            logger.warning("poll_tax_documents: проход завершился ошибкой", exc_info=True)
+            return
+    if result.get("status") != "not_configured":
+        logger.info("poll_tax_documents: %s", result)
+
+
+@scheduler.scheduled_job(
     "cron",
     hour=7,
     minute=0,

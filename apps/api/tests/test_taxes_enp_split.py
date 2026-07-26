@@ -146,16 +146,36 @@ async def test_split_replaces_reconstructed_row(
         assert ndfl_rows[0].quality_status == "confirmed"
 
 
-async def test_contributions_feed_usn_deduction_but_ndfl_does_not(
+async def test_enp_split_does_not_feed_deduction(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Ядро: взносы за работников из разноса идут в вычет УСН, а НДФЛ — нет."""
+    """Разнос из оборотки — НАЧИСЛЕНИЯ, в вычет УСН он не входит.
+
+    Вычет кассовый: его питают только факты уплаты из банка (source_kind='bank_statement').
+    Раньше разнос шёл в вычет и задваивал взносы с банковским фактом за те же месяцы —
+    налог занижался (466 477 вместо 478 376 на живых данных). Решение владельца 26.07.2026.
+    """
     async with async_session_factory() as session:
         session.add(_ledger(2026, 5, "206", contributions="11842.20", ndfl="4950.00"))
         await session.flush()
         await rebuild_payroll_enp_split(session, year=2026)
+        # Банковский факт уплаты тех же взносов — именно он и даёт вычет.
+        session.add(
+            TaxPayment(
+                id=uuid.uuid4(),
+                bundle_id=uuid.uuid4(),
+                paid_on=date(2026, 6, 23),
+                kind="contrib_employees",
+                amount=Decimal("11842.20"),
+                recipient="fns",
+                for_year=2026,
+                status="paid",
+                source_kind="bank_statement",
+                quality_status="confirmed",
+            )
+        )
         await session.commit()
 
-        # Взносы мая уплачены к сроку 28.06 → попадают в окно вычета полугодия.
         inputs = await load_tax_inputs(session, as_of=date(2026, 6, 30))
-        assert inputs.employees_paid == Decimal("11842.20")  # только взносы, НДФЛ исключён
+        # Только банковский факт: разнос (tax_notice) не добавился вторым слоем.
+        assert inputs.employees_paid == Decimal("11842.20")

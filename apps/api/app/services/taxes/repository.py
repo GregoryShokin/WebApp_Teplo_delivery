@@ -74,11 +74,21 @@ async def sum_revenue(
 
 
 def expected_months(start: date, end: date) -> set[tuple[int, int]]:
-    """Месяцы, которые обязаны быть покрыты базой на дату среза."""
+    """Месяцы, которые ОБЯЗАНЫ быть покрыты выручкой на дату среза.
+
+    УСН отчитывается поквартально, поэтому спрос — только с ЗАКРЫТЫХ кварталов: пока
+    квартал идёт, его месяцы (включая уже закончившиеся) обязательными не считаются —
+    платёжки по ним не существует, сверять нечего, и «трубить» о них рано. Дыра в месяце
+    закрытого квартала — наоборот, авария: расчёт по нему занижен. Решение владельца
+    26.07.2026: предупреждать только про отчётные периоды.
+    """
     months: set[tuple[int, int]] = set()
     year, month = start.year, start.month
     while (year, month) <= (end.year, end.month):
-        months.add((year, month))
+        q_end_month = ((month - 1) // 3) * 3 + 3
+        q_end = date(year, q_end_month, calendar.monthrange(year, q_end_month)[1])
+        if q_end <= end:
+            months.add((year, month))
         month += 1
         if month > 12:
             year, month = year + 1, 1
@@ -107,11 +117,14 @@ async def _sum_payments(
     year: int | None = None,
     paid_from: date | None = None,
     paid_to: date | None = None,
+    exclude_source: tuple[str, ...] = (),
 ) -> Decimal:
     stmt = select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
         TaxPayment.status == "paid",
         TaxPayment.kind.in_(kinds),
     )
+    if exclude_source:
+        stmt = stmt.where(TaxPayment.source_kind.notin_(exclude_source))
     if year is not None:
         stmt = stmt.where(TaxPayment.for_year == year)
     if paid_from is not None:
@@ -153,8 +166,17 @@ async def load_tax_inputs(
     )
     expected = expected_months(jan1, as_of)
 
+    # Вычет — только ФАКТЫ уплаты (кассовый принцип, подп. 1 п. 3.1 ст. 346.21): банковская
+    # выписка или ручной ввод. Разнос из оборотки (``source_kind='tax_notice'``) — это
+    # НАЧИСЛЕНИЯ: он разбивает ЕНП на НДФЛ/взносы для сверки и отображения, но в вычет не
+    # входит — иначе те же взносы считаются дважды (факт из банка + начисление из оборотки),
+    # и налог занижается. Решение владельца 26.07.2026, воспроизводит платёжки агента.
     employees_paid = await _sum_payments(
-        session, kinds=DEDUCTIBLE_PAID_KINDS, paid_from=jan1, paid_to=as_of
+        session,
+        kinds=DEDUCTIBLE_PAID_KINDS,
+        paid_from=jan1,
+        paid_to=as_of,
+        exclude_source=("tax_notice",),
     )
     # Взносы «за себя», уплаченные внутри периода. Нужны при основании 'cash'.
     # Окно то же [1 января .. срез]: платёж 25 июля в вычет за полугодие не попадает,
@@ -168,10 +190,12 @@ async def load_tax_inputs(
     advances_paid = await _sum_payments(
         session, kinds=("usn_advance",), year=year, paid_to=as_of
     )
+    # Та же логика для метрики нагрузки: считаем реально ушедшие деньги, без разноса-начислений.
     contributions_paid = await _sum_payments(
         session,
         kinds=("contrib_employees", "contrib_injury", "contrib_fixed", "contrib_extra_1pct"),
         year=year,
+        exclude_source=("tax_notice",),
     )
     fixed_used, extra_used = await _claimed_in_closed_periods(session, year=year)
 

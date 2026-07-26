@@ -265,6 +265,10 @@ async def promote_ready_intakes(
     results: list[PromotionResult] = []
     split_years: set[int] = set()
     for intake in rows:
+        # ЕНП-платёжка (смешанный НДФЛ+взносы) не продвигается как одиночное обязательство:
+        # её разнос делает оборотка (rebuild_payroll_enp_split). Пропускаем молча, без «skipped».
+        if (intake.recognition or {}).get("tax_kind") == UNSPLITTABLE_KIND:
+            continue
         try:
             if intake.document_type == "turnover_statement":
                 result = await promote_turnover_intake(

@@ -17,8 +17,9 @@ import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
@@ -29,6 +30,7 @@ from app.db.session import get_session
 from app.models.tax import (
     TAX_INTAKE_STATUSES,
     TAX_PAYMENT_KINDS,
+    TaxBankDraft,
     TaxDocumentIntake,
     TaxPayment,
 )
@@ -42,7 +44,10 @@ from app.schemas.taxes import (
     TaxDocumentListRead,
     TaxDocumentRead,
     TaxDocumentReviewInput,
+    TaxDraftSendInput,
     TaxOverviewRead,
+    TaxPaymentDraftInput,
+    TaxPaymentDraftRead,
     TaxPaymentListRead,
     TaxPaymentRead,
     TaxPromotionResultRead,
@@ -55,8 +60,18 @@ from app.schemas.taxes import (
     VatWageCriterionRead,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
-from app.services.taxes.bank_draft import TaxDraftError, create_tax_bank_draft
-from app.services.taxes.document_ingest import ingest_tax_documents, set_intake_review
+from app.services.taxes.bank_draft import (
+    TaxDraftError,
+    cancel_tax_draft,
+    create_tax_bank_draft,
+    create_tax_payment_draft,
+    send_tax_draft_to_bank,
+)
+from app.services.taxes.document_ingest import (
+    ingest_tax_documents,
+    resolve_tax_senders,
+    set_intake_review,
+)
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
@@ -223,6 +238,24 @@ async def get_calendar(
         )
     ).all()
 
+    # Обязательство, по которому уже есть ФАКТ уплаты, закрыто: плановая строка-«близнец»
+    # (создана продвижением платёжки) — шум и ложная «просрочка», её не показываем — уплату
+    # уже представляет paid-строка. Матчим по виду и периоду; факт без периода (реконструкция
+    # из выписки не знает, за какой период платёж) — по совпадению суммы.
+    paid_rows = [r for r in rows if r.status == "paid"]
+
+    def _is_settled(planned: TaxPayment) -> bool:
+        for fact in paid_rows:
+            if fact.kind != planned.kind:
+                continue
+            if fact.for_period is not None:
+                if fact.for_period == planned.for_period:
+                    return True
+                continue
+            if abs(fact.amount - planned.amount) <= Decimal("1"):
+                return True
+        return False
+
     items: list[TaxCalendarItemRead] = []
     planned_total = ZERO
     paid_total = ZERO
@@ -231,6 +264,8 @@ async def get_calendar(
 
     for row in rows:
         is_planned = row.status == "planned"
+        if is_planned and _is_settled(row):
+            continue
         # У плановой строки в `paid_on` лежит СРОК уплаты (так её заполняет продвижение
         # документа), у уплаченной — фактическая дата списания. Раскладываем явно.
         due_date = row.paid_on if is_planned else None
@@ -369,7 +404,10 @@ async def list_documents(
         )
 
     received = func.coalesce(TaxDocumentIntake.received_at, TaxDocumentIntake.created_at)
-    stmt = select(TaxDocumentIntake).options(defer(TaxDocumentIntake.content))
+    # Флаг наличия исходного файла считаем прямо в SQL (content IS NOT NULL) — сами байты
+    # по-прежнему не поднимаем (defer), в список идёт только булев признак для кнопки «Открыть».
+    has_file_expr = TaxDocumentIntake.content.isnot(None)
+    stmt = select(TaxDocumentIntake, has_file_expr).options(defer(TaxDocumentIntake.content))
     if document_status is not None:
         stmt = stmt.where(TaxDocumentIntake.status == document_status)
 
@@ -377,7 +415,7 @@ async def list_documents(
     # письма приходит одной секундой) порядок без него не определён, и строки под `limit`
     # могут прыгать между запросами.
     rows = (
-        await session.scalars(
+        await session.execute(
             stmt.order_by(received.desc(), TaxDocumentIntake.id).limit(limit)
         )
     ).all()
@@ -397,10 +435,42 @@ async def list_documents(
         else sum(status_counts.values())
     )
 
+    items = []
+    for intake, intake_has_file in rows:
+        read = TaxDocumentRead.model_validate(intake)
+        read.has_file = bool(intake_has_file)
+        items.append(read)
+
     return TaxDocumentListRead(
-        items=[TaxDocumentRead.model_validate(row) for row in rows],
+        items=items,
         total=total,
         status_counts=status_counts,
+    )
+
+
+@router.get("/documents/{intake_id}/file", dependencies=TAXES_READ)
+async def get_document_file(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Отдать исходный файл документа (платёжка/ведомость/оборотка) как есть.
+
+    Основание в один клик из строки «Документы» — так же, как PDF-счёт открывается на
+    «Странице на оплату». Байты лежат в staging (``content``); отдаём их только по этому
+    прямому запросу, в списке — лишь флаг ``has_file``.
+    """
+    intake = await session.get(TaxDocumentIntake, intake_id)
+    if intake is None or not intake.content:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл документа недоступен.")
+    # Имена файлов бухгалтера кириллические, а HTTP-заголовки только latin-1 → ASCII-фолбэк
+    # + RFC 5987 (filename*), иначе Starlette роняет ответ. Тот же приём, что в payment_page.
+    raw_name = intake.filename or "document"
+    ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "document"
+    disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw_name)}"
+    return Response(
+        content=bytes(intake.content),
+        media_type=intake.mime or "application/octet-stream",
+        headers={"Content-Disposition": disposition},
     )
 
 
@@ -439,12 +509,17 @@ async def promote_documents(
 async def refresh_documents(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, int | str]:
-    """Забрать новые документы из почты бухгалтера в staging «Документы».
+    """Забрать новые документы из почты бухгалтера в staging «Документы» прямо сейчас.
 
-    На проде почта забирается фоново по расписанию; эта кнопка — «проверить прямо сейчас».
-    Если почта не настроена (превью), вернётся статус ``not_configured``.
+    Тянет живой IMAP настроенных ящиков (MAILRU_*), берёт вложения от отправителей из
+    настройки ``tax_document_senders``, кладёт в staging с дедупом по SHA-256. Если почта не
+    настроена (например, превью без кредов) — вернётся ``{"status": "not_configured"}``, а
+    сообщение об этом покажет UI. Фоновый забор по расписанию делает планировщик
+    (``tax_document_poll_enabled``); эта кнопка — ручная проверка в любой момент.
     """
-    return await ingest_tax_documents(session)
+    settings = get_settings()
+    senders = resolve_tax_senders(settings.tax_document_senders)
+    return await ingest_tax_documents(session, settings=settings, senders=senders)
 
 
 @router.post(
@@ -612,3 +687,99 @@ async def create_bank_draft(
         status=result.status,
         provider_ref=result.provider_ref,
     )
+
+
+@router.post(
+    "/payment-drafts",
+    response_model=TaxPaymentDraftRead,
+    dependencies=TAXES_MANAGE,
+)
+async def create_payment_draft(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    body: TaxPaymentDraftInput,
+) -> TaxPaymentDraftRead:
+    """Подготовить налоговый платёж в очередь «Активные платежи».
+
+    Кнопка «Отправить в банк» на «Налогах» больше не стреляет платёжкой напрямую и вслепую —
+    она создаёт видимую строку: платёж появляется в окне активных платежей, где владелец
+    сверяет сумму и назначение и уже оттуда отправляет в банк. Повторный клик по тому же
+    обязательству не плодит дубликат — обновляет подготовленный платёж.
+    """
+    if body.amount <= ZERO:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Сумма платежа должна быть больше нуля."
+        )
+    try:
+        draft = await create_tax_payment_draft(
+            session,
+            tax_kind=body.tax_kind,
+            amount=body.amount,
+            purpose=body.purpose,
+            for_year=body.for_year,
+            for_period=body.for_period,
+            due_date=body.due_date,
+            title=body.title,
+            created_by=actor.user_id,
+        )
+    except TaxDraftError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    await session.refresh(draft)
+    return TaxPaymentDraftRead.model_validate(draft)
+
+
+@router.post(
+    "/payment-drafts/{draft_id}/send-to-bank",
+    response_model=TaxPaymentDraftRead,
+    dependencies=TAXES_MANAGE,
+)
+async def send_payment_draft_to_bank(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    draft_id: uuid.UUID,
+    body: TaxDraftSendInput,
+) -> TaxPaymentDraftRead:
+    """Отправить подготовленный налоговый платёж в банк (черновик платёжки ЕНП в Т-Банк).
+
+    Сумму/назначение можно поправить перед отправкой; реквизиты получателя ФНС фиксированы.
+    Отказ банка оставляет платёж в очереди со статусом ``failed`` — его можно отправить снова.
+    """
+    draft = await session.get(TaxBankDraft, draft_id)
+    if draft is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Платёж не найден.")
+    try:
+        draft = await send_tax_draft_to_bank(
+            session, draft, settings=settings, amount=body.amount, purpose=body.purpose
+        )
+    except TaxDraftError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except BankFetchError as exc:
+        # Статус 'failed' и текст ошибки уже проставлены сервисом — сохраняем их до маппинга.
+        await session.commit()
+        raise _tax_bank_rejected(exc) from exc
+    await session.commit()
+    await session.refresh(draft)
+    return TaxPaymentDraftRead.model_validate(draft)
+
+
+@router.post(
+    "/payment-drafts/{draft_id}/cancel",
+    response_model=TaxPaymentDraftRead,
+    dependencies=TAXES_MANAGE,
+)
+async def cancel_payment_draft(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    draft_id: uuid.UUID,
+) -> TaxPaymentDraftRead:
+    """Убрать подготовленный налоговый платёж из очереди активных платежей."""
+    draft = await session.get(TaxBankDraft, draft_id)
+    if draft is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Платёж не найден.")
+    try:
+        draft = await cancel_tax_draft(session, draft)
+    except TaxDraftError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    await session.refresh(draft)
+    return TaxPaymentDraftRead.model_validate(draft)

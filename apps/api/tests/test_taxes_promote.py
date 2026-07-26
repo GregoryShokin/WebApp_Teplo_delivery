@@ -205,7 +205,9 @@ async def test_bulk_promotion_skips_unpromotable_without_failing(
         await session.commit()
 
         actions = sorted(r.action for r in results)
-        assert actions == ["created", "skipped", "skipped"]
+        # Годная УСН → created; нулевая-заглушка → skipped. ЕНП-платёжка пропускается МОЛЧА
+        # (её разнос делает оборотка), поэтому в результатах её нет вовсе.
+        assert actions == ["created", "skipped"]
         assert await session.scalar(select(func.count()).select_from(TaxPayment)) == 1
 
 

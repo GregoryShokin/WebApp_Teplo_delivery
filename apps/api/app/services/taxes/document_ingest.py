@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,7 @@ from app.services.taxes.document_parser import (
     PaymentOrderDoc,
     PayrollStatementDoc,
     TurnoverStatementDoc,
+    parse_injury_payment,
     parse_payment_order,
     parse_payroll_statement,
     parse_turnover_statement,
@@ -39,6 +41,18 @@ logger = logging.getLogger(__name__)
 
 # Отправители, чьи документы считаем налоговыми. По умолчанию — налоговый агент из методологии.
 DEFAULT_TAX_SENDERS: tuple[str, ...] = ("askad02@mail.ru",)
+
+
+def resolve_tax_senders(raw: str | None) -> tuple[str, ...]:
+    """Список отправителей из настройки (``tax_document_senders``, через запятую) → кортеж.
+
+    Пусто/None → дефолт методологии. Так владелец добавляет адрес нового бухгалтера
+    настройкой, не трогая код, и счёт с другого адреса перестаёт молча теряться.
+    """
+    if not raw:
+        return DEFAULT_TAX_SENDERS
+    parsed = tuple(part.strip().lower() for part in raw.split(",") if part.strip())
+    return parsed or DEFAULT_TAX_SENDERS
 
 
 def _received_year(att: FetchedAttachment) -> int:
@@ -52,6 +66,10 @@ def _classify_document(filename: str) -> str:
     low = (filename or "").lower()
     if low.endswith(".docx") or low.endswith(".doc"):
         # Платёжки приходят в docx; приказы/договоры тоже бывают docx, но обычно .xls.
+        return "payment_order"
+    # Платёжка взноса на травматизм (ПД-налог, .xls «0,2 %» / «травматизм») — тоже платёжка,
+    # но со своим разбором (.xls). Раньше уходила в Т-53-парсер и висла в «нужна проверка».
+    if re.search(r"0[.,]2\s*%|травматизм|несчастн", low):
         return "payment_order"
     # Оборотка — раньше «вед» и раньше общего .xls-фолбэка: иначе уедет в Т-53-парсер.
     if "оборот" in low or "сальдо" in low:
@@ -139,7 +157,16 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
 
     try:
         if kind == "payment_order":
-            doc = parse_payment_order(att.content, filename=att.filename or "", default_year=year)
+            name = (att.filename or "").lower()
+            if name.endswith((".xls", ".xlsx")):
+                # .xls-платёжка среди платёжек — это ПД-налог взноса на травматизм.
+                doc = parse_injury_payment(
+                    att.content, filename=att.filename or "", default_year=year
+                )
+            else:
+                doc = parse_payment_order(
+                    att.content, filename=att.filename or "", default_year=year
+                )
             recognition = _payment_order_recognition(doc)
             status = "needs_review" if doc.needs_review else "parsed"
             return "payment_order", status, recognition, None
@@ -275,4 +302,5 @@ __all__ = [
     "MailAccount",
     "ingest_tax_documents",
     "parse_attachment",
+    "resolve_tax_senders",
 ]

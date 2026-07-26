@@ -68,6 +68,8 @@ from app.models import (
     SupplierInvoice,
     Wallet,
 )
+from app.models.tax import TaxBankDraft
+from app.services.banking.fns_enp_requisites import treasury_enp_requisites
 from app.services.payroll_reserves import (
     PAYROLL_RESERVE_LABEL_ADMIN,
     PAYROLL_RESERVE_LABEL_PRODUCTION,
@@ -134,9 +136,10 @@ class PaymentItem:
     """Нормализованная строка платежа для витрины (модалка + страница истории)."""
 
     id: str  # композитный: f"{source}:{uuid}"
-    source: str  # 'invoice' | 'draft' | 'reserve' | 'payroll_draft'
-    # 'invoice'|'expense'|'prepayment'|'informal'|'safe_reserve'|'kassa_reserve'
-    # |'payroll_reserve'|'payroll_bank_draft'
+    # source: invoice|draft|reserve|payroll_draft|deposit_draft|advance_draft|tax_draft
+    source: str
+    # kind: invoice|expense|prepayment|informal|safe_reserve|kassa_reserve|payroll_reserve
+    # |payroll_bank_draft|deposit_bank_draft|advance_bank_draft|tax_enp
     kind: str
     ref_id: uuid.UUID
     title: str
@@ -772,6 +775,80 @@ async def _advance_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     return items
 
 
+async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
+    """Налоговые платёжки ЕНП, подготовленные на «Налогах» — «Готов к отправке» или «Отправлен».
+
+    Строка ``TaxBankDraft`` в ``ready_to_send`` попадает в корзину «к отправке» с кнопкой «В банк»;
+    после отправки (``in_bank``) — «Отправлен в банк». Получатель — фиксированные реквизиты ФНС
+    (owner-locked), поэтому в диалоге редактируемы только сумма и назначение, а сами реквизиты
+    кладём в ``extra`` для показа. Отказ банка (``failed``) возвращает платёж в очередь на отправку.
+    """
+    drafts = (
+        (await session.execute(select(TaxBankDraft).order_by(TaxBankDraft.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    if not drafts:
+        return []
+
+    reqs = treasury_enp_requisites()
+    status_map = {
+        "ready_to_send": "ready_to_send",
+        "in_bank": "in_bank",
+        "paid": "paid",
+        "cancelled": "cancelled",
+        "failed": "ready_to_send",  # отказ банка — платёж снова в очереди на отправку
+    }
+    items: list[PaymentItem] = []
+    for d in drafts:
+        state = status_map.get(d.status, d.status)
+        title = d.title or "Единый налоговый платёж (ЕНП)"
+        items.append(
+            PaymentItem(
+                id=f"tax_draft:{d.id}",
+                source="tax_draft",
+                kind="tax_enp",
+                ref_id=d.id,
+                title=f"{title} · {_fmt_money(Decimal(d.amount))}",
+                counterparty_id=None,
+                counterparty_name=d.recipient_name or str(reqs["recipientName"]),
+                amount=Decimal(d.amount),
+                amount_paid=None,
+                article_id=None,
+                article_name="Налоги — ЕНП",
+                method="bank",
+                bank_channel=d.bank_provider,
+                state=state,
+                bucket=BUCKET_BY_STATE.get(state),
+                created_at=d.created_at,
+                can_edit=state == "ready_to_send",
+                can_send_to_bank=state == "ready_to_send",
+                can_pay=False,  # деньги уходят подтверждением в банк-клиенте, не отсюда
+                can_cancel=state == "ready_to_send",
+                extra={
+                    "tax": True,
+                    "tax_kind": d.tax_kind,
+                    "for_period": d.for_period,
+                    "for_year": d.for_year,
+                    "due_date": d.due_date.isoformat() if d.due_date else None,
+                    "purpose": d.purpose,
+                    "kbk": d.kbk or str(reqs["kbk"]),
+                    "last_error": d.last_error,
+                    "requisites": {
+                        "recipientName": str(reqs["recipientName"]),
+                        "inn": str(reqs["inn"]),
+                        "kpp": str(reqs["kpp"]),
+                        "bankAcnt": str(reqs["bankAcnt"]),
+                        "bankBik": str(reqs["bankBik"]),
+                        "bankName": str(reqs.get("bankName", "")),
+                        "kbk": str(reqs["kbk"]),
+                    },
+                },
+            )
+        )
+    return items
+
+
 # --- публичный API -------------------------------------------------------------
 
 
@@ -788,6 +865,7 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
     deposit_drafts = await _deposit_bank_draft_items(session)
     advance_drafts = await _advance_bank_draft_items(session)
     employee_payouts = await _employee_payout_items(session)
+    tax_drafts = await _tax_bank_draft_items(session)
     items = (
         invoices
         + drafts
@@ -796,6 +874,7 @@ async def list_payments(session: AsyncSession, *, scope: str = "active") -> list
         + deposit_drafts
         + advance_drafts
         + employee_payouts
+        + tax_drafts
     )
 
     if scope == "active":

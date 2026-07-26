@@ -222,6 +222,12 @@ export type TaxRecognition = {
   kbk?: string | null;
   recipient?: string | null;
   document_number?: string | null;
+  /** Ведомость Т-53: номер, тип выплаты (advance/salary), расчётный период, итог. */
+  doc_number?: string | null;
+  payout_kind?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  total?: Money | null;
   /** Оборотка: месяц/год и помесячные итоги по колонкам. */
   year?: number | null;
   month?: number | null;
@@ -249,6 +255,8 @@ export type TaxDocumentRow = {
   error: string | null;
   tax_payment_bundle_id: string | null;
   created_at: string | null;
+  /** Есть ли сохранённый исходный файл, который можно открыть кнопкой. */
+  has_file: boolean;
 };
 
 export type TaxDocumentList = {
@@ -344,8 +352,13 @@ export async function promoteTaxDocuments(): Promise<TaxPromotionSummary> {
 }
 
 export async function refreshTaxDocuments(): Promise<Record<string, number | string>> {
+  // Живой IMAP-проход по ящикам бухгалтера медленнее обычного запроса — даём ему свой
+  // увеличенный таймаут, иначе клиент оборвётся (15 c по умолчанию) ложной ошибкой, хотя
+  // сервер проход довёл и документы уже сохранены.
   const response = await api.post<Record<string, number | string>>(
     `${BASE}/documents/refresh`,
+    undefined,
+    { timeout: 120_000 },
   );
   return response.data;
 }
@@ -359,6 +372,16 @@ export async function reviewTaxDocument(
     { status },
   );
   return response.data;
+}
+
+/** Исходный файл документа под авторизацией — тянем blob (прямую ссылку без токена API не
+ *  отдаст) и возвращаем object-URL. Открытие/скачивание делает вызывающий: окно надо открыть
+ *  синхронно по клику, иначе попап блокируется браузером после await. */
+export async function fetchTaxDocumentFileUrl(intakeId: string): Promise<string> {
+  const response = await api.get(`${BASE}/documents/${intakeId}/file`, {
+    responseType: "blob",
+  });
+  return URL.createObjectURL(response.data as Blob);
 }
 
 export async function getTaxSources(): Promise<TaxSources> {
@@ -425,5 +448,52 @@ export async function createTaxBankDraft(
     amount,
     purpose,
   });
+  return response.data;
+}
+
+// ── Налоговый платёж в очереди «Активные платежи» ──────────────────────────────
+
+export type TaxPaymentDraft = {
+  id: string;
+  tax_kind: string;
+  for_year: number | null;
+  for_period: string | null;
+  title: string | null;
+  amount: Money;
+  purpose: string;
+  due_date: string | null;
+  kbk: string | null;
+  recipient_name: string | null;
+  status: string;
+  bank_provider: string;
+  document_id: string | null;
+  provider_ref: string | null;
+  last_error: string | null;
+  created_at: string | null;
+};
+
+/** «Отправить в банк» на «Налогах»: подготовить платёж в окно активных платежей. */
+export async function createTaxPaymentDraft(payload: {
+  tax_kind: string;
+  amount: number;
+  purpose?: string | null;
+  for_year?: number | null;
+  for_period?: string | null;
+  due_date?: string | null;
+  title?: string | null;
+}): Promise<TaxPaymentDraft> {
+  const response = await api.post<TaxPaymentDraft>(`${BASE}/payment-drafts`, payload);
+  return response.data;
+}
+
+/** Отправить подготовленный платёж в банк (сумму/назначение можно поправить). */
+export async function sendTaxPaymentDraftToBank(
+  draftId: string,
+  payload: { amount?: number | null; purpose?: string | null },
+): Promise<TaxPaymentDraft> {
+  const response = await api.post<TaxPaymentDraft>(
+    `${BASE}/payment-drafts/${draftId}/send-to-bank`,
+    payload,
+  );
   return response.data;
 }

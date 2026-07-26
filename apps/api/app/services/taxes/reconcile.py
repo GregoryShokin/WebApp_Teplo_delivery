@@ -169,10 +169,28 @@ def _classify(
 
 
 def _payable(
-    verdict: str, *, documented: Decimal | None, calculated: Decimal | None
+    verdict: str,
+    *,
+    documented: Decimal | None,
+    calculated: Decimal | None,
+    expected: Decimal | None = None,
 ) -> Decimal | None:
-    """Сколько платить по обязательству — для кнопки «Отправить в банк». Только когда ждём
-    уплаты (due/overdue): берём сумму из документа бухгалтера, иначе из расчёта."""
+    """Сколько платить по обязательству — для кнопки «Отправить в банк».
+
+    Ждём уплаты (due/overdue) — сумма из документа бухгалтера, иначе из расчёта.
+    Расхождение в БЕЗОПАСНУЮ сторону (документ больше расчёта → переплата зачтётся на ЕНС)
+    тоже платёжное: кнопку даём на сумму документа. Опасная сторона (документ меньше) —
+    кнопки нет, платить нельзя.
+    """
+    if verdict == "doc_mismatch":
+        if (
+            documented is not None
+            and expected is not None
+            and documented > expected
+            and documented > ZERO
+        ):
+            return documented
+        return None
     if verdict not in ("due", "overdue"):
         return None
     if documented is not None and documented > ZERO:
@@ -182,15 +200,35 @@ def _payable(
     return None
 
 
-def _action_for(verdict: str, *, documented: Decimal | None = None) -> str | None:
-    """Что делать владельцу с этим обязательством. None — действий не требуется."""
+def _action_for(
+    verdict: str,
+    *,
+    documented: Decimal | None = None,
+    expected: Decimal | None = None,
+) -> str | None:
+    """Что делать владельцу с этим обязательством. None — действий не требуется.
+
+    ``expected`` — сумма, с которой сверяли документ (расчёт либо остаток к доплате).
+    Направление расхождения решает всё: документ МЕНЬШЕ ожидаемого — риск недоимки и пеней,
+    платить нельзя; документ БОЛЬШЕ на копейки — безопасная переплата (зачтётся на ЕНС),
+    запрет тут только пугает.
+    """
     if verdict == "doc_mismatch":
         if documented is not None and documented == ZERO:
             return (
                 "Бухгалтер прислала нулевую платёжку — запросите корректную "
                 "и не платите по этой."
             )
-        return "Платить по этому документу нельзя: уточните сумму у бухгалтера."
+        if documented is not None and expected is not None and documented > expected:
+            return (
+                f"Документ на {fmt_money(documented - expected)} ₽ больше расчёта — платить "
+                "по нему можно: небольшая переплата зачтётся на ЕНС. Расхождение обычно в "
+                "составе вычета, при желании сверьте с бухгалтером."
+            )
+        return (
+            "Платить по этому документу нельзя — в нём меньше, чем начислено: возникнет "
+            "недоимка и пени. Уточните сумму у бухгалтера."
+        )
     if verdict == "overdue":
         return "Срок уплаты прошёл — оплатите скорее, иначе начнут капать пени."
     if verdict == "payment_mismatch":
@@ -344,9 +382,12 @@ async def build_reconciliation(
                 verdict=verdict,
                 severity=severity,
                 messages=messages,
-                action=_action_for(verdict, documented=documented),
+                action=_action_for(verdict, documented=documented, expected=calculated),
                 payable_amount=_payable(
-                    verdict, documented=documented, calculated=calculated
+                    verdict,
+                    documented=documented,
+                    calculated=calculated,
+                    expected=calculated,
                 ),
             )
         )
@@ -381,9 +422,17 @@ async def build_reconciliation(
             verdict=verdict,
             severity=severity,
             messages=messages,
-            action=_action_for(verdict, documented=documented),
+            # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
+            action=_action_for(
+                verdict,
+                documented=documented,
+                expected=state.extra_accrued - (paid or ZERO),
+            ),
             payable_amount=_payable(
-                verdict, documented=documented, calculated=state.extra_accrued
+                verdict,
+                documented=documented,
+                calculated=state.extra_accrued,
+                expected=state.extra_accrued - (paid or ZERO),
             ),
         )
     )

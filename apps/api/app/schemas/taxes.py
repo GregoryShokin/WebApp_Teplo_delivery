@@ -263,6 +263,9 @@ class TaxDocumentRead(BaseModel):
     error: str | None = None
     tax_payment_bundle_id: uuid.UUID | None = None
     created_at: datetime | None = None
+    # Есть ли сохранённый исходный файл, который можно открыть. Байты (``content``) наружу
+    # по-прежнему не отдаются в списке — это лишь флаг для кнопки «Открыть».
+    has_file: bool = False
 
 
 class TaxDocumentListRead(BaseModel):
@@ -398,3 +401,45 @@ class TaxBankDraftResultRead(BaseModel):
     document_id: str
     status: str
     provider_ref: str | None = None
+
+
+class TaxPaymentDraftInput(BaseModel):
+    """Подготовить налоговый платёж в очередь «Активные платежи» (кнопка «Отправить в банк»)."""
+
+    tax_kind: str
+    amount: Decimal
+    purpose: str | None = None
+    for_year: int | None = None
+    for_period: str | None = None
+    due_date: date | None = None
+    title: str | None = None
+
+
+class TaxDraftSendInput(BaseModel):
+    """Отправка подготовленного платежа в банк — сумму/назначение можно поправить."""
+
+    amount: Decimal | None = None
+    purpose: str | None = None
+
+
+class TaxPaymentDraftRead(BaseModel):
+    """Подготовленный налоговый платёж — строка очереди «Активные платежи»."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    tax_kind: str
+    for_year: int | None = None
+    for_period: str | None = None
+    title: str | None = None
+    amount: Decimal
+    purpose: str
+    due_date: date | None = None
+    kbk: str | None = None
+    recipient_name: str | None = None
+    status: str
+    bank_provider: str
+    document_id: str | None = None
+    provider_ref: str | None = None
+    last_error: str | None = None
+    created_at: datetime | None = None

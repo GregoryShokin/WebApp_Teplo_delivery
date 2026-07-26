@@ -503,3 +503,64 @@ class TaxPayrollLedger(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# Путь налоговой платёжки в очереди «Активные платежи»: от подготовки до факта.
+TAX_BANK_DRAFT_STATUSES: tuple[str, ...] = (
+    "ready_to_send",  # подготовлена на «Налогах», ждёт проверки реквизитов в окне платежей
+    "in_bank",  # черновик отправлен в Т-Банк, ждёт подтверждения владельцем
+    "paid",  # оплачена (факт из выписки) — уходит в историю
+    "cancelled",  # отменена владельцем
+    "failed",  # банк отклонил создание черновика
+)
+
+
+class TaxBankDraft(Base):
+    """Налоговый платёж в очереди «Активные платежи»: от подготовки до отправки в банк.
+
+    Раньше кнопка «Отправить в банк» на странице «Налоги» стреляла черновиком прямо в Т-Банк,
+    ничего не сохраняя, — платёж был не виден и его нельзя было проверить. Теперь она создаёт
+    ЭТУ строку в статусе ``ready_to_send``; платёж появляется в окне активных платежей, где
+    владелец сверяет сумму и назначение (реквизиты получателя ФНС фиксированы, owner-locked) и
+    только тогда отправляет в банк (``in_bank``). Факт списания по-прежнему приходит из выписки
+    отдельным ``TaxPayment`` и сходится в сверке — этот черновик к тому моменту уходит в историю.
+    """
+
+    __tablename__ = "tax_bank_draft"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('ready_to_send', 'in_bank', 'paid', 'cancelled', 'failed')",
+            name="ck_tax_bank_draft_status",
+        ),
+        CheckConstraint("amount > 0", name="ck_tax_bank_draft_amount"),
+        Index("ix_tax_bank_draft_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Что платим (для заголовка и дедупа повторного клика): вид налога + период.
+    tax_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    for_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    for_period: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Реквизиты получателя ЕНП фиксированы (fns_enp_requisites); КБК храним для показа в строке.
+    kbk: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    recipient_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready_to_send")
+    bank_provider: Mapped[str] = mapped_column(String(16), nullable=False, default="tbank")
+    # Заполняются после отправки в банк.
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -37,7 +37,9 @@ _KIND_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"1\s*%|1%\s*св|допвзнос|1\s*процент", "contrib_extra_1pct"),
     (r"\bусн\b", "usn_advance"),
     (r"0[.,]2\s*%|травматизм|несчастн", "contrib_injury"),
-    (r"\bенп\b", "enp_payroll"),  # смешанный НДФЛ+взносы — требует разноса по уведомлению
+    # «СВ ИП 1 кв.docx» — фиксированные взносы ИП «за себя» (платятся поквартально по ¼).
+    (r"св\s+ип|взнос[а-я]*\s+ип", "contrib_fixed"),
+    (r"\bенп\b", "enp_payroll"),  # смешанный НДФЛ+взносы — разнос даёт оборотка
 )
 
 
@@ -181,10 +183,11 @@ def parse_payment_order(
         reasons.append("не распознан КБК")
     if tax_kind is None:
         reasons.append("не распознан вид платежа по имени файла/заголовку")
-    if tax_kind == "enp_payroll":
-        reasons.append("ЕНП: НДФЛ и взносы смешаны — нужен разнос по уведомлению")
     if due is None:
         reasons.append("не распознан срок уплаты")
+    # ЕНП (смешанный НДФЛ+взносы) НЕ уходит в needs_review: разнос делается из оборотки
+    # бухгалтера (rebuild_payroll_enp_split), а не из уведомления. Платёжка тут — справочная
+    # (подтверждает уплаченную единой суммой ЕНП), отдельного ручного подтверждения не требует.
 
     return PaymentOrderDoc(
         amount=amount,
@@ -198,6 +201,73 @@ def parse_payment_order(
         review_reasons=reasons,
         source_filename=filename or None,
     )
+
+
+def parse_injury_payment(
+    data: bytes, *, filename: str = "", default_year: int | None = None
+) -> PaymentOrderDoc:
+    """Разобрать платёжку взноса на травматизм — «Форма ПД (налог)» (.xls) в СФР.
+
+    Это единая платёжка «0,2 %» по всем сотрудникам (не ведомость Т-53 и не форма 0401060):
+    внутри — сумма, КБК травматизма (797…), получатель ОСФР по региону. Раньше такой .xls
+    молча уходил в Т-53-парсер, где «не находил сотрудников» и вис в «нужна проверка».
+    """
+    import xlrd  # локальный импорт: тяжёлый только для .xls-веток
+
+    wb = xlrd.open_workbook(file_contents=data)
+    cells: list[str] = []
+    for sheet in wb.sheets():
+        for r in range(sheet.nrows):
+            for c in range(sheet.ncols):
+                value = str(sheet.cell_value(r, c)).strip()
+                if value:
+                    cells.append(value)
+    text = " ".join(cells)
+    year = default_year or _guess_year(text) or date.today().year
+
+    amount = _injury_amount(cells)
+    kbk = next(
+        (c for c in cells if re.fullmatch(r"\d{20}", c) and c.startswith("797")),
+        None,
+    )
+
+    reasons: list[str] = []
+    if amount is None:
+        reasons.append("не распознана сумма взноса")
+    if kbk is None:
+        reasons.append("не распознан КБК травматизма")
+
+    return PaymentOrderDoc(
+        amount=amount,
+        kbk=kbk,
+        recipient="sfr",
+        tax_kind="contrib_injury",
+        due_date=_parse_due_date(text, filename, year),
+        purpose="Страховые взносы на травматизм (в СФР)",
+        period_hint=_period_hint(filename, text),
+        needs_review=bool(reasons),
+        review_reasons=reasons,
+        source_filename=filename or None,
+    )
+
+
+def _injury_amount(cells: list[str]) -> Decimal | None:
+    """Сумма взноса — ячейка сразу после метки «Сумма» (формат 57.14 / 100,00 / 100)."""
+
+    def _num(raw: str) -> Decimal | None:
+        s = raw.replace(" ", "").replace(",", ".")
+        if re.fullmatch(r"\d{1,9}(\.\d+)?", s):
+            with contextlib.suppress(ArithmeticError):
+                return Decimal(s)
+        return None
+
+    for i, cell in enumerate(cells):
+        if "сумма" in cell.lower():
+            for nxt in cells[i + 1 : i + 3]:
+                value = _num(nxt)
+                if value is not None and value > 0:
+                    return value
+    return None
 
 
 def _recipient_from(text: str, kbk: str | None) -> str | None:

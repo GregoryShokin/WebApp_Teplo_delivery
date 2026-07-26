@@ -52,7 +52,8 @@ import { apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import {
-  createTaxBankDraft,
+  createTaxPaymentDraft,
+  fetchTaxDocumentFileUrl,
   getTaxCalendar,
   getTaxDocuments,
   getTaxOverview,
@@ -72,6 +73,7 @@ import {
   type TaxDocumentRow,
   type TaxPaymentRow,
   type TaxPromotionSummary,
+  type TaxRecognition,
   type TaxSource,
   type TaxState,
   type VatWageCriterion,
@@ -151,6 +153,20 @@ function formatDateTime(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : dateTimeFormatter.format(parsed);
 }
 
+/** «01.07.2026 – 15.07.2026» из пары дат; если совпадают — одна дата; частичный период — как есть. */
+function formatPeriodRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string | null {
+  if (!start && !end) {
+    return null;
+  }
+  if (start && end) {
+    return start === end ? formatDate(start) : `${formatDate(start)} – ${formatDate(end)}`;
+  }
+  return formatDate(start ?? end);
+}
+
 function toNumber(value: Money | null | undefined): number {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -173,7 +189,7 @@ const TAX_KIND_LABELS: Record<string, string> = {
   contrib_employees: "Взносы за работников",
   ndfl: "НДФЛ за работников",
   enp_payroll: "Зарплатный ЕНП (НДФЛ + взносы)",
-  injury: "Взносы на травматизм",
+  contrib_injury: "Взносы на травматизм (0,2%)",
   other: "Прочее",
 };
 
@@ -249,12 +265,37 @@ const DOCUMENT_STATUS: Record<string, { label: string; className: string }> = {
   ignored: { label: "Игнорируем", className: NEUTRAL_BADGE },
 };
 
+/** Что означает каждый статус — показываем по «i», чтобы не гадать. */
+const DOCUMENT_STATUS_HINT: Record<string, string> = {
+  parsed:
+    "Распознан уверенно и готов к продвижению. Кнопка «Продвинуть готовые» превратит платёжку в плановое обязательство (попадёт в календарь и сверку), а оборотку — в помесячную раскладку зарплаты.",
+  needs_review:
+    "Распознан частично — автоматика не уверена (например, смешанный ЕНП или нечитаемая сумма). Проверьте вручную кнопками «Проверено» / «Игнорировать» в строке.",
+  promoted:
+    "Уже продвинут: из документа создано налоговое обязательство или строка расчёта — данные ушли в контур. Делать с ним больше ничего не нужно.",
+  unsupported:
+    "Вложение не из платёжного контура (приказ, договор, кадровый документ) — в налоги не идёт.",
+  error: "Файл не удалось разобрать. Причина — под статусом.",
+  ignored: "Вы отклонили документ вручную — в расчёт и сверку он не попадёт.",
+};
+
 const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   payment_order: "Платёжное поручение",
   payroll_statement: "Зарплатная ведомость",
   turnover_statement: "Оборотно-сальдовая ведомость",
   unknown: "Тип не определён",
 };
+
+/** Тип выплаты в ведомости Т-53 — из имени файла бухгалтера. */
+const PAYOUT_KIND_LABELS: Record<string, string> = {
+  advance: "Аванс",
+  salary: "Зарплата",
+};
+
+function payoutKindLabel(kind: string | null | undefined): string {
+  if (!kind) return "Ведомость";
+  return PAYOUT_KIND_LABELS[kind] ?? "Ведомость";
+}
 
 const MONTHS_RU_NOMINATIVE = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -564,15 +605,25 @@ function ReconRow({ line }: { line: ReconLine }) {
   const [payOpen, setPayOpen] = useState(false);
   const payable = line.payable_amount;
   const draftMutation = useMutation({
-    mutationFn: () => createTaxBankDraft(toNumber(payable), "Единый налоговый платеж"),
-    onSuccess: (result) => {
+    mutationFn: () =>
+      createTaxPaymentDraft({
+        tax_kind: line.tax_kind,
+        amount: toNumber(payable),
+        purpose: "Единый налоговый платеж",
+        for_period: line.period_code,
+        for_year: line.due_date ? Number(line.due_date.slice(0, 4)) : undefined,
+        due_date: line.due_date ?? undefined,
+        title: line.label,
+      }),
+    onSuccess: () => {
       setPayOpen(false);
-      toast.success("Черновик платёжки создан в Т-Банке", {
-        description: `Это ещё не оплата — подтвердите её в банк-клиенте. Статус: ${result.status}.`,
+      toast.success("Платёж добавлен в «Активные платежи»", {
+        description: "Проверьте реквизиты и отправьте в банк из окна активных платежей.",
       });
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
     },
-    onError: (error) => toast.error(apiErrorMessage(error, "Банк отклонил платёж")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось подготовить платёж")),
   });
 
   return (
@@ -636,13 +687,14 @@ function ReconRow({ line }: { line: ReconLine }) {
         <AlertDialog onOpenChange={setPayOpen} open={payOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Создать черновик платёжки в Т-Банке?</AlertDialogTitle>
+              <AlertDialogTitle>Подготовить платёж к отправке в банк?</AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div className="space-y-2 text-sm">
                   <p>
-                    Черновик на <b>{formatMoney(payable)} ₽</b> — «{line.label}». Это ещё не
-                    оплата: платёжка появится в Т-Банке, деньги уйдут только после вашего
-                    подтверждения в банк-клиенте.
+                    Платёж на <b>{formatMoney(payable)}</b> — «{line.label}» — появится в окне
+                    «Активные платежи». Там вы сверите реквизиты и суммы и отправите его в банк
+                    одной кнопкой. Это ещё не оплата: деньги уйдут только после подтверждения
+                    платёжки в банк-клиенте.
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Получатель: Казначейство России (ФНС России), КБК 18201061201010000510,
@@ -663,7 +715,7 @@ function ReconRow({ line }: { line: ReconLine }) {
                 {draftMutation.isPending ? (
                   <Loader2 className="animate-spin" aria-hidden="true" />
                 ) : null}
-                Создать черновик
+                Подготовить платёж
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1067,7 +1119,9 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
     (row) =>
       row.status === "parsed" &&
       (row.document_type === "payment_order" ||
-        row.document_type === "turnover_statement"),
+        row.document_type === "turnover_statement") &&
+      // ЕНП-платёжка не продвигается вручную: её разнос делает оборотка.
+      row.recognition?.tax_kind !== "enp_payroll",
   ).length;
 
   const promoteMutation = useMutation({
@@ -1229,11 +1283,38 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить статус")),
   });
   const status = DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
+  const statusHint = DOCUMENT_STATUS_HINT[row.status];
   const recognition = row.recognition ?? {};
+
+  // Открываем исходник синхронно в жесте клика (иначе браузер блокирует попап после await);
+  // если попап всё же заблокирован — скачиваем файл.
+  async function openFile() {
+    const win = window.open("", "_blank");
+    try {
+      const url = await fetchTaxDocumentFileUrl(row.id);
+      if (win && !win.closed) {
+        win.location.href = url;
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = row.filename ?? "document";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      win?.close();
+      toast.error(apiErrorMessage(error, "Не удалось открыть файл"));
+    }
+  }
+
   const reasons = recognition.review_reasons ?? [];
   const needsReview = row.status === "needs_review";
   const isTurnover = row.document_type === "turnover_statement";
+  const isPayroll = row.document_type === "payroll_statement";
   const turnoverRows = recognition.rows ?? [];
+  const payrollPeriod = formatPeriodRange(recognition.period_start, recognition.period_end);
   const hasFields =
     Boolean(recognition.tax_kind) ||
     recognition.amount !== undefined ||
@@ -1244,7 +1325,19 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
   return (
     <TableRow className={needsReview ? "bg-amber-50/50 hover:bg-amber-50" : undefined}>
       <TableCell className="align-top">
-        <div className="font-medium">{row.filename ?? "Без имени файла"}</div>
+        {row.has_file ? (
+          <button
+            className="flex items-start gap-1.5 text-left font-medium text-sky-700 hover:underline"
+            onClick={openFile}
+            title="Открыть исходный файл"
+            type="button"
+          >
+            <FileText className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            {row.filename ?? "Без имени файла"}
+          </button>
+        ) : (
+          <div className="font-medium">{row.filename ?? "Без имени файла"}</div>
+        )}
         <div className="text-xs text-muted-foreground">
           {[formatDateTime(row.received_at ?? row.created_at), row.from_addr]
             .filter(Boolean)
@@ -1281,6 +1374,29 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               <span className="text-sm text-muted-foreground">Строки не распознаны</span>
             )}
           </div>
+        ) : isPayroll ? (
+          <div className="space-y-1">
+            <div className="font-medium">
+              {payoutKindLabel(recognition.payout_kind)}
+              {payrollPeriod ? ` · ${payrollPeriod}` : ""}
+            </div>
+            {turnoverRows.length > 0 ? (
+              <div className="space-y-0.5 text-xs text-muted-foreground">
+                {turnoverRows.map((person, index) => (
+                  <div key={person.tab_number ?? index}>
+                    <span className="font-medium text-foreground">
+                      {person.employee ?? "—"}
+                    </span>
+                    {" — "}
+                    {m(person.amount)}
+                  </div>
+                ))}
+                <div className="pt-0.5 text-foreground">Итого: {m(recognition.total)}</div>
+              </div>
+            ) : (
+              <span className="text-sm text-muted-foreground">Строки не распознаны</span>
+            )}
+          </div>
         ) : hasFields ? (
           <div className="space-y-0.5">
             <div className="font-medium">{taxKindLabel(recognition.tax_kind)}</div>
@@ -1296,6 +1412,12 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 .filter(Boolean)
                 .join(" · ") || "—"}
             </div>
+            {recognition.tax_kind === "enp_payroll" ? (
+              <div className="text-xs leading-5 text-emerald-700">
+                Разнос НДФЛ и взносов берётся из оборотки за месяц — отдельного подтверждения
+                не нужно.
+              </div>
+            ) : null}
           </div>
         ) : (
           <span className="text-sm text-muted-foreground">Поля не распознаны</span>
@@ -1303,9 +1425,12 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
         {row.error ? <div className="mt-1 text-xs text-rose-700">{row.error}</div> : null}
       </TableCell>
       <TableCell className="align-top">
-        <Badge className={status.className} variant="outline">
-          {status.label}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge className={status.className} variant="outline">
+            {status.label}
+          </Badge>
+          {statusHint ? <InfoHint>{statusHint}</InfoHint> : null}
+        </div>
         {reasons.length > 0 ? (
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs leading-5 text-amber-800">
             {reasons.map((reason) => (

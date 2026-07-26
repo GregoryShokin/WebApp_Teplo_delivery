@@ -62,14 +62,18 @@ def test_extra_1pct_due_date_read_from_body_not_filename() -> None:
     assert doc.needs_review is False
 
 
-def test_enp_payroll_is_flagged_for_review() -> None:
-    """Зарплатный ЕНП: НДФЛ и взносы смешаны — вид enp_payroll, помечен на разнос."""
+def test_enp_payroll_is_recognized_not_flagged() -> None:
+    """Зарплатный ЕНП: вид enp_payroll распознан и НЕ уходит в «нужна проверка».
+
+    Разнос НДФЛ/взносов делает оборотка бухгалтера (rebuild_payroll_enp_split), а не
+    уведомление, поэтому платёжка-ЕНП тут справочная и ручного подтверждения не требует.
+    """
     doc = _po("enp_payroll_14902.docx", "ЕНП_до 28.07.docx")
 
     assert doc.amount == Decimal("14902.30")
     assert doc.tax_kind == "enp_payroll"
-    assert doc.needs_review is True
-    assert any("смешаны" in r for r in doc.review_reasons)
+    assert doc.needs_review is False
+    assert not any("смешаны" in r for r in doc.review_reasons)
 
 
 def test_zero_stub_is_zero_not_missing() -> None:

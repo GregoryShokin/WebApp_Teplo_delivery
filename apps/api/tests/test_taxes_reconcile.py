@@ -370,3 +370,68 @@ async def test_payroll_enp_split_line_shows_breakdown(
     # Платёжка показана справочно с пояснением про «окна» НДФЛ, а не как расхождение.
     assert any("Справочно" in m and "окнами" in m for m in line.messages)
     assert not recon.has_alerts
+
+
+# ── календарь: оплаченное обязательство закрыто, а не «просрочено» ─────────────
+
+
+def _planned(
+    kind: str, amount: str, due: date, period: str | None, recipient: str = "fns"
+) -> TaxPayment:
+    """Плановое обязательство из продвинутой платёжки (в `paid_on` лежит СРОК уплаты)."""
+    return TaxPayment(
+        id=uuid.uuid4(),
+        bundle_id=uuid.uuid4(),
+        paid_on=due,
+        kind=kind,
+        amount=Decimal(amount),
+        recipient=recipient,
+        for_year=2026,
+        for_period=period,
+        status="planned",
+        source_kind="tax_notice",
+        quality_status="confirmed",
+    )
+
+
+async def test_calendar_settles_planned_twin_by_period(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """РЕАЛЬНЫЙ случай 26.07: УСН за Q1 уплачен 20.04, но плановая строка из платёжки
+    висела «просрочкой» на 674 624. Факт того же периода закрывает обязательство."""
+    from app.api.v1.routes.taxes import get_calendar
+
+    async with async_session_factory() as session:
+        session.add(_planned("usn_advance", "674624", date(2026, 4, 28), "q1"))
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))
+        await session.commit()
+
+        result = await get_calendar(session, year=2026)
+
+    assert result.overdue_count == 0
+    assert [item.status for item in result.items] == ["paid"]  # плановый близнец скрыт
+
+
+async def test_calendar_settles_periodless_fact_by_amount(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Факт без периода (реконструкция из выписки) закрывает обязательство по сумме;
+    обязательство без факта остаётся в календаре."""
+    from app.api.v1.routes.taxes import get_calendar
+
+    async with async_session_factory() as session:
+        # Взносы ИП: платёжка на ¼ года + факт уплаты без for_period той же суммой.
+        session.add(_planned("contrib_fixed", "14347.50", date(2026, 12, 28), "q1"))
+        session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+        # Травматизм за июль: платёжка есть, факта уплаты нет — обязательство живо.
+        session.add(
+            _planned("contrib_injury", "100", date(2026, 8, 15), "2026-07", recipient="sfr")
+        )
+        await session.commit()
+
+        result = await get_calendar(session, year=2026)
+
+    by_status = {(item.status, str(item.kind)) for item in result.items}
+    assert ("paid", "contrib_fixed") in by_status
+    assert ("planned", "contrib_injury") in by_status  # не закрыт — факта нет
+    assert ("planned", "contrib_fixed") not in by_status  # закрыт фактом по сумме

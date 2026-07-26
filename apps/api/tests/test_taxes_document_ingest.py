@@ -7,19 +7,18 @@ IMAP не трогаем: подсовываем фикстуры через и�
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-import uuid
-
-import pytest
-
 from app.core.config import get_settings
 from app.models.tax import TaxDocumentIntake
-from app.services.mail.imap_client import FetchedAttachment
+from app.services.mail.imap_client import FetchedAttachment, MailAccount
 from app.services.taxes.document_ingest import (
     ingest_tax_documents,
     parse_attachment,
@@ -58,6 +57,11 @@ def _fetch_stub(attachments: list[FetchedAttachment]):
     return _fetch
 
 
+# Один фиктивный ящик — чтобы приём был герметичным и не зависел от того, настроена ли
+# реальная почта в окружении (иначе на два настроенных ящика stub-fetch задвоит вложения).
+_TEST_ACCOUNTS = [MailAccount("test", "test@local", "x")]
+
+
 # ── чистый разбор вложения ───────────────────────────────────────────────────
 
 
@@ -72,10 +76,35 @@ def test_parse_attachment_routes_payment_order() -> None:
     assert err is None
 
 
-def test_parse_attachment_flags_enp_needs_review() -> None:
+def test_parse_attachment_enp_is_parsed_not_review() -> None:
+    """ЕНП-платёжка распознаётся (parsed), а не висит в «нужна проверка»: её разнос НДФЛ/взносов
+    делает оборотка (rebuild_payroll_enp_split), отдельного ручного подтверждения не требуется."""
     _, status, rec, _ = parse_attachment(_att("enp_payroll_14902.docx", "ЕНП_до 28.07.docx"))
-    assert status == "needs_review"
+    assert status == "parsed"
     assert rec["tax_kind"] == "enp_payroll"
+
+
+def test_injury_document_classified_as_payment_order() -> None:
+    """Файл травматизма («0,2 %.xls») — это платёжка (payment_order), а не Т-53-ведомость.
+
+    Раньше .xls без «оборот/вед» уходил в Т-53-парсер, где «не находил сотрудников» и виснул
+    в «нужна проверка». Теперь ключевые слова травматизма распознаются до .xls-фолбэка.
+    """
+    from app.services.taxes.document_ingest import _classify_document
+
+    assert _classify_document("0,2 %.xls") == "payment_order"
+    assert _classify_document("Травматизм июль.xls") == "payment_order"
+    # обычная ведомость по-прежнему Т-53
+    assert _classify_document("ВЕД-13 АВАНС 20.07.xls") == "payroll_statement"
+
+
+def test_injury_amount_extracted_after_label() -> None:
+    """Сумма взноса на травматизм берётся из ячейки сразу после метки «Сумма»."""
+    from app.services.taxes.document_parser import _injury_amount
+
+    assert _injury_amount(["ИНН", "890307589201", "Сумма", "100.00"]) == Decimal("100.00")
+    assert _injury_amount(["Сумма", "57,14"]) == Decimal("57.14")
+    assert _injury_amount(["нет метки", "12345"]) is None
 
 
 def test_parse_attachment_routes_payroll_statement() -> None:
@@ -122,12 +151,15 @@ async def test_ingest_stores_and_routes(
     ]
     async with async_session_factory() as session:
         result = await ingest_tax_documents(
-            session, settings=get_settings(), fetch=_fetch_stub(attachments)
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub(attachments),
+            accounts=_TEST_ACCOUNTS,
         )
 
     assert result["fetched"] == 3
-    assert result["parsed"] == 2  # УСН + ведомость
-    assert result["needs_review"] == 1  # ЕНП
+    assert result["parsed"] == 3  # УСН + ЕНП + ведомость (ЕНП теперь распознан, разнос из оборотки)
+    assert result["needs_review"] == 0
     async with async_session_factory() as session:
         assert await session.scalar(
             select(func.count()).select_from(TaxDocumentIntake)
@@ -140,10 +172,18 @@ async def test_ingest_dedups_by_content(
     """Повторный проход того же вложения не создаёт вторую строку."""
     att = _att("usn_h1_478376.docx", "УСН 2 кв до 28.07.docx")
     async with async_session_factory() as session:
-        await ingest_tax_documents(session, settings=get_settings(), fetch=_fetch_stub([att]))
+        await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([att]),
+            accounts=_TEST_ACCOUNTS,
+        )
     async with async_session_factory() as session:
         result = await ingest_tax_documents(
-            session, settings=get_settings(), fetch=_fetch_stub([att])
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([att]),
+            accounts=_TEST_ACCOUNTS,
         )
 
     assert result["duplicate"] == 1
@@ -163,7 +203,10 @@ async def test_ingest_skips_foreign_sender(
     )
     async with async_session_factory() as session:
         result = await ingest_tax_documents(
-            session, settings=get_settings(), fetch=_fetch_stub([att])
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([att]),
+            accounts=_TEST_ACCOUNTS,
         )
 
     assert result["skipped_sender"] == 1
