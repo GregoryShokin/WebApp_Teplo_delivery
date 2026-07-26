@@ -344,7 +344,26 @@ const SOURCE_CONFIDENCE: Record<string, { label: string; className: string }> = 
 
 function periodTitle(code: string | null | undefined): string {
   if (!code) return "—";
+  // Месячный период приходит кодом «2026-06» — человеку показываем «июнь 2026».
+  const monthly = /^(\d{4})-(\d{2})$/.exec(code);
+  if (monthly) {
+    const month = Number(monthly[2]);
+    if (month >= 1 && month <= 12) {
+      return `${MONTHS_RU_NOMINATIVE[month - 1].toLowerCase()} ${monthly[1]}`;
+    }
+  }
   return PERIOD_TITLES[code] ?? code;
+}
+
+/** Получатель бюджетного платежа — русской аббревиатурой, а не кодом из БД. */
+const RECIPIENT_LABELS: Record<string, string> = {
+  fns: "ФНС",
+  sfr: "СФР",
+};
+
+function recipientLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  return RECIPIENT_LABELS[code] ?? code;
 }
 
 function taxKindLabel(kind: string | null | undefined): string {
@@ -977,7 +996,7 @@ function CalendarRow({ item }: { item: TaxCalendarItem }) {
         <div className="text-xs text-muted-foreground">
           {[
             item.for_period ? periodTitle(item.for_period) : null,
-            item.recipient,
+            item.recipient ? recipientLabel(item.recipient) : null,
             item.note ?? item.purpose,
           ]
             .filter(Boolean)
@@ -1091,7 +1110,7 @@ function PaymentRow({ row }: { row: TaxPaymentRow }) {
       </TableCell>
       <TableCell className="text-right align-top tabular-nums">{formatMoney(row.amount)}</TableCell>
       <TableCell className="align-top">
-        <div className="truncate">{row.recipient || "—"}</div>
+        <div className="truncate">{recipientLabel(row.recipient)}</div>
         <div className="text-xs text-muted-foreground">
           {row.document_number ? `№ ${row.document_number}` : "без номера документа"}
         </div>
@@ -1397,12 +1416,24 @@ function ReviewPaymentDialog({
             <label className={fieldLabel} htmlFor="rev-period">
               Период
             </label>
-            <Input
+            {/* В данные уходит КОД периода (q1/h1/9m/year/ГГГГ-ММ) — по нему сверка
+                матчит платёжку с обязательством; человеку показываем русские названия. */}
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               id="rev-period"
               onChange={(event) => setPeriod(event.target.value)}
-              placeholder="q1 · h1 · 9m · year · 2026-07"
               value={period}
-            />
+            >
+              <option value="">— не указан —</option>
+              {Object.entries(PERIOD_TITLES).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+              {period && !(period in PERIOD_TITLES) ? (
+                <option value={period}>{periodTitle(period)}</option>
+              ) : null}
+            </select>
           </div>
         </div>
         <DialogFooter>
