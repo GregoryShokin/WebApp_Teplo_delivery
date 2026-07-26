@@ -152,6 +152,46 @@ async def test_bogus_amount_is_not_applied(
     assert intake.status == "needs_review"
 
 
+def test_fmt_diff_directions() -> None:
+    """Дельта для снимка аудита: направление словами, модель ничего не считает сама."""
+    from decimal import Decimal
+
+    from app.services.taxes.ai_reviewer import _fmt_diff
+
+    bigger = _fmt_diff(Decimal("478376"), Decimal("478319"))
+    assert bigger is not None and "БОЛЬШЕ расчёта на 57" in bigger
+    assert "безопасная сторона" in bigger
+    smaller = _fmt_diff(Decimal("100"), Decimal("150"))
+    assert smaller is not None and "МЕНЬШЕ расчёта на 50" in smaller
+    assert _fmt_diff(Decimal("5"), Decimal("5")) == "документ равен расчёту"
+    assert _fmt_diff(None, Decimal("5")) is None
+
+
+async def test_audit_prompt_carries_precomputed_explanations(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Промпт аудита несёт готовые пояснения сверки и запрет пересчитывать суммы."""
+    captured: dict[str, str] = {}
+
+    async def call(settings, *, tool, prompt, max_tokens=2048):
+        if tool["name"] == _AUDIT_TOOL["name"]:
+            captured["audit"] = prompt
+            return {"verdict": "ок", "findings": []}
+        return {
+            "document_type": "other",
+            "summary": "х",
+            "confidence": 0.5,
+            "needs_human": True,
+        }
+
+    async with async_session_factory() as session:
+        await review_all(session, settings=get_settings(), call=call)
+
+    prompt = captured["audit"]
+    assert "НЕ вычисляй разницы сам" in prompt
+    assert "## Сверка" in prompt
+
+
 async def test_review_all_covers_attention_statuses_and_audits(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
