@@ -41,3 +41,11 @@ apps/web/vite.config.js
 playwright-report/
 test-results/
 scratchpad/
+
+# graphify: локальное и генерируемое. В git остаются graph.json, GRAPH_REPORT.md,
+# graph.html, manifest.json, .graphify_labels.json и cache/semantic — последний
+# экономит другим агентам живые LLM-токены при --update.
+graphify-out/cache/ast/
+graphify-out/memory/
+graphify-out/.graphify_python
+graphify-out/.graphify_root
