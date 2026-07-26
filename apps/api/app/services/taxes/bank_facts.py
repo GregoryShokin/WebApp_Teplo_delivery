@@ -248,7 +248,8 @@ async def _match_intake(
                 TaxDocumentIntake.document_type == "payment_order",
                 TaxDocumentIntake.status.in_(("parsed", "needs_review", "promoted")),
             )
-            .order_by(TaxDocumentIntake.received_at.asc())
+            # Тай-брейк по id: вложения одного письма несут один received_at.
+            .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
         )
     ).all()
     best: dict | None = None
@@ -418,12 +419,17 @@ async def _ripen_review_bundles(
     """
     stale = (
         await session.scalars(
-            select(TaxPayment).where(
+            select(TaxPayment)
+            .where(
                 TaxPayment.source_kind == "bank_statement",
                 TaxPayment.kind == "other",
                 TaxPayment.quality_status == "requires_review",
                 TaxPayment.bank_operation_id.isnot(None),
             )
+            # Порядок дозревания детерминирован: каждая итерация меняет состояние
+            # (черновик paid, план погашен), от которого зависит матчинг следующих —
+            # без ORDER BY «кому достанется черновик» решал порядок строк Postgres.
+            .order_by(TaxPayment.paid_on.asc(), TaxPayment.id.asc())
         )
     ).all()
     for row in stale:

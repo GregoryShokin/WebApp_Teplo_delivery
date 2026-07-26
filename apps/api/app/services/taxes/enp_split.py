@@ -89,12 +89,17 @@ async def rebuild_payroll_enp_split(session: AsyncSession, *, year: int) -> Spli
         due = payroll_enp_due(year, month)
         # Точный разнос из оборотки ЗАМЕЩАЕТ реконструированный за тот же месяц — иначе
         # старая расчётная строка и новая первичная сложатся (двойной счёт в вычете и сверке).
+        # БАНКОВСКИЕ факт-строки (source_kind='bank_statement', их создаёт bank_facts._split_enp
+        # тоже с quality='reconstructed') НЕ трогаем: иначе каждый повторный прогон rebuild
+        # удалял бы факты уплаты — временная потеря вычета и вечный пинг-понг с факт-слоем
+        # (находка аудита 27.07.2026).
         await session.execute(
             delete(TaxPayment).where(
                 TaxPayment.for_year == year,
                 TaxPayment.for_period == period,
                 TaxPayment.kind.in_(_SPLIT_KINDS),
                 TaxPayment.quality_status == "reconstructed",
+                TaxPayment.source_kind != "bank_statement",
             )
         )
         amounts = {

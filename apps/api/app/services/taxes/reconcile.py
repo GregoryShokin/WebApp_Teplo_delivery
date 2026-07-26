@@ -303,7 +303,9 @@ async def _documented_amount(
                 TaxDocumentIntake.document_type == "payment_order",
                 TaxDocumentIntake.status.in_(("parsed", "needs_review", "promoted")),
             )
-            .order_by(TaxDocumentIntake.received_at.asc())
+            # Тай-брейк по id: вложения одного письма несут ОДИН received_at (дата письма),
+            # без него «последний побеждает» недетерминирован (находка аудита 27.07.2026).
+            .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
         )
     ).scalars().all()
 
@@ -362,10 +364,15 @@ async def _enp_payroll_documents(session: AsyncSession) -> dict[date, Decimal]:
     """Платёжки зарплатного ЕНП: ``срок уплаты -> сумма`` (НДФЛ и взносы одной суммой)."""
     rows = (
         await session.execute(
-            select(TaxDocumentIntake).where(
+            select(TaxDocumentIntake)
+            .where(
                 TaxDocumentIntake.document_type == "payment_order",
                 TaxDocumentIntake.status.in_(("parsed", "needs_review", "promoted")),
             )
+            # Детерминированный «последний побеждает»: при двух платёжках на один срок
+            # (оригинал + исправление) верх берёт более поздняя по (received_at, id) —
+            # без ORDER BY победителя выбирал физический порядок строк Postgres.
+            .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
         )
     ).scalars().all()
     out: dict[date, Decimal] = {}
@@ -382,16 +389,34 @@ async def _enp_payroll_documents(session: AsyncSession) -> dict[date, Decimal]:
 async def _payroll_split_paid(
     session: AsyncSession, *, year: int, period: str
 ) -> Decimal | None:
-    """Сколько разнесено по месяцу (НДФЛ + взносы) как уплаченное."""
-    total = await session.scalar(
-        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
-            TaxPayment.status == "paid",
-            TaxPayment.for_year == year,
-            TaxPayment.for_period == period,
-            TaxPayment.kind.in_(("contrib_employees", "ndfl")),
+    """Сколько уплачено по месяцу (НДФЛ + взносы).
+
+    Приоритет — БАНКОВСКИЕ факты (разнос ЕНП из выписки); без них — кассовая конвенция
+    разноса оборотки (tax_notice: «считаем уплаченным в срок»). Суммировать оба слоя
+    нельзя: за один месяц они описывают ОДИН и тот же платёж — сумма задваивалась бы
+    (находка аудита 27.07.2026, вскрылась после защиты банковских строк от rebuild).
+    """
+    rows = (
+        await session.execute(
+            select(TaxPayment.source_kind, func.coalesce(func.sum(TaxPayment.amount), 0))
+            .where(
+                TaxPayment.status == "paid",
+                TaxPayment.for_year == year,
+                TaxPayment.for_period == period,
+                TaxPayment.kind.in_(("contrib_employees", "ndfl")),
+            )
+            .group_by(TaxPayment.source_kind)
         )
+    ).all()
+    bank = sum(
+        (Decimal(str(total)) for source, total in rows if source != "tax_notice"),
+        Decimal("0"),
     )
-    value = Decimal(str(total or 0))
+    notice = sum(
+        (Decimal(str(total)) for source, total in rows if source == "tax_notice"),
+        Decimal("0"),
+    )
+    value = bank if bank > 0 else notice
     return value if value > 0 else None
 
 

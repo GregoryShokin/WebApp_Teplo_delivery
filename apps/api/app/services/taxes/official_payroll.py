@@ -299,8 +299,15 @@ async def fixed_contribution_remainder(
     paid_rows = [r for r in rows if r.status == "paid"]
     paid = sum((r.amount for r in paid_rows), ZERO)
     # Погашенная фактом плановая строка уже учтена в ``paid`` — второй раз не вычитаем.
+    # Один set на проход: квартальные планки фикса одинаковы по сумме, и без «расхода»
+    # фактов один платёж без периода погасил бы их все.
+    used: set = set()
     planned_open = sum(
-        (r.amount for r in rows if r.status == "planned" and not is_settled(r, paid_rows)),
+        (
+            r.amount
+            for r in rows
+            if r.status == "planned" and not is_settled(r, paid_rows, used_fact_ids=used)
+        ),
         ZERO,
     )
     remainder = cfg.fixed_contribution - paid - planned_open

@@ -323,10 +323,11 @@ async def get_calendar(
     paid_total = ZERO
     overdue_total = ZERO
     overdue_count = 0
+    used_facts: set = set()  # один факт гасит одну плановую строку
 
     for row in rows:
         is_planned = row.status == "planned"
-        if is_planned and is_settled(row, paid_rows):
+        if is_planned and is_settled(row, paid_rows, used_fact_ids=used_facts):
             continue
         # Разнос из оборотки (tax_notice) помечен «paid» по кассовой конвенции: дата = СРОК
         # уплаты. Пока срок не наступил, деньги ещё не ушли — для календаря это ПЛАН

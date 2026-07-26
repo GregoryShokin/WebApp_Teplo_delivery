@@ -111,7 +111,11 @@ async def test_split_is_idempotent(
 async def test_split_replaces_reconstructed_row(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Точный разнос из оборотки вытесняет реконструированную строку за тот же месяц."""
+    """Точный разнос из оборотки вытесняет НЕБАНКОВСКУЮ реконструкцию за тот же месяц.
+
+    Банковские факт-строки (source_kind='bank_statement') rebuild НЕ трогает — это
+    факты уплаты из выписки, их защищает test_rebuild_split_preserves_bank_facts
+    (находка аудита 27.07.2026: раньше DELETE уносил и их)."""
     async with async_session_factory() as session:
         session.add(
             TaxPayment(
@@ -124,7 +128,7 @@ async def test_split_replaces_reconstructed_row(
                 for_year=2026,
                 for_period="2026-05",
                 status="paid",
-                source_kind="bank_statement",
+                source_kind="manual",
                 quality_status="reconstructed",
             )
         )

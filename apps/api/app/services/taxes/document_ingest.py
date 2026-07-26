@@ -261,11 +261,18 @@ async def set_intake_review(
     if overrides:
         if intake.document_type != "payment_order":
             raise ValueError("Поля можно править только у платёжного поручения.")
+        overrides = dict(overrides)
         kind = overrides.get("tax_kind")
         if kind is not None and kind not in REVIEW_TAX_KINDS:
             raise ValueError(
                 f"Неизвестный вид платежа: {kind!r}. Допустимые: {', '.join(REVIEW_TAX_KINDS)}."
             )
+        # «УСН за год» в хранении — это usn_advance с периодом 'year': отдельного вида
+        # в tax_payment нет (CHECK ck_tax_payment_kind), и без маппинга продвижение
+        # падало «Неизвестный вид платежа» (находка аудита 27.07.2026).
+        if kind == "usn_year":
+            overrides["tax_kind"] = "usn_advance"
+            overrides.setdefault("period_hint", "year")
         updated = dict(intake.recognition or {})
         for key in ("tax_kind", "amount", "due_date", "period_hint"):
             value = overrides.get(key)

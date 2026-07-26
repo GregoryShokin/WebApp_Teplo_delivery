@@ -47,8 +47,13 @@ async def create_tax_bank_draft(
     amount: Decimal,
     purpose: str | None = None,
     tax_kind: str | None = None,
+    document_id: str | None = None,
 ) -> PaymentDraftResult:
-    """Создать черновик налоговой платёжки в Т-Банк (по умолчанию — ЕНП в ФНС)."""
+    """Создать черновик налоговой платёжки в Т-Банк (по умолчанию — ЕНП в ФНС).
+
+    ``document_id`` — идемпотентный ключ банка: при повторе после сбоя передавайте
+    ТОТ ЖЕ ключ, иначе в банке окажутся два черновика на одну сумму.
+    """
     if amount is None or amount <= 0:
         raise TaxDraftError("Сумма платежа должна быть больше нуля.")
     payer_account = payer_account_for(settings, "tbank")
@@ -58,7 +63,7 @@ async def create_tax_bank_draft(
     requisites = requisites_for_kind(tax_kind)
     client = payout_client_for("tbank", session)
     return await client.create_payment_draft(
-        document_id=uuid.uuid4().hex,
+        document_id=document_id or uuid.uuid4().hex,
         amount=amount,
         purpose=purpose or str(requisites["paymentPurpose"]),
         requisites=requisites,
@@ -161,6 +166,13 @@ async def send_tax_draft_to_bank(
     if purpose is not None and purpose.strip():
         draft.purpose = purpose.strip()
 
+    # Идемпотентный ключ генерируется ОДИН раз и коммитится ДО вызова банка: если банк
+    # платёжку создал, а ответ потерялся (таймаут → failed), повтор уйдёт с тем же
+    # document_id и второй черновик в банке не появится (находка аудита 27.07.2026).
+    if not draft.document_id:
+        draft.document_id = uuid.uuid4().hex
+        await session.commit()
+
     try:
         result = await create_tax_bank_draft(
             session,
@@ -168,6 +180,7 @@ async def send_tax_draft_to_bank(
             amount=draft.amount,
             purpose=draft.purpose,
             tax_kind=draft.tax_kind,
+            document_id=draft.document_id,
         )
     except BankFetchError as exc:
         draft.status = "failed"

@@ -52,14 +52,21 @@ class PromotionResult:
     reason: str | None = None
 
 
-def _tax_year(period_hint: str | None, due: date | None) -> int:
+def _tax_year(period_hint: str | None, due: date | None, received_at=None) -> int:
     """Налоговый год обязательства.
 
     Годовой платёж по УСН уплачивается в АПРЕЛЕ СЛЕДУЮЩЕГО года — для него год берётся
     предыдущий, иначе платёж уедет не в тот период нарастающего итога.
+
+    Без распознанного срока год берём из ДАТЫ ПИСЬМА (данные), а не date.today():
+    иначе продвижение январём документа за декабрь уводило обязательство в другой
+    налоговый год в зависимости от дня нажатия кнопки (находка аудита 27.07.2026).
     """
     if due is None:
-        return date.today().year
+        anchor = received_at.date() if received_at is not None else date.today()
+        if period_hint == "year" and anchor.month <= 4:
+            return anchor.year - 1
+        return anchor.year
     if period_hint == "year" and due.month <= 4:
         return due.year - 1
     return due.year
@@ -114,7 +121,7 @@ async def promote_intake(
     обязательства обновляет плановую сумму и срок, а не создаёт вторую строку.
     """
     kind, amount, due, period = _validate(intake)
-    year = _tax_year(period, due)
+    year = _tax_year(period, due, intake.received_at)
 
     existing = (
         await session.execute(
@@ -144,7 +151,8 @@ async def promote_intake(
         bundle_id=bundle_id,
         # Для планового обязательства дата — это СРОК уплаты; при оплате она перезапишется
         # фактической датой списания (кассовый принцип вычета опирается на факт).
-        paid_on=due or date.today(),
+        # Без срока опираемся на дату письма (данные), а не на день нажатия кнопки.
+        paid_on=due or (intake.received_at.date() if intake.received_at else date.today()),
         kind=kind,
         amount=amount,
         recipient="sfr" if kind == "contrib_injury" else "fns",
@@ -216,14 +224,18 @@ async def promote_turnover_intake(
             "to_pay": _ledger_decimal(row.get("to_pay")),
             "intake_id": intake.id,
         }
+        # Слот — (год, месяц, табельный). Без табельного различаем по ФИО: иначе вторая
+        # строка с tab=NULL молча затирала бы первую — потеря сотрудника в раскладке
+        # (находка аудита 27.07.2026; `== None` компилируется в IS NULL).
+        slot_filters = [
+            TaxPayrollLedger.year == year,
+            TaxPayrollLedger.month == month,
+            TaxPayrollLedger.tab_number == tab,
+        ]
+        if tab is None:
+            slot_filters.append(TaxPayrollLedger.employee == values["employee"])
         existing = (
-            await session.execute(
-                select(TaxPayrollLedger).where(
-                    TaxPayrollLedger.year == year,
-                    TaxPayrollLedger.month == month,
-                    TaxPayrollLedger.tab_number == tab,
-                )
-            )
+            await session.execute(select(TaxPayrollLedger).where(*slot_filters))
         ).scalar_one_or_none()
         if existing is not None:
             for field_name, field_value in values.items():
@@ -258,7 +270,8 @@ async def promote_ready_intakes(
                     ("payment_order", "turnover_statement")
                 ),
             )
-            .order_by(TaxDocumentIntake.received_at.asc())
+            # Тай-брейк по id: вложения одного письма несут один received_at.
+            .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
         )
     ).scalars().all()
 
