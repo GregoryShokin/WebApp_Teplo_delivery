@@ -45,6 +45,7 @@ from app.models.dds import BankOperation
 from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayrollLedger
 from app.services.banking.fns_enp_requisites import TREASURY_ENP_REQUISITES
 from app.services.banking.sfr_injury_requisites import TREASURY_INJURY_REQUISITES
+from app.services.taxes.concurrency import insert_or_reread
 
 logger = logging.getLogger(__name__)
 
@@ -388,6 +389,20 @@ def _build_rows(
     return rows
 
 
+async def _existing_operation_row(
+    session: AsyncSession, operation_id, kind: str
+) -> TaxPayment | None:
+    """Строка факта по слоту (операция, вид) — перечит для проигравшего гонку прогона."""
+    return (
+        await session.scalars(
+            select(TaxPayment).where(
+                TaxPayment.bank_operation_id == operation_id,
+                TaxPayment.kind == kind,
+            )
+        )
+    ).first()
+
+
 async def _tax_operations_without_facts(
     session: AsyncSession,
 ) -> list[BankOperation]:
@@ -474,8 +489,19 @@ async def sync_tax_facts_from_bank(session: AsyncSession) -> TaxFactsSyncReport:
         if recipient is None:  # защита от гонки — отбор уже отфильтровал
             continue
         resolution, draft = await _resolve_operation(session, op, recipient)
+        # Вебхук и почасовой поллинг могут прийти на одну операцию одновременно —
+        # дубль факта задвоил бы вычет. Гарантия — уникальный слот (операция, вид):
+        # проигравший прогон просто пропускает уже созданную строку (миграция 0215).
+        raced = False
         for row in _build_rows(op, recipient, resolution):
-            session.add(row)
+            _, created = await insert_or_reread(
+                session,
+                row,
+                reread=lambda r=row: _existing_operation_row(session, r.bank_operation_id, r.kind),
+            )
+            raced = raced or not created
+        if raced:
+            continue  # операцию уже разнёс параллельный прогон — счётчики не двигаем
         if draft is not None:
             draft.status = "paid"
             report.drafts_paid += 1

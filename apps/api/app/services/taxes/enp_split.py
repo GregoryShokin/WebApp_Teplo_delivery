@@ -28,6 +28,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tax import TaxPayment, TaxPayrollLedger
+from app.services.taxes.concurrency import insert_or_reread
 
 # Виды платежей, которые порождает разнос оборотки. Оба идут в ФНС; травматизм сюда НЕ входит —
 # он платится отдельным платежом прямо в СФР, а не в составе ЕНП.
@@ -118,14 +119,11 @@ async def rebuild_payroll_enp_split(session: AsyncSession, *, year: int) -> Spli
                 # Начисления нет — но если строка осталась от прошлой оборотки, обнулять
                 # нельзя (amount>0 в CHECK); оставляем как есть, это не наш случай для ЗП.
                 continue
-            if existing is not None:
-                existing.amount = amount
-                existing.paid_on = due
-                existing.quality_status = "confirmed"
-                existing.source_kind = "tax_notice"
-                updated += 1
-            else:
-                session.add(
+            if existing is None:
+                # Гонку двух прогонов (кнопка + фоновый джоб) ловит уникальный слот
+                # (миграция 0215): проигравший получает чужую строку и обновляет её.
+                row, was_created = await insert_or_reread(
+                    session,
                     TaxPayment(
                         id=uuid.uuid4(),
                         bundle_id=bundle,
@@ -139,9 +137,22 @@ async def rebuild_payroll_enp_split(session: AsyncSession, *, year: int) -> Spli
                         source_kind="tax_notice",
                         quality_status="confirmed",
                         note="Разнос зарплатного ЕНП из оборотки",
-                    )
+                    ),
+                    # Значения цикла связываем дефолтами: лямбда исполнится позже.
+                    reread=lambda k=kind, p=period: _existing_split_row(
+                        session, year=year, period=p, kind=k
+                    ),
                 )
-                created += 1
+                if was_created:
+                    created += 1
+                    month_touched = True
+                    continue
+                existing = row
+            existing.amount = amount
+            existing.paid_on = due
+            existing.quality_status = "confirmed"
+            existing.source_kind = "tax_notice"
+            updated += 1
             month_touched = True
         if month_touched:
             touched_months.append(period)

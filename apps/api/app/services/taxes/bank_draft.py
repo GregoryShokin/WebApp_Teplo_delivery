@@ -23,6 +23,7 @@ from app.services.banking.exceptions import BankFetchError
 from app.services.banking.fns_enp_requisites import treasury_enp_requisites
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.sfr_injury_requisites import treasury_injury_requisites
+from app.services.taxes.concurrency import insert_or_reread
 
 
 class TaxDraftError(RuntimeError):
@@ -97,18 +98,21 @@ async def create_tax_payment_draft(
     # Идемпотентность по (вид налога, год, период), сравнение в Python — null-безопасно.
     # Неотправленный черновик обновляется; УЖЕ ОТПРАВЛЕННЫЙ — не дублируется: повторный
     # клик «Отправить в банк» не должен плодить вторую платёжку в Т-Банке.
-    candidates = (
-        await session.scalars(
-            select(TaxBankDraft).where(
-                TaxBankDraft.status.in_(("ready_to_send", "in_bank")),
-                TaxBankDraft.tax_kind == tax_kind,
+    async def _find_active() -> TaxBankDraft | None:
+        candidates = (
+            await session.scalars(
+                select(TaxBankDraft).where(
+                    TaxBankDraft.status.in_(("ready_to_send", "in_bank")),
+                    TaxBankDraft.tax_kind == tax_kind,
+                )
             )
+        ).all()
+        return next(
+            (d for d in candidates if d.for_year == for_year and d.for_period == for_period),
+            None,
         )
-    ).all()
-    existing = next(
-        (d for d in candidates if d.for_year == for_year and d.for_period == for_period),
-        None,
-    )
+
+    existing = await _find_active()
     if existing is not None:
         if existing.status == "in_bank":
             raise TaxDraftError(
@@ -137,7 +141,20 @@ async def create_tax_payment_draft(
         bank_provider="tbank",
         created_by=created_by,
     )
-    session.add(draft)
+    # Двойной клик ловит уникальный слот активного черновика (миграция 0215): проигравший
+    # запрос получает уже созданный черновик, второй платёжки не появляется.
+    draft, created = await insert_or_reread(session, draft, reread=_find_active)
+    if not created:
+        if draft.status == "in_bank":
+            raise TaxDraftError(
+                "Платёж по этому обязательству уже отправлен в банк — подтвердите его "
+                "в банк-клиенте или удалите черновик там."
+            )
+        draft.amount = amount
+        draft.purpose = resolved_purpose
+        draft.due_date = due_date
+        if title:
+            draft.title = title
     await session.flush()
     return draft
 

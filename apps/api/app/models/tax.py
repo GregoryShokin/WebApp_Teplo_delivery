@@ -42,6 +42,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -232,6 +233,43 @@ class TaxPayment(Base):
         Index("ix_tax_payment_paid_on", "paid_on"),
         Index("ix_tax_payment_year_kind", "for_year", "kind"),
         Index("ix_tax_payment_bundle", "bundle_id"),
+        # ── Единственность слота: защита от двойного клика (миграция 0215) ──────
+        # Писатели работают по схеме «select слот → insert»; параллельные запросы оба
+        # видят пусто и оба пишут. Дубль плановой строки = двойной счёт в долге,
+        # дубль разноса = двойной счёт в вычете. Гарантия — на стороне БД.
+        # NULLS NOT DISTINCT: for_period/for_year бывают NULL, и такие слоты тоже
+        # должны совпадать (в PG по умолчанию NULL ≠ NULL и индекс бы не сработал).
+        Index(
+            "uq_tax_payment_planned_slot",
+            "for_year",
+            "kind",
+            "for_period",
+            unique=True,
+            postgresql_where=text("status = 'planned'"),
+            postgresql_nulls_not_distinct=True,
+        ),
+        # Слот разноса идентифицируется МЕСЯЦЕМ: строки без периода (сид, исторический
+        # ручной ввод) слотом не являются и под ограничение не попадают.
+        Index(
+            "uq_tax_payment_split_slot",
+            "for_year",
+            "for_period",
+            "kind",
+            unique=True,
+            postgresql_where=text(
+                "source_kind = 'tax_notice' and for_period is not null "
+                "and kind in ('contrib_employees', 'ndfl')"
+            ),
+        ),
+        # Одна банковская операция даёт максимум одну строку каждого вида (ЕНП
+        # разносится на взносы + НДФЛ — это две строки одной операции, они законны).
+        Index(
+            "uq_tax_payment_bank_operation_kind",
+            "bank_operation_id",
+            "kind",
+            unique=True,
+            postgresql_where=text("bank_operation_id is not null"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -534,6 +572,17 @@ class TaxBankDraft(Base):
         ),
         CheckConstraint("amount > 0", name="ck_tax_bank_draft_amount"),
         Index("ix_tax_bank_draft_status", "status"),
+        # Один активный черновик на обязательство: двойной клик «Отправить в банк»
+        # не должен готовить вторую платёжку на ту же сумму (миграция 0215).
+        Index(
+            "uq_tax_bank_draft_active_slot",
+            "tax_kind",
+            "for_year",
+            "for_period",
+            unique=True,
+            postgresql_where=text("status in ('ready_to_send', 'in_bank')"),
+            postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

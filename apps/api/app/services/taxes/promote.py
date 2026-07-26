@@ -32,6 +32,7 @@ from app.models.tax import (
     TaxPayment,
     TaxPayrollLedger,
 )
+from app.services.taxes.concurrency import insert_or_reread, lock_row
 from app.services.taxes.enp_split import rebuild_payroll_enp_split
 
 logger = logging.getLogger(__name__)
@@ -119,20 +120,28 @@ async def promote_intake(
 
     Идемпотентно по слоту ``(for_year, kind, for_period)``: повторный документ того же
     обязательства обновляет плановую сумму и срок, а не создаёт вторую строку.
+
+    Двойной клик по «Продвинуть готовые» сериализуется блокировкой строки документа:
+    второй запрос ждёт первый и видит статус ``promoted`` — работа не делается дважды.
     """
+    # Блокировка ДО проверки статуса: иначе оба запроса прочитают 'parsed'.
+    await lock_row(session, intake)
     kind, amount, due, period = _validate(intake)
     year = _tax_year(period, due, intake.received_at)
 
-    existing = (
-        await session.execute(
-            select(TaxPayment).where(
-                TaxPayment.status == "planned",
-                TaxPayment.for_year == year,
-                TaxPayment.kind == kind,
-                TaxPayment.for_period == period,
+    async def _find_slot() -> TaxPayment | None:
+        return (
+            await session.execute(
+                select(TaxPayment).where(
+                    TaxPayment.status == "planned",
+                    TaxPayment.for_year == year,
+                    TaxPayment.kind == kind,
+                    TaxPayment.for_period == period,
+                )
             )
-        )
-    ).scalar_one_or_none()
+        ).scalar_one_or_none()
+
+    existing = await _find_slot()
 
     if existing is not None:
         existing.amount = amount
@@ -165,11 +174,19 @@ async def promote_intake(
         note=f"Из документа: {intake.filename}" if intake.filename else None,
         created_by_user_id=actor_user_id,
     )
-    session.add(payment)
+    # Гонку на слоте ловит уникальный индекс (миграция 0215): проигравший запрос
+    # не падает 500-й, а работает с выигравшей строкой — как при обычном повторе.
+    payment, created = await insert_or_reread(session, payment, reread=_find_slot)
+    if not created:
+        payment.amount = amount
+        if due is not None:
+            payment.paid_on = due
+        payment.source_kind = "tax_notice"
+        payment.quality_status = "confirmed"
     intake.status = "promoted"
-    intake.tax_payment_bundle_id = bundle_id
+    intake.tax_payment_bundle_id = payment.bundle_id
     await session.flush()
-    return PromotionResult(intake.id, payment.id, "created")
+    return PromotionResult(intake.id, payment.id, "created" if created else "updated")
 
 
 def _ledger_decimal(value: object) -> Decimal | None:
