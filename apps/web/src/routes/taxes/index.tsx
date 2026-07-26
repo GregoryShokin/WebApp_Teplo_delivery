@@ -61,6 +61,7 @@ import { apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import {
+  aiApplyTaxProposal,
   aiReviewAllTaxes,
   aiReviewTaxDocument,
   createTaxPaymentDraft,
@@ -1211,9 +1212,13 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
     mutationFn: aiReviewAllTaxes,
     onSuccess: (report) => {
       setAiReport(report);
-      const applied = report.documents.filter((d) => d.applied).length;
+      const proposals = report.documents.filter((d) => d.proposal).length;
       toast.success(
-        `ИИ-ревизия готова${applied > 0 ? `: дозаполнено документов — ${applied}` : ""}`,
+        `ИИ-ревизия готова${
+          proposals > 0
+            ? `: предложений по документам — ${proposals} (смотрите «Разбор ИИ» в строках)`
+            : ""
+        }`,
       );
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
     },
@@ -1529,10 +1534,153 @@ function ReviewPaymentDialog({
   );
 }
 
+/** Окно ИИ-разбора: объяснение и предложение полей. ИИ не применяет ничего сам —
+    владелец смотрит и подтверждает кнопкой «Применить» («да, делай»). */
+function AiReviewDialog({
+  row,
+  onClose,
+  onRerun,
+  rerunPending,
+}: {
+  row: TaxDocumentRow;
+  onClose: () => void;
+  onRerun: () => void;
+  rerunPending: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const review = row.recognition?.ai_review;
+  const proposal = review?.proposal ?? null;
+  const canApply = Boolean(proposal) && row.status !== "promoted" && !review?.applied;
+
+  const applyMutation = useMutation({
+    mutationFn: () => aiApplyTaxProposal(row.id),
+    onSuccess: () => {
+      toast.success("Предложение ИИ применено", {
+        description: "Документ распознан — «Продвинуть готовые» создаст обязательство.",
+      });
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+      onClose();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось применить")),
+  });
+
+  if (!review) return null;
+  const confidencePct = Math.round((review.confidence ?? 0) * 100);
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="size-4 text-violet-700" aria-hidden="true" />
+            Разбор ИИ
+          </DialogTitle>
+          <DialogDescription>{row.filename ?? "Документ"}</DialogDescription>
+        </DialogHeader>
+        <div className="min-w-0 space-y-3">
+          <p className="text-sm leading-6">{review.summary}</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge className={NEUTRAL_BADGE} variant="outline">
+              уверенность {confidencePct}%
+            </Badge>
+            {review.applied ? (
+              <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700" variant="outline">
+                применено
+              </Badge>
+            ) : null}
+            {review.at ? <span>{formatDateTime(review.at)}</span> : null}
+          </div>
+          {review.needs_human && (review.reasons ?? []).length > 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <div className="font-medium">Нужен человек:</div>
+              <ul className="mt-0.5 list-disc space-y-0.5 pl-4">
+                {(review.reasons ?? []).map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {proposal ? (
+            <div className="rounded-md border border-violet-200 bg-violet-50/60 px-3 py-2">
+              <div className="text-xs font-medium text-violet-900">
+                Предложенные поля платёжки
+              </div>
+              <dl className="mt-1.5 space-y-1 text-sm">
+                {proposal.tax_kind ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Вид платежа</dt>
+                    <dd className="font-medium">{taxKindLabel(proposal.tax_kind)}</dd>
+                  </div>
+                ) : null}
+                {proposal.amount ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Сумма</dt>
+                    <dd className="font-medium tabular-nums">
+                      {formatMoney(Number(proposal.amount))}
+                    </dd>
+                  </div>
+                ) : null}
+                {proposal.due_date ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Срок уплаты</dt>
+                    <dd className="font-medium">{formatDate(proposal.due_date)}</dd>
+                  </div>
+                ) : null}
+                {proposal.period_hint ? (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Период</dt>
+                    <dd className="font-medium">{periodTitle(proposal.period_hint)}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Полей к применению нет: это не платёжное поручение либо данных в файле
+              недостаточно.
+            </p>
+          )}
+        </div>
+        <DialogFooter className="gap-2">
+          <Button disabled={rerunPending} onClick={onRerun} size="sm" variant="ghost">
+            {rerunPending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw aria-hidden="true" />
+            )}
+            Разобрать заново
+          </Button>
+          <Button onClick={onClose} size="sm" variant="outline">
+            Закрыть
+          </Button>
+          {canApply ? (
+            <Button
+              disabled={applyMutation.isPending}
+              onClick={() => applyMutation.mutate()}
+              size="sm"
+            >
+              {applyMutation.isPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : null}
+              Применить
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocumentRow({ row }: { row: TaxDocumentRow }) {
   const queryClient = useQueryClient();
   const canManage = usePermissions().hasPermission("accounting.taxes.manage");
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const reviewMutation = useMutation({
     mutationFn: (status: "parsed" | "ignored") => reviewTaxDocument(row.id, status),
     onSuccess: (_result, status) => {
@@ -1541,14 +1689,11 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить статус")),
   });
+  // Разбор по клику: результат показываем в окне, а не вписываем в строку.
   const aiMutation = useMutation({
     mutationFn: () => aiReviewTaxDocument(row.id),
-    onSuccess: (result) => {
-      toast.success(
-        result.applied
-          ? "ИИ дозаполнил поля — документ распознан"
-          : "ИИ разобрал документ — объяснение в строке",
-      );
+    onSuccess: () => {
+      setAiOpen(true);
       void queryClient.invalidateQueries({ queryKey: ["taxes"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "ИИ-разбор не удался")),
@@ -1712,18 +1857,7 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             ))}
           </ul>
         ) : null}
-        {recognition.ai_review ? (
-          <div className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-violet-800">
-            <Sparkles className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-            <span>
-              {recognition.ai_review.summary}
-              {recognition.ai_review.applied ? (
-                <span className="text-violet-600"> · поля дозаполнены ИИ</span>
-              ) : null}
-            </span>
-          </div>
-        ) : null}
-        {needsAttention && canManage ? (
+        {(needsAttention || recognition.ai_review) && canManage ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {needsReview ? (
               <Button
@@ -1741,11 +1875,19 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 {row.document_type === "payment_order" ? "Проверить…" : "Проверено"}
               </Button>
             ) : null}
+            {/* Разбор уже есть — кнопка открывает окно; нет — запускает модель. */}
             <Button
+              className={recognition.ai_review ? "text-violet-700" : undefined}
               disabled={aiMutation.isPending}
-              onClick={() => aiMutation.mutate()}
+              onClick={() =>
+                recognition.ai_review ? setAiOpen(true) : aiMutation.mutate()
+              }
               size="sm"
-              title="Claude прочитает документ, объяснит его и дозаполнит нераспознанные поля"
+              title={
+                recognition.ai_review
+                  ? "Открыть разбор: что это за документ и что предлагает ИИ"
+                  : "Claude прочитает документ, объяснит его и предложит недостающие поля"
+              }
               variant="outline"
             >
               {aiMutation.isPending ? (
@@ -1753,7 +1895,7 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               ) : (
                 <Sparkles aria-hidden="true" />
               )}
-              ИИ-разбор
+              {recognition.ai_review ? "Разбор ИИ" : "ИИ-разбор"}
             </Button>
             {needsReview ? (
               <Button
@@ -1766,6 +1908,14 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               </Button>
             ) : null}
           </div>
+        ) : null}
+        {aiOpen && recognition.ai_review ? (
+          <AiReviewDialog
+            onClose={() => setAiOpen(false)}
+            onRerun={() => aiMutation.mutate()}
+            rerunPending={aiMutation.isPending}
+            row={row}
+          />
         ) : null}
         {reviewOpen ? (
           <ReviewPaymentDialog onClose={() => setReviewOpen(false)} row={row} />

@@ -37,8 +37,6 @@ from app.services.taxes.document_parser import _docx_text
 
 logger = logging.getLogger(__name__)
 
-# Порог автоприменения правок: ниже — только объясняем, решает владелец.
-_APPLY_CONFIDENCE = 0.8
 # Статусы, документы в которых ИИ-ревизия разбирает без явного клика по документу.
 ATTENTION_STATUSES: tuple[str, ...] = ("needs_review", "error", "unsupported")
 
@@ -56,7 +54,9 @@ class AiDocumentReview:
     summary: str
     confidence: float
     document_type: str | None
-    applied: bool  # правки записаны в recognition и документ переведён в parsed
+    # Предложенные поля платёжки (tax_kind/amount/due_date/period_hint) — ИИ сам их
+    # НЕ применяет: владелец подтверждает кнопкой «Применить» в окне разбора.
+    proposal: dict | None
     needs_human: bool
     reasons: list[str] = field(default_factory=list)
 
@@ -258,6 +258,30 @@ def _valid_amount(raw: object) -> Decimal | None:
     return value if value > 0 else None
 
 
+def _build_proposal(payload: dict, intake: TaxDocumentIntake) -> dict | None:
+    """Предложение полей платёжки из ответа модели. None — предлагать нечего.
+
+    Решение владельца 26.07.2026: ИИ НИЧЕГО не применяет сам — только предлагает.
+    Владелец смотрит предложение во всплывающем окне и подтверждает кнопкой; применение
+    идёт той же ручкой, что ручная проверка. Предложение имеет смысл только для платёжек
+    (у ведомостей/оборотк поля другие) и только у документов, ждущих внимания.
+    """
+    if payload.get("document_type") != "payment_order":
+        return None
+    if intake.status not in (*ATTENTION_STATUSES, "parsed"):
+        return None
+    proposal: dict[str, str] = {}
+    if payload.get("tax_kind") in REVIEW_TAX_KINDS:
+        proposal["tax_kind"] = str(payload["tax_kind"])
+    amount = _valid_amount(payload.get("amount"))
+    if amount is not None:
+        proposal["amount"] = str(amount)
+    for key in ("due_date", "period_hint"):
+        if payload.get(key):
+            proposal[key] = str(payload[key])
+    return proposal or None
+
+
 async def review_document(
     session: AsyncSession,
     intake: TaxDocumentIntake,
@@ -265,7 +289,11 @@ async def review_document(
     settings: Settings | None = None,
     call=_call_claude,
 ) -> AiDocumentReview:
-    """ИИ-разбор одного документа: объяснение всегда, правки — только уверенные платёжки.
+    """ИИ-разбор одного документа: объяснение + ПРЕДЛОЖЕНИЕ полей, без применения.
+
+    Данные не трогаются: разбор сохраняется в ``recognition['ai_review']`` (окно на
+    фронте показывает его по клику), предложенные поля владелец применяет сам кнопкой
+    «Применить» — через тот же роут, что ручная проверка.
 
     ``call`` инъектируется в тестах (как ``fetch`` в ingest) — реальный API не дёргается.
     """
@@ -281,29 +309,8 @@ async def review_document(
     needs_human = bool(payload.get("needs_human"))
     reasons = [str(r) for r in payload.get("reasons") or []]
     doc_type = payload.get("document_type")
+    proposal = _build_proposal(payload, intake)
 
-    applied = False
-    if (
-        not needs_human
-        and confidence >= _APPLY_CONFIDENCE
-        and doc_type == "payment_order"
-        and intake.status in ATTENTION_STATUSES
-        and payload.get("tax_kind") in REVIEW_TAX_KINDS
-        and _valid_amount(payload.get("amount")) is not None
-    ):
-        # Файл, который парсер не смог классифицировать, ИИ опознал платёжкой —
-        # выравниваем тип, иначе set_intake_review откажет в overrides.
-        if intake.document_type != "payment_order":
-            intake.document_type = "payment_order"
-        overrides = {
-            key: payload.get(key)
-            for key in ("tax_kind", "amount", "due_date", "period_hint")
-            if payload.get(key)
-        }
-        await set_intake_review(session, intake, status="parsed", overrides=overrides)
-        applied = True
-
-    # След ИИ — всегда, даже без правок: владелец видит объяснение в карточке документа.
     updated = dict(intake.recognition or {})
     updated["ai_review"] = {
         "summary": summary,
@@ -311,15 +318,10 @@ async def review_document(
         "document_type": doc_type,
         "needs_human": needs_human,
         "reasons": reasons,
-        "applied": applied,
+        "proposal": proposal,
         "model": settings.tax_ai_reviewer_model,
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
-    if applied:
-        # Честная маркировка: поля дозаполнил ИИ, а не человек (ручная форма ставит
-        # manually_reviewed — здесь поверх пишем, кто проверял на самом деле).
-        updated["manually_reviewed"] = False
-        updated["reviewed_by"] = "ai"
     intake.recognition = updated
     await session.flush()
 
@@ -329,10 +331,37 @@ async def review_document(
         summary=summary,
         confidence=confidence,
         document_type=str(doc_type) if doc_type else None,
-        applied=applied,
+        proposal=proposal,
         needs_human=needs_human,
         reasons=reasons,
     )
+
+
+async def apply_ai_proposal(session: AsyncSession, intake: TaxDocumentIntake) -> None:
+    """Владелец подтвердил предложение ИИ («да, делай») — применить сохранённые поля.
+
+    Применяется РОВНО то, что лежит в ``recognition['ai_review']['proposal']`` (никакой
+    подмены полей с фронта), той же дорогой, что ручная проверка. Документ, который парсер
+    не классифицировал (error/unsupported), при подтверждении выравнивается в платёжку —
+    иначе ``set_intake_review`` откажет в overrides.
+    """
+    review = (intake.recognition or {}).get("ai_review") or {}
+    proposal = review.get("proposal")
+    if not proposal:
+        raise ValueError("У этого документа нет предложения ИИ — сначала запустите разбор.")
+    if intake.document_type != "payment_order":
+        intake.document_type = "payment_order"
+    await set_intake_review(session, intake, status="parsed", overrides=dict(proposal))
+
+    updated = dict(intake.recognition or {})
+    ai_review = dict(updated.get("ai_review") or {})
+    ai_review["applied"] = True
+    ai_review["applied_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+    updated["ai_review"] = ai_review
+    # Поля предложил ИИ, подтвердил владелец — фиксируем обе стороны.
+    updated["reviewed_by"] = "ai_confirmed"
+    intake.recognition = updated
+    await session.flush()
 
 
 def _audit_prompt(snapshot: str) -> str:

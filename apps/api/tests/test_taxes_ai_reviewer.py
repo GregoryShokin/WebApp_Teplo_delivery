@@ -1,8 +1,8 @@
-"""ИИ-ревьюер: правки применяются только уверенные и только той же дорогой, что руки.
+"""ИИ-ревьюер: разбор ПРЕДЛАГАЕТ, применяет только владелец кнопкой («да, делай»).
 
-Вызов Claude инъектируется (``call=``), реальный API в тестах не дёргается. Проверяем
-контракт применения: уверенная платёжка → parsed с overrides и следом ИИ; неуверенная —
-только объяснение; общий аудит собирает снимок и вердикт.
+Вызов Claude инъектируется (``call=``), реальный API в тестах не дёргается. Контракт:
+разбор сохраняет объяснение и предложение полей, данные не трогает; применение идёт
+отдельной функцией той же дорогой, что ручная проверка.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.models.tax import TaxDocumentIntake
 from app.services.taxes.ai_reviewer import (
     _AUDIT_TOOL,
     _REVIEW_TOOL,
+    apply_ai_proposal,
     review_all,
     review_document,
 )
@@ -52,49 +53,91 @@ def _fake_call(review_payload: dict, audit_payload: dict | None = None):
     return call
 
 
-async def test_confident_payment_review_is_applied(
+_CONFIDENT_PAYMENT = {
+    "document_type": "payment_order",
+    "tax_kind": "enp_payroll",
+    "amount": "19460.93",
+    "due_date": "2026-03-27",
+    "summary": "Платёжка ЕНП за февраль: НДФЛ и взносы одной суммой.",
+    "confidence": 0.95,
+    "needs_human": False,
+}
+
+
+async def test_review_saves_proposal_but_does_not_apply(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Уверенный разбор платёжки: parsed, поля дозаполнены, след ИИ записан честно."""
+    """Даже уверенный разбор платёжки ничего не меняет — только предложение в ai_review."""
     async with async_session_factory() as session:
         intake = _intake("ЕНС до 27.03.docx", recognition={"review_reasons": ["вид не распознан"]})
         session.add(intake)
         await session.commit()
 
         result = await review_document(
-            session,
-            intake,
-            settings=get_settings(),
-            call=_fake_call(
-                {
-                    "document_type": "payment_order",
-                    "tax_kind": "enp_payroll",
-                    "amount": "19460.93",
-                    "due_date": "2026-03-27",
-                    "summary": "Платёжка ЕНП за февраль: НДФЛ и взносы одной суммой.",
-                    "confidence": 0.95,
-                    "needs_human": False,
-                }
-            ),
+            session, intake, settings=get_settings(), call=_fake_call(_CONFIDENT_PAYMENT)
         )
         await session.commit()
 
-    assert result.applied is True
+    assert result.proposal == {
+        "tax_kind": "enp_payroll",
+        "amount": "19460.93",
+        "due_date": "2026-03-27",
+    }
+    assert intake.status == "needs_review"  # статус НЕ изменён — решает владелец
+    rec = intake.recognition
+    assert "tax_kind" not in rec  # поля документа не тронуты
+    assert rec["ai_review"]["proposal"]["amount"] == "19460.93"
+    assert "ЕНП" in rec["ai_review"]["summary"]
+
+
+async def test_owner_confirms_and_proposal_is_applied(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Да, делай»: применяется ровно сохранённое предложение, документ — «распознан»."""
+    async with async_session_factory() as session:
+        # Файл, который парсер вовсе не классифицировал — ИИ опознал платёжкой.
+        intake = _intake("ЕНС до 27.03.docx", status="error", document_type="unknown")
+        session.add(intake)
+        await session.commit()
+
+        await review_document(
+            session, intake, settings=get_settings(), call=_fake_call(_CONFIDENT_PAYMENT)
+        )
+        await session.commit()
+        assert intake.status == "error"  # разбор сам ничего не применил
+
+        await apply_ai_proposal(session, intake)
+        await session.commit()
+
     assert intake.status == "parsed"
+    assert intake.document_type == "payment_order"  # тип выровнен при подтверждении
     rec = intake.recognition
     assert rec["tax_kind"] == "enp_payroll"
     assert rec["amount"] == "19460.93"
     assert rec["review_reasons"] == []
-    assert rec["reviewed_by"] == "ai"
-    assert rec["manually_reviewed"] is False  # поле заполнил ИИ, не человек
+    assert rec["reviewed_by"] == "ai_confirmed"  # предложил ИИ, подтвердил владелец
     assert rec["ai_review"]["applied"] is True
-    assert "ЕНП" in rec["ai_review"]["summary"]
 
 
-async def test_unsure_review_explains_but_does_not_touch(
+async def test_apply_without_proposal_refuses(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """needs_human/низкая уверенность: статус и поля не тронуты, объяснение записано."""
+    """Подтверждать нечего — честная ошибка, а не тихий no-op."""
+    import pytest
+
+    async with async_session_factory() as session:
+        intake = _intake("письмо.docx")
+        session.add(intake)
+        await session.commit()
+
+        with pytest.raises(ValueError, match="нет предложения"):
+            await apply_ai_proposal(session, intake)
+
+
+async def test_unsure_review_explains_without_proposal(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Не-платёжка/нет полей: объяснение сохраняется, предложения нет."""
     async with async_session_factory() as session:
         intake = _intake("непонятный.docx", status="error", document_type="unknown")
         session.add(intake)
@@ -116,17 +159,16 @@ async def test_unsure_review_explains_but_does_not_touch(
         )
         await session.commit()
 
-    assert result.applied is False
-    assert intake.status == "error"  # статус не изменён
+    assert result.proposal is None
+    assert intake.status == "error"
     assert "приказ" in intake.recognition["ai_review"]["summary"]
-    assert intake.recognition["ai_review"]["needs_human"] is True
-    assert "tax_kind" not in intake.recognition
+    assert intake.recognition["ai_review"]["proposal"] is None
 
 
-async def test_bogus_amount_is_not_applied(
+async def test_bogus_amount_is_not_proposed(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Невалидная сумма от модели — правка не применяется, даже при высокой уверенности."""
+    """Невалидная сумма от модели в предложение не попадает."""
     async with async_session_factory() as session:
         intake = _intake("платёжка.docx")
         session.add(intake)
@@ -148,8 +190,7 @@ async def test_bogus_amount_is_not_applied(
             ),
         )
 
-    assert result.applied is False
-    assert intake.status == "needs_review"
+    assert result.proposal == {"tax_kind": "usn_advance"}  # сумма отброшена
 
 
 def test_fmt_diff_directions() -> None:

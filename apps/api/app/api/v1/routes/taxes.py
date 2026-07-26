@@ -66,7 +66,7 @@ from app.schemas.taxes import (
     VatWageCriterionRead,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
-from app.services.taxes.ai_reviewer import TaxAiError, review_all
+from app.services.taxes.ai_reviewer import TaxAiError, apply_ai_proposal, review_all
 from app.services.taxes.ai_reviewer import review_document as ai_review_document
 from app.services.taxes.bank_draft import (
     TaxDraftError,
@@ -647,6 +647,31 @@ async def ai_review_one(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
     return AiDocumentReviewRead.model_validate(result)
+
+
+@router.post(
+    "/documents/{intake_id}/ai-apply",
+    response_model=TaxDocumentRead,
+    dependencies=TAXES_MANAGE,
+)
+async def ai_apply(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: uuid.UUID,
+) -> TaxDocumentRead:
+    """Владелец подтвердил предложение ИИ в окне разбора — применить сохранённые поля.
+
+    Применяется ровно то, что предлагал ИИ (из ``recognition.ai_review.proposal``), той же
+    дорогой и с той же валидацией, что ручная проверка. Документ становится «распознан».
+    """
+    intake = await session.get(TaxDocumentIntake, intake_id)
+    if intake is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден.")
+    try:
+        await apply_ai_proposal(session, intake)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    return TaxDocumentRead.model_validate(intake)
 
 
 @router.post("/ai-review", response_model=AiAuditReportRead, dependencies=TAXES_MANAGE)

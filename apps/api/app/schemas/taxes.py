@@ -486,7 +486,11 @@ class EnsWalletRead(BaseModel):
 
 
 class AiDocumentReviewRead(BaseModel):
-    """Результат ИИ-разбора одного документа."""
+    """Результат ИИ-разбора одного документа.
+
+    ``proposal`` — предложенные поля платёжки; ИИ их НЕ применяет: владелец подтверждает
+    кнопкой «Применить» в окне разбора (POST /documents/{id}/ai-apply).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -495,7 +499,7 @@ class AiDocumentReviewRead(BaseModel):
     summary: str
     confidence: float
     document_type: str | None = None
-    applied: bool  # ИИ дозаполнил поля и перевёл документ в «распознан»
+    proposal: dict[str, str] | None = None
     needs_human: bool
     reasons: list[str] = []
 

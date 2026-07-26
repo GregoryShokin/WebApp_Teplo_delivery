@@ -240,18 +240,22 @@ export type TaxRecognition = {
   rows?: TaxTurnoverRow[];
   /** Почему документ ушёл в needs_review — русский текст, показываем владельцу. */
   review_reasons?: string[];
-  /** След ИИ-разбора: объяснение и метка, применял ли ИИ правки. */
+  /** След ИИ-разбора: объяснение и ПРЕДЛОЖЕНИЕ полей (ИИ сам ничего не применяет). */
   ai_review?: {
     summary: string;
     confidence: number;
     document_type?: string | null;
     needs_human: boolean;
     reasons?: string[];
-    applied: boolean;
+    /** Предложенные поля платёжки — применяются кнопкой «Применить» в окне разбора. */
+    proposal?: Record<string, string> | null;
+    /** Владелец подтвердил предложение — поля применены. */
+    applied?: boolean;
+    applied_at?: string;
     model?: string;
     at?: string;
   } | null;
-  /** Кто проверял документ: поле дозаполнил ИИ, а не человек. */
+  /** Кто проверял документ: 'ai_confirmed' — предложил ИИ, подтвердил владелец. */
   reviewed_by?: string | null;
   [key: string]: unknown;
 };
@@ -407,14 +411,14 @@ export async function fetchTaxDocumentFileUrl(intakeId: string): Promise<string>
   return URL.createObjectURL(response.data as Blob);
 }
 
-/** Результат ИИ-разбора одного документа. */
+/** Результат ИИ-разбора одного документа. Предложение применяет владелец, не ИИ. */
 export type AiDocumentReview = {
   intake_id: string;
   filename: string;
   summary: string;
   confidence: number;
   document_type: string | null;
-  applied: boolean;
+  proposal: Record<string, string> | null;
   needs_human: boolean;
   reasons: string[];
 };
@@ -438,6 +442,12 @@ export async function aiReviewTaxDocument(intakeId: string): Promise<AiDocumentR
     undefined,
     { timeout: 120_000 },
   );
+  return response.data;
+}
+
+/** «Да, делай»: применить сохранённое предложение ИИ (та же валидация, что у ручной проверки). */
+export async function aiApplyTaxProposal(intakeId: string): Promise<TaxDocumentRow> {
+  const response = await api.post<TaxDocumentRow>(`${BASE}/documents/${intakeId}/ai-apply`);
   return response.data;
 }
 
