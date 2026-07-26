@@ -158,12 +158,6 @@ def invalidate_position_registry() -> None:
     _loaded_at = None
 
 
-def reset_position_registry_for_tests() -> None:
-    global _snapshot, _loaded_at
-    _snapshot = _DEFAULT_SNAPSHOT
-    _loaded_at = None
-
-
 async def refresh_position_registry(session: AsyncSession) -> PositionSnapshot:
     global _snapshot, _loaded_at
     rows = (await session.scalars(select(Position).order_by(Position.name))).all()

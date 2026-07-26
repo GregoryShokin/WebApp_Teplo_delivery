@@ -16,11 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import CourierIikoShift, Employee, EmployeePositionAssignment
 from app.services.couriers.iiko_attendance_sync import sync_attendance
-from app.services.position_registry import (
-    courier_positions,
-    refresh_position_registry,
-    reset_position_registry_for_tests,
-)
+from app.services.position_registry import courier_positions, refresh_position_registry
 
 BASE = "/api/v1/webhooks/iiko"
 COURIER_IIKO_ID = "courier-iiko-webhook-1"
@@ -94,74 +90,58 @@ def _event(employee_id: str, *, opened: bool) -> list[dict]:
 def test_webhook_opens_courier_shift(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    reset_position_registry_for_tests()
-    try:
-        asyncio.run(_seed_courier(async_session_factory))
-        asyncio.run(_refresh_registry(async_session_factory))
+    asyncio.run(_seed_courier(async_session_factory))
+    asyncio.run(_refresh_registry(async_session_factory))
 
-        response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
-        assert response.status_code == 200
-        assert response.json()["processed"] == 1
+    response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
+    assert response.status_code == 200
+    assert response.json()["processed"] == 1
 
-        shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
-        assert len(shifts) == 1
-        assert shifts[0].closed_at is None
-        assert shifts[0].employee_id is not None
-        assert shifts[0].raw_payload.get("_source") == "cloud_webhook"
-    finally:
-        reset_position_registry_for_tests()
+    shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
+    assert len(shifts) == 1
+    assert shifts[0].closed_at is None
+    assert shifts[0].employee_id is not None
+    assert shifts[0].raw_payload.get("_source") == "cloud_webhook"
 
 
 def test_webhook_close_sets_closed_at(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    reset_position_registry_for_tests()
-    try:
-        asyncio.run(_seed_courier(async_session_factory))
-        asyncio.run(_refresh_registry(async_session_factory))
+    asyncio.run(_seed_courier(async_session_factory))
+    asyncio.run(_refresh_registry(async_session_factory))
 
-        client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
-        response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=False))
-        assert response.status_code == 200
+    client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
+    response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=False))
+    assert response.status_code == 200
 
-        shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
-        assert len(shifts) == 1  # закрытие обновляет открытую смену, не плодит
-        assert shifts[0].closed_at is not None
-    finally:
-        reset_position_registry_for_tests()
+    shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
+    assert len(shifts) == 1  # закрытие обновляет открытую смену, не плодит
+    assert shifts[0].closed_at is not None
 
 
 def test_webhook_close_without_open_is_noop(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Закрытие без открытой смены ничего не создаёт (поллинг доберёт)."""
-    reset_position_registry_for_tests()
-    try:
-        asyncio.run(_seed_courier(async_session_factory))
-        asyncio.run(_refresh_registry(async_session_factory))
+    asyncio.run(_seed_courier(async_session_factory))
+    asyncio.run(_refresh_registry(async_session_factory))
 
-        response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=False))
-        assert response.status_code == 200
-        assert response.json()["processed"] == 0
-        shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
-        assert shifts == []
-    finally:
-        reset_position_registry_for_tests()
+    response = client.post(BASE, json=_event(COURIER_IIKO_ID, opened=False))
+    assert response.status_code == 200
+    assert response.json()["processed"] == 0
+    shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
+    assert shifts == []
 
 
 def test_webhook_ignores_non_courier(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    reset_position_registry_for_tests()
-    try:
-        asyncio.run(_refresh_registry(async_session_factory))
-        response = client.post(BASE, json=_event("unknown-employee-guid", opened=True))
-        assert response.status_code == 200
-        assert response.json()["processed"] == 0
-        shifts = asyncio.run(_shifts(async_session_factory, "unknown-employee-guid"))
-        assert shifts == []
-    finally:
-        reset_position_registry_for_tests()
+    asyncio.run(_refresh_registry(async_session_factory))
+    response = client.post(BASE, json=_event("unknown-employee-guid", opened=True))
+    assert response.status_code == 200
+    assert response.json()["processed"] == 0
+    shifts = asyncio.run(_shifts(async_session_factory, "unknown-employee-guid"))
+    assert shifts == []
 
 
 async def _run_attendance_sync(
@@ -182,31 +162,27 @@ def test_polling_adopts_webhook_shift(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Поллинг усыновляет вебхук-смену (точное время), не плодит дубль за день."""
-    reset_position_registry_for_tests()
-    try:
-        asyncio.run(_seed_courier(async_session_factory))
-        asyncio.run(_refresh_registry(async_session_factory))
+    asyncio.run(_seed_courier(async_session_factory))
+    asyncio.run(_refresh_registry(async_session_factory))
 
-        # 1) вебхук открыл смену (opened_at ≈ now, помечена cloud_webhook)
-        client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
-        # 2) поллинг приносит ту же смену с ТОЧНЫМ временем (другой opened_at), тот же день
-        today = date.today().isoformat()
-        xml = (
-            "<attendances><attendance>"
-            f"<employeeId>{COURIER_IIKO_ID}</employeeId>"
-            "<roleId>courier-role</roleId>"
-            f"<dateFrom>{today}T08:00:00+03:00</dateFrom>"
-            "<attendanceType>P</attendanceType>"
-            "</attendance></attendances>"
-        )
-        asyncio.run(_run_attendance_sync(async_session_factory, xml))
+    # 1) вебхук открыл смену (opened_at ≈ now, помечена cloud_webhook)
+    client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
+    # 2) поллинг приносит ту же смену с ТОЧНЫМ временем (другой opened_at), тот же день
+    today = date.today().isoformat()
+    xml = (
+        "<attendances><attendance>"
+        f"<employeeId>{COURIER_IIKO_ID}</employeeId>"
+        "<roleId>courier-role</roleId>"
+        f"<dateFrom>{today}T08:00:00+03:00</dateFrom>"
+        "<attendanceType>P</attendanceType>"
+        "</attendance></attendances>"
+    )
+    asyncio.run(_run_attendance_sync(async_session_factory, xml))
 
-        shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
-        assert len(shifts) == 1  # усыновлена, НЕ дубль
-        # поллинг — источник истины: метка cloud_webhook перезаписана его payload'ом
-        assert shifts[0].raw_payload.get("_source") != "cloud_webhook"
-    finally:
-        reset_position_registry_for_tests()
+    shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
+    assert len(shifts) == 1  # усыновлена, НЕ дубль
+    # поллинг — источник истины: метка cloud_webhook перезаписана его payload'ом
+    assert shifts[0].raw_payload.get("_source") != "cloud_webhook"
 
 
 def test_webhook_skips_order_events(

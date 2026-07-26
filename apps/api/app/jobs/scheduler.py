@@ -13,6 +13,14 @@ from app.jobs.sbis_sync_job import run_sbis_sync_job
 from app.jobs.supplier_closing_activation_job import run_supplier_closing_activation_job
 from app.jobs.supplier_service_period_job import run_supplier_service_period_job
 
+# Синглтон на процесс: lifespan приложения стартует и гасит ОДИН И ТОТ ЖЕ объект.
+# В проде это ровно один цикл, но в тестах TestClient поднимает lifespan на каждый тест —
+# 250+ start/shutdown подряд. После первого shutdown() внутренний ThreadPoolExecutor
+# apscheduler мёртв навсегда: повторный start() поднимет планировщик, который не может
+# исполнить ни одну джобу. Прогон тестов держится только на SCHEDULER_ENABLED=false
+# (см. apps/api/tests/conftest.py) — без него джобы ещё и пишут в тестовую БД параллельно
+# с teardown-транкейтом. Не включай планировщик в тестах: сначала научи get_scheduler()
+# отдавать свежий объект после shutdown.
 _scheduler: BackgroundScheduler | None = None
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 

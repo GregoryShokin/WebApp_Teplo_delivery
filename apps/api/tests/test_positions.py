@@ -29,13 +29,6 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
-@pytest.fixture(autouse=True)
-def _reset_registry():
-    position_registry.reset_position_registry_for_tests()
-    yield
-    position_registry.reset_position_registry_for_tests()
-
-
 def _actor(*permissions: str) -> CurrentActor:
     # user_id=None: журнал изменений ссылается на таблицу user по FK,
     # а тестовый актор в ней не существует.

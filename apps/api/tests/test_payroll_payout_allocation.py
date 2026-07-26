@@ -1,7 +1,7 @@
 """Юнит-тесты разнесения выплаты по статьям ДДС и каскада наличных.
 
-Чистые функции, без БД: реестр должностей сбрасывается на встроенный канон
-(``reset_position_registry_for_tests``), идентичный сиду миграций.
+Чистые функции, без БД: на входе в тест реестр должностей — встроенный канон, идентичный
+сиду миграций (сбрасывает autouse-фикстура ``_clean_process_global_caches`` в conftest).
 """
 
 from __future__ import annotations
@@ -19,14 +19,6 @@ from app.services.payroll_payout_allocation import (
     build_payout_buckets,
     dds_article_code_for_position,
 )
-from app.services.position_registry import reset_position_registry_for_tests
-
-
-@pytest.fixture(autouse=True)
-def _reset_registry():
-    reset_position_registry_for_tests()
-    yield
-    reset_position_registry_for_tests()
 
 
 @pytest.mark.parametrize(

@@ -30,6 +30,9 @@ os.environ["SCHEDULER_ENABLED"] = "false"
 from app.core.config import get_settings
 from app.db.session import get_session
 from app.main import create_app
+from app.services import iiko_directory, iiko_location, position_registry
+from app.services.couriers import iiko_attendance_sync
+from app.services.sbis import client as sbis_client
 
 API_DIR = Path(__file__).resolve().parents[1]
 
@@ -119,6 +122,36 @@ def client(_session_engine) -> Iterator[TestClient]:
             yield test_client
     finally:
         app.dependency_overrides.pop(get_session, None)
+
+
+def _reset_process_global_caches() -> None:
+    """Сбросить кэши, которые живут в памяти процесса, а не в БД.
+
+    ``_truncate_between_tests`` чистит таблицы, но не память: снапшот реестра должностей,
+    id точки iiko, справочник iiko, курьерские роли, токен СБИС и lru_cache настроек
+    переживают тест и текут в следующий. Кто об этом знал — боролся сам (module-level
+    autouse-фикстуры и ``try/finally`` в теле теста), кто не знал — молча зависел от
+    порядка запуска. Здесь это делается один раз для всех.
+
+    В приватные имена модулей лезем намеренно: это единственное место, где тесты знают
+    про внутренности кэшей, зато продовый код не носит test-only хелперов.
+    """
+    position_registry._snapshot = position_registry._DEFAULT_SNAPSHOT
+    position_registry._loaded_at = None
+    iiko_location._cache.clear()
+    iiko_directory._cache = None
+    iiko_attendance_sync._courier_role_cache = None
+    sbis_client._token_cache.clear()
+    # Настройки перечитываются из env: тесты правят env через monkeypatch и зовут
+    # cache_clear() уже ПОСЛЕ setenv — без сброса на входе мок доживал до чужого теста.
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _clean_process_global_caches() -> Iterator[None]:
+    _reset_process_global_caches()
+    yield
+    _reset_process_global_caches()
 
 
 @pytest.fixture(autouse=True)

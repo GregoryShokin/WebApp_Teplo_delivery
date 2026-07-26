@@ -13,7 +13,6 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_payroll_payouts import RecordingBankClient, create_actor_user
@@ -43,14 +42,6 @@ from app.services.payroll_payouts import (
     create_or_update_run_draft,
     set_run_payout_cash,
 )
-from app.services.position_registry import reset_position_registry_for_tests
-
-
-@pytest.fixture(autouse=True)
-def _reset_registry():
-    reset_position_registry_for_tests()
-    yield
-    reset_position_registry_for_tests()
 
 
 async def _payer_wallet(session: AsyncSession) -> tuple[Account, Wallet]:

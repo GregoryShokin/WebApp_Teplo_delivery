@@ -412,17 +412,12 @@ async def test_assistant_manager_position_seeded_with_oklad(
 
     async with async_session_factory() as session:
         await position_registry.refresh_position_registry(session)
-        try:
-            assert "Помощник менеджера" in position_registry.okladnik_positions()
-            assert "Помощник менеджера" in position_registry.admin_payroll_positions()
+        assert "Помощник менеджера" in position_registry.okladnik_positions()
+        assert "Помощник менеджера" in position_registry.admin_payroll_positions()
 
-            data = await list_admin_oklady(session, as_of=date(2026, 6, 1))
-            row = next(
-                d for d in data["defaults"] if d["position"] == "Помощник менеджера"
-            )
-            assert row["amount"] == 6000
-        finally:
-            position_registry.reset_position_registry_for_tests()
+        data = await list_admin_oklady(session, as_of=date(2026, 6, 1))
+        row = next(d for d in data["defaults"] if d["position"] == "Помощник менеджера")
+        assert row["amount"] == 6000
 
 
 def test_okladnik_earned_to_date_on_demand_returns_accrual() -> None:
