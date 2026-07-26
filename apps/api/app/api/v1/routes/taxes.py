@@ -35,12 +35,15 @@ from app.models.tax import (
     TaxPayment,
 )
 from app.schemas.taxes import (
+    EnsWalletRead,
     ReconciliationRead,
     ReconLineRead,
     TaxBankDraftInput,
     TaxBankDraftResultRead,
     TaxCalendarItemRead,
     TaxCalendarRead,
+    TaxDebtItemRead,
+    TaxDebtRead,
     TaxDocumentListRead,
     TaxDocumentRead,
     TaxDocumentReviewInput,
@@ -73,7 +76,8 @@ from app.services.taxes.document_ingest import (
     set_intake_review,
 )
 from app.services.taxes.engine import TaxComputationError, TaxState, compute_tax_state
-from app.services.taxes.obligations import is_settled
+from app.services.taxes.ens_wallet import compute_ens_wallet
+from app.services.taxes.obligations import is_settled, list_payable_obligations
 from app.services.taxes.promote import promote_ready_intakes
 from app.services.taxes.reconcile import Reconciliation, build_reconciliation
 from app.services.taxes.repository import load_tax_inputs
@@ -207,6 +211,70 @@ async def get_reconciliation(
     """
     recon = await _load_reconciliation(session, _resolve_as_of(as_of))
     return _reconciliation_read(recon)
+
+
+@router.get("/debt", response_model=TaxDebtRead, dependencies=TAXES_READ)
+async def get_tax_debt(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    as_of: Annotated[
+        date | None, Query(description="Дата среза. По умолчанию — сегодня.")
+    ] = None,
+) -> TaxDebtRead:
+    """Расчёты с бюджетом для страницы «Учёт ДЗ/КЗ»: одна строка + детализация.
+
+    Кредиторка — все неоплаченные обязательства из ``list_payable_obligations`` (тот же
+    источник, что наполняет «Активные платежи»: одна цифра в трёх местах по построению).
+    Черновик «в банке» долг НЕ гасит — гасит только факт списания из выписки, — но его
+    статус показываем, чтобы владелец видел, что платёж уже в работе.
+
+    Дебиторка — расчётное сальдо ЕНС (переплата в бюджет): факты уплаты минус признанные
+    начисления. Считается, а не вводится руками, поэтому не протухает.
+    """
+    moment = _resolve_as_of(as_of)
+    try:
+        obligations = await list_payable_obligations(session, today=moment)
+        wallet = await compute_ens_wallet(session, as_of=moment)
+    except TaxComputationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    # Активные черновики — статусом на строку (вид+период; 1% матчится по одному виду:
+    # сверка кодирует его годом, платёжка приходит на прирост квартала).
+    drafts = (
+        await session.scalars(
+            select(TaxBankDraft).where(
+                TaxBankDraft.status.in_(("ready_to_send", "in_bank"))
+            )
+        )
+    ).all()
+
+    def _draft_status(kind: str, period: str | None) -> str | None:
+        for d in drafts:
+            if d.tax_kind != kind:
+                continue
+            if d.for_period == period or kind == "contrib_extra_1pct":
+                return d.status
+        return None
+
+    items = [
+        TaxDebtItemRead(
+            kind=ob.kind,
+            title=ob.title,
+            for_year=ob.for_year,
+            for_period=ob.for_period,
+            amount=ob.amount,
+            due_date=ob.due_date,
+            draft_status=_draft_status(ob.kind, ob.for_period),
+        )
+        for ob in sorted(obligations, key=lambda o: (o.due_date or moment, -o.amount))
+    ]
+    return TaxDebtRead(
+        as_of=moment,
+        payable_total=sum((ob.amount for ob in obligations), ZERO),
+        items=items,
+        wallet=EnsWalletRead.model_validate(wallet),
+    )
 
 
 @router.get("/calendar", response_model=TaxCalendarRead, dependencies=TAXES_READ)

@@ -27,7 +27,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, apiErrorMessage } from "@/lib/api";
+import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
+import { navigateTo } from "@/router";
 
 type View = "open" | "all" | "needs_review" | "recognized";
 type Section = "balances" | "payments" | "documents" | "recognition";
@@ -243,6 +245,37 @@ const STAFF_BASIS_LABEL: Record<string, string> = {
   production: "выработка",
 };
 
+// Расчёты с бюджетом: те же данные, что наполняют «Активные платежи» и кнопки на
+// «Налогах» — одна цифра в трёх местах по построению. Черновик «в банке» долг НЕ гасит
+// (гасит только факт списания из выписки), но его статус владельцу виден.
+type TaxDebt = {
+  as_of: string;
+  payable_total: number;
+  items: {
+    kind: string;
+    title: string;
+    for_year: number | null;
+    for_period: string | null;
+    amount: number;
+    due_date: string | null;
+    draft_status: string | null;
+  }[];
+  // Расчётный ЕНС-кошелёк: переплата в бюджет считается из фактов и начислений,
+  // а не вводится руками (решение владельца 26.07.2026) — поэтому не протухает.
+  wallet: {
+    as_of: string;
+    inflow: number;
+    recognized: number;
+    balance: number;
+    shortfall: number;
+  };
+};
+
+const TAX_DRAFT_STATUS_LABEL: Record<string, string> = {
+  ready_to_send: "подготовлен к отправке",
+  in_bank: "отправлен в банк",
+};
+
 async function getAccounting(view: View): Promise<AccountingList> {
   const response = await api.get<AccountingList>("/accounting/suppliers", { params: { view } });
   return response.data;
@@ -250,6 +283,11 @@ async function getAccounting(view: View): Promise<AccountingList> {
 
 async function getStaffPayable(): Promise<StaffPayable> {
   const response = await api.get<StaffPayable>("/accounting/suppliers/staff-payable");
+  return response.data;
+}
+
+async function getTaxDebt(): Promise<TaxDebt> {
+  const response = await api.get<TaxDebt>("/taxes/debt");
   return response.data;
 }
 
@@ -327,6 +365,17 @@ export function DzKzRoute() {
     queryFn: getStaffPayable,
     staleTime: 5 * 60 * 1000,
   });
+  // Задолженность по налогам видна только тем, кому виден модуль «Налоги»:
+  // без права запрос не шлём вовсе, страница работает как раньше.
+  const canSeeTaxes =
+    permissions.hasPermission("accounting.taxes.read") ||
+    permissions.hasPermission("accounting.taxes.manage");
+  const taxes = useQuery({
+    queryKey: ["accounting", "tax-debt"],
+    queryFn: getTaxDebt,
+    enabled: canSeeTaxes,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const supplierPayable = balances.data?.payable_total;
   const staffPayable = staff.data
@@ -343,10 +392,12 @@ export function DzKzRoute() {
     staffPayable == null && courierPayable == null
       ? undefined
       : (staffPayable ?? 0) + (courierPayable ?? 0);
+  // Налоги — третий источник кредиторской: неоплаченные обязательства налогового контура.
+  const taxPayable = canSeeTaxes ? taxes.data?.payable_total : null;
   const payableTotal =
-    supplierPayable == null && peoplePayable == null
+    supplierPayable == null && peoplePayable == null && taxPayable == null
       ? undefined
-      : (supplierPayable ?? 0) + (peoplePayable ?? 0);
+      : (supplierPayable ?? 0) + (peoplePayable ?? 0) + (taxPayable ?? 0);
   const supplierReceivable = balances.data?.receivable_total;
   const staffReceivable = staff.data
     ? staff.data.items
@@ -362,10 +413,12 @@ export function DzKzRoute() {
     staffReceivable == null && courierReceivable == null
       ? undefined
       : (staffReceivable ?? 0) + (courierReceivable ?? 0);
+  // ДЗ бюджета — расчётная переплата на ЕНС (кошелёк налогового контура).
+  const taxReceivable = canSeeTaxes ? taxes.data?.wallet.balance : null;
   const receivableTotal =
-    supplierReceivable == null && peopleReceivable == null
+    supplierReceivable == null && peopleReceivable == null && taxReceivable == null
       ? undefined
-      : (supplierReceivable ?? 0) + (peopleReceivable ?? 0);
+      : (supplierReceivable ?? 0) + (peopleReceivable ?? 0) + (taxReceivable ?? 0);
 
   const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
@@ -395,8 +448,21 @@ export function DzKzRoute() {
           value={receivableTotal}
           tone="sky"
           hint={
-            supplierReceivable != null && peopleReceivable != null && peopleReceivable > 0
-              ? `поставщики ${money.format(supplierReceivable)} · сотрудники ${money.format(staffReceivable ?? 0)} · курьеры ${money.format(courierReceivable ?? 0)}`
+            supplierReceivable != null &&
+            peopleReceivable != null &&
+            (peopleReceivable > 0 || (taxReceivable ?? 0) > 0)
+              ? [
+                  `поставщики ${money.format(supplierReceivable)}`,
+                  (staffReceivable ?? 0) > 0
+                    ? `сотрудники ${money.format(staffReceivable ?? 0)}`
+                    : null,
+                  (courierReceivable ?? 0) > 0
+                    ? `курьеры ${money.format(courierReceivable ?? 0)}`
+                    : null,
+                  (taxReceivable ?? 0) > 0 ? `бюджет ${money.format(taxReceivable ?? 0)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
               : "Открытые предоплаты: нам должны закрыть документами или вернуть"
           }
         />
@@ -406,8 +472,15 @@ export function DzKzRoute() {
           tone="rose"
           hint={
             supplierPayable != null && peoplePayable != null
-              ? `поставщики ${money.format(supplierPayable)} · сотрудники ${money.format(staffPayable ?? 0)} · курьеры ${money.format(courierPayable ?? 0)}`
-              : "Накладные и акты к оплате + заработанное сотрудниками"
+              ? [
+                  `поставщики ${money.format(supplierPayable)}`,
+                  `сотрудники ${money.format(staffPayable ?? 0)}`,
+                  `курьеры ${money.format(courierPayable ?? 0)}`,
+                  taxPayable != null ? `налоги ${money.format(taxPayable)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "Накладные и акты к оплате + заработанное сотрудниками + налоги"
           }
         />
       </div>
@@ -429,7 +502,12 @@ export function DzKzRoute() {
       </Tabs>
 
       {section === "balances" ? (
-        <BalancesSection query={balances} staffQuery={staff} onOpenRegister={openRegister} />
+        <BalancesSection
+          query={balances}
+          staffQuery={staff}
+          taxQuery={canSeeTaxes ? taxes : null}
+          onOpenRegister={openRegister}
+        />
       ) : null}
       {section === "payments" || section === "documents" ? (
         <RegisterFiltersBar filters={filters} onChange={setFilters} />
@@ -706,13 +784,132 @@ function StaffPayableCard({
   );
 }
 
+function TaxDebtCard({ query }: { query: ReturnType<typeof useQuery<TaxDebt>> }) {
+  const [open, setOpen] = useState(false);
+  const wallet = query.data?.wallet;
+  const today = todayIso();
+  return (
+    <div className="rounded-lg border bg-background">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div>
+          <div className="font-medium">Задолженность по налогам</div>
+          <div className="text-xs text-muted-foreground">
+            Все известные обязательства перед бюджетом, не закрытые фактом уплаты из банка.
+            «Отправлен в банк» — ещё долг: его гасит только списание из выписки.
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-lg font-semibold tabular-nums">
+          {query.isLoading ? (
+            <Loader2 className="animate-spin" size={17} />
+          ) : query.isError ? (
+            <span className="text-sm font-normal text-red-600">
+              {apiErrorMessage(query.error, "не посчиталось")}
+            </span>
+          ) : (
+            <>
+              <span className="text-rose-700" title="Мы должны бюджету">
+                {money.format(query.data?.payable_total ?? 0)}
+              </span>
+              {(wallet?.balance ?? 0) > 0 ? (
+                <span className="text-sky-700" title="Переплата в бюджет (расчётное сальдо ЕНС)">
+                  {money.format(wallet?.balance ?? 0)}
+                </span>
+              ) : null}
+            </>
+          )}
+          <ArrowRight size={15} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        </div>
+      </button>
+      {open && query.data ? (
+        <div className="border-t">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Обязательство</TableHead>
+                <TableHead>Срок</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead className="text-right">Сумма</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {query.data.items.length === 0 ? (
+                <TableStatus colSpan={4} state="empty" />
+              ) : (
+                query.data.items.map((row) => {
+                  const overdue = row.due_date != null && row.due_date < today && !row.draft_status;
+                  return (
+                    <TableRow key={`${row.kind}:${row.for_period ?? "year"}`}>
+                      <TableCell className="font-medium">{row.title}</TableCell>
+                      <TableCell
+                        className={`tabular-nums ${overdue ? "font-medium text-red-600" : "text-muted-foreground"}`}
+                      >
+                        {row.due_date ? fmtDate(row.due_date) : "—"}
+                        {overdue ? " · срок прошёл" : ""}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {row.draft_status
+                          ? (TAX_DRAFT_STATUS_LABEL[row.draft_status] ?? row.draft_status)
+                          : "к уплате"}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums text-rose-700">
+                        {money.format(row.amount)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+          {wallet ? (
+            <div className="border-t px-4 py-3 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Расчётный ЕНС-кошелёк:</span>{" "}
+              уплачено через ЕНС {money.format(wallet.inflow)} − признано начислений{" "}
+              {money.format(wallet.recognized)} ={" "}
+              {wallet.balance > 0 ? (
+                <span className="font-semibold text-sky-700">
+                  переплата {money.format(wallet.balance)}
+                </span>
+              ) : (
+                "переплаты нет"
+              )}
+              . Сальдо считается из выписки и наших начислений, а не вводится руками; с витриной
+              личного кабинета ФНС может расходиться на резервы и пени.
+              {wallet.shortfall > 0 ? (
+                <>
+                  {" "}
+                  Фактов уплаты меньше признанных начислений на{" "}
+                  {money.format(wallet.shortfall)} — обычно это платёж в пути или неполная
+                  выписка; сами долги видны строками выше и в минус кошелёк не уходит.
+                </>
+              ) : null}{" "}
+              <button
+                type="button"
+                className="text-primary hover:underline"
+                onClick={() => navigateTo("/taxes")}
+              >
+                Открыть «Налоги»
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function BalancesSection({
   query,
   staffQuery,
+  taxQuery,
   onOpenRegister,
 }: {
   query: ReturnType<typeof useQuery<BalanceList>>;
   staffQuery: ReturnType<typeof useQuery<StaffPayable>>;
+  taxQuery: ReturnType<typeof useQuery<TaxDebt>> | null;
   onOpenRegister: (target: "payments" | "documents", cp: CounterpartyBalance | null) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -729,6 +926,7 @@ function BalancesSection({
     <div className="flex flex-col gap-3">
       <StaffPayableCard query={staffQuery} group="staff" />
       <StaffPayableCard query={staffQuery} group="courier" />
+      {taxQuery ? <TaxDebtCard query={taxQuery} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
           value={search}

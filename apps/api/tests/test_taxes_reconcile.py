@@ -22,7 +22,7 @@ from app.models.tax import (
     TaxPayrollLedger,
 )
 from app.services.taxes.enp_split import rebuild_payroll_enp_split
-from app.services.taxes.reconcile import build_reconciliation
+from app.services.taxes.reconcile import ReconLine, build_reconciliation
 from app.services.taxes.repository import DEFAULT_DEPARTMENT
 
 # Выручка со скидками, iiko, помесячно (сверено с платёжками).
@@ -531,3 +531,82 @@ async def test_calendar_presents_future_split_as_planned(
     assert by_amount["8571.30"].is_overdue is False
     assert by_amount["11842.20"].status == "paid"  # срок прошёл — уплачено по конвенции
     assert result.overdue_count == 0
+
+
+# ── Зачёт расчётной переплаты ЕНС в вердикте сверки ─────────────────────────────
+# Решение владельца 26.07.2026: платёжка меньше начисления при достаточной переплате
+# на ЕНС — не недоимка, а трата переплаты. Красный запрет платить в этом случае врёт.
+
+
+def _alert_line(*, documented: str, expected: str) -> ReconLine:
+    return ReconLine(
+        label="УСН, II квартал",
+        tax_kind="usn_advance",
+        period_code="h1",
+        due_date=date(2026, 7, 28),
+        calculated=Decimal(expected),
+        documented=Decimal(documented),
+        paid=None,
+        verdict="doc_mismatch",
+        severity="alert",
+        messages=["Документ расходится с расчётом."],
+        action="Платить по этому документу нельзя.",
+        payable_amount=None,
+    )
+
+
+def test_ens_offset_softens_covered_gap() -> None:
+    """Разница покрыта переплатой целиком — alert снимается, платить по документу можно."""
+    from app.services.taxes.reconcile import _offset_by_ens
+
+    line = _offset_by_ens(
+        _alert_line(documented="463376", expected="478376"),
+        expected=Decimal("478376"),
+        wallet_balance=Decimal("20000"),
+    )
+    assert line.severity == "warning"
+    assert line.payable_amount == Decimal("463376")
+    assert any("покрыта расчётной переплатой" in m for m in line.messages)
+    assert "спишутся" in (line.action or "")
+
+
+def test_ens_offset_partial_coverage_keeps_alert() -> None:
+    """Переплата меньше разницы — alert остаётся, но владелец видит частичное покрытие."""
+    from app.services.taxes.reconcile import _offset_by_ens
+
+    line = _offset_by_ens(
+        _alert_line(documented="463376", expected="478376"),
+        expected=Decimal("478376"),
+        wallet_balance=Decimal("5000"),
+    )
+    assert line.severity == "alert"
+    assert line.payable_amount is None
+    assert any("частично" in m for m in line.messages)
+
+
+def test_ens_offset_never_excuses_zero_document() -> None:
+    """Нулевая платёжка — сломанный документ: переплата её не оправдывает."""
+    from app.services.taxes.reconcile import _offset_by_ens
+
+    line = _offset_by_ens(
+        _alert_line(documented="0", expected="478376"),
+        expected=Decimal("478376"),
+        wallet_balance=Decimal("1000000"),
+    )
+    assert line.severity == "alert"
+    assert line.payable_amount is None
+
+
+def test_ens_offset_leaves_other_verdicts_alone() -> None:
+    """Не-alert строки зачёт не трогает (безопасная переплата и так жёлтая)."""
+    from dataclasses import replace as dc_replace
+
+    from app.services.taxes.reconcile import _offset_by_ens
+
+    warning_line = dc_replace(
+        _alert_line(documented="478433", expected="478376"), severity="warning"
+    )
+    line = _offset_by_ens(
+        warning_line, expected=Decimal("478376"), wallet_balance=Decimal("99999")
+    )
+    assert line == warning_line

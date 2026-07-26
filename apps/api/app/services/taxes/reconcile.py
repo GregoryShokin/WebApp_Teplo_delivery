@@ -30,6 +30,7 @@ from app.services.taxes.engine import (
     period_end_date,
 )
 from app.services.taxes.enp_split import payroll_enp_due
+from app.services.taxes.ens_wallet import compute_ens_wallet
 from app.services.taxes.repository import load_tax_inputs
 
 ZERO = Decimal("0")
@@ -242,6 +243,51 @@ def _action_for(
     return None
 
 
+def _offset_by_ens(
+    line: ReconLine, *, expected: Decimal | None, wallet_balance: Decimal
+) -> ReconLine:
+    """Смягчить «документ меньше начисленного», если разницу покрывает переплата на ЕНС.
+
+    Решение владельца 26.07.2026: если бухгалтер прислала платёжку меньше начисления,
+    а на ЕНС лежит расчётная переплата не меньше разницы — это не недоимка, это трата
+    переплаты (налоговая доберёт остаток из кошелька). Красный запрет платить в этом
+    случае врёт. Нулевую платёжку зачётом не оправдываем: это сломанный документ.
+    Частичное покрытие (переплата меньше разницы) alert не снимает — только поясняет.
+    """
+    if line.verdict != "doc_mismatch" or line.severity != "alert":
+        return line
+    if line.documented is None or line.documented <= ZERO or expected is None:
+        return line
+    gap = expected - line.documented
+    if gap <= ZERO:
+        return line
+    if wallet_balance + TOLERANCE >= gap:
+        return replace(
+            line,
+            severity="warning",
+            messages=[
+                *line.messages,
+                f"Разница {fmt_money(gap)} ₽ покрыта расчётной переплатой на ЕНС "
+                f"({fmt_money(wallet_balance)} ₽): налоговая доберёт её из кошелька.",
+            ],
+            action=(
+                f"Платить по документу можно: недостающие {fmt_money(gap)} ₽ спишутся "
+                f"из переплаты на ЕНС. Если хотите — сверьте остаток кошелька с бухгалтером."
+            ),
+            payable_amount=line.documented,
+        )
+    if wallet_balance > ZERO:
+        return replace(
+            line,
+            messages=[
+                *line.messages,
+                f"Расчётная переплата на ЕНС ({fmt_money(wallet_balance)} ₽) покрывает "
+                f"разницу лишь частично — не хватает {fmt_money(gap - wallet_balance)} ₽.",
+            ],
+        )
+    return line
+
+
 async def _documented_amount(
     session: AsyncSession, *, tax_kind: str, period_code: str
 ) -> tuple[Decimal | None, date | None]:
@@ -355,6 +401,9 @@ async def build_reconciliation(
     """Собрать сверку трёх слоёв на дату среза."""
     year = as_of.year
     lines: list[ReconLine] = []
+    # Расчётная переплата на ЕНС — для смягчения «документ меньше начисленного»:
+    # бухгалтер может законно тратить переплату, присылая платёжку меньше расчёта.
+    wallet = await compute_ens_wallet(session, as_of=as_of)
 
     # ── УСН по каждому закрывшемуся отчётному периоду ────────────────────────
     for period_code in PERIOD_SEQ:
@@ -377,24 +426,28 @@ async def build_reconciliation(
             as_of=as_of,
         )
         lines.append(
-            ReconLine(
-                label=f"УСН, {PERIOD_TITLES[period_code]}",
-                tax_kind="usn_advance",
-                period_code=period_code,
-                due_date=due,
-                calculated=calculated,
-                documented=documented,
-                paid=paid,
-                verdict=verdict,
-                severity=severity,
-                messages=messages,
-                action=_action_for(verdict, documented=documented, expected=calculated),
-                payable_amount=_payable(
-                    verdict,
-                    documented=documented,
+            _offset_by_ens(
+                ReconLine(
+                    label=f"УСН, {PERIOD_TITLES[period_code]}",
+                    tax_kind="usn_advance",
+                    period_code=period_code,
+                    due_date=due,
                     calculated=calculated,
-                    expected=calculated,
+                    documented=documented,
+                    paid=paid,
+                    verdict=verdict,
+                    severity=severity,
+                    messages=messages,
+                    action=_action_for(verdict, documented=documented, expected=calculated),
+                    payable_amount=_payable(
+                        verdict,
+                        documented=documented,
+                        calculated=calculated,
+                        expected=calculated,
+                    ),
                 ),
+                expected=calculated,
+                wallet_balance=wallet.balance,
             )
         )
 
@@ -417,29 +470,33 @@ async def build_reconciliation(
         documented_is_increment=True,
     )
     lines.append(
-        ReconLine(
-            label="Допвзнос 1%",
-            tax_kind="contrib_extra_1pct",
-            period_code="year",
-            due_date=due,
-            calculated=state.extra_accrued,
-            documented=documented,
-            paid=paid,
-            verdict=verdict,
-            severity=severity,
-            messages=messages,
-            # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
-            action=_action_for(
-                verdict,
-                documented=documented,
-                expected=state.extra_accrued - (paid or ZERO),
-            ),
-            payable_amount=_payable(
-                verdict,
-                documented=documented,
+        _offset_by_ens(
+            ReconLine(
+                label="Допвзнос 1%",
+                tax_kind="contrib_extra_1pct",
+                period_code="year",
+                due_date=due,
                 calculated=state.extra_accrued,
-                expected=state.extra_accrued - (paid or ZERO),
+                documented=documented,
+                paid=paid,
+                verdict=verdict,
+                severity=severity,
+                messages=messages,
+                # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
+                action=_action_for(
+                    verdict,
+                    documented=documented,
+                    expected=state.extra_accrued - (paid or ZERO),
+                ),
+                payable_amount=_payable(
+                    verdict,
+                    documented=documented,
+                    calculated=state.extra_accrued,
+                    expected=state.extra_accrued - (paid or ZERO),
+                ),
             ),
+            expected=state.extra_accrued - (paid or ZERO),
+            wallet_balance=wallet.balance,
         )
     )
 

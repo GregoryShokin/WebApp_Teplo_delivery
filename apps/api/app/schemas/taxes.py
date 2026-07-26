@@ -457,3 +457,43 @@ class TaxPaymentDraftRead(BaseModel):
     provider_ref: str | None = None
     last_error: str | None = None
     created_at: datetime | None = None
+
+
+class TaxDebtItemRead(BaseModel):
+    """Одно неоплаченное обязательство в строке «Задолженность по налогам» УДКЗ."""
+
+    kind: str
+    title: str
+    for_year: int | None = None
+    for_period: str | None = None
+    amount: Decimal
+    due_date: date | None = None
+    # 'ready_to_send' | 'in_bank' — платёж уже в работе; долг им НЕ гасится
+    # (гасит только факт списания из выписки), но статус владельцу виден.
+    draft_status: str | None = None
+
+
+class EnsWalletRead(BaseModel):
+    """Расчётное сальдо ЕНС — дебиторка бюджета, посчитанная, а не введённая руками."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    as_of: date
+    inflow: Decimal  # факты уплаты через ЕНС с 1 января
+    recognized: Decimal  # начисления, признанные «списанными» налоговой
+    balance: Decimal  # переплата: max(0, inflow − recognized)
+    shortfall: Decimal  # насколько фактов меньше начислений (дыра факт-слоя/платёж в пути)
+
+
+class TaxDebtRead(BaseModel):
+    """Расчёты с бюджетом для страницы «Учёт ДЗ/КЗ»: одна строка + детализация.
+
+    ``payable_total`` — все известные неоплаченные обязательства, включая будущие сроки
+    (решение владельца 26.07.2026): срок виден в детализации, а итог отвечает на вопрос
+    «сколько мы должны бюджету», а не «что горит сегодня».
+    """
+
+    as_of: date
+    payable_total: Decimal
+    items: list[TaxDebtItemRead]
+    wallet: EnsWalletRead
