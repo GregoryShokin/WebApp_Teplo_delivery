@@ -805,7 +805,8 @@ function SummaryTab({ asOf }: { asOf: string }) {
             <InfoHint label="правило вычета">
               Уплаченные взносы уменьшают налог, но не более чем наполовину. Всё, что не
               влезло в половину, сгорает: на следующий период и на следующий год не
-              переносится.
+              переносится. «За себя» — взносы ИП за самого себя (фиксированный платёж за год
+              плюс 1% с дохода свыше 300 000 ₽); взносы за работников — отдельная строка.
             </InfoHint>
           </CardTitle>
         </CardHeader>
@@ -817,10 +818,14 @@ function SummaryTab({ asOf }: { asOf: string }) {
           />
           <DetailRow
             hint={`Доступно ${formatMoney(state.fixed_available)}`}
-            label="Фиксированные взносы ИП — заявлено"
+            label="Взносы ИП «за себя», фиксированные — заявлено"
             value={formatMoney(state.fixed_claimed)}
           />
-          <DetailRow label="Допвзнос 1% — начислено" value={formatMoney(state.extra_accrued)} />
+          <DetailRow
+            hint="Взносы ИП «за себя» с дохода свыше 300 000 ₽"
+            label="Допвзнос 1% — начислено"
+            value={formatMoney(state.extra_accrued)}
+          />
           <DetailRow
             hint={`Доступно ${formatMoney(state.extra_available)}`}
             label="Допвзнос 1% — заявлено"
@@ -837,7 +842,7 @@ function SummaryTab({ asOf }: { asOf: string }) {
           ) : null}
           {Number(state.deduction_deferred ?? 0) > 0 ? (
             <DetailRow
-              hint="Начислено, но не уплачено — уйдёт в вычет следующих периодов года"
+              hint="Взносы ИП «за себя» (фиксированные + 1%) начислены, но не уплачены — уйдут в вычет, когда заплатите"
               label="Отложено"
               value={formatMoney(state.deduction_deferred)}
             />

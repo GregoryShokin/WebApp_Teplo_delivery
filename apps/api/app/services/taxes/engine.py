@@ -322,12 +322,17 @@ def compute_tax_state(inputs: TaxInputs) -> TaxState:
 
     # Сколько вычета отложено из-за того, что взносы «за себя» ещё не уплачены.
     # Ограничиваем свободным местом под лимитом: то, что и так сгорело бы, ценой не является.
+    unpaid_fixed = ZERO
+    unpaid_extra = ZERO
     if cfg.self_contributions_basis == "cash":
-        unpaid_self = max(cfg.fixed_contribution - money(inputs.fixed_paid), ZERO) + max(
-            extra_accrued - money(inputs.extra_paid), ZERO
-        )
+        # Взносы ИП «за себя» — это ДВА платежа: фиксированный за год (ст. 430 НК) и
+        # допвзнос 1% с дохода свыше порога. Держим их раздельно, чтобы показать состав.
+        unpaid_fixed = max(cfg.fixed_contribution - money(inputs.fixed_paid), ZERO)
+        unpaid_extra = max(extra_accrued - money(inputs.extra_paid), ZERO)
+        unpaid_self = unpaid_fixed + unpaid_extra
         deduction_deferred = min(unpaid_self, max(deduction_limit - deduction_applied, ZERO))
     else:
+        unpaid_self = ZERO
         deduction_deferred = ZERO
 
     if deduction_burned > ZERO:
@@ -336,10 +341,19 @@ def compute_tax_state(inputs: TaxInputs) -> TaxState:
             f"переносится ни на следующий период, ни на следующий год."
         )
     if deduction_deferred > ZERO:
+        # Состав обязателен: «взносы за себя» — это ДВА разных платежа, и без разбивки
+        # владелец не понимает, что именно не уплачено (вопрос владельца 27.07.2026).
+        parts = []
+        if unpaid_fixed > ZERO:
+            parts.append(f"фиксированные {fmt_money(unpaid_fixed)} ₽")
+        if unpaid_extra > ZERO:
+            parts.append(f"1% с дохода {fmt_money(unpaid_extra)} ₽")
+        capped = deduction_deferred < unpaid_self
         warnings.append(
-            f"Взносы «за себя» на {fmt_money(deduction_deferred)} ₽ начислены, но не уплачены. "
-            f"По принятой конвенции (по оплате) вычет отложен: уплатите их до конца "
-            f"следующего отчётного периода — и налог уменьшится на эту сумму."
+            f"Взносы ИП «за себя» не уплачены: {' + '.join(parts)}. Уплатите их до конца "
+            f"следующего отчётного периода — налог уменьшится на "
+            f"{fmt_money(deduction_deferred)} ₽"
+            + (" (остальное упрётся в лимит 50%)." if capped else ".")
         )
     if deduction_unclaimed > ZERO:
         warnings.append(
