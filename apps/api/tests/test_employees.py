@@ -2947,7 +2947,7 @@ async def test_dismiss_partial_amount_exceeds_balance_fails(
 
 def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
     """Подменяет денежный контур выдачи депозита, записывая вызовы (проверка маршрутизации)."""
-    calls: dict[str, list[Any]] = {"cashflow": [], "transfer": [], "iiko": [], "draft": []}
+    calls: dict[str, list[Any]] = {"cashflow": [], "iiko": [], "draft": []}
 
     class _FakeWallet:
         def __init__(self, code: str) -> None:
@@ -2964,35 +2964,33 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
         calls["cashflow"].append(payout_method)
         return _FakeWallet("tk_chernikova" if payout_method == "cash_tk" else "cash_safe")
 
-    async def fake_transfer(
-        _session: Any,
-        *,
-        source_kind: str,
-        source_id: Any,
-        amount: Decimal,
-        operation_date: Any,
-        purpose: str,
-        provider: str = "tbank",
-    ) -> bool:
-        calls["transfer"].append(amount)
-        return True
-
     async def fake_draft(
         _session: Any,
         *,
-        document_id: str,
+        recipient_kind: str,
         amount: Decimal,
         purpose: str,
-        provider: str = "tbank",
-    ) -> bool:
-        calls["draft"].append(document_id)
-        return True
+        provider: str,
+        employee_id: Any = None,
+        **_kwargs: Any,
+    ) -> Any:
+        calls["draft"].append(
+            {
+                "recipient_kind": recipient_kind,
+                "amount": amount,
+                "provider": provider,
+                "employee_id": employee_id,
+            }
+        )
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def fake_in_flight(_session: Any, _employee_id: Any) -> Decimal:
+        return Decimal("0")
 
     def fake_iiko(*, amount: Decimal, payout_date: Any, source_id: Any) -> None:
         calls["iiko"].append(amount)
 
-    # Общий контур выдачи переехал в deposit_payout — там теперь и вызовы cashflow/транзита,
-    # поэтому патчим по месту нового вызова (send_draft остаётся на роуте увольнения).
+    # Наличный контур выдачи переехал в deposit_payout — патчим по месту нового вызова.
     from app.services import deposit_payout as deposit_payout_service
 
     monkeypatch.setattr(
@@ -3000,8 +2998,11 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
         "book_production_deposit_payout_cashflow",
         fake_cashflow,
     )
-    monkeypatch.setattr(deposit_payout_service, "book_deposit_bank_to_safe_transfer", fake_transfer)
-    monkeypatch.setattr(employee_routes, "send_deposit_payout_bank_draft", fake_draft)
+    # Банк-канал (10904f6): роут только выписывает черновик выдачи. Транзит банк→Сейф переехал
+    # в жизненный цикл черновика (deposit_bank_draft.apply_deposit_draft_status) — на увольнении
+    # его больше нет и патчить нечего.
+    monkeypatch.setattr(employee_routes, "create_deposit_payout_draft", fake_draft)
+    monkeypatch.setattr(employee_routes, "deposit_in_flight_amount", fake_in_flight)
     monkeypatch.setattr(employee_routes, "post_production_deposit_payout_to_iiko", fake_iiko)
     return calls
 
@@ -3037,7 +3038,6 @@ async def test_dismiss_payout_cash_tk_books_cashflow_and_iiko(
 
     assert calls["cashflow"] == ["cash_tk"]
     assert calls["iiko"] == [Decimal("5000")]
-    assert calls["transfer"] == []
     assert calls["draft"] == []
     assert account.balance == Decimal("0")
 
@@ -3071,13 +3071,17 @@ async def test_dismiss_payout_cash_safe_skips_iiko(monkeypatch: pytest.MonkeyPat
 
     assert calls["cashflow"] == ["cash_safe"]
     assert calls["iiko"] == []
-    assert calls["transfer"] == []
     assert calls["draft"] == []
 
 
-async def test_dismiss_payout_bank_draft_transfers_and_sends_draft(
+async def test_dismiss_payout_bank_draft_only_creates_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Банк-канал увольнения: роут только выписывает черновик, деньги стоят до выдачи (10904f6).
+
+    Депозит-счёт не списывается и расход в ДДС не книжится — транзит банк→Сейф и списание
+    произойдут на оплате черновика (``apply_deposit_draft_status``) и фактической выдаче.
+    """
     employee = make_employee(iiko_id="iiko-dep-draft", full_name="Deposit Draft")
     account = make_deposit_account(employee, Decimal("6000"))
     session = FakeSession([employee], deposit_accounts=[account])
@@ -3104,10 +3108,16 @@ async def test_dismiss_payout_bank_draft_transfers_and_sends_draft(
         ),
     )
 
-    assert calls["cashflow"] == ["bank_draft"]
-    assert calls["transfer"] == [Decimal("6000")]
+    # Ровно один черновик на всю сумму депозита, в T-Банк.
     assert len(calls["draft"]) == 1
+    assert calls["draft"][0]["amount"] == Decimal("6000")
+    assert calls["draft"][0]["provider"] == "tbank"
+    assert calls["draft"][0]["employee_id"] == employee.id
+    # Ни расхода ДДС, ни iiko-изъятия: деньги остаются на депозит-счёте до фактической выдачи.
+    assert calls["cashflow"] == []
     assert calls["iiko"] == []
+    assert account.balance == Decimal("6000")
+    assert session.deposit_transactions == []
 
 
 async def test_dismiss_payout_requires_channel_permission(

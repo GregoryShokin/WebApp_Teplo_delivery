@@ -11,6 +11,10 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+# Целевой зарплатный резерв — единственный источник выплаты ЗП (9796541). Хелпер один на все
+# payroll-тесты: два его экземпляра уже разъезжались, из-за чего файлы отставали от кода.
+from test_payroll_payments import reserve_payroll_run
+
 from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
 from app.core.config import Settings
@@ -61,33 +65,6 @@ async def fund_wallet(
     wallet.opening_balance_date = date(2099, 1, 1)
     await session.flush()
     return wallet
-
-
-async def reserve_payroll_run(
-    session: AsyncSession,
-    run_id: uuid.UUID,
-    *,
-    wallet_code: str = "cash_safe",
-) -> SafeAllocation:
-    wallet = await session.scalar(select(Wallet).where(Wallet.code == wallet_code))
-    assert wallet is not None
-    total = await session.scalar(
-        select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
-            PayrollLine.run_id == run_id
-        )
-    )
-    reserve = SafeAllocation(
-        wallet_id=wallet.id,
-        amount=Decimal(total or 0),
-        amount_paid=Decimal("0"),
-        purpose="Выплата зарплаты",
-        source_run_id=run_id,
-        status="reserved",
-        location="safe",
-    )
-    session.add(reserve)
-    await session.commit()
-    return reserve
 
 
 async def test_split_blocks_cash_above_available_wallet_balance_and_ignores_own_reserve(

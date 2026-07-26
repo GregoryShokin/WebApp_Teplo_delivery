@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from test_payroll_payouts import RecordingBankClient, create_actor_user
+from test_payroll_payouts import RecordingBankClient, create_actor_user, reserve_payroll_run
 
 from app.core.config import get_settings
 from app.models import (
@@ -255,6 +255,9 @@ async def test_payout_books_expense_from_safe_incrementally(
             session,
             [("Менеджер", Decimal("30000")), ("Уборщица", Decimal("15000"))],
         )
+        # Источник зарплаты — только целевой резерв ведомости на Сейфе (9796541),
+        # свободный остаток кошелька больше не оплачивает ФОТ.
+        await reserve_payroll_run(session, run.id)
         by_role = {role: emp_id for emp_id, role in employees}
         admin_id = await _article_id(session, DDS_ARTICLE_ADMIN_PAYROLL)
         aux_id = await _article_id(session, DDS_ARTICLE_AUX_PAYROLL)

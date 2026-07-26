@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 
 import pytest
@@ -55,6 +55,23 @@ PERIOD_START = date(2026, 7, 7)
 PERIOD_END = date(2026, 7, 13)
 PAYROLL_DATE = date(2026, 7, 14)
 AS_OF = date(2026, 7, 8)
+
+
+def _freeze_settlement_clock(monkeypatch: pytest.MonkeyPatch, *, today: date = AS_OF) -> None:
+    """Заморозить «сегодня» внутри shift_settlement на дату открытого периода.
+
+    Часть API (``kassa_pending_payload``) не пробрасывает ``as_of`` — модуль берёт
+    ``datetime.now(MOSCOW_TZ).date()``. Без заморозки такой тест зелёный только пока
+    реальная дата попадает в зашитый период (или в фолбэк «ближайший будущий»), а потом
+    молча краснеет. Подменяем импортированный в модуль ``datetime``.
+    """
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:  # type: ignore[override]
+            return datetime(today.year, today.month, today.day, 12, 0, tzinfo=tz)
+
+    monkeypatch.setattr(shift_settlement, "datetime", _FrozenDatetime)
 
 
 # --------------------------------------------------------------------------- #
@@ -543,7 +560,10 @@ async def test_finalized_period_drops_from_kassa_paid_cash_stays_excluded(
 # --------------------------------------------------------------------------- #
 async def test_kassa_pending_includes_freelancers_per_person(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # kassa_pending_payload не принимает as_of — «сегодня» берётся из часов модуля.
+    _freeze_settlement_clock(monkeypatch)
     async with async_session_factory() as session:
         await _tk_wallet(session)
         employee = await _freelancer(session, name="Пётр Внештат", rate=Decimal("3600"))

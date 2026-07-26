@@ -8,7 +8,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from test_payroll_payments import create_actor_user, create_payroll_run
+from test_payroll_payments import create_actor_user, create_payroll_run, reserve_payroll_run
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
@@ -54,6 +54,7 @@ async def test_partial_payment_sets_partially_paid(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         payment = await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("700"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -74,6 +75,7 @@ async def test_topup_completes_to_paid(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("700"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -94,6 +96,7 @@ async def test_topup_none_pays_full_remaining(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("650"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -114,6 +117,7 @@ async def test_partial_over_remaining_returns_409(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("700"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -133,6 +137,7 @@ async def test_partial_on_fully_paid_returns_409(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=None, paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -153,6 +158,7 @@ async def test_dds_booked_incrementally_no_double(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("600"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -177,6 +183,7 @@ async def test_partial_then_bulk_no_double_book(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("600"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -200,6 +207,7 @@ async def test_runs_list_summary_reports_partial_state(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")], [Decimal("500")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("700"), paid_at=PAID_AT,
             actor_user_id=actor.id,
@@ -222,6 +230,7 @@ async def test_partial_blocked_for_scheduled_deposit_employee(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
         assert line is not None
         line.deposit_payout_scheduled = Decimal("500")
@@ -242,6 +251,7 @@ async def test_unmark_partial_not_allowed(
         _period, run, employees = await create_payroll_run(
             session, employee_line_totals=[[Decimal("1000")]]
         )
+        await reserve_payroll_run(session, run.id)
         await mark_partial_payment(
             session, run.id, employees[0].id, amount=Decimal("600"), paid_at=PAID_AT,
             actor_user_id=actor.id,
