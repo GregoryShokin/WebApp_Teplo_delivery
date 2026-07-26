@@ -19,6 +19,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,6 +61,8 @@ import { apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import {
+  aiReviewAllTaxes,
+  aiReviewTaxDocument,
   createTaxPaymentDraft,
   fetchTaxDocumentFileUrl,
   getTaxCalendar,
@@ -72,6 +75,7 @@ import {
   refreshTaxDocuments,
   reviewTaxDocument,
   setVatThreshold,
+  type AiAuditReport,
   type Money,
   type Reconciliation,
   type ReconLine,
@@ -1134,6 +1138,7 @@ function PaymentRow({ row }: { row: TaxPaymentRow }) {
 function DocumentsTab({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [aiReport, setAiReport] = useState<AiAuditReport | null>(null);
 
   const query = useQuery({
     queryKey: ["taxes", "documents"],
@@ -1202,6 +1207,19 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось проверить почту")),
   });
 
+  const aiAuditMutation = useMutation({
+    mutationFn: aiReviewAllTaxes,
+    onSuccess: (report) => {
+      setAiReport(report);
+      const applied = report.documents.filter((d) => d.applied).length;
+      toast.success(
+        `ИИ-ревизия готова${applied > 0 ? `: дозаполнено документов — ${applied}` : ""}`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "ИИ-ревизия не удалась")),
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1226,6 +1244,19 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
               Проверить почту
             </Button>
             <Button
+              disabled={aiAuditMutation.isPending}
+              onClick={() => aiAuditMutation.mutate()}
+              title="Claude разберёт документы, требующие внимания, и проверит сверку целиком"
+              variant="outline"
+            >
+              {aiAuditMutation.isPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles aria-hidden="true" />
+              )}
+              ИИ-ревизия
+            </Button>
+            <Button
               disabled={promoteMutation.isPending || readyCount === 0}
               onClick={() => setConfirmOpen(true)}
             >
@@ -1237,6 +1268,52 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
           </div>
         ) : null}
       </div>
+
+      {aiReport ? (
+        <div className="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-violet-700" aria-hidden="true" />
+              <div>
+                <div className="text-sm font-medium text-violet-900">Вердикт ИИ-ревизии</div>
+                <p className="text-sm text-violet-900/90">{aiReport.verdict}</p>
+              </div>
+            </div>
+            <button
+              className="text-xs text-violet-700 hover:underline"
+              onClick={() => setAiReport(null)}
+              type="button"
+            >
+              Скрыть
+            </button>
+          </div>
+          {aiReport.findings.length > 0 ? (
+            <ul className="space-y-1.5">
+              {aiReport.findings.map((finding, index) => (
+                <li className="text-sm" key={index}>
+                  <Badge
+                    className={
+                      finding.severity === "alert"
+                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                        : finding.severity === "warning"
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : NEUTRAL_BADGE
+                    }
+                    variant="outline"
+                  >
+                    {finding.title}
+                  </Badge>{" "}
+                  <span className="text-violet-900/90">{finding.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="text-xs text-violet-900/60">
+            Проверено моделью {"Claude"} по снимку сверки, обязательств и ЕНС-кошелька.
+            Объяснения по разобранным документам — в их строках ниже.
+          </p>
+        </div>
+      ) : null}
 
       {query.isLoading ? <LoadingBlock rows={5} /> : null}
       {query.isError ? (
@@ -1464,6 +1541,18 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить статус")),
   });
+  const aiMutation = useMutation({
+    mutationFn: () => aiReviewTaxDocument(row.id),
+    onSuccess: (result) => {
+      toast.success(
+        result.applied
+          ? "ИИ дозаполнил поля — документ распознан"
+          : "ИИ разобрал документ — объяснение в строке",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "ИИ-разбор не удался")),
+  });
   const status = DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
   const statusHint = DOCUMENT_STATUS_HINT[row.status];
   const recognition = row.recognition ?? {};
@@ -1493,6 +1582,9 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
 
   const reasons = recognition.review_reasons ?? [];
   const needsReview = row.status === "needs_review";
+  // ИИ-разбор доступен и там, где автоматика сдалась совсем (ошибка/неподдержанный формат).
+  const needsAttention =
+    needsReview || row.status === "error" || row.status === "unsupported";
   const isTurnover = row.document_type === "turnover_statement";
   const isPayroll = row.document_type === "payroll_statement";
   const turnoverRows = recognition.rows ?? [];
@@ -1620,30 +1712,59 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             ))}
           </ul>
         ) : null}
-        {needsReview && canManage ? (
+        {recognition.ai_review ? (
+          <div className="mt-1.5 flex items-start gap-1.5 text-xs leading-5 text-violet-800">
+            <Sparkles className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              {recognition.ai_review.summary}
+              {recognition.ai_review.applied ? (
+                <span className="text-violet-600"> · поля дозаполнены ИИ</span>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
+        {needsAttention && canManage ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
+            {needsReview ? (
+              <Button
+                disabled={reviewMutation.isPending}
+                onClick={() =>
+                  // У платёжки открываем форму: можно дозаполнить срок/сумму/вид/период.
+                  // У ведомостей/оборотк править нечего — подтверждаем как есть.
+                  row.document_type === "payment_order"
+                    ? setReviewOpen(true)
+                    : reviewMutation.mutate("parsed")
+                }
+                size="sm"
+                variant="outline"
+              >
+                {row.document_type === "payment_order" ? "Проверить…" : "Проверено"}
+              </Button>
+            ) : null}
             <Button
-              disabled={reviewMutation.isPending}
-              onClick={() =>
-                // У платёжки открываем форму: можно дозаполнить срок/сумму/вид/период.
-                // У ведомостей/оборотк править нечего — подтверждаем как есть.
-                row.document_type === "payment_order"
-                  ? setReviewOpen(true)
-                  : reviewMutation.mutate("parsed")
-              }
+              disabled={aiMutation.isPending}
+              onClick={() => aiMutation.mutate()}
               size="sm"
+              title="Claude прочитает документ, объяснит его и дозаполнит нераспознанные поля"
               variant="outline"
             >
-              {row.document_type === "payment_order" ? "Проверить…" : "Проверено"}
+              {aiMutation.isPending ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Sparkles aria-hidden="true" />
+              )}
+              ИИ-разбор
             </Button>
-            <Button
-              disabled={reviewMutation.isPending}
-              onClick={() => reviewMutation.mutate("ignored")}
-              size="sm"
-              variant="ghost"
-            >
-              Игнорировать
-            </Button>
+            {needsReview ? (
+              <Button
+                disabled={reviewMutation.isPending}
+                onClick={() => reviewMutation.mutate("ignored")}
+                size="sm"
+                variant="ghost"
+              >
+                Игнорировать
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {reviewOpen ? (

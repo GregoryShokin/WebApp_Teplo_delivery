@@ -485,6 +485,39 @@ class EnsWalletRead(BaseModel):
     shortfall: Decimal  # насколько фактов меньше начислений (дыра факт-слоя/платёж в пути)
 
 
+class AiDocumentReviewRead(BaseModel):
+    """Результат ИИ-разбора одного документа."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    intake_id: str
+    filename: str
+    summary: str
+    confidence: float
+    document_type: str | None = None
+    applied: bool  # ИИ дозаполнил поля и перевёл документ в «распознан»
+    needs_human: bool
+    reasons: list[str] = []
+
+
+class AiAuditFindingRead(BaseModel):
+    """Одно замечание общей ИИ-ревизии."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    severity: str  # 'info' | 'warning' | 'alert'
+    title: str
+    detail: str
+
+
+class AiAuditReportRead(BaseModel):
+    """Отчёт ИИ-ревизии: вердикт + замечания + разобранные документы."""
+
+    verdict: str
+    findings: list[AiAuditFindingRead]
+    documents: list[AiDocumentReviewRead]
+
+
 class TaxDebtRead(BaseModel):
     """Расчёты с бюджетом для страницы «Учёт ДЗ/КЗ»: одна строка + детализация.
 

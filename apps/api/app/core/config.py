@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     # детерминированный слой, неуверенные счета уходят в «требует проверки».
     anthropic_api_key: str | None = None
     invoice_recognition_model: str = "claude-sonnet-4-6"
+    # ИИ-ревьюер налоговых документов (кнопки «ИИ-разбор»/«ИИ-ревизия» на «Налогах»).
+    # Тот же ANTHROPIC_API_KEY; без ключа кнопки честно отвечают 422.
+    tax_ai_reviewer_model: str = "claude-sonnet-5"
     # Ниже порога уверенности счёт не материализуется в накладную, а ждёт оператора.
     invoice_recognition_min_confidence: float = 0.75
 

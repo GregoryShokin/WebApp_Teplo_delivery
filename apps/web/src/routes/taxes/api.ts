@@ -240,6 +240,19 @@ export type TaxRecognition = {
   rows?: TaxTurnoverRow[];
   /** Почему документ ушёл в needs_review — русский текст, показываем владельцу. */
   review_reasons?: string[];
+  /** След ИИ-разбора: объяснение и метка, применял ли ИИ правки. */
+  ai_review?: {
+    summary: string;
+    confidence: number;
+    document_type?: string | null;
+    needs_human: boolean;
+    reasons?: string[];
+    applied: boolean;
+    model?: string;
+    at?: string;
+  } | null;
+  /** Кто проверял документ: поле дозаполнил ИИ, а не человек. */
+  reviewed_by?: string | null;
   [key: string]: unknown;
 };
 
@@ -392,6 +405,48 @@ export async function fetchTaxDocumentFileUrl(intakeId: string): Promise<string>
     responseType: "blob",
   });
   return URL.createObjectURL(response.data as Blob);
+}
+
+/** Результат ИИ-разбора одного документа. */
+export type AiDocumentReview = {
+  intake_id: string;
+  filename: string;
+  summary: string;
+  confidence: number;
+  document_type: string | null;
+  applied: boolean;
+  needs_human: boolean;
+  reasons: string[];
+};
+
+export type AiAuditFinding = {
+  severity: "info" | "warning" | "alert" | string;
+  title: string;
+  detail: string;
+};
+
+export type AiAuditReport = {
+  verdict: string;
+  findings: AiAuditFinding[];
+  documents: AiDocumentReview[];
+};
+
+export async function aiReviewTaxDocument(intakeId: string): Promise<AiDocumentReview> {
+  // Модель думает секунды-десятки секунд — обычного клиентского таймаута мало.
+  const response = await api.post<AiDocumentReview>(
+    `${BASE}/documents/${intakeId}/ai-review`,
+    undefined,
+    { timeout: 120_000 },
+  );
+  return response.data;
+}
+
+export async function aiReviewAllTaxes(): Promise<AiAuditReport> {
+  // Полная ревизия — несколько документов подряд + общий аудит: даём щедрый запас.
+  const response = await api.post<AiAuditReport>(`${BASE}/ai-review`, undefined, {
+    timeout: 300_000,
+  });
+  return response.data;
 }
 
 export async function getTaxSources(): Promise<TaxSources> {

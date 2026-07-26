@@ -35,6 +35,9 @@ from app.models.tax import (
     TaxPayment,
 )
 from app.schemas.taxes import (
+    AiAuditFindingRead,
+    AiAuditReportRead,
+    AiDocumentReviewRead,
     EnsWalletRead,
     ReconciliationRead,
     ReconLineRead,
@@ -63,6 +66,8 @@ from app.schemas.taxes import (
     VatWageCriterionRead,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.taxes.ai_reviewer import TaxAiError, review_all
+from app.services.taxes.ai_reviewer import review_document as ai_review_document
 from app.services.taxes.bank_draft import (
     TaxDraftError,
     cancel_tax_draft,
@@ -617,6 +622,52 @@ async def review_document(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
     return TaxDocumentRead.model_validate(intake)
+
+
+@router.post(
+    "/documents/{intake_id}/ai-review",
+    response_model=AiDocumentReviewRead,
+    dependencies=TAXES_MANAGE,
+)
+async def ai_review_one(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: uuid.UUID,
+) -> AiDocumentReviewRead:
+    """ИИ-разбор одного документа: модель читает файл, объясняет и дозаполняет поля.
+
+    Уверенные правки платёжек применяются той же дорогой, что ручная проверка (с той же
+    валидацией), с пометкой «проверено ИИ». Неуверенные — только объяснение владельцу.
+    """
+    intake = await session.get(TaxDocumentIntake, intake_id)
+    if intake is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден.")
+    try:
+        result = await ai_review_document(session, intake)
+    except TaxAiError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    return AiDocumentReviewRead.model_validate(result)
+
+
+@router.post("/ai-review", response_model=AiAuditReportRead, dependencies=TAXES_MANAGE)
+async def ai_review_everything(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AiAuditReportRead:
+    """ИИ-ревизия: разобрать все документы, требующие внимания, и проверить контур целиком.
+
+    Модель получает снимок сверки, обязательств и ЕНС-кошелька и возвращает вердикт с
+    замечаниями. Правки данных — только через тот же контур, что ручная проверка.
+    """
+    try:
+        report = await review_all(session)
+    except TaxAiError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    await session.commit()
+    return AiAuditReportRead(
+        verdict=report.verdict,
+        findings=[AiAuditFindingRead.model_validate(f) for f in report.findings],
+        documents=[AiDocumentReviewRead.model_validate(d) for d in report.documents],
+    )
 
 
 @router.get("/sources", response_model=TaxSourcesRead, dependencies=TAXES_READ)
