@@ -366,6 +366,14 @@ export function InvoiceDetailDialog({
   const priceFlagged = detail?.price_control_status === "flagged";
   const priceConfirmed = detail?.price_control_status === "confirmed";
   const priceAnomalies = detail?.price_anomalies ?? [];
+  // Есть что доплачивать. Раньше кнопка «Оплатить» жила под общим условием payment_status ===
+  // 'unpaid' вместе с «Редактировать»/«Удалить», поэтому ПОСЛЕ первой же частичной оплаты она
+  // исчезала, и хвост нельзя было закрыть ничем — ни авансом, ни банком, ни наличными (кейс
+  // Лигая 26.07: зачёт аванса покрыл 153 918 из 153 978, оставшиеся 60 ₽ добить было нечем).
+  // Правка/удаление по-прежнему только для полностью неоплаченной — бэкенд требует именно
+  // unpaid (update_warehouse_invoice, ensure_invoice_deletable), иначе вернёт 409.
+  const hasUnpaidRemainder = (detail?.remaining ?? 0) > 0 && detail?.payment_status !== "void";
+  const isUnpaid = detail?.payment_status === "unpaid";
 
   return (
     <>
@@ -540,14 +548,14 @@ export function InvoiceDetailDialog({
               <ServicePeriodBlock invoiceId={invoiceId} detail={detail} canEdit={canEdit} />
             ) : null}
 
-            {detail.payment_status === "unpaid" && !detail.barter_role && !detail.draft_id ? (
+            {(isUnpaid || hasUnpaidRemainder) && !detail.barter_role && !detail.draft_id ? (
               <div className="flex flex-wrap gap-2">
-                {canEdit ? (
+                {canEdit && isUnpaid ? (
                   <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                     <Pencil size={14} aria-hidden="true" /> Редактировать позиции
                   </Button>
                 ) : null}
-                {onKassaPay ? (
+                {hasUnpaidRemainder && onKassaPay ? (
                   // Кассовый контекст: только наличная оплата с ТК Черникова (как строчная
                   // кнопка Кассы) — банк/сплит администратору Кассы недоступны.
                   <Button
@@ -562,7 +570,7 @@ export function InvoiceDetailDialog({
                   >
                     <Banknote size={14} aria-hidden="true" /> Оплатить с ТК Черникова
                   </Button>
-                ) : canPay ? (
+                ) : hasUnpaidRemainder && canPay ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -573,7 +581,7 @@ export function InvoiceDetailDialog({
                     <Banknote size={14} aria-hidden="true" /> Оплатить
                   </Button>
                 ) : null}
-                {canEdit ? (
+                {canEdit && isUnpaid ? (
                   <Button
                     size="sm"
                     variant="outline"
