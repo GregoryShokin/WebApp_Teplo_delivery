@@ -25,9 +25,9 @@
     "semantic_hash": "b568a54167990682627e45fe5c6ed878"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/.obsidian/workspace.json": {
-    "mtime": 1785073201.1428642,
-    "ast_hash": "a26d840166055c813174c8c07e336803",
-    "semantic_hash": "a26d840166055c813174c8c07e336803"
+    "mtime": 1785074712.1463106,
+    "ast_hash": "c23a5d6abfebfd37094783de8641be2a",
+    "semantic_hash": "c23a5d6abfebfd37094783de8641be2a"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/alembic/env.py": {
     "mtime": 1780068868.3066661,
@@ -3625,9 +3625,9 @@
     "semantic_hash": "a2d02a18c043a86a88db76ff671a884e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/WORK-IN-PROGRESS.md": {
-    "mtime": 1784800873.6581206,
-    "ast_hash": "b3f31233fa0caaae118bdf9ed7f0f819",
-    "semantic_hash": "b3f31233fa0caaae118bdf9ed7f0f819"
+    "mtime": 1785074266.5366066,
+    "ast_hash": "4162e8e4819f643b1d2b97c1e7df73f3",
+    "semantic_hash": "4162e8e4819f643b1d2b97c1e7df73f3"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/app-spec/00-index.md": {
     "mtime": 1780088188.7599561,
@@ -3870,9 +3870,9 @@
     "semantic_hash": "1905c8e1c7358c5213a542cc28b2c547"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-b.yml": {
-    "mtime": 1784203631.6878748,
-    "ast_hash": "96fe74a08dab4f92c7f2f47a2d2eba1a",
-    "semantic_hash": "96fe74a08dab4f92c7f2f47a2d2eba1a"
+    "mtime": 1785074266.5372853,
+    "ast_hash": "5f9f9c13698dd6b8dccc06aa76baf3b0",
+    "semantic_hash": "5f9f9c13698dd6b8dccc06aa76baf3b0"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.yml": {
     "mtime": 1780827127.5287097,
@@ -5195,34 +5195,34 @@
     "semantic_hash": "761dc7643f23a03a778f08c6676ed731"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-c.yml": {
-    "mtime": 1784562714.8309948,
-    "ast_hash": "2525b3baedca296775a257204331516b",
-    "semantic_hash": "2525b3baedca296775a257204331516b"
+    "mtime": 1785074266.5378819,
+    "ast_hash": "8d69edce02a06e2a2fde8e2d03632d2d",
+    "semantic_hash": "8d69edce02a06e2a2fde8e2d03632d2d"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-dds.yml": {
-    "mtime": 1783635369.3844888,
-    "ast_hash": "17991b2b8efcdb2f8b27ad3001341b24",
-    "semantic_hash": "17991b2b8efcdb2f8b27ad3001341b24"
+    "mtime": 1785074266.5384133,
+    "ast_hash": "54e2aecb5b028a41f3e738cc83d71860",
+    "semantic_hash": "54e2aecb5b028a41f3e738cc83d71860"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-partial.yml": {
-    "mtime": 1783941028.8421216,
-    "ast_hash": "cdd9d1864dfb8b89ecccedf0fbc8b070",
-    "semantic_hash": "cdd9d1864dfb8b89ecccedf0fbc8b070"
+    "mtime": 1785074266.5388882,
+    "ast_hash": "ad90263c03365e649d4e98ff5eb8bb11",
+    "semantic_hash": "ad90263c03365e649d4e98ff5eb8bb11"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-payments.yml": {
-    "mtime": 1783860743.2895327,
-    "ast_hash": "77152b508d2afc75ddaffab56eeb1da7",
-    "semantic_hash": "77152b508d2afc75ddaffab56eeb1da7"
+    "mtime": 1785074266.5392475,
+    "ast_hash": "deff88d65fb25c15cd440e8dc4b0575c",
+    "semantic_hash": "deff88d65fb25c15cd440e8dc4b0575c"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-periods.yml": {
-    "mtime": 1784562714.831233,
-    "ast_hash": "7d1f9f2675f0cf8e2d2d3a3b614f801c",
-    "semantic_hash": "7d1f9f2675f0cf8e2d2d3a3b614f801c"
+    "mtime": 1785074266.5394063,
+    "ast_hash": "93c37fe4d49028a429218af4232a4f25",
+    "semantic_hash": "93c37fe4d49028a429218af4232a4f25"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.preview-ic.yml": {
-    "mtime": 1783616466.7532222,
-    "ast_hash": "528c6794fbf9e1fba1ae2bc4da6182d5",
-    "semantic_hash": "528c6794fbf9e1fba1ae2bc4da6182d5"
+    "mtime": 1785074266.539806,
+    "ast_hash": "156d0aeab39803398c2a1820205438a4",
+    "semantic_hash": "156d0aeab39803398c2a1820205438a4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/disign/\u0440\u0430\u0441\u043a\u0430\u0434\u0440\u043e\u0432\u043a\u0430-\u043f\u0440\u043e\u043c\u043e.html": {
     "mtime": 1783599033.368335,
