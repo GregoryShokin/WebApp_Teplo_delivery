@@ -70,11 +70,11 @@ from app.models import (
     Wallet,
 )
 from app.models.tax import TaxBankDraft
-from app.services.banking.fns_enp_requisites import treasury_enp_requisites
 from app.services.payroll_reserves import (
     PAYROLL_RESERVE_LABEL_ADMIN,
     PAYROLL_RESERVE_LABEL_PRODUCTION,
 )
+from app.services.taxes.bank_draft import requisites_for_kind
 
 logger = logging.getLogger(__name__)
 
@@ -794,7 +794,6 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     if not drafts:
         return []
 
-    reqs = treasury_enp_requisites()
     status_map = {
         "ready_to_send": "ready_to_send",
         "in_bank": "in_bank",
@@ -804,6 +803,8 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
     }
     items: list[PaymentItem] = []
     for d in drafts:
+        # Реквизиты по виду налога: ЕНП — ФНС, травматизм — СФР.
+        reqs = requisites_for_kind(d.tax_kind)
         state = status_map.get(d.status, d.status)
         title = d.title or "Единый налоговый платёж (ЕНП)"
         items.append(
@@ -818,7 +819,11 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                 amount=Decimal(d.amount),
                 amount_paid=None,
                 article_id=None,
-                article_name="Налоги — ЕНП",
+                article_name=(
+                    "Налоги — травматизм (СФР)"
+                    if d.tax_kind == "contrib_injury"
+                    else "Налоги — ЕНП"
+                ),
                 method="bank",
                 bank_channel=d.bank_provider,
                 state=state,
@@ -882,12 +887,14 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
         for d in existing_drafts
         if d.status in ("ready_to_send", "in_bank", "failed")
     }
-    reqs = treasury_enp_requisites()
 
     items: list[PaymentItem] = []
     for ob in obligations:
         if (ob.kind, ob.for_period) in draft_keys:
             continue
+        # Реквизиты по виду: всё уходит ЕНПом в ФНС, травматизм — отдельной платёжкой в СФР.
+        reqs = requisites_for_kind(ob.kind)
+        is_injury = ob.kind == "contrib_injury"
         due_dt = datetime.combine(ob.due_date, time.min, tzinfo=UTC) if ob.due_date else None
         extra: dict = {
             "tax": True,
@@ -898,10 +905,8 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
             "due_date": ob.due_date.isoformat() if ob.due_date else None,
             "purpose": str(reqs["paymentPurpose"]),
             "title": ob.title,
-        }
-        if ob.sendable_via_enp:
-            extra["kbk"] = str(reqs["kbk"])
-            extra["requisites"] = {
+            "kbk": str(reqs["kbk"]),
+            "requisites": {
                 "recipientName": str(reqs["recipientName"]),
                 "inn": str(reqs["inn"]),
                 "kpp": str(reqs["kpp"]),
@@ -909,7 +914,8 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
                 "bankBik": str(reqs["bankBik"]),
                 "bankName": str(reqs.get("bankName", "")),
                 "kbk": str(reqs["kbk"]),
-            }
+            },
+        }
         items.append(
             PaymentItem(
                 # Детерминированный id: то же обязательство — та же строка между опросами.
@@ -921,24 +927,18 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
                 ),
                 title=f"{ob.title} · {_fmt_money(Decimal(ob.amount))}",
                 counterparty_id=None,
-                counterparty_name=(
-                    str(reqs["recipientName"]) if ob.sendable_via_enp else "СФР"
-                ),
+                counterparty_name=str(reqs["recipientName"]),
                 amount=Decimal(ob.amount),
                 amount_paid=None,
                 article_id=None,
-                article_name=(
-                    "Налоги — ЕНП"
-                    if ob.sendable_via_enp
-                    else "СФР — отдельная платёжка (не ЕНП)"
-                ),
+                article_name="Налоги — травматизм (СФР)" if is_injury else "Налоги — ЕНП",
                 method="bank",
-                bank_channel="tbank" if ob.sendable_via_enp else None,
+                bank_channel="tbank",
                 state="ready_to_send",
                 bucket=BUCKET_BY_STATE.get("ready_to_send"),
                 created_at=due_dt or datetime.now(UTC),
                 can_edit=False,
-                can_send_to_bank=ob.sendable_via_enp,
+                can_send_to_bank=True,
                 can_pay=False,
                 can_cancel=False,  # обязательство из расчёта/платёжки — отменять нечего
                 extra=extra,

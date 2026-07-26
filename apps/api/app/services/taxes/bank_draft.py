@@ -22,10 +22,22 @@ from app.services.banking.base import PaymentDraftResult
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.fns_enp_requisites import treasury_enp_requisites
 from app.services.banking.payout import payer_account_for, payout_client_for
+from app.services.banking.sfr_injury_requisites import treasury_injury_requisites
 
 
 class TaxDraftError(RuntimeError):
     """Черновик налоговой платёжки создать нельзя — причина в сообщении."""
+
+
+def requisites_for_kind(tax_kind: str | None) -> dict:
+    """Реквизиты получателя по виду налога.
+
+    Всё, кроме травматизма, уходит единым налоговым платежом в ФНС. Травматизм — вне ЕНС:
+    отдельная платёжка в СФР со своим КБК, счётом и статусом плательщика «08».
+    """
+    if tax_kind == "contrib_injury":
+        return treasury_injury_requisites()
+    return treasury_enp_requisites()
 
 
 async def create_tax_bank_draft(
@@ -34,15 +46,16 @@ async def create_tax_bank_draft(
     settings: Settings,
     amount: Decimal,
     purpose: str | None = None,
+    tax_kind: str | None = None,
 ) -> PaymentDraftResult:
-    """Создать черновик платёжки ЕНП в Т-Банк на указанную сумму."""
+    """Создать черновик налоговой платёжки в Т-Банк (по умолчанию — ЕНП в ФНС)."""
     if amount is None or amount <= 0:
         raise TaxDraftError("Сумма платежа должна быть больше нуля.")
     payer_account = payer_account_for(settings, "tbank")
     if not payer_account:
         raise TaxDraftError("Не настроен счёт плательщика в Т-Банке.")
 
-    requisites = treasury_enp_requisites()
+    requisites = requisites_for_kind(tax_kind)
     client = payout_client_for("tbank", session)
     return await client.create_payment_draft(
         document_id=uuid.uuid4().hex,
@@ -73,7 +86,7 @@ async def create_tax_payment_draft(
     """
     if amount is None or amount <= 0:
         raise TaxDraftError("Сумма платежа должна быть больше нуля.")
-    reqs = treasury_enp_requisites()
+    reqs = requisites_for_kind(tax_kind)
     resolved_purpose = (purpose or "").strip() or str(reqs["paymentPurpose"])
 
     # Идемпотентность по (вид налога, год, период), сравнение в Python — null-безопасно.
@@ -150,7 +163,11 @@ async def send_tax_draft_to_bank(
 
     try:
         result = await create_tax_bank_draft(
-            session, settings=settings, amount=draft.amount, purpose=draft.purpose
+            session,
+            settings=settings,
+            amount=draft.amount,
+            purpose=draft.purpose,
+            tax_kind=draft.tax_kind,
         )
     except BankFetchError as exc:
         draft.status = "failed"

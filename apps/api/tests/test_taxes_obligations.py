@@ -68,7 +68,6 @@ async def test_planned_included_settled_excluded(
     usn = [o for o in obligations if o.kind == "usn_advance"]
     assert [str(o.amount) for o in usn] == ["478376.00"]  # q1 закрыт фактом
     assert usn[0].due_date == date(2026, 7, 28)
-    assert usn[0].sendable_via_enp is True
 
 
 async def test_enp_due_comes_from_reconciliation(
@@ -95,13 +94,14 @@ async def test_enp_due_comes_from_reconciliation(
     assert len(enp) == 1
     assert enp[0].for_period == "2026-06"
     assert str(enp[0].amount) == "12103.30"  # взносы + НДФЛ июня, срок 28.07
-    assert enp[0].sendable_via_enp is True
 
 
-async def test_injury_is_visible_but_not_sendable_via_enp(
+async def test_injury_obligation_uses_sfr_requisites(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Травматизм платится в СФР по своим реквизитам — строка есть, кнопки ЕНП нет."""
+    """Травматизм — в списке «к уплате», а контур отправки даёт ему реквизиты СФР (не ЕНП)."""
+    from app.services.taxes.bank_draft import requisites_for_kind
+
     async with async_session_factory() as session:
         session.add(
             _planned("contrib_injury", "100", date(2026, 8, 15), "2026-07", recipient="sfr")
@@ -112,4 +112,9 @@ async def test_injury_is_visible_but_not_sendable_via_enp(
 
     injury = [o for o in obligations if o.kind == "contrib_injury"]
     assert len(injury) == 1
-    assert injury[0].sendable_via_enp is False
+    reqs = requisites_for_kind("contrib_injury")
+    assert reqs["kbk"] == "79710212000061000160"  # КБК травматизма, не ЕНП
+    assert reqs["taxPayerStatus"] == "08"
+    assert "ОСФР" in reqs["recipientName"]
+    # Остальные виды по-прежнему уходят ЕНПом в ФНС.
+    assert requisites_for_kind("usn_advance")["kbk"] == "18201061201010000510"

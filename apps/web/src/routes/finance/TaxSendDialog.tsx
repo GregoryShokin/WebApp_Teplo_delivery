@@ -60,6 +60,8 @@ export function TaxSendDialog({
 
   const reqs = (row?.extra.requisites ?? {}) as Requisites;
   const lastError = typeof row?.extra.last_error === "string" ? row.extra.last_error : null;
+  // Травматизм — единственный зарплатный налог вне ЕНС: получатель СФР, не ФНС.
+  const recipientLabel = row?.extra.tax_kind === "contrib_injury" ? "СФР" : "ФНС";
   const value = Number(amount.replace(",", ".").replace(/\s/g, ""));
   const valid = value > 0;
 
@@ -112,16 +114,20 @@ export function TaxSendDialog({
           <DialogDescription>{row?.title}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        {/* min-w-0: этот div — grid-элемент DialogContent; без него длинный получатель
+            (УФК/ОСФР) распирает диалог, и значения реквизитов уезжают за правый край. */}
+        <div className="min-w-0 space-y-3">
           {lastError ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               Прошлая попытка отклонена банком: {lastError}
             </div>
           ) : null}
 
-          <div className="rounded-md border bg-muted/40 p-3 text-sm">
+          {/* min-w-0: блок — grid-элемент диалога; без него длинное имя получателя (УФК/ОСФР)
+              распирает диалог и уводит значения за правый край. */}
+          <div className="min-w-0 rounded-md border bg-muted/40 p-3 text-sm">
             <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <ShieldCheck size={13} /> Получатель — реквизиты ФНС, менять нельзя
+              <ShieldCheck size={13} /> Получатель — реквизиты {recipientLabel}, менять нельзя
             </div>
             <ReqRow label="Получатель" value={reqs.recipientName} />
             <ReqRow label="ИНН / КПП" value={[reqs.inn, reqs.kpp].filter(Boolean).join(" / ")} />
@@ -176,7 +182,14 @@ function ReqRow({ label, value }: { label: string; value?: string | null }) {
   return (
     <div className="flex justify-between gap-3 py-0.5">
       <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate text-right font-medium tabular-nums">{value || "—"}</span>
+      {/* min-w-0 обязателен: без него truncate во flex не работает, и длинное имя
+          получателя (УФК/ОСФР) распирает диалог горизонтальным скроллом. */}
+      <span
+        className="min-w-0 truncate text-right font-medium tabular-nums"
+        title={value || undefined}
+      >
+        {value || "—"}
+      </span>
     </div>
   );
 }

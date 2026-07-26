@@ -123,3 +123,23 @@ async def test_prepare_draft_is_idempotent_and_guards_in_bank(
                 for_year=2026,
                 for_period="h1",
             )
+
+
+def test_injury_payload_goes_to_sfr_not_enp() -> None:
+    """Платёжка травматизма собирается на реквизиты СФР: свой КБК, статус «08», счёт УФК
+    по Ростовской области — а не на ЕНП-реквизиты ФНС."""
+    from app.services.banking.sfr_injury_requisites import treasury_injury_requisites
+
+    payload = build_payment_draft_api_payload(
+        document_id="abc123",
+        amount=Decimal("100.00"),
+        purpose="Страховые взносы от несчастных случаев (травматизм)",
+        requisites=treasury_injury_requisites(),
+        payer_account="40802810900000000001",
+    )
+    assert payload["kbk"] == "79710212000061000160"
+    assert payload["taxPayerStatus"] == "08"
+    assert payload["oktmo"] == "60712000"
+    assert payload["bankAcnt"] == "03100643000000015800"
+    assert payload["bankBik"] == "016015102"
+    assert "ОСФР" in payload["recipientName"]

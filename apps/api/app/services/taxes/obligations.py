@@ -71,7 +71,11 @@ def is_settled(planned: TaxPayment, paid_rows: list[TaxPayment]) -> bool:
 
 @dataclass(frozen=True)
 class PayableObligation:
-    """Одно «надо платить» для окна активных платежей."""
+    """Одно «надо платить» для окна активных платежей.
+
+    Реквизиты получателя выбираются по виду (``requisites_for_kind``): всё идёт ЕНПом в ФНС,
+    травматизм — отдельной платёжкой в СФР со своим КБК.
+    """
 
     kind: str
     for_year: int | None
@@ -79,8 +83,6 @@ class PayableObligation:
     title: str
     amount: Decimal
     due_date: date | None
-    # Травматизм идёт в СФР по своим реквизитам — банковский контур ЕНП его не отправит.
-    sendable_via_enp: bool
 
 
 def _title(kind: str, period: str | None) -> str:
@@ -117,7 +119,6 @@ async def list_payable_obligations(
                 title=_title(row.kind, row.for_period),
                 amount=row.amount,
                 due_date=row.paid_on,  # у плановой строки в paid_on лежит СРОК уплаты
-                sendable_via_enp=row.kind != "contrib_injury",
             )
         )
         seen.add((row.kind, row.for_period))
@@ -143,7 +144,6 @@ async def list_payable_obligations(
                 title=line.label,
                 amount=Decimal(line.payable_amount),
                 due_date=line.due_date,
-                sendable_via_enp=line.tax_kind != "contrib_injury",
             )
         )
         seen.add((line.tax_kind, line.period_code))
