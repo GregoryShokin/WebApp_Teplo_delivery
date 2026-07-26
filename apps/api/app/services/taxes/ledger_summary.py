@@ -8,8 +8,8 @@
 Одна строка — один вид платежа, три числа:
 
 * **начислено** — сколько должно быть по расчёту/документам за год нарастающим итогом;
-* **уплачено** — сколько реально ушло (факты из банка; для зарплатных месяцев без
-  банковского факта — разнос оборотки, который по конвенции считается уплаченным в срок);
+* **уплачено** — сколько РЕАЛЬНО ушло из банка (как и в вычете: конвенция «в срок
+  считаем уплаченным» деньгами не является и сюда не входит — она отдельной пометкой);
 * **осталось** — разница, но не меньше нуля (переплата показывается отдельным полем).
 
 Здесь НЕ считается вычет: он живёт в движке и отвечает на другой вопрос — «насколько
@@ -46,6 +46,8 @@ class LedgerRow:
     # (НДФЛ не уменьшает никогда: это налог работника, удержанный из его зарплаты).
     reduces_tax: bool
     recipient: str  # 'fns' | 'sfr'
+    # Принято уплаченным по сроку, но банковского факта нет (дыра факт-слоя).
+    paid_by_convention: Decimal = ZERO
     note: str | None = None
 
 
@@ -100,18 +102,22 @@ async def _payroll_accrued(session: AsyncSession, *, year: int) -> _PayrollAccru
 
 async def _paid_by_kind(
     session: AsyncSession, *, year: int, kinds: tuple[str, ...], as_of: date
-) -> Decimal:
-    """Уплачено на дату среза по видам, без задвоения банка и кассовой конвенции.
+) -> tuple[Decimal, Decimal]:
+    """Уплачено на дату среза: ``(реальные списания, принятое по сроку)``.
 
-    За один месяц банковский факт и разнос оборотки описывают ОДИН платёж: если есть
-    банковский факт — берём его, иначе конвенцию (та же логика, что в сверке).
-    Срез обязателен: движок берёт взносы ИП по ``paid_on <= as_of``, и без того же
-    ограничения строки таблицы считались бы на разные даты.
+    «Уплачено» — это ДЕНЬГИ ИЗ БАНКА, ровно как считает движок (``exclude_source=
+    ('tax_notice',)``, repository.py). Разнос оборотки (``tax_notice``) — не факт уплаты,
+    а конвенция «в срок считаем уплаченным»; складывать его с банковскими фактами нельзя:
+    исторический платёж без периода (39 029 ₽ = взносы за три месяца) и помесячная
+    конвенция за те же месяцы дают ДВОЙНОЙ СЧЁТ — так на стенде и получилось «уплачено
+    больше начисленного» (находка владельца 27.07.2026).
+
+    Вторым числом возвращаем сумму конвенции — её показываем отдельной пометкой, чтобы
+    было видно, где банковский факт ещё не найден (дыра факт-слоя, закрывается бэкфиллом).
     """
     rows = (
         await session.execute(
             select(
-                TaxPayment.for_period,
                 TaxPayment.source_kind,
                 func.coalesce(func.sum(TaxPayment.amount), 0),
             )
@@ -121,18 +127,17 @@ async def _paid_by_kind(
                 TaxPayment.kind.in_(kinds),
                 TaxPayment.paid_on <= as_of,
             )
-            .group_by(TaxPayment.for_period, TaxPayment.source_kind)
+            .group_by(TaxPayment.source_kind)
         )
     ).all()
-    by_period: dict[str | None, dict[str, Decimal]] = {}
-    for period, source, total in rows:
-        bucket = by_period.setdefault(period, {"bank": ZERO, "notice": ZERO})
-        key = "notice" if source == "tax_notice" else "bank"
-        bucket[key] += Decimal(str(total))
-    return sum(
-        (bucket["bank"] if bucket["bank"] > ZERO else bucket["notice"])
-        for bucket in by_period.values()
-    ) or ZERO
+    bank = ZERO
+    notice = ZERO
+    for source, total in rows:
+        if source == "tax_notice":
+            notice += Decimal(str(total))
+        else:
+            bank += Decimal(str(total))
+    return bank, notice
 
 
 def _left(accrued: Decimal | None, paid: Decimal, *, comparable: bool = True) -> Decimal | None:
@@ -187,7 +192,7 @@ async def build_ledger_summary(
         )
     )
 
-    contrib_paid = await _paid_by_kind(
+    contrib_paid, contrib_convention = await _paid_by_kind(
         session, year=year, kinds=("contrib_employees",), as_of=as_of
     )
     rows.append(
@@ -203,11 +208,14 @@ async def build_ledger_summary(
             ),
             reduces_tax=True,
             recipient="fns",
+            paid_by_convention=contrib_convention,
             note=payroll_note or "Начисления — из оборотки бухгалтера",
         )
     )
 
-    ndfl_paid = await _paid_by_kind(session, year=year, kinds=("ndfl",), as_of=as_of)
+    ndfl_paid, ndfl_convention = await _paid_by_kind(
+        session, year=year, kinds=("ndfl",), as_of=as_of
+    )
     rows.append(
         LedgerRow(
             kind="ndfl",
@@ -219,6 +227,7 @@ async def build_ledger_summary(
             ),
             reduces_tax=False,
             recipient="fns",
+            paid_by_convention=ndfl_convention,
             note=(
                 payroll_note
                 or "Налог работника: удерживается из зарплаты, налог ИП не уменьшает"
@@ -252,7 +261,9 @@ async def build_ledger_summary(
         )
     )
 
-    injury_paid = await _paid_by_kind(session, year=year, kinds=("contrib_injury",), as_of=as_of)
+    injury_paid, injury_convention = await _paid_by_kind(
+        session, year=year, kinds=("contrib_injury",), as_of=as_of
+    )
     rows.append(
         LedgerRow(
             kind="contrib_injury",
@@ -266,6 +277,7 @@ async def build_ledger_summary(
             ),
             reduces_tax=True,
             recipient="sfr",
+            paid_by_convention=injury_convention,
             note=payroll_note or "Платится в СФР отдельной платёжкой, не через ЕНП",
         )
     )

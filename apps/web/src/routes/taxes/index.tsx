@@ -833,7 +833,14 @@ function LedgerBlock({ ledger, state }: { ledger: LedgerSummary; state: TaxState
             <TableRow>
               <TableHead className="min-w-[240px]">Налог или взнос</TableHead>
               <TableHead className="text-right">Начислено</TableHead>
-              <TableHead className="text-right">Уплачено</TableHead>
+                  <TableHead className="text-right">
+                Уплачено
+                <InfoHint label="колонка «Уплачено»">
+                  Реальные списания по выписке банка — то же, что уменьшает налог. Платежи,
+                  принятые уплаченными по сроку, но не найденные в выписке, показаны отдельной
+                  подписью «по сроку».
+                </InfoHint>
+              </TableHead>
               <TableHead className="text-right">Осталось</TableHead>
             </TableRow>
           </TableHeader>
@@ -865,6 +872,20 @@ function LedgerBlock({ ledger, state }: { ledger: LedgerSummary; state: TaxState
                   </TableCell>
                   <TableCell className="text-right align-top tabular-nums">
                     {formatMoney(row.paid)}
+                    {/* СУММУ конвенции не показываем: чаще всего это те же деньги, что и
+                        банковский платёж, просто разложенные по месяцам, — сложение читалось
+                        бы как вторая уплата. Только пометка + объяснение под «i». */}
+                    {toNumber(row.paid_by_convention ?? 0) > 0 ? (
+                      <div className="text-xs font-normal text-muted-foreground">
+                        часть — по сроку
+                        <InfoHint label="уплаты, принятые по сроку">
+                          Здесь только реальные списания из выписки. По части месяцев уплата
+                          принята по сроку из оборотки, а банковский факт ещё не найден —
+                          обычно это исторический платёж, ушедший одной суммой за несколько
+                          месяцев. Поэтому помесячное сравнение по этой строке неточное.
+                        </InfoHint>
+                      </div>
+                    ) : null}
                   </TableCell>
                   <TableCell
                     className={`text-right align-top tabular-nums ${

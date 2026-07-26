@@ -129,6 +129,8 @@ export type LedgerRow = {
   /** Уменьшает ли платёж налог УСН (НДФЛ — никогда). */
   reduces_tax: boolean;
   recipient: string;
+  /** Принято уплаченным по сроку, банковского факта нет. */
+  paid_by_convention?: Money;
   note?: string | null;
 };
 

@@ -166,6 +166,8 @@ class LedgerRowRead(BaseModel):
     # Уменьшает ли платёж налог УСН (НДФЛ — никогда: это налог работника).
     reduces_tax: bool
     recipient: str
+    # Принято уплаченным по сроку, но банковского факта нет (дыра факт-слоя).
+    paid_by_convention: Decimal = Decimal("0")
     note: str | None = None
 
 
