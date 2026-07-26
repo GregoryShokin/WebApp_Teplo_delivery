@@ -270,7 +270,8 @@ async def get_tax_debt(
             for_period=ob.for_period,
             amount=ob.amount,
             due_date=ob.due_date,
-            draft_status=_draft_status(ob.kind, ob.for_period),
+            draft_status=None if ob.is_projection else _draft_status(ob.kind, ob.for_period),
+            is_projection=ob.is_projection,
         )
         for ob in sorted(obligations, key=lambda o: (o.due_date or moment, -o.amount))
     ]

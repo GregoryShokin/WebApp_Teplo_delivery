@@ -44,6 +44,16 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Смотреть историю изменений администрации",
     ),
     ("staff.freelancer_pin.read", "Штат", "Смотреть ПИН внештатника"),
+    (
+        "staff.official.read",
+        "Штат",
+        "Смотреть официальный контур сотрудника (оклад, вычеты, статус)",
+    ),
+    (
+        "staff.official.manage",
+        "Штат",
+        "Вести официальный контур сотрудника (официальные ФИО, оклад, вычет НДФЛ)",
+    ),
     ("staff.cooks.read", "Штат", "Смотреть поваров"),
     ("staff.cooks.create", "Штат", "Создавать поваров"),
     ("staff.cooks.edit", "Штат", "Редактировать поваров"),
@@ -798,6 +808,9 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.penalty.waive",
         # ПИН внештатника — только у тех, кто выдаёт смены (owner/admin/управляющий).
         "staff.freelancer_pin.read",
+        # Официальный контур (оклады, вычеты НДФЛ) — чувствительные данные, только owner/admin.
+        "staff.official.read",
+        "staff.official.manage",
         # Цель депозита ниже дефолта категории — точечное право (только owner/admin).
         "payroll.production_deposits.target_below_category",
     }

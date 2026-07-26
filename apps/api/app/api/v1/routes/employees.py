@@ -70,6 +70,8 @@ from app.schemas.employees import (
     FreelancerAttendanceCaseRead,
     FreelancerCardPatch,
     IikoEmployeeRoleRead,
+    OfficialProfileRead,
+    OfficialProfileUpdate,
     SyncResultRead,
 )
 from app.services import (
@@ -198,6 +200,25 @@ async def _require_dismissal_reasons_edit(
 # Право просмотра ПИН внештатника: ПИН видят только те, кто выдаёт смены
 # (владелец/админ/управляющий), а не все со Штатом.
 FREELANCER_PIN_READ_PERMISSION = "staff.freelancer_pin.read"
+OFFICIAL_READ_PERMISSION = "staff.official.read"
+OFFICIAL_MANAGE_PERMISSION = "staff.official.manage"
+
+
+async def _require_official_read(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    if not (
+        permission_is_granted(OFFICIAL_READ_PERMISSION, actor.permissions)
+        or permission_is_granted(OFFICIAL_MANAGE_PERMISSION, actor.permissions)
+    ):
+        raise HTTPException(status_code=403, detail="Нет права видеть официальный контур")
+
+
+async def _require_official_manage(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> None:
+    if not permission_is_granted(OFFICIAL_MANAGE_PERMISSION, actor.permissions):
+        raise HTTPException(status_code=403, detail="Нет права вести официальный контур")
 
 
 def _actor_can_see_freelancer_pin(actor: CurrentActor | None) -> bool:
@@ -4328,3 +4349,87 @@ async def _close_active_shift_entries_on_dismiss(
                 after_value=after,
             )
         )
+
+
+# ── Официальный зарплатный контур (решение владельца 26.07.2026) ─────────────────
+# Отдельный субресурс: оклады и вычеты — чувствительные данные, в общие списки и
+# EmployeeRead они не попадают (там только флаг is_official). По этим полям налоговый
+# модуль прогнозирует начисления (НДФЛ, взносы МСП, травматизм) до прихода оборотки.
+
+
+@router.get(
+    "/{employee_id}/official",
+    response_model=OfficialProfileRead,
+    dependencies=(Depends(_require_official_read),),
+)
+async def get_official_profile(
+    employee_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OfficialProfileRead:
+    employee = await _get_employee_or_404(session, employee_id)
+    return OfficialProfileRead.model_validate(employee)
+
+
+@router.put(
+    "/{employee_id}/official",
+    response_model=OfficialProfileRead,
+    dependencies=(Depends(_require_official_manage),),
+)
+async def put_official_profile(
+    employee_id: uuid.UUID,
+    payload: OfficialProfileUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> OfficialProfileRead:
+    """Обновить официальный контур целиком (PUT-семантика).
+
+    Обязательность официальных ФИО и оклада при включённом флаге валидирует схема.
+    Каждая правка пишется в историю изменений сотрудника (аудит тот же, что у прочих
+    полей карточки).
+    """
+    employee = await _get_employee_or_404(session, employee_id)
+
+    fields = (
+        "is_official",
+        "official_full_name",
+        "official_tab_number",
+        "official_salary",
+        "official_ndfl_deduction",
+        "official_status",
+    )
+
+    def _snapshot() -> dict[str, Any]:
+        return {
+            f: (str(v) if isinstance(v := getattr(employee, f), Decimal) else v)
+            for f in fields
+        }
+
+    before = _snapshot()
+    employee.is_official = payload.is_official
+    employee.official_full_name = payload.official_full_name
+    employee.official_tab_number = payload.official_tab_number
+    employee.official_salary = payload.official_salary
+    employee.official_ndfl_deduction = payload.official_ndfl_deduction
+    employee.official_status = payload.official_status
+    after = _snapshot()
+
+    if after != before:
+        await employee_change_event_service.add_employee_change_event(
+            session,
+            employee_id=employee.id,
+            change_type="official_profile_update",
+            source="app",
+            summary=(
+                "Официальный контур: "
+                + ("оформлен официально" if payload.is_official else "официальный контур выключен")
+            ),
+            actor_user_id=actor.user_id,
+            actor_label=employee_change_event_service.actor_label_from_roles(actor.roles),
+            before_value=before,
+            after_value=after,
+            related_entity_type="employee",
+            related_entity_id=employee.id,
+        )
+    await session.commit()
+    await session.refresh(employee)
+    return OfficialProfileRead.model_validate(employee)

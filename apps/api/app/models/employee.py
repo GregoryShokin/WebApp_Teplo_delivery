@@ -71,6 +71,14 @@ class Employee(Base):
             "freelancer_shift_rate is null or freelancer_shift_rate > 0",
             name="ck_employee_freelancer_shift_rate_positive",
         ),
+        CheckConstraint(
+            "official_status in ('working', 'maternity_leave')",
+            name="ck_employee_official_status_value",
+        ),
+        CheckConstraint(
+            "official_salary is null or official_salary > 0",
+            name="ck_employee_official_salary_positive",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -149,6 +157,48 @@ class Employee(Base):
             "source=app_managed; договорная ставка внештатника за 12-часовую смену, ₽. "
             "Начисление = ставка/12 × фактические часы явки (без доплат пт/сб и +1ч)"
         ),
+    )
+    # ── Официальный зарплатный контур (решение владельца 26.07.2026) ─────────────
+    # Официальные данные ≠ внутренние: имя в iiko может быть псевдонимом («Victoria
+    # Manager»), реальная зарплата — отличаться от официального оклада. Синк iiko эти
+    # поля НЕ трогает; чтение/правка — только под правами staff.official.read/manage.
+    # По официальным сотрудникам налоговый модуль прогнозирует начисления (НДФЛ,
+    # взносы МСП, травматизм) за отработанные месяцы до прихода оборотки бухгалтера.
+    is_official: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="source=app_managed; сотрудник оформлен официально (трудовой договор)",
+    )
+    official_full_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="source=app_managed; ФИО по трудовому договору — для сверки с документами ФНС",
+    )
+    official_tab_number: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+        comment="source=app_managed; табельный номер — ключ сверки с обороткой бухгалтера",
+    )
+    official_salary: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+        comment="source=app_managed; официальный оклад по трудовому договору, ₽/мес",
+    )
+    official_ndfl_deduction: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+        comment="source=app_managed; стандартный вычет НДФЛ (детский и т.п.), ₽/мес",
+    )
+    official_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="working",
+        server_default="working",
+        comment="source=app_managed; working — начисления идут, maternity_leave — нет",
     )
     status: Mapped[str] = mapped_column(
         employee_status_enum,

@@ -210,6 +210,15 @@ class EmployeeRead(BaseModel):
     freelancer_shift_rate: Decimal | None = None
     freelancer_card: FreelancerCardRead | None = None
     status: EmployeeStatus
+    # Флаг официального оформления виден всем со staff.*.read; сами официальные данные
+    # (оклад, вычеты, табельный) отдаются ТОЛЬКО субресурсом /official под правом
+    # staff.official.read — в общие списки они не попадают.
+    is_official: bool = False
+
+    @field_validator("is_official", mode="before")
+    @classmethod
+    def _default_official_false(cls, value: object) -> object:
+        return False if value is None else value
 
     @field_validator(
         "is_courier_placeholder", "is_freelancer_placeholder", "is_freelancer_temp", mode="before"
@@ -666,3 +675,68 @@ class SyncResultRead(BaseModel):
 
 class ErrorDetail(BaseModel):
     detail: str | dict[str, Any]
+
+
+OFFICIAL_STATUSES: tuple[str, ...] = ("working", "maternity_leave")
+
+
+class OfficialProfileRead(BaseModel):
+    """Официальный контур сотрудника — субресурс под правом ``staff.official.read``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    is_official: bool = False
+    official_full_name: str | None = None
+    official_tab_number: str | None = None
+    official_salary: Decimal | None = None
+    official_ndfl_deduction: Decimal = Decimal("0")
+    official_status: str = "working"
+
+
+class OfficialProfileUpdate(BaseModel):
+    """Полное обновление официального контура (PUT-семантика: пишутся все поля разом).
+
+    При включённом флаге официальные ФИО и оклад ОБЯЗАТЕЛЬНЫ (решение владельца
+    26.07.2026): без них не сматчить сотрудника с документами ФНС и не посчитать
+    прогнозные начисления. Табельный номер желателен, но его присваивает бухгалтер —
+    не блокируем.
+    """
+
+    is_official: bool
+    official_full_name: str | None = Field(default=None, max_length=255)
+    official_tab_number: str | None = Field(default=None, max_length=16)
+    official_salary: Decimal | None = None
+    official_ndfl_deduction: Decimal = Decimal("0")
+    official_status: str = "working"
+
+    @field_validator("official_full_name", "official_tab_number")
+    @classmethod
+    def _strip_or_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("official_status")
+    @classmethod
+    def _validate_status(cls, value: str) -> str:
+        if value not in OFFICIAL_STATUSES:
+            raise ValueError("Статус: working (работает) или maternity_leave (декрет)")
+        return value
+
+    @field_validator("official_ndfl_deduction")
+    @classmethod
+    def _validate_deduction(cls, value: Decimal) -> Decimal:
+        if value < 0:
+            raise ValueError("Вычет НДФЛ не может быть отрицательным")
+        return value
+
+    @model_validator(mode="after")
+    def _require_fields_when_official(self) -> OfficialProfileUpdate:
+        if not self.is_official:
+            return self
+        if not self.official_full_name or len(self.official_full_name.split()) < 2:
+            raise ValueError("Для официального сотрудника укажите официальные фамилию и имя")
+        if self.official_salary is None or self.official_salary <= 0:
+            raise ValueError("Для официального сотрудника укажите официальный оклад")
+        return self

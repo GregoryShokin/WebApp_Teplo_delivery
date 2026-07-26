@@ -471,6 +471,8 @@ class TaxDebtItemRead(BaseModel):
     # 'ready_to_send' | 'in_bank' — платёж уже в работе; долг им НЕ гасится
     # (гасит только факт списания из выписки), но статус владельцу виден.
     draft_status: str | None = None
+    # Прогноз официального контура (документов ещё нет): в долге виден, платить рано.
+    is_projection: bool = False
 
 
 class EnsWalletRead(BaseModel):

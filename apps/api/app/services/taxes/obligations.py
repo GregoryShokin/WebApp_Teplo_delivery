@@ -75,6 +75,11 @@ class PayableObligation:
 
     Реквизиты получателя выбираются по виду (``requisites_for_kind``): всё идёт ЕНПом в ФНС,
     травматизм — отдельной платёжкой в СФР со своим КБК.
+
+    ``is_projection`` — строка из прогнозного слоя официального контура (стандартный месяц
+    по карточкам сотрудников, документов ещё нет): в долге УДКЗ она видна, но платить по
+    ней нельзя — платим по платёжкам бухгалтера, поэтому в окно «Активные платежи» и под
+    кнопку «В банк» прогноз не попадает.
     """
 
     kind: str
@@ -83,6 +88,7 @@ class PayableObligation:
     title: str
     amount: Decimal
     due_date: date | None
+    is_projection: bool = False
 
 
 def _title(kind: str, period: str | None) -> str:
@@ -148,4 +154,101 @@ async def list_payable_obligations(
         )
         seen.add((line.tax_kind, line.period_code))
 
+    # 3) Прогнозный слой официального контура (решение владельца 26.07.2026): сотрудник
+    # отработал месяц — долг появился, не дожидаясь оборотки. Строится строго как
+    # ДОПОЛНЕНИЕ: только полные месяцы БЕЗ оборотки (по остальным работают сверка и
+    # документный слой). Плюс годовой остаток фиксированных взносов ИП — сумма года
+    # известна заранее (ст. 430 НК). Прогнозные строки не платёжные (is_projection).
+    result.extend(await _projection_layer(session, today=today, seen=seen))
+
     return result
+
+
+async def _projection_layer(
+    session: AsyncSession, *, today: date, seen: set[tuple[str, str | None]]
+) -> list[PayableObligation]:
+    from app.services.taxes.official_payroll import (
+        fixed_contribution_remainder,
+        injury_due,
+        months_without_turnover,
+        official_month_accrual,
+        paid_enp_month_covered,
+        payroll_enp_projection_due,
+    )
+    from app.services.taxes.reconcile import _MONTHS_RU_GENITIVE
+    from app.services.taxes.repository import year_config
+
+    try:
+        cfg = year_config(today.year)
+    except Exception:  # noqa: BLE001 - нет конфига года — прогнозный слой просто молчит
+        return []
+    if cfg.regime != "usn_income":
+        return []
+
+    items: list[PayableObligation] = []
+    year = today.year
+
+    for month in await months_without_turnover(session, year=year, today=today):
+        accrual = await official_month_accrual(session, year=year, month=month, cfg=cfg)
+        if accrual is None:
+            continue
+        period = f"{year}-{month:02d}"
+        month_name = _MONTHS_RU_GENITIVE[month - 1]
+        if (
+            accrual.enp_total > 0
+            and ("enp_payroll", period) not in seen
+            and not await paid_enp_month_covered(session, year=year, month=month)
+        ):
+            items.append(
+                PayableObligation(
+                    kind="enp_payroll",
+                    for_year=year,
+                    for_period=period,
+                    title=f"Зарплатный ЕНП за {month_name} · прогноз",
+                    amount=accrual.enp_total,
+                    due_date=payroll_enp_projection_due(year, month),
+                    is_projection=True,
+                )
+            )
+            seen.add(("enp_payroll", period))
+        if (
+            accrual.injury > 0
+            and ("contrib_injury", period) not in seen
+            and not await _injury_month_covered(session, year=year, month=month)
+        ):
+            items.append(
+                PayableObligation(
+                    kind="contrib_injury",
+                    for_year=year,
+                    for_period=period,
+                    title=f"Взносы на травматизм (0,2%) за {month_name} · прогноз",
+                    amount=accrual.injury,
+                    due_date=injury_due(year, month),
+                    is_projection=True,
+                )
+            )
+            seen.add(("contrib_injury", period))
+
+    remainder = await fixed_contribution_remainder(session, year=year, cfg=cfg)
+    if remainder > 0 and ("contrib_fixed", "year") not in seen:
+        from app.services.taxes.engine import fixed_contribution_due
+
+        items.append(
+            PayableObligation(
+                kind="contrib_fixed",
+                for_year=year,
+                for_period="year",
+                title="Взносы ИП «за себя» · остаток года",
+                amount=remainder,
+                due_date=fixed_contribution_due(year),
+                is_projection=True,
+            )
+        )
+        seen.add(("contrib_fixed", "year"))
+    return items
+
+
+async def _injury_month_covered(session: AsyncSession, *, year: int, month: int) -> bool:
+    from app.services.taxes.official_payroll import _paid_injury_month_covered
+
+    return await _paid_injury_month_covered(session, year=year, month=month)

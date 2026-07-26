@@ -3613,6 +3613,29 @@ export async function patchEmployee(id: string, patch: EmployeePatch): Promise<E
   return response.data;
 }
 
+/** Официальный контур сотрудника — субресурс под правом staff.official.read/manage. */
+export interface OfficialProfile {
+  is_official: boolean;
+  official_full_name: string | null;
+  official_tab_number: string | null;
+  official_salary: string | null;
+  official_ndfl_deduction: string;
+  official_status: "working" | "maternity_leave";
+}
+
+export async function fetchOfficialProfile(employeeId: string): Promise<OfficialProfile> {
+  const response = await api.get<OfficialProfile>(`/employees/${employeeId}/official`);
+  return response.data;
+}
+
+export async function putOfficialProfile(
+  employeeId: string,
+  payload: OfficialProfile,
+): Promise<OfficialProfile> {
+  const response = await api.put<OfficialProfile>(`/employees/${employeeId}/official`, payload);
+  return response.data;
+}
+
 export async function changeEmployeePosition(
   employeeId: string,
   payload: EmployeePositionChangePayload,

@@ -890,6 +890,10 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
 
     items: list[PaymentItem] = []
     for ob in obligations:
+        # Прогнозные строки официального контура — не платёжные: платим по платёжкам
+        # бухгалтера. В долге УДКЗ прогноз виден, в очередь оплат не попадает.
+        if ob.is_projection:
+            continue
         if (ob.kind, ob.for_period) in draft_keys:
             continue
         # Реквизиты по виду: всё уходит ЕНПом в ФНС, травматизм — отдельной платёжкой в СФР.

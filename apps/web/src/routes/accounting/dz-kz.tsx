@@ -259,6 +259,8 @@ type TaxDebt = {
     amount: number;
     due_date: string | null;
     draft_status: string | null;
+    // Прогноз официального контура (документов ещё нет): в долге виден, платить рано.
+    is_projection?: boolean;
   }[];
   // Расчётный ЕНС-кошелёк: переплата в бюджет считается из фактов и начислений,
   // а не вводится руками (решение владельца 26.07.2026) — поэтому не протухает.
@@ -840,7 +842,11 @@ function TaxDebtCard({ query }: { query: ReturnType<typeof useQuery<TaxDebt>> })
                 <TableStatus colSpan={4} state="empty" />
               ) : (
                 query.data.items.map((row) => {
-                  const overdue = row.due_date != null && row.due_date < today && !row.draft_status;
+                  const overdue =
+                    row.due_date != null &&
+                    row.due_date < today &&
+                    !row.draft_status &&
+                    !row.is_projection;
                   return (
                     <TableRow key={`${row.kind}:${row.for_period ?? "year"}`}>
                       <TableCell className="font-medium">{row.title}</TableCell>
@@ -851,9 +857,11 @@ function TaxDebtCard({ query }: { query: ReturnType<typeof useQuery<TaxDebt>> })
                         {overdue ? " · срок прошёл" : ""}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {row.draft_status
-                          ? (TAX_DRAFT_STATUS_LABEL[row.draft_status] ?? row.draft_status)
-                          : "к уплате"}
+                        {row.is_projection
+                          ? "прогноз — ждём документы"
+                          : row.draft_status
+                            ? (TAX_DRAFT_STATUS_LABEL[row.draft_status] ?? row.draft_status)
+                            : "к уплате"}
                       </TableCell>
                       <TableCell className="text-right font-semibold tabular-nums text-rose-700">
                         {money.format(row.amount)}

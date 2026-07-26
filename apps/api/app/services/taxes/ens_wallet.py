@@ -45,6 +45,7 @@ from app.models.tax import TaxPayment
 from app.services.taxes.engine import (
     PERIOD_SEQ,
     compute_tax_state,
+    fixed_contribution_due,
     period_end_date,
 )
 from app.services.taxes.repository import load_tax_inputs, year_config
@@ -173,7 +174,7 @@ async def compute_ens_wallet(session: AsyncSession, *, as_of: date) -> EnsWallet
     fixed_facts = await _bank_facts_sum(
         session, kinds=("contrib_fixed",), start=jan1, end=as_of
     )
-    if as_of >= date(year, 12, 28):
+    if as_of >= fixed_contribution_due(year):
         recognized += cfg.fixed_contribution
     else:
         recognized += min(fixed_facts, cfg.fixed_contribution)

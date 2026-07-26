@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 
 import { EmployeeDepositSection } from "@/components/deposits/EmployeeDepositSection";
+import { OfficialContourSection } from "@/components/staff/OfficialContourSection";
 import {
   extractDepositSettings,
   formatMoney as formatDepositMoney,
@@ -4619,6 +4620,8 @@ function StaffEditor({
             </label>
           </div>
         ) : null}
+
+        <OfficialContourSection employeeId={employee.id} />
 
         <EmployeeDepositSection
           deposit={employeeDeposit}
