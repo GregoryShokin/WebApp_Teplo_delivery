@@ -476,3 +476,58 @@ async def test_recon_line_shows_active_draft_status(
     assert line.draft_status == "in_bank"
     # А у строки без черновика статуса нет.
     assert _line(recon, "usn_advance", "q1").draft_status is None
+
+
+async def test_payments_registry_shows_only_bank_facts(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Журнал «Платежи» — только реальные списания: без планов и без разноса из оборотки.
+
+    Раньше всё было свалено вместе, и страница показывала «оплачено» с будущими датами
+    (разнос по сроку) рядом с дублями планов (решение владельца 26.07.2026)."""
+    from app.api.v1.routes.taxes import list_payments
+
+    async with async_session_factory() as session:
+        session.add(_usn_paid("674624", "q1", date(2026, 4, 20), "287"))  # факт из банка
+        session.add(_planned("usn_advance", "478376", date(2026, 7, 28), "h1"))  # план
+        # Разнос из оборотки: «paid» по конвенции, дата = срок в будущем.
+        razn = _tax_payment("contrib_employees", "8571.30", date(2026, 7, 28))
+        razn.source_kind = "tax_notice"
+        razn.quality_status = "confirmed"
+        session.add(razn)
+        await session.commit()
+
+        result = await list_payments(session, year=2026, kind=None)
+
+    kinds = [(item.kind, item.source_kind) for item in result.items]
+    assert kinds == [("usn_advance", "bank_statement")]  # только факт
+    assert result.paid_total == Decimal("674624.00")
+
+
+async def test_calendar_presents_future_split_as_planned(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разнос из оборотки с ненаступившим сроком в календаре — ПЛАН, а не «оплачено завтра»."""
+    from datetime import timedelta
+
+    from app.api.v1.routes.taxes import get_calendar
+
+    async with async_session_factory() as session:
+        future_due = date.today() + timedelta(days=20)
+        past_due = date.today() - timedelta(days=20)
+        for due, amount in ((future_due, "8571.30"), (past_due, "11842.20")):
+            razn = _tax_payment("contrib_employees", amount, due)
+            razn.source_kind = "tax_notice"
+            razn.quality_status = "confirmed"
+            razn.for_year = 2026
+            session.add(razn)
+        await session.commit()
+
+        result = await get_calendar(session, year=2026)
+
+    by_amount = {str(i.amount): i for i in result.items}
+    assert by_amount["8571.30"].status == "planned"  # срок впереди — план
+    assert by_amount["8571.30"].due_date == future_due
+    assert by_amount["8571.30"].is_overdue is False
+    assert by_amount["11842.20"].status == "paid"  # срок прошёл — уплачено по конвенции
+    assert result.overdue_count == 0

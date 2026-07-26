@@ -266,3 +266,48 @@ async def test_review_rejects_promoted_and_bad_status(
         intake = _needs_review_intake()
         with pytest.raises(ValueError, match="статус"):
             await set_intake_review(session, intake, status="deleted")
+
+
+async def test_review_with_overrides_fills_missing_fields(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Проверка с дозаправкой: владелец указывает срок/сумму/вид — они попадают в recognition,
+    причины «нужна проверка» снимаются, и продвижение возьмёт исправленные значения."""
+    async with async_session_factory() as session:
+        intake = _needs_review_intake()
+        intake.recognition = {
+            "tax_kind": None,
+            "amount": "116360",
+            "review_reasons": ["не распознан срок уплаты"],
+        }
+        session.add(intake)
+        await session.flush()
+
+        await set_intake_review(
+            session,
+            intake,
+            status="parsed",
+            overrides={"tax_kind": "contrib_extra_1pct", "due_date": "2026-04-28"},
+        )
+
+        assert intake.status == "parsed"
+        assert intake.recognition["tax_kind"] == "contrib_extra_1pct"
+        assert intake.recognition["due_date"] == "2026-04-28"
+        assert intake.recognition["amount"] == "116360"  # нетронутое осталось
+        assert intake.recognition["review_reasons"] == []
+        assert intake.recognition["manually_reviewed"] is True
+
+
+async def test_review_overrides_reject_unknown_kind(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Мусорный вид платежа в ручной правке отклоняется, а не пишется в расчёт."""
+    async with async_session_factory() as session:
+        intake = _needs_review_intake()
+        session.add(intake)
+        await session.flush()
+
+        with pytest.raises(ValueError, match="Неизвестный вид"):
+            await set_intake_review(
+                session, intake, status="parsed", overrides={"tax_kind": "чепуха"}
+            )

@@ -32,6 +32,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1014,9 +1022,9 @@ function PaymentsTab({ year }: { year: number }) {
   if (!data || data.items.length === 0) {
     return (
       <EmptyState
-        description={`За ${year} год платежей в бюджет не зарегистрировано. Факт приходит из выписки T-Bank, план — из платёжек бухгалтера, продвинутых во вкладке «Документы».`}
+        description={`За ${year} год фактических уплат в бюджет не зарегистрировано. Здесь только реальные списания из банка; планы и сроки — во вкладке «Календарь».`}
         icon={<FileText size={18} aria-hidden="true" />}
-        title="Платежей нет"
+        title="Уплат пока нет"
       />
     );
   }
@@ -1025,15 +1033,9 @@ function PaymentsTab({ year }: { year: number }) {
     <div className="space-y-3">
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
         <span>
-          Уплачено за {year} год:{" "}
+          Уплачено за {year} год (факт из банка):{" "}
           <span className="font-semibold tabular-nums text-foreground">
             {formatMoney(data.paid_total)}
-          </span>
-        </span>
-        <span>
-          В плане:{" "}
-          <span className="font-semibold tabular-nums text-foreground">
-            {formatMoney(data.planned_total)}
           </span>
         </span>
         <span>строк: {data.total}</span>
@@ -1042,8 +1044,10 @@ function PaymentsTab({ year }: { year: number }) {
       <Card className="shadow-none">
         <CardHeader className="pb-3">
           <p className="text-sm text-muted-foreground">
-            Одна строка — одно назначение внутри перевода, а не один перевод: ЕНП уходит
-            единой суммой, но внутри и НДФЛ (в вычет не идёт), и взносы за работников (идут).
+            Только реальные списания: что и когда фактически ушло в бюджет. Будущие сроки и
+            планы — во вкладке «Календарь», помесячная разбивка ЕНП — в «Сводке». Одна
+            строка — одно назначение внутри перевода: ЕНП уходит единой суммой, но внутри и
+            НДФЛ (в вычет не идёт), и взносы за работников (идут).
           </p>
         </CardHeader>
         <CardContent className="p-0">
@@ -1284,9 +1288,143 @@ function DocumentsTab({ canManage }: { canManage: boolean }) {
   );
 }
 
+/** Проверка платёжки человеком: дозаполнить то, что автоматика не распознала.
+
+    Раньше «Проверено» лишь снимало блокировку — срок так и оставался пустым, и
+    обязательство создавалось без срока. Теперь поля правятся прямо при проверке. */
+function ReviewPaymentDialog({
+  row,
+  onClose,
+}: {
+  row: TaxDocumentRow;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const recognition = row.recognition ?? {};
+  const [taxKind, setTaxKind] = useState(recognition.tax_kind ?? "");
+  const [amount, setAmount] = useState(
+    recognition.amount !== undefined && recognition.amount !== null
+      ? String(recognition.amount)
+      : "",
+  );
+  const [due, setDue] = useState(recognition.due_date ?? "");
+  const [period, setPeriod] = useState(recognition.period_hint ?? "");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      reviewTaxDocument(row.id, "parsed", {
+        tax_kind: taxKind || undefined,
+        amount: amount ? Number(amount.replace(",", ".").replace(/\s/g, "")) : undefined,
+        due_date: due || undefined,
+        period_hint: period || undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Документ проверен", {
+        description: "Поля сохранены — «Продвинуть готовые» создаст обязательство по ним.",
+      });
+      void queryClient.invalidateQueries({ queryKey: ["taxes"] });
+      onClose();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить проверку")),
+  });
+
+  const fieldLabel = "text-sm font-medium";
+  const missing = (recognition.review_reasons ?? []).join("; ");
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Проверить платёжку</DialogTitle>
+          <DialogDescription>{row.filename ?? "Документ"}</DialogDescription>
+        </DialogHeader>
+        <div className="min-w-0 space-y-3">
+          {missing ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Автоматика не распознала: {missing}. Заполните недостающее — обязательство
+              создастся с этими значениями.
+            </div>
+          ) : null}
+          <div className="space-y-1.5">
+            <label className={fieldLabel} htmlFor="rev-kind">
+              Вид платежа
+            </label>
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              id="rev-kind"
+              onChange={(event) => setTaxKind(event.target.value)}
+              value={taxKind}
+            >
+              <option value="">— не определён —</option>
+              {Object.entries(TAX_KIND_LABELS)
+                .filter(([kind]) => !["contrib_employees", "ndfl", "injury", "other"].includes(kind))
+                .map(([kind, label]) => (
+                  <option key={kind} value={kind}>
+                    {label}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className={fieldLabel} htmlFor="rev-amount">
+              Сумма, ₽
+            </label>
+            <Input
+              className="tabular-nums"
+              id="rev-amount"
+              inputMode="decimal"
+              onChange={(event) => setAmount(event.target.value)}
+              value={amount}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className={fieldLabel} htmlFor="rev-due">
+              Срок уплаты
+            </label>
+            <Input
+              id="rev-due"
+              onChange={(event) => setDue(event.target.value)}
+              type="date"
+              value={due}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className={fieldLabel} htmlFor="rev-period">
+              Период
+            </label>
+            <Input
+              id="rev-period"
+              onChange={(event) => setPeriod(event.target.value)}
+              placeholder="q1 · h1 · 9m · year · 2026-07"
+              value={period}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose} variant="outline">
+            Отмена
+          </Button>
+          <Button disabled={mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending ? (
+              <Loader2 className="mr-1.5 animate-spin" size={15} />
+            ) : null}
+            Подтвердить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DocumentRow({ row }: { row: TaxDocumentRow }) {
   const queryClient = useQueryClient();
   const canManage = usePermissions().hasPermission("accounting.taxes.manage");
+  const [reviewOpen, setReviewOpen] = useState(false);
   const reviewMutation = useMutation({
     mutationFn: (status: "parsed" | "ignored") => reviewTaxDocument(row.id, status),
     onSuccess: (_result, status) => {
@@ -1455,11 +1593,17 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Button
               disabled={reviewMutation.isPending}
-              onClick={() => reviewMutation.mutate("parsed")}
+              onClick={() =>
+                // У платёжки открываем форму: можно дозаполнить срок/сумму/вид/период.
+                // У ведомостей/оборотк править нечего — подтверждаем как есть.
+                row.document_type === "payment_order"
+                  ? setReviewOpen(true)
+                  : reviewMutation.mutate("parsed")
+              }
               size="sm"
               variant="outline"
             >
-              Проверено
+              {row.document_type === "payment_order" ? "Проверить…" : "Проверено"}
             </Button>
             <Button
               disabled={reviewMutation.isPending}
@@ -1470,6 +1614,9 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               Игнорировать
             </Button>
           </div>
+        ) : null}
+        {reviewOpen ? (
+          <ReviewPaymentDialog onClose={() => setReviewOpen(false)} row={row} />
         ) : null}
       </TableCell>
     </TableRow>

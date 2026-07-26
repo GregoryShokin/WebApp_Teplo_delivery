@@ -195,16 +195,55 @@ def _sender_matches(from_addr: str | None, senders: tuple[str, ...]) -> bool:
 # Статусы, которые владелец может выставить документу вручную из интерфейса.
 INTAKE_REVIEW_STATUSES: tuple[str, ...] = ("parsed", "ignored")
 
+# Виды платежа, допустимые в ручной правке распознанного (см. _KIND_PATTERNS парсера).
+REVIEW_TAX_KINDS: tuple[str, ...] = (
+    "usn_advance",
+    "usn_year",
+    "contrib_fixed",
+    "contrib_extra_1pct",
+    "contrib_injury",
+    "enp_payroll",
+)
+
 
 async def set_intake_review(
-    session: AsyncSession, intake: TaxDocumentIntake, *, status: str
+    session: AsyncSession,
+    intake: TaxDocumentIntake,
+    *,
+    status: str,
+    overrides: dict | None = None,
 ) -> None:
     """Владелец проверил документ: пометить готовым к продвижению (``parsed``) или отклонить
-    (``ignored``). Уже продвинутый документ не трогаем — он породил обязательство."""
+    (``ignored``). Уже продвинутый документ не трогаем — он породил обязательство.
+
+    ``overrides`` — ручная дозаправка распознанного (срок уплаты, сумма, вид, период):
+    автоматика не угадала — человек указал. Пишется в ``recognition`` (СВЕРХУ распознанного),
+    причины ``needs_review`` снимаются: документ проверен человеком, продвижение возьмёт
+    исправленные поля. Разрешено только для платёжек — у ведомостей/оборотк поля другие.
+    """
     if status not in INTAKE_REVIEW_STATUSES:
         raise ValueError(f"Недопустимый статус проверки: {status!r}.")
     if intake.status == "promoted":
         raise ValueError("Документ уже продвинут в обязательство — статус менять нельзя.")
+
+    if overrides:
+        if intake.document_type != "payment_order":
+            raise ValueError("Поля можно править только у платёжного поручения.")
+        kind = overrides.get("tax_kind")
+        if kind is not None and kind not in REVIEW_TAX_KINDS:
+            raise ValueError(
+                f"Неизвестный вид платежа: {kind!r}. Допустимые: {', '.join(REVIEW_TAX_KINDS)}."
+            )
+        updated = dict(intake.recognition or {})
+        for key in ("tax_kind", "amount", "due_date", "period_hint"):
+            value = overrides.get(key)
+            if value is None:
+                continue
+            updated[key] = str(value)
+        updated["review_reasons"] = []
+        updated["manually_reviewed"] = True
+        intake.recognition = updated
+
     intake.status = status
     await session.flush()
 

@@ -226,13 +226,15 @@ class TaxPaymentRead(BaseModel):
 
 
 class TaxPaymentListRead(BaseModel):
-    """Реестр платежей за год + итоги, чтобы фронт не пересуммировал Decimal сам."""
+    """Журнал фактических уплат за год + итоги, чтобы фронт не пересуммировал Decimal сам.
+
+    Только реальные списания из банка/ручной ввод: планы — в календаре, разнос — в сверке.
+    """
 
     year: int
     items: list[TaxPaymentRead]
     total: int
     paid_total: Decimal
-    planned_total: Decimal
     # Суммы уплаченного по видам платежа: ключ — kind из TAX_PAYMENT_KINDS.
     totals_by_kind: dict[str, Decimal]
 
@@ -385,9 +387,19 @@ class VatThresholdInput(BaseModel):
 
 
 class TaxDocumentReviewInput(BaseModel):
-    """Ручная отметка документа: проверен (``parsed``) или отклонён (``ignored``)."""
+    """Ручная отметка документа: проверен (``parsed``) или отклонён (``ignored``).
+
+    При проверке платёжки владелец может ДОЗАПОЛНИТЬ то, что автоматика не распознала
+    (срок уплаты, сумму, вид, период) — иначе «Проверено» снимало блокировку, но
+    обязательство создавалось без срока, и владелец резонно спрашивал «а система
+    узнает срок?» (26.07.2026). Поля опциональны: пустое — оставить как распознано.
+    """
 
     status: str
+    tax_kind: str | None = None
+    amount: Decimal | None = None
+    due_date: date | None = None
+    period_hint: str | None = None
 
 
 class TaxBankDraftInput(BaseModel):

@@ -172,12 +172,12 @@ export type TaxPaymentRow = {
   bank_operation_id: string | null;
 };
 
+/** Журнал ФАКТИЧЕСКИХ уплат: только реальные списания из банка. Планы — в календаре. */
 export type TaxPaymentList = {
   year: number;
   items: TaxPaymentRow[];
   total: number;
   paid_total: Money;
-  planned_total: Money;
   /** Уплачено по видам платежа: ключ — kind. */
   totals_by_kind: Record<string, Money>;
 };
@@ -334,7 +334,6 @@ export async function getTaxCalendar(year?: number): Promise<TaxCalendar> {
 export async function getTaxPayments(params?: {
   year?: number;
   kind?: string;
-  status?: TaxPaymentStatus;
 }): Promise<TaxPaymentList> {
   const response = await api.get<TaxPaymentList>(`${BASE}/payments`, { params });
   return response.data;
@@ -365,13 +364,22 @@ export async function refreshTaxDocuments(): Promise<Record<string, number | str
   return response.data;
 }
 
+/** Ручная дозаправка нераспознанных полей платёжки при проверке (пустое — как распознано). */
+export type TaxReviewOverrides = {
+  tax_kind?: string | null;
+  amount?: number | null;
+  due_date?: string | null;
+  period_hint?: string | null;
+};
+
 export async function reviewTaxDocument(
   intakeId: string,
   status: "parsed" | "ignored",
+  overrides?: TaxReviewOverrides,
 ): Promise<TaxDocumentRow> {
   const response = await api.post<TaxDocumentRow>(
     `${BASE}/documents/${intakeId}/review`,
-    { status },
+    { status, ...(overrides ?? {}) },
   );
   return response.data;
 }

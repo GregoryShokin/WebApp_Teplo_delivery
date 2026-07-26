@@ -254,12 +254,20 @@ async def get_calendar(
         is_planned = row.status == "planned"
         if is_planned and is_settled(row, paid_rows):
             continue
+        # Разнос из оборотки (tax_notice) помечен «paid» по кассовой конвенции: дата = СРОК
+        # уплаты. Пока срок не наступил, деньги ещё не ушли — для календаря это ПЛАН
+        # («Зарплатный ЕНП за июль к 28.08»), а не свершившаяся уплата с будущей датой.
+        planned_like = is_planned or (
+            row.source_kind == "tax_notice" and row.status == "paid" and row.paid_on > today
+        )
         # У плановой строки в `paid_on` лежит СРОК уплаты (так её заполняет продвижение
         # документа), у уплаченной — фактическая дата списания. Раскладываем явно.
-        due_date = row.paid_on if is_planned else None
+        due_date = row.paid_on if planned_like else None
+        # Просрочка — только у настоящих планов: разнос прошедшего срока считается
+        # уплаченным по конвенции (факт сверяется отдельно, в сверке).
         is_overdue = is_planned and row.paid_on < today
 
-        if is_planned:
+        if planned_like:
             planned_total += row.amount
             if is_overdue:
                 overdue_total += row.amount
@@ -268,7 +276,15 @@ async def get_calendar(
             paid_total += row.amount
 
         item = TaxCalendarItemRead.model_validate(row)
-        items.append(item.model_copy(update={"due_date": due_date, "is_overdue": is_overdue}))
+        items.append(
+            item.model_copy(
+                update={
+                    "due_date": due_date,
+                    "is_overdue": is_overdue,
+                    "status": "planned" if planned_like else row.status,
+                }
+            )
+        )
 
     return TaxCalendarRead(
         year=target_year,
@@ -292,19 +308,18 @@ async def list_payments(
         str | None,
         Query(description="Вид платежа: usn_advance, ndfl, contrib_* и т.д."),
     ] = None,
-    payment_status: Annotated[
-        str | None,
-        Query(alias="status", description="Статус строки: planned | paid | cancelled."),
-    ] = None,
 ) -> TaxPaymentListRead:
-    """Реестр платежей в бюджет за год — расшифровка того, из чего сложилась нагрузка.
+    """Журнал ФАКТИЧЕСКИХ уплат в бюджет за год — что реально ушло из банка.
+
+    Здесь ТОЛЬКО реальные списания (``status='paid'`` из выписки или ручного ввода).
+    Плановые обязательства живут в «Календаре», разнос ЕНП по месяцам — в «Сводке»:
+    раньше все три вида строк были свалены сюда вперемешку, и страница показывала
+    «оплачено» с будущими датами (разнос по сроку) рядом с дублями планов — владелец
+    справедливо не смог её прочитать (26.07.2026).
 
     Одна строка = одно НАЗНАЧЕНИЕ внутри перевода, а не один перевод. ЕНП уходит единой
     суммой, но внутри и НДФЛ (в вычет не идёт), и взносы за работников (идут) — без
-    разложения вычет посчитать нельзя, поэтому реестр ведётся по назначениям.
-
-    ``totals_by_kind`` считается только по УПЛАЧЕННЫМ строкам: это ответ на вопрос
-    «сколько реально ушло по каждому виду», плановые обязательства его бы исказили.
+    разложения вычет посчитать нельзя, поэтому журнал ведётся по назначениям.
     """
     target_year = _resolve_year(year)
 
@@ -316,41 +331,31 @@ async def list_payments(
                 f"Допустимые: {', '.join(TAX_PAYMENT_KINDS)}."
             ),
         )
-    if payment_status is not None and payment_status not in ("planned", "paid", "cancelled"):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f"Неизвестный статус платежа: {payment_status!r}. "
-                f"Допустимые: planned, paid, cancelled."
-            ),
-        )
 
-    stmt = select(TaxPayment).where(TaxPayment.for_year == target_year)
+    stmt = select(TaxPayment).where(
+        TaxPayment.for_year == target_year,
+        TaxPayment.status == "paid",
+        # Разнос из оборотки (tax_notice) — начисления для сверки, не движение денег.
+        TaxPayment.source_kind.in_(("bank_statement", "manual")),
+    )
     if kind is not None:
         stmt = stmt.where(TaxPayment.kind == kind)
-    if payment_status is not None:
-        stmt = stmt.where(TaxPayment.status == payment_status)
 
     rows = (
         await session.scalars(stmt.order_by(TaxPayment.paid_on.desc(), TaxPayment.kind))
     ).all()
 
     paid_total = ZERO
-    planned_total = ZERO
     totals_by_kind: dict[str, Decimal] = {}
     for row in rows:
-        if row.status == "paid":
-            paid_total += row.amount
-            totals_by_kind[row.kind] = totals_by_kind.get(row.kind, ZERO) + row.amount
-        elif row.status == "planned":
-            planned_total += row.amount
+        paid_total += row.amount
+        totals_by_kind[row.kind] = totals_by_kind.get(row.kind, ZERO) + row.amount
 
     return TaxPaymentListRead(
         year=target_year,
         items=[TaxPaymentRead.model_validate(row) for row in rows],
         total=len(rows),
         paid_total=paid_total,
-        planned_total=planned_total,
         totals_by_kind=totals_by_kind,
     )
 
@@ -521,12 +526,25 @@ async def review_document(
     body: TaxDocumentReviewInput,
 ) -> TaxDocumentRead:
     """Отметить документ проверенным (``parsed`` — готов к продвижению) или отклонить
-    (``ignored``). Так владелец подтверждает то, что автоматика оставила на проверку."""
+    (``ignored``). Так владелец подтверждает то, что автоматика оставила на проверку.
+
+    Вместе со статусом можно дозаполнить нераспознанные поля платёжки (срок, сумму,
+    вид, период) — продвижение возьмёт исправленные значения.
+    """
     intake = await session.get(TaxDocumentIntake, intake_id)
     if intake is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден.")
+    overrides = {
+        "tax_kind": body.tax_kind,
+        "amount": body.amount,
+        "due_date": body.due_date.isoformat() if body.due_date else None,
+        "period_hint": body.period_hint,
+    }
+    overrides = {k: v for k, v in overrides.items() if v is not None}
     try:
-        await set_intake_review(session, intake, status=body.status)
+        await set_intake_review(
+            session, intake, status=body.status, overrides=overrides or None
+        )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
