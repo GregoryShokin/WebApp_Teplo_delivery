@@ -62,4 +62,20 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 - **Миграции alembic** (`alembic upgrade head`): сериализованно, один за раз. Держатель: agent-c (head `0104`)
 - **Тестовая БД `teplo_test`**: default-стек. Второй агент → `teplo_test_b` (compose agent-b).
-- **Порты**: API 8000 / web 5173 (default); API 8010 / web 5183 (agent-b); API 8020 / web 5193 (agent-c); API 8040 / web **7153** (agent-payments).
+- **Порты** — формула слота k: web `5173+10k` / api `8000+10k` / pg `5432+10k`.
+  Занятые слоты (сверено с compose-файлами 26.07):
+
+  | слот | стек (compose) | web | api | pg |
+  |------|----------------|-----|-----|-----|
+  | 0 | default (`docker-compose.yml`) | 5173 | 8000 | 5432 |
+  | 1 | agent-b | 5183 | 8010 | 5442 |
+  | 2 | agent-periods | 5193 | 8020 | 5452 |
+  | 3 | agent-c | 5203 | 8030 | 5462 |
+  | 4 | agent-payments | **7153** (запрос владельца, не 5213) | 8040 | 5472 |
+  | 4 | preview-taxes (ветка `agent/tax-taxes`) | 5213 | 8040 | 5472 |
+  | 5 | agent-partial | **7163** (не 5223) | 8050 | 5482 |
+  | 6 | agent-dds | 5233 | 8060 | 5492 |
+  | 7 | preview-ic | 5243 | 8070 | 5502 |
+
+  Слот 4 держат сразу два стенда (agent-payments и preview-taxes) — одновременно не поднять,
+  согласуйте очередь. Следующий свободный слот — 8 (web 5253 / api 8080 / pg 5512).

@@ -1,6 +1,9 @@
-# Изолированный стек агента partial-payroll (слот partial): свой проект/порты/БД.
-# Не пересекается с default (5432/8000/5173), agent-payments (5472/8040/7153).
-# Web-превью на 7163, api 8050, pg 5482.
+# Изолированный стек агента partial-payroll (слот 5): свой проект/порты/БД.
+# api 8050 / pg 5482 — слот 5 по формуле (api 8000+10k, pg 5432+10k);
+# web зафиксирован на 7163, а не на 5223 из формулы.
+# Не пересекается с default (5173/8000/5432), agent-b (5183/8010/5442),
+# agent-periods (5193/8020/5452), agent-c (5203/8030/5462), payments (7153/8040/5472),
+# agent-dds (5233/8060/5492), preview-ic (5243/8070/5502).
 #
 # Запуск (из apps/ в этом worktree):
 #   docker compose -p teplo-partial -f docker-compose.agent-partial.yml up -d postgres

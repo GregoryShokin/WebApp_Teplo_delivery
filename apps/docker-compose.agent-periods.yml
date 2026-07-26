@@ -1,6 +1,8 @@
-# Изолированный стек агента counterparty-service-periods (слот 2 / «c»): свой проект/порты/БД.
-# Не пересекается с default (5432/8000/5173), agent-b (5442/8010/5183),
-# agent-dds (5462/8030/5203), payments (5472/8040/7153), partial (5482/8050/7163).
+# Изолированный стек агента counterparty-service-periods (слот 2): свой проект/порты/БД.
+# Порты слота 2: web 5193 / api 8020 / pg 5452 (формула: web 5173+10k, api 8000+10k, pg 5432+10k).
+# Не пересекается с default (5173/8000/5432), agent-b (5183/8010/5442),
+# agent-c (5203/8030/5462), payments (7153/8040/5472), partial (7163/8050/5482),
+# agent-dds (5233/8060/5492), preview-ic (5243/8070/5502).
 #
 # Запуск (из apps/ в этом worktree):
 #   docker compose -p teplo-periods -f docker-compose.agent-periods.yml up -d postgres

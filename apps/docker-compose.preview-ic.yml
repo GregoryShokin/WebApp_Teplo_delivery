@@ -5,7 +5,8 @@
 #   docker compose -p teplo-ic -f docker-compose.preview-ic.yml up -d --build
 #   ... затем залить дамп dev-БД и alembic upgrade head (см. сессию).
 #
-# Порты: web 7153 (просьба владельца) / api 8163 / pg 5472.
+# Порты слота 7: web 5243 / api 8070 / pg 5502 (формула: web 5173+10k, api 8000+10k, pg 5432+10k).
+# Раньше стек стоял на 7153/8163/5472 и делил web+pg с agent-payments — одновременно не поднять.
 
 services:
   postgres:
@@ -16,7 +17,7 @@ services:
       POSTGRES_USER: teplo
       POSTGRES_PASSWORD: teplo
     ports:
-      - "5472:5432"
+      - "5502:5432"
     volumes:
       - teplo_pgdata_ic:/var/lib/postgresql/data
     healthcheck:
@@ -42,9 +43,9 @@ services:
       JWT_SECRET_KEY: change-me-in-local-env-change-me
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
-      BACKEND_CORS_ORIGINS: '["http://localhost:7153","http://127.0.0.1:7153"]'
+      BACKEND_CORS_ORIGINS: '["http://localhost:5243","http://127.0.0.1:5243"]'
     ports:
-      - "8163:8000"
+      - "8070:8000"
     volumes:
       - ./api:/app/apps/api
       - ../integrations:/app/integrations:ro
@@ -58,10 +59,10 @@ services:
       dockerfile: Dockerfile.dev
     container_name: teplo-web-ic
     environment:
-      VITE_API_BASE_URL: http://localhost:8163
+      VITE_API_BASE_URL: http://localhost:8070
     command: npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
     ports:
-      - "7153:5173"
+      - "5243:5173"
     volumes:
       - ./web:/app/apps/web
       - /app/apps/web/node_modules

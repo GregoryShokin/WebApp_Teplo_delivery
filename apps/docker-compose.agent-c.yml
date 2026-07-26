@@ -1,8 +1,10 @@
-# Изолированный стек для второго агента (agent-c (слот 3)).
-# Свой Docker-проект, свои контейнеры, свои порты, своя БД — не пересекается с default-стеком.
+# Изолированный стек агента agent-c (слот 3): свой Docker-проект, контейнеры, порты и БД.
+# Порты слота 3: web 5203 / api 8030 / pg 5462 (формула: web 5173+10k, api 8000+10k, pg 5432+10k).
+# Не пересекается с default (5173/8000/5432), agent-b (5183/8010/5442),
+# agent-periods (5193/8020/5452), agent-dds (5233/8060/5492), preview-ic (5243/8070/5502).
 #
-# Запуск (из папки apps/ в worktree второго агента):
-#   docker compose -p teplo-c -f docker-compose.agent-c (слот 3).yml up -d
+# Запуск (из папки apps/ в worktree агента):
+#   docker compose -p teplo-c -f docker-compose.agent-c.yml up -d
 #   docker exec -w /app/apps/api teplo-api-c alembic upgrade head
 #
 # Default-стек первого агента (docker compose up) продолжает жить параллельно.
@@ -35,6 +37,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
       TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_c
+      # В ../.env лежит live-режим с боевыми кредами: без этой строки стенд выпишет
+      # настоящий платёж в T-Bank. environment перебивает env_file — не убирать.
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko: без переменной IikoClient.__init__ бросает SystemExit и роняет uvicorn
+      # (один заход на «График» кладёт весь стенд). С заглушкой запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me

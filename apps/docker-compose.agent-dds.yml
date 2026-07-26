@@ -1,5 +1,8 @@
-# Изолированный стек агента dds-payroll (слот 3): свой проект/порты/БД.
-# Не пересекается с default (5432/8000/5173), agent-b (5442/8010/5183), agent-c (5452/8020/5193).
+# Изолированный стек агента dds-payroll (слот 6): свой проект/порты/БД.
+# Порты слота 6: web 5233 / api 8060 / pg 5492 (формула: web 5173+10k, api 8000+10k, pg 5432+10k).
+# Не пересекается с default (5173/8000/5432), agent-b (5183/8010/5442),
+# agent-periods (5193/8020/5452), agent-c (5203/8030/5462), payments (7153/8040/5472),
+# partial (7163/8050/5482), preview-ic (5243/8070/5502).
 #
 # Запуск (из apps/ в этом worktree):
 #   docker compose -p teplo-dds -f docker-compose.agent-dds.yml up -d postgres
@@ -14,7 +17,7 @@ services:
       POSTGRES_USER: teplo
       POSTGRES_PASSWORD: teplo
     ports:
-      - "5462:5432"
+      - "5492:5432"
     volumes:
       - teplo_pgdata_dds:/var/lib/postgresql/data
     healthcheck:
@@ -33,14 +36,20 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
       TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_dds
+      # В ../.env лежит live-режим с боевыми кредами: без этой строки стенд выпишет
+      # настоящий платёж в T-Bank. environment перебивает env_file — не убирать.
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko: без переменной IikoClient.__init__ бросает SystemExit и роняет uvicorn
+      # (один заход на «График» кладёт весь стенд). С заглушкой запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
       JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
-      BACKEND_CORS_ORIGINS: '["http://localhost:5203","http://127.0.0.1:5203"]'
+      BACKEND_CORS_ORIGINS: '["http://localhost:5233","http://127.0.0.1:5233"]'
     ports:
-      - "8030:8000"
+      - "8060:8000"
     volumes:
       - ./api:/app/apps/api
       - ../integrations:/app/integrations:ro
@@ -54,9 +63,9 @@ services:
       dockerfile: Dockerfile.dev
     container_name: teplo-web-dds
     environment:
-      VITE_API_BASE_URL: http://localhost:8030
+      VITE_API_BASE_URL: http://localhost:8060
     ports:
-      - "5203:5173"
+      - "5233:5173"
     volumes:
       - ./web:/app/apps/web
       - /app/apps/web/node_modules

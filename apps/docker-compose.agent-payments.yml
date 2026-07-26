@@ -1,7 +1,11 @@
-# Изолированный стек агента payments-finance-payments (слот payments): свой проект/порты/БД.
-# Не пересекается с default (5432/8000/5173), agent-b (5442/8010/5183),
-# agent-c (5452/8020/5193), agent-dds (5462/8030/5203).
-# Web-превью зафиксирован на 7153 (запрос владельца).
+# Изолированный стек агента payments-finance-payments (слот 4): свой проект/порты/БД.
+# api 8040 / pg 5472 — слот 4 по формуле (api 8000+10k, pg 5432+10k);
+# web зафиксирован на 7153 (запрос владельца), а не на 5213 из формулы — так же в WORK-IN-PROGRESS.md.
+# Не пересекается с default (5173/8000/5432), agent-b (5183/8010/5442),
+# agent-periods (5193/8020/5452), agent-c (5203/8030/5462), partial (7163/8050/5482),
+# agent-dds (5233/8060/5492), preview-ic (5243/8070/5502).
+# ВНИМАНИЕ: docker-compose.preview-taxes.yml (ветка agent/tax-taxes) занимает тот же слот 4
+# (web 5213 / api 8040 / pg 5472) — одновременно эти два стенда не поднять.
 #
 # Запуск (из apps/ в этом worktree):
 #   docker compose -p teplo-payments -f docker-compose.agent-payments.yml up -d postgres
