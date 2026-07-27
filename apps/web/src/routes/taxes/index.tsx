@@ -519,6 +519,11 @@ function ReconciliationBlock({
 
   const alertCount =
     reconciliation.alert_count ?? lines.filter((line) => line.severity === "alert").length;
+  // Безопасные расхождения (документ больше расчёта — переплата зачтётся) в alert не входят,
+  // но бейдж «расхождений нет» рядом со строками «Документ ≠ расчёт» читается как ложь.
+  const softMismatchCount = lines.filter(
+    (line) => line.severity !== "alert" && line.verdict === "doc_mismatch",
+  ).length;
 
   if (lines.length === 0) {
     return (
@@ -563,8 +568,13 @@ function ReconciliationBlock({
           <CardTitle className="flex flex-wrap items-center gap-2 text-base font-semibold">
             Сверка: расчёт ↔ документ ↔ факт
             {alertCount === 0 && !isBlocked ? (
-              <Badge className={SEVERITY_BADGE.ok} variant="outline">
-                расхождений нет
+              <Badge
+                className={softMismatchCount > 0 ? SEVERITY_BADGE.warning : SEVERITY_BADGE.ok}
+                variant="outline"
+              >
+                {softMismatchCount > 0
+                  ? `безопасных расхождений: ${softMismatchCount}`
+                  : "расхождений нет"}
               </Badge>
             ) : null}
           </CardTitle>
