@@ -30,6 +30,7 @@ from app.models import (
     CounterpartyPayableProfile,
     CounterpartyRole,
     EmailInvoiceIntake,
+    SupplierExpenseAccrual,
     SupplierInvoice,
 )
 from app.services import counterparty_payments as payments
@@ -301,6 +302,23 @@ def _date_or_none(raw: object) -> date | None:
         return None
 
 
+async def _materialize_package_companion(
+    session: AsyncSession,
+    intake: EmailInvoiceIntake,
+    *,
+    cp_id: uuid.UUID,
+    recognition: dict[str, object],
+) -> SupplierInvoice | None:
+    """Единая дверь «в файле был пакет — заведи закрывающий». Без спутника в распознанном —
+    no-op. Идемпотентно: повторный вызов по тому же intake второй документ не создаёт."""
+    companion = recognition.get("companion")
+    if not isinstance(companion, dict):
+        return None
+    if intake.companion_invoice_id is not None:
+        return await session.get(SupplierInvoice, intake.companion_invoice_id)
+    return await _materialize_companion(session, intake, cp_id=cp_id, companion=companion)
+
+
 async def _materialize_companion(
     session: AsyncSession,
     intake: EmailInvoiceIntake,
@@ -327,7 +345,13 @@ async def _materialize_companion(
     )
     dup = await _find_duplicate_email_invoice(session, cp_id, probe, doc_kind="closing")
     if dup is not None:
-        intake.companion_invoice_id = dup.id
+        # Такой закрывающий уже есть (пришёл отдельным письмом, из СБИС или заведён вручную) —
+        # второй раз не создаём. И НЕ записываем его в companion_invoice_id: это ЧУЖОЙ документ
+        # со своей судьбой, а исключение/удаление intake ведёт свои документы — иначе оно
+        # аннулировало бы кредиторку, к которой наше письмо отношения не имеет.
+        logger.info(
+            "email-пакет: закрывающий уже существует (invoice=%s) — спутник не создаём", dup.id
+        )
         return dup
 
     period_start = _date_or_none(companion.get("service_period_start"))
@@ -365,7 +389,18 @@ async def _materialize_companion(
     )
     session.add(closing)
     await session.flush()
-    await service_periods.sync_invoice_accrual(session, closing)
+    # Признание расхода (P&L) — ОДНО на пакет. Счёт и его закрывающий описывают одну и ту же
+    # услугу за один период: начисление на обоих задвоило бы расход в отчёте. Начисление ведёт
+    # счёт; спутник заводит своё, только если у счёта его нет (период распознан лишь в УПД).
+    bill_accrual = None
+    if intake.invoice_id is not None:
+        bill_accrual = await session.scalar(
+            select(SupplierExpenseAccrual.id).where(
+                SupplierExpenseAccrual.invoice_id == intake.invoice_id
+            )
+        )
+    if bill_accrual is None:
+        await service_periods.sync_invoice_accrual(session, closing)
     intake.companion_invoice_id = closing.id
     # Закрывающий из пакета проводится так же, как пришедший отдельным письмом: правило 2
     # (гасит открытую дебиторку) + правило 4 (будущей датой ждёт своей даты).
@@ -454,6 +489,10 @@ async def materialize_from_intake(
             confidence=rec_json.get("service_period_confidence"),
         ):
             await service_periods.sync_invoice_accrual(session, dup)
+        # Повтор СЧЁТА не означает, что повторился и его закрывающий: поставщик мог прислать
+        # тот же счёт вторым письмом, добавив к нему УПД. Заводим спутника и здесь — иначе
+        # кредиторка по факту услуги не возникнет вовсе (свой дедуп внутри).
+        await _materialize_package_companion(session, intake, cp_id=cp_id, recognition=rec_json)
         return intake.status
 
     invoice = SupplierInvoice(
@@ -496,11 +535,9 @@ async def materialize_from_intake(
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
         # Оплата счёта из банка сама сформирует ДЗ / погасит КЗ (ensure_prepayment_from_bank_...).
         intake.status = "linked"
-        companion = rec_json.get("companion")
-        if isinstance(companion, dict):
-            # В файле был пакет «счёт + УПД»: закрывающий заводим вторым документом, иначе
-            # кредиторка по факту оказанной услуги не возникнет вовсе.
-            await _materialize_companion(session, intake, cp_id=cp_id, companion=companion)
+        # В файле был пакет «счёт + УПД»: закрывающий заводим вторым документом, иначе
+        # кредиторка по факту оказанной услуги не возникнет вовсе.
+        await _materialize_package_companion(session, intake, cp_id=cp_id, recognition=rec_json)
     return intake.status
 
 
@@ -623,6 +660,25 @@ async def confirm_intake_with_review(
             elif profile and profile.service_period_required:
                 inv.service_period_status = "missing"
             await _resync_closing_after_edit(session, inv)
+        # Пакет «счёт + УПД»: правки оператора касаются и спутника. Контрагент у пакета один —
+        # смена поставщика в окне разбора обязана вести оба документа, иначе кредиторка
+        # останется висеть на прежнем (часто ошибочно созданной заглушке). Сумму/номер/дату
+        # спутника оператор правит отдельно: у закрывающего они свои и в окне не показаны.
+        companion = (
+            await session.get(SupplierInvoice, intake.companion_invoice_id)
+            if intake.companion_invoice_id is not None
+            else None
+        )
+        if companion is not None and companion.counterparty_id != cp_id:
+            if companion.draft_id is not None or companion.payment_status != "unpaid":
+                raise ValueError(
+                    "Нельзя сменить контрагента: закрывающий документ из этого письма "
+                    "уже проведён по оплате"
+                )
+            companion.counterparty_id = cp_id
+            await _resync_closing_after_edit(session, companion)
+        # Пакет мог не завестись целиком в прошлый раз (спутник появился при пере-разборе).
+        await _materialize_package_companion(session, intake, cp_id=cp_id, recognition=rec)
         return intake.status
 
     return await materialize_from_intake(session, intake, counterparty_id=cp_id)
@@ -902,11 +958,11 @@ async def process_attachment(
     else:
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
         intake.status = "linked"
-        companion = rec.to_json().get("companion") if rec.companion is not None else None
-        if isinstance(companion, dict):
-            # Пакет «счёт + УПД» одним файлом (СДЭК): счёт уже в очереди оплат, а закрывающий
-            # проводим вторым документом — он и создаёт кредиторку по факту услуги.
-            await _materialize_companion(session, intake, cp_id=cp_id, companion=companion)
+        # Пакет «счёт + УПД» одним файлом (СДЭК): счёт уже в очереди оплат, а закрывающий
+        # проводим вторым документом — он и создаёт кредиторку по факту услуги.
+        await _materialize_package_companion(
+            session, intake, cp_id=cp_id, recognition=intake.recognition or {}
+        )
     return intake.status
 
 

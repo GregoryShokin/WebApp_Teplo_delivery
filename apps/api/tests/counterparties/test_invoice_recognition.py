@@ -491,3 +491,71 @@ def test_upd_only_pdf_is_still_closing():
     rec = deterministic_recognize_pages([CDEK_PAGE_UPD, CDEK_PAGE_UPD_ANNEX])
     assert rec.document_kind == "upd"
     assert rec.companion is None
+
+
+# --- Регрессы предделойного аудита (wf_8244f364) --------------------------------------------
+
+
+def test_amount_does_not_glue_date_or_account_number():
+    """Жадный шаблон денег склеивал соседние числа через пробел.
+
+    «от 19.07.2026 7 984,90» читалось как одно число 20 267 984,90, а «Итого 4070…829 1 000,00»
+    утаскивало в сумму 20-значный номер счёта. С максимумом по строке это давало бы платёж в
+    десятки миллионов вместо тысяч."""
+    from app.services.invoice_recognition import _pick_amount
+
+    assert _pick_amount("ИТОГО к оплате УПД № СКБ-1 от 19.07.2026 7 984,90") == Decimal("7984.90")
+    assert _pick_amount("Итого 40702810430000013829 1 000,00") == Decimal("1000.00")
+    assert _pick_amount("Всего к оплате по счету от 01.08.2026 15 580,00") == Decimal("15580.00")
+    # Обычные форматы не пострадали.
+    assert _pick_amount("Всего к оплате: 98092,00") == Decimal("98092.00")
+    assert _pick_amount("Итого 1 234 567,89") == Decimal("1234567.89")
+
+
+def test_annex_referencing_invoice_stays_part_of_closing():
+    """Приложение к УПД со ссылкой «Основание: Счет на оплату №…» — НЕ новый счёт.
+
+    Иначе закрывающий документ разваливался на «счёт + спутник», приложение вставало в очередь
+    оплат, и поставку можно было оплатить второй раз."""
+    from app.services.invoice_recognition import (
+        deterministic_recognize_pages,
+        split_document_sections,
+    )
+
+    upd = (
+        "Универсальный передаточный документ\n"
+        "Счет-фактура № 123 от 19 июля 2026 г.\nПродавец: ООО Ромашка\nВсего к оплате 1 000,00"
+    )
+    annex = (
+        "Приложение к УПД № 123\nОснование: Счет на оплату № 55 от 01.07.2026\nИтого 1 000,00"
+    )
+    assert [kind for kind, _ in split_document_sections([upd, annex])] == ["upd"]
+
+    rec = deterministic_recognize_pages([upd, annex])
+    assert rec.document_kind == "upd"
+    assert rec.companion is None
+
+
+def test_companion_keeps_its_own_amount_and_number():
+    """Спутник не наследует сумму, номер и дату счёта.
+
+    Наследование заводило кредиторку из суммы счёта (даже если в УПД своего итога нет) и ломало
+    дедуп: тот же УПД, пришедший отдельным письмом, не схлопывался и удваивал долг."""
+    from app.services.invoice_recognition import deterministic_recognize_pages
+
+    bill = (
+        "Образец заполнения платежного поручения\nИНН 2370006152 КПП 237001001\n"
+        "ООО \"СДЭК-СЛАВЯНСК\"\nСчет на оплату № СКБ-0437096 от 19 июля 2026 г.\n"
+        "Итого с НДС 22%: 7 984,90\n"
+    )
+    upd_without_total = (
+        "Универсальный передаточный документ\n"
+        "Счет-фактура № СКБ-0008640 от 19 июля 2026 г.\nПродавец: ООО СДЭК-СЛАВЯНСК\n"
+    )
+    rec = deterministic_recognize_pages([bill, upd_without_total])
+    assert rec.amount == Decimal("7984.90")
+    companion = rec.companion
+    assert companion is not None
+    assert companion.amount is None  # своего итога в УПД нет — чужой не подставляем
+    assert companion.invoice_number == "СКБ-0008640"
+    assert companion.inn == "2370006152"  # личность контрагента унаследована — это законно

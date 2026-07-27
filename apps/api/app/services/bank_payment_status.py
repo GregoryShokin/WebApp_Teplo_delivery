@@ -340,6 +340,47 @@ def classify_payment_status(raw_status: str | None) -> str:
     return "pending"
 
 
+async def _payment_booked_by_statement_row(
+    session: AsyncSession, draft: CounterpartyPaymentDraft
+) -> bool:
+    """Деньги этого черновика уже разобраны СОБСТВЕННОЙ проводкой операции выписки?
+
+    Гонка «правило классификации ↔ paid-переход»: если операция выписки пришла первой, её мог
+    разобрать классификатор (по правилу контрагента или руками оператора) в отдельную строку
+    ``bank_operation`` — и правило 1 там уже отработало (``classifier.apply_operation_action``).
+    Тогда повторный прогон по prebooked-строке считал бы те же деньги второй раз: пул правила 1
+    берётся от суммы своей проводки, а мост «операция↔проводка» для только что созданной строки
+    ещё пуст, поэтому «бюджет платежа» дубля не видит.
+
+    Ключ поиска — тот же детерминированный, что у ``absorb_auto_classified_counterparty_payment``:
+    номер документа черновика (мы сами его отправляли банку) + сумма + направление. Признак
+    «уже разобрано» — зависимости на строке операции (зачёты кредиторки или предоплата).
+    """
+    if not draft.document_id:
+        return False
+    from app.models import BankOperation
+    from app.services.banking.classifier import _cashflow_row_has_dependents
+    from app.services.banking.tbank import _document_number
+
+    docnum = _document_number(draft.document_id)
+    if not docnum:
+        return False
+    rows = (
+        await session.scalars(
+            select(BankOperation).where(
+                BankOperation.direction == "out",
+                BankOperation.amount == draft.amount,
+                BankOperation.document_number == docnum,
+                BankOperation.cashflow_transaction_id.is_not(None),
+            )
+        )
+    ).all()
+    for operation in rows:
+        if await _cashflow_row_has_dependents(session, operation.cashflow_transaction_id):
+            return True
+    return False
+
+
 async def apply_payment_status(
     session: AsyncSession,
     *,
@@ -490,9 +531,23 @@ async def apply_payment_status(
             # Без этого вызова свободный платёж уходил мимо контура ДЗ/КЗ целиком: приходящая
             # операция выписки заклеймит эту проводку prebooked-claim'ом и вернётся ДО правила 1
             # (classifier: короткое замыкание), второго шанса учесть деньги не будет.
-            from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+            #
+            # НО только если этот платёж ещё не разобран отдельной проводкой операции выписки:
+            # при обратном порядке (выписка пришла раньше paid-перехода) правило 1 уже отработало
+            # в классификаторе на её собственной строке, и повторный прогон удвоил бы зачёт
+            # кредиторки и завёл дебиторку из воздуха.
+            if await _payment_booked_by_statement_row(session, draft):
+                logger.info(
+                    "apply_payment_status: платёж draft=%s уже разобран операцией выписки — "
+                    "правило 1 повторно не применяем",
+                    draft.id,
+                )
+            else:
+                from app.services.supplier_prepayments import (
+                    ensure_prepayment_from_bank_transaction,
+                )
 
-            await ensure_prepayment_from_bank_transaction(session, free_txn)
+                await ensure_prepayment_from_bank_transaction(session, free_txn)
         # Накладные к гашению + статья каждой (счета услуг «Страницы на оплату» несут свою
         # dds_article_id, складские — дефолтную «Оплата поставщикам»).
         payable: list[tuple[SupplierInvoice, Decimal, uuid.UUID | None]] = []

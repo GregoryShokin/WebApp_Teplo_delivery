@@ -628,7 +628,13 @@ async def _settle_open_kz_from_transaction(
     не подбираются автоматически даже при совпадении поставщика: платёж без ссылки на конкретную
     товарную поставку становится ДЗ, а ручной зачёт выполняется отдельно. Аллокация
     source_kind='cash' денег НЕ двигает (они ушли транзакцией). Возвращает погашенную сумму
-    (≤ limit)."""
+    (≤ limit).
+
+    Документ, уже отправленный в банк-черновик (``draft_id``), НЕ подбираем: по нему платёж
+    в пути, и гашение его чужими деньгами привело бы к оплате дважды — сначала этим платежом,
+    потом исполнением черновика. Тот же гард стоит в ``auto_settle_invoice_from_open_prepayments``;
+    здесь его не было, и любой свободный платёж тому же поставщику мог закрыть документ,
+    ожидающий подтверждения в банке."""
     pool = _money(limit)
     settled = Decimal("0.00")
     if pool <= 0:
@@ -643,6 +649,7 @@ async def _settle_open_kz_from_transaction(
                 SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
                 SupplierInvoice.activation_status == "active",
                 SupplierInvoice.barter_role.is_(None),
+                SupplierInvoice.draft_id.is_(None),
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
             )
             .order_by(SupplierInvoice.invoice_date.nulls_last(), SupplierInvoice.created_at)

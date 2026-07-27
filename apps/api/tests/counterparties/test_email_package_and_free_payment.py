@@ -273,3 +273,302 @@ async def test_free_counterparty_payment_without_kz_becomes_receivable(
         await session.commit()
 
         assert await _receivable(session, cp.id) == Decimal("6000.00")
+
+
+# --- Регрессы предделойного аудита (wf_8244f364) --------------------------------------------
+
+
+async def test_existing_closing_is_not_adopted_as_companion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Если такой закрывающий уже есть (СБИС/вручную/отдельным письмом) — он ЧУЖОЙ.
+
+    Присвоение его в companion_invoice_id делало исключение пакета разрушительным: exclude
+    аннулировал кредиторку, к которой это письмо отношения не имеет."""
+    from cp_helpers import make_invoice
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="СДЭК-чужой-УПД", inn="2370006155")
+        foreign = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount=Decimal("7984.90"),
+            number="СКБ-0008640",
+            source="sbis",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=PAST,
+        )
+        await session.commit()
+
+        intake = _package_intake(cp.id)
+        session.add(intake)
+        await session.flush()
+        await materialize_from_intake(session, intake)
+        await session.commit()
+
+        # Спутник не создан и НЕ присвоен: чужой документ живёт своей жизнью.
+        assert intake.companion_invoice_id is None
+        assert await _payable(session, cp.id) == Decimal("7984.90")  # ровно один долг, не два
+
+        await exclude_intake(session, intake)
+        await session.commit()
+        await session.refresh(foreign)
+        assert foreign.payment_status == "unpaid"  # чужой документ не тронут
+        assert await _payable(session, cp.id) == Decimal("7984.90")
+
+
+async def test_duplicate_bill_still_creates_companion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повтор СЧЁТА не должен терять закрывающий: поставщик прислал тот же счёт, добавив УПД."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="СДЭК-повтор-счёта", inn="2370006156")
+
+        first = _package_intake(cp.id)
+        first.recognition = {**first.recognition, "companion": None}
+        session.add(first)
+        await session.flush()
+        await materialize_from_intake(session, first)
+        await session.commit()
+        assert first.companion_invoice_id is None
+        assert await _payable(session, cp.id) == Decimal("0.00")  # счёт долгом не является
+
+        second = _package_intake(cp.id)  # тот же счёт, теперь с УПД в пакете
+        session.add(second)
+        await session.flush()
+        status = await materialize_from_intake(session, second)
+        await session.commit()
+
+        assert status == "duplicate"  # счёт — повтор
+        assert second.companion_invoice_id is not None  # а вот УПД новый
+        assert await _payable(session, cp.id) == Decimal("7984.90")
+
+
+async def test_package_books_single_expense_accrual(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Одна услуга — одно признание расхода: счёт и его закрывающий не задваивают P&L."""
+    from app.models import SupplierExpenseAccrual
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="СДЭК-начисление", inn="2370006157")
+        intake = _package_intake(cp.id)
+        rec = dict(intake.recognition)
+        period = {
+            "service_period_start": PAST.replace(day=1).isoformat(),
+            "service_period_end": PAST.isoformat(),
+        }
+        # Период стоит на ОБОИХ документах пакета — так и приходит от поставщика услуг
+        # (счёт и УПД за один и тот же отчётный период).
+        rec.update(period)
+        rec["companion"] = {**rec["companion"], **period}
+        intake.recognition = rec
+        session.add(intake)
+        await session.flush()
+        await materialize_from_intake(session, intake)
+        await session.commit()
+
+        accruals = (
+            await session.scalars(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.counterparty_id == cp.id
+                )
+            )
+        ).all()
+        assert len(accruals) == 1
+        assert accruals[0].invoice_id == intake.invoice_id
+
+
+async def test_reparse_moves_companion_to_new_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Смена контрагента в окне разбора ведёт ОБА документа пакета, не только счёт."""
+    from app.services.email_invoice_ingest import confirm_intake_with_review
+
+    async with async_session_factory() as session:
+        wrong = await make_counterparty(session, name="Заглушка ИНН 237000615", inn="2370006158")
+        right = await make_counterparty(
+            session, name="ООО СДЭК-Славянск (верный)", inn="2370006159"
+        )
+        intake = _package_intake(wrong.id)
+        session.add(intake)
+        await session.flush()
+        await materialize_from_intake(session, intake)
+        await session.commit()
+        assert await _payable(session, wrong.id) == Decimal("7984.90")
+
+        await confirm_intake_with_review(
+            session, intake, actor_user_id=None, counterparty_id=right.id
+        )
+        await session.commit()
+
+        bill = await session.get(SupplierInvoice, intake.invoice_id)
+        companion = await session.get(SupplierInvoice, intake.companion_invoice_id)
+        assert bill is not None and bill.counterparty_id == right.id
+        assert companion is not None and companion.counterparty_id == right.id
+        assert await _payable(session, wrong.id) == Decimal("0.00")
+        assert await _payable(session, right.id) == Decimal("7984.90")
+
+
+async def test_free_payment_does_not_double_book_when_statement_row_came_first(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Обратный порядок: операция выписки разобрана РАНЬШЕ paid-перехода черновика.
+
+    Тогда правило 1 уже отработало на строке операции (классификатор зовёт его сам), и повторный
+    прогон по prebooked-строке зачёл бы те же деньги второй раз: кредиторка «погашена» дважды,
+    а разница осела бы дебиторкой из воздуха. Найдено предделойным аудитом (blocker)."""
+    import uuid as _uuid
+
+    from app.models import BankOperation, InvoicePaymentAllocation
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        _account, payer_wallet = await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        cp = await make_counterparty(
+            session,
+            name="СДЭК-обратный-порядок",
+            inn="2370006160",
+            requisites={
+                "bankAcnt": "40702810430000013829",
+                "bankBik": "040349602",
+                "recipientCorrAccountNumber": "30101810100000000602",
+            },
+            requisites_verified=True,
+        )
+        intake = _package_intake(cp.id)
+        session.add(intake)
+        await session.flush()
+        await materialize_from_intake(session, intake)
+        await session.commit()
+        closing_id = intake.companion_invoice_id
+        assert await _payable(session, cp.id) == Decimal("7984.90")
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(
+                    article_id=article.id,
+                    amount=Decimal("7984.00"),
+                    purpose="Услуги доставки",
+                    counterparty_id=cp.id,
+                )
+            ],
+        )
+        draft.document_id = f"doc-{_uuid.uuid4()}"
+        await session.flush()
+
+        # Выписка пришла первой: своя проводка + зачёт кредиторки правилом 1 (как это делает
+        # классификатор при разборе операции).
+        statement_txn = CashflowTransaction(
+            wallet_id=payer_wallet.id,
+            direction="out",
+            amount=Decimal("7984.00"),
+            operation_date=PAST,
+            article_id=article.id,
+            counterparty_id=cp.id,
+            source_kind="bank_operation",
+            payment_purpose="Услуги доставки",
+            quality_status="auto",
+        )
+        session.add(statement_txn)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=closing_id,
+                source_kind="cash",
+                cashflow_transaction_id=statement_txn.id,
+                amount=Decimal("7984.00"),
+            )
+        )
+        session.add(
+            BankOperation(
+                provider="tbank",
+                provider_operation_id=f"op-{_uuid.uuid4()}",
+                account_id=payer_wallet.account_id,
+                operation_date=PAST,
+                direction="out",
+                amount=Decimal("7984.00"),
+                document_number=_document_number(draft.document_id),
+                payment_purpose="Услуги доставки",
+                raw_payload={},
+                classification_status="classified",
+                cashflow_transaction_id=statement_txn.id,
+            )
+        )
+        await session.commit()
+        assert await _payable(session, cp.id) == Decimal("0.90")
+
+        # Теперь приходит статус «исполнен» по тому же платежу.
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+        await session.commit()
+
+        # Деньги учтены ОДИН раз: остаток кредиторки не изменился, дебиторка не появилась.
+        assert await _payable(session, cp.id) == Decimal("0.90")
+        assert await _receivable(session, cp.id) == Decimal("0.00")
+
+
+async def test_free_payment_does_not_settle_document_awaiting_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ, ушедший в банк-черновик, чужим платежом не гасится.
+
+    Иначе поставщику платят дважды: сначала этим свободным платежом (зачёт кредиторки), потом
+    исполнением черновика. Гард симметричен тому, что уже стоит в авто-зачёте из предоплат."""
+    from cp_helpers import make_invoice
+
+    from app.services.counterparty_payments import create_payment_draft_for_invoices
+
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        cp = await make_counterparty(
+            session,
+            name="Поставщик с платежом в пути",
+            inn="2370006161",
+            requisites={
+                "bankAcnt": "40702810430000013829",
+                "bankBik": "040349602",
+                "recipientCorrAccountNumber": "30101810100000000602",
+            },
+            requisites_verified=True,
+        )
+        in_bank = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount=Decimal("5000.00"),
+            number="УПД-В-БАНКЕ",
+            source="email",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=PAST,
+        )
+        await session.commit()
+        # Документ реально уходит в банк штатным путём — так же, как из «Страницы на оплату».
+        await create_payment_draft_for_invoices(
+            session, invoice_ids=[in_bank.id], actor_user_id=None
+        )
+        await session.refresh(in_bank)
+        assert in_bank.draft_id is not None
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(
+                    article_id=article.id,
+                    amount=Decimal("3000.00"),
+                    purpose="Другая услуга",
+                    counterparty_id=cp.id,
+                )
+            ],
+        )
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+        await session.commit()
+
+        await session.refresh(in_bank)
+        assert in_bank.payment_status == "unpaid"  # платёж в пути не тронут
+        assert await _receivable(session, cp.id) == Decimal("3000.00")  # деньги стали авансом
