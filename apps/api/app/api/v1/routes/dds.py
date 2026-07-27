@@ -2123,11 +2123,15 @@ async def classify_transaction(
     txn.location_id = context.location_id
     txn.lease_id = context.lease_id
     txn.quality_status = "manual_override"
-    # Проводка из выписки (кейс Манго — предоплатная модель по банк-фиду): смена контрагента
-    # обязана привести привязанную автопредоплату в соответствие, иначе фантомная дебиторка
-    # осталась бы на прежнем контрагенте.
-    if txn.source_kind == "bank_operation":
+    # Правило 1 канона: платёж поставщику гасит его открытую кредиторку, а излишек становится
+    # дебиторкой. Канал денег роли не играет — наличная выплата из Сейфа обязана давать ДЗ так же,
+    # как списание из выписки (иначе оплаченная вперёд аренда в свою дату превращалась бы в
+    # фантомную КЗ). Смена контрагента здесь же приводит привязанную предоплату в соответствие,
+    # иначе фантомная дебиторка осталась бы на прежнем контрагенте (кейс Манго).
+    try:
         await ensure_prepayment_from_bank_transaction(session, txn)
+    except CounterpartyPaymentError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     # Возврат переплаты гасит дебиторку без аллокации, поэтому сам за переразметкой не следует:
     # снятая возвратная статья оставляла бы дебиторку списанной навсегда, а поставленная — не
     # гасила бы её вовсе. Пересобираем зачёт у ОБОИХ контрагентов (проводку могли перевесить).
@@ -2197,7 +2201,9 @@ async def classify_transaction_full(
             )
         else:
             created_ids = await apply_cashflow_exclude(session, txn)
-    except CashflowClassificationConflictError as error:
+    except (CashflowClassificationConflictError, CounterpartyPaymentError) as error:
+        # Второй случай — правило 1: снять зачёт кредиторки, замороженный в банк-черновике,
+        # нельзя, пока черновик не откачен.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

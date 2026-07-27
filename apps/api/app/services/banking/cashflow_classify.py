@@ -291,6 +291,7 @@ async def apply_cashflow_split(
         await session.flush()
 
     created: list[UUID] = []
+    legs: list[CashflowTransaction] = []
     for index, line in enumerate(splits):
         article_id, amount, employee_id = line.article_id, line.amount, line.employee_id
         transfer_wallet_id = line.transfer_wallet_id
@@ -326,6 +327,7 @@ async def apply_cashflow_split(
             session.add(leg)
             await session.flush()
         created.append(leg.id)
+        legs.append(leg)
         if transfer_wallet_id is not None:
             await _book_transfer_counter_leg(
                 session,
@@ -355,6 +357,16 @@ async def apply_cashflow_split(
                 )
             )
             await session.flush()
+
+    # Правило 1 канона — ПОСЛЕ того как разложены все доли: каждая доля-расход в пользу
+    # поставщика гасит его открытую кредиторку, а излишек становится дебиторкой. Порядок важен
+    # по той же причине, что и в разборе банк-операции: FIFO должен видеть уже проставленные
+    # аллокации, иначе один платёж профинансирует документов больше, чем в нём денег.
+    # Доля, с которой контрагента сняли, тем же вызовом теряет свою прежнюю предоплату.
+    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+    for leg in legs:
+        await ensure_prepayment_from_bank_transaction(session, leg)
     return created
 
 
@@ -364,8 +376,15 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     ``quality_status='excluded'`` убирает проводку из витрины баланса (фильтр в
     ``_wallet_movement_deltas``) — баланс кошелька изменится на её сумму. Повторный разбор
     (split) снова назначит статью и вернёт проводку в баланс.
+
+    Вслед за деньгами уходит и всё, что они финансировали по правилу 1: дебиторка этой проводки
+    и её зачёты кредиторки. Иначе исключённый платёж продолжал бы держать ДЗ, которой нет
+    покрытия, а его зачёт — числить чужой УПД погашенным.
     """
     ensure_cashflow_reclassifiable(txn)
     await _clear_transfer_counter_leg(session, txn)
     txn.quality_status = EXCLUDED_QUALITY
+    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+    await ensure_prepayment_from_bank_transaction(session, txn)
     return [txn.id]
