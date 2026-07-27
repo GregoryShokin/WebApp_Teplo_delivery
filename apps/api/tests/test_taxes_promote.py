@@ -328,3 +328,36 @@ async def test_injury_without_due_gets_legal_deadline(
 
     assert row.paid_on == date(2026, 8, 15)
     assert row.recipient == "sfr"  # отдельные реквизиты СФР, не ЕНП
+
+
+async def test_month_period_defines_tax_year_not_due_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Декабрьский травматизм остаётся в 2025 году, хотя срок у него — 15 января.
+
+    Год брался из срока, поэтому платёжка за декабрь уезжала в 2026-й и утаскивала за собой
+    факт уплаты: в сводке 2026 года «уплачено» показывало лишние 499,27 ₽ (найдено на проде).
+    """
+    async with async_session_factory() as session:
+        intake = _intake(
+            tax_kind="contrib_injury",
+            amount="499.27",
+            period="2025-12",
+            due="2026-01-15",
+            received=datetime(2025, 12, 23, tzinfo=UTC),
+            filename="0,2%.xls",
+        )
+        session.add(intake)
+        await session.commit()
+
+        await promote_intake(session, intake)
+        await session.commit()
+
+        row = (
+            await session.scalars(
+                select(TaxPayment).where(TaxPayment.kind == "contrib_injury")
+            )
+        ).one()
+
+    assert row.for_year == 2025
+    assert row.paid_on == date(2026, 1, 15)  # срок остаётся законным

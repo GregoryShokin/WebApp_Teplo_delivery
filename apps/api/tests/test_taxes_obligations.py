@@ -131,7 +131,8 @@ async def test_injury_settled_only_by_payment_of_the_same_month(
     «Осталось», найдено владельцем 27.07.2026).
     """
     async with async_session_factory() as session:
-        session.add(_planned("contrib_injury", "100", date(2026, 7, 26), "year",
+        # Срок июльского взноса — 15 августа (125-ФЗ, ст. 22).
+        session.add(_planned("contrib_injury", "100", date(2026, 8, 15), "2026-07",
                              recipient="sfr"))
         session.add(_paid("contrib_injury", "100", date(2026, 1, 26), "year"))
         session.add(_paid("contrib_injury", "57.14", date(2026, 6, 23), "year"))
@@ -146,13 +147,14 @@ async def test_injury_settled_only_by_payment_of_the_same_month(
 async def test_injury_settled_by_payment_inside_its_window(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Платёж того же месяца (и до 15 числа следующего — крайний срок) обязательство гасит."""
+    """Платёж внутри месяца начисления (до срока 15 числа следующего) обязательство гасит."""
     async with async_session_factory() as session:
-        session.add(_planned("contrib_injury", "100", date(2026, 7, 26), "year",
+        session.add(_planned("contrib_injury", "100", date(2026, 8, 15), "2026-07",
                              recipient="sfr"))
+        # Бухгалтер выписывает платёжку в июле, платят её тогда же — задолго до срока.
         session.add(_paid("contrib_injury", "100", date(2026, 7, 27), "year"))
         await session.commit()
 
-        obligations = await list_payable_obligations(session, today=date(2026, 7, 28))
+        obligations = await list_payable_obligations(session, today=date(2026, 8, 1))
 
     assert not [o for o in obligations if o.kind == "contrib_injury"]

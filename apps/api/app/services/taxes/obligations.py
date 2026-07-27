@@ -54,18 +54,18 @@ PERIOD_TITLES: dict[str, str] = {
 def _same_injury_window(paid_on: date | None, due: date | None) -> bool:
     """Платёж травматизма относится к той же месячной платёжке, что и плановая строка.
 
-    Взнос за месяц N платят внутри месяца N, крайний срок — 15 число N+1 (125-ФЗ, ст. 22).
-    Окно: [1 число месяца платёжки .. 15 число следующего].
+    В плановой строке ``paid_on`` — это СРОК: 15 число месяца, следующего за месяцем
+    начисления (125-ФЗ, ст. 22). Платят обычно раньше, внутри самого месяца начисления,
+    поэтому окно отсчитываем ОТ СРОКА назад: [1 число месяца начисления .. сам срок].
+    Без этого январский платёж 26.01 не закрывал платёжку со сроком 15.02 — обязательство
+    висело неоплаченным (найдено на проде 27.07.2026).
     """
     if paid_on is None or due is None:
         return False
-    if paid_on.year == due.year and paid_on.month == due.month:
-        return True
-    next_month = (due.month % 12) + 1
-    next_year = due.year + (1 if due.month == 12 else 0)
-    return (
-        paid_on.year == next_year and paid_on.month == next_month and paid_on.day <= 15
-    )
+    accrual_month = due.month - 1 or 12
+    accrual_year = due.year - (1 if due.month == 1 else 0)
+    window_start = date(accrual_year, accrual_month, 1)
+    return window_start <= paid_on <= due
 
 
 def is_settled(
@@ -88,12 +88,15 @@ def is_settled(
             continue
         if fact.kind != planned.kind:
             continue
-        if planned.kind == "contrib_injury" and not _same_injury_window(
-            fact.paid_on, planned.paid_on
-        ):
-            # Травматизм платится КАЖДЫЙ месяц, а период у всех строк один — 'year'.
-            # Без окна январский платёж «гасил» июльскую платёжку, и обязательство молча
-            # исчезало из «Активных платежей» (расхождение со сводкой на 100 ₽, 27.07.2026).
+        if planned.kind == "contrib_injury":
+            # Травматизм платится КАЖДЫЙ месяц, и период у строк разнобойный: у платёжек
+            # он месячный ('2026-07'), у банковских фактов чаще пуст или 'year'. Сравнивать
+            # периоды тут бессмысленно — соответствие задаёт ОКНО уплаты; вне окна платёж
+            # чужой (январский «гасил» июльскую платёжку — находка владельца 27.07.2026).
+            if _same_injury_window(fact.paid_on, planned.paid_on):
+                if used_fact_ids is not None:
+                    used_fact_ids.add(fact.id)
+                return True
             continue
         if fact.for_period is not None:
             if fact.for_period == planned.for_period:

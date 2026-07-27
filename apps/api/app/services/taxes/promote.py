@@ -79,7 +79,13 @@ def _tax_year(period_hint: str | None, due: date | None, received_at=None) -> in
     Без распознанного срока год берём из ДАТЫ ПИСЬМА (данные), а не date.today():
     иначе продвижение январём документа за декабрь уводило обязательство в другой
     налоговый год в зависимости от дня нажатия кнопки (находка аудита 27.07.2026).
+
+    Месячный период ('YYYY-MM') сам называет год — и он главнее срока: декабрьский
+    травматизм платится до 15 января, и по сроку обязательство уезжало в СЛЕДУЮЩИЙ год,
+    утаскивая за собой факт уплаты (найдено на проде 27.07.2026).
     """
+    if period_hint and len(period_hint) == 7 and period_hint[4] == "-":
+        return int(period_hint[:4])
     if due is None:
         anchor = received_at.date() if received_at is not None else date.today()
         if period_hint == "year" and anchor.month <= 4:
