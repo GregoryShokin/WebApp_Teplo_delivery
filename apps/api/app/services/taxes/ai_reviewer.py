@@ -180,7 +180,19 @@ async def _call_claude(
     except Exception as exc:  # noqa: BLE001 - до пересборки образа пакета может не быть
         raise TaxAiError("Пакет anthropic недоступен в этом окружении.") from exc
 
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    # Базовый URL SDK берёт из ANTHROPIC_BASE_URL сам (на проде это адрес релея —
+    # Anthropic блокирует регион сервера). Секрет релея шлём заголовком: ключ остаётся у нас,
+    # релей его не хранит и без секрета никого не пускает.
+    client = AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        timeout=settings.anthropic_timeout_seconds,
+        max_retries=settings.anthropic_max_retries,
+        default_headers=(
+            {"x-relay-secret": settings.anthropic_relay_secret}
+            if settings.anthropic_relay_secret
+            else None
+        ),
+    )
     try:
         message = await client.messages.create(
             model=settings.tax_ai_reviewer_model,

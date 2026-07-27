@@ -595,7 +595,17 @@ async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice 
     except Exception:  # noqa: BLE001 - до пересборки образа пакета может не быть
         logger.warning("anthropic SDK недоступен — LLM-фолбэк выключен", exc_info=True)
         return None
-    client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+    # Через тот же релей, что и ИИ-ревьюер налогов: с прод-IP Anthropic отдаёт 403 по региону.
+    client = AsyncAnthropic(
+        api_key=settings.anthropic_api_key,
+        timeout=settings.anthropic_timeout_seconds,
+        max_retries=settings.anthropic_max_retries,
+        default_headers=(
+            {"x-relay-secret": settings.anthropic_relay_secret}
+            if settings.anthropic_relay_secret
+            else None
+        ),
+    )
     b64 = base64.standard_b64encode(pdf).decode("ascii")
     try:
         message = await client.messages.create(

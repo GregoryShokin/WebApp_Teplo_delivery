@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
@@ -290,3 +291,50 @@ def test_region_block_is_explained_not_dumped_as_403() -> None:
 
     assert "401" in _call_failure_reason(RuntimeError("Error code: 401 authentication_error"))
     assert "Лимит" in _call_failure_reason(RuntimeError("Error code: 429 rate_limit"))
+
+
+async def test_client_carries_relay_secret_and_limits(monkeypatch) -> None:
+    """Клиент Claude уходит через релей: секрет в заголовке, таймаут и ретраи — из настроек.
+
+    Прод ходит к Anthropic не напрямую (403 по региону), а через Cloudflare-воркер. Ключ
+    остаётся у нас и передаётся заголовком, воркер его не хранит; секрет релея закрывает
+    адрес от посторонних. Без настройки секрета заголовок не шлём вовсе.
+    """
+    from app.core.config import Settings
+    from app.services.taxes import ai_reviewer
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.messages = self
+
+        async def create(self, **_kwargs):
+            raise RuntimeError("сеть не нужна: проверяем только конструктор клиента")
+
+    import sys
+    import types
+
+    fake_module = types.ModuleType("anthropic")
+    fake_module.AsyncAnthropic = _FakeClient
+    monkeypatch.setitem(sys.modules, "anthropic", fake_module)
+
+    settings = Settings(
+        anthropic_api_key="k",
+        anthropic_relay_secret="s3cret",
+        anthropic_timeout_seconds=42.0,
+        anthropic_max_retries=7,
+    )
+    with pytest.raises(ai_reviewer.TaxAiError):
+        await ai_reviewer._call_claude(settings, tool={"name": "t"}, prompt="p")
+
+    assert captured["default_headers"] == {"x-relay-secret": "s3cret"}
+    assert captured["timeout"] == 42.0
+    assert captured["max_retries"] == 7
+
+    captured.clear()
+    settings_no_relay = Settings(anthropic_api_key="k")
+    with pytest.raises(ai_reviewer.TaxAiError):
+        await ai_reviewer._call_claude(settings_no_relay, tool={"name": "t"}, prompt="p")
+    assert captured["default_headers"] is None
