@@ -31,7 +31,7 @@ from app.services.taxes.bank_facts import (
     injury_paid_for_month,
     payroll_facts_without_turnover,
 )
-from app.services.taxes.engine import TaxInputs, TaxState, YearConfig
+from app.services.taxes.engine import TaxInputs, TaxState, YearConfig, fmt_money
 
 ZERO = Decimal("0")
 
@@ -316,7 +316,16 @@ async def build_ledger_summary(
             reduces_tax=True,
             recipient="sfr",
             paid_by_convention=injury_convention,
-            note=payroll_note or "Платится в СФР отдельной платёжкой, не через ЕНП",
+            # Владелец 27.07.2026: бухгалтер травматизм в вычет не берёт, «считает копейками».
+            # Наш расчёт его берёт (подп. 1 п. 3.1 ст. 346.21 НК), но декларацию подаёт она —
+            # значит по факту налог платится на эту сумму больше. Цену методики показываем.
+            note=(
+                f"Платится в СФР отдельной платёжкой, не через ЕНП. Уменьшает УСН рубль в "
+                f"рубль, но бухгалтер его в вычет не берёт — за год это "
+                f"{fmt_money(injury_paid)} ₽ лишнего налога"
+                if injury_paid > ZERO
+                else (payroll_note or "Платится в СФР отдельной платёжкой, не через ЕНП")
+            ),
         )
     )
 

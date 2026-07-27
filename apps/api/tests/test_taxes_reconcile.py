@@ -699,14 +699,14 @@ async def test_month_without_turnover_gets_line_from_paid_fact(
     assert line.action is None  # платить второй раз не предлагаем
 
 
-async def test_doc_bigger_than_calc_names_injury_share(
+async def test_doc_bigger_by_injury_is_convention_not_mismatch(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """«Документ больше расчёта» называет долю травматизма, а не «где-то в вычете».
+    """Платёжка больше расчёта РОВНО на травматизм — это методика бухгалтера, не расхождение.
 
-    Бухгалтер считает вычет без взносов на травматизм, движок — с ними (подп. 1 п. 3.1
-    ст. 346.21 НК). Разница платёжки и расчёта равна уплаченному травматизму, и сверка
-    обязана называть эту причину прямо.
+    Владелец 27.07.2026: «Наталья травматизм не вычитает, считая это копейками». Разница
+    повторяется каждый квартал; краснеть по ней сверка не должна, но обязана назвать причину
+    и оставить обязательство платёжным — платим по её платёжке.
     """
     async with async_session_factory() as session:
         await _seed_revenue(session, 3)
@@ -730,10 +730,12 @@ async def test_doc_bigger_than_calc_names_injury_share(
         recon = await build_reconciliation(session, as_of=date(2026, 4, 20))
 
     usn = _line(recon, "usn_advance", "q1")
-    assert usn.verdict == "doc_mismatch"
-    assert usn.action_why is not None
-    assert "травматизм" in usn.action_why
-    assert "300,00" in usn.action_why
+    assert usn.verdict != "doc_mismatch"  # известная конвенция, а не ошибка
+    assert usn.severity != "alert"
+    explanation = next(m for m in usn.messages if "травматизм" in m)
+    assert "300,00" in explanation
+    # Платить всё равно по платёжке бухгалтера — обязательство не должно исчезнуть.
+    assert usn.payable_amount == Decimal("701816")
 
 
 async def test_paid_obligation_with_safe_mismatch_is_not_payable_again(
@@ -769,8 +771,8 @@ async def test_paid_obligation_with_safe_mismatch_is_not_payable_again(
         recon = await build_reconciliation(session, as_of=date(2026, 4, 29))
 
     usn = _line(recon, "usn_advance", "q1")
-    assert usn.verdict == "doc_mismatch"  # расхождение по-прежнему видно
-    assert usn.payable_amount is None  # но платить нечего — уже уплачено
+    assert usn.payable_amount is None  # платить нечего — уже уплачено
+    assert usn.severity != "alert"
 
 
 async def test_enp_line_explains_calc_vs_fact_gap_as_ndfl_windows(
@@ -813,3 +815,41 @@ async def test_enp_line_explains_calc_vs_fact_gap_as_ndfl_windows(
     assert "13 595,93" in explanation  # взносы совпали
     assert "463,10" in explanation  # разница названа и отнесена к НДФЛ
     assert "НДФЛ" in explanation
+
+
+async def test_doc_bigger_beyond_injury_is_still_a_mismatch(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Допуск на методику бухгалтера НЕ должен глушить настоящее расхождение.
+
+    Травматизм объясняет 300 ₽; если платёжка больше расчёта на 5 300 ₽ — оставшиеся 5 000
+    объяснить нечем, и это по-прежнему расхождение с пояснением.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+        session.add(_tax_payment("contrib_employees", "27191.86", date(2026, 3, 26)))
+        session.add(
+            _tax_payment("contrib_injury", "300.00", date(2026, 3, 26), recipient="sfr")
+        )
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance",
+                period="q1",
+                amount="679624",  # расчёт 674 324 + травма 300 + необъяснимые 5 000
+                due=date(2026, 4, 28),
+                received=datetime(2026, 4, 17, tzinfo=UTC),
+                filename="УСН 1 кв.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 4, 20))
+
+    usn = _line(recon, "usn_advance", "q1")
+    assert usn.verdict == "doc_mismatch"
+    assert usn.action_why is not None
+    assert "300,00" in usn.action_why  # травматизм назван
+    # fmt_money ставит неразрывный пробел между разрядами.
+    assert "5\u00a0000,00" in usn.action_why  # и необъяснённый остаток тоже
+    assert "уточните у бухгалтера" in usn.action_why

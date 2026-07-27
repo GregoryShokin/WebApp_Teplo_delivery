@@ -108,6 +108,8 @@ def _classify(
     due_date: date | None,
     as_of: date,
     documented_is_increment: bool = False,
+    doc_gap_allowance: Decimal = ZERO,
+    allowance_reason: str = "",
 ) -> tuple[str, str, list[str]]:
     """Вердикт по трём значениям. Возвращает (verdict, severity, messages).
 
@@ -115,6 +117,12 @@ def _classify(
     к доплате. Так устроен допвзнос 1%: расчёт ведётся нарастающим итогом за год, а бухгалтер
     выписывает платёжку на прирост за квартал. Сравнивать их напрямую нельзя — получится
     ложное расхождение, хотя `уплачено + платёжка` сходится с расчётом до копейки.
+
+    ``doc_gap_allowance`` — насколько платёжка МОЖЕТ законно превышать наш расчёт из-за
+    известной конвенции бухгалтера (владелец 27.07.2026: «Наталья травматизм не вычитает,
+    считая это копейками»). В пределах этой суммы превышение — не расхождение, а разная
+    методика: краснеть каждый квартал по одному и тому же поводу сверка не должна. Всё, что
+    сверх, остаётся расхождением; платёжка МЕНЬШЕ расчёта — расхождение всегда.
     """
     messages: list[str] = []
 
@@ -124,6 +132,17 @@ def _classify(
     if documented_is_increment and calculated is not None:
         doc_base = calculated - (paid or ZERO)
     doc_vs_calc = _diff(documented, doc_base)
+    if (
+        doc_vs_calc is not None
+        and doc_gap_allowance > ZERO
+        and TOLERANCE < doc_vs_calc <= doc_gap_allowance + TOLERANCE
+    ):
+        messages.append(
+            f"Платёжка больше расчёта на {fmt_money(doc_vs_calc)} ₽ — "
+            f"{allowance_reason or 'разная методика вычета'}. Это не расхождение: платите по "
+            f"платёжке, разница осядет на ЕНС и зачтётся."
+        )
+        doc_vs_calc = ZERO  # дальше классифицируем как совпадение
     if doc_vs_calc is not None and abs(doc_vs_calc) > TOLERANCE:
         expected = "остатком к доплате" if documented_is_increment else "расчётом"
         messages.append(
@@ -503,7 +522,13 @@ def _explain_doc_gap(why: str | None, *, gap: Decimal, injury: Decimal) -> str |
         f"(подп. 1 п. 3.1 ст. 346.21 НК), бухгалтер — нет."
     )
     if tail > ZERO:
-        extra += f" Остальные {fmt_money(tail)} ₽ — округления и разница в сумме дохода."
+        # Копейки — это округление налога и разница в сумме дохода; заметный остаток
+        # объяснять нечем, и говорить про «округления» в таком случае — врать владельцу.
+        extra += (
+            f" Остальные {fmt_money(tail)} ₽ — округления и разница в сумме дохода."
+            if tail <= Decimal("5")
+            else f" Остальные {fmt_money(tail)} ₽ ничем не объяснены — уточните у бухгалтера."
+        )
     return why + extra
 
 
@@ -531,12 +556,22 @@ async def build_reconciliation(
         paid = await _paid_amount(
             session, year=year, kind="usn_advance", period_code=period_code
         )
+        # Бухгалтер не берёт травматизм в вычет («копейки»), движок берёт — её платёжка
+        # систематически больше нашего расчёта ровно на уплаченный травматизм. Это разная
+        # методика, а не ошибка: держим её как допуск, чтобы сверка не краснела каждый квартал.
+        injury_claimed = await _injury_in_deduction(session, year=year, as_of=p_end)
         verdict, severity, messages = _classify(
             calculated=calculated,
             documented=documented,
             paid=paid,
             due_date=due,
             as_of=as_of,
+            doc_gap_allowance=injury_claimed,
+            allowance_reason=(
+                "бухгалтер не берёт в вычет уплаченный травматизм "
+                f"({fmt_money(injury_claimed)} ₽ с начала года), а мы берём "
+                "(подп. 1 п. 3.1 ст. 346.21 НК)"
+            ),
         )
         _usn_action = _action_for(verdict, documented=documented, expected=calculated)
         if verdict == "doc_mismatch" and documented is not None and documented > calculated:
@@ -545,7 +580,7 @@ async def build_reconciliation(
                 _explain_doc_gap(
                     _usn_action[1],
                     gap=documented - calculated,
-                    injury=await _injury_in_deduction(session, year=year, as_of=p_end),
+                    injury=injury_claimed,
                 ),
             )
         lines.append(
