@@ -271,3 +271,22 @@ async def test_review_all_covers_attention_statuses_and_audits(
     assert len(report.documents) == 2  # только needs_review + unsupported
     assert report.verdict.startswith("Контур сходится")
     assert report.findings[0].severity == "warning"
+
+
+def test_region_block_is_explained_not_dumped_as_403() -> None:
+    """403 «Request not allowed» — это регион, а не ключ; владельцу так и пишем.
+
+    С российского IP Anthropic отвечает 403 даже на заведомо неверный ключ (проверено на
+    проде 27.07.2026). Сырой текст исключения отправлял владельца проверять ключ впустую.
+    """
+    from app.services.taxes.ai_reviewer import _call_failure_reason
+
+    reason = _call_failure_reason(
+        RuntimeError("Error code: 403 - {'error': {'message': 'Request not allowed'}}")
+    )
+    assert "не обслуживает запросы с IP" in reason
+    assert "HTTPS_PROXY" in reason
+    assert "Ключ тут ни при чём" in reason
+
+    assert "401" in _call_failure_reason(RuntimeError("Error code: 401 authentication_error"))
+    assert "Лимит" in _call_failure_reason(RuntimeError("Error code: 429 rate_limit"))

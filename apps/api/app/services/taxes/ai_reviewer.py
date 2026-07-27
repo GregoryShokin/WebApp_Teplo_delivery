@@ -192,12 +192,34 @@ async def _call_claude(
         )
     except Exception as exc:  # noqa: BLE001 - сеть/лимиты не должны ронять страницу
         logger.warning("ИИ-ревьюер: вызов Claude не удался", exc_info=True)
-        raise TaxAiError(f"Не удалось получить ответ модели: {exc}") from exc
+        raise TaxAiError(_call_failure_reason(exc)) from exc
 
     for block in message.content:
         if getattr(block, "type", None) == "tool_use":
             return dict(block.input)  # type: ignore[arg-type]
     raise TaxAiError("Модель не вернула структурированный ответ.")
+
+
+def _call_failure_reason(exc: Exception) -> str:
+    """Человеческая причина отказа вместо сырого текста исключения.
+
+    Отдельно ловим региональную блокировку: с российского IP Anthropic отвечает
+    403 «Request not allowed» ДАЖЕ на верный ключ (проверено на проде 27.07.2026 — 403
+    приходит и на заведомо неправильный ключ, то есть дело не в нём). Без этого владелец
+    видел «Не удалось получить ответ модели: Error code: 403…» и шёл искать проблему в ключе.
+    """
+    text = str(exc)
+    if "403" in text and "not allowed" in text.casefold():
+        return (
+            "Anthropic не обслуживает запросы с IP этого сервера (403). Ключ тут ни при чём: "
+            "нужен выход через разрешённый регион — задайте HTTPS_PROXY в окружении API "
+            "либо запускайте ИИ-разбор с машины, у которой доступ есть."
+        )
+    if "401" in text or "authentication" in text.casefold():
+        return "Ключ ANTHROPIC_API_KEY не принят (401): проверьте значение и срок действия."
+    if "429" in text:
+        return "Лимит запросов к модели исчерпан (429) — попробуйте позже."
+    return f"Не удалось получить ответ модели: {exc}"
 
 
 def _extract_text(intake: TaxDocumentIntake) -> str | None:
