@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus } from "lucide-react";
+import { LoaderCircle, Plus, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiErrorMessage } from "@/lib/api";
-import { getRegistry } from "@/routes/counterparties/api";
+import { getExpenseArticles, getRegistry } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
 
 import {
@@ -35,10 +35,38 @@ import {
   updateWarehouseInvoice,
 } from "./api";
 
+/** Складская строка формы + то, что документ уже знает о ней и что нельзя потерять при правке:
+ * статья ДДС (у чека Кассы складская строка несёт «Оплата поставщикам») и пометка возврата. */
+type StoreLine = DraftLine & { ddsArticleId: string | null; isReturn: boolean };
+/** Расходная строка (не товар): своя статья ДДС. У чека Кассы такие строки — «Расходы на
+ * питание персонала», «Содержание торговых точек»; у накладной тот же блок — «персонал». */
+type ExpenseLine = StaffLine & { isReturn: boolean };
+
+/** Возвращённая в магазин позиция чека: остаётся в документе (сверка с бумажным чеком копейка
+ * в копейку), но не проводится. Пометку саму по себе в правке не снимают — она приехала с
+ * кассы вместе со строкой; форма её показывает и возвращает обратно нетронутой. */
+function ReturnMark({ isReturn, children }: { isReturn: boolean; children: ReactNode }) {
+  if (!isReturn) return <>{children}</>;
+  return (
+    <div className="space-y-1 rounded-md border border-red-200 bg-red-50/50 p-1.5">
+      <div className="flex items-center gap-1 text-xs text-red-600">
+        <Undo2 size={12} aria-hidden="true" /> возвращено в магазин — в сумму не входит
+      </div>
+      {children}
+    </div>
+  );
+}
+
 /** Правка позиций накладной. По умолчанию — НЕОПЛАЧЕННОЙ (не бартерной): «переделать и отправить
  * в iiko». В режиме `paid` — исправление УЖЕ ОПЛАЧЕННОЙ (право invoices.normal.edit_paid): излишек
  * оплаты уходит в дебиторку поставщику, iiko-документ не трогаем. Форма одна, отличается гейтом,
- * эндпоинтом и предупреждением. Переиспользует строки создания. */
+ * эндпоинтом и предупреждением. Переиспользует строки создания.
+ *
+ * Чек Кассы правится этой же формой (кнопка «Исправить оплаченную» есть и у него), но устроен
+ * иначе: `is_staff` у него всегда false, а «товар vs расход» живёт в СТАТЬЕ каждой строки.
+ * Поэтому раскладываем строки по статье (как `CreateChequeDialog`), а не по `is_staff`, и
+ * возвращаем на бэк и статью, и пометку возврата — иначе расходы чека уедут в iiko приходом
+ * на склад, а возвращённые позиции станут проведёнными. */
 export function InvoiceEditDialog({
   invoiceId,
   onOpenChange,
@@ -67,6 +95,14 @@ export function InvoiceEditDialog({
     enabled: open,
     staleTime: 60_000,
   });
+  // Полный расходный каталог — для строк чека Кассы («содержание точек», «хозрасходы» и т.п.):
+  // блок «Траты на персонал» знает только две статьи, а чек разносится по любой расходной.
+  const expenseArticlesQuery = useQuery({
+    queryKey: ["cp", "expense-articles"],
+    queryFn: getExpenseArticles,
+    enabled: open,
+    staleTime: 60_000,
+  });
   // Реестр контрагентов — для смены поставщика (только неоплаченная накладная).
   const registryQuery = useQuery({
     queryKey: ["cp", "registry", "all"],
@@ -75,9 +111,14 @@ export function InvoiceEditDialog({
   });
   const detail = detailQuery.data;
   const staffArticles = staffArticlesQuery.data ?? [];
+  const expenseArticles = expenseArticlesQuery.data ?? [];
+  // Чек Кассы: расходы живут не в «персонале», а в статье строки — форма показывает их
+  // отдельным блоком с полным каталогом статей, как в окне создания чека.
+  const isCheque = detail?.source === "kassa_cheque";
 
-  const [lines, setLines] = useState<DraftLine[]>([]);
+  const [lines, setLines] = useState<StoreLine[]>([]);
   const [staffLines, setStaffLines] = useState<StaffLine[]>([]);
+  const [expenseLines, setExpenseLines] = useState<ExpenseLine[]>([]);
   const [number, setNumber] = useState("");
   const [counterpartyId, setCounterpartyId] = useState("");
 
@@ -86,7 +127,7 @@ export function InvoiceEditDialog({
     if (!detail) return;
     setLines(
       detail.lines
-        .filter((l) => !l.is_staff)
+        .filter((l) => !l.is_staff && !l.is_expense)
         .map((l) => ({
           key: l.id,
           product_id: l.iiko_product_id,
@@ -96,6 +137,10 @@ export function InvoiceEditDialog({
           price: String(l.price),
           vat: l.vat_percent ? String(l.vat_percent) : "",
           amount: String(l.sum),
+          // Статью складской строки (у чека — «Оплата поставщикам») возвращаем как есть:
+          // по ней бэк отличает товар от расхода.
+          ddsArticleId: l.dds_article_id,
+          isReturn: Boolean(l.is_return),
         })),
     );
     setStaffLines(
@@ -108,18 +153,34 @@ export function InvoiceEditDialog({
           amount: String(l.sum),
         })),
     );
+    setExpenseLines(
+      detail.lines
+        .filter((l) => !l.is_staff && l.is_expense)
+        .map((l) => ({
+          key: l.id,
+          articleId: l.dds_article_id ?? "",
+          note: l.name,
+          amount: String(l.sum),
+          isReturn: Boolean(l.is_return),
+        })),
+    );
     setNumber(detail.number ?? "");
     setCounterpartyId(detail.counterparty_id);
   }, [detail?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totals = useMemo(() => {
-    const store = lines.reduce(
-      (s, l) => s + (l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price)),
-      0,
-    );
+    // Возвращённые в магазин позиции в сумму документа не идут (он проводится net) —
+    // считаем их отдельно, чтобы кассир видел и «как на бумаге», и «к оплате».
+    const lineAmount = (l: StoreLine) =>
+      l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price);
+    const store = lines.reduce((s, l) => s + (l.isReturn ? 0 : lineAmount(l)), 0);
     const staff = staffLines.reduce((s, l) => s + num(l.amount), 0);
-    return { store, staff, total: store + staff };
-  }, [lines, staffLines]);
+    const expense = expenseLines.reduce((s, l) => s + (l.isReturn ? 0 : num(l.amount)), 0);
+    const returned =
+      lines.reduce((s, l) => s + (l.isReturn ? lineAmount(l) : 0), 0) +
+      expenseLines.reduce((s, l) => s + (l.isReturn ? num(l.amount) : 0), 0);
+    return { store, staff, expense, returned, total: store + staff + expense };
+  }, [lines, staffLines, expenseLines]);
 
   // Правка идёт через позиции — без сохранённых строк (старая iiko-синхронизация) исправлять нечего.
   const hasSavedLines = (detail?.lines?.length ?? 0) > 0;
@@ -153,6 +214,10 @@ export function InvoiceEditDialog({
           iiko_product_id: l.product_id,
           vat_percent: num(l.vat) > 0 ? num(l.vat) : null,
           is_staff: false,
+          // Статья складской строки уезжает обратно как есть: у чека это «Оплата
+          // поставщикам», у обычной накладной её нет (null) — товарность от этого не меняется.
+          dds_article_id: l.ddsArticleId,
+          is_return: l.isReturn,
           // Сумма строки — эталон (как при создании): не пересчитываем кол-во×округлённая цена.
           sum: l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price),
         })),
@@ -167,6 +232,21 @@ export function InvoiceEditDialog({
           vat_percent: null,
           is_staff: true,
           dds_article_id: l.articleId,
+          sum: num(l.amount),
+        })),
+      ...expenseLines
+        .filter((l) => l.articleId && num(l.amount) > 0)
+        .map((l) => ({
+          name: l.note.trim() || expenseArticles.find((a) => a.id === l.articleId)?.name || "Расход",
+          quantity: 1,
+          price: num(l.amount),
+          iiko_product_id: null,
+          vat_percent: null,
+          // У чека расход помечен статьёй, а не is_staff (иначе он попадёт в «персонал»-часть
+          // накладной и разъедется с проводками, которые чек уже сделал по статьям).
+          is_staff: false,
+          dds_article_id: l.articleId,
+          is_return: l.isReturn,
           sum: num(l.amount),
         })),
     ],
@@ -203,15 +283,26 @@ export function InvoiceEditDialog({
 
   const filled = lines.filter((l) => l.name && num(l.quantity) > 0).length;
   const filledStaff = staffLines.filter((l) => l.articleId && num(l.amount) > 0).length;
+  const filledExpense = expenseLines.filter((l) => l.articleId && num(l.amount) > 0).length;
   // Товарная строка без выбора из номенклатуры iiko теряется при выгрузке — блокируем сохранение.
   const goodsMissingProduct = lines.some(
     (l) => l.name.trim() && num(l.quantity) > 0 && !l.product_id,
   );
+  // Начатая расходная строка без статьи не сохранится (бэк примет её за товар) — не пускаем.
+  const expenseMissingArticle = expenseLines.some((l) => !l.articleId && num(l.amount) > 0);
+  // Блок расходов — для чека Кассы (он так и заводится) и для любого документа, где такие
+  // строки уже есть. Блок «персонал» — наоборот, для накладной: у чека is_staff всегда false.
+  const showExpenseBlock = isCheque || expenseLines.length > 0;
+  const showStaffBlock = !isCheque || staffLines.length > 0;
+  // Статья новой складской строки — та же, что у уже существующих («Оплата поставщикам» у чека,
+  // ничего у накладной): иначе новая позиция чека выпадет из разноса по статьям ДДС.
+  const storeArticleId = lines.find((l) => l.ddsArticleId)?.ddsArticleId ?? null;
   const canSave =
     !!editable &&
-    filled + filledStaff > 0 &&
+    filled + filledStaff + filledExpense > 0 &&
     !saveMutation.isPending &&
     !goodsMissingProduct &&
+    !expenseMissingArticle &&
     !supplierNeedsIikoGuid;
 
   return (
@@ -297,61 +388,111 @@ export function InvoiceEditDialog({
                 <span />
               </div>
               {lines.map((line) => (
-                <LineRow
-                  key={line.key}
-                  line={line}
-                  barter={false}
-                  products={productsQuery.data ?? []}
-                  onChange={(patch) =>
-                    setLines((prev) =>
-                      prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
-                    )
-                  }
-                  onRemove={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
-                />
+                <ReturnMark key={line.key} isReturn={line.isReturn}>
+                  <LineRow
+                    line={line}
+                    barter={false}
+                    products={productsQuery.data ?? []}
+                    onChange={(patch) =>
+                      setLines((prev) =>
+                        prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
+                      )
+                    }
+                    onRemove={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
+                  />
+                </ReturnMark>
               ))}
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                onClick={() =>
+                  setLines((prev) => [
+                    ...prev,
+                    { ...emptyLine(), ddsArticleId: storeArticleId, isReturn: false },
+                  ])
+                }
               >
                 <Plus size={14} aria-hidden="true" /> товар
               </Button>
             </div>
 
-            {/* Траты на персонал */}
-            <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Траты на персонал</span>
-                <span className="text-xs text-muted-foreground">только ДДС · не в iiko</span>
-              </div>
-              {staffLines.map((line) => (
-                <StaffLineRow
-                  key={line.key}
-                  line={line}
-                  articles={staffArticles}
-                  onChange={(patch) =>
-                    setStaffLines((prev) =>
-                      prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
-                    )
+            {/* Прочие расходы — блок чека Кассы: строка помечена статьёй, а не «персоналом» */}
+            {showExpenseBlock ? (
+              <div className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Прочие расходы</span>
+                  <span className="text-xs text-muted-foreground">только ДДС · без склада</span>
+                </div>
+                {expenseLines.map((line) => (
+                  <ReturnMark key={line.key} isReturn={line.isReturn}>
+                    <StaffLineRow
+                      line={line}
+                      articles={expenseArticles}
+                      onChange={(patch) =>
+                        setExpenseLines((prev) =>
+                          prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
+                        )
+                      }
+                      onRemove={() =>
+                        setExpenseLines((prev) => prev.filter((l) => l.key !== line.key))
+                      }
+                    />
+                  </ReturnMark>
+                ))}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setExpenseLines((prev) => [...prev, { ...emptyStaffLine(), isReturn: false }])
                   }
-                  onRemove={() => setStaffLines((prev) => prev.filter((l) => l.key !== line.key))}
-                />
-              ))}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setStaffLines((prev) => [...prev, emptyStaffLine()])}
-              >
-                <Plus size={14} aria-hidden="true" /> трата
-              </Button>
-            </div>
+                >
+                  <Plus size={14} aria-hidden="true" /> расход
+                </Button>
+              </div>
+            ) : null}
+
+            {/* Траты на персонал — блок накладной (у чека Кассы is_staff всегда false) */}
+            {showStaffBlock ? (
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Траты на персонал</span>
+                  <span className="text-xs text-muted-foreground">только ДДС · не в iiko</span>
+                </div>
+                {staffLines.map((line) => (
+                  <StaffLineRow
+                    key={line.key}
+                    line={line}
+                    articles={staffArticles}
+                    onChange={(patch) =>
+                      setStaffLines((prev) =>
+                        prev.map((l) => (l.key === line.key ? { ...l, ...patch } : l)),
+                      )
+                    }
+                    onRemove={() => setStaffLines((prev) => prev.filter((l) => l.key !== line.key))}
+                  />
+                ))}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setStaffLines((prev) => [...prev, emptyStaffLine()])}
+                >
+                  <Plus size={14} aria-hidden="true" /> трата
+                </Button>
+              </div>
+            ) : null}
 
             <div className="text-sm">
               Итого: <span className="font-medium tabular-nums">{formatRub(totals.total)}</span>{" "}
               <span className="text-muted-foreground">
-                (склад {formatRub(totals.store)} + персонал {formatRub(totals.staff)})
+                (склад {formatRub(totals.store)}
+                {showExpenseBlock ? ` + расходы ${formatRub(totals.expense)}` : ""}
+                {showStaffBlock ? ` + персонал ${formatRub(totals.staff)}` : ""})
               </span>
+              {totals.returned > 0 ? (
+                <div className="text-xs text-red-600">
+                  Возвращено в магазин {formatRub(totals.returned)} — в сумму документа не входит
+                </div>
+              ) : null}
             </div>
           </div>
         )}

@@ -107,9 +107,13 @@ class LineCreate(BaseModel):
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
     is_staff: bool = False
-    # Статья ДДС персональной строки (питание / прочие затраты на персонал) — задаёт,
-    # на какую статью ляжет «персонал»-часть при оплате накладной. Только для is_staff.
+    # Статья ДДС строки. У накладной ею помечена персональная строка (питание / прочие
+    # затраты на персонал), у чека Кассы — каждая: складская несёт «Оплата поставщикам»,
+    # расходная — свою. По ней же читается «товар vs расход», поэтому при правке чека
+    # статью обязан вернуть и фронт (иначе расходы чека станут товаром).
     dds_article_id: uuid.UUID | None = None
+    # Позиция возвращена в магазин (чек Кассы): в документе остаётся, в сумму не идёт.
+    is_return: bool = False
     # Сумма строки как её видит пользователь (эталон из документа поставщика). Если задана —
     # бэк хранит её, а не пересчитывает кол-во×цена (цена в 2 знака не всегда точна). None —
     # старые клиенты / фолбэк на кол-во×цена.
@@ -796,6 +800,7 @@ async def post_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    is_return=line.is_return,
                     sum=line.sum,
                 )
                 for line in payload.lines
@@ -869,6 +874,7 @@ async def put_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    is_return=line.is_return,
                     sum=line.sum,
                 )
                 for line in payload.lines
@@ -925,6 +931,7 @@ async def post_adjust_paid_invoice(
                     vat_percent=line.vat_percent,
                     is_staff=line.is_staff,
                     dds_article_id=line.dds_article_id,
+                    is_return=line.is_return,
                     sum=line.sum,
                 )
                 for line in payload.lines

@@ -150,16 +150,23 @@ class LineInput:
     iiko_product_id: uuid.UUID | None = None
     vat_percent: Decimal | None = None
     is_staff: bool = False
-    # Статья ДДС персональной строки — на неё ляжет «персонал»-часть при оплате.
+    # Статья ДДС строки. У накладной ею помечена персональная строка (на неё ляжет
+    # «персонал»-часть при оплате), у чека Кассы — КАЖДАЯ: складская несёт «Оплата
+    # поставщикам», расходная — свою («питание персонала», «содержание точек»). Признак
+    # «товар vs расход» читается из неё же (``line_is_goods``), поэтому статью хранит любая
+    # строка, а не только ``is_staff`` — иначе правка чека делает его расходы товаром.
     dds_article_id: uuid.UUID | None = None
+    # Позиция возвращена в магазин (чек Кассы): остаётся в документе для сверки с бумажным
+    # чеком копейка в копейку, но не проводится — ни в сумму, ни в НДС, ни в iiko.
+    is_return: bool = False
     # Явная сумма строки (эталон из документа поставщика). Если задана — хранится как есть, а
     # не пересчитывается кол-во×цена: цена в 2 знака не всегда даёт точную сумму (80×41,225 =
     # 3298, но округлённая цена 41,23 даёт 3298,40). None → обратная совместимость (кол-во×цена).
     sum: Decimal | None = None
 
 
-def _assert_goods_have_product(
-    lines: Sequence[LineInput], products: dict[uuid.UUID, IikoProduct]
+async def _assert_goods_have_product(
+    session: AsyncSession, lines: Sequence[LineInput], products: dict[uuid.UUID, IikoProduct]
 ) -> None:
     """Товарная строка (НЕ персонал и без расходной статьи ДДС) обязана быть сопоставлена с
     номенклатурой iiko.
@@ -168,9 +175,15 @@ def _assert_goods_have_product(
     (``warehouse_invoice_push.prepare_push``: ``if not line.product_guid: continue``) — накладная
     уходит НЕПОЛНОЙ, сумма в iiko < нашей, и расхождение незаметно (статус остаётся ``pushed``).
     Поэтому требуем явный выбор товара уже на вводе. Персональные (``is_staff``) и расходные (со
-    статьёй ДДС) строки в iiko не идут — для них сопоставление не требуется."""
+    статьёй ДДС) строки в iiko не идут — для них сопоставление не требуется.
+
+    Критерий товарности — тот же ``line_is_goods``, что и у выгрузки: статья «Оплата поставщикам»
+    товарная, поэтому складская строка чека Кассы (она несёт именно её) гардом тоже проверяется."""
+    supplier_article_ids = await supplier_payment_article_ids(session)
     for line in lines:
-        is_goods = not line.is_staff and line.dds_article_id is None
+        is_goods = not line.is_staff and (
+            line.dds_article_id is None or line.dds_article_id in supplier_article_ids
+        )
         if is_goods and (
             line.iiko_product_id is None or products.get(line.iiko_product_id) is None
         ):
@@ -260,7 +273,7 @@ async def create_warehouse_invoice(
             await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
         ).all()
         products = {product.id: product for product in rows}
-    _assert_goods_have_product(lines, products)
+    await _assert_goods_have_product(session, lines, products)
 
     # Barter loan: расход (we_lend=мы выдаём) или приход (нам выдают); явная роль «loan».
     if mode == "loan":
@@ -315,7 +328,8 @@ async def create_warehouse_invoice(
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))
             vat_sum = _money(line_sum * rate / (Decimal("100") + rate))  # gross-inclusive
-            vat_total += vat_sum
+            if not line.is_return:
+                vat_total += vat_sum
         item_name = line.name or (product.name if product else "Позиция")
         session.add(
             InvoiceLineItem(
@@ -331,15 +345,16 @@ async def create_warehouse_invoice(
                 vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
                 vat_sum=vat_sum,
                 is_staff=line.is_staff,
-                # Статья ДДС — только у персональных строк (товарные идут по «Оплата
-                # поставщикам» при оплате); фронт на товарных её не задаёт.
-                dds_article_id=line.dds_article_id if line.is_staff else None,
+                dds_article_id=line.dds_article_id,
+                is_return=line.is_return,
                 sort_order=index,
             )
         )
-        total += line_sum
-        if line.is_staff:
-            staff_total += line_sum
+        # Возвращённая в магазин позиция не проводится: ни в сумму документа, ни в НДС.
+        if not line.is_return:
+            total += line_sum
+            if line.is_staff:
+                staff_total += line_sum
         price_lines.append(
             PriceCheckLine(
                 name=item_name,
@@ -347,6 +362,7 @@ async def create_warehouse_invoice(
                 unit=product.unit if product else None,
                 price=price,
                 is_staff=line.is_staff,
+                is_return=line.is_return,
             )
         )
         # Mirror keeps product_id/article so counterparty_barter_match._products() works.
@@ -357,6 +373,7 @@ async def create_warehouse_invoice(
                 "name": item_name,
                 "quantity": str(quantity),
                 "amount": str(line_sum),
+                "is_return": line.is_return,
             }
         )
 
@@ -387,7 +404,11 @@ async def _rebuild_invoice_lines(
 ) -> None:
     """Заменить строки накладной на ``lines`` и пересчитать amount/staff_amount/vat_total и
     JSONB-зеркало ``line_items``. Тот же расчёт, что в ``create_warehouse_invoice``, но со
-    сносом старых строк. Общий для ``update_warehouse_invoice`` и ``adjust_paid_invoice``."""
+    сносом старых строк. Общий для ``update_warehouse_invoice`` и ``adjust_paid_invoice``.
+
+    Строка хранится целиком, как пришла: статья ДДС (у чека Кассы она есть у КАЖДОЙ строки и
+    решает «товар vs расход») и пометка возврата. Возвращённая позиция остаётся в документе для
+    сверки с бумажным чеком, но в ``amount``/``vat_total`` не идёт — чек проводится net."""
     await session.execute(
         delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
     )
@@ -407,7 +428,8 @@ async def _rebuild_invoice_lines(
         if line.vat_percent:
             rate = Decimal(str(line.vat_percent))
             vat_sum = _money(line_sum * rate / (Decimal("100") + rate))
-            vat_total += vat_sum
+            if not line.is_return:
+                vat_total += vat_sum
         item_name = line.name or (product.name if product else "Позиция")
         session.add(
             InvoiceLineItem(
@@ -423,13 +445,15 @@ async def _rebuild_invoice_lines(
                 vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
                 vat_sum=vat_sum,
                 is_staff=line.is_staff,
-                dds_article_id=line.dds_article_id if line.is_staff else None,
+                dds_article_id=line.dds_article_id,
+                is_return=line.is_return,
                 sort_order=index,
             )
         )
-        total += line_sum
-        if line.is_staff:
-            staff_total += line_sum
+        if not line.is_return:
+            total += line_sum
+            if line.is_staff:
+                staff_total += line_sum
         price_lines.append(
             PriceCheckLine(
                 name=item_name,
@@ -437,6 +461,7 @@ async def _rebuild_invoice_lines(
                 unit=product.unit if product else None,
                 price=price,
                 is_staff=line.is_staff,
+                is_return=line.is_return,
             )
         )
         mirror.append(
@@ -446,6 +471,7 @@ async def _rebuild_invoice_lines(
                 "name": item_name,
                 "quantity": str(quantity),
                 "amount": str(line_sum),
+                "is_return": line.is_return,
             }
         )
     invoice.amount = _money(total)
@@ -502,7 +528,7 @@ async def update_warehouse_invoice(
             await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
         ).all()
         products = {product.id: product for product in rows}
-    _assert_goods_have_product(lines, products)
+    await _assert_goods_have_product(session, lines, products)
 
     await _rebuild_invoice_lines(session, invoice, lines, products)
     if issued_at is not None:
@@ -734,7 +760,7 @@ async def adjust_paid_invoice(
             await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
         ).all()
         products = {product.id: product for product in rows}
-    _assert_goods_have_product(lines, products)
+    await _assert_goods_have_product(session, lines, products)
 
     allocated = await _allocated_amount(session, invoice.id)
     # Снимок товаров и суммы ДО правки — для отражения коррекции в iiko (Фаза 2, полный разворот).
