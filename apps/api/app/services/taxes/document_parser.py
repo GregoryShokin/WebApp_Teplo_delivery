@@ -265,6 +265,23 @@ def parse_payment_order(
     )
 
 
+_INJURY_PERIOD_RE = re.compile(r"МС\.(0?[1-9]|1[0-2])\.(20\d{2})", re.I)
+
+
+def _injury_period_month(cells: list[str]) -> tuple[int, int] | None:
+    """Месяц начисления из поля периода платёжки «МС.07.2026» → (год, месяц)."""
+    for cell in cells:
+        m = _INJURY_PERIOD_RE.search(cell)
+        if m:
+            return int(m.group(2)), int(m.group(1))
+    return None
+
+
+def _injury_due(year: int, month: int) -> date:
+    """Срок уплаты взноса на травматизм за месяц N — 15 число N+1 (125-ФЗ, ст. 22)."""
+    return date(year + 1, 1, 15) if month == 12 else date(year, month + 1, 15)
+
+
 def parse_injury_payment(
     data: bytes, *, filename: str = "", default_year: int | None = None
 ) -> PaymentOrderDoc:
@@ -297,14 +314,34 @@ def parse_injury_payment(
     if kbk is None:
         reasons.append("не распознан КБК травматизма")
 
+    # Срока уплаты в форме ПД нет — его задаёт закон: до 15 числа месяца, следующего за
+    # месяцем начисления (125-ФЗ, ст. 22). Месяц берём из поля периода «МС.MM.YYYY», иначе
+    # из даты платёжки (бухгалтер выписывает её в том же месяце). Без этого обязательство
+    # получало «срок» = дата письма и на следующий день краснело просрочкой.
+    month = _injury_period_month(cells)
+    period_year, period_month = month if month else (None, None)
+    if period_month is None:
+        pp_date = _parse_due_date(text, filename, year)
+        if pp_date is not None:
+            period_year, period_month = pp_date.year, pp_date.month
+    due = (
+        _injury_due(period_year, period_month)
+        if period_year and period_month
+        else _parse_due_date(text, filename, year)
+    )
+
     return PaymentOrderDoc(
         amount=amount,
         kbk=kbk,
         recipient="sfr",
         tax_kind="contrib_injury",
-        due_date=_parse_due_date(text, filename, year),
+        due_date=due,
         purpose="Страховые взносы на травматизм (в СФР)",
-        period_hint=_period_hint(filename, text),
+        period_hint=(
+            f"{period_year}-{period_month:02d}"
+            if period_year and period_month
+            else _period_hint(filename, text)
+        ),
         needs_review=bool(reasons),
         review_reasons=reasons,
         source_filename=filename or None,

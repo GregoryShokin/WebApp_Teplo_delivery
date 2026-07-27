@@ -294,3 +294,37 @@ async def test_bulk_promotion_routes_turnover_and_payment_separately(
             (await session.execute(select(TaxPayment.kind))).scalars().all()
         )
         assert kinds == {"usn_advance", "contrib_employees", "ndfl"}
+
+
+async def test_injury_without_due_gets_legal_deadline(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Травматизм без срока в документе получает законный срок — 15 число следующего месяца.
+
+    В «Форме ПД (налог)» срока нет (поле «Дата» — для отметки банка), и плановая строка брала
+    дату письма. Обязательство назавтра краснело просрочкой, хотя по 125-ФЗ (ст. 22) взнос за
+    июль платится до 15 августа (вопрос владельца 27.07.2026).
+    """
+    async with async_session_factory() as session:
+        intake = _intake(
+            tax_kind="contrib_injury",
+            amount="100",
+            period="year",
+            due=None,
+            received=datetime(2026, 7, 22, tzinfo=UTC),
+            filename="0,2 %.xls",
+        )
+        session.add(intake)
+        await session.commit()
+
+        await promote_intake(session, intake)
+        await session.commit()
+
+        row = (
+            await session.scalars(
+                select(TaxPayment).where(TaxPayment.kind == "contrib_injury")
+            )
+        ).one()
+
+    assert row.paid_on == date(2026, 8, 15)
+    assert row.recipient == "sfr"  # отдельные реквизиты СФР, не ЕНП

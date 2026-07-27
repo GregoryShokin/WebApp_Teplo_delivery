@@ -53,6 +53,23 @@ class PromotionResult:
     reason: str | None = None
 
 
+def _injury_due_fallback(kind: str, due: date | None, received_at) -> date | None:
+    """Срок травматизма, если в платёжке его нет: 15 число месяца, следующего за месяцем письма.
+
+    В «Форме ПД (налог)» срока нет вообще — поле «Дата» там для отметки банка. Раньше плановое
+    обязательство получало срок = дата письма и назавтра краснело просрочкой (вопрос владельца
+    27.07.2026 про «просроченные» 100 ₽). Настоящий срок задаёт закон — до 15 числа следующего
+    месяца (125-ФЗ, ст. 22); месяц берём из даты письма: бухгалтер шлёт платёжку в том же
+    месяце, за который считает взнос.
+    """
+    if kind != "contrib_injury" or due is not None or received_at is None:
+        return due
+    sent = received_at.date() if hasattr(received_at, "date") else received_at
+    return (
+        date(sent.year + 1, 1, 15) if sent.month == 12 else date(sent.year, sent.month + 1, 15)
+    )
+
+
 def _tax_year(period_hint: str | None, due: date | None, received_at=None) -> int:
     """Налоговый год обязательства.
 
@@ -127,6 +144,7 @@ async def promote_intake(
     # Блокировка ДО проверки статуса: иначе оба запроса прочитают 'parsed'.
     await lock_row(session, intake)
     kind, amount, due, period = _validate(intake)
+    due = _injury_due_fallback(kind, due, intake.received_at)
     year = _tax_year(period, due, intake.received_at)
 
     async def _find_slot() -> TaxPayment | None:
