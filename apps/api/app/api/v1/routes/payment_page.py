@@ -51,6 +51,9 @@ class IntakeRead(BaseModel):
     counterparty_id: uuid.UUID | None
     counterparty_name: str | None
     invoice_id: uuid.UUID | None
+    # Пакет «счёт + УПД» одним файлом: закрывающий документ, заведённый вместе со счётом.
+    companion_invoice_id: uuid.UUID | None
+    companion_amount: str | None
     # Плоско вынесенные распознанные поля — для таблицы.
     recipient_name: str | None
     inn: str | None
@@ -170,6 +173,10 @@ def _to_read(
         counterparty_id=intake.counterparty_id,
         counterparty_name=counterparty_name,
         invoice_id=intake.invoice_id,
+        companion_invoice_id=intake.companion_invoice_id,
+        companion_amount=(rec.get("companion") or {}).get("amount")
+        if isinstance(rec.get("companion"), dict)
+        else None,
         recipient_name=rec.get("recipient_name"),
         inn=rec.get("inn"),
         amount=rec.get("amount"),

@@ -307,6 +307,14 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                           {item.subject}
                         </div>
                       ) : null}
+                      {item.companion_invoice_id ? (
+                        // В файле пришёл пакет: счёт (в очереди оплат) + закрывающий УПД,
+                        // который уже проведён в учёте ДЗ/КЗ отдельным документом.
+                        <div className="text-xs text-muted-foreground">
+                          + закрывающий документ
+                          {item.companion_amount ? ` на ${formatRub(item.companion_amount)}` : ""}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {item.amount ? formatRub(item.amount) : "—"}

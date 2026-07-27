@@ -359,7 +359,7 @@ async def test_ambiguous_reset_when_llm_resolves_single_period(monkeypatch):
     llm.service_period_candidates = [(date(2026, 6, 1), date(2026, 6, 30))]
     llm.confidence = 0.9
 
-    monkeypatch.setattr(ir, "extract_pdf_text", lambda pdf: "счёт с текстом")
+    monkeypatch.setattr(ir, "extract_pdf_pages", lambda pdf: ["счёт с текстом"])
     monkeypatch.setattr(ir, "deterministic_recognize", lambda text, context_text=None: det)
 
     async def _fake_llm(pdf, *, settings):
@@ -388,7 +388,7 @@ async def test_ambiguous_kept_when_llm_also_multiple(monkeypatch):
         (date(2026, 5, 1), date(2026, 5, 31)),
     ]
 
-    monkeypatch.setattr(ir, "extract_pdf_text", lambda pdf: "счёт с текстом")
+    monkeypatch.setattr(ir, "extract_pdf_pages", lambda pdf: ["счёт с текстом"])
     monkeypatch.setattr(ir, "deterministic_recognize", lambda text, context_text=None: det)
 
     async def _fake_llm(pdf, *, settings):
@@ -398,3 +398,96 @@ async def test_ambiguous_kept_when_llm_also_multiple(monkeypatch):
 
     result = await ir.recognize(b"pdf", settings=_fake_settings())
     assert result.service_period_ambiguous is True
+
+
+# --- СДЭК: ПАКЕТ документов одним PDF (счёт + УПД + приложение к УПД) ------------------------
+# Реальная структура вложения «Пакет СКБ-0437096 от 19_07_2026.pdf» (прод, 19.07.2026).
+
+CDEK_PAGE_BILL = """\
+Образец заполнения платежного поручения
+КРАСНОДАРСКОЕ ОТДЕЛЕНИЕ N8619 ПАО СБЕРБАНК БИК 040349602
+Сч. № 30101810100000000602
+Банк получателя
+ИНН 2370006152 КПП 237001001 Сч. № 40702810430000013829
+ООО "СДЭК-СЛАВЯНСК"
+Получатель
+Оплата по счету № СКБ-0437096 от 19 июля 2026 г., за услуги доставки, в т.ч. НДС 1439,90.
+Счет № Счет на оплату № СКБ-0437096 от 19 июля 2026 г.
+Расшифровка счета: Документ Сумма, руб УПД № СКБ-0008640 от 19.07.2026 7 984,90
+ИТОГО к оплате: № Наименование услуг НДС Сумма, руб 1 Услуги доставки 1 439,90 7 984,90
+Итого с НДС 22%: 7 984,90
+Всего наименований 1, на сумму 7 984,90 RUB.
+"""
+
+CDEK_PAGE_UPD = """\
+Универсальный
+передаточный
+документ
+Счет-фактура № СКБ-0008640 от 19 июля 2026 г. (1)
+Продавец: ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ СДЭК-СЛАВЯНСК (2)
+Покупатель: Индивидуальный предприниматель ШОКИНА КРИСТИНА ЮРЬЕВНА (6)
+услуги доставки за период с 13.07.2026 по 19.07.2026 -- 6 545,00 без акциза 22% 1 439,90 7 984,90
+Всего к оплате (9) 6 545,00 Х 1 439,90 7 984,90
+"""
+
+CDEK_PAGE_UPD_ANNEX = """\
+Приложение 1
+к УПД № СКБ-0008640 от 19.07.2026 г.
+Услуги экспресс доставки по накладным
+1 10294188371 14.07.2026 18.07.2026 ШОКИНА КРИСТИНА ЮРЬЕВНА 7893,40
+Дополнительный сбор за объявленную стоимость 91,50 0,00 0,00 7984,90
+Итого: 7893,40 91,50 0,00 0,00 7984,90 В том числе НДС 22% 1439,90
+"""
+
+CDEK_PACKAGE_PAGES = [CDEK_PAGE_BILL, CDEK_PAGE_UPD, CDEK_PAGE_UPD_ANNEX]
+
+
+def test_cdek_package_splits_into_bill_and_closing_sections():
+    """Приложение без своего заголовка прилипает к УПД, а не открывает третий документ."""
+    from app.services.invoice_recognition import split_document_sections
+
+    sections = split_document_sections(CDEK_PACKAGE_PAGES)
+    assert [kind for kind, _ in sections] == ["invoice", "upd"]
+    assert "Приложение 1" in sections[1][1]
+
+
+def test_cdek_package_main_document_is_the_bill():
+    """Главный документ пакета — счёт (его платят), УПД идёт спутником.
+
+    Регресс на прод-баг: по склеенному тексту весь пакет опознавался как УПД (маркер
+    «универсальный передаточный документ» со стр. 2 проверяется раньше маркеров счёта),
+    счёт исчезал из очереди оплат, а кредиторка вставала на сумму строки реестра."""
+    from app.services.invoice_recognition import deterministic_recognize_pages
+
+    rec = deterministic_recognize_pages(CDEK_PACKAGE_PAGES)
+    assert rec.document_kind == "invoice"
+    assert rec.amount == Decimal("7984.90")  # не 7893,40 из приложения к УПД
+    assert rec.invoice_number == "СКБ-0437096"
+    assert rec.inn == "2370006152"
+    assert rec.bank_acnt == "40702810430000013829"
+
+    companion = rec.companion
+    assert companion is not None
+    assert companion.document_kind == "upd"
+    assert companion.amount == Decimal("7984.90")  # итог с НДС, не 6 545,00 из колонки «без НДС»
+    assert companion.invoice_number == "СКБ-0008640"
+    assert companion.inn == "2370006152"  # унаследован от счёта: на листе УПД «ИНН/КПП продавца»
+
+
+def test_single_document_pdf_keeps_one_recognition():
+    """Обычный однодокументный файл спутника не получает — поведение не изменилось."""
+    from app.services.invoice_recognition import deterministic_recognize_pages
+
+    rec = deterministic_recognize_pages([IIKO_COURIERICA])
+    assert rec.document_kind == "invoice"
+    assert rec.companion is None
+    assert rec.amount == Decimal("4260.00")
+
+
+def test_upd_only_pdf_is_still_closing():
+    """Пакет без счёта (только УПД) остаётся закрывающим документом, спутника нет."""
+    from app.services.invoice_recognition import deterministic_recognize_pages
+
+    rec = deterministic_recognize_pages([CDEK_PAGE_UPD, CDEK_PAGE_UPD_ANNEX])
+    assert rec.document_kind == "upd"
+    assert rec.companion is None

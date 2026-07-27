@@ -16,6 +16,9 @@ export type PaymentIntake = {
   counterparty_id: string | null;
   counterparty_name: string | null;
   invoice_id: string | null;
+  // Пакет «счёт + УПД» одним файлом: закрывающий документ, заведённый вместе со счётом.
+  companion_invoice_id: string | null;
+  companion_amount: string | null;
   recipient_name: string | null;
   inn: string | null;
   amount: string | null;

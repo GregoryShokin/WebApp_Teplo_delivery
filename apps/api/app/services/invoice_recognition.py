@@ -64,13 +64,21 @@ _RU_MONTH_PATTERN = "|".join(sorted(_RU_MONTHS, key=len, reverse=True))
 
 # Деньги: «1 234,56» / «1 234.56» / «12 000,00» (тысячные — пробел/неразрывный пробел).
 _MONEY = r"\d[\d   ]*[.,]\d{2}"
-_AMOUNT_PATTERNS = (
-    rf"итого\s+к\s+оплате[^0-9\-]{{0,40}}?({_MONEY})",
-    rf"всего\s+к\s+оплате[^0-9\-]{{0,40}}?({_MONEY})",
-    rf"\bк\s+оплате[^0-9\-]{{0,40}}?({_MONEY})",
-    rf"сумма\s+к\s+оплате[^0-9\-]{{0,40}}?({_MONEY})",
-    rf"\bитого[^0-9\-]{{0,20}}?({_MONEY})",
-    rf"\bвсего[^0-9\-]{{0,20}}?({_MONEY})",
+_MONEY_RE = re.compile(_MONEY)
+# Маркеры итоговой суммы — от самых однозначных к общим. Ищем деньги ПОСЛЕ маркера, а не
+# «первое число, перед которым нет цифр»: прежний строгий шаблон спотыкался о служебные номера
+# («Всего к оплате (9) …») и заголовки колонок («ИТОГО к оплате: № Наименование услуг НДС
+# Сумма, руб …»), проваливался на общий фолбэк «итого» и хватал первую строку реестра услуг
+# (кейс СДЭК: 7 893,40 вместо 7 984,90).
+_AMOUNT_MARKERS = (
+    r"итого\s+с\s+ндс",
+    r"итого\s+к\s+оплате",
+    r"всего\s+к\s+оплате",
+    r"сумма\s+к\s+оплате",
+    r"\bк\s+оплате",
+    r"на\s+сумму",
+    r"\bитого\b",
+    r"\bвсего\b",
 )
 _ORG_RE = re.compile(
     r"(?:ООО|ОАО|ЗАО|ПАО|НАО|АО|ИП)\s+[«\"’']?[^»\"’'\n;:|/]{2,80}",
@@ -107,6 +115,10 @@ class RecognizedInvoice:
     # Подсказка по продукту для счетов iiko (courierica — ПО курьеров; iiko_license — лицензия
     # iiko/iikoCloud). Нужна, чтобы развести два регулярных счёта одного поставщика по статьям ДДС.
     product_hint: str | None = None
+    # Второй документ ИЗ ТОГО ЖЕ вложения: поставщик шлёт пакет «счёт + УПД» одним PDF (СДЭК).
+    # Основным остаётся счёт (он идёт в очередь оплат), спутник — закрывающий УПД/акт, который
+    # ingest проводит отдельным документом (кредиторка / гашение дебиторки).
+    companion: RecognizedInvoice | None = None
 
     @property
     def is_payment_invoice(self) -> bool:
@@ -160,6 +172,7 @@ class RecognizedInvoice:
             "requisites": self.requisites(),
             "notes": self.notes,
             "text_excerpt": self.raw_text_excerpt[:2000],
+            "companion": self.companion.to_json() if self.companion is not None else None,
         }
 
 
@@ -321,21 +334,30 @@ def _apply_service_period(rec: RecognizedInvoice, text: str, context_text: str |
         )
 
 
-def extract_pdf_text(pdf: bytes) -> str:
-    """Текст из цифрового PDF (``pypdf``). Для сканов вернёт пусто → решит LLM-фолбэк."""
+def extract_pdf_pages(pdf: bytes) -> list[str]:
+    """Тексты страниц цифрового PDF (``pypdf``). Для сканов вернёт пусто → решит LLM-фолбэк.
+
+    Постранично, а не одной строкой, потому что в одном вложении может лежать ПАКЕТ документов
+    (СДЭК: стр. 1 — счёт на оплату, стр. 2 — УПД, стр. 3 — приложение к УПД). По склеенному
+    тексту тип документа определить нельзя: маркеры разных документов перебивают друг друга."""
     try:
         from io import BytesIO
 
         from pypdf import PdfReader
     except Exception:  # noqa: BLE001 - до пересборки образа пакета может не быть
         logger.warning("pypdf недоступен — пропускаю детерминированный слой", exc_info=True)
-        return ""
+        return []
     try:
         reader = PdfReader(BytesIO(pdf))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return [page.extract_text() or "" for page in reader.pages]
     except Exception:  # noqa: BLE001 - битый/зашифрованный PDF
         logger.warning("не удалось извлечь текст из PDF", exc_info=True)
-        return ""
+        return []
+
+
+def extract_pdf_text(pdf: bytes) -> str:
+    """Весь текст PDF одной строкой (совместимость с вызывающими, которым страницы не нужны)."""
+    return "\n".join(extract_pdf_pages(pdf))
 
 
 def _pick_inn(text: str) -> str | None:
@@ -358,13 +380,29 @@ def _labelled_20(text: str, *labels: str) -> str | None:
     return None
 
 
+def _amount_near_marker(text: str, marker: str, *, window: int = 200) -> Decimal | None:
+    """Итоговая сумма после маркера: МАКСИМУМ денежных значений в его строке (или в окне).
+
+    Максимум, а не первое число, потому что итоговая строка УПД/счёта печатается колонками
+    «без НДС | НДС | с НДС» («Всего к оплате (9) 6 545,00 Х 1 439,90 7 984,90») либо
+    «услуга | доп.сбор | … | итого» («Итого: 7 893,40 91,50 0,00 0,00 7 984,90»). Сумма к
+    оплате — всегда наибольшая из них, поэтому колонка «без НДС» больше не выигрывает."""
+    for m in re.finditer(marker, text, re.IGNORECASE):
+        tail = text[m.end() : m.end() + window]
+        # Сначала — своя строка маркера (там итог и печатают); если в ней денег нет, документ
+        # переносит сумму на следующую строку — расширяем до окна.
+        for scope in (tail.split("\n", 1)[0], tail):
+            values = [v for v in (_money(raw) for raw in _MONEY_RE.findall(scope)) if v is not None]
+            if values:
+                return max(values)
+    return None
+
+
 def _pick_amount(text: str) -> Decimal | None:
-    for pattern in _AMOUNT_PATTERNS:
-        m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-        if m:
-            amount = _money(m.group(1))
-            if amount is not None:
-                return amount
+    for marker in _AMOUNT_MARKERS:
+        amount = _amount_near_marker(text, marker)
+        if amount is not None:
+            return amount
     return None
 
 
@@ -450,6 +488,24 @@ def _classify_document(text: str) -> str:
     return "unknown"
 
 
+def split_document_sections(pages: list[str]) -> list[tuple[str, str]]:
+    """Разбить страницы PDF на секции «один документ» → ``[(тип, текст), …]``.
+
+    Поставщик может слать ПАКЕТ одним файлом (СДЭК: счёт + УПД + приложение к УПД). Страница
+    без собственного заголовка (``unknown``) — продолжение предыдущего документа (реестр
+    накладных, вторая страница спецификации), поэтому прилипает к текущей секции; страница
+    того же типа — тоже (многостраничный УПД). Новый ИЗВЕСТНЫЙ тип открывает новую секцию.
+    """
+    sections: list[tuple[str, list[str]]] = []
+    for page in pages:
+        kind = _classify_document(page) if page.strip() else "unknown"
+        if sections and (kind == "unknown" or kind == sections[-1][0]):
+            sections[-1][1].append(page)
+            continue
+        sections.append((kind, [page]))
+    return [(kind, "\n".join(chunk)) for kind, chunk in sections]
+
+
 _ACC20_RE = re.compile(r"\d{20}")
 
 
@@ -480,15 +536,36 @@ def _extract_party_accounts(text: str, bik: str | None = None) -> tuple[str | No
     return rs, ks
 
 
+# Слова, которые встречаются между «№» и настоящим номером: у СДЭК шапка звучит
+# «Счет № Счет на оплату № СКБ-0437096» — без пропуска этих слов номером становится «Счет».
+_NUMBER_SKIP_WORDS = frozenset({"счет", "счёт", "на", "оплату", "фактура", "договор"})
+
+
+def _number_after_hash(tail: str) -> str | None:
+    """Первый осмысленный номер после «№»: служебные слова пропускаем, номер обязан иметь цифру.
+
+    На чужом слове без цифр останавливаемся — значит номер не здесь, и брать соседний текст
+    (дату, наименование) нельзя."""
+    for token in re.findall(r"[\w/№-]+", tail[:60]):
+        cleaned = token.strip("-/№")
+        if not cleaned:
+            continue
+        if cleaned.casefold() in _NUMBER_SKIP_WORDS:
+            continue
+        return cleaned if any(ch.isdigit() for ch in cleaned) else None
+    return None
+
+
 def _pick_number(text: str) -> str | None:
-    # 1) «Счёт [на оплату|-фактура|-договор] № <номер>» (iiko, ЛЕММА).
-    m = re.search(
-        r"сч[ёе]т(?:[-\s]*фактура|[-\s]*договор)?(?:\s+на\s+оплату)?\s*№\s*([\w/][\w\-/]*)",
+    # 1) «Счёт [на оплату|-фактура|-договор] № <номер>» (iiko, ЛЕММА, СДЭК).
+    for m in re.finditer(
+        r"сч[ёе]т(?:[-\s]*фактура|[-\s]*договор)?(?:\s+на\s+оплату)?\s*№",
         text,
         re.IGNORECASE,
-    )
-    if m:
-        return m.group(1).strip("-/")
+    ):
+        candidate = _number_after_hash(text[m.end() :])
+        if candidate:
+            return candidate
     # 2) «Счёт <номер> от <дата>» без № (Стартер: «Счет 0000-001175 от 31 марта 2026 г.»).
     m = re.search(r"сч[ёе]т\s+([0-9][\w\-/]*)\s+от\s+\d", text, re.IGNORECASE)
     if m:
@@ -554,6 +631,37 @@ def deterministic_recognize(text: str, *, context_text: str | None = None) -> Re
     elif rec.product_hint == "iiko_license":
         rec.notes.append("iiko: лицензия iiko/iikoCloud")
     rec.confidence = _confidence(rec)
+    return rec
+
+
+def deterministic_recognize_pages(
+    pages: list[str], *, context_text: str | None = None
+) -> RecognizedInvoice:
+    """Распознать вложение постранично, разведя пакет «счёт + УПД» на документ и спутника.
+
+    Пакет одним файлом (СДЭК) прежде схлопывался в ОДИН документ, и побеждал УПД: маркер
+    «универсальный передаточный документ» со второй страницы проверяется раньше маркеров счёта
+    и ищется по всему склеенному тексту. Итог — счёт исчезал из очереди оплат, а кредиторка
+    вставала на сумму из приложения к УПД. Теперь: счёт — основной документ (его платят),
+    закрывающий УПД/акт из того же файла — ``companion`` (его проводит ingest отдельно).
+    """
+    text = "\n".join(pages)
+    sections = split_document_sections(pages)
+    bill = next((body for kind, body in sections if kind == "invoice"), None)
+    closing = next((body for kind, body in sections if kind in ("upd", "act")), None)
+    if bill is None or closing is None:
+        # Обычный случай — один документ на файл: классифицируем целиком, как прежде.
+        return deterministic_recognize(text, context_text=context_text)
+
+    rec = deterministic_recognize(bill, context_text=context_text)
+    companion = deterministic_recognize(closing, context_text=context_text)
+    # Реквизиты получателя и ИНН печатаются на странице счёта; на листе УПД их может не быть
+    # («ИНН/КПП продавца: …» под общий регекс не подходит). Спутник — не платёжный документ,
+    # поэтому недостающее наследуем от счёта: контрагент у пакета один.
+    _merge(companion, rec)
+    companion.notes.append("закрывающий документ из пакета вместе со счётом")
+    rec.companion = companion
+    rec.notes.append("в файле пакет документов: счёт + закрывающий")
     return rec
 
 
@@ -733,8 +841,9 @@ async def recognize(
     pdf: bytes, *, settings: Settings, context_text: str | None = None
 ) -> RecognizedInvoice:
     """Распознать счёт: детерминированный слой, при нехватке — LLM-фолбэк, затем слияние."""
-    text = extract_pdf_text(pdf)
-    det = deterministic_recognize(text, context_text=context_text)
+    pages = extract_pdf_pages(pdf)
+    text = "\n".join(pages)
+    det = deterministic_recognize_pages(pages, context_text=context_text)
 
     # Закрывающие/сверочные документы (УПД, акт сверки, передаточный акт) опознаются по тексту
     # надёжно — не зовём LLM, чтобы он ошибочно не «спас» не-счёт в счёт на оплату.

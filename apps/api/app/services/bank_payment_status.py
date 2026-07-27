@@ -468,23 +468,31 @@ async def apply_payment_status(
             and draft.target_article_id is not None
             and bank_wallet is not None
         ):
-            session.add(
-                CashflowTransaction(
-                    wallet_id=bank_wallet.id,
-                    direction="out",
-                    amount=draft.amount,
-                    operation_date=op_date,
-                    article_id=draft.target_article_id,
-                    counterparty_id=draft.counterparty_id,
-                    source_kind="counterparty_payment",
-                    source_id=draft.id,
-                    payment_purpose=(
-                        (draft.target_purpose or "").strip()
-                        or "Оплата контрагенту по статусу платежа банка"
-                    ),
-                    quality_status="final",
-                )
+            free_txn = CashflowTransaction(
+                wallet_id=bank_wallet.id,
+                direction="out",
+                amount=draft.amount,
+                operation_date=op_date,
+                article_id=draft.target_article_id,
+                counterparty_id=draft.counterparty_id,
+                source_kind="counterparty_payment",
+                source_id=draft.id,
+                payment_purpose=(
+                    (draft.target_purpose or "").strip()
+                    or "Оплата контрагенту по статусу платежа банка"
+                ),
+                quality_status="final",
             )
+            session.add(free_txn)
+            await session.flush()
+            # Правило 1 канона: платёж поставщику без ссылки на документ гасит его открытую
+            # кредиторку (FIFO по финансовым УПД/актам), а излишек становится дебиторкой.
+            # Без этого вызова свободный платёж уходил мимо контура ДЗ/КЗ целиком: приходящая
+            # операция выписки заклеймит эту проводку prebooked-claim'ом и вернётся ДО правила 1
+            # (classifier: короткое замыкание), второго шанса учесть деньги не будет.
+            from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+            await ensure_prepayment_from_bank_transaction(session, free_txn)
         # Накладные к гашению + статья каждой (счета услуг «Страницы на оплату» несут свою
         # dds_article_id, складские — дефолтную «Оплата поставщикам»).
         payable: list[tuple[SupplierInvoice, Decimal, uuid.UUID | None]] = []

@@ -95,6 +95,12 @@ class EmailInvoiceIntake(Base):
     invoice_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
     )
+    # Второй документ из ТОГО ЖЕ вложения: поставщик шлёт пакет «счёт + УПД» одним PDF (СДЭК).
+    # invoice_id при этом указывает на СЧЁТ (он в очереди оплат), а здесь лежит закрывающий
+    # документ — чтобы исключение/возврат/удаление intake вели оба, а не бросали УПД сиротой.
+    companion_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
+    )
     # Дата плановой авто-отправки в банк (джоба send_scheduled_payments). None = отправка вручную.
     scheduled_send_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Статус до ручного исключения — чтобы «Вернуть» из «Исключённых» восстановило прежнее место.

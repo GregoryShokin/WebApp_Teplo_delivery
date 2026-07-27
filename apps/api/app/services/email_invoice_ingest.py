@@ -282,6 +282,97 @@ def _enrich_duplicate_period(
     return True
 
 
+def _decimal_or_none(raw: object) -> Decimal | None:
+    if raw in (None, ""):
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _date_or_none(raw: object) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(str(raw))
+    except (ValueError, TypeError):
+        return None
+
+
+async def _materialize_companion(
+    session: AsyncSession,
+    intake: EmailInvoiceIntake,
+    *,
+    cp_id: uuid.UUID,
+    companion: dict[str, object],
+) -> SupplierInvoice | None:
+    """Завести ЗАКРЫВАЮЩИЙ документ из пакета «счёт + УПД», пришедшего одним PDF.
+
+    Счёт уже материализован как ``bill`` (очередь оплат) — здесь его спутник: УПД/акт из тех же
+    страниц. По канону он и создаёт кредиторку (или гасит дебиторку, если счёт уже оплачен),
+    поэтому проводим его штатным ``apply_closing_document``. Контрагент — тот же, что у счёта:
+    пакет всегда об одном поставщике, а ИНН на листе УПД печатается в формате «ИНН/КПП
+    продавца», который общий регекс не берёт.
+
+    Возвращает документ (или найденный дубль), либо None — если в спутнике нет суммы."""
+    amount = _decimal_or_none(companion.get("amount"))
+    if amount is None:
+        return None
+    number = companion.get("invoice_number") or None
+    inv_date = _date_or_none(companion.get("invoice_date"))
+    probe = RecognizedInvoice(
+        amount=amount, invoice_number=str(number) if number else None, invoice_date=inv_date
+    )
+    dup = await _find_duplicate_email_invoice(session, cp_id, probe, doc_kind="closing")
+    if dup is not None:
+        intake.companion_invoice_id = dup.id
+        return dup
+
+    period_start = _date_or_none(companion.get("service_period_start"))
+    period_end = _date_or_none(companion.get("service_period_end"))
+    closing = SupplierInvoice(
+        counterparty_id=cp_id,
+        source="email",
+        direction="payable",
+        doc_kind="closing",
+        operational_scope="finance",
+        # Суффикс роли: у счёта и его спутника один SHA вложения, а external_id должен различать
+        # документы (иначе второй затрёт первого при кросс-канальном матче).
+        external_id=f"{intake.attachment_sha256}:closing"[:128],
+        number=str(number) if number else None,
+        invoice_date=inv_date,
+        service_period_start=period_start,
+        service_period_end=period_end,
+        service_period_source=companion.get("service_period_source") or None,
+        service_period_status=(
+            "ready" if period_start is not None and period_end is not None else "not_required"
+        ),
+        service_period_confidence=companion.get("service_period_confidence"),
+        amount=amount,
+        payment_status="unpaid",
+        note=intake.subject,
+        raw_payload={
+            "mailbox": intake.mailbox,
+            "from": intake.from_addr,
+            "subject": intake.subject,
+            "message_id": intake.message_id,
+            "attachment_filename": intake.attachment_filename,
+            "recognition": companion,
+            "companion_of_intake": str(intake.id),
+        },
+    )
+    session.add(closing)
+    await session.flush()
+    await service_periods.sync_invoice_accrual(session, closing)
+    intake.companion_invoice_id = closing.id
+    # Закрывающий из пакета проводится так же, как пришедший отдельным письмом: правило 2
+    # (гасит открытую дебиторку) + правило 4 (будущей датой ждёт своей даты).
+    await prepayments.apply_closing_document(session, closing)
+    return closing
+
+
 def _intake_amount(intake: EmailInvoiceIntake) -> Decimal | None:
     raw = (intake.recognition or {}).get("amount")
     if raw in (None, ""):
@@ -405,6 +496,11 @@ async def materialize_from_intake(
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
         # Оплата счёта из банка сама сформирует ДЗ / погасит КЗ (ensure_prepayment_from_bank_...).
         intake.status = "linked"
+        companion = rec_json.get("companion")
+        if isinstance(companion, dict):
+            # В файле был пакет «счёт + УПД»: закрывающий заводим вторым документом, иначе
+            # кредиторка по факту оказанной услуги не возникнет вовсе.
+            await _materialize_companion(session, intake, cp_id=cp_id, companion=companion)
     return intake.status
 
 
@@ -535,16 +631,30 @@ async def confirm_intake_with_review(
 # --- исключение / удаление / плановая отправка («Страница на оплату») ------------------------
 
 
+async def _intake_documents(
+    session: AsyncSession, intake: EmailInvoiceIntake
+) -> list[SupplierInvoice]:
+    """Все документы, рождённые вложением: счёт и (для пакета «счёт + УПД») его закрывающий."""
+    ids = [i for i in (intake.invoice_id, intake.companion_invoice_id) if i is not None]
+    docs = [await session.get(SupplierInvoice, doc_id) for doc_id in ids]
+    return [doc for doc in docs if doc is not None]
+
+
 async def exclude_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> None:
     """Ручное исключение счёта из рабочего инбокса в корзину «Исключённые». Если по счёту уже
     создана накладная (не оплачена и не отправлена в банк) — помечаем её ``void``, чтобы убрать
-    из платёжного контура. Плановую отправку снимаем. НЕ коммитит — это делает вызывающий."""
+    из платёжного контура. Плановую отправку снимаем. НЕ коммитит — это делает вызывающий.
+
+    Пакет «счёт + УПД» из одного файла исключается ЦЕЛИКОМ: оставить закрывающий в кредиторке,
+    убрав счёт, значит показать долг по документу, который оператор признал непригодным."""
     if intake.status == "excluded":
         raise ValueError("Счёт уже в исключённых")
-    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
-    if invoice is not None and invoice.draft_id is not None:
+    documents = await _intake_documents(session, intake)
+    if any(doc.draft_id is not None for doc in documents):
         raise ValueError("Счёт уже отправлен в банк — исключение недоступно")
-    if invoice is not None and invoice.payment_status not in ("paid", "void"):
+    for invoice in documents:
+        if invoice.payment_status in ("paid", "void"):
+            continue
         invoice.payment_status = "void"
         if invoice.doc_kind == "closing":
             # Аннулированный закрывающий не может продолжать «съедать» аванс: зачёты
@@ -561,8 +671,9 @@ async def restore_intake(session: AsyncSession, intake: EmailInvoiceIntake) -> N
     возвращаем в unpaid. НЕ коммитит."""
     if intake.status != "excluded":
         raise ValueError("Счёт не в исключённых")
-    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
-    if invoice is not None and invoice.payment_status == "void":
+    for invoice in await _intake_documents(session, intake):
+        if invoice.payment_status != "void":
+            continue
         invoice.payment_status = "unpaid"
         # Статус — по фактическим оплатам (частично оплаченный счёт не должен вернуться
         # «полностью неоплаченным»), затем закрывающий заново проводится по канону:
@@ -579,10 +690,12 @@ async def delete_intake_forever(session: AsyncSession, intake: EmailInvoiceIntak
     оплачена). Доступно только из «Исключённых» — рабочие счета сначала исключают. НЕ коммитит."""
     if intake.status != "excluded":
         raise ValueError("Удалять можно только из «Исключённых»")
-    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
+    documents = await _intake_documents(session, intake)
     await session.delete(intake)
     await session.flush()
-    if invoice is not None and invoice.draft_id is None and invoice.payment_status != "paid":
+    for invoice in documents:
+        if invoice.draft_id is not None or invoice.payment_status == "paid":
+            continue
         if invoice.doc_kind == "closing":
             # Исключение уже вернуло авансовые зачёты; страховка для накладных, аннулированных
             # до этого фикса: иначе каскад FK унесёт аллокации, а amount_settled финансировавшей
@@ -789,6 +902,11 @@ async def process_attachment(
     else:
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
         intake.status = "linked"
+        companion = rec.to_json().get("companion") if rec.companion is not None else None
+        if isinstance(companion, dict):
+            # Пакет «счёт + УПД» одним файлом (СДЭК): счёт уже в очереди оплат, а закрывающий
+            # проводим вторым документом — он и создаёт кредиторку по факту услуги.
+            await _materialize_companion(session, intake, cp_id=cp_id, companion=companion)
     return intake.status
 
 
