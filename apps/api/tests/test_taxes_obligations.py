@@ -44,7 +44,8 @@ def _paid(
         paid_on=paid_on,
         kind=kind,
         amount=Decimal(amount),
-        recipient="fns",
+        # Травматизм уходит в СФР, остальное — в ФНС (CHECK ck_tax_payment_recipient_kind).
+        recipient="sfr" if kind == "contrib_injury" else "fns",
         for_year=2026,
         for_period=period,
         status="paid",
@@ -118,3 +119,40 @@ async def test_injury_obligation_uses_sfr_requisites(
     assert "ОСФР" in reqs["recipientName"]
     # Остальные виды по-прежнему уходят ЕНПом в ФНС.
     assert requisites_for_kind("usn_advance")["kbk"] == "18201061201010000510"
+
+
+async def test_injury_settled_only_by_payment_of_the_same_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Январский травматизм НЕ гасит июльскую платёжку: период у всех строк один — 'year'.
+
+    Из-за этого обязательство «травматизм 100 ₽ за июль» молча исчезало из «Активных
+    платежей», хотя по банку последний взнос в СФР был 23.06 (расхождение со сводкой
+    «Осталось», найдено владельцем 27.07.2026).
+    """
+    async with async_session_factory() as session:
+        session.add(_planned("contrib_injury", "100", date(2026, 7, 26), "year",
+                             recipient="sfr"))
+        session.add(_paid("contrib_injury", "100", date(2026, 1, 26), "year"))
+        session.add(_paid("contrib_injury", "57.14", date(2026, 6, 23), "year"))
+        await session.commit()
+
+        obligations = await list_payable_obligations(session, today=date(2026, 7, 27))
+
+    injury = [o for o in obligations if o.kind == "contrib_injury"]
+    assert [o.amount for o in injury] == [Decimal("100")]
+
+
+async def test_injury_settled_by_payment_inside_its_window(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж того же месяца (и до 15 числа следующего — крайний срок) обязательство гасит."""
+    async with async_session_factory() as session:
+        session.add(_planned("contrib_injury", "100", date(2026, 7, 26), "year",
+                             recipient="sfr"))
+        session.add(_paid("contrib_injury", "100", date(2026, 7, 27), "year"))
+        await session.commit()
+
+        obligations = await list_payable_obligations(session, today=date(2026, 7, 28))
+
+    assert not [o for o in obligations if o.kind == "contrib_injury"]

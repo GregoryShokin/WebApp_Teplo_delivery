@@ -51,6 +51,23 @@ PERIOD_TITLES: dict[str, str] = {
 }
 
 
+def _same_injury_window(paid_on: date | None, due: date | None) -> bool:
+    """Платёж травматизма относится к той же месячной платёжке, что и плановая строка.
+
+    Взнос за месяц N платят внутри месяца N, крайний срок — 15 число N+1 (125-ФЗ, ст. 22).
+    Окно: [1 число месяца платёжки .. 15 число следующего].
+    """
+    if paid_on is None or due is None:
+        return False
+    if paid_on.year == due.year and paid_on.month == due.month:
+        return True
+    next_month = (due.month % 12) + 1
+    next_year = due.year + (1 if due.month == 12 else 0)
+    return (
+        paid_on.year == next_year and paid_on.month == next_month and paid_on.day <= 15
+    )
+
+
 def is_settled(
     planned: TaxPayment,
     paid_rows: list[TaxPayment],
@@ -70,6 +87,13 @@ def is_settled(
         if used_fact_ids is not None and fact.id in used_fact_ids:
             continue
         if fact.kind != planned.kind:
+            continue
+        if planned.kind == "contrib_injury" and not _same_injury_window(
+            fact.paid_on, planned.paid_on
+        ):
+            # Травматизм платится КАЖДЫЙ месяц, а период у всех строк один — 'year'.
+            # Без окна январский платёж «гасил» июльскую платёжку, и обязательство молча
+            # исчезало из «Активных платежей» (расхождение со сводкой на 100 ₽, 27.07.2026).
             continue
         if fact.for_period is not None:
             if fact.for_period == planned.for_period:
