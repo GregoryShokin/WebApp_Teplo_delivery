@@ -363,9 +363,7 @@ async def test_cheque_expense_line_with_iiko_guid_not_pushed(
         cp = await make_counterparty(session, name="Местный закуп", iiko_guid="LP-GUID")
         for guid, name in (("PROD-VEG", "Помидоры"), ("PROD-BREAD", "Хлеб")):
             session.add(
-                IikoProduct(
-                    iiko_id=guid, name=name, type="GOODS", unit="кг", main_unit_guid="U-KG"
-                )
+                IikoProduct(iiko_id=guid, name=name, type="GOODS", unit="кг", main_unit_guid="U-KG")
             )
         session.add(
             AppSetting(
@@ -382,9 +380,7 @@ async def test_cheque_expense_line_with_iiko_guid_not_pushed(
             session, code="meal", name="Расходы на питание персонала"
         )
         veg = await session.scalar(select(IikoProduct).where(IikoProduct.iiko_id == "PROD-VEG"))
-        bread = await session.scalar(
-            select(IikoProduct).where(IikoProduct.iiko_id == "PROD-BREAD")
-        )
+        bread = await session.scalar(select(IikoProduct).where(IikoProduct.iiko_id == "PROD-BREAD"))
         _, op = await _card_op(session, amount="500.00")
         await session.commit()
 
@@ -724,9 +720,7 @@ async def test_list_card_transactions_filters_by_purchase_day_not_settlement(
         await session.commit()
 
         # Дата чека 13.06 (день покупки) — операция найдена, хотя проведена 15-го.
-        purchase_day = await list_card_transactions(
-            session, issued_at=datetime(2026, 6, 13, 12, 0)
-        )
+        purchase_day = await list_card_transactions(session, issued_at=datetime(2026, 6, 13, 12, 0))
         assert [c.bank_operation_id for c in purchase_day] == [op.id]
 
         # Дата чека 15.06 (день проводки) — НЕ найдена: покупка была не в этот день.
@@ -797,6 +791,77 @@ def test_post_cheque_creates_paid_and_serializes(
     # Та же операция повторно → 409 (анти-дубль на HTTP-слое).
     repeat = client.post(f"{KASSA_BASE}/cheques", json=body, headers=headers)
     assert repeat.status_code == 409
+
+
+async def _seed_staff_meal_route(factory: async_sessionmaker[AsyncSession]):
+    """Сид чека, который РЕАЛЬНО идёт изъятием в iiko: статья из ``ARTICLE_TO_IIKO``."""
+    async with factory() as session:
+        article = await make_expense_article(
+            session, code="staff_meals", name="Расходы на питание персонала"
+        )
+        cp = await make_counterparty(session, name="Пятёрочка")
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        op = await make_bank_operation(
+            session,
+            amount="1500.00",
+            operation_date=OP_DATE,
+            posted_at=ISSUED,
+            category="cardOperation",
+            account_id=account.id,
+        )
+        await session.commit()
+        return cp.id, article.id, op.id
+
+
+async def _stored_cheques(factory: async_sessionmaker[AsyncSession]) -> list[SupplierInvoice]:
+    async with factory() as session:
+        return list(
+            (
+                await session.scalars(
+                    select(SupplierInvoice).where(SupplierInvoice.source == "kassa_cheque")
+                )
+            ).all()
+        )
+
+
+def test_post_cheque_survives_iiko_payout_failure(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Недоступный iiko не роняет уже созданный чек в 500.
+
+    Обработчик откатывает сессию, и ORM-объект чека становится expired: обращение к его
+    атрибутам ПОСЛЕ rollback пошло бы в БД вне greenlet (``MissingGreenlet``) — кассир
+    получал бы ошибку на записанный чек и жал «Создать» второй раз, плодя дубль. Ломаем
+    сетевой слой iiko, а не всю функцию: до падения она успевает открыть транзакцию —
+    без этого rollback вырождается в no-op и объект остаётся живым.
+    """
+    from app.services.kassa import cheque_payout_push
+
+    attempts: list[int] = []
+
+    def _iiko_down() -> str:
+        attempts.append(1)
+        raise RuntimeError("iiko недоступен")
+
+    monkeypatch.setattr(cheque_payout_push, "_auth_token", _iiko_down)
+    cp_id, article_id, op_id = _run(_seed_staff_meal_route(async_session_factory))
+    headers = _run(headers_for(async_session_factory, "kassa-cashier@test.local", ["cashier"]))
+    body = _cheque_body(cp_id, article_id, op_id)
+    body["track_nomenclature"] = True  # без позиций проводить в iiko нечего
+    body["lines"] = [{"name": "Обед персонала", "quantity": "1", "price": "1500.00"}]
+
+    resp = client.post(f"{KASSA_BASE}/cheques", json=body, headers=headers)
+
+    assert attempts, "проводка не дошла до iiko — тест не проверяет сценарий сбоя"
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["payment_status"] == "paid"
+    assert len(data["allocations"]) == 1  # rollback откатил только iiko-проводку, не чек
+    stored = _run(_stored_cheques(async_session_factory))
+    assert [str(cheque.id) for cheque in stored] == [data["id"]]
 
 
 def test_post_cheque_forbidden_without_permission(

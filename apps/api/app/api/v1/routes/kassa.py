@@ -302,22 +302,30 @@ async def create_cheque_endpoint(
         )
     except KassaChequeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # Явная граница транзакции перед побочными iiko-действиями: сам чек уже зафиксирован
+    # (``create_cheque`` коммитит последней строкой), а этот commit закрывает всё, что могло
+    # открыться после него, чтобы rollback ниже откатывал ТОЛЬКО несостоявшуюся проводку.
+    await session.commit()
+    # id забираем сейчас же: rollback ниже делает ORM-объект expired, и любое обращение к его
+    # атрибутам полезло бы в БД вне greenlet (MissingGreenlet) — кассир получал бы 500 на уже
+    # записанный чек и создавал бы его повторно.
+    invoice_id = invoice.id
     # Складские позиции (с товаром) уходят в iiko приходной накладной от «Местного закупа»;
     # прочие расходы без товара push пропускает сам. Ошибка/skip не отменяет созданный чек.
     with contextlib.suppress(WarehousePushError):
-        await push_invoice_to_iiko(session, invoice.id)
+        await push_invoice_to_iiko(session, invoice_id)
     # ПЕРСОНАЛЬНЫЕ/прочие статьи чека (питание/содержание) дублируем в iiko изъятиями addPayOut
     # по статьям, счёт по способу оплаты (наличные→Главная касса, карта→эквайринг). ТОВАРНУЮ часть
     # («Оплата поставщикам») здесь НЕ проводим (skip_supplier=True) — её гасит правильная «оплата
     # накладной» add_payment сверочным джобом mirror_paid_kassa_invoices (≤5 мин), чтобы товар не
     # задваивался. Идемпотентно; сбой проводки фиксируется в kassa_cheque_iiko_payout.
     try:
-        await post_kassa_payment_to_iiko(session, invoice.id, skip_supplier=True)
+        await post_kassa_payment_to_iiko(session, invoice_id, skip_supplier=True)
         await session.commit()
     except Exception:  # noqa: BLE001 — iiko-проводка побочна, чек уже создан и закоммичен
         await session.rollback()
-        logger.exception("Чек %s: не удалось провести прочие расходы в iiko", invoice.id)
-    payload_out = await get_cheque(session, invoice.id)
+        logger.exception("Чек %s: не удалось провести прочие расходы в iiko", invoice_id)
+    payload_out = await get_cheque(session, invoice_id)
     assert payload_out is not None  # noqa: S101 - just created it
     return payload_out
 
