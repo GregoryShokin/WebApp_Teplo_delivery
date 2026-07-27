@@ -20,14 +20,14 @@
     "semantic_hash": "7c877bea49eaeabb100563bd157b9051"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/.obsidian/graph.json": {
-    "mtime": 1784621242.289999,
-    "ast_hash": "b568a54167990682627e45fe5c6ed878",
-    "semantic_hash": "b568a54167990682627e45fe5c6ed878"
+    "mtime": 1785101254.288,
+    "ast_hash": "cbd352393a9aa21cb0183c059c6dcfea",
+    "semantic_hash": "cbd352393a9aa21cb0183c059c6dcfea"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/.obsidian/workspace.json": {
-    "mtime": 1785094637.1536086,
-    "ast_hash": "61e91cb3c25fc173358896cce5dd547a",
-    "semantic_hash": "61e91cb3c25fc173358896cce5dd547a"
+    "mtime": 1785101260.8758512,
+    "ast_hash": "4244c57a74a3b7eb13f5e05a0f8922e1",
+    "semantic_hash": "4244c57a74a3b7eb13f5e05a0f8922e1"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/alembic/env.py": {
     "mtime": 1780068868.3066661,
@@ -1365,9 +1365,9 @@
     "semantic_hash": "5202968aff7d4bf9e589afb1b9f7effb"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/schemas/dds.py": {
-    "mtime": 1784910386.266969,
-    "ast_hash": "15c93fd26ed6e6261fb98ca636765eb4",
-    "semantic_hash": "15c93fd26ed6e6261fb98ca636765eb4"
+    "mtime": 1785153466.6365712,
+    "ast_hash": "5897620e55bc8310a0563f9e8925b7c3",
+    "semantic_hash": "5897620e55bc8310a0563f9e8925b7c3"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/schemas/employees.py": {
     "mtime": 1783671503.1077018,
@@ -1805,9 +1805,9 @@
     "semantic_hash": "03d2d2c5d9a8b08833ca0f3665d859d5"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/new_payment.py": {
-    "mtime": 1784910386.2771084,
-    "ast_hash": "df4b225b18283a92703f5c60ee1c648c",
-    "semantic_hash": "df4b225b18283a92703f5c60ee1c648c"
+    "mtime": 1785153466.6370296,
+    "ast_hash": "ce70e22ae757133c21d2f5c317c1bcb5",
+    "semantic_hash": "ce70e22ae757133c21d2f5c317c1bcb5"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/notice_service.py": {
     "mtime": 1780926265.0839472,
@@ -2125,9 +2125,9 @@
     "semantic_hash": "d19eed052f2c4e535c8639178e0e9a1e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_new_payment_window.py": {
-    "mtime": 1784910386.279391,
-    "ast_hash": "00c2c12e4dbba8d081a5943c67e42fe1",
-    "semantic_hash": "00c2c12e4dbba8d081a5943c67e42fe1"
+    "mtime": 1785153466.6377668,
+    "ast_hash": "3bd4253de2a9d8d05f656c88448343c7",
+    "semantic_hash": "3bd4253de2a9d8d05f656c88448343c7"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_operation_split_invoice.py": {
     "mtime": 1784562714.8278809,
@@ -2930,9 +2930,9 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/lib/api.ts": {
-    "mtime": 1785011654.376612,
-    "ast_hash": "fbbc23733ec0ebe51f0611bffb657cf8",
-    "semantic_hash": "fbbc23733ec0ebe51f0611bffb657cf8"
+    "mtime": 1785153466.6386516,
+    "ast_hash": "8ec1a2d2d1aa32f27a9f9c9f991036c7",
+    "semantic_hash": "8ec1a2d2d1aa32f27a9f9c9f991036c7"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/lib/auth.ts": {
     "mtime": 1780747833.0947237,
@@ -3080,9 +3080,9 @@
     "semantic_hash": "9f801ee01b3f345ef9da265077633349"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/dds/NewPaymentDialog.tsx": {
-    "mtime": 1785009015.2010648,
-    "ast_hash": "af933c19b1c433db24d13f63c3250906",
-    "semantic_hash": "af933c19b1c433db24d13f63c3250906"
+    "mtime": 1785153466.6395953,
+    "ast_hash": "030cdfb5c672f174d324fca7161dad2e",
+    "semantic_hash": "030cdfb5c672f174d324fca7161dad2e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/dds/SafeAccountDialog.tsx": {
     "mtime": 1784067914.8790126,
@@ -5973,5 +5973,160 @@
     "mtime": 1785070337.4583197,
     "ast_hash": "40b4a2071d7bda2b9a6e159317b748b6",
     "semantic_hash": "40b4a2071d7bda2b9a6e159317b748b6"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/payload.json": {
+    "mtime": 1785152923.1484296,
+    "ast_hash": "fbf9d906cca505b0da5554f8341ee55b",
+    "semantic_hash": "fbf9d906cca505b0da5554f8341ee55b"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/recipe-request.json": {
+    "mtime": 1785152923.1437814,
+    "ast_hash": "bb670c91a686fef251ac849727234605",
+    "semantic_hash": "bb670c91a686fef251ac849727234605"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/review.json": {
+    "mtime": 1785152923.1477678,
+    "ast_hash": "74297b4a9ccbb468b5a6e151773022f3",
+    "semantic_hash": "74297b4a9ccbb468b5a6e151773022f3"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-last-inventory-after-import.json": {
+    "mtime": 1785153079.2216814,
+    "ast_hash": "39bfeb4b9628c99d47c9b606d63a224c",
+    "semantic_hash": "39bfeb4b9628c99d47c9b606d63a224c"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-last-inventory.json": {
+    "mtime": 1785151348.7692058,
+    "ast_hash": "6554e3b1ec6a872a456bcd9829c22bb8",
+    "semantic_hash": "6554e3b1ec6a872a456bcd9829c22bb8"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-products.json": {
+    "mtime": 1785151329.985034,
+    "ast_hash": "e58940075c564c50c76e9ce63acba4ba",
+    "semantic_hash": "e58940075c564c50c76e9ce63acba4ba"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-stores.json": {
+    "mtime": 1785151341.993346,
+    "ast_hash": "3b1635b50de65370deb1889b5d668567",
+    "semantic_hash": "3b1635b50de65370deb1889b5d668567"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/ocr-items.json": {
+    "mtime": 1785152914.2103465,
+    "ast_hash": "3ae461c0e3daa21b3f1a123eeced1be2",
+    "semantic_hash": "3ae461c0e3daa21b3f1a123eeced1be2"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/prepared-recipes.json": {
+    "mtime": 1785151715.3346248,
+    "ast_hash": "d5701c7c05a721729d6100beb80d5681",
+    "semantic_hash": "d5701c7c05a721729d6100beb80d5681"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-01.png": {
+    "mtime": 1785150707.8358395,
+    "ast_hash": "a1b1b6b388ef4b9593cd08d5a568e50e",
+    "semantic_hash": "a1b1b6b388ef4b9593cd08d5a568e50e"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-02.png": {
+    "mtime": 1785150716.834013,
+    "ast_hash": "a67a2a10b0d39924b0e7e9c8a8ce0223",
+    "semantic_hash": "a67a2a10b0d39924b0e7e9c8a8ce0223"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-03.png": {
+    "mtime": 1785150726.2383888,
+    "ast_hash": "72943049dbab2487236f99b9e3ea86be",
+    "semantic_hash": "72943049dbab2487236f99b9e3ea86be"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-04.png": {
+    "mtime": 1785150734.9608874,
+    "ast_hash": "ab38af49bdb1b6841e31122a98e2fa90",
+    "semantic_hash": "ab38af49bdb1b6841e31122a98e2fa90"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-05.png": {
+    "mtime": 1785150749.2983897,
+    "ast_hash": "767ebbd00504deae59c3ddab91c8a56b",
+    "semantic_hash": "767ebbd00504deae59c3ddab91c8a56b"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-06.png": {
+    "mtime": 1785150758.317112,
+    "ast_hash": "52dc35a2fd7ea8963ba768d50dbc32eb",
+    "semantic_hash": "52dc35a2fd7ea8963ba768d50dbc32eb"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-07.png": {
+    "mtime": 1785150766.5825703,
+    "ast_hash": "070f31762947b5798700d693f87ca08f",
+    "semantic_hash": "070f31762947b5798700d693f87ca08f"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-08.png": {
+    "mtime": 1785150776.2136283,
+    "ast_hash": "57f3b7d1e307f4f66fcf8fe01b01c1bb",
+    "semantic_hash": "57f3b7d1e307f4f66fcf8fe01b01c1bb"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-09-bottom.jpg": {
+    "mtime": 1785151014.6992724,
+    "ast_hash": "22e2adcdd5a0afe9e50318b007a7ac56",
+    "semantic_hash": "22e2adcdd5a0afe9e50318b007a7ac56"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-09-top.jpg": {
+    "mtime": 1785151014.6262624,
+    "ast_hash": "9b6829323e483341b04bd2d5603da1f8",
+    "semantic_hash": "9b6829323e483341b04bd2d5603da1f8"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-09.jpg": {
+    "mtime": 1785150992.074435,
+    "ast_hash": "22e2adcdd5a0afe9e50318b007a7ac56",
+    "semantic_hash": "22e2adcdd5a0afe9e50318b007a7ac56"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-09.png": {
+    "mtime": 1785150783.0316696,
+    "ast_hash": "90d20fc9ec8d92c3a99eb575ca05e8a1",
+    "semantic_hash": "90d20fc9ec8d92c3a99eb575ca05e8a1"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-10.png": {
+    "mtime": 1785150792.6590831,
+    "ast_hash": "bacaa3ec6c242bcc8ecb23dd5d0549b1",
+    "semantic_hash": "bacaa3ec6c242bcc8ecb23dd5d0549b1"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-11.png": {
+    "mtime": 1785150800.0091376,
+    "ast_hash": "54f66ca8246ae26b140366a719997263",
+    "semantic_hash": "54f66ca8246ae26b140366a719997263"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-12.png": {
+    "mtime": 1785150808.8875835,
+    "ast_hash": "a595b1166043a26d77240ebb37fb8a7a",
+    "semantic_hash": "a595b1166043a26d77240ebb37fb8a7a"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-13.png": {
+    "mtime": 1785150815.0470817,
+    "ast_hash": "5cbfa8473ed2724baf016dac14f31fb4",
+    "semantic_hash": "5cbfa8473ed2724baf016dac14f31fb4"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-14.png": {
+    "mtime": 1785150823.9103088,
+    "ast_hash": "5cbeabfd138c2ee499041c2c16d8bb64",
+    "semantic_hash": "5cbeabfd138c2ee499041c2c16d8bb64"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-15.png": {
+    "mtime": 1785150837.0992494,
+    "ast_hash": "2bf797b4de8b78146957b5bf24c27278",
+    "semantic_hash": "2bf797b4de8b78146957b5bf24c27278"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-16.png": {
+    "mtime": 1785150851.280992,
+    "ast_hash": "a99f70d1076be216863b840f88ceff11",
+    "semantic_hash": "a99f70d1076be216863b840f88ceff11"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-17.png": {
+    "mtime": 1785150861.3068786,
+    "ast_hash": "881cd586bef364d67bf17272977918e4",
+    "semantic_hash": "881cd586bef364d67bf17272977918e4"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/page-18.png": {
+    "mtime": 1785150870.4707923,
+    "ast_hash": "1a3847076e31d85dd85547aea426406e",
+    "semantic_hash": "1a3847076e31d85dd85547aea426406e"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/tmp/pdfs/revision-2026-07-27/repage-09.jpg": {
+    "mtime": 1785151055.1897566,
+    "ast_hash": "e6c9a014bff3f35247dbf5aa67b40b7f",
+    "semantic_hash": "e6c9a014bff3f35247dbf5aa67b40b7f"
   }
 }
