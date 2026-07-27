@@ -440,3 +440,18 @@ async def test_review_overrides_reject_unknown_kind(
             await set_intake_review(
                 session, intake, status="parsed", overrides={"tax_kind": "чепуха"}
             )
+
+
+def test_svod_classified_as_turnover() -> None:
+    """Файл «СВОД 02.xls» — это оборотка в другой форме, а не ведомость Т-53.
+
+    До правки свод уходил в разбор ведомостей и вис в «нужна проверка»: взносы февраля
+    в канон не попадали.
+    """
+    from app.services.taxes.document_ingest import _classify_document
+
+    assert _classify_document("СВОД 02.xls") == "turnover_statement"
+    assert _classify_document("ОБОРОТКА 01.xls") == "turnover_statement"
+    # «Сводная ведомость» тоже свод; а «ВЕД-3 АВАНС» остаётся ведомостью Т-53.
+    assert _classify_document("Сводная 03.xls") == "turnover_statement"
+    assert _classify_document("ВЕД-3 АВАНС 20.02.xls") == "payroll_statement"

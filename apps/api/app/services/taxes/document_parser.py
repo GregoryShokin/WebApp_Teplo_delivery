@@ -560,10 +560,117 @@ def _turnover_period(grid: list[list[str]]) -> tuple[int | None, int | None]:
     return year, month
 
 
+# ── СВОД по начислениям-удержаниям ───────────────────────────────────────────
+# Вторая форма того же содержания: помесячные ИТОГИ без разбивки по сотрудникам.
+# Бухгалтер присылает её, когда оборотка не выгружается («за февраль не могу пока выгрузить
+# оборотку, в своде тоже есть цифры начисления страховых взносов», письмо 27.07.2026).
+_SUMMARY_HEADER_RE = re.compile(r"по\s+начислени\w*[\s\-–]*удержани", re.I)
+_SUMMARY_PERIOD_RE = re.compile(r"за\s+(0?[1-9]|1[0-2])\.(20\d{2})")
+_SUMMARY_AMOUNT_COL = 2  # «Вид Н-У | Дата | Сумма» — сумма в третьей колонке
+_SUMMARY_TOTALS_COL = 3  # блок «Итоги» — сумма в четвёртой
+_SUMMARY_ROW_LABEL = "СВОД (все сотрудники)"
+
+
+def _summary_num(grid: list[list[str]], row: int, col: int) -> Decimal | None:
+    if row >= len(grid) or col >= len(grid[row]):
+        return None
+    return _turnover_decimal(grid[row][col])
+
+
+def _parse_payroll_summary(
+    grid: list[list[str]], *, filename: str
+) -> TurnoverStatementDoc:
+    """Свод «по начислениям-удержаниям за MM.YYYY» → та же структура, что и оборотка.
+
+    Строк сотрудников в своде нет — суммы уже итоговые, поэтому отдаём ОДНУ строку
+    ``СВОД (все сотрудники)`` без табельного номера. Виды опознаём по названию:
+    «СТР.СФР» — взносы за работников, «Стр.Тр.» — травматизм, «НалогФЛ» — НДФЛ (строк
+    может быть несколько: НДФЛ месяца платится «окнами», в своде он разложен по срокам).
+    """
+    header = " ".join(cell for line in grid[:4] for cell in line)
+    period = _SUMMARY_PERIOD_RE.search(header)
+    year = int(period.group(2)) if period else None
+    month = int(period.group(1)) if period else None
+
+    accrued = ndfl = contributions = injury = advance = to_pay = oklad = days = None
+    for r, line in enumerate(grid):
+        label = (line[0] if line else "").strip()
+        if not label:
+            continue
+        low = label.casefold()
+        value = _summary_num(grid, r, _SUMMARY_AMOUNT_COL)
+        if "оклад" in low and value is not None:
+            oklad = (oklad or Decimal("0")) + value
+            days = days if days is not None else _summary_num(grid, r, 3)
+        elif "стр.сфр" in low and value is not None:
+            contributions = (contributions or Decimal("0")) + value
+        elif "стр.тр" in low and value is not None:
+            injury = (injury or Decimal("0")) + value
+        elif "налогфл" in low and value is not None:
+            ndfl = (ndfl or Decimal("0")) + value
+        elif "зп 1/2м" in low and value is not None:
+            advance = (advance or Decimal("0")) + value
+        elif "всего начислено" in low:
+            accrued = _summary_num(grid, r, _SUMMARY_TOTALS_COL) or accrued
+        elif "всего к выдаче" in low:
+            to_pay = _summary_num(grid, r, _SUMMARY_TOTALS_COL)
+    if accrued is None:
+        accrued = oklad
+
+    row = TurnoverRow(
+        tab_number=None,
+        employee=_SUMMARY_ROW_LABEL,
+        oklad=oklad,
+        days=days,
+        accrued=accrued,
+        ndfl=ndfl,
+        advance=advance,
+        contributions=contributions,
+        injury=injury,
+        deduction=None,
+        to_pay=to_pay,
+    )
+    reasons: list[str] = []
+    if year is None or month is None:
+        reasons.append("не распознан месяц/год из заголовка свода")
+    if contributions is None:
+        reasons.append("в своде не найдены страховые взносы (СТР.СФР)")
+    if accrued is None:
+        reasons.append("в своде не найдено начислено")
+    return TurnoverStatementDoc(
+        year=year,
+        month=month,
+        period_code=f"{year}-{month:02d}" if (year and month) else None,
+        rows=[row],
+        accrued_total=accrued or Decimal("0"),
+        ndfl_total=ndfl or Decimal("0"),
+        contributions_total=contributions or Decimal("0"),
+        injury_total=injury or Decimal("0"),
+        needs_review=bool(reasons),
+        review_reasons=reasons,
+        source_filename=filename or None,
+    )
+
+
 def parse_turnover_statement(data: bytes, *, filename: str = "") -> TurnoverStatementDoc:
-    """Разобрать сальдо-оборотную ведомость по зарплате (xls/xlsx, лист 'л1')."""
+    """Разобрать сальдо-оборотную ведомость по зарплате (xls/xlsx, лист 'л1').
+
+    Если листа 'л1' нет, но документ похож на СВОД по начислениям-удержаниям — читаем его:
+    у свода те же итоги месяца, только без разбивки по сотрудникам.
+    """
     wb = open_workbook(data)
     if _TURNOVER_SHEET not in wb.sheet_names():
+        for name in wb.sheet_names():
+            sheet = wb.sheet_by_name(name)
+            if not sheet.nrows:
+                continue
+            grid = [
+                [str(sheet.cell_value(r, c)).strip() for c in range(sheet.ncols)]
+                for r in range(sheet.nrows)
+            ]
+            head = " ".join(cell for line in grid[:4] for cell in line)
+            if _SUMMARY_HEADER_RE.search(head):
+                return _parse_payroll_summary(grid, filename=filename)
         return TurnoverStatementDoc(
             year=None, month=None, period_code=None, rows=[],
             accrued_total=Decimal("0"), ndfl_total=Decimal("0"),

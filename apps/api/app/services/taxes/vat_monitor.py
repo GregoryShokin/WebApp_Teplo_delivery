@@ -143,9 +143,20 @@ async def evaluate_vat_wage_criterion(
         )
 
     # Действующий сотрудник — из самого свежего месяца оборотки (ушедшие сюда не попадают).
-    last_month = max(r.month for r in rows)
+    # Строки СВОДА (итоги месяца без разбивки, tab_number пуст) действующим сотрудником быть
+    # не могут: иначе «СВОД (все сотрудники)» встанет в критерий вместо человека.
+    named = [r for r in rows if r.tab_number]
+    if not named:
+        return VatWageCriterion(
+            year=year, active_employee=None, active_tab=None, months=[],
+            indicator_full=None, indicator_all=None, threshold=threshold,
+            passes=None, margin=None,
+            messages=["Есть только сводные начисления без табельных номеров — "
+                      "показатель по сотруднику не рассчитать."],
+        )
+    last_month = max(r.month for r in named)
     active = sorted(
-        {(r.tab_number, r.employee) for r in rows if r.month == last_month}
+        {(r.tab_number, r.employee) for r in named if r.month == last_month}
     )
     active_tabs = {tab for tab, _ in active}
     active_tab, active_employee = active[0] if active else (None, None)

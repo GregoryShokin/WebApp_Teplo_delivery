@@ -202,3 +202,30 @@ def test_ens_filename_is_payroll_enp_not_extra_contribution() -> None:
     assert _classify_kind("ЕНП до 28.05.docx", "") == "enp_payroll"
     # Допвзнос 1% по-прежнему узнаётся своим паттерном и не перехватывается «ЕНС».
     assert _classify_kind("1% за 2 кв 2026.docx", "") == "contrib_extra_1pct"
+
+
+# ── СВОД по начислениям-удержаниям (вторая форма оборотки) ───────────────────
+
+
+def test_payroll_summary_parsed_as_turnover() -> None:
+    """Свод «по начислениям-удержаниям за 02.2026» читается как оборотка месяца.
+
+    Реальный случай 27.07.2026: «за февраль не могу пока выгрузить оборотку, в своде тоже
+    есть цифры начисления страховых взносов». Без разбора свода взносы февраля 13 595,93 ₽
+    остались бы восстановленными из травматизма, а не документальными.
+    """
+    doc = _osv("svod_02.xls", "СВОД 02.xls")
+
+    assert doc.period_code == "2026-02"
+    assert not doc.needs_review, doc.review_reasons
+    assert doc.contributions_total == Decimal("13595.93")
+    assert doc.injury_total == Decimal("100")
+    # НДФЛ в своде разложен по срокам уплаты (3 421 + 3 079) — за месяц начислено 6 500.
+    assert doc.ndfl_total == Decimal("6500")
+    assert doc.accrued_total == Decimal("50000")
+
+    (row,) = doc.rows
+    assert row.tab_number is None  # свод — итог по всем, не человек
+    assert row.employee == "СВОД (все сотрудники)"
+    assert row.advance == Decimal("22895")
+    assert row.to_pay == Decimal("20605")

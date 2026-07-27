@@ -70,7 +70,9 @@ def _classify_document(filename: str) -> str:
     if re.search(r"0[.,]2\s*%|травматизм|несчастн", low):
         return "payment_order"
     # Оборотка — раньше «вед» и раньше общего .xls-фолбэка: иначе уедет в Т-53-парсер.
-    if "оборот" in low or "сальдо" in low:
+    # «Свод» — вторая форма той же оборотки (итоги месяца без разбивки по сотрудникам);
+    # бухгалтер шлёт его, когда оборотка не выгружается (февраль 2026).
+    if "оборот" in low or "сальдо" in low or re.search(r"\bсвод", low):
         return "turnover_statement"
     if "вед" in low or "ведомост" in low:
         return "payroll_statement"
