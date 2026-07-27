@@ -75,9 +75,15 @@ export function emptyStaffLine(): StaffLine {
   return { key: Math.random().toString(36).slice(2), articleId: "", note: "", amount: "" };
 }
 
-export const num = (v: string) => Math.max(0, Number(v) || 0);
+// Разбор числа из поля ввода. Запятая — штатный десятичный разделитель русской раскладки:
+// без неё `Number("0,5")` даёт NaN → 0, и строка молча выпадает из фильтров (кнопка сохранения
+// гаснет), а сумма перестаёт пересчитываться из цены. Пробелы-разделители разрядов тоже режем.
+export const num = (v: string) =>
+  Math.max(0, Number(String(v).replace(/[\s ]/g, "").replace(",", ".")) || 0);
 // Число → строка суммы/цены без хвостовых нулей (пустая строка для нуля).
 const toAmount = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
+// Кол-во для показа: в русском UI разделитель — запятая (0,5 кг, а не 0.5 кг).
+const fmtQty = (n: number) => String(n).replace(".", ",");
 
 export function CreateInvoiceDialog({
   open,
@@ -237,13 +243,33 @@ export function CreateInvoiceDialog({
   const goodsMissingProduct = lines.some(
     (l) => l.name.trim() && num(l.quantity) > 0 && !l.product_id,
   );
+  // Долг по займу номинирован товаром и гасится ПО ЦЕНЕ ВЫДАЧИ — заём без цены нечем гасить.
+  const barterNeedsPrice = isBarter && filledStore > 0 && totals.total <= 0;
   const canSave =
     !!counterpartyId &&
     !!issuedAt &&
     filledStore + filledStaff > 0 &&
     !createMutation.isPending &&
     !goodsMissingProduct &&
+    !barterNeedsPrice &&
     !(markPaid && !cpHasGuid);
+  // Кнопка гасла молча: пользователь видел заполненную форму и не понимал, чего не хватает
+  // (чаще всего — контрагент напечатан, но не выбран из выпадающего списка).
+  const blockReason = createMutation.isPending
+    ? null
+    : !counterpartyId
+      ? "выберите контрагента из выпадающего списка"
+      : !issuedAt
+        ? "укажите дату и время"
+        : goodsMissingProduct
+          ? "выберите товар из номенклатуры iiko"
+          : filledStore + filledStaff === 0
+            ? "заполните строку: товар и количество"
+            : barterNeedsPrice
+              ? "укажите цену за единицу или сумму строки"
+              : markPaid && !cpHasGuid
+                ? "контрагент не сматчен с iiko — снимите отметку об оплате"
+                : null;
 
   return (
     <>
@@ -349,14 +375,15 @@ export function CreateInvoiceDialog({
               className={cn(
                 "mt-2 grid items-center gap-2 px-1 text-xs text-muted-foreground",
                 isBarter
-                  ? "grid-cols-[minmax(0,1fr)_64px_88px_104px_28px]"
-                  : "grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px]",
+                  ? "grid-cols-[minmax(0,1fr)_64px_32px_88px_104px_28px]"
+                  : "grid-cols-[minmax(0,1fr)_64px_32px_88px_56px_104px_28px]",
               )}
             >
               <span>Товар</span>
-              <span>Кол-во</span>
-              <span>Цена</span>
-              {!isBarter ? <span>НДС%</span> : null}
+              <span className="text-right">Кол-во</span>
+              <span className="text-center">Ед.</span>
+              <span className="text-right">Цена/ед.</span>
+              {!isBarter ? <span className="text-right">НДС%</span> : null}
               <span className="text-right">Сумма</span>
               <span aria-hidden="true" />
             </div>
@@ -496,7 +523,12 @@ export function CreateInvoiceDialog({
           </div>
         ) : null}
 
-        <DialogFooter>
+        <DialogFooter className="sm:items-center sm:justify-between">
+            {blockReason ? (
+              <p className="text-xs text-amber-600">Чтобы сохранить — {blockReason}.</p>
+            ) : (
+              <span aria-hidden="true" />
+            )}
             <Button
               disabled={!canSave}
               onClick={() => {
@@ -536,8 +568,11 @@ export function CreateInvoiceDialog({
                 .map((l) => (
                   <li key={l.key} className="flex items-center justify-between gap-3">
                     <span className="font-medium">{l.name}</span>
+                    {/* Раскладка «кол-во × цена = сумма»: партнёр должен вернуть тот же товар
+                        по цене выдачи, поэтому цена за единицу важнее итога. */}
                     <span className="tabular-nums text-muted-foreground">
-                      {num(l.quantity)} {l.unit ?? "кг"} · {formatRub(num(l.amount))}
+                      {fmtQty(num(l.quantity))} {l.unit ?? "ед."} × {formatRub(num(l.price))} ={" "}
+                      {formatRub(l.amount !== "" ? num(l.amount) : num(l.quantity) * num(l.price))}
                     </span>
                   </li>
                 ))}
@@ -608,6 +643,8 @@ export function LineRow({
   // Товарная строка обязана быть выбрана из номенклатуры iiko (есть product_id). Иначе при
   // выгрузке в iiko строка молча теряется (нет product_guid) — накладная уходит неполной.
   const needsProduct = !!line.name.trim() && !line.product_id;
+  // Единица приходит из номенклатуры iiko вместе с товаром; до выбора товара её нет.
+  const unitLabel = line.unit?.trim() || null;
   // Живой контроль цены: подтягиваем скользящее среднее по товару и предупреждаем прямо при
   // вводе, если цена улетела за порог (+сверху/−снизу). Не блокирует — только подсветка.
   const priceStatsQuery = useQuery({
@@ -635,8 +672,8 @@ export function LineRow({
       className={cn(
         "grid items-center gap-2",
         barter
-          ? "grid-cols-[minmax(0,1fr)_64px_88px_104px_28px]"
-          : "grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px]",
+          ? "grid-cols-[minmax(0,1fr)_64px_32px_88px_104px_28px]"
+          : "grid-cols-[minmax(0,1fr)_64px_32px_88px_56px_104px_28px]",
         needsProduct && "rounded-md p-1 ring-1 ring-red-300",
       )}
     >
@@ -649,8 +686,9 @@ export function LineRow({
       <Input
         inputMode="decimal"
         className="text-right"
+        aria-label="Количество"
         value={line.quantity}
-        title={line.unit ?? undefined}
+        title={unitLabel ? `Количество, ${unitLabel}` : undefined}
         onChange={(e) =>
           onChange({
             quantity: e.target.value,
@@ -658,16 +696,25 @@ export function LineRow({
           })
         }
       />
+      {/* Единица из номенклатуры iiko: без неё непонятно, за что цена — за кг или за фасовку. */}
+      <span
+        className="truncate text-center text-xs text-muted-foreground"
+        title={unitLabel ? `Единица измерения: ${unitLabel}` : "Единица появится после выбора товара"}
+      >
+        {unitLabel ?? "—"}
+      </span>
       <Input
         inputMode="decimal"
         className={cn("text-right", priceWarn && "ring-1 ring-amber-400")}
+        aria-label={unitLabel ? `Цена за 1 ${unitLabel}` : "Цена за единицу"}
         value={line.price}
+        placeholder={unitLabel ? `₽/${unitLabel}` : "₽/ед."}
         title={
           priceWarn
             ? `Среднее ${formatRub(priceWarn.avg)} · отклонение ${
                 priceWarn.dev > 0 ? "+" : ""
               }${priceWarn.dev.toFixed(1)}%`
-            : undefined
+            : `Цена за 1 ${unitLabel ?? "единицу"} — сумма = цена × кол-во`
         }
         onChange={(e) =>
           onChange({
@@ -681,6 +728,7 @@ export function LineRow({
           inputMode="decimal"
           className="text-right"
           value={line.vat}
+          aria-label="Ставка НДС, %"
           onChange={(e) => onChange({ vat: e.target.value })}
           title="Ставка НДС, %"
         />
@@ -688,6 +736,7 @@ export function LineRow({
       <Input
         inputMode="decimal"
         className="text-right"
+        aria-label="Сумма строки"
         value={line.amount}
         title="Сумма строки — цена × кол-во; при вводе суммы цена пересчитывается"
         onChange={(e) => {

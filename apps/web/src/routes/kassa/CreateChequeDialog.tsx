@@ -95,7 +95,10 @@ function dayLabel(issuedAt: string): string {
   return d && m && y ? `${d}.${m}.${y}` : "—";
 }
 
-const num = (value: string) => Number(value) || 0;
+// Запятая — штатный десятичный разделитель русской раскладки: без неё `Number("0,5")` даёт NaN,
+// строка выпадает из фильтров и сумма не пересчитывается из цены (тот же дефект был в накладных).
+const num = (value: string) =>
+  Number(String(value).replace(/[\s ]/g, "").replace(",", ".")) || 0;
 const toAmount = (n: number) => (n > 0 ? String(Math.round(n * 100) / 100) : "");
 
 type CreateChequeDialogProps = {

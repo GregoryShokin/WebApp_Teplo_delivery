@@ -56,6 +56,16 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: контейнеры/порты 5203, 8050, 5482 и локальный prod-data snapshot
 - статус: долгоживущее превью по запросу пользователя
 
+### agent-barter — ветка `agent/barter-barter-unit-price`
+- worktree: `../Teplo-agent-barter`
+- compose: свой не поднимал — одноразовый vite-контейнер `teplo-web-barter` (web **5253**, слот 8)
+  поверх образа `teplo-taxes-web`; бэкенд не нужен, e2e полностью мокают API
+- трогает: окно создания накладной (бартер и обычная) — `routes/warehouse/CreateInvoiceDialog.tsx`,
+  шапка колонок в `routes/warehouse/InvoiceEditDialog.tsx`, парсер числа в
+  `routes/kassa/CreateChequeDialog.tsx`, новый тест `apps/web/tests/barter-invoice-dialog.spec.ts`
+- НЕ трогать другим: `num()` в этих трёх файлах (разбор «0,5» с запятой)
+- статус: правка готова, e2e зелёные, ждёт решения владельца о деплое
+
 ---
 
 ## Shared-ресурсы — кто сейчас держит

@@ -287,10 +287,11 @@ export function InvoiceEditDialog({
                 <span className="text-sm font-medium">Закупка на склад</span>
                 <span className="text-xs text-muted-foreground">iiko · приходная накладная</span>
               </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_64px_88px_56px_104px_28px] gap-2 text-xs text-muted-foreground">
+              <div className="grid grid-cols-[minmax(0,1fr)_64px_32px_88px_56px_104px_28px] gap-2 text-xs text-muted-foreground">
                 <span>Товар</span>
                 <span className="text-right">Кол-во</span>
-                <span className="text-right">Цена</span>
+                <span className="text-center">Ед.</span>
+                <span className="text-right">Цена/ед.</span>
                 <span className="text-right">НДС%</span>
                 <span className="text-right">Сумма</span>
                 <span />
