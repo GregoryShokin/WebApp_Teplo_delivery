@@ -595,7 +595,6 @@ class NewPaymentArticleRead(BaseModel):
         "employee_advance",
         "employee_loan",
         "supplier_prepayment",
-        "supplier_invoices",
         "internal_transfer",
     ]
     # Вид деятельности статьи — для леджер-фильтра палитры (operating/financing/investing).

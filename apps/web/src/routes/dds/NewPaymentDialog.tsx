@@ -451,8 +451,13 @@ export function NewPaymentDialog({
   const q = search.trim().toLowerCase();
   const matches = (label: string) => !q || label.toLowerCase().includes(q);
   // Поиск ищет по всем леджерам; без поиска статьи фильтруются активным леджером.
-  const inLedger = (item: NewPaymentArticle) =>
-    Boolean(q) || (item.activity ?? "operating") === ledger;
+  // Виды деятельности вне трёх чипов (technical/internal) показываем в «Опер.» —
+  // иначе такая статья была бы недостижима ничем, кроме поиска.
+  const articleLedger = (item: NewPaymentArticle): LedgerKey =>
+    LEDGERS.some((entry) => entry.key === item.activity)
+      ? (item.activity as LedgerKey)
+      : "operating";
+  const inLedger = (item: NewPaymentArticle) => Boolean(q) || articleLedger(item) === ledger;
 
   const usedArticleIds = new Set(expenseRows.map((row) => row.articleId).filter(Boolean));
   // Уже выбранные статьи видимы всегда — сквозь леджер и схлопывание.

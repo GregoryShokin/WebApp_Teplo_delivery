@@ -8,12 +8,15 @@
 - ``employee_payout`` — зарплатные статьи: разовая выплата сотруднику
   (``employee_payouts``, только on_demand);
 - ``employee_advance`` / ``employee_loan`` — аванс/заём (``payroll_advance_service``);
-- ``supplier_prepayment`` — предоплата поставщику (``create_standalone_payment_draft``);
-- ``supplier_invoices`` — оплата накладных (``create_payment_draft_for_invoices``).
+- ``supplier_prepayment`` — предоплата поставщику (``create_standalone_payment_draft``).
 
 Селект статей собирается ПО ПРАВАМ пользователя: каждый маршрут виден только при его
-операционном праве; свободные расходные статьи (маршрут ``expense``) не включают
-движковые/защищённые и статьи с флагом «доступна в кассе» — у тех свои контуры выдачи.
+операционном праве. Внутри своего маршрута каталог ДДС открыт ЦЕЛИКОМ: любая активная
+статья доступна к оплате — расходная свободным выводом, приходная ручным поступлением.
+Флаг «доступна в кассе» на окно не влияет (он лишь пускает статью в форму «Выплата из
+кассы»), собственные контуры выдачи статью тоже не прячут: у депозитов, ЗП и накладных
+свои механизмы гашения долга, но заплатить по их статье из окна владелец вправе —
+проводка ДДС встанет, леджер профильного модуля при этом не двигается.
 """
 
 from __future__ import annotations
@@ -36,7 +39,6 @@ from app.services.counterparty_registry import ARCHIVED_STATUSES, NON_PAYOUT_WAL
 from app.services.kassa.payouts import (
     EMPLOYEE_ADVANCE_ARTICLE_CODE,
     EMPLOYEE_LOAN_ARTICLE_CODE,
-    PROTECTED_ARTICLE_CODES,
     SUPPLIER_PREPAYMENT_ARTICLE_CODE,
 )
 from app.services.payroll_admin import (
@@ -44,15 +46,14 @@ from app.services.payroll_admin import (
     _load_okladnik_payout_modes,
 )
 
-# Статьи-маршруты окна. Зарплатные коды и «Оплата поставщикам» продублированы из
-# профильных сервисов (employee_payouts / payroll_payout_allocation /
-# counterparty_payments), чтобы не тянуть их тяжёлые модули на импорт; равенство
-# закреплено тестами tests/counterparties/test_new_payment_window.py.
+# Статьи-маршруты окна: у них в окне СВОЯ форма (не «просто трата»), поэтому маршрут
+# определяется по коду. Зарплатные коды продублированы из профильных сервисов
+# (employee_payouts / payroll_payout_allocation), чтобы не тянуть их тяжёлые модули на
+# импорт; равенство закреплено тестами tests/counterparties/test_new_payment_window.py.
 EMPLOYEE_PAYOUT_ARTICLE_CODES = (
     "zarplata_administrativnogo_personala",
     "zarplata_proizvodstvennogo_personala",
 )
-SUPPLIER_INVOICES_ARTICLE_CODE = "payment_to_supplier"
 
 INTERNAL_TRANSFER_ARTICLE_CODE = "internal_transfer"
 
@@ -60,29 +61,11 @@ FLOW_BY_ARTICLE_CODE: dict[str, str] = {
     EMPLOYEE_ADVANCE_ARTICLE_CODE: "employee_advance",
     EMPLOYEE_LOAN_ARTICLE_CODE: "employee_loan",
     SUPPLIER_PREPAYMENT_ARTICLE_CODE: "supplier_prepayment",
-    SUPPLIER_INVOICES_ARTICLE_CODE: "supplier_invoices",
     # Внутренний перевод — маршрут «Нового платежа»: наличный источник → двухногий
     # перевод; банк-источник → черновик-пополнение Сейфа (topup_only). Требует счёт-получатель.
     INTERNAL_TRANSFER_ARTICLE_CODE: "internal_transfer",
     **{code: "employee_payout" for code in EMPLOYEE_PAYOUT_ARTICLE_CODES},
 }
-
-# Движковые статьи вне канонического каталога (0114, KEEP_ACTIVE_CODES) — цели правил
-# классификации банка, руками по ним не платят. Переводы между счетами уже в
-# PROTECTED_ARTICLE_CODES.
-ENGINE_ARTICLE_CODES = frozenset({"revenue_acquiring_tbank", "internal_transfer", "unknown"})
-
-# Приходные статьи с собственными авто-контурами (выручка, контур кассовой смены,
-# резервы) — ручной приход по ним из окна задвоил бы движковые проводки.
-INCOME_ENGINE_ARTICLE_CODES = frozenset(
-    {
-        "revenue_cash",
-        "revenue_acquiring_sber",
-        "korretirovki_kassy",
-        "postuplenie_deneg_s_torg_tochek",
-        "rezervy_postuplenie",
-    }
-)
 
 # Право каждого маршрута — существующие операционные права, новых не вводим.
 FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
@@ -101,7 +84,6 @@ FLOW_PERMISSIONS: dict[str, tuple[str, ...]] = {
         "payroll.advances.production.issue",
     ),
     "supplier_prepayment": ("invoices.normal.pay",),
-    "supplier_invoices": ("invoices.normal.pay",),
     # Внутренний перевод — как ручной резерв/движение Сейфа.
     "internal_transfer": ("finance.safe.allocate",),
     # Наличное поступление — реальное движение денег сразу (не намерение):
@@ -136,10 +118,16 @@ def _allowed_flows(permissions: frozenset[str]) -> set[str]:
 def new_payment_article_flow(article: DdsArticle) -> str | None:
     """Маршрут окна для статьи; ``None`` — статья в окне недоступна.
 
-    Статьи-маршруты определяются по коду независимо от флагов (у зарплатных и «Оплаты
-    поставщикам» kassa-флаг запрещён, но и с ним маршрут остался бы верным). Остальные
-    расходные статьи — свободный вывод (``expense``), кроме движковых/защищённых и
-    статей с флагом «доступна в кассе»: это окно про банк, у тех — свои контуры.
+    Каталог ДДС открыт целиком: любая активная статья платится из окна. Сначала
+    статьи-маршруты по коду (у них в окне своя форма — аванс, заём, выплата по ЗП,
+    предоплата поставщику, перевод), остальные — по направлению движения: расход →
+    свободный вывод (``expense``), приход → ручное поступление (``income``).
+
+    Флаги статьи маршрут не меняют: «доступна в кассе» — про форму «Выплата из кассы»,
+    а не про банк; статьи с собственными контурами (депозиты, ЗП, накладные, движковые
+    цели правил классификации) тоже доступны — ручной платёж по ним заводит проводку
+    ДДС, но НЕ двигает леджер профильного модуля (долг по депозиту, ведомость,
+    остаток накладной гасятся своими механизмами).
     """
     if not article.is_active:
         return None
@@ -148,34 +136,20 @@ def new_payment_article_flow(article: DdsArticle) -> str | None:
     flow = FLOW_BY_ARTICLE_CODE.get(article.code)
     if flow is not None:
         return flow
-    # Приходные статьи → маршрут «поступление» (наличный приход на Сейф/в Кассу).
-    # Технические/движковые и статьи с авто-контурами исключены — их книжат движки.
     if article.movement_type == "inflow":
-        if (
-            article.activity_type in ("technical", "internal")
-            or article.kassa_enabled
-            or article.code in PROTECTED_ARTICLE_CODES
-            or article.code in ENGINE_ARTICLE_CODES
-            or article.code in INCOME_ENGINE_ARTICLE_CODES
-        ):
-            return None
         return "income"
-    if article.movement_type != "outflow":
-        return None
-    if (
-        article.kassa_enabled
-        or article.code in PROTECTED_ARTICLE_CODES
-        or article.code in ENGINE_ARTICLE_CODES
-    ):
-        return None
-    return "expense"
+    if article.movement_type == "outflow":
+        return "expense"
+    return None
 
 
 def ensure_expense_article_allowed(article: DdsArticle) -> None:
     """Статья годится для свободного вывода на Сейф (маршрут ``expense``)?
 
-    Бэкенд-страховка симметрично фильтру селекта: статьи-маршруты, движковые,
-    защищённые и кассовые статьи свободным выводом не оплачиваются.
+    Бэкенд-страховка симметрично фильтру селекта: свободным выводом не платятся только
+    статьи-маршруты — у них в окне своя форма (аванс/заём/выплата по ЗП/предоплата
+    поставщику/перевод), и голая трата по такой статье не завела бы ни удержание, ни
+    дебиторку. Остальной каталог открыт.
     """
     if not article.is_active:
         raise ValueError("Статья ДДС неактивна")
@@ -183,7 +157,7 @@ def ensure_expense_article_allowed(article: DdsArticle) -> None:
         raise ValueError("Свободный вывод на Сейф доступен только по расходным статьям")
     if new_payment_article_flow(article) != "expense":
         raise ValueError(
-            "У этой статьи собственный контур выдачи — свободный вывод на Сейф недоступен"
+            "У этой статьи собственная форма в окне — свободный вывод на Сейф недоступен"
         )
 
 
@@ -206,15 +180,15 @@ def ensure_reservable_article_allowed(article: DdsArticle, *, has_counterparty: 
 def ensure_income_article_allowed(article: DdsArticle) -> None:
     """Статья годится для ручного наличного поступления (маршрут ``income``)?
 
-    Симметрично фильтру селекта: только активные приходные без собственных
-    авто-контуров (выручка/смена/резервы) и не технические переводы.
+    Симметрично фильтру селекта: любая активная приходная статья каталога. Отсекаются
+    только статьи-маршруты со своей формой (например «Внутренний перевод»).
     """
     if not article.is_active:
         raise ValueError("Статья ДДС неактивна")
     if article.movement_type != "inflow":
         raise ValueError("Поступление можно провести только по приходной статье")
     if new_payment_article_flow(article) != "income":
-        raise ValueError("У этой статьи собственный контур поступлений — ручной приход недоступен")
+        raise ValueError("У этой статьи собственная форма в окне — ручной приход недоступен")
 
 
 async def _counterparties_by_article(
@@ -447,13 +421,10 @@ async def build_new_payment_context(
 
 
 __all__ = [
-    "ENGINE_ARTICLE_CODES",
     "EMPLOYEE_PAYOUT_ARTICLE_CODES",
     "FLOW_BY_ARTICLE_CODE",
     "FLOW_PERMISSIONS",
-    "INCOME_ENGINE_ARTICLE_CODES",
     "NEW_PAYMENT_PERMISSION_CODES",
-    "SUPPLIER_INVOICES_ARTICLE_CODE",
     "build_new_payment_context",
     "ensure_expense_article_allowed",
     "ensure_income_article_allowed",

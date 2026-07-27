@@ -51,8 +51,7 @@ from app.services.kassa.payouts import PROTECTED_ARTICLE_CODES
 from app.services.new_payment import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     FLOW_BY_ARTICLE_CODE,
-    INCOME_ENGINE_ARTICLE_CODES,
-    SUPPLIER_INVOICES_ARTICLE_CODE,
+    ensure_expense_article_allowed,
     ensure_income_article_allowed,
     ensure_reservable_article_allowed,
     list_new_payment_articles,
@@ -79,7 +78,9 @@ def test_route_codes_match_source_services() -> None:
     assert FLOW_BY_ARTICLE_CODE[ADVANCE_ARTICLE_CODE] == "employee_advance"
     assert FLOW_BY_ARTICLE_CODE[LOAN_ARTICLE_CODE] == "employee_loan"
     assert FLOW_BY_ARTICLE_CODE[PREPAYMENT_ARTICLE_CODE] == "supplier_prepayment"
-    assert SUPPLIER_INVOICES_ARTICLE_CODE == DEFAULT_SUPPLIER_ARTICLE_CODE
+    # «Оплата поставщикам» своей формы в окне не имеет (накладные платятся из своего
+    # модуля), поэтому она — обычная расходная статья свободного вывода.
+    assert DEFAULT_SUPPLIER_ARTICLE_CODE not in FLOW_BY_ARTICLE_CODE
     assert DEFAULT_PAYOUT_ARTICLE_CODE in EMPLOYEE_PAYOUT_ARTICLE_CODES
     assert set(EMPLOYEE_PAYOUT_ARTICLE_CODES) == {
         DDS_ARTICLE_ADMIN_PAYROLL,
@@ -88,7 +89,7 @@ def test_route_codes_match_source_services() -> None:
 
 
 async def _free_expense_article(session: AsyncSession) -> DdsArticle:
-    """Любая засеянная статья свободного вывода (не маршрут/не защищённая/не кассовая).
+    """Любая засеянная статья свободного вывода (то есть без своей формы в окне).
 
     Исключаем location_required: такая статья (аренда) требует помещение, а тесты этого
     хелпера платят «просто трату» без обязательных атрибутов.
@@ -541,41 +542,44 @@ async def test_official_without_requisites_requires_explicit_ip_card_confirmatio
         assert saved_line.counterparty_id == supplier.id
 
 
-async def test_expense_rejects_articles_with_own_circuits(
+async def test_expense_rejects_only_articles_with_own_form(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Статьи-маршруты, защищённые и кассовые статьи свободным выводом не платятся."""
+    """Свободным выводом не платятся лишь статьи-маршруты — остальной каталог открыт."""
     async with async_session_factory() as session:
         prepayment = await session.scalar(
             select(DdsArticle).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
         )
         assert prepayment is not None
-        with pytest.raises(CounterpartyPaymentError, match="собственный контур"):
+        with pytest.raises(CounterpartyPaymentError, match="собственная форма"):
             await create_expense_payment_draft(
                 session, article_id=prepayment.id, amount=Decimal("100"), purpose="x"
             )
 
-        # Расходная защищённая статья (переводы-приходы отсеклись бы другим текстом).
+        # Статья с собственным контуром гашения (депозиты/ЗП/накладные) теперь платится:
+        # проводка ДДС встаёт, леджер профильного модуля живёт своей жизнью.
         protected = await session.scalar(
             select(DdsArticle).where(
                 DdsArticle.code.in_(tuple(PROTECTED_ARTICLE_CODES)),
                 DdsArticle.movement_type == "outflow",
                 DdsArticle.is_active.is_(True),
+                DdsArticle.code.notin_(tuple(FLOW_BY_ARTICLE_CODE)),
+                DdsArticle.location_required.is_(False),
             )
         )
         assert protected is not None, "нет засеянных расходных защищённых статей"
-        with pytest.raises(CounterpartyPaymentError, match="собственный контур"):
-            await create_expense_payment_draft(
-                session, article_id=protected.id, amount=Decimal("100"), purpose="x"
-            )
+        draft = await create_expense_payment_draft(
+            session, article_id=protected.id, amount=Decimal("100"), purpose="x"
+        )
+        assert draft.target_article_id == protected.id
 
         kassa_article = await _free_expense_article(session)
         kassa_article.kassa_enabled = True
         await session.flush()
-        with pytest.raises(CounterpartyPaymentError, match="собственный контур"):
-            await create_expense_payment_draft(
-                session, article_id=kassa_article.id, amount=Decimal("100"), purpose="x"
-            )
+        kassa_draft = await create_expense_payment_draft(
+            session, article_id=kassa_article.id, amount=Decimal("100"), purpose="x"
+        )
+        assert kassa_draft.target_article_id == kassa_article.id
 
 
 async def test_expense_optional_purpose_defaults_to_article_name(
@@ -616,15 +620,14 @@ async def test_context_articles_follow_permissions(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
-        # Только оплата накладных/предоплата: видны ровно supplier-маршруты.
+        # Только предоплата поставщику: своя форма в окне у неё одна.
         supplier_only = await list_new_payment_articles(
             session, permissions=frozenset({"invoices.normal.pay"})
         )
         flows = {item["flow"] for item in supplier_only}
-        assert flows == {"supplier_prepayment", "supplier_invoices"}
+        assert flows == {"supplier_prepayment"}
         codes = {item["code"] for item in supplier_only}
         assert PREPAYMENT_ARTICLE_CODE in codes
-        assert DEFAULT_SUPPLIER_ARTICLE_CODE in codes
 
         # Свободный вывод: expense-статьи + статья-маршрут «Внутренний перевод»
         # (то же право). Приходные (income) требуют confirm_paid — их тут нет.
@@ -635,7 +638,10 @@ async def test_context_articles_follow_permissions(
         assert {item["flow"] for item in expense_only} == {"expense", "internal_transfer"}
         expense_codes = {item["code"] for item in expense_only}
         assert expense_codes & set(FLOW_BY_ARTICLE_CODE) == {"internal_transfer"}
-        assert not expense_codes & PROTECTED_ARTICLE_CODES
+        # Каталог открыт целиком: «Оплата поставщикам» и статьи с собственными
+        # контурами гашения (депозиты, переводы) — обычные расходные статьи окна.
+        assert DEFAULT_SUPPLIER_ARTICLE_CODE in expense_codes
+        assert expense_codes & PROTECTED_ARTICLE_CODES
 
         # Поступления — реальное движение денег: только с правом подтверждения оплат.
         income_only = await list_new_payment_articles(
@@ -646,10 +652,32 @@ async def test_context_articles_follow_permissions(
         income_codes = {item["code"] for item in income_only}
         assert "prochie_postupleniya" in income_codes
         assert SUPPLIER_REFUND_ARTICLE_CODE in income_codes
-        # Движковые приходные (выручка/смена/резервы) в окно не попадают.
-        assert not income_codes & INCOME_ENGINE_ARTICLE_CODES
+        # Приходные с движковыми контурами тоже открыты — руками провести можно.
+        assert "postuplenie_deneg_s_torg_tochek" in income_codes
         # У каждой статьи окна есть вид деятельности (леджер-фильтр палитры).
         assert all(item["activity"] for item in income_only + expense_only)
+
+        # Весь активный каталог доступен: ни одна статья не выпала из окна.
+        everyone = await list_new_payment_articles(
+            session,
+            permissions=frozenset(
+                {
+                    "finance.safe.allocate",
+                    "finance.safe.confirm_paid",
+                    "invoices.normal.pay",
+                    "payroll.employee_payouts.create",
+                    "payroll.advances.admin.issue",
+                    "payroll.advances.production.issue",
+                    "payroll.loans.issue",
+                }
+            ),
+        )
+        active_codes = set(
+            (
+                await session.scalars(select(DdsArticle.code).where(DdsArticle.is_active.is_(True)))
+            ).all()
+        )
+        assert {item["code"] for item in everyone} == active_codes
 
         # Займ-статья видна только с правом займов ПОВЕРХ issue-права авансов:
         # POST /payroll/advances требует issue-право по должности до allow_loan,
@@ -673,10 +701,10 @@ async def test_context_articles_follow_permissions(
         assert LOAN_ARTICLE_CODE in {item["code"] for item in advance_plus_loans}
 
 
-async def test_context_hides_kassa_enabled_free_articles(
+async def test_context_keeps_kassa_enabled_articles(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Флаг «доступна в кассе» убирает свободную статью из окна (у неё контур кассы)."""
+    """Флаг «доступна в кассе» на окно не влияет: он про форму кассы, не про банк."""
     async with async_session_factory() as session:
         article = await _free_expense_article(session)
         article.kassa_enabled = True
@@ -684,7 +712,9 @@ async def test_context_hides_kassa_enabled_free_articles(
         items = await list_new_payment_articles(
             session, permissions=frozenset({"finance.safe.allocate"})
         )
-        assert article.code not in {item["code"] for item in items}
+        assert article.code in {item["code"] for item in items}
+        # И оплатить по ней можно — гард симметричен селекту.
+        ensure_expense_article_allowed(article)
 
 
 async def test_context_marks_official_counterparty_for_requisites_route(
@@ -831,7 +861,7 @@ async def test_invoices_draft_amount_is_sum_of_remainders(
 async def test_income_flow_routing_and_guards(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Маршрут «Поступления»: движковые приходные исключены, гварды симметричны."""
+    """Маршрут «Поступления»: весь приходный каталог, гварды симметричны селекту."""
     async with async_session_factory() as session:
         refund = await session.scalar(
             select(DdsArticle).where(DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE)
@@ -840,12 +870,16 @@ async def test_income_flow_routing_and_guards(
         assert new_payment_article_flow(refund) == "income"
         ensure_income_article_allowed(refund)  # не бросает
 
-        engine_code = next(iter(INCOME_ENGINE_ARTICLE_CODES))
-        engine = await session.scalar(select(DdsArticle).where(DdsArticle.code == engine_code))
+        # Приходная статья с движковым контуром (выручка смены) тоже доступна руками.
+        engine = await session.scalar(
+            select(DdsArticle).where(
+                DdsArticle.code == "postuplenie_deneg_s_torg_tochek",
+                DdsArticle.is_active.is_(True),
+            )
+        )
         if engine is not None:
-            assert new_payment_article_flow(engine) is None
-            with pytest.raises(ValueError):
-                ensure_income_article_allowed(engine)
+            assert new_payment_article_flow(engine) == "income"
+            ensure_income_article_allowed(engine)
 
         # Расходную статью поступлением не провести, и наоборот.
         expense = await _free_expense_article(session)

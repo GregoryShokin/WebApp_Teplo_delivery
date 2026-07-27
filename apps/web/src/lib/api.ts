@@ -2753,7 +2753,6 @@ export type NewPaymentFlow =
   | "employee_advance"
   | "employee_loan"
   | "supplier_prepayment"
-  | "supplier_invoices"
   | "internal_transfer";
 
 export type NewPaymentArticleCounterparty = {
