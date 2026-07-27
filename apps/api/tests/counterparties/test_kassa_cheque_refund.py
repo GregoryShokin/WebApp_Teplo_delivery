@@ -29,6 +29,7 @@ from app.models import (
     BankOperation,
     CashflowTransaction,
     DdsArticle,
+    IikoProduct,
     InvoiceLineItem,
     InvoicePaymentAllocation,
     ReconciliationCase,
@@ -585,25 +586,24 @@ async def test_goods_split_excludes_returned_lines(
         supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
         cp = await make_counterparty(session, name="Местный закуп")
         _, _, op = await _purchase_op(session, amount="6000.00")
+        # Товарные строки чека обязаны нести номенклатуру iiko (гард create_cheque) — отсюда и
+        # product_guid, по которому goods-split отбирает товарную часть.
+        product = IikoProduct(
+            iiko_id="guid-товара", name="Товар", type="GOODS", unit="шт", main_unit_guid="U-PCS"
+        )
+        session.add(product)
         await session.commit()
         cheque = await create_cheque(
             session, counterparty_id=cp.id, article_id=None, issued_at=ISSUED,
             bank_parts=[ChequeBankPart(bank_operation_id=op.id)], track_nomenclature=True,
             lines=[
                 ChequeLineInput(name="Товар", quantity=Decimal("1"), price=Decimal("5500.00"),
-                                dds_article_id=supplier.id),
+                                dds_article_id=supplier.id, iiko_product_id=product.id),
                 ChequeLineInput(name="Возвращённый товар", quantity=Decimal("1"),
-                                price=Decimal("500.00"), dds_article_id=supplier.id, is_return=True),
+                                price=Decimal("500.00"), dds_article_id=supplier.id,
+                                iiko_product_id=product.id, is_return=True),
             ],
         )
-        lines = (
-            await session.scalars(
-                select(InvoiceLineItem).where(InvoiceLineItem.invoice_id == cheque.id)
-            )
-        ).all()
-        for line in lines:
-            line.product_guid = "guid-товара"
-        await session.commit()
         split = await compute_kassa_goods_split(session, cheque.id)
         assert split is not None
         card_share, cash_share = split

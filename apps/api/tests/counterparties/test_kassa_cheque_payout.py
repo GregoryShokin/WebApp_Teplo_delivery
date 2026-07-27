@@ -20,7 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.services.kassa.cheque_payout_push as payout
-from app.models import ChequeIikoPayout, InvoiceLineItem, InvoicePaymentAllocation, Wallet
+from app.models import (
+    ChequeIikoPayout,
+    IikoProduct,
+    InvoiceLineItem,
+    InvoicePaymentAllocation,
+    Wallet,
+)
 from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque import ChequeBankPart, ChequeLineInput, create_cheque
 from app.services.kassa.cheque_payout_push import (
@@ -276,6 +282,11 @@ async def test_supplier_line_posted_with_counteragent(
         supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
         cp = await make_counterparty(session, name="Местный закуп", iiko_guid="SUP-GUID")
         op = await _card_op(session, amount="250.00")
+        # Товарная строка обязана быть сопоставлена с номенклатурой iiko (гард create_cheque).
+        product = IikoProduct(
+            iiko_id="PROD-TOM", name="Помидоры", type="GOODS", unit="кг", main_unit_guid="U-KG"
+        )
+        session.add(product)
         await session.commit()
         cheque = await create_cheque(
             session,
@@ -289,6 +300,7 @@ async def test_supplier_line_posted_with_counteragent(
                     quantity=Decimal("1"),
                     price=Decimal("250.00"),
                     dds_article_id=supplier.id,
+                    iiko_product_id=product.id,
                 )
             ],
         )

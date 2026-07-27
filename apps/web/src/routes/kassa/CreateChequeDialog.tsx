@@ -309,6 +309,11 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
   const storeValid = storeLines.every(
     (l) => !l.name.trim() || (num(l.quantity) > 0 && num(l.price) > 0),
   );
+  // Складская строка с названием, но без выбора из номенклатуры iiko — блокируем сохранение
+  // (зеркало серверного гарда create_cheque): иначе позиция молча теряется при выгрузке чека в
+  // iiko приходной накладной, и приход уходит на сумму меньше чека. Товара нет в номенклатуре →
+  // «Синхронизировать номенклатуру» либо в блок «Прочие расходы» (без склада).
+  const goodsMissingProduct = storeLines.some((l) => l.name.trim() && !l.productId);
   const expenseValid = expenseLines.every((l) => !l.articleId || num(l.amount) > 0);
   const filledCount =
     storeLines.filter((l) => l.name.trim() && num(l.quantity) > 0).length +
@@ -330,6 +335,7 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
     paidTotal > 0 &&
     filledCount > 0 &&
     storeValid &&
+    !goodsMissingProduct &&
     expenseValid &&
     totalsMatch &&
     returnsValid &&
@@ -348,21 +354,23 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
           ? "Добавьте хотя бы одну позицию"
           : !storeValid
             ? "У товарных строк укажите количество и цену"
-            : !expenseValid
-              ? "У строк прочих расходов укажите сумму"
-              : hasReturns && !selectedOp
-                ? "Возврат позиций — только при выбранной карт-операции"
-                : hasReturns && cash > 0
-                  ? "Возврат не сочетается с наличной частью"
-                  : hasReturns && returnedTotal >= (selectedOp?.amount ?? 0)
-                    ? "Возвраты не могут покрывать всю операцию"
-                    : paidTotal <= 0
-                      ? "Укажите оплату — карт-операцию или наличные"
-                      : !totalsMatch
-                        ? hasReturns
-                          ? "Позиции (с возвратами) должны сойтись с суммой операции"
-                          : "Суммы позиций и оплаты не сходятся"
-                        : null;
+            : goodsMissingProduct
+              ? "У товарных строк выберите товар из номенклатуры iiko (или перенесите в «Прочие расходы»)"
+              : !expenseValid
+                ? "У строк прочих расходов укажите сумму"
+                : hasReturns && !selectedOp
+                  ? "Возврат позиций — только при выбранной карт-операции"
+                  : hasReturns && cash > 0
+                    ? "Возврат не сочетается с наличной частью"
+                    : hasReturns && returnedTotal >= (selectedOp?.amount ?? 0)
+                      ? "Возвраты не могут покрывать всю операцию"
+                      : paidTotal <= 0
+                        ? "Укажите оплату — карт-операцию или наличные"
+                        : !totalsMatch
+                          ? hasReturns
+                            ? "Позиции (с возвратами) должны сойтись с суммой операции"
+                            : "Суммы позиций и оплаты не сходятся"
+                          : null;
 
   function patchStore(key: string, patch: Partial<StoreLine>) {
     setStoreLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -516,11 +524,13 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                     <span />
                   </div>
                   {storeLines.map((line) => (
+                    <div key={line.key}>
                     <div
-                      key={line.key}
                       className={cn(
                         "grid grid-cols-[1fr_44px_26px_56px_64px_24px_24px] items-center gap-1.5",
                         line.isReturn && "rounded-md bg-red-50 ring-1 ring-red-200",
+                        // Товар не выбран из номенклатуры — та же подсветка, что в накладной.
+                        line.name.trim() && !line.productId && "rounded-md p-1 ring-1 ring-red-300",
                       )}
                     >
                       <ProductSearch
@@ -603,6 +613,12 @@ export function CreateChequeDialog({ open, onOpenChange, onCreated }: CreateCheq
                       >
                         <Trash2 size={14} aria-hidden="true" />
                       </Button>
+                    </div>
+                    {line.name.trim() && !line.productId ? (
+                      <p className="px-1 text-xs text-red-600">
+                        Выберите конкретный товар из номенклатуры iiko
+                      </p>
+                    ) : null}
                     </div>
                   ))}
                 </div>

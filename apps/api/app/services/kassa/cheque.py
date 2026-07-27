@@ -15,6 +15,7 @@ Card-операции классификатор выписки НЕ книжи�
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -48,6 +49,7 @@ from app.services.counterparty_bank_match import (
     _receiver_block,
 )
 from app.services.counterparty_matching import _op_already_allocated, _recompute_status
+from app.services.warehouse_invoices import supplier_payment_article_ids
 
 CASH_WALLET_CODE = "tk_chernikova"
 # Бизнес-карта — всегда Т-Банк рублёвый счёт (других карточных счетов нет). На него садится
@@ -121,6 +123,44 @@ class ChequeLineInput:
     # Позиция возвращена в магазин: участвует в сверке gross-суммы с бумажным чеком и
     # карт-операцией (копейка в копейку), но не проводится — ДДС/iiko/аллокации без неё.
     is_return: bool = False
+
+
+def _assert_goods_lines_have_product(
+    lines: Sequence[ChequeLineInput],
+    cheque_article_id: uuid.UUID | None,
+    products: dict[uuid.UUID, IikoProduct],
+    supplier_article_ids: set[uuid.UUID],
+) -> None:
+    """Товарная строка чека обязана быть сопоставлена с номенклатурой iiko.
+
+    Тот же гард, что у накладной (``warehouse_invoices._assert_goods_have_product``), которого
+    чекам не хватало: строку без ``product_guid`` выгрузка в iiko МОЛЧА отбрасывает
+    (``warehouse_invoice_push.prepare_push``: ``if not line.product_guid: continue``) — приход
+    уходит неполным, сумма в iiko меньше суммы чека, а статус остаётся «отправлена в iiko», так
+    что расхождение незаметно. Так в чеке Ч-44 (23.07.2026) потерялся «кефир», набранный
+    текстом без выбора товара.
+
+    Признак товарной строки у чека — статья «Оплата поставщикам» (у чека ``is_staff`` всегда
+    false, а статья есть у каждой строки), поэтому критерий по СТАТЬЕ, как в ``prepare_push`` и
+    ``line_is_goods``, а не по ``dds_article_id is None``, как у накладной. Строки расходных
+    статей (питание персонала, содержание точек) в iiko приходом не идут — номенклатура им не
+    нужна, это и есть путь для покупки без номенклатуры: блок «Прочие расходы».
+
+    Возвращённые (``is_return``) строки тоже проверяем: в iiko они не уходят, но правило «в
+    складском блоке — только номенклатура» должно быть одним для всех строк, иначе снятая
+    пометка возврата тихо вернёт дырку.
+    """
+    for line in lines:
+        article_id = line.dds_article_id or cheque_article_id
+        if article_id is None or article_id not in supplier_article_ids:
+            continue
+        if line.iiko_product_id is None or products.get(line.iiko_product_id) is None:
+            raise KassaChequeError(
+                f"Позиция «{line.name or '—'}»: выберите конкретный товар из номенклатуры iiko. "
+                "Товарную позицию нельзя сохранить без сопоставления — иначе она потеряется "
+                "при выгрузке чека в iiko. Нет такого товара в номенклатуре — внесите позицию "
+                "в «Прочие расходы»."
+            )
 
 
 @dataclass
@@ -559,6 +599,21 @@ async def create_cheque(
         if cash_wallet is None:
             raise KassaChequeError("Счёт «Торговая касса Черникова» не найден")
 
+    # --- номенклатура товарных строк: гард ДО записи ---------------------------
+    # Товар из кэша номенклатуры (по нему же ниже заполняем product_guid/article/unit) и
+    # UUID-ы статей «Оплата поставщикам» — признак ТОВАРНОЙ строки чека.
+    products: dict[uuid.UUID, IikoProduct] = {}
+    if track_nomenclature and line_inputs:
+        product_ids = [li.iiko_product_id for li in line_inputs if li.iiko_product_id]
+        if product_ids:
+            rows = (
+                await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
+            ).all()
+            products = {product.id: product for product in rows}
+        _assert_goods_lines_have_product(
+            line_inputs, article_id, products, await supplier_payment_article_ids(session)
+        )
+
     # --- создаём чек (накладную) -----------------------------------------------
     invoice = SupplierInvoice(
         counterparty_id=counterparty_id,
@@ -584,13 +639,6 @@ async def create_cheque(
     if track_nomenclature:
         if not line_inputs:
             raise KassaChequeError("Включён складской учёт — добавьте позиции")
-        product_ids = [li.iiko_product_id for li in line_inputs if li.iiko_product_id]
-        products: dict[uuid.UUID, IikoProduct] = {}
-        if product_ids:
-            rows = (
-                await session.scalars(select(IikoProduct).where(IikoProduct.id.in_(product_ids)))
-            ).all()
-            products = {product.id: product for product in rows}
         lines_total = Decimal("0.00")  # gross: ВСЕ строки, включая возвращённые
         for index, line in enumerate(line_inputs):
             product = products.get(line.iiko_product_id) if line.iiko_product_id else None

@@ -5,6 +5,7 @@ card-операций и анти-дубль. Прогоняется на ``tepl
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -18,7 +19,7 @@ from cp_helpers import (
     make_wallet,
 )
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
@@ -28,6 +29,7 @@ from app.models import (
     IikoProduct,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    SupplierInvoice,
     Wallet,
 )
 from app.services.kassa.cheque import (
@@ -416,6 +418,107 @@ async def test_cheque_expense_line_with_iiko_guid_not_pushed(
         guids = {line.product for line in prepared.doc.lines}
         assert "PROD-VEG" in guids  # товар (Оплата поставщикам) уходит
         assert "PROD-BREAD" not in guids  # питание персонала в iiko НЕ уходит
+
+
+async def test_cheque_goods_line_without_nomenclature_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Товарная строка чека («Оплата поставщикам») без товара iiko — отказ на вводе.
+
+    Регресс чека Ч-44 (23.07.2026): кассир набрал «кефир» текстом, не выбрав номенклатуру.
+    У накладной такой ввод запрещал ``_assert_goods_have_product``, а чек проходил — и строка
+    молча выпала из приходной накладной iiko (``prepare_push`` пропускает строки без
+    ``product_guid``), приход ушёл на сумму меньше чека при статусе «отправлена в iiko».
+    """
+    async with async_session_factory() as session:
+        supplier = await make_expense_article(session, code="sup", name="Оплата поставщикам")
+        cp = await make_counterparty(session, name="Местный закуп")
+        _, op = await _card_op(session, amount="500.00")
+        await session.commit()
+
+        with pytest.raises(KassaChequeError, match="номенклатуры iiko"):
+            await create_cheque(
+                session,
+                counterparty_id=cp.id,
+                article_id=None,
+                issued_at=ISSUED,
+                bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+                track_nomenclature=True,
+                lines=[
+                    ChequeLineInput(
+                        name="кефир",
+                        quantity=Decimal("1"),
+                        price=Decimal("500.00"),
+                        dds_article_id=supplier.id,  # товарная статья, но товар не выбран
+                    )
+                ],
+            )
+        # Ничего не сохранено: ни чека, ни строк (гард срабатывает до commit).
+        assert await session.scalar(select(func.count()).select_from(SupplierInvoice)) == 0
+        assert await session.scalar(select(func.count()).select_from(InvoiceLineItem)) == 0
+
+
+async def test_cheque_expense_line_without_nomenclature_allowed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Строка РАСХОДНОЙ статьи (губки, питание) остаётся без номенклатуры — она в iiko
+    приходом не идёт, требовать товар нельзя (иначе кассир не внесёт бытовую мелочь)."""
+    async with async_session_factory() as session:
+        household = await make_expense_article(
+            session, code="tochki2", name="Содержание торговых точек"
+        )
+        cp = await make_counterparty(session, name="Местный закуп")
+        _, op = await _card_op(session, amount="500.00")
+        await session.commit()
+
+        cheque = await create_cheque(
+            session,
+            counterparty_id=cp.id,
+            article_id=None,
+            issued_at=ISSUED,
+            bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+            track_nomenclature=True,
+            lines=[
+                ChequeLineInput(
+                    name="Губки",
+                    quantity=Decimal("1"),
+                    price=Decimal("500.00"),
+                    dds_article_id=household.id,
+                )
+            ],
+        )
+        assert cheque.payment_status == "paid"
+
+
+async def test_cheque_goods_line_with_stale_product_id_rejected(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """``iiko_product_id`` есть, но товара такого в кэше номенклатуры нет (устаревший клиент,
+    товар выпал при синхронизации) → ``product_guid`` был бы NULL, строка потерялась бы так же."""
+    async with async_session_factory() as session:
+        supplier = await make_expense_article(session, code="sup2", name="Оплата поставщикам")
+        cp = await make_counterparty(session, name="Местный закуп")
+        _, op = await _card_op(session, amount="500.00")
+        await session.commit()
+
+        with pytest.raises(KassaChequeError, match="номенклатуры iiko"):
+            await create_cheque(
+                session,
+                counterparty_id=cp.id,
+                article_id=None,
+                issued_at=ISSUED,
+                bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+                track_nomenclature=True,
+                lines=[
+                    ChequeLineInput(
+                        name="кефир",
+                        quantity=Decimal("1"),
+                        price=Decimal("500.00"),
+                        dds_article_id=supplier.id,
+                        iiko_product_id=uuid.uuid4(),  # нет такого товара в кэше
+                    )
+                ],
+            )
 
 
 async def test_nomenclature_total_mismatch_rejected(
