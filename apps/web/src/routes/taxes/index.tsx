@@ -1798,9 +1798,18 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
     },
     onError: (error) => toast.error(apiErrorMessage(error, "ИИ-разбор не удался")),
   });
-  const status = DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
-  const statusHint = DOCUMENT_STATUS_HINT[row.status];
   const recognition = row.recognition ?? {};
+  // Бухгалтер присылает одну форму то в .xls, то печатью в .pdf: второй файл принимается
+  // как «игнорируем», но отклонил его не владелец — подсказка должна говорить правду.
+  const isDuplicate = Boolean(recognition.duplicate_of);
+  const status =
+    isDuplicate && row.status === "ignored"
+      ? { label: "Дубль", className: NEUTRAL_BADGE }
+      : DOCUMENT_STATUS[row.status] ?? { label: row.status, className: NEUTRAL_BADGE };
+  const statusHint =
+    isDuplicate && row.status === "ignored"
+      ? "Тот же документ уже принят в другом формате — в расчёт идёт первый."
+      : DOCUMENT_STATUS_HINT[row.status];
 
   // Открываем исходник синхронно в жесте клика (иначе браузер блокирует попап после await);
   // если попап всё же заблокирован — скачиваем файл.

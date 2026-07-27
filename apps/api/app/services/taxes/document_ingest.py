@@ -1,6 +1,6 @@
 """Приём налоговых документов из почты бухгалтера → staging ``tax_document_intake``.
 
-Обвязка над разбором ([document_parser]): скачать docx/xls из ящика, отфильтровать по
+Обвязка над разбором ([document_parser]): скачать docx/xls/pdf из ящика, отфильтровать по
 отправителю (налоговый агент), разобрать, положить в staging со статусом. Дедуп по SHA-256
 содержимого — повторный проход письма не плодит строк.
 
@@ -13,8 +13,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
+import uuid
 import zipfile
 
 from sqlalchemy import select
@@ -32,6 +34,7 @@ from app.services.taxes.document_parser import (
     PaymentOrderDoc,
     PayrollStatementDoc,
     TurnoverStatementDoc,
+    is_pdf,
     parse_injury_payment,
     parse_payment_order,
     parse_payroll_statement,
@@ -210,6 +213,14 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
             status = "needs_review" if doc.needs_review else "parsed"
             return "payroll_statement", status, recognition, None
         if kind == "turnover_statement":
+            # Оборотка читается по ИНДЕКСАМ колонок листа 'л1' — в печати в PDF колоночная
+            # сетка теряется, поэтому честно просим исходник, а не гадаем по тексту.
+            if is_pdf(att.content):
+                reason = (
+                    "Оборотка в PDF: автоматика читает её только в Excel — "
+                    "попросите бухгалтера прислать .xls."
+                )
+                return "turnover_statement", "unsupported", {"reason": reason}, None
             turnover = parse_turnover_statement(att.content, filename=att.filename or "")
             recognition = _turnover_recognition(turnover)
             status = "needs_review" if turnover.needs_review else "parsed"
@@ -224,6 +235,41 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
 def _sender_matches(from_addr: str | None, senders: tuple[str, ...]) -> bool:
     low = (from_addr or "").lower()
     return any(s in low for s in senders)
+
+
+# Служебные поля распознанного, не относящиеся к содержанию документа.
+_VOLATILE_RECOGNITION_KEYS = frozenset({"review_reasons", "duplicate_of", "manually_reviewed"})
+# Статусы, при которых распознанное содержательно и годится для сравнения документов.
+_COMPARABLE_STATUSES = frozenset({"parsed", "needs_review"})
+
+
+def _content_key(recognition: dict) -> str:
+    """Отпечаток СОДЕРЖАНИЯ документа — по распознанным полям, без служебных."""
+    payload = {k: v for k, v in recognition.items() if k not in _VOLATILE_RECOGNITION_KEYS}
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+
+async def _duplicate_intake_id(
+    session: AsyncSession, document_type: str, recognition: dict
+) -> uuid.UUID | None:
+    """Тот же документ уже принят в другом формате?
+
+    Дедуп по SHA-256 ловит только повтор одного файла. Бухгалтер же присылает одну и ту же
+    форму то в .xls, то печатью в .pdf (ВЕД-14: .xls 22.07.2026 и .pdf 27.07.2026) — байты
+    разные, содержание одно. Сравниваем ПОЛНОЕ распознанное: исправленный документ (другие
+    суммы, другой период) совпадением не будет и приедет как новый — так и надо.
+    """
+    key = _content_key(recognition)
+    rows = await session.execute(
+        select(TaxDocumentIntake.id, TaxDocumentIntake.recognition).where(
+            TaxDocumentIntake.document_type == document_type,
+            TaxDocumentIntake.status != "ignored",
+        )
+    )
+    for intake_id, existing in rows:
+        if _content_key(existing or {}) == key:
+            return intake_id
+    return None
 
 
 # Статусы, которые владелец может выставить документу вручную из интерфейса.
@@ -318,6 +364,7 @@ async def ingest_tax_documents(
         "fetched": 0,
         "skipped_sender": 0,
         "duplicate": 0,
+        "ignored": 0,
         "parsed": 0,
         "needs_review": 0,
         "unsupported": 0,
@@ -352,6 +399,16 @@ async def ingest_tax_documents(
                 result["duplicate"] += 1
                 continue
             document_type, status, recognition, error = parse_attachment(att)
+            if status in _COMPARABLE_STATUSES and recognition:
+                twin = await _duplicate_intake_id(session, document_type, recognition)
+                if twin is not None:
+                    logger.info(
+                        "tax ingest: %s — тот же документ в другом формате (%s)",
+                        att.filename,
+                        twin,
+                    )
+                    recognition = {**recognition, "duplicate_of": str(twin)}
+                    status = "ignored"
             session.add(
                 TaxDocumentIntake(
                     mailbox=att.mailbox,

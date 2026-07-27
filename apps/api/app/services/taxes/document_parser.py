@@ -155,6 +155,56 @@ def _docx_text(data: bytes) -> str:
     return re.sub(r"<[^>]+>", "", xml)
 
 
+# ── pdf ──────────────────────────────────────────────────────────────────────
+#
+# Бухгалтер шлёт те же формы то в Word/Excel, то печатью в PDF (одна и та же ведомость
+# ВЕД-14 пришла 22.07 в .xls и 27.07 в .pdf). Формат выбирается по СИГНАТУРЕ содержимого,
+# как в :func:`open_workbook`, — расширения в письмах рукописные и не всегда честные.
+
+PDF_SIGNATURE = b"%PDF"
+
+
+def is_pdf(data: bytes) -> bool:
+    return data[:4] == PDF_SIGNATURE
+
+
+def _pdf_text(data: bytes) -> str:
+    """Текст цифрового PDF (``pypdf``). Скан вернёт пусто — разбор честно уйдёт в проверку."""
+    from io import BytesIO as _BytesIO  # локально: pypdf тяжёлый и нужен только pdf-ветке
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(_BytesIO(data))
+    return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+# Фамилия и инициалы в PDF приходят отдельными словами («ВОДОЛАЗОВА В.С.»), а Excel отдаёт их
+# одной ячейкой. Склеиваем обратно — иначе строка сотрудника не опознаётся (см. _NAME_RE).
+_PDF_SURNAME_RE = re.compile(r"^[А-ЯЁ][А-ЯЁа-яё]+(?:-[А-ЯЁ][А-ЯЁа-яё]+)?$")
+_PDF_INITIALS_RE = re.compile(r"^[А-ЯЁ]\.\s*[А-ЯЁ]\.?$")
+
+
+def _pdf_grid(data: bytes) -> list[list[str]]:
+    """PDF → «таблица» строк, как её видят Т-53-хелперы: строка текста → список ячеек."""
+    grid: list[list[str]] = []
+    for line in _pdf_text(data).split("\n"):
+        cells = [token for token in line.split() if token]
+        if not cells:
+            continue
+        merged: list[str] = []
+        for cell in cells:
+            if (
+                merged
+                and _PDF_INITIALS_RE.match(cell)
+                and _PDF_SURNAME_RE.match(merged[-1])
+            ):
+                merged[-1] = f"{merged[-1]} {cell}"
+                continue
+            merged.append(cell)
+        grid.append(merged)
+    return grid
+
+
 def _parse_amount(text: str) -> Decimal | None:
     """Сумма из формата «105628-00» (рубли-копейки). Берём в блоке «Сумма»/итога.
 
@@ -224,8 +274,8 @@ def _period_hint(filename: str, header: str) -> str | None:
 def parse_payment_order(
     data: bytes, *, filename: str = "", default_year: int | None = None
 ) -> PaymentOrderDoc:
-    """Разобрать платёжное поручение (docx, форма 0401060)."""
-    text = _docx_text(data)
+    """Разобрать платёжное поручение (docx или печать в pdf, форма 0401060)."""
+    text = _pdf_text(data) if is_pdf(data) else _docx_text(data)
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     header = lines[0] if lines else ""
     year = default_year or _guess_year(text) or date.today().year
@@ -401,12 +451,15 @@ _NAME_RE = re.compile(
 
 
 def parse_payroll_statement(data: bytes, *, filename: str = "") -> PayrollStatementDoc:
-    """Разобрать платёжную ведомость (xls/xlsx, форма Т-53)."""
-    wb = open_workbook(data)
-    grid: list[list[str]] = []
-    for sheet in wb.sheets():
-        for r in range(sheet.nrows):
-            grid.append([str(sheet.cell_value(r, c)).strip() for c in range(sheet.ncols)])
+    """Разобрать платёжную ведомость (xls/xlsx или печать в pdf, форма Т-53)."""
+    if is_pdf(data):
+        grid = _pdf_grid(data)
+    else:
+        wb = open_workbook(data)
+        grid = []
+        for sheet in wb.sheets():
+            for r in range(sheet.nrows):
+                grid.append([str(sheet.cell_value(r, c)).strip() for c in range(sheet.ncols)])
 
     doc_number = _find_doc_number(grid)
     period_start, period_end = _find_period(grid)

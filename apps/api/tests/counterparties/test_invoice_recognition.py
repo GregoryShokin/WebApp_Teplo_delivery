@@ -114,6 +114,39 @@ def test_iiko_courierica_invoice():
     assert rec.product_hint == "courierica"
 
 
+def test_invoice_date_read_from_document_line():
+    """Дата счёта — из строки «Счет на оплату № … от 04 апреля 2026 г.»."""
+    rec = deterministic_recognize(IIKO_COURIERICA)
+    assert rec.invoice_date == date(2026, 4, 4)
+
+
+# Шапка унифицированного бланка: «от 05.01.2004» здесь — дата постановления Госкомстата,
+# а не дата документа. 27.07.2026 такая ведомость встала в очередь оплат с датой 2004 года.
+UNIFIED_FORM_HEADER = """\
+Унифицированная форма № Т-53
+Утверждена Постановлением Госкомстата
+России от 05.01.2004 № 1
+ПЛАТЕЖНАЯ ВЕДОМОСТЬ
+Номер документа Дата составления Расчетный период
+20-14 05.08.2026 01.07.2026 31.07.2026
+Итого: 22696.00
+"""
+
+
+def test_form_approval_date_is_not_invoice_date():
+    """Дата утверждения бланка датой документа не становится — лучше пусто, чем 2004 год."""
+    rec = deterministic_recognize(UNIFIED_FORM_HEADER)
+    assert rec.invoice_date is None
+
+
+def test_invoice_date_survives_boilerplate_above_it():
+    """Если ниже шапки есть настоящая «от <дата>» — берётся она, а не дата постановления."""
+    rec = deterministic_recognize(
+        UNIFIED_FORM_HEADER + "Счет на оплату № 12 от 05.08.2026 г.\n"
+    )
+    assert rec.invoice_date == date(2026, 8, 5)
+
+
 def test_iiko_license_invoice():
     rec = deterministic_recognize(IIKO_LICENSE)
     assert rec.document_kind == "invoice"

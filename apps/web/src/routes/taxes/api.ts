@@ -271,6 +271,8 @@ export type TaxRecognition = {
   review_reasons?: string[];
   /** Почему документ «не поддержан» (кадровый, нечитаемый формат) — русский текст. */
   reason?: string | null;
+  /** Тот же документ уже принят в другом формате (.xls и печать в .pdf) — id первого. */
+  duplicate_of?: string | null;
   /** След ИИ-разбора: объяснение и ПРЕДЛОЖЕНИЕ полей (ИИ сам ничего не применяет). */
   ai_review?: {
     summary: string;

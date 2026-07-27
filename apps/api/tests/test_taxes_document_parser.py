@@ -12,6 +12,9 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
+from app.services.taxes import document_parser
 from app.services.taxes.document_parser import (
     parse_payment_order,
     parse_payroll_statement,
@@ -121,6 +124,63 @@ def test_advance_plus_salary_equals_net_pay() -> None:
     sal = _ved("vedomost_salary_22696.xls", "ВЕД-14 ЗП 05.08.xls")
 
     assert adv.total + sal.total == Decimal("43682")
+
+
+# ── те же формы, но печатью в PDF ────────────────────────────────────────────
+#
+# Бухгалтер шлёт один и тот же документ то в Excel/Word, то печатью в PDF: ВЕД-14 пришла
+# 22.07.2026 в .xls, а 27.07.2026 — в .pdf. Двоичную фикстуру-pdf в репозиторий не кладём
+# (в оригинале персональные данные), поэтому подменяем ИЗВЛЕЧЁННЫЙ ТЕКСТ — ровно то, что
+# отдаёт pypdf на реальном файле, с обезличенным ФИО. Проверяется вся наша логика:
+# выбор ветки по сигнатуре, сборка «таблицы» из строк и склейка «Фамилия И.О.».
+_VED_PDF_TEXT = """Унифицированная форма № Т-53
+Утверждена Постановлением Госкомстата
+России от 05.01.2004 № 1
+Итого: 22696.00
+Итого по листу: 22696.00
+1 206 ИВАНОВА И.И. 22696.00
+Табельный
+номер Фамилия, инициалы Сумма,
+ИП ИВАНОВ И И
+ПЛАТЕЖНАЯ
+ВЕДОМОСТЬ
+Номер документа Дата составления Расчетный период
+с по
+20-14 05.08.2026 01.07.2026 31.07.2026"""
+
+
+def test_vedomost_from_pdf_reads_like_xls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ведомость в PDF даёт то же, что и .xls: номер 20-14, июль, 22 696 ₽ сотруднику 206.
+
+    Дата утверждения бланка (05.01.2004) в шапке периоду не мешает — расчётный период
+    берётся по 1-му числу и максимуму дат документа.
+    """
+    monkeypatch.setattr(document_parser, "_pdf_text", lambda data: _VED_PDF_TEXT)
+
+    doc = parse_payroll_statement(b"%PDF-1.5\n...", filename="ВЕД-14 ЗП 05.08.pdf")
+
+    assert doc.doc_number == "20-14"
+    assert doc.payout_kind == "salary"
+    assert (doc.period_start, doc.period_end) == (date(2026, 7, 1), date(2026, 8, 5))
+    assert [(r.tab_number, r.employee, r.amount) for r in doc.rows] == [
+        ("206", "ИВАНОВА И.И.", Decimal("22696"))
+    ]
+    assert doc.total == Decimal("22696")
+    assert doc.needs_review is False
+
+
+def test_payment_order_from_pdf_reads_like_docx(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Платёжка, напечатанная в PDF, разбирается как исходный docx — тот же текст формы."""
+    docx_text = document_parser._docx_text((FIXTURES / "usn_h1_478376.docx").read_bytes())
+    monkeypatch.setattr(document_parser, "_pdf_text", lambda data: docx_text)
+
+    doc = parse_payment_order(
+        b"%PDF-1.7\n...", filename="УСН 2 кв до 28.07.pdf", default_year=2026
+    )
+
+    assert doc.amount == Decimal("478376")
+    assert doc.tax_kind == "usn_advance"
+    assert doc.due_date == date(2026, 7, 28)
 
 
 # ── сальдо-оборотные ведомости по зарплате (лист 'л1') ────────────────────────

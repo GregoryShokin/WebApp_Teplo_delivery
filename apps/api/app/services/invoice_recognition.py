@@ -200,6 +200,32 @@ def _parse_date(value: str | None) -> date | None:
     return None
 
 
+# «от <дата>» — так подписана дата счёта. Но в унифицированных бланках эта же конструкция
+# стоит в шапке («Утверждена Постановлением Госкомстата России от 05.01.2004 № 1»), и первое
+# совпадение уводило дату документа в 2004 год (ведомость Т-53, 27.07.2026). Поэтому идём по
+# всем совпадениям и берём первое правдоподобное.
+_DATE_AFTER_OT_RE = re.compile(
+    r"от\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{1,2}\s+[а-яё]+\s+\d{4})",
+    re.IGNORECASE,
+)
+# Слева от даты — признаки нормативной шапки бланка, а не даты документа.
+_BOILERPLATE_RE = re.compile(r"утвержд|постановлен|госкомстат|окуд|приказ[а-я]*\s+минфин", re.I)
+# Электронный документооборот моложе этого года; всё раньше — реквизит бланка, не счёт.
+_EARLIEST_INVOICE_YEAR = 2015
+
+
+def _pick_invoice_date(text: str) -> date | None:
+    for m in _DATE_AFTER_OT_RE.finditer(text):
+        context = text[max(0, m.start() - 80) : m.start()]
+        if _BOILERPLATE_RE.search(context):
+            continue
+        parsed = _parse_date(m.group(1))
+        if parsed is None or parsed.year < _EARLIEST_INVOICE_YEAR:
+            continue
+        return parsed
+    return None
+
+
 def _month_period(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
 
@@ -520,12 +546,7 @@ def deterministic_recognize(text: str, *, context_text: str | None = None) -> Re
     kpp = re.search(r"КПП[\s:№]*?(\d{9})", text, re.IGNORECASE)
     rec.kpp = kpp.group(1) if kpp else None
     rec.invoice_number = _pick_number(text)
-    dm = re.search(
-        r"от\s+(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{1,2}\s+[а-яё]+\s+\d{4})",
-        text,
-        re.IGNORECASE,
-    )
-    rec.invoice_date = _parse_date(dm.group(1)) if dm else None
+    rec.invoice_date = _pick_invoice_date(text)
     _apply_service_period(rec, text, context_text)
     rec.product_hint = _iiko_product(text, rec.invoice_number)
     if rec.product_hint == "courierica":

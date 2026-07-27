@@ -115,18 +115,21 @@ def _is_pdf_part(part: Message) -> bool:
 # и PDF-счета, и налоговые docx/xls, не дублируя IMAP-логику.
 AttachmentPredicate = Callable[[Message], bool]
 
-# Расширения офисных документов налогового агента.
-_TAX_DOC_EXTENSIONS = (".docx", ".xls", ".xlsx", ".doc")
+# Расширения документов налогового агента. PDF здесь с 27.07.2026: бухгалтер шлёт одну и ту же
+# ведомость то в .xls, то в .pdf (ВЕД-14 ЗП 05.08 пришла обоими способами), и без .pdf модуль
+# «Налоги» такое письмо просто не видел — документ уезжал в контур счетов на оплату.
+_TAX_DOC_EXTENSIONS = (".docx", ".xls", ".xlsx", ".doc", ".pdf")
 _TAX_DOC_MIMES = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-excel",
     "application/msword",
+    "application/pdf",
 )
 
 
 def _is_tax_document_part(part: Message) -> bool:
-    """docx/xls/doc/xlsx — по MIME или расширению имени файла."""
+    """docx/xls/doc/xlsx/pdf — по MIME или расширению имени файла."""
     content_type = (part.get_content_type() or "").casefold()
     if content_type in _TAX_DOC_MIMES:
         return True

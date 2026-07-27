@@ -44,6 +44,7 @@ from app.services.mail.imap_client import (
     configured_accounts,
     fetch_pdf_attachments,
 )
+from app.services.taxes.document_ingest import resolve_tax_senders
 
 logger = logging.getLogger(__name__)
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -52,6 +53,19 @@ MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 # приходят настоящие счета на оплату (лицензии iiko/Курьерика), а его акты/сверки/УПД
 # отсекаются классификатором по типу документа (recognize → document_kind), а не по отправителю.
 SKIP_SENDER_SUBSTRINGS: tuple[str, ...] = ()
+
+
+def _is_tax_agent(from_addr: str | None, tax_senders: tuple[str, ...]) -> bool:
+    """Письмо налогового агента? Его документы — не счета на оплату.
+
+    Бухгалтер шлёт ведомости, платёжки и оборотки; их разбирает модуль «Налоги»
+    (``tax_document_intake``). 27.07.2026 ведомость Т-53 в PDF приехала сюда и встала в очередь
+    оплат как счёт на 22 696 ₽ с датой 05.01.2004 (дата утверждения бланка Госкомстатом).
+    Отсекаем по тому же списку адресов, что и приём налоговых документов, — одна настройка
+    ``tax_document_senders`` на оба контура, чтобы они не разъезжались.
+    """
+    sender = (from_addr or "").lower()
+    return any(s in sender for s in tax_senders)
 
 
 def _guess_type(inn: str | None) -> str:
@@ -792,9 +806,11 @@ async def poll_and_ingest(
         logger.info("poll_mail_invoices: почта не настроена (MAILRU_* пусто) — пропуск")
         return {"status": "not_configured"}
 
+    tax_senders = resolve_tax_senders(settings.tax_document_senders)
     result: dict[str, int] = {
         "fetched": 0,
         "skipped": 0,
+        "skipped_tax_agent": 0,
         "linked": 0,
         "closing": 0,
         "duplicate": 0,
@@ -822,6 +838,14 @@ async def poll_and_ingest(
             sender = (att.from_addr or "").lower()
             if any(s in sender for s in SKIP_SENDER_SUBSTRINGS):
                 result["skipped"] += 1
+                continue
+            if _is_tax_agent(att.from_addr, tax_senders):
+                logger.info(
+                    "poll_mail_invoices: %s от налогового агента (%s) — это документ «Налогов»",
+                    att.filename or att.sha256[:12],
+                    sender,
+                )
+                result["skipped_tax_agent"] += 1
                 continue
             exists = await session.scalar(
                 select(EmailInvoiceIntake.id).where(

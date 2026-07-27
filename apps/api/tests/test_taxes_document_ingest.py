@@ -149,6 +149,62 @@ def test_kadr_doc_wins_over_extension() -> None:
     assert _classify_document("отдых команды.xls") != "unsupported_kadr"
 
 
+def _pdf_att(filename: str, *, content: bytes = b"%PDF-1.5\n...") -> FetchedAttachment:
+    return FetchedAttachment(
+        mailbox="corporate",
+        message_uid="2",
+        message_id=f"<{filename}@test>",
+        from_addr="Бухгалтер <askad02@mail.ru>",
+        subject=filename,
+        received_at=datetime(2026, 7, 27, tzinfo=UTC),
+        filename=filename,
+        mime="application/pdf",
+        content=content,
+    )
+
+
+def test_pdf_attachment_reaches_tax_contour() -> None:
+    """PDF от бухгалтера принимается приёмом налоговых документов.
+
+    27.07.2026 та же ведомость ВЕД-14 пришла в .pdf: фильтр вложений её не пропускал, и
+    документ уезжал в контур счетов на оплату — там Т-53 встала в очередь как счёт.
+    """
+    from email.message import EmailMessage
+
+    from app.services.mail.imap_client import _is_tax_document_part
+
+    part = EmailMessage()
+    part.set_content(
+        b"%PDF-1.5", maintype="application", subtype="pdf", filename="ВЕД-14 ЗП 05.08.pdf"
+    )
+    assert _is_tax_document_part(part) is True
+
+
+def test_parse_attachment_reads_payroll_from_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ведомость печатью в PDF разбирается так же, как из .xls."""
+    from app.services.taxes import document_parser
+
+    monkeypatch.setattr(
+        document_parser,
+        "_pdf_text",
+        lambda data: "1 206 ИВАНОВА И.И. 22696.00\n20-14 05.08.2026 01.07.2026 31.07.2026",
+    )
+
+    dtype, status, rec, err = parse_attachment(_pdf_att("ВЕД-14 ЗП 05.08.pdf"))
+
+    assert (dtype, status, err) == ("payroll_statement", "parsed", None)
+    assert rec["doc_number"] == "20-14"
+    assert rec["total"] == "22696"
+
+
+def test_turnover_in_pdf_asks_for_excel() -> None:
+    """Оборотка читается по индексам колонок листа 'л1' — в PDF сетки нет, просим .xls."""
+    dtype, status, rec, err = parse_attachment(_pdf_att("ОБОРОТКА 07.pdf"))
+
+    assert (dtype, status, err) == ("turnover_statement", "unsupported", None)
+    assert ".xls" in rec["reason"]
+
+
 def test_old_doc_format_unsupported_with_russian_reason() -> None:
     """Старый Word (.doc) не читается автоматикой — статус «не поддержан» с русской причиной."""
     dtype, status, rec, err = parse_attachment(
@@ -344,6 +400,81 @@ async def test_ingest_skips_foreign_sender(
         assert await session.scalar(
             select(func.count()).select_from(TaxDocumentIntake)
         ) == 0
+
+
+async def test_ingest_ignores_same_document_in_another_format(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ведомость, присланная сначала .xls, а потом .pdf, во второй раз уходит в «отклонён».
+
+    Байты разные — дедуп по SHA-256 её не ловит, а в списке документов возникает призрачный
+    дубль (ВЕД-14 пришла .xls 22.07.2026 и .pdf 27.07.2026). Сравниваем содержание.
+    """
+    from app.services.taxes import document_parser
+
+    xls = _att("vedomost_advance_20986.xls", "ВЕД-13 АВАНС 20.07.xls")
+    async with async_session_factory() as session:
+        await ingest_tax_documents(
+            session, settings=get_settings(), fetch=_fetch_stub([xls]), accounts=_TEST_ACCOUNTS
+        )
+
+    _, _, xls_rec, _ = parse_attachment(xls)
+    monkeypatch.setattr(
+        document_parser,
+        "_pdf_text",
+        lambda data: "\n".join(
+            [
+                f"1 {xls_rec['rows'][0]['tab_number']} {xls_rec['rows'][0]['employee']} 20986.00",
+                f"{xls_rec['doc_number']} 01.07.2026 31.07.2026",
+            ]
+        ),
+    )
+    async with async_session_factory() as session:
+        result = await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([_pdf_att("ВЕД-13 АВАНС 20.07.pdf")]),
+            accounts=_TEST_ACCOUNTS,
+        )
+
+    assert result["ignored"] == 1
+    assert result["parsed"] == 0
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(TaxDocumentIntake.filename, TaxDocumentIntake.status).order_by(
+                    TaxDocumentIntake.filename
+                )
+            )
+        ).all()
+    assert [(name, status) for name, status in rows] == [
+        ("ВЕД-13 АВАНС 20.07.pdf", "ignored"),
+        ("ВЕД-13 АВАНС 20.07.xls", "parsed"),
+    ]
+
+
+async def test_corrected_document_is_not_treated_as_duplicate(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Исправленный документ (другие суммы) — новый документ, а не дубль."""
+    async with async_session_factory() as session:
+        await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([_att("vedomost_advance_20986.xls", "ВЕД-13 АВАНС 20.07.xls")]),
+            accounts=_TEST_ACCOUNTS,
+        )
+    async with async_session_factory() as session:
+        result = await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([_att("vedomost_salary_22696.xls", "ВЕД-14 ЗП 05.08.xls")]),
+            accounts=_TEST_ACCOUNTS,
+        )
+
+    assert result["parsed"] == 1
+    assert result["ignored"] == 0
 
 
 def test_content_sha_is_stable() -> None:
