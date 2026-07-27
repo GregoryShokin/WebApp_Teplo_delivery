@@ -184,6 +184,7 @@ def _payable(
     documented: Decimal | None,
     calculated: Decimal | None,
     expected: Decimal | None = None,
+    paid: Decimal | None = None,
 ) -> Decimal | None:
     """Сколько платить по обязательству — для кнопки «Отправить в банк».
 
@@ -191,7 +192,13 @@ def _payable(
     Расхождение в БЕЗОПАСНУЮ сторону (документ больше расчёта → переплата зачтётся на ЕНС)
     тоже платёжное: кнопку даём на сумму документа. Опасная сторона (документ меньше) —
     кнопки нет, платить нельзя.
+
+    УПЛАЧЕННОЕ не платёжное ни при каком вердикте: уплаченный аванс УСН за I квартал с
+    безопасным расхождением (документ 674 624 при расчёте 674 324) иначе снова попадал в
+    «к уплате» и в кредиторскую задолженность — второй раз на ту же сумму.
     """
+    if paid is not None and documented is not None and paid + TOLERANCE >= documented:
+        return None
     if verdict == "doc_mismatch":
         if (
             documented is not None
@@ -552,6 +559,7 @@ async def build_reconciliation(
                         documented=documented,
                         calculated=calculated,
                         expected=calculated,
+                        paid=paid,
                     ),
                 ),
                 expected=calculated,
@@ -685,7 +693,7 @@ async def build_reconciliation(
                 # Платить нужно сумму платёжки бухгалтера (она учитывает «окна» НДФЛ),
                 # иначе — начисленное за месяц.
                 payable_amount=_payable(
-                    verdict, documented=documented, calculated=accrued
+                    verdict, documented=documented, calculated=accrued, paid=paid
                 ),
             )
         )

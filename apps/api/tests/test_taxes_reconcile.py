@@ -734,3 +734,40 @@ async def test_doc_bigger_than_calc_names_injury_share(
     assert usn.action_why is not None
     assert "травматизм" in usn.action_why
     assert "300,00" in usn.action_why
+
+
+async def test_paid_obligation_with_safe_mismatch_is_not_payable_again(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Уплаченный аванс с БЕЗОПАСНЫМ расхождением не предлагается к уплате второй раз.
+
+    УСН за I квартал уплачен 674 624 по платёжке, а расчёт 674 324 (мы зачли травматизм).
+    Вердикт — «документ больше расчёта, платить можно», и строка снова уезжала в «к уплате»
+    и в кредиторскую задолженность на 674 624 ₽ — по уже закрытому обязательству.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        # Реальный вычет I квартала: фикс 14 347,50 + взносы янв-фев 27 191,86 + травма 300.
+        session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+        session.add(_tax_payment("contrib_employees", "27191.86", date(2026, 3, 26)))
+        session.add(
+            _tax_payment("contrib_injury", "300.00", date(2026, 3, 26), recipient="sfr")
+        )
+        session.add(_usn_paid("674624.00", "q1", date(2026, 4, 20), "287"))
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance",
+                period="q1",
+                amount="674624",
+                due=date(2026, 4, 28),
+                received=datetime(2026, 4, 17, tzinfo=UTC),
+                filename="УСН 1 кв.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 4, 29))
+
+    usn = _line(recon, "usn_advance", "q1")
+    assert usn.verdict == "doc_mismatch"  # расхождение по-прежнему видно
+    assert usn.payable_amount is None  # но платить нечего — уже уплачено
