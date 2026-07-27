@@ -771,3 +771,45 @@ async def test_paid_obligation_with_safe_mismatch_is_not_payable_again(
     usn = _line(recon, "usn_advance", "q1")
     assert usn.verdict == "doc_mismatch"  # расхождение по-прежнему видно
     assert usn.payable_amount is None  # но платить нечего — уже уплачено
+
+
+async def test_enp_line_explains_calc_vs_fact_gap_as_ndfl_windows(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Расчёт ≠ факт» по ЕНП объясняется прямо: взносы сошлись, разница — НДФЛ.
+
+    Вопрос владельца 27.07.2026: расчёт за март 20 095,93, факт 20 559,03 — «не хватает
+    информации?». Нет: взносы 13 595,93 совпали копейка в копейку (в вычет идут они), а
+    НДФЛ платится «окнами» по датам выплат, поэтому в платёж месяца попадает НДФЛ с аванса
+    следующего. Строка обязана говорить это сама.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        session.add(
+            TaxPayrollLedger(
+                id=uuid.uuid4(),
+                year=2026,
+                month=3,
+                tab_number="205",
+                employee="ДОЛГОПОЛОВА К.Д.",
+                contributions=Decimal("13595.93"),
+                ndfl=Decimal("6500.00"),
+            )
+        )
+        contrib = _tax_payment("contrib_employees", "13595.93", date(2026, 4, 20))
+        contrib.for_period = "2026-03"
+        ndfl = _tax_payment("ndfl", "6963.10", date(2026, 4, 20))
+        ndfl.for_period = "2026-03"
+        session.add_all([contrib, ndfl])
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 5, 1))
+
+    line = _line(recon, "enp_payroll", "2026-03")
+    assert line.calculated == Decimal("20095.93")
+    assert line.paid == Decimal("20559.03")
+    assert line.verdict == "ok"
+    explanation = next(m for m in line.messages if "Взносы сошлись" in m)
+    assert "13 595,93" in explanation  # взносы совпали
+    assert "463,10" in explanation  # разница названа и отнесена к НДФЛ
+    assert "НДФЛ" in explanation

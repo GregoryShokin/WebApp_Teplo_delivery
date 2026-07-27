@@ -404,10 +404,10 @@ async def _enp_payroll_documents(session: AsyncSession) -> dict[date, Decimal]:
     return out
 
 
-async def _payroll_split_paid(
+async def _payroll_paid_breakdown(
     session: AsyncSession, *, year: int, period: str
-) -> Decimal | None:
-    """Сколько уплачено по месяцу (НДФЛ + взносы).
+) -> tuple[Decimal, Decimal]:
+    """Уплачено по месяцу в разрезе ``(взносы за работников, НДФЛ)``.
 
     Приоритет — БАНКОВСКИЕ факты (разнос ЕНП из выписки); без них — кассовая конвенция
     разноса оборотки (tax_notice: «считаем уплаченным в срок»). Суммировать оба слоя
@@ -416,25 +416,34 @@ async def _payroll_split_paid(
     """
     rows = (
         await session.execute(
-            select(TaxPayment.source_kind, func.coalesce(func.sum(TaxPayment.amount), 0))
+            select(
+                TaxPayment.source_kind,
+                TaxPayment.kind,
+                func.coalesce(func.sum(TaxPayment.amount), 0),
+            )
             .where(
                 TaxPayment.status == "paid",
                 TaxPayment.for_year == year,
                 TaxPayment.for_period == period,
                 TaxPayment.kind.in_(("contrib_employees", "ndfl")),
             )
-            .group_by(TaxPayment.source_kind)
+            .group_by(TaxPayment.source_kind, TaxPayment.kind)
         )
     ).all()
-    bank = sum(
-        (Decimal(str(total)) for source, total in rows if source != "tax_notice"),
-        Decimal("0"),
-    )
-    notice = sum(
-        (Decimal(str(total)) for source, total in rows if source == "tax_notice"),
-        Decimal("0"),
-    )
-    value = bank if bank > 0 else notice
+    layers: dict[str, dict[str, Decimal]] = {"bank": {}, "notice": {}}
+    for source, kind, total in rows:
+        layer = "notice" if source == "tax_notice" else "bank"
+        layers[layer][kind] = layers[layer].get(kind, ZERO) + Decimal(str(total))
+    chosen = layers["bank"] if sum(layers["bank"].values(), ZERO) > ZERO else layers["notice"]
+    return chosen.get("contrib_employees", ZERO), chosen.get("ndfl", ZERO)
+
+
+async def _payroll_split_paid(
+    session: AsyncSession, *, year: int, period: str
+) -> Decimal | None:
+    """Сколько уплачено по месяцу всего (НДФЛ + взносы); None — платежей нет."""
+    contributions, ndfl = await _payroll_paid_breakdown(session, year=year, period=period)
+    value = contributions + ndfl
     return value if value > 0 else None
 
 
@@ -637,11 +646,13 @@ async def build_reconciliation(
         # если срок ещё не наступил (платят и досрочно). Иначе строка звала бы платить второй
         # раз то, что уже уплачено.
         settled = month_due <= as_of or month in reconstructed
-        paid = (
-            await _payroll_split_paid(session, year=year, period=period)
+        paid_contributions, paid_ndfl = (
+            await _payroll_paid_breakdown(session, year=year, period=period)
             if settled
-            else None
+            else (ZERO, ZERO)
         )
+        paid_total = paid_contributions + paid_ndfl
+        paid = paid_total if paid_total > ZERO else None
 
         month_name = _MONTHS_RU_GENITIVE[month - 1]
         messages = [
@@ -660,6 +671,26 @@ async def build_reconciliation(
         if settled:
             verdict, severity = "ok", "ok"
             messages.append(f"Уплачено в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
+            # Прямой ответ на «расчёт с фактом не сходится»: сверять надо ВЗНОСЫ (они и идут
+            # в вычет) — они совпадают копейка в копейку. Разница целиком в НДФЛ: начисляется
+            # он помесячно, а платится «окнами» по датам выплат (до 28 числа — за 1–22, до
+            # 5 числа следующего — за остаток), поэтому в платёж месяца попадает НДФЛ с аванса
+            # СЛЕДУЮЩЕГО месяца и не попадает часть текущего.
+            gap = paid_total - accrued
+            if paid_contributions > ZERO and abs(gap) > TOLERANCE:
+                if abs(paid_contributions - contributions) <= TOLERANCE:
+                    messages.append(
+                        f"Взносы сошлись: начислено и уплачено {fmt_money(contributions)} ₽ — "
+                        f"в вычет УСН идут именно они. Разница с фактом "
+                        f"{fmt_money(abs(gap))} ₽ — это НДФЛ: начислено за месяц "
+                        f"{fmt_money(ndfl)} ₽, уплачено в этом ЕНП {fmt_money(paid_ndfl)} ₽ "
+                        f"(«окна» уплаты, не расхождение)."
+                    )
+                else:
+                    messages.append(
+                        f"Взносы: начислено {fmt_money(contributions)} ₽, уплачено "
+                        f"{fmt_money(paid_contributions)} ₽ — проверьте месяц с бухгалтером."
+                    )
         else:
             verdict, severity = "due", "info"
             messages.append(
