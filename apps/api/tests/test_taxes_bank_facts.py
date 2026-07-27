@@ -279,3 +279,132 @@ async def test_split_enp_feeds_deduction_with_contributions_only(
         inputs = await load_tax_inputs(session, as_of=date(2026, 8, 1))
 
     assert inputs.employees_paid == Decimal("8571.30")
+
+
+# ── Разнос ЕНП за месяцы без оборотки (сверка с реальной выпиской 27.07.2026) ──
+
+
+async def test_split_enp_uses_injury_payment_when_turnover_missing(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Нет оборотки — взносы берём из платёжки травматизма: 100 ₽ / 0,2 % → ФОТ 50 000.
+
+    Реальный случай: оборотки за январь и февраль 2026 бухгалтер не присылала, а ЕНП
+    21 783,93 ₽ уплачен. Взносы 13 595,93 ₽ (тариф МСП от 50 000) сверены с платёжкой
+    копейка в копейку — без этого разноса они не попадали в вычет и УСН был завышен.
+    """
+    async with async_session_factory() as session:
+        session.add(_intake("enp_payroll", "21783.93", date(2026, 2, 27)))
+        session.add(_operation("100.00", date(2026, 1, 26), inn=SFR_INN))
+        session.add(_operation("21783.93", date(2026, 2, 25)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = {(f.kind, f.for_period): f.amount for f in await _facts(session)}
+
+    assert facts[("contrib_employees", "2026-01")] == Decimal("13595.93")
+    assert facts[("ndfl", "2026-01")] == Decimal("8188.00")
+
+
+async def test_enp_smaller_than_contributions_is_pure_ndfl(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж меньше взносов месяца — это отдельный НДФЛ, а не часть взносов.
+
+    Платёжка «ЕНП-НДФЛ с аванса» на 1 733 ₽ при взносах 13 595,93 ₽: без проверки
+    ``amount < взносы`` весь платёж уходил в взносы и завышал вычет УСН.
+    """
+    async with async_session_factory() as session:
+        session.add(_ledger(1, "13595.93", "6500"))
+        session.add(_intake("enp_payroll", "1733.00", date(2026, 2, 27)))
+        session.add(_operation("1733.00", date(2026, 1, 21)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+
+    assert [(f.kind, f.for_period, f.amount) for f in facts] == [
+        ("ndfl", "2026-01", Decimal("1733.00"))
+    ]
+
+
+async def test_enp_period_is_accrual_month_not_due_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Месяц ЕНП — месяц начисления (срок 28.N+1 → N), даже если в платёжке стоит апрель.
+
+    Дефект: подсказка периода из имени файла «ЕНП сроком до 28.04» читалась как 2026-04,
+    и платежи за март и за апрель занимали ОДИН слот — вычет задваивался на одном месяце
+    и терялся на другом.
+    """
+    async with async_session_factory() as session:
+        march = _intake("enp_payroll", "20559.93", date(2026, 4, 28))
+        march.recognition = {**march.recognition, "period_hint": "2026-04"}
+        april = _intake("enp_payroll", "18556.93", date(2026, 5, 28))
+        april.recognition = {**april.recognition, "period_hint": "2026-05"}
+        session.add_all([march, april])
+        session.add(_ledger(3, "13595.93", "6500"))
+        session.add(_ledger(4, "13595.93", "6500"))
+        session.add(_operation("20559.93", date(2026, 4, 20)))
+        session.add(_operation("18556.93", date(2026, 5, 26)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        periods = sorted(
+            f.for_period
+            for f in await _facts(session)
+            if f.kind == "contrib_employees"
+        )
+
+    assert periods == ["2026-03", "2026-04"]
+
+
+async def test_kopeck_payment_does_not_match_zero_document(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Добор 0,90 ₽ не приклеивается к нулевой платёжке из-за допуска ±1 ₽.
+
+    Бухгалтер прислала «УСН 2 кв» пустой (0 ₽) и заменила на следующий день. Допуск
+    ±1 ₽ ловил её на копеечный добор к ЕНП — 0,90 ₽ уезжали в УСН.
+    """
+    async with async_session_factory() as session:
+        session.add(_intake("usn_advance", "0", date(2026, 7, 28)))
+        session.add(_operation("0.90", date(2026, 4, 27)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+
+    assert [(f.kind, f.amount) for f in facts] == [("other", Decimal("0.90"))]
+
+
+async def test_ripening_runs_after_new_operations_in_one_pass(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Основание разноса, появившееся в этом же проходе, применяется сразу.
+
+    Травматизм за январь уплачен 26.01, а НДФЛ-ЕНП — 21.01: при дозревании ДО разбора
+    новых операций платёж 21.01 оставался «нужна проверка» до следующего запуска —
+    результат зависел от числа нажатий кнопки.
+    """
+    async with async_session_factory() as session:
+        session.add(_intake("enp_payroll", "1733.00", date(2026, 2, 27)))
+        session.add(_operation("1733.00", date(2026, 1, 21)))
+        session.add(_operation("100.00", date(2026, 1, 26), inn=SFR_INN))
+        await session.commit()
+
+        report = await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = {(f.kind, f.for_period) for f in await _facts(session)}
+
+    assert report.review_pending == 0
+    assert ("ndfl", "2026-01") in facts

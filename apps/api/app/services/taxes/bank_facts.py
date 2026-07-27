@@ -21,9 +21,17 @@ owner-locked констант: ИНН Казначейства/ФНС и ОСФ�
    не занижаем; «прочее» видно на «Платежах» и дозревает следующим прогоном).
 
 Зарплатный ЕНП разносится по видам ОБЯЗАТЕЛЬНО (``kind='enp_payroll'`` запрещён CHECK'ом):
-взносы месяца N из оборотки (``tax_payroll_ledger``), НДФЛ — остаток платежа. Без оборотки
-месяца разнос невозможен — платёж ждёт её в ``other``/``requires_review`` и пересобирается,
-когда оборотка приходит («дозревание»).
+взносы месяца N — из первого доступного основания, НДФЛ — остаток платежа. Основания взносов
+по убыванию точности (см. ``_contributions_basis``):
+
+1. **оборотка** бухгалтера (``tax_payroll_ledger``) — взносы стоят цифрой;
+2. **платёжка травматизма** того же месяца: 0,2 % от ФОТ → база = сумма / 0,002 → взносы по
+   тарифу МСП. Так разносятся месяцы, за которые оборотку не присылали (январь–февраль 2026:
+   травматизм 100 ₽ → база 50 000 → взносы 13 595,93 — сверено с ЕНП копейка в копейку);
+3. **официальный контур** сотрудника (оклад × тариф) — если и травматизма за месяц нет.
+
+Без всех трёх разнос невозможен — платёж ждёт данные в ``other``/``requires_review`` и
+пересобирается, когда они приходят («дозревание»).
 
 Идемпотентность: операция обрабатывается один раз (дедуп по ``bank_operation_id``);
 пере-разнос касается ТОЛЬКО собственных строк ``other``/``requires_review``. Строки,
@@ -38,7 +46,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dds import BankOperation
@@ -46,6 +54,13 @@ from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayro
 from app.services.banking.fns_enp_requisites import TREASURY_ENP_REQUISITES
 from app.services.banking.sfr_injury_requisites import TREASURY_INJURY_REQUISITES
 from app.services.taxes.concurrency import insert_or_reread
+from app.services.taxes.engine import money
+from app.services.taxes.official_payroll import (
+    injury_due,
+    month_contributions,
+    official_month_accrual,
+)
+from app.services.taxes.repository import year_config
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +130,87 @@ class _Resolution:
     note: str
 
 
+async def payroll_facts_without_turnover(
+    session: AsyncSession, *, year: int
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """Месяцы БЕЗ оборотки, но с уплаченным и разнесённым зарплатным ЕНП.
+
+    Возвращает ``{месяц: (взносы, НДФЛ)}`` по банковским фактам. Нужен и сверке, и сводке
+    «начислено/уплачено»: январь и февраль 2026 оплачены (21 783,93 и 19 460,93), их взносы
+    в вычете, но начисления по ним оборотка не покрывает — без этой добавки месяц выпадал
+    из таблиц МОЛЧА, а «уплачено» оказывалось больше «начислено» на те же суммы.
+    """
+    covered = set(
+        (
+            await session.scalars(
+                select(TaxPayrollLedger.month)
+                .where(TaxPayrollLedger.year == year)
+                .distinct()
+            )
+        ).all()
+    )
+    rows = (
+        await session.execute(
+            select(
+                TaxPayment.for_period,
+                TaxPayment.kind,
+                func.coalesce(func.sum(TaxPayment.amount), 0),
+            )
+            .where(
+                TaxPayment.status == "paid",
+                TaxPayment.for_year == year,
+                TaxPayment.source_kind != "tax_notice",
+                TaxPayment.kind.in_(("contrib_employees", "ndfl")),
+                TaxPayment.for_period.is_not(None),
+            )
+            .group_by(TaxPayment.for_period, TaxPayment.kind)
+        )
+    ).all()
+    out: dict[int, tuple[Decimal, Decimal]] = {}
+    for period, kind, total in rows:
+        if not period or len(period) != 7 or period[4] != "-":
+            continue
+        month = int(period[5:])
+        if month in covered:
+            continue
+        contributions, ndfl = out.get(month, (ZERO, ZERO))
+        if kind == "contrib_employees":
+            contributions += Decimal(str(total))
+        else:
+            ndfl += Decimal(str(total))
+        out[month] = (contributions, ndfl)
+    return out
+
+
+async def injury_paid_for_month(
+    session: AsyncSession, *, year: int, month: int
+) -> Decimal:
+    """Травматизм, уплаченный за месяц N (платится внутри N, крайний срок 15.(N+1))."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+            TaxPayment.kind == "contrib_injury",
+            TaxPayment.status == "paid",
+            TaxPayment.source_kind != "tax_notice",
+            TaxPayment.paid_on >= date(year, month, 1),
+            TaxPayment.paid_on <= injury_due(year, month),
+        )
+    )
+    return Decimal(str(total or 0))
+
+
+def _amounts_match(document: Decimal, operation: Decimal) -> bool:
+    """Совпадают ли суммы документа и списания с допуском на рублёвое округление.
+
+    Допуск ±1 ₽ нужен потому, что налог в платёжке округлён до рубля, но для КОПЕЕЧНЫХ сумм
+    он абсурден: добор 0,90 ₽ к ЕНП попадал в допуск нулевой платёжки «УСН 2 кв» (Наталья
+    прислала её пустой и на следующий день заменила) и уезжал в УСН. Поэтому обе суммы
+    должны быть больше допуска, иначе требуем точного совпадения.
+    """
+    if document <= TOLERANCE or operation <= TOLERANCE:
+        return document == operation
+    return abs(document - operation) <= TOLERANCE
+
+
 async def _payroll_contributions(
     session: AsyncSession, *, year: int, month: int
 ) -> Decimal | None:
@@ -131,30 +227,93 @@ async def _payroll_contributions(
     return sum((Decimal(str(v)) for v in rows if v is not None), ZERO)
 
 
+async def _injury_payroll_base(
+    session: AsyncSession, *, year: int, month: int
+) -> Decimal | None:
+    """ФОТ месяца, восстановленный из уплаченного травматизма: сумма / 0,2 %.
+
+    Травматизм бухгалтер считает от того же ФОТ, что и взносы, и платит его ОТДЕЛЬНОЙ
+    платёжкой в СФР внутри месяца N (не в составе ЕНП) — значит, он читается из выписки
+    прямо и годится основанием, когда оборотки за месяц нет. Окно поиска — месяц N плюс
+    срок 15.(N+1) (125-ФЗ, ст. 22).
+    """
+    cfg = year_config(year)
+    if not cfg.injury_rate:
+        return None
+    window_start = date(year, month, 1)
+    window_end = injury_due(year, month)
+    paid = (
+        await session.scalars(
+            select(TaxPayment.amount).where(
+                TaxPayment.kind == "contrib_injury",
+                TaxPayment.status == "paid",
+                TaxPayment.paid_on >= window_start,
+                TaxPayment.paid_on <= window_end,
+            )
+        )
+    ).all()
+    total = sum((Decimal(str(v)) for v in paid if v is not None), ZERO)
+    if total <= ZERO:
+        return None
+    return money(total / cfg.injury_rate)
+
+
+async def _contributions_basis(
+    session: AsyncSession, *, year: int, month: int
+) -> tuple[Decimal, str] | None:
+    """Взносы за работников за месяц + человекочитаемое основание. None — считать нечем."""
+    from_ledger = await _payroll_contributions(session, year=year, month=month)
+    if from_ledger is not None:
+        return from_ledger, f"по оборотке {year}-{month:02d}"
+
+    cfg = year_config(year)
+    base = await _injury_payroll_base(session, year=year, month=month)
+    if base is not None:
+        return month_contributions(base, cfg), (
+            f"по травматизму {year}-{month:02d} (ФОТ {base} восстановлен из 0,2 %)"
+        )
+
+    accrual = await official_month_accrual(session, year=year, month=month, cfg=cfg)
+    if accrual is not None:
+        return accrual.contributions, f"по официальному контуру {year}-{month:02d}"
+    return None
+
+
 async def _split_enp(
-    session: AsyncSession, *, amount: Decimal, year: int, month: int
+    session: AsyncSession, *, amount: Decimal, year: int, month: int, op_date: date
 ) -> _Resolution | None:
-    """Разнос зарплатного ЕНП: взносы месяца из оборотки + НДФЛ остатком.
+    """Разнос зарплатного ЕНП: взносы месяца + НДФЛ остатком.
 
     Разнос расчётный (состав платежа из выписки не виден — один КБК на всё),
     поэтому качество строк — ``reconstructed``, а не ``confirmed``.
     """
-    contributions = await _payroll_contributions(session, year=year, month=month)
-    if contributions is None:
+    basis = await _contributions_basis(session, year=year, month=month)
+    if basis is None:
         return None
+    contributions, basis_note = basis
     period = f"{year}-{month:02d}"
-    contrib_part = min(contributions, amount)
-    ndfl_part = amount - contrib_part
-    rows: list[tuple[str, Decimal, str]] = []
-    if contrib_part > ZERO:
-        rows.append(("contrib_employees", contrib_part, "reconstructed"))
+    if amount < contributions:
+        # Платёж МЕНЬШЕ взносов месяца — значит взносов в нём нет вовсе: это отдельный НДФЛ
+        # (платёжка «ЕНП-НДФЛ с аванса», 1 733 ₽ при взносах 13 595,93) или добор копеек.
+        # Относим целиком в НДФЛ месяцем удержания = месяцем платежа. Раньше такой платёж
+        # съедал часть взносов месяца и завышал вычет УСН.
+        return _Resolution(
+            rows=(("ndfl", amount, "reconstructed"),),
+            for_period=f"{op_date.year}-{op_date.month:02d}",
+            for_year=op_date.year,
+            note=f"платёж меньше взносов месяца {period} — НДФЛ без взносов",
+        )
+    ndfl_part = amount - contributions
+    rows: list[tuple[str, Decimal, str]] = [
+        ("contrib_employees", contributions, "reconstructed")
+    ]
     if ndfl_part > ZERO:
         rows.append(("ndfl", ndfl_part, "reconstructed"))
     return _Resolution(
         rows=tuple(rows),
         for_period=period,
         for_year=year,
-        note=f"разнос ЕНП по оборотке {period}: взносы {contrib_part} + НДФЛ {ndfl_part}",
+        note=f"разнос ЕНП {basis_note}: взносы {contributions} + НДФЛ {ndfl_part}",
     )
 
 
@@ -172,8 +331,13 @@ async def _resolve_via_kind(
 ) -> _Resolution | None:
     """Свести известный вид (из черновика/плана/платёжки) к строкам факта.
 
-    Обычный вид — одна строка как есть. Зарплатный ЕНП — обязательный разнос по
-    оборотке; месяц берём из периода ('YYYY-MM') либо из срока уплаты (28.N+1 → N).
+    Обычный вид — одна строка как есть. Зарплатный ЕНП — обязательный разнос.
+
+    Месяц ЕНП — это месяц НАЧИСЛЕНИЯ (N при сроке 28.N+1), и срок уплаты для него
+    приоритетнее подсказки периода из документа: в платёжке «ЕНП сроком до 28.04» подсказка
+    читается парсером как апрель, а взносы внутри — за март. Если верить подсказке, платежи
+    за март и за апрель занимают ОДИН слот 2026-04 — вычет задваивается на одном месяце и
+    теряется на другом.
     """
     if kind != "enp_payroll":
         return _Resolution(
@@ -182,13 +346,15 @@ async def _resolve_via_kind(
             for_year=for_year or _year_for(for_period, op_date),
             note=note,
         )
-    if for_period and len(for_period) == 7 and for_period[4] == "-":
-        year, month = int(for_period[:4]), int(for_period[5:])
-    elif due_date is not None:
+    if due_date is not None:
         year, month = _month_from_due(due_date)
+    elif for_period and len(for_period) == 7 and for_period[4] == "-":
+        year, month = int(for_period[:4]), int(for_period[5:])
     else:
         return None
-    return await _split_enp(session, amount=amount, year=year, month=month)
+    return await _split_enp(
+        session, amount=amount, year=year, month=month, op_date=op_date
+    )
 
 
 async def _match_draft(
@@ -227,7 +393,9 @@ async def _match_planned(
             )
         )
     ).all()
-    candidates = [r for r in rows if abs(Decimal(str(r.amount)) - amount) <= TOLERANCE]
+    candidates = [
+        r for r in rows if _amounts_match(Decimal(str(r.amount)), amount)
+    ]
     if not candidates:
         return None
     candidates.sort(key=lambda r: (r.paid_on, str(r.id)))
@@ -259,7 +427,7 @@ async def _match_intake(
         raw_amount = rec.get("amount")
         if raw_amount is None:
             continue
-        if abs(Decimal(str(raw_amount)) - amount) > TOLERANCE:
+        if not _amounts_match(Decimal(str(raw_amount)), amount):
             continue
         kind = rec.get("tax_kind")
         if not kind:
@@ -480,8 +648,6 @@ async def sync_tax_facts_from_bank(session: AsyncSession) -> TaxFactsSyncReport:
     """
     report = TaxFactsSyncReport()
 
-    await _ripen_review_bundles(session, report)
-
     operations = await _tax_operations_without_facts(session)
     report.operations_seen = len(operations)
     for op in sorted(operations, key=lambda o: (o.operation_date, str(o.id))):
@@ -506,8 +672,25 @@ async def sync_tax_facts_from_bank(session: AsyncSession) -> TaxFactsSyncReport:
             draft.status = "paid"
             report.drafts_paid += 1
         report.bundles_created += 1
-        if len(resolution.rows) == 1 and resolution.rows[0][0] == "other":
-            report.review_pending += 1
         report.details.append(f"{op.operation_date} {op.amount} ₽: {resolution.note}")
     await session.flush()
+
+    # Дозревание — ПОСЛЕ разбора новых операций, а не до. Основание разноса может появиться
+    # в этом же проходе: травматизм за январь уплачен 26.01, а НДФЛ-ЕНП — 21.01, и при
+    # обратном порядке платёж 21.01 оставался «нужна проверка» до следующего нажатия кнопки.
+    # Итог прогона не должен зависеть от того, сколько раз его запустили.
+    await _ripen_review_bundles(session, report)
+    report.review_pending = await _review_pending_count(session)
     return report
+
+
+async def _review_pending_count(session: AsyncSession) -> int:
+    """Сколько платежей всё ещё ждут разноса — считаем по факту, а не накоплением счётчика."""
+    rows = await session.scalars(
+        select(TaxPayment.id).where(
+            TaxPayment.kind == "other",
+            TaxPayment.quality_status == "requires_review",
+            TaxPayment.bank_operation_id.is_not(None),
+        )
+    )
+    return len(rows.all())

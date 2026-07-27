@@ -669,3 +669,68 @@ async def test_doc_mismatch_names_unallocated_payments_as_cause(
     assert any("неразнесённые платежи" in m for m in usn.messages)
     # fmt_money ставит неразрывный пробел между разрядами.
     assert any("21\u00a0783,93" in m for m in usn.messages)
+
+
+async def test_month_without_turnover_gets_line_from_paid_fact(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Месяц без оборотки, но с уплаченным ЕНП, ВИДЕН в сверке и помечен восстановленным.
+
+    Январь и февраль 2026 оплачены (21 783,93 и 19 460,93), их взносы попали в вычет, а
+    строк «Зарплатный ЕНП за январь/февраль» в таблице не было — месяц выпадал МОЛЧА, и
+    владелец не мог убедиться, что он закрыт.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        contrib = _tax_payment("contrib_employees", "13595.93", date(2026, 2, 25))
+        contrib.for_period = "2026-01"
+        ndfl = _tax_payment("ndfl", "8188.00", date(2026, 2, 25))
+        ndfl.for_period = "2026-01"
+        session.add_all([contrib, ndfl])
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 4, 15))
+
+    line = _line(recon, "enp_payroll", "2026-01")
+    assert line.calculated == Decimal("21783.93")
+    assert line.paid == Decimal("21783.93")
+    assert line.verdict == "ok"
+    assert any("Оборотки за январь бухгалтер не присылала" in m for m in line.messages)
+    assert line.action is None  # платить второй раз не предлагаем
+
+
+async def test_doc_bigger_than_calc_names_injury_share(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Документ больше расчёта» называет долю травматизма, а не «где-то в вычете».
+
+    Бухгалтер считает вычет без взносов на травматизм, движок — с ними (подп. 1 п. 3.1
+    ст. 346.21 НК). Разница платёжки и расчёта равна уплаченному травматизму, и сверка
+    обязана называть эту причину прямо.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 3)
+        session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+        session.add(
+            _tax_payment("contrib_injury", "300.00", date(2026, 3, 26), recipient="sfr")
+        )
+        session.add(
+            _payment_order_intake(
+                tax_kind="usn_advance",
+                period="q1",
+                # Вычет бухгалтера — без травматизма, поэтому её сумма больше нашей на 300 ₽.
+                amount="701816",
+                due=date(2026, 4, 28),
+                received=datetime(2026, 4, 17, tzinfo=UTC),
+                filename="УСН 1 кв.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 4, 20))
+
+    usn = _line(recon, "usn_advance", "q1")
+    assert usn.verdict == "doc_mismatch"
+    assert usn.action_why is not None
+    assert "травматизм" in usn.action_why
+    assert "300,00" in usn.action_why

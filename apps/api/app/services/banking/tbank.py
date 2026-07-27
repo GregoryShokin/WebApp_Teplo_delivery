@@ -301,31 +301,68 @@ class TbankClient:
             },
             timeout=self.settings.tbank_api_timeout_seconds,
         ) as client:
+            fetched_any = False
+            unknown_account_error: BankFetchError | None = None
             for account_number in account_numbers:
-                cursor = ""
-                while True:
-                    params: dict[str, Any] = {
-                        "accountNumber": account_number,
-                        # T-Bank statement requires RFC3339 date-time, not a bare date —
-                        # a plain ``2026-06-01`` is rejected with 400 VALIDATION_ERROR.
-                        "from": f"{date_from.isoformat()}T00:00:00Z",
-                        "to": f"{date_to.isoformat()}T23:59:59Z",
-                        "limit": 1000,
-                    }
-                    if cursor:
-                        params["cursor"] = cursor
-                    payload = await self._get_json(client, "/api/v1/statement", params)
-                    rows = operation_rows(payload)
+                try:
                     operations.extend(
-                        self._normalize_operation(row, account_number, date_from)
-                        for row in rows
-                        # Холды (Authorization) не проведены — не двигают баланс; как на вебхуке.
-                        if not is_tbank_operation_hold(row)
+                        await self._statement_for_account(
+                            client,
+                            account_number=account_number,
+                            date_from=date_from,
+                            date_to=date_to,
+                        )
                     )
-                    cursor = _next_cursor(payload)
-                    if not cursor:
-                        break
+                except BankFetchError as exc:
+                    # Счёт из нашего реестра, которого у банка нет (закрыт, чужой, остался от
+                    # демо-данных), отдаёт 422 NO_EXISTING_ACCOUNT. Раньше такая строка валила
+                    # весь проход — выписка не приходила ни по одному счёту. Пропускаем её.
+                    if not _is_unknown_account_error(exc):
+                        raise
+                    unknown_account_error = exc
+                    logger.warning(
+                        "tbank statement: счёт …%s банку неизвестен — пропускаю",
+                        account_number[-4:],
+                    )
+                    continue
+                fetched_any = True
+            if not fetched_any and unknown_account_error is not None:
+                # Ни одного живого счёта — это уже не «мусор в реестре», а сбой настройки.
+                raise unknown_account_error
         return operations
+
+    async def _statement_for_account(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        account_number: str,
+        date_from: date,
+        date_to: date,
+    ) -> list[NormalizedBankOperation]:
+        operations: list[NormalizedBankOperation] = []
+        cursor = ""
+        while True:
+            params: dict[str, Any] = {
+                "accountNumber": account_number,
+                # T-Bank statement requires RFC3339 date-time, not a bare date —
+                # a plain ``2026-06-01`` is rejected with 400 VALIDATION_ERROR.
+                "from": f"{date_from.isoformat()}T00:00:00Z",
+                "to": f"{date_to.isoformat()}T23:59:59Z",
+                "limit": 1000,
+            }
+            if cursor:
+                params["cursor"] = cursor
+            payload = await self._get_json(client, "/api/v1/statement", params)
+            rows = operation_rows(payload)
+            operations.extend(
+                self._normalize_operation(row, account_number, date_from)
+                for row in rows
+                # Холды (Authorization) не проведены — не двигают баланс; как на вебхуке.
+                if not is_tbank_operation_hold(row)
+            )
+            cursor = _next_cursor(payload)
+            if not cursor:
+                return operations
 
     async def _get_json(self, client: httpx.AsyncClient, path: str, params: dict[str, Any]) -> Any:
         response = await client.get(
@@ -336,7 +373,12 @@ class TbankClient:
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
-            raise BankFetchError(self.provider, f"T-Bank API returned {response.status_code}")
+            raise BankFetchError(
+                self.provider,
+                f"T-Bank API returned {response.status_code}",
+                status_code=response.status_code,
+                detail=_error_code(response),
+            )
         return response.json()
 
     def _normalize_operation(
@@ -457,6 +499,29 @@ def normalize_tbank_statement_row(
         document_number=scalar(row, ("documentNumber", "docNumber", "number")) or None,
         raw_payload=raw_payload,
     )
+
+
+# Коды T-Bank для «такого счёта у компании нет» — счёт закрыт, чужой или остался от
+# демо-данных. Единственная ошибка выписки, которую пропускаем молча (по счёту, не по проходу).
+_UNKNOWN_ACCOUNT_CODES = ("no_existing_account", "account_not_found")
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    """``errorCode`` из тела ошибки банка — по нему отличаем «нет счёта» от прочих сбоев."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("errorCode") or payload.get("error_code")
+    return str(code) if code else None
+
+
+def _is_unknown_account_error(exc: BankFetchError) -> bool:
+    if exc.status_code not in {404, 422}:
+        return False
+    return (exc.detail or "").strip().casefold() in _UNKNOWN_ACCOUNT_CODES
 
 
 def _next_cursor(payload: Any) -> str:

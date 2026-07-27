@@ -27,6 +27,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tax import TaxPayment, TaxPayrollLedger
+from app.services.taxes.bank_facts import (
+    injury_paid_for_month,
+    payroll_facts_without_turnover,
+)
 from app.services.taxes.engine import TaxInputs, TaxState, YearConfig
 
 ZERO = Decimal("0")
@@ -119,6 +123,7 @@ async def _paid_by_kind(
         await session.execute(
             select(
                 TaxPayment.source_kind,
+                TaxPayment.for_period,
                 func.coalesce(func.sum(TaxPayment.amount), 0),
             )
             .where(
@@ -127,16 +132,24 @@ async def _paid_by_kind(
                 TaxPayment.kind.in_(kinds),
                 TaxPayment.paid_on <= as_of,
             )
-            .group_by(TaxPayment.source_kind)
+            .group_by(TaxPayment.source_kind, TaxPayment.for_period)
         )
     ).all()
     bank = ZERO
-    notice = ZERO
-    for source, total in rows:
+    notice_by_period: dict[str | None, Decimal] = {}
+    bank_periods: set[str | None] = set()
+    for source, period, total in rows:
         if source == "tax_notice":
-            notice += Decimal(str(total))
+            notice_by_period[period] = notice_by_period.get(period, ZERO) + Decimal(str(total))
         else:
             bank += Decimal(str(total))
+            bank_periods.add(period)
+    # Конвенция показывается ТОЛЬКО там, где банковского факта за период действительно нет:
+    # иначе за март-май (разнос есть и в банке, и в оборотке) пометка врала бы о «дыре».
+    notice = sum(
+        (amount for period, amount in notice_by_period.items() if period not in bank_periods),
+        ZERO,
+    )
     return bank, notice
 
 
@@ -163,17 +176,38 @@ async def build_ledger_summary(
     """Собрать сводку по всем видам за год на дату среза."""
     year = as_of.year
     payroll = await _payroll_accrued(session, year=year)
+    # Месяцы без оборотки, закрытые уплаченным ЕНП: начисление известно из разноса факта
+    # (взносы по травматизму, НДФЛ остатком). Без них «уплачено» было БОЛЬШЕ «начислено» на
+    # январь-февраль, а «осталось» стояло прочерком — вопрос владельца 27.07.2026.
+    restored = await payroll_facts_without_turnover(session, year=year)
+    restored_contributions = sum((c for c, _ in restored.values()), ZERO)
+    restored_ndfl = sum((n for _, n in restored.values()), ZERO)
+    restored_injury = ZERO
+    for month in restored:
+        restored_injury += await injury_paid_for_month(session, year=year, month=month)
     # Месяцы, по которым уже должна быть оборотка: закрывшиеся месяцы года до среза.
     months_expected = max(as_of.month - 1, 0) if as_of.year == year else 12
-    payroll_full = payroll.months_covered >= months_expected
+    months_known = payroll.months_covered + len(restored)
+    payroll_full = months_known >= months_expected
+    payroll = _PayrollAccrued(
+        contributions=payroll.contributions + restored_contributions,
+        ndfl=payroll.ndfl + restored_ndfl,
+        injury=payroll.injury + restored_injury,
+        months_covered=months_known,
+    )
     payroll_note = (
         None
         if payroll_full
         else (
-            f"Оборотка есть за {payroll.months_covered} мес. из {months_expected} — "
-            f"начислено показано только по ним"
+            f"Начисления известны за {months_known} мес. из {months_expected} — "
+            f"по остальным нет ни оборотки, ни уплаченного ЕНП"
         )
     )
+    if restored and payroll_full:
+        payroll_note = (
+            f"За {len(restored)} мес. оборотки нет — начислено восстановлено из "
+            f"уплаченного ЕНП (взносы по травматизму, НДФЛ остатком)"
+        )
 
     rows: list[LedgerRow] = []
 
@@ -229,8 +263,12 @@ async def build_ledger_summary(
             recipient="fns",
             paid_by_convention=ndfl_convention,
             note=(
-                payroll_note
-                or "Налог работника: удерживается из зарплаты, налог ИП не уменьшает"
+                # НДФЛ начисляется месяцем, а платится «окнами» по датам выплат (до 28 числа
+                # за 1–22 и до 5 числа следующего — за остаток), поэтому месячные суммы
+                # начислено/уплачено смещены: остаток сходится за период, а не помесячно.
+                "Налог работника (налог ИП не уменьшает); платится «окнами» по датам "
+                "выплат, поэтому остаток сходится за период, а не помесячно"
+                + (f". {payroll_note}" if payroll_note else "")
             ),
         )
     )

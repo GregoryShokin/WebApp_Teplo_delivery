@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tax import TaxBankDraft, TaxDocumentIntake, TaxPayment, TaxPayrollLedger
+from app.services.taxes.bank_facts import payroll_facts_without_turnover
 from app.services.taxes.engine import (
     PERIOD_SEQ,
     compute_tax_state,
@@ -236,8 +237,7 @@ def _action_for(
             return (
                 "Платить можно — переплата зачтётся",
                 f"Документ на {fmt_money(documented - expected)} ₽ больше расчёта; "
-                "небольшая переплата зачтётся на ЕНС. Расхождение обычно в составе "
-                "вычета — при желании сверьте с бухгалтером.",
+                "небольшая переплата зачтётся на ЕНС.",
             )
         return (
             "Платить нельзя — уточните сумму",
@@ -452,6 +452,45 @@ async def _unallocated_fns_facts(session: AsyncSession, *, year: int, as_of: dat
     return Decimal(str(total or 0))
 
 
+async def _injury_in_deduction(
+    session: AsyncSession, *, year: int, as_of: date
+) -> Decimal:
+    """Травматизм, реально уплаченный с 1 января по срез (часть нашего вычета).
+
+    Подп. 1 п. 3.1 ст. 346.21 НК прямо называет взносы «от несчастных случаев на
+    производстве» среди уменьшающих налог, и движок их зачитывает. Бухгалтер считает вычет
+    БЕЗ них — поэтому её платёжка систематически больше расчёта примерно на эту сумму.
+    Сверка должна называть причину, а не отправлять владельца искать её «где-то в вычете».
+    """
+    total = await session.scalar(
+        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+            TaxPayment.status == "paid",
+            TaxPayment.kind == "contrib_injury",
+            TaxPayment.source_kind != "tax_notice",
+            TaxPayment.paid_on >= date(year, 1, 1),
+            TaxPayment.paid_on <= as_of,
+        )
+    )
+    return Decimal(str(total or 0))
+
+
+def _explain_doc_gap(why: str | None, *, gap: Decimal, injury: Decimal) -> str | None:
+    """Дописать к причине расхождения долю травматизма — сколько из зазора объяснено."""
+    if why is None or gap <= ZERO:
+        return why
+    if injury <= ZERO:
+        return why + " Причина — в составе вычета; сверьте его с бухгалтером."
+    covered = min(gap, injury)
+    tail = gap - covered
+    extra = (
+        f" Из них {fmt_money(covered)} ₽ — уплаченный травматизм: движок зачёл его в вычет "
+        f"(подп. 1 п. 3.1 ст. 346.21 НК), бухгалтер — нет."
+    )
+    if tail > ZERO:
+        extra += f" Остальные {fmt_money(tail)} ₽ — округления и разница в сумме дохода."
+    return why + extra
+
+
 async def build_reconciliation(
     session: AsyncSession, *, as_of: date
 ) -> Reconciliation:
@@ -484,6 +523,15 @@ async def build_reconciliation(
             as_of=as_of,
         )
         _usn_action = _action_for(verdict, documented=documented, expected=calculated)
+        if verdict == "doc_mismatch" and documented is not None and documented > calculated:
+            _usn_action = (
+                _usn_action[0],
+                _explain_doc_gap(
+                    _usn_action[1],
+                    gap=documented - calculated,
+                    injury=await _injury_in_deduction(session, year=year, as_of=p_end),
+                ),
+            )
         lines.append(
             _offset_by_ens(
                 ReconLine(
@@ -566,6 +614,8 @@ async def build_reconciliation(
     # Помесячно платёжка ЕНП с начислением НЕ совпадает — НДФЛ платится «окнами» (за месяц N
     # частями до 28 N и до 5 N+1), поэтому платёжку не сверяем жёстко, а показываем состав.
     accruals = await _payroll_accruals(session, year=year)
+    reconstructed = await payroll_facts_without_turnover(session, year=year)
+    accruals.update(reconstructed)
     enp_docs = await _enp_payroll_documents(session)
     for month in sorted(accruals):
         contributions, ndfl = accruals[month]
@@ -575,9 +625,13 @@ async def build_reconciliation(
         period = f"{year}-{month:02d}"
         month_due = payroll_enp_due(year, month)
         documented = enp_docs.get(month_due)
+        # Месяц без оборотки восстановлен ИЗ ФАКТА уплаты — он закрыт по определению, даже
+        # если срок ещё не наступил (платят и досрочно). Иначе строка звала бы платить второй
+        # раз то, что уже уплачено.
+        settled = month_due <= as_of or month in reconstructed
         paid = (
             await _payroll_split_paid(session, year=year, period=period)
-            if month_due <= as_of
+            if settled
             else None
         )
 
@@ -587,9 +641,15 @@ async def build_reconciliation(
             f"{fmt_money(contributions)} ₽ (идут в вычет УСН) + НДФЛ {fmt_money(ndfl)} ₽ "
             f"(в вычет не идёт)."
         ]
+        if month in reconstructed:
+            messages.append(
+                f"Оборотки за {month_name} бухгалтер не присылала — состав восстановлен из "
+                f"уплаченного ЕНП: взносы по платёжке травматизма (0,2 % от ФОТ), НДФЛ — "
+                f"остаток платежа. Запросите оборотку, если хотите подтвердить цифры."
+            )
         action: str | None = None
         action_why: str | None = None
-        if month_due <= as_of:
+        if settled:
             verdict, severity = "ok", "ok"
             messages.append(f"Уплачено в составе ЕНП, срок {month_due.strftime('%d.%m.%Y')}.")
         else:
