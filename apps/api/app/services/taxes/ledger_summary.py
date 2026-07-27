@@ -153,6 +153,31 @@ async def _paid_by_kind(
     return bank, notice
 
 
+async def _documented_accrued(
+    session: AsyncSession, *, year: int, kind: str
+) -> Decimal | None:
+    """Начислено ПО ДОКУМЕНТАМ налогового агента: сумма продвинутых платёжек вида за год.
+
+    Решение владельца 27.07.2026: «система должна опираться не на собственные расчёты, а на
+    документы, которые присылает налоговый агент». Платёжки продвигаются в плановые строки
+    (``source_kind='tax_notice'``) по слоту (год, вид, период), поэтому исправленная платёжка
+    заменяет прежнюю, а не задваивает её. По УСН и допвзносу документ на каждый период —
+    ПРИРОСТ, поэтому сумма строк и есть начисление нарастающим итогом.
+
+    None — платёжек ещё нет: тогда показываем собственный расчёт и подписываем это.
+    """
+    total = await session.scalar(
+        select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+            TaxPayment.for_year == year,
+            TaxPayment.kind == kind,
+            TaxPayment.source_kind == "tax_notice",
+            TaxPayment.status.in_(("planned", "paid")),
+        )
+    )
+    value = Decimal(str(total or 0))
+    return value if value > ZERO else None
+
+
 def _left(accrued: Decimal | None, paid: Decimal, *, comparable: bool = True) -> Decimal | None:
     """Осталось заплатить — не меньше нуля: переплата это не долг.
 
@@ -211,8 +236,13 @@ async def build_ledger_summary(
 
     rows: list[LedgerRow] = []
 
-    # УСН: начислено — налог за вычетом того, что уменьшили взносами.
-    usn_accrued = max(state.tax_computed - state.deduction_applied, ZERO)
+    # УСН: начислено — ПО ПЛАТЁЖКАМ БУХГАЛТЕРА (решение владельца 27.07.2026: «система должна
+    # опираться не на собственные расчёты, а на документы налогового агента»). Наш расчёт
+    # остаётся контролем — он виден в сверке и в подписи строки. Платёжек нет → показываем
+    # расчёт и честно это подписываем.
+    usn_computed = max(state.tax_computed - state.deduction_applied, ZERO)
+    usn_documented = await _documented_accrued(session, year=year, kind="usn_advance")
+    usn_accrued = usn_documented if usn_documented is not None else usn_computed
     rows.append(
         LedgerRow(
             kind="usn_advance",
@@ -222,7 +252,12 @@ async def build_ledger_summary(
             left=_left(usn_accrued, state.advances_paid),
             reduces_tax=False,
             recipient="fns",
-            note="Налог 6% минус вычет по взносам",
+            note=(
+                f"По платёжкам бухгалтера; наш расчёт — {fmt_money(usn_computed)} ₽ "
+                f"(налог 6 % минус вычет по взносам)"
+                if usn_documented is not None
+                else "Платёжки ещё нет — начислено по нашему расчёту: 6 % минус вычет"
+            ),
         )
     )
 
@@ -286,16 +321,27 @@ async def build_ledger_summary(
         )
     )
 
+    extra_documented = await _documented_accrued(
+        session, year=year, kind="contrib_extra_1pct"
+    )
+    extra_accrued = (
+        extra_documented if extra_documented is not None else state.extra_accrued
+    )
     rows.append(
         LedgerRow(
             kind="contrib_extra_1pct",
             title="Взносы ИП «за себя», 1% с дохода",
-            accrued=state.extra_accrued,
+            accrued=extra_accrued,
             paid=inputs.extra_paid,
-            left=_left(state.extra_accrued, inputs.extra_paid),
+            left=_left(extra_accrued, inputs.extra_paid),
             reduces_tax=True,
             recipient="fns",
-            note="1% с дохода свыше 300 000 ₽, срок 1 июля следующего года",
+            note=(
+                f"По платёжкам бухгалтера; наш расчёт — {fmt_money(state.extra_accrued)} ₽ "
+                f"(1 % с дохода свыше 300 000 ₽, срок 1 июля следующего года)"
+                if extra_documented is not None
+                else "1% с дохода свыше 300 000 ₽, срок 1 июля следующего года"
+            ),
         )
     )
 

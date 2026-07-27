@@ -408,3 +408,56 @@ async def test_ripening_runs_after_new_operations_in_one_pass(
 
     assert report.review_pending == 0
     assert ("ndfl", "2026-01") in facts
+
+
+async def test_kopeck_topup_is_attached_to_its_payment_order(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Добор к платёжке ЕНП относится к ней же, а не висит «прочим».
+
+    Реальный случай: платёжка марта на 20 559,93, ушло 20 559,03, бухгалтер написала «не
+    доплатили 90 копеек» — доплату сделали отдельным платежом. Такой платёж ни с чем не
+    матчится по сумме и оставался неразнесённым: НДФЛ месяца не сходился на 90 копеек.
+    """
+    async with async_session_factory() as session:
+        session.add(_intake("enp_payroll", "20559.93", date(2026, 4, 28)))
+        session.add(_ledger(3, "13595.93", "6500"))
+        session.add(_operation("20559.03", date(2026, 4, 20)))
+        session.add(_operation("0.90", date(2026, 4, 27)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+
+    ndfl = sorted(
+        (f.amount for f in facts if f.kind == "ndfl" and f.for_period == "2026-03")
+    )
+    assert ndfl == [Decimal("0.90"), Decimal("6963.10")]  # вместе — 6 964,00
+    assert not [f for f in facts if f.kind == "other"]
+
+
+async def test_small_payment_without_matching_shortfall_stays_unallocated(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Мелкий платёж, который НЕ добивает ни одну платёжку, остаётся «прочим».
+
+    Замок против соблазна «пристроить копейки куда-нибудь»: совпадение недостачи требуется
+    точное, иначе в вычет уедут случайные платежи.
+    """
+    async with async_session_factory() as session:
+        session.add(_intake("enp_payroll", "20559.93", date(2026, 4, 28)))
+        session.add(_ledger(3, "13595.93", "6500"))
+        session.add(_operation("20559.03", date(2026, 4, 20)))
+        session.add(_operation("5.00", date(2026, 4, 27)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+
+    assert [(f.kind, f.amount) for f in facts if f.kind == "other"] == [
+        ("other", Decimal("5.00"))
+    ]

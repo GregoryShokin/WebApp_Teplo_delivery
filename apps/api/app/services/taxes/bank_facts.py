@@ -439,6 +439,65 @@ async def _match_intake(
     return best
 
 
+async def _match_enp_topup(
+    session: AsyncSession, *, amount: Decimal, recipient: str
+) -> _Resolution | None:
+    """Добор к уже уплаченной платёжке ЕНП: платёж ровно на недостающую разницу.
+
+    Реальный случай: платёжка ЕНП за март была на 20 559,93, ушло 20 559,03, и бухгалтер
+    написала «по платежке 286 не доплатили 90 копеек» — на следующий день ушли эти 90 копеек.
+    Отдельной платёжки на них нет, по сумме такой платёж не матчится ни с чем и оставался
+    «прочим» (в вычет не идёт, висит «нужна проверка»). Ищем документ, у которого факт
+    меньше ровно на эту сумму, и относим добор туда же — в НДФЛ: взносы месяца предыдущий
+    платёж уже закрыл полностью (разнос кладёт их первыми).
+
+    Совпадение требуется ТОЧНОЕ: допуск тут опасен — под «почти подходит» попадёт любой
+    мелкий платёж.
+    """
+    if recipient != "fns" or amount <= ZERO:
+        return None
+    docs = (
+        await session.scalars(
+            select(TaxDocumentIntake)
+            .where(
+                TaxDocumentIntake.document_type == "payment_order",
+                TaxDocumentIntake.status.in_(("parsed", "needs_review", "promoted")),
+            )
+            .order_by(TaxDocumentIntake.received_at.asc(), TaxDocumentIntake.id.asc())
+        )
+    ).all()
+    for row in docs:
+        rec = row.recognition or {}
+        if rec.get("tax_kind") != "enp_payroll":
+            continue
+        raw_amount, raw_due = rec.get("amount"), rec.get("due_date")
+        if raw_amount is None or not raw_due:
+            continue
+        year, month = _month_from_due(date.fromisoformat(raw_due))
+        period = f"{year}-{month:02d}"
+        paid = await session.scalar(
+            select(func.coalesce(func.sum(TaxPayment.amount), 0)).where(
+                TaxPayment.status == "paid",
+                TaxPayment.for_year == year,
+                TaxPayment.for_period == period,
+                TaxPayment.kind.in_(("contrib_employees", "ndfl")),
+                TaxPayment.source_kind != "tax_notice",
+            )
+        )
+        already_paid = Decimal(str(paid or 0))
+        if already_paid <= ZERO:
+            continue  # по платёжке ещё вообще не платили — это не добор, а первый платёж
+        shortfall = Decimal(str(raw_amount)) - already_paid
+        if shortfall == amount:
+            return _Resolution(
+                rows=(("ndfl", amount, "reconstructed"),),
+                for_period=period,
+                for_year=year,
+                note=f"добор к платёжке ЕНП за {period}: недоплаченный НДФЛ",
+            )
+    return None
+
+
 async def _resolve_operation(
     session: AsyncSession, op: BankOperation, recipient: str
 ) -> tuple[_Resolution, TaxBankDraft | None]:
@@ -498,6 +557,10 @@ async def _resolve_operation(
         )
         if resolution is not None:
             return resolution, None
+
+    topup = await _match_enp_topup(session, amount=amount, recipient=recipient)
+    if topup is not None:
+        return topup, None
 
     if recipient == "sfr":
         # В СФР у нас уходит только травматизм; привязки к документу нет — разнос расчётный.
