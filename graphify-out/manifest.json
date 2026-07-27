@@ -1010,9 +1010,9 @@
     "semantic_hash": "748a765eac424d1e13f50b42b0a95453"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/payment_page.py": {
-    "mtime": 1784562714.8031852,
-    "ast_hash": "4c4aa52a96fd0f5d8079aedcdd663ef8",
-    "semantic_hash": "4c4aa52a96fd0f5d8079aedcdd663ef8"
+    "mtime": 1785189289.2752855,
+    "ast_hash": "18d80bf2bab88546406fc8260f46a2ab",
+    "semantic_hash": "18d80bf2bab88546406fc8260f46a2ab"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/payroll.py": {
     "mtime": 1784640283.342779,
@@ -1235,9 +1235,9 @@
     "semantic_hash": "b44a143e9695ba3c34bc1ca5e337c963"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/email_invoice_intake.py": {
-    "mtime": 1784562714.8093884,
-    "ast_hash": "25bb0334fcd8fa86e682d49151950de4",
-    "semantic_hash": "25bb0334fcd8fa86e682d49151950de4"
+    "mtime": 1785189289.2762234,
+    "ast_hash": "c21a28546ad94deac47bc74dd0ce3f0d",
+    "semantic_hash": "c21a28546ad94deac47bc74dd0ce3f0d"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/employee.py": {
     "mtime": 1785173434.8905156,
@@ -1475,9 +1475,9 @@
     "semantic_hash": "9dda7f1b8c1a23764b605a928c52e41f"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/bank_payment_status.py": {
-    "mtime": 1784910386.2688487,
-    "ast_hash": "d2c22998c708d2d188592761692b154f",
-    "semantic_hash": "d2c22998c708d2d188592761692b154f"
+    "mtime": 1785189289.2772558,
+    "ast_hash": "a58e004effa37c6cacd05199b300dcdd",
+    "semantic_hash": "a58e004effa37c6cacd05199b300dcdd"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/banking/__init__.py": {
     "mtime": 1780833929.735365,
@@ -1675,9 +1675,9 @@
     "semantic_hash": "a52364825b09d679dd2b15b3b4b6e1b8"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/email_invoice_ingest.py": {
-    "mtime": 1785182247.1536484,
-    "ast_hash": "f826b95a676415e2c3ce55e64955e708",
-    "semantic_hash": "f826b95a676415e2c3ce55e64955e708"
+    "mtime": 1785189289.277829,
+    "ast_hash": "042b80b33ede67b67eaa7a71a6abf363",
+    "semantic_hash": "042b80b33ede67b67eaa7a71a6abf363"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/employee_assignments.py": {
     "mtime": 1780926254.528712,
@@ -1755,9 +1755,9 @@
     "semantic_hash": "751e67cf3974dbce52c1f05ea15550d7"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/invoice_recognition.py": {
-    "mtime": 1785182247.1542764,
-    "ast_hash": "87cbe51e9fbac93c5cb2c7876b0491c2",
-    "semantic_hash": "87cbe51e9fbac93c5cb2c7876b0491c2"
+    "mtime": 1785189289.2783155,
+    "ast_hash": "8ef38d6b7bf06c03cea19ac91ecc2006",
+    "semantic_hash": "8ef38d6b7bf06c03cea19ac91ecc2006"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/kassa/__init__.py": {
     "mtime": 1781699366.624222,
@@ -1955,9 +1955,9 @@
     "semantic_hash": "1b79e49f53fbd1da26bc4ae81b70919d"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/supplier_prepayments.py": {
-    "mtime": 1785187960.7712169,
-    "ast_hash": "9b432112a0222323199eb62378efacc6",
-    "semantic_hash": "9b432112a0222323199eb62378efacc6"
+    "mtime": 1785189289.2789016,
+    "ast_hash": "2270a3bfbebc48f23365ddff63263ad1",
+    "semantic_hash": "2270a3bfbebc48f23365ddff63263ad1"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/vacation_service.py": {
     "mtime": 1781646236.2938297,
@@ -2065,9 +2065,9 @@
     "semantic_hash": "39247be860fdf13699dc062eacd7d802"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_invoice_recognition.py": {
-    "mtime": 1785182247.162128,
-    "ast_hash": "d60a2c707bcf88bf64c7deb194aa8fe2",
-    "semantic_hash": "d60a2c707bcf88bf64c7deb194aa8fe2"
+    "mtime": 1785189289.279489,
+    "ast_hash": "8eb57a93871de45282c8b6fbc0a312b8",
+    "semantic_hash": "8eb57a93871de45282c8b6fbc0a312b8"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_invoice_sync.py": {
     "mtime": 1784662680.1078155,
@@ -3210,14 +3210,14 @@
     "semantic_hash": "94586114bd4867c8aea27cb44c389252"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payment-page/api.ts": {
-    "mtime": 1784562714.8462865,
-    "ast_hash": "5db649c5c6b0b7c31695b02c8d8e1500",
-    "semantic_hash": "5db649c5c6b0b7c31695b02c8d8e1500"
+    "mtime": 1785189289.28006,
+    "ast_hash": "f454671dfb21d03e0b850c562a65e417",
+    "semantic_hash": "f454671dfb21d03e0b850c562a65e417"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payment-page/index.tsx": {
-    "mtime": 1784562714.8469071,
-    "ast_hash": "b12df5b2c4f6b44758c4e131cef4829e",
-    "semantic_hash": "b12df5b2c4f6b44758c4e131cef4829e"
+    "mtime": 1785189289.2805889,
+    "ast_hash": "d08ee2e56177b9cdfdb980ad13abea41",
+    "semantic_hash": "d08ee2e56177b9cdfdb980ad13abea41"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payroll/accruals-tab.tsx": {
     "mtime": 1780744829.0816658,
@@ -6473,5 +6473,15 @@
     "mtime": 1785177769.1114435,
     "ast_hash": "0523d53aa04b850d37bc1d63abe62387",
     "semantic_hash": "0523d53aa04b850d37bc1d63abe62387"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/alembic/versions/0217_intake_companion.py": {
+    "mtime": 1785189289.2721574,
+    "ast_hash": "8dccd1f6c9a6a4b78c49f4f9bfda596a",
+    "semantic_hash": "8dccd1f6c9a6a4b78c49f4f9bfda596a"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_email_package_and_free_payment.py": {
+    "mtime": 1785189289.279172,
+    "ast_hash": "e80487492a50b4eefd1f64fe57e06501",
+    "semantic_hash": "e80487492a50b4eefd1f64fe57e06501"
   }
 }
