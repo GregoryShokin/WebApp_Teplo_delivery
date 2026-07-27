@@ -173,6 +173,7 @@ from app.services.supplier_prepayments import (
     ensure_prepayment_from_bank_transaction,
     refund_counterparty_prepayments,
     resync_counterparty_refunds,
+    sync_manual_payment_receivable,
 )
 from app.services.warehouse_invoices import invoice_permission_kind
 
@@ -2128,8 +2129,13 @@ async def classify_transaction(
     # как списание из выписки (иначе оплаченная вперёд аренда в свою дату превращалась бы в
     # фантомную КЗ). Смена контрагента здесь же приводит привязанную предоплату в соответствие,
     # иначе фантомная дебиторка осталась бы на прежнем контрагенте (кейс Манго).
+    # Проводка из выписки идёт прямым путём (её распределение ведёт классификатор), а ручная —
+    # через гейт «свободных денег»: чужую адресную оплату и целевой аванс FIFO трогать нельзя.
     try:
-        await ensure_prepayment_from_bank_transaction(session, txn)
+        if txn.source_kind == "bank_operation":
+            await ensure_prepayment_from_bank_transaction(session, txn)
+        else:
+            await sync_manual_payment_receivable(session, txn)
     except CounterpartyPaymentError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     # Возврат переплаты гасит дебиторку без аллокации, поэтому сам за переразметкой не следует:

@@ -290,6 +290,14 @@ async def apply_cashflow_split(
     if prior_payouts:
         await session.flush()
 
+    # Свободу денег для правила 1 фиксируем ДО раскладки — по исходной проводке. После неё
+    # первая доля унаследует её аллокации, а остальные родятся чистыми, и «занятость» платежа
+    # станет неотличима от свободы.
+    from app.services.supplier_prepayments import manual_payment_money_is_free
+
+    origin_source_kind = txn.source_kind
+    origin_money_is_free = await manual_payment_money_is_free(session, txn)
+
     created: list[UUID] = []
     legs: list[CashflowTransaction] = []
     for index, line in enumerate(splits):
@@ -327,7 +335,11 @@ async def apply_cashflow_split(
             session.add(leg)
             await session.flush()
         created.append(leg.id)
-        legs.append(leg)
+        # Транзитную долю в правило 1 не отдаём: перевод Сейф→Касса деньги компании не покидают,
+        # и «погасить» им долг поставщика нельзя, даже если контрагент на строке остался с
+        # прежнего разбора (диалог его не сбрасывает при смене статьи на транзитную).
+        if transfer_wallet_id is None and article_id not in transfer_article_ids:
+            legs.append(leg)
         if transfer_wallet_id is not None:
             await _book_transfer_counter_leg(
                 session,
@@ -363,10 +375,18 @@ async def apply_cashflow_split(
     # по той же причине, что и в разборе банк-операции: FIFO должен видеть уже проставленные
     # аллокации, иначе один платёж профинансирует документов больше, чем в нём денег.
     # Доля, с которой контрагента сняли, тем же вызовом теряет свою прежнюю предоплату.
-    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+    # Свободу денег проверяет по РОДИТЕЛЬСКОЙ проводке: доли рождаются чистыми
+    # (``source_kind='manual_split'``, без аллокаций), и по себе любая из них выглядела бы
+    # свободной, даже когда исходный платёж давно разложен по документам.
+    from app.services.supplier_prepayments import sync_manual_payment_receivable
 
     for leg in legs:
-        await ensure_prepayment_from_bank_transaction(session, leg)
+        await sync_manual_payment_receivable(
+            session,
+            leg,
+            origin_source_kind=origin_source_kind,
+            money_is_free=origin_money_is_free,
+        )
     return created
 
 
@@ -377,14 +397,17 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     ``_wallet_movement_deltas``) — баланс кошелька изменится на её сумму. Повторный разбор
     (split) снова назначит статью и вернёт проводку в баланс.
 
-    Вслед за деньгами уходит и всё, что они финансировали по правилу 1: дебиторка этой проводки
-    и её зачёты кредиторки. Иначе исключённый платёж продолжал бы держать ДЗ, которой нет
-    покрытия, а его зачёт — числить чужой УПД погашенным.
+    Вслед за деньгами уходит и то, что они финансировали ПО ПРАВИЛУ 1: его дебиторка и его
+    зачёты кредиторки. Иначе исключённый платёж продолжал бы держать ДЗ, за которой нет денег.
+    Чужие оплаты (складская накладная, счёт, адресное гашение договора) исключение НЕ снимает:
+    вернуть их нечем — FIFO правила 1 подбирает только финансовые закрывающие, а поля накладной
+    в ручном разборе нет, так что «обратимое» действие оставило бы документ в кредиторке с
+    риском повторной оплаты. Такую проводку сначала отвязывают от документа.
     """
     ensure_cashflow_reclassifiable(txn)
     await _clear_transfer_counter_leg(session, txn)
     txn.quality_status = EXCLUDED_QUALITY
-    from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+    from app.services.supplier_prepayments import sync_manual_payment_receivable
 
-    await ensure_prepayment_from_bank_transaction(session, txn)
+    await sync_manual_payment_receivable(session, txn)
     return [txn.id]

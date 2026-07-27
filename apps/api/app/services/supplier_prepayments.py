@@ -56,6 +56,21 @@ AUTO_SETTLEMENT_OPERATIONAL_SCOPE = "finance"
 # каждая переразметка кассового чека рождала бы фантомную дебиторку на «Местный закуп».
 SELF_SETTLING_SOURCE_KINDS = frozenset({"kassa_cheque", "kassa_cheque_refund"})
 
+# Наличные контуры, распорядившиеся деньгами АДРЕСНО: оплата конкретного счёта/накладной,
+# выплата целевого резерва (гасит обязательство своего договора аренды), явная предоплата.
+# Правило 1 раскладывает деньги вслепую по FIFO и, вмешавшись в ручной разбор такой проводки,
+# сняло бы адресную привязку и перевесило платёж на посторонний документ.
+DEDICATED_MONEY_SOURCE_KINDS = frozenset(
+    {
+        "counterparty_payment",
+        "supplier_prepayment",
+        "safe_payout",
+        "kassa_target_payout",
+        "kassa_payout",
+        "kassa_payin",
+    }
+)
+
 # Целевые авансы под конкретную поставку (kind='goods') гасятся ЯВНО — когда придёт накладная
 # именно этой поставки (settle_invoice_from_prepayment). Их НЕЛЬЗЯ авто-гасить FIFO любой
 # приходящей накладной: иначе аванс под недопоставленный заказ молча «съест» посторонний
@@ -73,6 +88,12 @@ EARMARKED_PREPAYMENT_KINDS = frozenset({"goods", "deposit"})
 # EARMARKED_PREPAYMENT_KINDS, иначе закрывающий документ не смог бы её авто-погасить и мы
 # получили бы фантомную КЗ (блокер-2).
 BILL_PREPAYMENT_KIND = "prepaid_bill"
+
+# Вид, которым правило 1 метит СВОЮ дебиторку. Всё остальное на той же проводке — чужая запись
+# (целевой аванс кассы/Сейфа, ДЗ оплаченного счёта от чокпоинта): её нельзя ни пересобрать, ни
+# удалить, ни пустить на FIFO-гашение.
+RULE1_PREPAYMENT_KIND = "subscription"
+FOREIGN_PREPAYMENT_KINDS = EARMARKED_PREPAYMENT_KINDS | {BILL_PREPAYMENT_KIND}
 
 
 def _prepayment_untouched(prepayment: SupplierPrepayment) -> bool:
@@ -833,6 +854,12 @@ async def ensure_prepayment_from_bank_transaction(
             SupplierPrepayment.cashflow_transaction_id == transaction.id
         )
     )
+    if existing is not None and existing.kind in FOREIGN_PREPAYMENT_KINDS:
+        # Предоплату завёл ДРУГОЙ контур и распорядился деньгами по-своему: целевой аванс ждёт
+        # свою поставку, ДЗ оплаченного счёта принадлежит чокпоинту. Поиск по
+        # cashflow_transaction_id находит их наравне со своими, но пересобирать чужую запись
+        # (а тем более удалить её и скормить деньги FIFO постороннему УПД) правило 1 не вправе.
+        return existing
     should_have = (
         transaction.direction == "out"
         and transaction.counterparty_id is not None
@@ -943,6 +970,83 @@ async def ensure_prepayment_from_bank_transaction(
     existing.wallet_id = transaction.wallet_id
     await session.flush()
     return existing
+
+
+async def manual_payment_money_is_free(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    *,
+    origin_source_kind: str | None = None,
+) -> bool:
+    """Свободны ли деньги проводки для правила 1 — критерий один для всех ручных дверей.
+
+    Проверять НУЖНО по исходной проводке до раскладки сплита: доли рождаются без аллокаций и
+    с новым ``source_kind``, поэтому каждая по себе выглядит свободной, даже когда исходный
+    платёж давно разложен по документам. Обоснование каждого условия — в
+    ``sync_manual_payment_receivable``.
+    """
+    origin = origin_source_kind or transaction.source_kind
+    if origin in SELF_SETTLING_SOURCE_KINDS or origin in DEDICATED_MONEY_SOURCE_KINDS:
+        return False
+    if transaction.source_kind in SELF_SETTLING_SOURCE_KINDS:
+        return False
+
+    own_kind = await session.scalar(
+        select(SupplierPrepayment.kind).where(
+            SupplierPrepayment.cashflow_transaction_id == transaction.id
+        )
+    )
+    if own_kind is not None:
+        # Своя дебиторка правила 1 — его зачёты тоже его, пересобрать вправе. Чужой вид записи
+        # (целевой аванс, ДЗ оплаченного счёта) закрывает дверь.
+        return own_kind == RULE1_PREPAYMENT_KIND
+    allocated = await session.scalar(
+        select(func.count(InvoicePaymentAllocation.id)).where(
+            InvoicePaymentAllocation.cashflow_transaction_id == transaction.id
+        )
+    )
+    return not allocated
+
+
+async def sync_manual_payment_receivable(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    *,
+    origin_source_kind: str | None = None,
+    money_is_free: bool | None = None,
+) -> SupplierPrepayment | None:
+    """Правило 1 для РУЧНОГО разбора ДДС — только по деньгам, которыми никто ещё не распорядился.
+
+    Банковский разбор пускает правило 1 не на всё подряд, а лишь на СВОБОДНЫЕ строки сплита
+    (``classifier``: не аванс, без явной ссылки на накладную, не выплата сотруднику). Ручной
+    разбор наличных обязан держать ту же границу, иначе перекладывает чужие деньги:
+
+    • проводка адресного контура (оплата счёта, целевой резерв, явная предоплата) — её платёж
+      уже привязан к конкретному документу или договору, а FIFO перевесил бы его на посторонний;
+    • деньги, уже разложенные аллокациями, — второй заход профинансировал бы документов больше,
+      чем в проводке рублей (и снял бы оплату, которую вернуть нечем: складскую накладную FIFO
+      правила 1 не подбирает);
+    • самооплатный кассовый чек — товар получен на месте, дебиторки быть не может. При сплите
+      доли получают ``source_kind='manual_split'``, поэтому самооплатность наследуется от
+      РОДИТЕЛЬСКОЙ проводки через ``origin_source_kind``.
+
+    Исключение для аллокаций — проводка, у которой уже есть СВОЯ дебиторка правила 1: значит
+    зачёты на ней тоже его, и пересобрать/снять их он вправе (иначе смена контрагента оставила
+    бы фантом на прежнем). Известное ограничение: если платёж целиком ушёл в зачёт КЗ и своей
+    ДЗ не осталось, последующее исключение проводки зачёт не снимет — деньги придётся
+    отвязать вручную.
+
+    ``money_is_free`` передают, когда свобода уже посчитана по родительской проводке (сплит);
+    иначе считается здесь по самой проводке.
+    """
+    is_free = money_is_free
+    if is_free is None:
+        is_free = await manual_payment_money_is_free(
+            session, transaction, origin_source_kind=origin_source_kind
+        )
+    if not is_free:
+        return None
+    return await ensure_prepayment_from_bank_transaction(session, transaction)
 
 
 async def refund_counterparty_prepayments(
