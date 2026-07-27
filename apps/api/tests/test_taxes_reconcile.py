@@ -853,3 +853,74 @@ async def test_doc_bigger_beyond_injury_is_still_a_mismatch(
     # fmt_money ставит неразрывный пробел между разрядами.
     assert "5\u00a0000,00" in usn.action_why  # и необъяснённый остаток тоже
     assert "уточните у бухгалтера" in usn.action_why
+
+
+async def test_injury_and_fixed_are_visible_in_reconciliation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Травматизм и фиксированные взносы ИП — полноценные строки сверки, а не только окно.
+
+    Вопрос владельца 27.07.2026: «травматизм начислен, но не уплачен — почему его нет в сводке
+    как платежа к уплате?». Оба обязательства были видны только в «Активных платежах», на
+    главном экране их не существовало.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(
+            TaxPayrollLedger(
+                id=uuid.uuid4(), year=2026, month=7, tab_number="206",
+                employee="ВОДОЛАЗОВА В.С.", contributions=Decimal("13595.93"),
+                ndfl=Decimal("6318.00"), injury=Decimal("100.00"),
+            )
+        )
+        session.add(_tax_payment("contrib_fixed", "14347.50", date(2026, 1, 21)))
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 27))
+
+    injury = _line(recon, "contrib_injury", "year")
+    assert injury.calculated == Decimal("100.00")
+    assert injury.paid is None  # в СФР по июлю ещё не платили
+    assert injury.verdict == "due"
+    assert injury.action is not None
+    assert any("в ЕНП не входит" in m for m in injury.messages)
+    # Строка ЗЕРКАЛИТ долг; платёж ведут документный и прогнозный слои обязательств,
+    # иначе окно «Активные платежи» показало бы одно обязательство дважды.
+    assert injury.payable_amount is None
+
+    fixed = _line(recon, "contrib_fixed", "year")
+    assert fixed.calculated == Decimal("57390.00")  # годовая сумма по ст. 430 НК
+    assert fixed.paid == Decimal("14347.50")
+    assert fixed.verdict == "due"
+    assert fixed.due_date == date(2026, 12, 28)
+    # fmt_money ставит неразрывный пробел между разрядами.
+    assert "43\u00a0042,50" in (fixed.action_why or "")
+    assert fixed.payable_amount is None
+
+
+async def test_injury_line_does_not_double_the_payable_window(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Новая строка сверки не задваивает обязательство, уже пришедшее из платёжки."""
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(
+            TaxPayrollLedger(
+                id=uuid.uuid4(), year=2026, month=7, tab_number="206",
+                employee="ВОДОЛАЗОВА В.С.", contributions=Decimal("13595.93"),
+                ndfl=Decimal("6318.00"), injury=Decimal("100.00"),
+            )
+        )
+        planned = _tax_payment("contrib_injury", "100", date(2026, 8, 15), recipient="sfr")
+        planned.status = "planned"
+        planned.source_kind = "tax_notice"
+        planned.for_period = "year"
+        session.add(planned)
+        await session.commit()
+
+        obligations = await list_payable_obligations(session, today=date(2026, 7, 27))
+
+    injury = [o for o in obligations if o.kind == "contrib_injury"]
+    assert [o.amount for o in injury] == [Decimal("100")]

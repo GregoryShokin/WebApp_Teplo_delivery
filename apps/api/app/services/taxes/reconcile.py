@@ -27,12 +27,17 @@ from app.services.taxes.bank_facts import payroll_facts_without_turnover
 from app.services.taxes.engine import (
     PERIOD_SEQ,
     compute_tax_state,
+    fixed_contribution_due,
     fmt_money,
     period_end_date,
 )
 from app.services.taxes.enp_split import payroll_enp_due
 from app.services.taxes.ens_wallet import compute_ens_wallet
-from app.services.taxes.repository import load_tax_inputs
+from app.services.taxes.official_payroll import (
+    months_without_turnover,
+    official_month_accrual,
+)
+from app.services.taxes.repository import load_tax_inputs, year_config
 
 ZERO = Decimal("0")
 # Допуск сверки: налог округляется до рубля, поэтому расхождение ≤ 1 ₽ — не сигнал.
@@ -532,6 +537,157 @@ def _explain_doc_gap(why: str | None, *, gap: Decimal, injury: Decimal) -> str |
     return why + extra
 
 
+async def _kind_totals(
+    session: AsyncSession, *, year: int, kind: str
+) -> tuple[Decimal, Decimal, date | None]:
+    """``(по платёжкам бухгалтера, уплачено из банка, ближайший непогашенный срок)``."""
+    rows = (
+        await session.scalars(
+            select(TaxPayment).where(
+                TaxPayment.for_year == year,
+                TaxPayment.kind == kind,
+                TaxPayment.status.in_(("planned", "paid")),
+            )
+        )
+    ).all()
+    documented = sum(
+        (r.amount for r in rows if r.source_kind == "tax_notice"), ZERO
+    )
+    paid = sum(
+        (r.amount for r in rows if r.status == "paid" and r.source_kind != "tax_notice"),
+        ZERO,
+    )
+    open_due = sorted(
+        r.paid_on for r in rows if r.status == "planned" and r.paid_on is not None
+    )
+    return documented, paid, (open_due[0] if open_due else None)
+
+
+def _due_verdict(
+    outstanding: Decimal, due: date | None, as_of: date
+) -> tuple[str, str]:
+    """Вердикт обязательства с известным остатком: уплачено / к уплате / просрочено."""
+    if outstanding <= TOLERANCE:
+        return "ok", "ok"
+    if due is not None and due < as_of:
+        return "overdue", "alert"
+    return "due", "info"
+
+
+async def _fixed_line(session: AsyncSession, *, year: int, as_of: date) -> ReconLine:
+    """Фиксированные взносы ИП: сумма года известна заранее (ст. 430 НК)."""
+    cfg = year_config(year)
+    documented, paid, _ = await _kind_totals(session, year=year, kind="contrib_fixed")
+    accrued = cfg.fixed_contribution
+    outstanding = max(accrued - paid, ZERO)
+    due = fixed_contribution_due(year)
+    verdict, severity = _due_verdict(outstanding, due, as_of)
+    messages = [
+        f"Сумма года {fmt_money(accrued)} ₽ (ст. 430 НК), уплачено {fmt_money(paid)} ₽.",
+    ]
+    if outstanding > ZERO:
+        messages.append(
+            f"Остаток {fmt_money(outstanding)} ₽ — крайний срок {due.strftime('%d.%m.%Y')}. "
+            f"Платить можно частями: каждый уплаченный рубль сразу уменьшает УСН, поэтому "
+            f"выгоднее закрывать до конца квартала, а не в декабре."
+        )
+    return ReconLine(
+        label="Взносы ИП «за себя», фиксированные",
+        tax_kind="contrib_fixed",
+        period_code="year",
+        due_date=due,
+        calculated=accrued,
+        documented=documented if documented > ZERO else None,
+        paid=paid if paid > ZERO else None,
+        verdict=verdict,
+        severity=severity,
+        messages=messages,
+        action="Оплатите — уменьшит налог" if outstanding > ZERO else None,
+        action_why=(
+            f"Не уплачено {fmt_money(outstanding)} ₽ из годовой суммы; вычет по УСН работает "
+            f"только по факту уплаты. Платёж готовится в окне «Активные платежи»."
+            if outstanding > ZERO
+            else None
+        ),
+        # Платёж ведут документный и прогнозный слои обязательств: годовая строка сверки —
+        # ЗЕРКАЛО долга, а не второй его экземпляр (иначе окно покажет сумму дважды).
+        payable_amount=None,
+    )
+
+
+async def _injury_line(
+    session: AsyncSession, *, year: int, as_of: date
+) -> ReconLine | None:
+    """Травматизм: начислено по оборотке, платится ОТДЕЛЬНОЙ платёжкой в СФР, не через ЕНП."""
+    accrued = Decimal(
+        str(
+            await session.scalar(
+                select(func.coalesce(func.sum(TaxPayrollLedger.injury), 0)).where(
+                    TaxPayrollLedger.year == year
+                )
+            )
+            or 0
+        )
+    )
+    # Месяцы без оборотки добираем прогнозом официального контура — иначе строка занизила бы
+    # начисление, а прогнозный слой обязательств выставил бы за те же месяцы ВТОРУЮ строку.
+    projected = ZERO
+    try:
+        cfg = year_config(year)
+        for month in await months_without_turnover(session, year=year, today=as_of):
+            accrual = await official_month_accrual(
+                session, year=year, month=month, cfg=cfg
+            )
+            if accrual is not None:
+                projected += accrual.injury
+    except Exception:  # noqa: BLE001 - нет конфига года: работаем по одной оборотке
+        projected = ZERO
+    accrued += projected
+
+    documented, paid, open_due = await _kind_totals(
+        session, year=year, kind="contrib_injury"
+    )
+    if accrued <= ZERO and documented <= ZERO and paid <= ZERO:
+        return None
+    reference = accrued if accrued > ZERO else documented
+    outstanding = max(reference - paid, ZERO)
+    verdict, severity = _due_verdict(outstanding, open_due, as_of)
+    messages = [
+        f"Начислено {fmt_money(accrued)} ₽ (0,2 % от ФОТ), уплачено {fmt_money(paid)} ₽."
+        + (
+            f" Из них {fmt_money(projected)} ₽ — прогноз по месяцам без оборотки."
+            if projected > ZERO
+            else ""
+        ),
+        "Уходит отдельной платёжкой в СФР по своим реквизитам — в ЕНП не входит.",
+    ]
+    if outstanding > ZERO and open_due is not None:
+        messages.append(
+            f"Остаток {fmt_money(outstanding)} ₽, срок {open_due.strftime('%d.%m.%Y')} "
+            f"(15 число следующего месяца, 125-ФЗ ст. 22)."
+        )
+    return ReconLine(
+        label="Взносы на травматизм",
+        tax_kind="contrib_injury",
+        period_code="year",
+        due_date=open_due,
+        calculated=accrued if accrued > ZERO else None,
+        documented=documented if documented > ZERO else None,
+        paid=paid if paid > ZERO else None,
+        verdict=verdict,
+        severity=severity,
+        messages=messages,
+        action="Оплатите — платёжка в СФР" if outstanding > ZERO else None,
+        action_why=(
+            f"Не уплачено {fmt_money(outstanding)} ₽. Реквизиты у взноса свои (ОСФР), "
+            f"через ЕНП он не проходит. Платёж готовится в окне «Активные платежи»."
+            if outstanding > ZERO
+            else None
+        ),
+        payable_amount=None,  # см. комментарий в _fixed_line
+    )
+
+
 async def build_reconciliation(
     session: AsyncSession, *, as_of: date
 ) -> Reconciliation:
@@ -660,6 +816,16 @@ async def build_reconciliation(
             wallet_balance=wallet.balance,
         )
     )
+
+    # ── Взносы ИП «за себя» и травматизм ─────────────────────────────────────
+    # Вопрос владельца 27.07.2026: «травматизм начислен, но не уплачен — почему его нет в
+    # сводке как платежа к уплате?». Оба обязательства были только в «Активных платежах»,
+    # а на главном экране их не было вовсе: начисление известно, остаток тоже, показывать
+    # обязаны. Дедуп с окном — по (вид, период='year'), как у остальных строк.
+    lines.append(await _fixed_line(session, year=year, as_of=as_of))
+    injury_line = await _injury_line(session, year=year, as_of=as_of)
+    if injury_line is not None:
+        lines.append(injury_line)
 
     # ── Зарплатный ЕНП: разнос из оборотки (НДФЛ + взносы за работников) ──────
     # Сверяем НАЧИСЛЕНО (оборотка) с фактом разноса и показываем платёжку справочно.
