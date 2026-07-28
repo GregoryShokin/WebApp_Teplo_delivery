@@ -24,7 +24,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiErrorMessage, triggerBankSync, type DdsProvider } from "@/lib/api";
+import {
+  apiErrorMessage,
+  apiErrorStatus,
+  getLocationOptionsForArticle,
+  triggerBankSync,
+  type DdsProvider,
+} from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
@@ -389,4 +395,28 @@ export function badgeMutedClass(isActive: boolean) {
       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
       : "border-muted bg-muted text-muted-foreground",
   );
+}
+
+/**
+ * Весь роутер /locations закрыт правом source.locations.read. Без права запрос падает 403,
+ * список схлопывается в пустой — и раньше UI объявлял это «помещений нет»: 28.07.2026 у роли
+ * office_manager права не было, и владелец полдня искал поломку в реестре помещений.
+ * Текст один на оба пикера (новый платёж и разбор операции), чтобы диагноз не расходился.
+ */
+export const LOCATIONS_FORBIDDEN_HINT =
+  "Нет доступа к реестру помещений — попросите Собственника выдать право «Смотреть реестр помещений» (Настройки → Доступы).";
+
+/**
+ * Помещения и их аренды по статье. Общий ключ: пикер строки и сводка блокировки над кнопкой
+ * читают один кэш react-query, второго запроса на тот же articleId не уходит.
+ */
+export function locationOptionsQuery(articleId: string) {
+  return {
+    queryKey: ["location-options", articleId],
+    queryFn: () => getLocationOptionsForArticle(articleId),
+    enabled: Boolean(articleId),
+    // 403 — не «моргание сети»: право не появится от повтора, а ретрай лишь тянет заглушку.
+    retry: (failureCount: number, error: Error) =>
+      apiErrorStatus(error) !== 403 && failureCount < 1,
+  };
 }

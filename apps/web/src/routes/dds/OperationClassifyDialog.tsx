@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   apiErrorMessage,
+  apiErrorStatus,
   classifyCashflowTransaction,
   classifyOperation,
   getDdsArticles,
@@ -25,7 +26,6 @@ import {
   getDdsPayoutEmployees,
   getDdsUnpaidInvoices,
   getDdsWallets,
-  getLocationOptionsForArticle,
   getPayrollAdvanceAvailability,
   type CashflowClassifyPayload,
   type JournalRow,
@@ -36,9 +36,11 @@ import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 import {
   DdsStatusBadge,
   DirectionBadge,
+  LOCATIONS_FORBIDDEN_HINT,
   compactText,
   formatDate,
   formatDdsMoney,
+  locationOptionsQuery,
 } from "@/routes/dds/shared";
 
 const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
@@ -264,6 +266,22 @@ export function OperationClassifyDialog({
     invoiceCounterpartyIds.map((cpId, index) => [cpId, invoiceQueries[index]?.data ?? []]),
   );
   const invoicesFor = (cpId: string) => invoicesByCounterparty.get(cpId) ?? [];
+  // Помещения строк «объектных» статей: тот же ключ, что у OperationLocationPicker (общий кэш,
+  // второго запроса нет). Родителю нужен сам факт 403 — без права source.locations.read
+  // помещение выбрать нечем, и «Разнести» серая не потому, что оператор поленился заполнить поле.
+  const locationArticleIds = Array.from(
+    new Set(
+      rows
+        .filter((item) =>
+          articles.some((article) => article.id === item.articleId && article.location_required),
+        )
+        .map((item) => item.articleId),
+    ),
+  );
+  const locationQueries = useQueries({
+    queries: locationArticleIds.map((articleId) => locationOptionsQuery(articleId)),
+  });
+  const locationsForbidden = locationQueries.some((query) => apiErrorStatus(query.error) === 403);
   // Сотрудники для зарплатной строки — активные + увольняемые (обходит запрет /staff кассиру).
   const usesAdvanceArticle = rows.some((item) => employeeAdvanceArticleIds.has(item.articleId));
   const payoutEmployeesQuery = useQuery({
@@ -706,6 +724,16 @@ export function OperationClassifyDialog({
               </div>
             ) : null}
 
+            {rowMissingLocation ? (
+              // «Разнести» блокируется молча — причину называем словами, иначе серая кнопка
+              // выглядит поломкой. Отдельно случай без права: помещение выбрать нечем.
+              <p className="text-sm text-amber-700">
+                {locationsForbidden
+                  ? LOCATIONS_FORBIDDEN_HINT
+                  : "Для этой статьи нужно помещение (у аренды — ещё и арендодатель): откройте строку статьи и выберите."}
+              </p>
+            ) : null}
+
             <div className="flex flex-wrap gap-2 border-t pt-4">
               <Button
                 disabled={
@@ -1019,11 +1047,10 @@ function OperationLocationPicker({
   leaseId: string;
   onChange: (patch: { locationId: string; leaseId: string; counterpartyId?: string }) => void;
 }) {
-  const optionsQuery = useQuery({
-    queryKey: ["location-options", articleId],
-    queryFn: () => getLocationOptionsForArticle(articleId),
-    enabled: Boolean(articleId),
-  });
+  const optionsQuery = useQuery(locationOptionsQuery(articleId));
+  // Пустой список и недоступный список — разные состояния: при 403 (нет права
+  // source.locations.read) реестр цел, не хватает доступа, и «Помещения не найдены» врёт.
+  const forbidden = apiErrorStatus(optionsQuery.error) === 403;
   const options: LocationOption[] = optionsQuery.data ?? [];
   const selected = options.find((item) => item.location_id === locationId) ?? null;
 
@@ -1062,14 +1089,34 @@ function OperationLocationPicker({
     <div className="space-y-2 rounded-md border p-2">
       <div className="space-y-1">
         <Label className="text-sm">Помещение</Label>
-        <InlineOptionList
-          options={locationOptions}
-          value={locationId}
-          onChange={(value) => onChange({ locationId: value, leaseId: "" })}
-          searchPlaceholder="Поиск помещения…"
-          emptyMessage="Помещения не найдены"
-          listClassName="max-h-40"
-        />
+        {optionsQuery.isError ? (
+          <p className="text-xs text-destructive">
+            {forbidden ? (
+              LOCATIONS_FORBIDDEN_HINT
+            ) : (
+              <>
+                Не удалось загрузить помещения:{" "}
+                {apiErrorMessage(optionsQuery.error, "ошибка запроса")}.{" "}
+                <button
+                  className="underline"
+                  onClick={() => void optionsQuery.refetch()}
+                  type="button"
+                >
+                  Повторить
+                </button>
+              </>
+            )}
+          </p>
+        ) : (
+          <InlineOptionList
+            options={locationOptions}
+            value={locationId}
+            onChange={(value) => onChange({ locationId: value, leaseId: "" })}
+            searchPlaceholder="Поиск помещения…"
+            emptyMessage={optionsQuery.isLoading ? "Загружаем помещения…" : "Помещения не найдены"}
+            listClassName="max-h-40"
+          />
+        )}
       </div>
       {selected && leaseOptions.length > 0 ? (
         <div className="space-y-1">

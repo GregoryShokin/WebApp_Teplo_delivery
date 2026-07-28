@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -42,11 +42,11 @@ import {
 } from "@/components/ui/select";
 import {
   apiErrorMessage,
+  apiErrorStatus,
   createEmployeePayout,
   createExpenseCashReserves,
   createInternalTransfer,
   createNewPaymentExpenseDraft,
-  getLocationOptionsForArticle,
   createNewPaymentIncome,
   createNewPaymentInternalTransfer,
   createPayrollAdvance,
@@ -68,6 +68,7 @@ import {
   getRegistry,
 } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
+import { LOCATIONS_FORBIDDEN_HINT, locationOptionsQuery } from "@/routes/dds/shared";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
@@ -1120,6 +1121,17 @@ function ExpenseForm({
     return map;
   }, [articles]);
 
+  // Реестр помещений закрыт правом source.locations.read: без него поле «Помещение» не заполнить
+  // в принципе, и сводка «Укажите помещение» вводит в заблуждение — причина блокировки другая.
+  // Ключ тот же, что у ExpenseLocationPicker, — react-query отдаёт общий кэш, второго запроса нет.
+  const locationArticleIds = rows
+    .filter((row) => articleById.get(row.articleId)?.location_required)
+    .map((row) => row.articleId);
+  const locationQueries = useQueries({
+    queries: Array.from(new Set(locationArticleIds)).map((id) => locationOptionsQuery(id)),
+  });
+  const locationsForbidden = locationQueries.some((query) => apiErrorStatus(query.error) === 403);
+
   const total = rows.reduce(
     (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
     0,
@@ -1275,8 +1287,9 @@ function ExpenseForm({
     summary = "Выберите счёт списания.";
   } else if (missingLocationRow) {
     tone = "warning";
-    summary =
-      articleById.get(missingLocationRow.articleId)?.lease_bound && missingLocationRow.locationId
+    summary = locationsForbidden
+      ? LOCATIONS_FORBIDDEN_HINT
+      : articleById.get(missingLocationRow.articleId)?.lease_bound && missingLocationRow.locationId
         ? "Выберите арендодателя для арендного платежа."
         : "Укажите помещение для арендного платежа.";
   } else if (missingServicePeriodRecipient) {
@@ -2672,11 +2685,10 @@ function ExpenseLocationPicker({
     leaseRecipient?: LeaseRecipient | null;
   }) => void;
 }) {
-  const optionsQuery = useQuery({
-    queryKey: ["location-options", articleId],
-    queryFn: () => getLocationOptionsForArticle(articleId),
-    enabled: Boolean(articleId),
-  });
+  const optionsQuery = useQuery(locationOptionsQuery(articleId));
+  // Запрос упал — список пуст не потому, что помещений нет. 403 (нет права
+  // source.locations.read) отделяем от прочих ошибок: лечится он выдачей доступа, а не повтором.
+  const forbidden = apiErrorStatus(optionsQuery.error) === 403;
   const options: LocationOption[] = optionsQuery.data ?? [];
   // Новый платёж создаётся только по действующей точке: закрытые (по ним разбирают исторические
   // выписки в окне разбора операции) в выборе не показываем.
@@ -2748,7 +2760,27 @@ function ExpenseLocationPicker({
         <span className="text-[11px] text-muted-foreground">обязательное поле</span>
       </div>
       <div className="grid gap-2">
-        {activeOptions.length === 0 ? (
+        {optionsQuery.isError ? (
+          <p className="text-[11px] text-destructive">
+            {forbidden ? (
+              LOCATIONS_FORBIDDEN_HINT
+            ) : (
+              <>
+                Не удалось загрузить помещения:{" "}
+                {apiErrorMessage(optionsQuery.error, "ошибка запроса")}.{" "}
+                <button
+                  className="underline"
+                  onClick={() => void optionsQuery.refetch()}
+                  type="button"
+                >
+                  Повторить
+                </button>
+              </>
+            )}
+          </p>
+        ) : optionsQuery.isLoading ? (
+          <p className="text-[11px] text-muted-foreground">Загружаем помещения…</p>
+        ) : activeOptions.length === 0 ? (
           <p className="text-[11px] text-muted-foreground">
             Нет действующих помещений. Заведите его в Настройках → Помещения.
           </p>
