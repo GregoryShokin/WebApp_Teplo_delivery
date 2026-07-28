@@ -541,6 +541,8 @@ async def _kind_totals(
     session: AsyncSession, *, year: int, kind: str
 ) -> tuple[Decimal, Decimal, date | None]:
     """``(по платёжкам бухгалтера, уплачено из банка, ближайший непогашенный срок)``."""
+    from app.services.taxes.obligations import is_settled  # поздний импорт: разрыв цикла
+
     rows = (
         await session.scalars(
             select(TaxPayment).where(
@@ -553,14 +555,32 @@ async def _kind_totals(
     documented = sum(
         (r.amount for r in rows if r.source_kind == "tax_notice"), ZERO
     )
+    paid_rows = [r for r in rows if r.status == "paid"]
     paid = sum(
-        (r.amount for r in rows if r.status == "paid" and r.source_kind != "tax_notice"),
+        (r.amount for r in paid_rows if r.source_kind != "tax_notice"),
         ZERO,
     )
-    open_due = sorted(
-        r.paid_on for r in rows if r.status == "planned" and r.paid_on is not None
+    # Срок берём у первой плановой строки, которую НЕ закрыл банковский факт. Плановая
+    # строка остаётся в статусе 'planned' и после уплаты (погашение считается на лету, как
+    # в календаре), поэтому «самый ранний плановый срок» — не то же самое, что «ближайший
+    # непогашенный». Без проверки сводка винила февральский срок за июльский долг:
+    # травматизм январь–июнь уплачен, открыт июль со сроком 15.08, а строка краснела
+    # «Просрочено, срок 15.02.2026» (найдено владельцем 28.07.2026).
+    # Один set на проход: месячные платёжки травматизма одинаковы по сумме, и без «расхода»
+    # фактов один платёж закрыл бы сразу несколько.
+    used: set = set()
+    open_due = next(
+        (
+            row.paid_on
+            for row in sorted(
+                (r for r in rows if r.status == "planned" and r.paid_on is not None),
+                key=lambda r: r.paid_on,
+            )
+            if not is_settled(row, paid_rows, used_fact_ids=used)
+        ),
+        None,
     )
-    return documented, paid, (open_due[0] if open_due else None)
+    return documented, paid, open_due
 
 
 def _due_verdict(

@@ -898,6 +898,48 @@ async def test_injury_and_fixed_are_visible_in_reconciliation(
     assert fixed.payable_amount is None
 
 
+async def test_injury_due_is_the_first_unsettled_month_not_the_earliest(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Срок в строке травматизма — ближайший НЕПОГАШЕННЫЙ, а не самый ранний плановый.
+
+    Ситуация прода 28.07.2026: январь–июнь уплачены помесячно, открыт только июль со сроком
+    15.08. Плановые строки остаются в статусе 'planned' и после уплаты (погашение считается
+    на лету), поэтому сводка брала февральский срок и рисовала «Просрочено» по давно
+    закрытому месяцу.
+    """
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        for month in (1, 2, 3, 7):
+            session.add(
+                TaxPayrollLedger(
+                    id=uuid.uuid4(), year=2026, month=month, tab_number="206",
+                    employee="ВОДОЛАЗОВА В.С.", contributions=Decimal("13595.93"),
+                    ndfl=Decimal("6318.00"), injury=Decimal("100.00"),
+                )
+            )
+        # Платёжки бухгалтера: январь, февраль, март и июль (срок — 15 число следующего).
+        for due, period in (
+            (date(2026, 2, 15), "2026-01"),
+            (date(2026, 3, 15), "2026-02"),
+            (date(2026, 4, 15), "2026-03"),
+            (date(2026, 8, 15), "2026-07"),
+        ):
+            session.add(_planned("contrib_injury", "100", due, period, recipient="sfr"))
+        # Факты из выписки: платит внутри месяца начисления, периода у факта нет.
+        for paid_on in (date(2026, 1, 26), date(2026, 2, 25), date(2026, 3, 26)):
+            session.add(_tax_payment("contrib_injury", "100", paid_on, recipient="sfr"))
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 7, 28))
+
+    injury = _line(recon, "contrib_injury", "year")
+    assert injury.due_date == date(2026, 8, 15)
+    assert injury.verdict == "due"  # срок ещё не наступил — это не просрочка
+    assert injury.severity != "alert"
+    assert injury.paid == Decimal("300.00")
+
+
 async def test_injury_line_does_not_double_the_payable_window(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
