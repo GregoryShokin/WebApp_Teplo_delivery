@@ -336,35 +336,22 @@ async def test_payroll_enp_split_line_shows_breakdown(
 
     Платёжка ЕНП (14 902,30) с помесячным начислением НЕ совпадает — НДФЛ платится «окнами»,
     поэтому она справочная, а строка сверяет начислено ↔ разнос (взносы в вычет, НДФЛ нет).
+    Месяц закрыт, потому что деньги видны в выписке.
     """
     async with async_session_factory() as session:
-        session.add(
-            TaxPayrollLedger(
-                id=uuid.uuid4(),
-                year=2026,
-                month=6,
-                tab_number="206",
-                employee="ИВАНОВА И.И.",
-                contributions=Decimal("8571.30"),
-                ndfl=Decimal("3532.00"),
-            )
-        )
-        await session.flush()
-        await rebuild_payroll_enp_split(session, year=2026)
-        session.add(
-            _payment_order_intake(
-                tax_kind="enp_payroll", period="2026-06", amount="14902.30",
-                due=date(2026, 7, 28), received=datetime(2026, 7, 22, tzinfo=UTC),
-                filename="ЕНП до 28.07.docx",
-            )
-        )
+        await _seed_june_payroll(session)
+        # Банковский разнос ЕНП: деньги ушли 27.07, период — июнь.
+        for kind, amount in (("contrib_employees", "8571.30"), ("ndfl", "3532.00")):
+            fact = _tax_payment(kind, amount, date(2026, 7, 27))
+            fact.for_period = "2026-06"
+            session.add(fact)
         await session.commit()
 
         recon = await build_reconciliation(session, as_of=date(2026, 7, 31))
 
     line = _line(recon, "enp_payroll", "2026-06")
     assert line.calculated == Decimal("12103.30")  # 8571.30 + 3532.00 начислено
-    assert line.paid == Decimal("12103.30")  # разнос уплачен к сроку 28.07 ≤ среза
+    assert line.paid == Decimal("12103.30")  # уплачено по выписке
     assert line.documented is None  # платёжка ушла в справку, не в колонку «Документ»
     assert line.verdict == "ok"
     assert line.severity == "ok"
@@ -372,6 +359,61 @@ async def test_payroll_enp_split_line_shows_breakdown(
     # Платёжка показана справочно с пояснением про «окна» НДФЛ, а не как расхождение.
     assert any("Справочно" in m and "окнами" in m for m in line.messages)
     assert not recon.has_alerts
+
+
+async def _seed_june_payroll(session: AsyncSession) -> None:
+    """Июнь: оборотка бухгалтера, её разнос и платёжка ЕНП на срок 28.07."""
+    session.add(
+        TaxPayrollLedger(
+            id=uuid.uuid4(),
+            year=2026,
+            month=6,
+            tab_number="206",
+            employee="ИВАНОВА И.И.",
+            contributions=Decimal("8571.30"),
+            ndfl=Decimal("3532.00"),
+        )
+    )
+    await session.flush()
+    await rebuild_payroll_enp_split(session, year=2026)
+    session.add(
+        _payment_order_intake(
+            tax_kind="enp_payroll", period="2026-06", amount="14902.30",
+            due=date(2026, 7, 28), received=datetime(2026, 7, 22, tzinfo=UTC),
+            filename="ЕНП до 28.07.docx",
+        )
+    )
+
+
+async def test_payroll_enp_month_without_money_stays_payable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Срок наступил, а платежа нет — месяц остаётся «к уплате», а не зеленеет.
+
+    Находка владельца 28.07.2026: июньский ЕНП исчез и из сводки, и из «Активных платежей»
+    ровно в день срока. Причина — разнос оборотки (source_kind='tax_notice') считался
+    «уплаченным в срок», хотя строится он из НАЧИСЛЕНИЙ. Платить надо 14 902,30 — сумму
+    платёжки бухгалтера (она учитывает «окна» НДФЛ), а не 12 103,30 начисления.
+    """
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        await _seed_june_payroll(session)
+        await session.commit()
+
+        on_due_date = await build_reconciliation(session, as_of=date(2026, 7, 28))
+        obligations = await list_payable_obligations(session, today=date(2026, 7, 28))
+        next_day = await build_reconciliation(session, as_of=date(2026, 7, 29))
+
+    line = _line(on_due_date, "enp_payroll", "2026-06")
+    assert line.paid is None  # разнос оборотки — не деньги
+    assert line.verdict == "due"  # срок сегодня — это ещё не просрочка
+    assert line.payable_amount == Decimal("14902.30")
+
+    enp = [o for o in obligations if o.kind == "enp_payroll" and o.for_period == "2026-06"]
+    assert [o.amount for o in enp] == [Decimal("14902.30")]
+
+    assert _line(next_day, "enp_payroll", "2026-06").verdict == "overdue"
 
 
 # ── календарь: оплаченное обязательство закрыто, а не «просрочено» ─────────────

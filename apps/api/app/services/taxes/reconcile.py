@@ -429,7 +429,7 @@ async def _enp_payroll_documents(session: AsyncSession) -> dict[date, Decimal]:
 
 
 async def _payroll_paid_breakdown(
-    session: AsyncSession, *, year: int, period: str
+    session: AsyncSession, *, year: int, period: str, only_facts: bool = False
 ) -> tuple[Decimal, Decimal]:
     """Уплачено по месяцу в разрезе ``(взносы за работников, НДФЛ)``.
 
@@ -437,6 +437,10 @@ async def _payroll_paid_breakdown(
     разноса оборотки (tax_notice: «считаем уплаченным в срок»). Суммировать оба слоя
     нельзя: за один месяц они описывают ОДИН и тот же платёж — сумма задваивалась бы
     (находка аудита 27.07.2026, вскрылась после защиты банковских строк от rebuild).
+
+    ``only_facts=True`` — конвенцию не применять, считать только ДЕНЬГИ. Разнос оборотки
+    строится из НАЧИСЛЕНИЙ (см. ``rebuild_payroll_enp_split``) и «уплаченным» месяц не
+    делает; там, где ответ решает «платить или нет», нужен факт, а не конвенция.
     """
     rows = (
         await session.execute(
@@ -458,7 +462,9 @@ async def _payroll_paid_breakdown(
     for source, kind, total in rows:
         layer = "notice" if source == "tax_notice" else "bank"
         layers[layer][kind] = layers[layer].get(kind, ZERO) + Decimal(str(total))
-    chosen = layers["bank"] if sum(layers["bank"].values(), ZERO) > ZERO else layers["notice"]
+    chosen = layers["bank"]
+    if not only_facts and sum(chosen.values(), ZERO) <= ZERO:
+        chosen = layers["notice"]
     return chosen.get("contrib_employees", ZERO), chosen.get("ndfl", ZERO)
 
 
@@ -863,16 +869,17 @@ async def build_reconciliation(
         period = f"{year}-{month:02d}"
         month_due = payroll_enp_due(year, month)
         documented = enp_docs.get(month_due)
-        # Месяц без оборотки восстановлен ИЗ ФАКТА уплаты — он закрыт по определению, даже
-        # если срок ещё не наступил (платят и досрочно). Иначе строка звала бы платить второй
-        # раз то, что уже уплачено.
-        settled = month_due <= as_of or month in reconstructed
-        paid_contributions, paid_ndfl = (
-            await _payroll_paid_breakdown(session, year=year, period=period)
-            if settled
-            else (ZERO, ZERO)
+        # Месяц закрыт ДЕНЬГАМИ, а не календарём. Раньше здесь стояло «срок наступил ⇒
+        # уплачено», и разнос оборотки (tax_notice) шёл в «Факт»: месяц с оборот кой сам
+        # зеленел в день срока. 28.07.2026 июньский ЕНП показался уплаченным, хотя платёж не
+        # ушёл, — и платёжка бухгалтера на 14 902,30 исчезла и из сводки, и из «Активных
+        # платежей» (нашёл владелец). Месяц без оборотки, восстановленный ИЗ ФАКТА уплаты,
+        # закрыт по определению — платят и досрочно.
+        paid_contributions, paid_ndfl = await _payroll_paid_breakdown(
+            session, year=year, period=period, only_facts=True
         )
         paid_total = paid_contributions + paid_ndfl
+        settled = paid_total > ZERO or month in reconstructed
         paid = paid_total if paid_total > ZERO else None
 
         month_name = _MONTHS_RU_GENITIVE[month - 1]
@@ -913,9 +920,13 @@ async def build_reconciliation(
                         f"{fmt_money(paid_contributions)} ₽ — проверьте месяц с бухгалтером."
                     )
         else:
-            verdict, severity = "due", "info"
+            # Денег по месяцу нет: до срока это «к уплате», после срока — просрочка. Раньше
+            # ветка была всегда «к уплате», потому что сюда попадали только будущие месяцы.
+            verdict, severity = _due_verdict(accrued, month_due, as_of)
             messages.append(
                 f"Уплачивается в составе ЕНП до {month_due.strftime('%d.%m.%Y')}."
+                if verdict != "overdue"
+                else f"Срок {month_due.strftime('%d.%m.%Y')} прошёл, платежа в выписке нет."
             )
             action = "Оплатите с ближайшим ЕНП"
             action_why = f"Срок уплаты — {month_due.strftime('%d.%m.%Y')}."
