@@ -53,6 +53,7 @@ async def _seed_kassa(
     cash: str = "300.00",
     with_supplier_addpayout: bool = False,
     with_old_is: bool = False,
+    expense_payout: str | None = None,
 ) -> uuid.UUID:
     """Оплаченный чек/накладная Кассы: товарная строка (с product_guid, статья «Оплата
     поставщикам») + персональная (is_staff, без product_guid) + аллокации карта/наличные."""
@@ -105,6 +106,19 @@ async def _seed_kassa(
         if with_old_is:
             # Старое «ИС»-зеркало (invoice_paid_push) уже погасило товар — отметка в raw_payload.
             inv.raw_payload = {"iiko_payment": {"status": "posted"}}
+        if expense_payout is not None:
+            # Проведённое изъятие по РАСХОДНОЙ статье (не «Оплата поставщикам»): нормальная
+            # половина смешанного чека — либо, если оно на всю сумму, деньги уже ушли целиком.
+            upkeep = await make_expense_article(
+                session, code="venue_upkeep", name="Содержание торговых точек"
+            )
+            session.add(
+                ChequeIikoPayout(
+                    invoice_id=inv.id, dds_article_id=upkeep.id, source="card",
+                    pay_out_type_id="T_UPKEEP", amount=Decimal(expense_payout),
+                    comment="x", status="posted",
+                )
+            )
         await session.commit()
         return inv.id
 
@@ -248,6 +262,43 @@ async def test_mirror_skips_backlog_old_is(
     assert result["backlog"] == 1 and result["ok"] == 0
     rows = await _push_rows(async_session_factory, inv_id)
     assert any(r.idempotency_key == f"kassa_goods_done:{inv_id}" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_mirror_skips_when_money_already_left_iiko_by_expense_payout(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Деньги документа уже ушли изъятием по РАСХОДНОЙ статье, а строка потом стала товарной
+    («Исправить оплаченную» дописала номенклатуру — чеки Ч-54/Ч-55) → add_payment НЕ шлём.
+
+    Изъятие необратимо (нет ни удаления проводки, ни addPayIn), поэтому оплата товара сверху
+    списала бы те же деньги второй раз. Проверка по ДЕНЬГАМ: 1000 (изъятие) + 600 (товар) > 1000
+    (оплата документа). Долг поставщика в iiko остаётся видимым — его закрывают вручную."""
+    inv_id = await _seed_kassa(async_session_factory, expense_payout="1000.00")
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+    assert calls == []  # ни одного повторного списания денег в iiko
+    assert result["backlog"] == 1 and result["ok"] == 0
+    rows = await _push_rows(async_session_factory, inv_id)
+    assert any(r.idempotency_key == f"kassa_goods_done:{inv_id}" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_mirror_still_pays_goods_of_mixed_cheque(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Регресс на гард выше: обычный СМЕШАННЫЙ чек (склад 600 + расход 400 при оплате 1000)
+    зеркалится как раньше. Изъятие ушло только на расходную часть, товарная доля добирает ровно
+    до суммы оплаты (400 + 600 = 1000) — задвоения нет, гасить зеркало не за что."""
+    await _seed_kassa(async_session_factory, expense_payout="400.00")
+    calls: list[dict] = []
+    monkeypatch.setattr(mod, "_call_add_payment", _fake_ok(calls))
+    async with async_session_factory() as session:
+        result = await mod.mirror_paid_kassa_invoices(session)
+    assert result["ok"] == 2, result
+    assert sum(c["amount"] for c in calls) == 600.0
 
 
 @pytest.mark.asyncio

@@ -1259,9 +1259,13 @@ async def mirror_paid_kassa_invoices(
 
     BACKLOG: документы, чей товар УЖЕ погашён старым addPayOut (созданы до перехода), НЕ
     add_payment'им — иначе долг поставщика в iiko гасится дважды; их сразу помечаем завершёнными.
+    Тот же отказ — когда деньги документа уже ушли изъятием по РАСХОДНОЙ статье, а строка потом
+    стала товарной (``goods_payment_would_double_spend``): изъятие необратимо, и оплата товара
+    сверху списала бы те же деньги второй раз.
     """
     from app.services.kassa.cheque_payout_push import (
         compute_kassa_goods_split,
+        goods_payment_would_double_spend,
         supplier_goods_already_paid_in_iiko,
     )
 
@@ -1324,6 +1328,21 @@ async def mirror_paid_kassa_invoices(
             result["no_goods"] += 1
             continue
         card_share, cash_share = split
+
+        # Деньги по документу могли УЖЕ уйти из iiko изъятием по РАСХОДНОЙ статье — так бывает,
+        # когда строку, заведённую расходом, потом исправили в товарную («Исправить оплаченную»
+        # дописала номенклатуру). Изъятие необратимо (нет ни delete, ни addPayIn), поэтому
+        # add_payment сверху списал бы те же деньги второй раз. Гасим зеркало и оставляем долг
+        # поставщика в iiko видимым — его закрывают вручную в бэк-офисе.
+        if await goods_payment_would_double_spend(session, inv_id, card_share + cash_share):
+            await _mark_kassa_goods_done(
+                session,
+                invoice_id=inv_id,
+                external_id=external_id,
+                note="деньги уже проведены изъятием по другой статье — оплату товара не дублируем",
+            )
+            result["backlog"] += 1
+            continue
 
         # Доли терминальны (ok / skipped / необратимый провал) → закрываем накладную done; при
         # временном сбое возвращаемся следующим проходом. НЕОБРАТИМЫЙ провал (непредставимая сумма /

@@ -320,3 +320,133 @@ async def test_adjust_paid_cheque_store_line_still_needs_product(
                     ),
                 ],
             )
+
+
+async def _expense_only_cheque(session: AsyncSession):
+    """Чек на 210,50 ₽ с ОДНОЙ расходной строкой без номенклатуры («Содержание торговых точек»).
+
+    Так на кассе заводят покупку «мимо склада»; в iiko приходом она не идёт, поэтому пуш
+    помечает накладную ``skipped``. Ровно это состояние было у чеков Ч-54/Ч-55 (27.07.2026).
+    """
+    supplier_article = await make_expense_article(
+        session, code="payment_to_supplier", name="Оплата поставщикам"
+    )
+    expense_article = await make_expense_article(
+        session, code="venue_upkeep", name="Содержание торговых точек"
+    )
+    cp = await make_counterparty(session, name="Местный закуп")
+    product = await make_iiko_product(session, name="Мешок для мусора 120л", unit="шт")
+    _wallet, op = await _card_op(session, amount="210.50")
+    await session.commit()
+
+    cheque = await create_cheque(
+        session,
+        counterparty_id=cp.id,
+        issued_at=ISSUED,
+        bank_parts=[ChequeBankPart(bank_operation_id=op.id)],
+        track_nomenclature=True,
+        lines=[
+            ChequeLineInput(
+                name="Мешок для мусора 120л",
+                quantity=Decimal("1"),
+                price=Decimal("210.50"),
+                amount=Decimal("210.50"),
+                dds_article_id=expense_article.id,
+            )
+        ],
+    )
+    # Состояние после пуша, который пропустил документ: вердикт «нет товарных строк» закэширован.
+    cheque.iiko_push_status = "skipped"
+    cheque.iiko_push_error = "Нет товарных строк с iiko-GUID (персонал/ручные)"
+    await session.commit()
+    return cheque, supplier_article, expense_article, product
+
+
+async def _allow_push(session: AsyncSession, counterparty_id) -> None:
+    """iiko-GUID поставщика + склад по умолчанию — без них ``prepare_push`` откажет раньше строк."""
+    from app.models import CounterpartyAlias
+
+    session.add(
+        CounterpartyAlias(counterparty_id=counterparty_id, source="iiko", alias="cp-guid")
+    )
+    session.add(
+        AppSetting(
+            key="iiko.default_store_guid",
+            value={"guid": "ST-1"},
+            value_type="json",
+            category="iiko",
+            display_name="Склад",
+            widget_type="json",
+        )
+    )
+    await session.commit()
+
+
+async def test_adjust_paid_cheque_revives_push_after_nomenclature_added(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Правка оплаченного чека, добавившая номенклатуру, снимает залипший вердикт ``skipped``.
+
+    ``iiko_push_status`` — это КЭШ ответа ``prepare_push``, а не свойство документа. Пока его не
+    сбрасывали (правка оплаченной трогала iiko-контур только при наличии ``external_id``), чек,
+    у которого расходную строку исправили на товарную, навсегда оставался «Не отправляется в
+    iiko»: у этого статуса в карточке нет даже кнопки отправки. Кейс Ч-54/Ч-55.
+    """
+    async with async_session_factory() as session:
+        cheque, supplier_article, _expense_article, product = await _expense_only_cheque(session)
+        await _allow_push(session, cheque.counterparty_id)
+
+        await adjust_paid_invoice(
+            session,
+            cheque,
+            lines=[
+                LineInput(
+                    name="Мешок для мусора 120л",
+                    quantity=Decimal("1"),
+                    price=Decimal("210.50"),
+                    sum=Decimal("210.50"),
+                    iiko_product_id=product.id,
+                    dds_article_id=supplier_article.id,
+                )
+            ],
+        )
+        await session.refresh(cheque)
+
+        assert cheque.external_id is None  # в iiko документа не было — разворачивать нечего
+        assert cheque.iiko_return_status == "none"  # контур коррекции не запускается
+        assert cheque.iiko_push_status == "not_pushed"
+        assert cheque.iiko_push_error is None
+        # Классификация снова идёт ПО ПОЗИЦИЯМ: товар с GUID есть → накладную можно отправить.
+        prepared = await prepare_push(session, cheque)
+        assert prepared.doc is not None, prepared.skip_reason
+        assert [line.product for line in prepared.doc.lines] == [product.iiko_id]
+
+
+async def test_adjust_paid_cheque_without_goods_is_skipped_again(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сброс статуса не выдаёт расходный чек за отправляемый: вердикт заново выносит
+    ``prepare_push``, и без товарных строк он снова «нет товарных строк с iiko-GUID»."""
+    async with async_session_factory() as session:
+        cheque, _supplier_article, expense_article, _product = await _expense_only_cheque(session)
+        await _allow_push(session, cheque.counterparty_id)
+
+        await adjust_paid_invoice(
+            session,
+            cheque,
+            lines=[
+                LineInput(
+                    name="Мешок для мусора 120л",
+                    quantity=Decimal("1"),
+                    price=Decimal("210.50"),
+                    sum=Decimal("210.50"),
+                    dds_article_id=expense_article.id,
+                )
+            ],
+        )
+        await session.refresh(cheque)
+
+        assert cheque.iiko_push_status == "not_pushed"  # кэш сброшен
+        prepared = await prepare_push(session, cheque)
+        assert prepared.doc is None
+        assert prepared.skip_reason == "Нет товарных строк с iiko-GUID (персонал/ручные)"

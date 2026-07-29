@@ -488,3 +488,47 @@ async def supplier_goods_already_paid_in_iiko(
         .limit(1)
     )
     return posted is not None
+
+
+async def goods_payment_would_double_spend(
+    session: AsyncSession, invoice_id: uuid.UUID, goods_total: Decimal
+) -> bool:
+    """True — товарную долю НЕЛЬЗЯ гасить ``add_payment``'ом: деньги по документу уже ушли из
+    iiko проведёнными изъятиями, и оплата товара сверху списала бы их ВТОРОЙ раз.
+
+    Критерий — по ДЕНЬГАМ, а не по статье: Σ проведённых изъятий + товарная доля не должна
+    превышать фактическую оплату документа.
+    - Обычный смешанный чек (склад 468 + «Содержание точек» 7 при оплате 475): изъятие ушло
+      только на расходную часть, товарная доля добирает ровно до суммы оплаты → 475 ≤ 475,
+      зеркало работает как раньше.
+    - Строка, заведённая РАСХОДОМ, а потом исправленная в товарную («Исправить оплаченную»
+      дописала номенклатуру — чеки Ч-54/Ч-55 от 27.07.2026): изъятие по старой статье уже
+      проведено на те же деньги → 475 + 468 > 475, гасим зеркало. Откатить изъятие нельзя —
+      в этом Resto API нет ни удаления проводки, ни внесения (``addPayIn`` = 404, ``addPayOut``
+      отвергает PAYIN-тип), поэтому выбор такой: либо долг поставщика в iiko остаётся видимым
+      (закрывается вручную в бэк-офисе — правкой корсчёта изъятия на «Задолженность перед
+      поставщиками»), либо деньги списываются дважды. Держим первое: перекос виден в балансе
+      поставщика, а двойной расход — нет.
+
+    Допуск в копейку — на округление долей по источникам (карта/наличные)."""
+    posted_total = _money(
+        await session.scalar(
+            select(func.coalesce(func.sum(ChequeIikoPayout.amount), 0)).where(
+                ChequeIikoPayout.invoice_id == invoice_id,
+                ChequeIikoPayout.status == "posted",
+            )
+        )
+        or 0
+    )
+    if posted_total <= 0:
+        return False
+    allocations = (
+        await session.scalars(
+            select(InvoicePaymentAllocation).where(
+                InvoicePaymentAllocation.invoice_id == invoice_id
+            )
+        )
+    ).all()
+    bank_total, cash_total = await _bank_cash_totals(session, list(allocations))
+    paid_total = _money(bank_total + cash_total)
+    return _money(posted_total + goods_total) > paid_total + Decimal("0.01")

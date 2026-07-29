@@ -799,6 +799,17 @@ async def adjust_paid_invoice(
         if goods_changed or amount_before != new_amount:
             invoice.iiko_return_lines = _serialize_goods_for_return(old_goods)
             invoice.iiko_return_status = "pending"
+    elif invoice.iiko_push_status != "pushed":
+        # Накладной в iiko НЕТ (пуш пропущен/не делался) — разворачивать нечего, но состав строк
+        # изменился, и прежний вердикт пуша устарел. Сбрасываем его так же, как правка
+        # неоплаченной (``update_warehouse_invoice``): статус — это КЭШ ответа ``prepare_push``,
+        # а не свойство документа, и без сброса «Не отправляется в iiko / нет товарных строк с
+        # iiko-GUID» залипал навсегда. Кейс чеков Ч-54/Ч-55 (27.07.2026): строку без номенклатуры
+        # исправили на товарную, а кнопки отправки в карточке так и не появилось (у статуса
+        # ``skipped`` её нет). Дальше классифицирует уже ``prepare_push`` — по ПОЗИЦИЯМ: есть
+        # товар с GUID → накладную можно отправить, нет → пуш снова вернёт ``skipped``.
+        invoice.iiko_push_status = "not_pushed"
+        invoice.iiko_push_error = None
 
     await _recompute_status(session, invoice)
     await session.commit()
