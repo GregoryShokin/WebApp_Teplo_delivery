@@ -49,6 +49,7 @@ from app.services.invoice_price_control import (
 from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.invoice_paid_push import counterparty_iiko_guid
 from app.services.kassa.payouts import kassa_today
+from app.services.warehouse_dds_reproject import reproject_invoice_dds
 from app.services.warehouse_invoice_push import (
     WarehousePushError,
     book_correction_in_iiko,
@@ -978,6 +979,30 @@ async def post_confirm_prices(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     result = await get_warehouse_invoice(session, invoice_id)
     assert result is not None
+    return result
+
+
+@router.post("/invoices/{invoice_id}/reproject-dds")
+async def post_reproject_dds(
+    invoice_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, Any]:
+    """Переразнести проводки ДДС документа по статьям его позиций.
+
+    Явное действие человека, поэтому ``force=True``: перебивает и разметку, поставленную вручную
+    в окне «Разобрать» (авто-перепроводка при правке её обходит). Деньги не двигаются — сумма
+    каждой оплаты, кошелёк, дата и привязки к операции сохраняются, меняется только разрез по
+    статьям."""
+    invoice = await session.get(SupplierInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Накладная не найдена")
+    ensure_permission(actor, "invoices.normal.edit_paid")
+    report = await reproject_invoice_dds(session, invoice, force=True)
+    await session.commit()
+    result = await get_warehouse_invoice(session, invoice_id)
+    assert result is not None
+    result["dds_reproject"] = report.as_dict()
     return result
 
 

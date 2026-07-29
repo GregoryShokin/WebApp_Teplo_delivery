@@ -39,6 +39,7 @@ import {
   deleteWarehouseInvoice,
   getWarehouseInvoice,
   pushInvoiceToIiko,
+  reprojectInvoiceDds,
   retryIikoReturn,
   sendIikoPayment,
   setInvoiceServicePeriod,
@@ -287,6 +288,18 @@ export function InvoiceDetailDialog({
       else toast.error(updated.iiko_return_error ?? "iiko не принял коррекцию");
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось отразить коррекцию в iiko")),
+  });
+
+  const reprojectDdsMutation = useMutation({
+    mutationFn: () => reprojectInvoiceDds(invoiceId!),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["wh", "invoice", invoiceId], updated);
+      void queryClient.invalidateQueries({ queryKey: ["wh"] });
+      void queryClient.invalidateQueries({ queryKey: ["cp"] });
+      void queryClient.invalidateQueries({ queryKey: ["dds"] });
+      toast.success("Проводки ДДС переразнесены по статьям позиций");
+    },
+    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось перепровести ДДС")),
   });
 
   const confirmPricesMutation = useMutation({
@@ -627,6 +640,37 @@ export function InvoiceDetailDialog({
                 >
                   <Pencil size={14} aria-hidden="true" /> Исправить оплаченную
                 </Button>
+              </div>
+            ) : null}
+
+            {/* Статьи проводок ДДС разошлись со статьями позиций: правка меняла состав строк до
+                появления авто-перепроводки, либо проводку размечали вручную и авто её обошло.
+                Кнопка переразносит суммы по статьям позиций — деньги при этом не двигаются. */}
+            {detail.dds_articles_mismatch ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                  ДДС не по позициям
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Статьи проводок ДДС не совпадают со статьями позиций. Перепроводка меняет только
+                  разрез по статьям — суммы, счета и даты остаются прежними.
+                </span>
+                {canEditPaid ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-auto"
+                    disabled={reprojectDdsMutation.isPending}
+                    onClick={() => reprojectDdsMutation.mutate()}
+                  >
+                    {reprojectDdsMutation.isPending ? (
+                      <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Pencil size={14} aria-hidden="true" />
+                    )}
+                    Перепровести ДДС по позициям
+                  </Button>
+                ) : null}
               </div>
             ) : null}
 

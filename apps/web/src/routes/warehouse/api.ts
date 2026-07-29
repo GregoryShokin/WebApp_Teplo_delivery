@@ -126,6 +126,9 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   service_period_status?: string;
   service_period_start?: string | null;
   service_period_end?: string | null;
+  // Статьи проводок ДДС разошлись со статьями позиций (правка до появления авто-перепроводки
+  // либо проводка размечена вручную и авто её обошло) → плашка + кнопка «Перепровести».
+  dds_articles_mismatch?: boolean;
 };
 
 export type LinePayload = {
@@ -242,6 +245,15 @@ export async function adjustPaidInvoice(
 export async function retryIikoReturn(id: string): Promise<WarehouseInvoiceDetail> {
   const response = await api.post<WarehouseInvoiceDetail>(
     `${BASE}/invoices/${id}/retry-iiko-return`,
+  );
+  return response.data;
+}
+
+/** Переразнести проводки ДДС по статьям позиций. Деньги не двигаются — меняется только разрез
+ *  по статьям; ручную разметку это действие перебивает (в отличие от авто-перепроводки). */
+export async function reprojectInvoiceDds(id: string): Promise<WarehouseInvoiceDetail> {
+  const response = await api.post<WarehouseInvoiceDetail>(
+    `${BASE}/invoices/${id}/reproject-dds`,
   );
   return response.data;
 }

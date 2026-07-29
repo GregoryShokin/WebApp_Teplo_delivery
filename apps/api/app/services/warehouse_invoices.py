@@ -408,10 +408,30 @@ async def _rebuild_invoice_lines(
 
     Строка хранится целиком, как пришла: статья ДДС (у чека Кассы она есть у КАЖДОЙ строки и
     решает «товар vs расход») и пометка возврата. Возвращённая позиция остаётся в документе для
-    сверки с бумажным чеком, но в ``amount``/``vat_total`` не идёт — чек проводится net."""
+    сверки с бумажным чеком, но в ``amount``/``vat_total`` не идёт — чек проводится net.
+
+    Исключение — складская строка ЧЕКА без статьи: ей проставляется «Оплата поставщикам».
+    ``create_cheque`` требует статью у каждой позиции («У позиции … не указана статья ДДС»), а
+    правка этой проверки не делала: строка, перенесённая из блока расходов в складской, уезжала
+    с ``dds_article_id=NULL`` (чеки Ч-54/Ч-55). Товарность от этого не менялась (``line_is_goods``
+    считает товаром и строку без статьи), а вот разнос чека по статьям ДДС рассыпался — и молча:
+    ``_pending_article_sums`` строки без статьи ПРОПУСКАЕТ, поэтому пендинг-чек при матче с
+    выпиской разнёсся бы не по всем позициям."""
     await session.execute(
         delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
     )
+    cheque_default_article_id: uuid.UUID | None = None
+    if invoice.source == "kassa_cheque" and any(
+        not line.is_staff and line.dds_article_id is None for line in lines
+    ):
+        cheque_default_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.name == SUPPLIER_PAYMENT_ARTICLE_NAME).limit(1)
+        )
+        if cheque_default_article_id is None:
+            raise WarehouseInvoiceError(
+                "Статья ДДС «Оплата поставщикам» не найдена — у складской позиции чека "
+                "должна быть статья"
+            )
     total = Decimal("0.00")
     staff_total = Decimal("0.00")
     vat_total = Decimal("0.00")
@@ -431,6 +451,9 @@ async def _rebuild_invoice_lines(
             if not line.is_return:
                 vat_total += vat_sum
         item_name = line.name or (product.name if product else "Позиция")
+        article_id = line.dds_article_id
+        if article_id is None and not line.is_staff and cheque_default_article_id is not None:
+            article_id = cheque_default_article_id
         session.add(
             InvoiceLineItem(
                 invoice_id=invoice.id,
@@ -445,7 +468,7 @@ async def _rebuild_invoice_lines(
                 vat_percent=Decimal(str(line.vat_percent)) if line.vat_percent else None,
                 vat_sum=vat_sum,
                 is_staff=line.is_staff,
-                dds_article_id=line.dds_article_id,
+                dds_article_id=article_id,
                 is_return=line.is_return,
                 sort_order=index,
             )
@@ -811,6 +834,15 @@ async def adjust_paid_invoice(
         invoice.iiko_push_status = "not_pushed"
         invoice.iiko_push_error = None
 
+    # Строки пересобраны — прежний разрез проводок ДДС по статьям устарел. Переразносим по новым
+    # позициям: сумма/кошелёк/дата/привязки те же, меняется только распределение по статьям.
+    # Ручную разметку (manual_override) авто-вызов не трогает — её перебивает только явная кнопка
+    # «Перепровести ДДС по позициям» (решение владельца 29.07.2026). Импорт локальный: модуль
+    # перепроводки сам тянет отсюда ``SUPPLIER_PAYMENT_ARTICLE_NAME``.
+    from app.services.warehouse_dds_reproject import reproject_invoice_dds
+
+    await reproject_invoice_dds(session, invoice, force=False)
+
     await _recompute_status(session, invoice)
     await session.commit()
     await session.refresh(invoice)
@@ -960,6 +992,13 @@ async def get_warehouse_invoice(
         iiko_invoice_payment_auto_sendable,
         original_payment_settled_in_iiko,
     )
+
+    # Разошлись ли статьи проводок ДДС со статьями позиций — фронту для плашки и кнопки
+    # «Перепровести ДДС по позициям». Расходится, когда правку сделали до появления
+    # авто-перепроводки или когда авто обошло проводку с ручной разметкой.
+    from app.services.warehouse_dds_reproject import dds_articles_mismatch
+
+    summary["dds_articles_mismatch"] = await dds_articles_mismatch(session, invoice)
 
     summary["iiko_payment_settled"] = await original_payment_settled_in_iiko(session, invoice)
     summary["iiko_payment_auto_sendable"] = await iiko_invoice_payment_auto_sendable(
