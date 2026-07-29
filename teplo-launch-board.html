@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тепло — доска запуска</title>
+<style>
+  :root{
+    --bg:#f6f5f1; --surface:#fff; --surface2:#efede7; --surface3:#e6e3da;
+    --text:#1c1c1a; --text2:#5f5e5a; --text3:#8f8d86; --border:rgba(0,0,0,.12);
+    --info-bg:#e6f1fb; --info:#185fa5; --ok-bg:#eaf3de; --ok:#3b6d11;
+    --radius:10px; --radius-sm:7px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#1a1a18;--surface:#262623;--surface2:#2f2f2b;--surface3:#3a3a35;
+    --text:#f3f1ea;--text2:#b4b2a9;--text3:#888780;--border:rgba(255,255,255,.14);
+    --info-bg:#0c447c;--info:#b5d4f4;--ok-bg:#27500a;--ok:#c0dd97;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.5;padding:20px}
+  h1{font-size:20px;font-weight:600;margin:0}
+  .wrap{max-width:1240px;margin:0 auto}
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  .sub{color:var(--text2);font-size:13px;margin:0 0 16px}
+  .bar-wrap{flex:1;min-width:180px;height:8px;background:var(--surface3);border-radius:6px;overflow:hidden}
+  .bar-fill{height:100%;background:#3b6d11;width:0;transition:width .3s}
+  .prog-num{font-size:13px;color:var(--text2);white-space:nowrap}
+  .btn{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 12px;font-size:13px;color:var(--text);cursor:pointer}
+  .btn:hover{background:var(--surface2)}
+  .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .legend{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .chip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);background:var(--surface);border:1px solid var(--border);padding:4px 10px;border-radius:20px;cursor:pointer;user-select:none}
+  .chip.off{opacity:.35}
+  .dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+  .board{display:flex;gap:10px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
+  .col{flex:1 0 200px;min-width:200px;background:var(--surface2);border-radius:var(--radius);padding:10px}
+  .col h3{font-size:14px;font-weight:600;margin:0 0 2px;display:flex;justify-content:space-between;align-items:center}
+  .col .cnt{font-size:12px;color:var(--text3);font-weight:400}
+  .zone{display:flex;flex-direction:column;gap:8px;min-height:40px;border-radius:var(--radius-sm);transition:background .15s}
+  .zone.over{background:var(--surface3)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;display:flex;cursor:grab}
+  .card.dragging{opacity:.4}
+  .cbar{width:4px;flex-shrink:0}
+  .cbody{padding:8px 10px;flex:1;min-width:0}
+  .ctitle{font-size:13px;line-height:1.35;cursor:pointer}
+  .card.done .ctitle{text-decoration:line-through;color:var(--text3)}
+  .crow{display:flex;align-items:center;gap:8px;justify-content:space-between;margin-top:7px}
+  .cmeta{font-size:11px;color:var(--text3);display:flex;gap:8px;min-width:0}
+  .cmeta .code{font-family:ui-monospace,monospace}
+  .cmeta .own{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st{font-size:11px;padding:2px 8px;border-radius:6px;border:none;cursor:pointer;white-space:nowrap}
+  .st.planned{background:var(--surface3);color:var(--text2)}
+  .st.in_progress{background:var(--info-bg);color:var(--info)}
+  .st.done{background:var(--ok-bg);color:var(--ok)}
+  .desc{font-size:12px;color:var(--text2);margin-top:7px;padding-top:7px;border-top:1px solid var(--border);display:none}
+  .card.open .desc{display:block}
+  .hint{font-size:12px;color:var(--text3);margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Тепло — доска запуска</h1>
+    <div class="bar-wrap"><div class="bar-fill" id="barFill"></div></div>
+    <span class="prog-num" id="progNum">0 / 0</span>
+  </header>
+  <p class="sub">Перетаскивай карточки между неделями · клик по статусу: планируется → в работе → завершена · клик по названию раскрывает детали. Прогресс сохраняется в браузере.</p>
+
+  <div class="toolbar">
+    <button class="btn" id="resetBtn">Сбросить к стартовой раскладке</button>
+    <div class="legend" id="legend">
+      <span class="chip" data-diff="vhigh"><span class="dot" style="background:#E24B4A"></span>очень сложно</span>
+      <span class="chip" data-diff="high"><span class="dot" style="background:#D85A30"></span>сложно</span>
+      <span class="chip" data-diff="mid"><span class="dot" style="background:#BA7517"></span>средне</span>
+      <span class="chip" data-diff="low"><span class="dot" style="background:#639922"></span>легко</span>
+      <span class="chip" data-diff="vlow"><span class="dot" style="background:#888780"></span>очень легко</span>
+    </div>
+  </div>
+
+  <div class="board" id="board"></div>
+  <p class="hint">24 задачи · разложены по убыванию сложности (тяжёлое — раньше, т.к. дольше). Стартовая логика: Н1 — быстрые победы + старт долгих; Н2 — маржа (после holdout); Н3 — удержание (после app-push); Н4 — рост; Н5 — ценовые + остальное.</p>
+</div>
+
+<script>
+const WEEKS=5;
+const DIFF={vhigh:'#E24B4A',high:'#D85A30',mid:'#BA7517',low:'#639922',vlow:'#888780'};
+const ST_ORDER=['planned','in_progress','done'];
+const ST_LABEL={planned:'планируется',in_progress:'в работе',done:'завершена'};
+const TASKS=[
+ {id:'t07',w:1,d:'vlow',code:'0.7',t:'Триггеры Starter — 3 фикса',o:'владелец',desc:'Вкл. День рождения (500₽); реактивацию 40→28 дн; сгорание баллов 10050→80 дн. ~10 минут в Маркетинг → Триггерные рассылки.'},
+ {id:'t01',w:1,d:'low',code:'0.1',t:'Возобновить рассылки',o:'владелец',desc:'Затухли с апреля (уволился ведущий). Push даёт 36 млн атриб. выручки/3 года — назначить ответственного или автоматизировать (0.8).'},
+ {id:'t04',w:1,d:'low',code:'0.4',t:'Я.Карты — платное размещение',o:'владелец',desc:'Кнопка «Заказать» отображается только при покупке рекламы на картах. Оценить пилотом как платный канал, не бесплатный фикс.'},
+ {id:'t23',w:1,d:'vhigh',code:'2.3',t:'Скорость: кухня в пик',o:'управляющий + шеф',desc:'Узкое место — само приготовление 31→43 мин в пик 16–19ч (не очередь). +1 повар/сборщик на 16–20ч, заготовки к 16:00, параллельность станций. Далее: по станциям (placeType).'},
+ {id:'t06',w:1,d:'high',code:'0.6',t:'app-push: поднять доставляемость',o:'владелец + Starter',desc:'Доставляемость 37,6% структурна (гости отключают push). Лечить мультиканалом: opt-in кампания (стимул включить) + SMS/in-app для ценных.'},
+
+ {id:'t11',w:2,d:'high',code:'1.1',t:'Потолок баллов 50% + исключения',o:'владелец + iiko',desc:'Старт 50% (+21к/мес, бьёт по анти-персоне). Грандфазеринг старых баллов, коммуникация, holdout. Далее поэтапно 30% (+42к) → 17% (+81к).'},
+ {id:'t02',w:2,d:'mid',code:'0.2',t:'Holdout-инфраструктура',o:'владелец + Starter',desc:'Контрольные группы (10–20% без сообщения) на каждую механику — чтобы мерить инкрементальность, а не вслепую.'},
+ {id:'t03',w:2,d:'mid',code:'0.3',t:'Трекеры приложения',o:'внутр. + Starter',desc:'Повесить на Директ-на-апп, кнопку «скачать» на сайте, QR на коробках. Закрывает атрибуцию 72% заказов приложения.'},
+ {id:'t12',w:2,d:'mid',code:'1.2',t:'Перелив ВК 100к',o:'владелец',desc:'Остановить таргет Билинской (ROI 0,04), сохранить Senler-базу, перераспределить в SEO/удержание/тесты.'},
+ {id:'t13',w:2,d:'mid',code:'1.3',t:'Порог подарка 1699→1900',o:'внутр.',desc:'1699 ниже медианы чека 1704 → подарок даром половине. Поднять к ~1900; дарить дешёвый по себестоимости сет (Нейросет 248₽).'},
+
+ {id:'t31',w:3,d:'vhigh',code:'3.1',t:'Активация 1→2 (welcome-flow)',o:'внутр.',desc:'Главная течь удержания (80% новых не возвращаются). Таймированный оффер на 2-й заказ день 7–14. Зависит от app-push.'},
+ {id:'t08',w:3,d:'vhigh',code:'0.8',t:'Автоматизация welcome/«любимое»',o:'разработчик',desc:'Встроенных триггеров нет, но API создания есть: POST /distribution/cluster по RFM-сегменту. Внешний сервис по расписанию (как курьерский).'},
+ {id:'t32',w:3,d:'high',code:'3.2',t:'Реактивация RFM',o:'внутр.',desc:'Горячие 31–90д (~1060) через app-push; «нельзя терять» (428) через SMS/звонок по авто-списку из clusters.'},
+ {id:'t26',w:3,d:'high',code:'2.6',t:'Live-трекинг курьера гостю',o:'владелец + Starter',desc:'«Курьерика» есть внутри, гостю не показываем. Снять тревогу ожидания (жалоба №1 — скорость/холодное, 43% негатива).'},
+ {id:'t22',w:3,d:'mid',code:'2.2',t:'Чистка меню (косметика)',o:'управляющий',desc:'~15 позиций: угревые роллы, Бонито/Невада/Фудзивара, старые карточки. Эффект ~0 (активное меню чистое, склад общий) — гигиена, не рычаг.'},
+
+ {id:'t41',w:4,d:'high',code:'4.1',t:'Новые маржинальные сеты',o:'владелец + шеф',desc:'Чемпион 999 (ФК 31%), Лёгкий 849, Горячий 1399 — растить чек продуктом, не скидкой.'},
+ {id:'t42',w:4,d:'mid',code:'4.2',t:'Перки ядра вместо скидки',o:'внутр.',desc:'Чемпионы (61,5% выручки) лояльны и так. Статус/приоритет/беспл.доставка/ранний доступ вместо кэшбэка.'},
+ {id:'t43',w:4,d:'mid',code:'4.3',t:'Будни/обед-офферы',o:'внутр.',desc:'Пн–Чт и обед 12–14 недогружены. Рост + сглаживание пика кухни (помогает скорости).'},
+ {id:'t44',w:4,d:'mid',code:'4.4',t:'SEO-масштаб',o:'внутр.',desc:'Лучший канал (CPO 190₽, ROI 10×), недофинансирован. Приёмник ВК-перелива; расширить контент.'},
+ {id:'t45',w:4,d:'mid',code:'4.5',t:'Удешевить наборы №2/№3',o:'владелец + шеф',desc:'Уже >33% эфф.ФК — не цену снижать, а компоненты (более дешёвая пицца).'},
+
+ {id:'t46',w:5,d:'high',code:'4.6',t:'Ценовые рычаги (волна/сбор)',o:'владелец',desc:'Волна цен 24 поз (+79к) / сервис-сбор 39–49₽ (+80к). Дозированно, holdout. NB: цены — лишь 0,7% жалоб в собственной базе.'},
+ {id:'tnew',w:5,d:'mid',code:'new',t:'Разбор жалоб персонал/курьер',o:'управляющий',desc:'10% негатива в отзывах (108 из 1118). Точечно разобрать — грубость? опоздания курьера?'},
+ {id:'taso',w:5,d:'low',code:'H2c-6',t:'ASO приложения',o:'внутр.',desc:'Наш апп 4,3★ vs 4,6 Суши Шеф. Улучшить листинг/отзывы; конверсия стора.'},
+ {id:'ttg',w:5,d:'low',code:'H2c-7',t:'Telegram — owned-канал',o:'внутр.',desc:'Строить как свой канал (контент/бренд), не триггер (уведомления нестабильны). Актив на будущее.'}
+];
+
+const KEY='teplo-launch-board-v1';
+let state={};
+function load(){try{state=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){state={}}}
+function save(){localStorage.setItem(KEY,JSON.stringify(state))}
+function taskState(id){return state[id]||{}}
+const hidden=new Set();
+
+function render(){
+  const board=document.getElementById('board');
+  board.innerHTML='';
+  const cols={};
+  for(let w=1;w<=WEEKS;w++){
+    const col=document.createElement('div');col.className='col';
+    col.innerHTML='<h3>Неделя '+w+' <span class="cnt" data-cnt="'+w+'"></span></h3>';
+    const zone=document.createElement('div');zone.className='zone';zone.dataset.week=w;
+    col.appendChild(zone);board.appendChild(col);cols[w]=zone;
+  }
+  TASKS.forEach(t=>{
+    const ts=taskState(t.id);
+    const w=ts.week||t.w; const st=ts.status||'planned';
+    if(hidden.has(t.d))return;
+    const card=document.createElement('div');
+    card.className='card'+(st==='done'?' done':'');
+    card.draggable=true;card.dataset.id=t.id;
+    card.innerHTML=
+      '<div class="cbar" style="background:'+DIFF[t.d]+'"></div>'+
+      '<div class="cbody">'+
+        '<div class="ctitle">'+t.t+'</div>'+
+        '<div class="crow">'+
+          '<span class="cmeta"><span class="code">'+t.code+'</span><span class="own">'+t.o+'</span></span>'+
+          '<button class="st '+st+'">'+ST_LABEL[st]+'</button>'+
+        '</div>'+
+        '<div class="desc">'+t.desc+'</div>'+
+      '</div>';
+    (cols[w]||cols[1]).appendChild(card);
+  });
+  // counts
+  document.querySelectorAll('[data-cnt]').forEach(s=>{
+    const w=s.dataset.cnt;s.textContent=document.querySelector('.zone[data-week="'+w+'"]').children.length;
+  });
+  updateProgress();
+  bindCards();
+}
+function updateProgress(){
+  let done=0;TASKS.forEach(t=>{if((taskState(t.id).status||'planned')==='done')done++});
+  document.getElementById('barFill').style.width=(100*done/TASKS.length)+'%';
+  document.getElementById('progNum').textContent=done+' / '+TASKS.length+' завершено';
+}
+let dragged=null;
+function bindCards(){
+  document.querySelectorAll('.card').forEach(c=>{
+    c.addEventListener('dragstart',()=>{dragged=c;setTimeout(()=>c.classList.add('dragging'),0)});
+    c.addEventListener('dragend',()=>{c.classList.remove('dragging');dragged=null});
+  });
+  document.querySelectorAll('.zone').forEach(z=>{
+    z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('over')});
+    z.addEventListener('dragleave',()=>z.classList.remove('over'));
+    z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('over');
+      if(!dragged)return;z.appendChild(dragged);
+      const id=dragged.dataset.id;state[id]=state[id]||{};state[id].week=parseInt(z.dataset.week);
+      save();document.querySelectorAll('[data-cnt]').forEach(s=>{const w=s.dataset.cnt;s.textContent=document.querySelector('.zone[data-week="'+w+'"]').children.length});
+    });
+  });
+  document.querySelectorAll('.st').forEach(b=>{
+    b.addEventListener('click',e=>{e.stopPropagation();
+      const card=b.closest('.card');const id=card.dataset.id;
+      const cur=state[id]&&state[id].status||'planned';
+      const next=ST_ORDER[(ST_ORDER.indexOf(cur)+1)%3];
+      state[id]=state[id]||{};state[id].status=next;save();
+      b.className='st '+next;b.textContent=ST_LABEL[next];
+      card.classList.toggle('done',next==='done');updateProgress();
+    });
+  });
+  document.querySelectorAll('.ctitle').forEach(t=>{
+    t.addEventListener('click',()=>t.closest('.card').classList.toggle('open'));
+  });
+}
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  if(confirm('Сбросить все перестановки и статусы к стартовой раскладке?')){state={};save();render();}
+});
+document.getElementById('legend').addEventListener('click',e=>{
+  const chip=e.target.closest('.chip');if(!chip)return;
+  const d=chip.dataset.diff;if(hidden.has(d)){hidden.delete(d);chip.classList.remove('off')}else{hidden.add(d);chip.classList.add('off')}
+  render();
+});
+load();render();
+</script>
+</body>
+</html>
