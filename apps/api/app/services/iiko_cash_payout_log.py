@@ -46,25 +46,35 @@ class PayoutRejected(RuntimeError):
     """iiko приняла запрос, но ответила не ``SUCCESS`` — проводки нет."""
 
 
-async def _open_case(
-    session: AsyncSession, record: IikoCashPayout, *, reason: str
+async def open_manual_case(
+    session: AsyncSession,
+    *,
+    source_id: str,
+    payout_kind: str,
+    amount: Decimal,
+    payout_date: date,
+    reason: str,
+    reason_code: str | None,
+    retriable: bool,
 ) -> None:
-    """Завести (или обновить) видимый кейс owner-review по незакрытой проводке."""
+    """Завести (или обновить) видимый кейс owner-review по незакрытой проводке.
+
+    Один кейс на операцию: повторные неудачи обновляют payload, а не плодят строки."""
     existing = await session.scalar(
         select(ReconciliationCase).where(
             ReconciliationCase.kind == CASE_KIND,
             ReconciliationCase.status == "pending",
-            ReconciliationCase.payload["source_id"].astext == record.source_id,
+            ReconciliationCase.payload["source_id"].astext == source_id,
         )
     )
     payload = {
-        "source_id": record.source_id,
-        "payout_kind": record.kind,
-        "amount": str(record.amount),
-        "payout_date": record.payout_date.isoformat(),
+        "source_id": source_id,
+        "payout_kind": payout_kind,
+        "amount": str(amount),
+        "payout_date": payout_date.isoformat(),
         "reason": reason,
-        "reason_code": record.reason_code,
-        "retriable": record.reason_code in RETRIABLE_REASONS,
+        "reason_code": reason_code,
+        "retriable": retriable,
     }
     if existing is not None:
         existing.payload = payload
@@ -145,10 +155,15 @@ async def post_cash_payout(
             if reason_code in RETRIABLE_REASONS
             else "проверьте проводку в бэк-офисе iiko и проведите вручную, если её нет"
         )
-        await _open_case(
+        await open_manual_case(
             session,
-            record,
+            source_id=record.source_id,
+            payout_kind=record.kind,
+            amount=record.amount,
+            payout_date=record.payout_date,
             reason=f"{title} на {record.amount} не отражена в iiko ({error}) — {hint}",
+            reason_code=reason_code,
+            retriable=reason_code in RETRIABLE_REASONS,
         )
         logger.warning(
             "iiko cash payout %s/%s не проведена (%s): %s", kind, source_id, reason_code, error

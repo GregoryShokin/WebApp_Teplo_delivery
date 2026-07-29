@@ -359,6 +359,13 @@ class IikoCashPayout(Base):
     # rejected (iiko ответила не SUCCESS), unknown (исключение при отправке — исход неизвестен).
     reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Пост-сверка по OLAP-отчёту iiko: ``verified_at`` — когда проводка найдена в учёте,
+    # ``verify_attempts`` — сколько раз искали и не нашли. Ответ addPayOut проводку не
+    # доказывает, а «потерянную» выдачу иначе увидеть неоткуда.
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verify_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

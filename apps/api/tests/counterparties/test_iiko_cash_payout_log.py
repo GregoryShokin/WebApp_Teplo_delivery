@@ -222,3 +222,169 @@ async def test_incremental_sync_tolerates_empty_export(
     async with async_session_factory() as session:
         result = await iiko_sync.sync_employees(session, mode="incremental")
     assert result.deactivated == 0
+
+
+# ── пост-сверка проводок по учёту iiko ──────────────────────────────────────────────────────────
+
+
+async def _aged_row(
+    session: AsyncSession,
+    *,
+    source_id: str,
+    status: str = "posted",
+    reason_code: str | None = None,
+    verify_attempts: int = 0,
+) -> IikoCashPayout:
+    """Строка журнала старше grace-окна — иначе сверка её не возьмёт."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.services.iiko_cash_payout_verify import VERIFY_GRACE
+
+    row = IikoCashPayout(
+        kind="advance",
+        source_id=source_id,
+        amount=Decimal("1000.00"),
+        payout_date=PAYOUT_DATE,
+        status=status,
+        reason_code=reason_code,
+        verify_attempts=verify_attempts,
+    )
+    session.add(row)
+    await session.flush()
+    row.created_at = datetime.now(UTC) - VERIFY_GRACE - timedelta(minutes=5)
+    await session.commit()
+    return row
+
+
+def _patch_olap(monkeypatch: pytest.MonkeyPatch, comments: list[str]) -> None:
+    from app.services import iiko_cash_payout_verify as verify_mod
+
+    monkeypatch.setattr(
+        verify_mod, "fetch_cash_payout_comments", lambda date_from, date_to: comments
+    )
+
+
+async def test_verify_confirms_payout_by_operation_id(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Комментарий проводки несёт id операции — сопоставляем точно по нему, а не по сумме."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    source_id = str(uuid.uuid4())
+    async with async_session_factory() as session:
+        row = await _aged_row(session, source_id=source_id)
+        _patch_olap(
+            monkeypatch,
+            [f'Приложение/Авансы: "Выдача аванса сотруднику (операция {source_id})"'],
+        )
+
+        result = await verify_cash_payouts(session)
+
+        await session.refresh(row)
+        assert result["verified"] == 1
+        assert row.verified_at is not None
+
+
+async def test_verify_matches_courier_hash_form(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """У транзакции депозита курьера id целочисленный и уходит в комментарий с решёткой."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    async with async_session_factory() as session:
+        row = await _aged_row(session, source_id="41")
+        _patch_olap(
+            monkeypatch,
+            ['Приложение/Возврат депозитов: "Возврат депозита курьеру (операция #41)"'],
+        )
+
+        result = await verify_cash_payouts(session)
+
+        await session.refresh(row)
+        assert (result["verified"], row.verified_at is not None) == (1, True)
+
+
+async def test_verify_promotes_unknown_outcome_when_transaction_found(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отправка оборвалась, но проводка в iiko есть → выдача отражена, строка становится posted."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    source_id = str(uuid.uuid4())
+    async with async_session_factory() as session:
+        row = await _aged_row(
+            session, source_id=source_id, status="failed", reason_code="unknown"
+        )
+        _patch_olap(monkeypatch, [f'"Выдача аванса сотруднику (операция {source_id})"'])
+
+        await verify_cash_payouts(session)
+
+        await session.refresh(row)
+        assert (row.status, row.reason_code, row.verified_at is not None) == ("posted", None, True)
+
+
+async def test_verify_is_patient_before_opening_case(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Проводка могла ещё не доехать в отчёт — одной неудачной проверки мало."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    source_id = str(uuid.uuid4())
+    async with async_session_factory() as session:
+        row = await _aged_row(session, source_id=source_id)
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_cash_payouts(session)
+
+        await session.refresh(row)
+        assert (result["pending"], row.verify_attempts) == (1, 1)
+        assert await _cases(session, source_id) == []
+
+
+async def test_verify_opens_case_when_transaction_never_appears(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Проводки нет и после порога проверок — выдача до учёта iiko не дошла. Кейс без
+    авто-повтора: addPayOut необратим, лишняя проводка = выданные дважды деньги."""
+    from app.services.iiko_cash_payout_verify import (
+        VERIFY_ATTEMPTS_BEFORE_CASE,
+        verify_cash_payouts,
+    )
+
+    source_id = str(uuid.uuid4())
+    async with async_session_factory() as session:
+        await _aged_row(
+            session, source_id=source_id, verify_attempts=VERIFY_ATTEMPTS_BEFORE_CASE - 1
+        )
+        _patch_olap(monkeypatch, ['"Выдача аванса сотруднику (операция чужая-операция)"'])
+
+        result = await verify_cash_payouts(session)
+
+        assert result["manual"] == 1
+        cases = await _cases(session, source_id)
+        assert len(cases) == 1
+        assert cases[0].payload["reason_code"] == "not_in_iiko_ledger"
+        assert cases[0].payload["retriable"] is False
+
+
+async def test_verify_skips_definite_failures(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отказ до отправки (тип не настроен) сверять нечего — проводки заведомо нет, и лишний
+    поход в OLAP ей ничего не добавит."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    async with async_session_factory() as session:
+        await _aged_row(
+            session, source_id=str(uuid.uuid4()), status="failed", reason_code="type_not_found"
+        )
+
+        def _boom(date_from: object, date_to: object) -> list[str]:
+            raise AssertionError("OLAP не должен вызываться на пустой выборке")
+
+        from app.services import iiko_cash_payout_verify as verify_mod
+
+        monkeypatch.setattr(verify_mod, "fetch_cash_payout_comments", _boom)
+        result = await verify_cash_payouts(session)
+
+    assert result == {"checked": 0, "verified": 0, "pending": 0, "manual": 0}

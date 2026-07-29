@@ -49,6 +49,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("reason_code", sa.String(length=32), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
+        # Пост-сверка по OLAP: ответ addPayOut не доказывает проводку (та же история, что с
+        # add_payment по накладным), а «потерянную» выдачу иначе не увидеть.
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "verify_attempts", sa.Integer(), nullable=False, server_default=sa.text("0")
+        ),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),

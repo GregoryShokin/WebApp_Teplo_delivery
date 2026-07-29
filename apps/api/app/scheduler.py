@@ -678,6 +678,31 @@ async def verify_iiko_invoice_payments() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=30,
+    id="verify_iiko_cash_payouts",
+    max_instances=1,
+    coalesce=True,
+)
+async def verify_iiko_cash_payouts() -> None:
+    """Подтвердить, что выдачи (авансы, депозиты) реально стали проводками в кассе iiko.
+
+    Ответ ``addPayOut`` проводку не доказывает, а оборвавшаяся отправка не говорит ничего.
+    Джоб сверяет журнал ``IikoCashPayout`` с OLAP-отчётом iiko по id операции в комментарии и
+    заводит кейс на то, чего в учёте нет. Ничего не переотправляет: addPayOut необратим."""
+    from app.services.iiko_cash_payout_verify import verify_cash_payouts
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await verify_cash_payouts(session)
+        except Exception:  # noqa: BLE001 — недоступный OLAP не должен ронять планировщик
+            logger.warning("verify_iiko_cash_payouts: сверка не удалась", exc_info=True)
+            return
+    if result.get("verified") or result.get("manual"):
+        logger.info("verify_iiko_cash_payouts: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=get_settings().mail_poll_interval_minutes,
     id="poll_mail_invoices",
     max_instances=1,
