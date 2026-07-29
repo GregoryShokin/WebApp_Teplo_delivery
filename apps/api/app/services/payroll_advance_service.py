@@ -470,10 +470,11 @@ async def issue_advance(
         and wallet is not None
         and wallet.code == ADVANCE_TK_WALLET_CODE
     ):
-        post_advance_payout_to_iiko(
+        await post_advance_payout_to_iiko(
+            session,
             amount=advance.amount,
             payout_date=advance.issued_on,
-            source_id=advance.id,
+            source_id=str(advance.id),
             is_loan=advance.kind == "loan",
             source="cash",
         )
@@ -1339,10 +1340,11 @@ async def disburse_bank_advance(
     # Деньги физически выданы сотруднику (нал из Сейфа) → изъятие в iiko по типу «эквайринг»
     # (безналичный источник выдачи). После commit, не валит выдачу при ошибке. Idempotent:
     # повторный «Выплачено» вышел выше по early-return (draft уже disbursed) → изъятие однажды.
-    post_advance_payout_to_iiko(
+    await post_advance_payout_to_iiko(
+        session,
         amount=advance.amount,
         payout_date=datetime.now(UTC).date(),
-        source_id=advance.id,
+        source_id=str(advance.id),
         is_loan=advance.kind == "loan",
         source="bank",
     )

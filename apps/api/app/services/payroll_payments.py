@@ -97,7 +97,7 @@ async def mark_payment(
     )
     await session.commit()
     await session.refresh(payment)
-    _post_deposit_payout_iiko(payout_result, run, paid_at)
+    await _post_deposit_payout_iiko(session, payout_result, run, paid_at)
     return payment
 
 
@@ -373,7 +373,7 @@ async def mark_all_payments(
         },
     )
     await session.commit()
-    _post_deposit_payout_iiko(payout_result, run, paid_at)
+    await _post_deposit_payout_iiko(session, payout_result, run, paid_at)
     return len(rows)
 
 
@@ -451,7 +451,7 @@ async def mark_payments_selected(
         },
     )
     await session.commit()
-    _post_deposit_payout_iiko(payout_result, run, paid_at)
+    await _post_deposit_payout_iiko(session, payout_result, run, paid_at)
     return len(rows)
 
 
@@ -562,7 +562,7 @@ async def mark_partial_payment(
     )
     await session.commit()
     await session.refresh(payment)
-    _post_deposit_payout_iiko(payout_result, run, paid_at)
+    await _post_deposit_payout_iiko(session, payout_result, run, paid_at)
     return payment
 
 
@@ -658,7 +658,9 @@ async def _reconcile_pool_reserves(session: AsyncSession, run_id: uuid.UUID) -> 
     await reconcile_run_reserves(session, run_id)
 
 
-def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date) -> None:
+async def _post_deposit_payout_iiko(
+    session: AsyncSession, payout_result: Any, run: PayrollRun, paid_at: date
+) -> None:
     """iiko-изъятие «Выдача депозита» на наличную часть выдачи с ТК Черникова.
 
     После commit (БД — источник истины). Ошибка iiko не валит выплату (логируется внутри).
@@ -670,7 +672,9 @@ def _post_deposit_payout_iiko(payout_result: Any, run: PayrollRun, paid_at: date
             post_production_deposit_payout_to_iiko,
         )
 
-        post_production_deposit_payout_to_iiko(amount=amount, payout_date=paid_at, source_id=run.id)
+        await post_production_deposit_payout_to_iiko(
+            session, amount=amount, payout_date=paid_at, source_id=str(run.id)
+        )
 
 
 async def _get_payment_run(session: AsyncSession, run_id: uuid.UUID) -> PayrollRun:

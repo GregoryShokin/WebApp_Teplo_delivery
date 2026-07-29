@@ -35,6 +35,7 @@ from app.models import (
     DdsArticle,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    ReconciliationCase,
     SupplierInvoice,
     Wallet,
 )
@@ -167,6 +168,48 @@ def _split_by_source(
     return [("card", card_share), ("cash", cash_share)]
 
 
+# Исход отправки неизвестен (обрыв/таймаут на addPayOut): повторять нельзя — задвоит изъятие.
+UNKNOWN_OUTCOME = "unknown"
+
+
+async def _open_unknown_outcome_case(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    article: DdsArticle,
+    source: str,
+    amount: Decimal,
+    error: str | None,
+) -> None:
+    """Видимый кейс owner-review по доле, чей исход в iiko неизвестен."""
+    from app.services.iiko_cash_payout_log import CASE_KIND
+
+    source_key = f"cheque:{invoice.id}:{article.id}:{source}"
+    existing_case = await session.scalar(
+        select(ReconciliationCase).where(
+            ReconciliationCase.kind == CASE_KIND,
+            ReconciliationCase.status == "pending",
+            ReconciliationCase.payload["source_id"].astext == source_key,
+        )
+    )
+    payload = {
+        "source_id": source_key,
+        "payout_kind": "cheque_expense",
+        "amount": str(amount),
+        "payout_date": invoice.invoice_date.isoformat() if invoice.invoice_date else None,
+        "reason": (
+            f"расход чека {invoice.number} по статье «{article.name}» на {amount} — отправка "
+            f"изъятия в iiko оборвалась ({error}); прошла проводка или нет, по ответу не видно"
+        ),
+        "reason_code": UNKNOWN_OUTCOME,
+        "retriable": False,
+    }
+    if existing_case is not None:
+        existing_case.payload = payload
+        return
+    session.add(ReconciliationCase(kind=CASE_KIND, status="pending", payload=payload))
+
+
 async def _post_one(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -191,13 +234,22 @@ async def _post_one(
     if existing is not None and existing.status == "posted":
         report.skipped += 1
         return
+    if existing is not None and existing.reason_code == UNKNOWN_OUTCOME:
+        # Прошлая отправка оборвалась НЕ получив ответа: приняла её iiko или нет — неизвестно.
+        # addPayOut необратим и не идемпотентен, поэтому вслепую слать второй раз нельзя —
+        # это задвоило бы изъятие в учёте. Разбирается вручную по кейсу owner-review.
+        report.failed += 1
+        return
 
     comment = f"Чек {invoice.number} · {article.name}"
     pay_out_type_id = _resolve_pay_out_type(index, article.name, source)
     status = "posted"
     error: str | None = None
+    reason_code: str | None = None
     if pay_out_type_id is None:
         status, error = "failed", "Тип изъятия iiko не найден (счёт/статья не настроены)"
+        # Отказ ДО отправки: проводки в iiko точно нет, повтор безопасен.
+        reason_code = "type_not_found"
     else:
         try:
             _add_pay_out(
@@ -205,6 +257,7 @@ async def _post_one(
             )
         except Exception as exc:  # noqa: BLE001 — фиксируем причину, чек не валим
             status, error = "failed", str(exc)[:500]
+            reason_code = UNKNOWN_OUTCOME
             logger.warning(
                 "Чек %s: изъятие %s/%s не проведено в iiko: %s",
                 invoice.number,
@@ -216,6 +269,7 @@ async def _post_one(
     if existing is not None:
         existing.status = status
         existing.error = error
+        existing.reason_code = reason_code
         existing.amount = amount
         existing.comment = comment
         existing.pay_out_type_id = pay_out_type_id or existing.pay_out_type_id
@@ -230,12 +284,18 @@ async def _post_one(
                 comment=comment,
                 status=status,
                 error=error,
+                reason_code=reason_code,
             )
         )
     if status == "posted":
         report.posted += 1
     else:
         report.failed += 1
+    if reason_code == UNKNOWN_OUTCOME:
+        # Кейс — единственный способ узнать о расхождении: авто-повтора у такой доли нет.
+        await _open_unknown_outcome_case(
+            session, invoice=invoice, article=article, source=source, amount=amount, error=error
+        )
 
 
 async def _bank_cash_totals(

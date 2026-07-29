@@ -83,6 +83,9 @@ export function OwnerReviewTab({ canClassify }: { canClassify: boolean }) {
               Не определён банк-счёт плательщика
             </SelectItem>
             <SelectItem value="iiko_payment_unsettled">Оплата в iiko не проведена</SelectItem>
+            <SelectItem value="iiko_cash_payout_unsettled">
+              Выдача не отражена в кассе iiko
+            </SelectItem>
             <SelectItem value="card_refund_after_cheque">Возврат по проведённому чеку</SelectItem>
             <SelectItem value="cheque_refund_missing">Возврат не пришёл от банка</SelectItem>
             <SelectItem value="deposit_bank_draft_failed">
@@ -282,6 +285,7 @@ function OwnerReviewCard({
   // Депозит списан, а черновик в банк не ушёл: банковской операции нет вообще, поэтому
   // общая карточка показала бы пустые поля и сырой payload — рисуем своё.
   const isDepositDraftFailed = item.kind === "deposit_bank_draft_failed";
+  const isCashPayoutUnsettled = item.kind === "iiko_cash_payout_unsettled";
   const iikoRetriable = isIikoUnsettled && item.payload?.retriable === true;
   const isMultiInvoiceResidual =
     isIikoUnsettled && item.payload?.reason_code === "multi_invoice_residual";
@@ -528,6 +532,14 @@ function OwnerReviewCard({
             не получил, и в банке подписывать нечего. Переведите сумму вручную (или выдайте
             наличными) и отметьте кейс разобранным.
           </div>
+        ) : isCashPayoutUnsettled ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            {(item.payload?.reason as string) ??
+              "Выдача прошла у нас, но изъятие в iiko не проведено — остаток «Главной кассы» разошёлся с ДДС."}{" "}
+            {item.payload?.retriable
+              ? "Причина известна и повтор безопасен: настройте тип проводки в iiko и проведите выдачу заново."
+              : "Прошла проводка или нет — по ответу iiko не видно, поэтому автоматически её не повторяем: сверьтесь в бэк-офисе iiko и проведите вручную, если изъятия там нет."}
+          </div>
         ) : item.kind === "iiko_payment_unsettled" ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             {isMultiInvoiceResidual
@@ -646,6 +658,9 @@ function caseKindLabel(kind: string) {
   }
   if (kind === "iiko_payment_unsettled") {
     return "Оплата в iiko не проведена";
+  }
+  if (kind === "iiko_cash_payout_unsettled") {
+    return "Выдача не отражена в кассе iiko";
   }
   if (kind === "card_refund_after_cheque") {
     return "Возврат по проведённому чеку";

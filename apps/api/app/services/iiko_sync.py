@@ -1020,7 +1020,6 @@ async def sync_employees(
 ) -> SyncResult:
     if mode not in ("incremental", "reset"):
         raise ValueError("Employee sync mode must be 'incremental' or 'reset'")
-
     owns_session = session is None
     if owns_session:
         async with AsyncSessionLocal() as owned_session:
@@ -1038,11 +1037,20 @@ async def sync_employees(
 
     sync_today = today or datetime.now(UTC).date()
     sync_now = now or datetime.now(UTC)
-    records = (
-        list(iiko_records)
-        if iiko_records is not None
-        else await anyio.to_thread.run_sync(fetch_iiko_employee_records)
-    )
+    if iiko_records is not None:
+        records = list(iiko_records)
+    else:
+        records = await anyio.to_thread.run_sync(fetch_iiko_employee_records)
+        if mode == "reset" and not records:
+            # Сброс синхронизирует штат «как в iiko», в том числе увольняет тех, кого в выгрузке
+            # нет. Пустая выгрузка означала бы «в iiko не осталось никого» и уволила бы весь штат
+            # разом — а на практике это всегда сбой самой выгрузки (обрыв, лимит, пустой ответ
+            # WAF). Гард стоит только на ЖИВОЙ выгрузке: явно переданные записи — осознанный
+            # вызов (скрипты, тесты), там решает вызывающий. Инкрементальному режиму пустой
+            # ответ безобиден: отсутствующих он не трогает.
+            raise ValueError(
+                "iiko вернул пустой список сотрудников — сброс отменён, чтобы не уволить весь штат"
+            )
 
     agent_run = AgentRun(
         agent_name="iiko_employee_sync",
@@ -1333,7 +1341,6 @@ def plan_employee_sync(
 ) -> EmployeeSyncPlan:
     if mode not in ("incremental", "reset"):
         raise ValueError("Employee sync mode must be 'incremental' or 'reset'")
-
     result = SyncResult()
     mutations: list[EmployeeMutation] = []
     created_employees: list[Employee] = []

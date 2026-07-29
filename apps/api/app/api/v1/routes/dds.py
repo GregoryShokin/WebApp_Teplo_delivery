@@ -1530,6 +1530,7 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        "iiko_cash_payout_unsettled",
         "card_refund_after_cheque",
         "cheque_refund_missing",
         "deposit_bank_draft_failed",
@@ -1543,6 +1544,9 @@ async def list_owner_review_cases(
         "unconfirmed_cheque",
         "payer_wallet_unresolved",
         "iiko_payment_unsettled",
+        # Выдача аванса/депозита не отразилась изъятием в iiko: касса iiko разошлась с ДДС,
+        # а раньше об этом знал только warning в логах контейнера.
+        "iiko_cash_payout_unsettled",
         "card_refund_after_cheque",
         "cheque_refund_missing",
         # Депозит списан, а черновик в банк не ушёл: платёж не появится ни в банке,
@@ -2388,10 +2392,11 @@ async def pay_safe_allocation(
     # «эквайринг» ПОСЛЕ commit, как делает disburse_bank_advance. Переход в disbursed
     # однократен, поэтому задвоения с путём «Выплачено» нет; ошибка iiko не валит оплату.
     if disbursed_advance is not None:
-        post_advance_payout_to_iiko(
+        await post_advance_payout_to_iiko(
+            session,
             amount=disbursed_advance.amount,
             payout_date=datetime.now(MOSCOW_TZ).date(),
-            source_id=disbursed_advance.id,
+            source_id=str(disbursed_advance.id),
             is_loan=disbursed_advance.kind == "loan",
             source="bank",
         )

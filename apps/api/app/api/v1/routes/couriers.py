@@ -801,7 +801,7 @@ async def post_courier_deposit_transaction(
     if tt_value == "return" and transaction.payout_method in (None, "cash_tk"):
         # Возврат наличными с ТК Черникова — изъятие из Главной кассы. Для Сейфа iiko не
         # трогаем (другой счёт), иначе ложное изъятие.
-        post_deposit_return_to_iiko(transaction)
+        await post_deposit_return_to_iiko(session, transaction)
     elif tt_value == "return" and channel_provider(transaction.payout_method) is not None:
         # Безналичный возврат «как ЗП»: черновик (Т-Банк/Сбер) на Сейф (раздача с Сейфа). После
         # commit, ошибка банка не валит возврат. iiko не трогаем (деньги не через кассу).

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -242,6 +243,9 @@ class ChequeIikoPayout(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Причина неуспеха: type_not_found — отказ ДО отправки (в iiko точно ничего нет, повтор
+    # безопасен); unknown — обрыв на отправке, исход НЕИЗВЕСТЕН, и повтор задвоил бы изъятие.
+    reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -302,6 +306,59 @@ class KassaPayinPreset(Base):
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class IikoCashPayout(Base):
+    """Журнал денежных проводок в iiko, которые НЕ привязаны к накладной: выдачи авансов и
+    депозитов, пополнения депозитов курьеров (``POST /v2/payInOuts/addPayOut``).
+
+    Зачем журнал. Проводка необратима (delete в API нет), а раньше её судьба нигде не
+    фиксировалась: при любом сбое (сеть, таймаут, лимит частоты, iiko недоступна) изъятие
+    молча терялось, и остаток «Главной кассы» в iiko расходился с нашим ДДС — узнать об этом
+    было неоткуда, кроме ``warning`` в логах контейнера, которые ротируются.
+
+    Паттерн pending-first, как у ``IikoInvoicePaymentPush``: строка ``pending`` пишется ДО
+    HTTP, после ответа переходит в ``posted``/``failed``. Краш между вызовом и финализацией
+    оставляет ``pending`` — исход неизвестен, и авто-повтор по такой строке запрещён (он
+    задвоил бы деньги в учёте); разбирается вручную по кейсу owner-review.
+
+    ``kind`` + ``source_id`` — ключ идемпотентности: одна операция (выдача аванса, транзакция
+    депозита) даёт ровно одну проводку.
+    """
+
+    __tablename__ = "iiko_cash_payout"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_iiko_cash_payout_amount_positive"),
+        CheckConstraint(
+            "status in ('pending', 'posted', 'failed')", name="ck_iiko_cash_payout_status"
+        ),
+        UniqueConstraint("kind", "source_id", name="uq_iiko_cash_payout_kind_source"),
+        Index("ix_iiko_cash_payout_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Контур проводки: advance | loan | deposit_production | courier_deposit_return |
+    # courier_deposit_topup. Вместе с source_id даёт идемпотентность.
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # id операции-источника в нашей БД. Строка, а не UUID: у транзакции депозита курьера
+    # первичный ключ целочисленный, у выдач — UUID.
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    payout_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # id типа payInOut в iiko (несёт счёт-источник, корсчёт и статью ДДС iiko).
+    pay_out_type_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Машиночитаемая причина неуспеха: type_not_found (до отправки — точно не прошло),
+    # rejected (iiko ответила не SUCCESS), unknown (исключение при отправке — исход неизвестен).
+    reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

@@ -2987,7 +2987,7 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
     async def fake_in_flight(_session: Any, _employee_id: Any) -> Decimal:
         return Decimal("0")
 
-    def fake_iiko(*, amount: Decimal, payout_date: Any, source_id: Any) -> None:
+    async def fake_iiko(_session: Any, *, amount: Decimal, payout_date: Any, source_id: Any) -> None:
         calls["iiko"].append(amount)
 
     # Наличный контур выдачи переехал в deposit_payout — патчим по месту нового вызова.

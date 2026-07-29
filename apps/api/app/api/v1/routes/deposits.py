@@ -479,8 +479,8 @@ async def payout_deposit(
     # iiko-изъятие из «Главной кассы» — только при выдаче с ТК Черникова (= iiko Главная
     # касса). После commit: БД — источник истины, ошибка iiko не откатывает выдачу.
     if payout_wallet is not None and payout_wallet.code == "tk_chernikova":
-        post_production_deposit_payout_to_iiko(
-            amount=amount, payout_date=now.date(), source_id=transaction.id
+        await post_production_deposit_payout_to_iiko(
+            session, amount=amount, payout_date=now.date(), source_id=str(transaction.id)
         )
     return _operation_payload(account, transaction)
 

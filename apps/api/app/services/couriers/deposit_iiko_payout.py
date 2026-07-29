@@ -15,8 +15,9 @@ payInOut'ов это ``addPayOut`` (405 на GET). Направление бер
 
 Резолв типа — по структуре (имена счетов + код статьи), id типа различается dev/prod, имя
 iiko в payInOutTypes/list не отдаёт. Вызываются ПОСЛЕ commit операции (БД — источник истины).
-Проводки iiko необратимы (нет delete): ошибка iiko НЕ откатывает операцию, только логируется;
-задвоение исключено тем, что вызов идёт ровно один раз на созданную транзакцию. iiko-доступ —
+Проводки iiko необратимы (нет delete): ошибка iiko НЕ откатывает операцию. Судьба проводки
+живёт в журнале ``IikoCashPayout`` (pending-first, кейс owner-review при неуспехе) — раньше
+сбой терял изъятие молча. См. ``iiko_cash_payout_log``. iiko-доступ —
 синхронные http.client-хелперы из ``iiko_cashshift_sync`` (обход прокси/WAF).
 """
 
@@ -26,7 +27,10 @@ import logging
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models import CourierDepositTransaction, CourierDepositTransactionType
+from app.services.iiko_cash_payout_log import PayoutRejected, post_cash_payout
 from app.services.iiko_location import get_department_id
 from app.services.kassa.cheque_payout_push import _build_payout_type_index
 from app.services.kassa.iiko_cashshift_sync import (
@@ -71,44 +75,56 @@ def _build_payin_type_index(
     return index
 
 
-def post_deposit_return_to_iiko(transaction: CourierDepositTransaction) -> None:
-    """Провести возврат депозита изъятием в iiko. Только RETURN; ошибку логирует, не поднимает."""
-    tt = transaction.transaction_type
-    tt_value = tt.value if isinstance(tt, CourierDepositTransactionType) else str(tt)
-    if tt_value != CourierDepositTransactionType.RETURN.value:
-        return
-    try:
-        token = _auth_token()
-        accounts = _fetch_accounts_map(token)
-        raw_types = _iiko_get(token, PAYOUT_TYPES_PATH, {"includeDeleted": "false"})
-        index = _build_payout_type_index(accounts, raw_types if isinstance(raw_types, list) else [])
-        type_id = index.get(RETURN_TYPE_KEY)
-        if type_id is None:
-            logger.warning(
-                "Возврат депозита #%s: тип изъятия iiko %s не найден",
-                transaction.id,
-                RETURN_TYPE_KEY,
-            )
-            return
-        amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        body = {
+def send_deposit_return(transaction: CourierDepositTransaction) -> str:
+    """Синхронная отправка изъятия возврата (в треде). Возвращает id типа проводки.
+
+    ``LookupError`` — тип не найден (до отправки, проводки в iiko точно нет);
+    :class:`PayoutRejected` — iiko ответила не ``SUCCESS``."""
+    token = _auth_token()
+    accounts = _fetch_accounts_map(token)
+    raw_types = _iiko_get(token, PAYOUT_TYPES_PATH, {"includeDeleted": "false"})
+    index = _build_payout_type_index(accounts, raw_types if isinstance(raw_types, list) else [])
+    type_id = index.get(RETURN_TYPE_KEY)
+    if type_id is None:
+        raise LookupError(f"тип изъятия iiko {RETURN_TYPE_KEY} не найден")
+    amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    data = _iiko_post(
+        token,
+        ADD_PAYOUT_PATH,
+        {
             "payOutTypeId": type_id,
             "payOutDate": transaction.transaction_date.isoformat(),
             "departmentSumMap": {get_department_id(): float(amount)},
             "comment": f"Возврат депозита курьеру (операция #{transaction.id})",
-        }
-        data = _iiko_post(token, ADD_PAYOUT_PATH, body)
-        result = data.get("result") if isinstance(data, dict) else None
-        if result != "SUCCESS":
-            logger.warning(
-                "Возврат депозита #%s: addPayOut вернул не SUCCESS: %s", transaction.id, data
-            )
-    except Exception as exc:  # noqa: BLE001 — iiko не должен валить уже проведённый возврат
-        logger.warning(
-            "Возврат депозита #%s: изъятие в iiko не проведено: %s", transaction.id, exc
-        )
+        },
+    )
+    result = data.get("result") if isinstance(data, dict) else None
+    if result != "SUCCESS":
+        raise PayoutRejected(f"addPayOut вернул не SUCCESS: {data}")
+    return type_id
+
+
+async def post_deposit_return_to_iiko(
+    session: AsyncSession, transaction: CourierDepositTransaction
+) -> None:
+    """Провести возврат депозита изъятием в iiko под журналом. Только RETURN."""
+    tt = transaction.transaction_type
+    tt_value = tt.value if isinstance(tt, CourierDepositTransactionType) else str(tt)
+    if tt_value != CourierDepositTransactionType.RETURN.value:
+        return
+    amount = (Decimal(transaction.amount_cents) / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    await post_cash_payout(
+        session,
+        kind="courier_deposit_return",
+        source_id=str(transaction.id),
+        amount=amount,
+        payout_date=transaction.transaction_date,
+        send=lambda: send_deposit_return(transaction),
+    )
 
 
 def post_deposit_topup_to_iiko(transaction: CourierDepositTransaction) -> None:

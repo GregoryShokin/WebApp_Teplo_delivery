@@ -774,8 +774,9 @@ async def pay_kassa_target(
     # истины). disbursement заполнен ровно один раз (черновик paid→disbursed), поэтому изъятие
     # не задваивается; ключ-комментарий — allocation.id.
     if disbursement is not None:
-        post_production_deposit_payout_to_iiko(
-            amount=disbursement.amount, payout_date=kassa_today(), source_id=allocation.id
+        await post_production_deposit_payout_to_iiko(
+            session, amount=disbursement.amount, payout_date=kassa_today(),
+            source_id=str(allocation.id),
         )
     return transaction_id
 

@@ -550,7 +550,7 @@ async def create_payout_endpoint(
         )
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    _mirror_advance_payout_to_iiko(result)
+    await _mirror_advance_payout_to_iiko(session, result)
     return result.as_dict()
 
 
@@ -579,7 +579,7 @@ async def update_payout_endpoint(
         )
     except KassaPayoutError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    _mirror_advance_payout_to_iiko(result)
+    await _mirror_advance_payout_to_iiko(session, result)
     return result.as_dict()
 
 
@@ -888,10 +888,11 @@ async def disburse_kassa_advance_endpoint(
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     # Тот же контур, что у наличной выдачи с ТК: после commit, ошибка не откатывает.
-    post_advance_payout_to_iiko(
+    await post_advance_payout_to_iiko(
+        session,
         amount=advance.amount,
         payout_date=advance.issued_on,
-        source_id=advance.id,
+        source_id=str(advance.id),
         is_loan=advance.kind == "loan",
         source="cash",
     )
@@ -1010,7 +1011,9 @@ async def void_freelancer_shift_endpoint(
     return await kassa_pending_payload(session)
 
 
-def _mirror_advance_payout_to_iiko(result: KassaPayoutResult) -> None:
+async def _mirror_advance_payout_to_iiko(
+    session: AsyncSession, result: KassaPayoutResult
+) -> None:
     """Наличный аванс/заём с ТК Черникова зеркалится изъятием в iiko «Главная касса».
 
     Тот же контур, что при выдаче со страницы авансов (payroll_advances): вызывается
@@ -1018,9 +1021,10 @@ def _mirror_advance_payout_to_iiko(result: KassaPayoutResult) -> None:
     advance = result.advance
     if advance is None:
         return
-    post_advance_payout_to_iiko(
+    await post_advance_payout_to_iiko(
+        session,
         amount=Decimal(str(advance.amount)),
         payout_date=advance.issued_on,
-        source_id=advance.id,
+        source_id=str(advance.id),
         is_loan=advance.kind == "loan",
     )

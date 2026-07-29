@@ -1436,10 +1436,11 @@ async def dismiss_employee(
     # не откатывает увольнение. Банк-канал сюда не попадает: там заведён черновик (полный цикл),
     # деньги и iiko-эффект наступят при фактической выдаче резерва, а не при увольнении.
     if payout_effect is not None and payout_effect.wallet_code == "tk_chernikova":
-        post_production_deposit_payout_to_iiko(
+        await post_production_deposit_payout_to_iiko(
+            session,
             amount=payout_effect.amount,
             payout_date=now.date(),
-            source_id=payout_effect.transaction_id,
+            source_id=str(payout_effect.transaction_id),
         )
     if isinstance(session, AsyncSession):
         return await _get_employee_or_404(
