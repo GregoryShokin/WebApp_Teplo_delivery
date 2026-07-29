@@ -18,6 +18,12 @@
 Правка/удаление — только СВОЯ запись и только в день создания (позднее появится
 отдельное право на поздние коррекции). Записи системных контуров (выручка,
 накладные, переводы, депозиты курьеров) из кассы не правятся никогда.
+
+Исключение — посменная выдача внештатнику (``freelancer_shift_payout``): править её
+нельзя (сумма учётная, её считает движок), но ошибочную операцию можно ОТМЕНИТЬ целиком
+под отдельным правом ``kassa.freelancer_shift.void`` — см.
+``freelancer.shift_settlement.void_freelancer_shift_payout``. В журнале такая строка
+несёт флаг ``voidable``.
 """
 
 from __future__ import annotations
@@ -37,14 +43,17 @@ from app.models import (
     CounterpartyPayableProfile,
     DdsArticle,
     Employee,
+    FreelancerShiftSettlement,
     PayrollLine,
     PayrollPayment,
+    PayrollPeriod,
     SafeAllocation,
     SalaryAdvance,
     SupplierPrepayment,
     Wallet,
 )
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
+from app.services.freelancer.shift_settlement import FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
     KASSA_TARGET_PAYOUT_SOURCE_KIND,
@@ -842,15 +851,28 @@ async def kassa_journal(
     )
     employee_names = await _employee_names(session, advances.values())
     counterparty_names = await _counterparty_names(session, transactions)
+    freelancer_payouts = await _freelancer_shift_payouts(session, transactions)
 
     today = kassa_today()
     items: list[dict[str, Any]] = []
     for transaction, article in rows:
         flow: str | None = None
         editable = False
+        voidable = False
         label: str | None = None
         employee_id: uuid.UUID | None = None
-        if transaction.source_kind == KASSA_PAYOUT_SOURCE_KIND:
+        if transaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND:
+            # Посменная выдача внештатнику. Правке она не подлежит (сумма учётная, её
+            # считает движок), но ошибочную операцию можно отменить целиком — отдельным
+            # правом ``kassa.freelancer_shift.void``. Приход-сторно уже отменённой выдачи
+            # приходит сюда же и, разумеется, не отменяется повторно.
+            payout = freelancer_payouts.get(transaction.source_id)
+            flow = "freelancer_shift"
+            if payout is not None:
+                label = payout["employee_name"]
+                employee_id = payout["employee_id"]
+                voidable = transaction.direction == "out" and payout["voidable"]
+        elif transaction.source_kind == KASSA_PAYOUT_SOURCE_KIND:
             flow = "expense"
             editable = (
                 actor_user_id is not None
@@ -907,6 +929,10 @@ async def kassa_journal(
                 "counterparty_id": transaction.counterparty_id,
                 "kassa_flow": flow,
                 "editable": editable,
+                # Ошибочную выдачу внештатнику отменяют целиком (деньги + зачёт в ведомости),
+                # а не правят — поэтому отдельный флаг, а не расширение `editable`.
+                "voidable": voidable,
+                "source_id": transaction.source_id,
                 "created_at": transaction.created_at,
             }
         )
@@ -942,6 +968,49 @@ async def _load_sources(
         return {}
     rows = (await session.scalars(select(model).where(model.id.in_(ids)))).all()
     return {row.id: row for row in rows}
+
+
+async def _freelancer_shift_payouts(
+    session: AsyncSession, transactions: list[CashflowTransaction]
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Подписи и признак отменяемости для строк посменной выдачи внештатнику.
+
+    Ключ — ``source_id`` проводки, то есть явка (``attendance_entry_id``). Отменить можно
+    только ДЕЙСТВУЮЩУЮ выдачу (``paid_cash``) неф��нализированного периода: после финализации
+    ведомость уже вычла выданное, и вернуть смену «к выдаче» некуда.
+    """
+    entry_ids = {
+        transaction.source_id
+        for transaction in transactions
+        if transaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
+        and transaction.source_id is not None
+    }
+    if not entry_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                FreelancerShiftSettlement.attendance_entry_id,
+                FreelancerShiftSettlement.employee_id,
+                Employee.full_name,
+                PayrollPeriod.status,
+            )
+            .join(Employee, Employee.id == FreelancerShiftSettlement.employee_id)
+            .join(PayrollPeriod, PayrollPeriod.id == FreelancerShiftSettlement.period_id)
+            .where(
+                FreelancerShiftSettlement.attendance_entry_id.in_(entry_ids),
+                FreelancerShiftSettlement.status == "paid_cash",
+            )
+        )
+    ).all()
+    return {
+        entry_id: {
+            "employee_id": employee_id,
+            "employee_name": full_name,
+            "voidable": period_status != "finalized",
+        }
+        for entry_id, employee_id, full_name, period_status in rows
+    }
 
 
 async def _employee_names(

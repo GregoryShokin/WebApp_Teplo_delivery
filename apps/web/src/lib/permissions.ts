@@ -93,6 +93,7 @@ export type AppAction =
   | "kassa.adjustments.create"
   | "kassa.penalty.waive"
   | "kassa.payouts.create"
+  | "kassa.freelancer_shift.void"
   | "kds.queue.write"
   | "payments.create";
 
@@ -378,6 +379,9 @@ const ACTION_PERMISSIONS: Record<AppAction, readonly PermissionCode[]> = {
   "kassa.adjustments.create": ["kassa.adjustments.create"],
   "kassa.penalty.waive": ["kassa.penalty.waive"],
   "kassa.payouts.create": ["kassa.payouts.create"],
+  // Отмена ошибочной выдачи внештатнику: право владельца/админа, кассиру не выдаётся
+  // (выдать смену он может, откатить уже отданные наличные — нет).
+  "kassa.freelancer_shift.void": ["kassa.freelancer_shift.void"],
   "kds.queue.write": ["kds.queue.write"],
   // Окно «Новый платёж» (FAB): видно при любом из прав его маршрутов — список
   // зеркалит NEW_PAYMENT_PERMISSION_CODES бэкенда (services/new_payment.py).

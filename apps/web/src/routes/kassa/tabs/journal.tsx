@@ -24,11 +24,13 @@ import {
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
   deleteKassaPayin,
   deleteKassaPayout,
   getKassaJournal,
+  voidKassaFreelancerShift,
   type KassaJournalItem,
 } from "@/routes/kassa/api";
 import {
@@ -67,6 +69,10 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
   const [editTarget, setEditTarget] = useState<KassaPayoutEditTarget | null>(null);
   const [payinEditTarget, setPayinEditTarget] = useState<KassaPayinEditTarget | null>(null);
   const [deleteItem, setDeleteItem] = useState<KassaJournalItem | null>(null);
+  const [voidItem, setVoidItem] = useState<KassaJournalItem | null>(null);
+  // Отмена выдачи внештатнику — отдельное право: выдаёт кассовый администратор, а
+  // откатывает уже отданные наличные тот, кто отвечает за деньги (owner/admin).
+  const canVoidFreelancerShift = usePermissions().canPerformAction("kassa.freelancer_shift.void");
 
   const range = useMemo(() => monthRange(month), [month]);
   const journalQuery = useQuery({
@@ -91,6 +97,18 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       void queryClient.invalidateQueries({ queryKey: ["cp"] });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось удалить запись")),
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: (item: KassaJournalItem) => voidKassaFreelancerShift(item.source_id as string),
+    onSuccess: () => {
+      toast.success("Выдача отменена — смена снова в «К выдаче»");
+      setVoidItem(null);
+      void queryClient.invalidateQueries({ queryKey: ["kassa"] });
+      void queryClient.invalidateQueries({ queryKey: ["dds"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
   });
 
   const journal = journalQuery.data;
@@ -135,8 +153,18 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       key: "actions",
       header: "",
       className: "text-right",
-      cell: (item) =>
-        canPayout && item.editable ? (
+      cell: (item) => {
+        // Выдача внештатнику не правится (сумму считает движок) — её отменяют целиком.
+        if (item.voidable && item.source_id) {
+          return canVoidFreelancerShift ? (
+            <div className="flex justify-end">
+              <Button size="sm" variant="ghost" onClick={() => setVoidItem(item)}>
+                Отменить выдачу
+              </Button>
+            </div>
+          ) : null;
+        }
+        return canPayout && item.editable ? (
           <div className="flex justify-end gap-2">
             <Button
               size="sm"
@@ -153,7 +181,8 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
               Удалить
             </Button>
           </div>
-        ) : null,
+        ) : null;
+      },
     },
   ];
 
@@ -254,6 +283,30 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
               onClick={() => deleteItem && deleteMutation.mutate(deleteItem)}
             >
               Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(voidItem)} onOpenChange={() => setVoidItem(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить выдачу внештатнику?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {voidItem
+                ? `${voidItem.counterparty_label ?? "Внештатник"} · ${formatRub(voidItem.amount)}. ` +
+                  "Расход снимется с кассы, смена вернётся в «К выдаче». " +
+                  "Если ведомость этой недели уже посчитана — её нужно будет пересчитать."
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Не отменять</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={voidMutation.isPending}
+              onClick={() => voidItem && voidMutation.mutate(voidItem)}
+            >
+              Отменить выдачу
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -20,6 +20,9 @@
    (для модалки): дата · часы · сумма · оплачена ли.
 4. ``pay_freelancer_shifts`` — выдать наличные из ТК Черникова за выбранные явки; статью
    «Зарплата производственного персонала» пишет движок (не свободная форма кассы).
+5. ``void_freelancer_shift_payout`` — отменить ОШИБОЧНУЮ выдачу (не тому человеку / не за ту
+   смену): деньги в ДДС снимаются, смена возвращается в «к выдаче». Сумму выданного контур
+   не пересчитывает никогда — отменяется операция целиком.
 
 Сверка с ведомостью (без двойной выплаты) — в ``payroll_freelancer_settlement``.
 """
@@ -344,3 +347,112 @@ async def pay_freelancer_shifts(
 
     await session.commit()
     return transaction_ids
+
+
+async def void_freelancer_shift_payout(
+    session: AsyncSession,
+    *,
+    attendance_entry_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """«Отменить выдачу»: откат ошибочной наличной выдачи (не тому человеку / не за ту смену).
+
+    Речь именно об ОШИБОЧНОЙ ОПЕРАЦИИ, а не о пересчёте суммы: «выдали 3 450 — значит выдали
+    3 450», сумма после выдачи не пересчитывается никогда. Отмена снимает выданное целиком.
+
+    След в ДДС — по кассовому канону:
+
+    * выдача СЕГОДНЯ — проводка удаляется, как своя сегодняшняя запись кассы
+      (``_remove_payout_target``): в журнале не остаётся ни расхода, ни сторно, баланс кассы
+      сходится «как будто не было»;
+    * выдача ЗА ПРОШЛУЮ ДАТУ — исходный расход остаётся, к нему пишется сторно-приход
+      (по образцу ``payroll_payments.unmark_payment``); закрытые дни задним числом не
+      переписываются.
+
+    Смена после отмены снова числится неоплаченной и доступна к выдаче: строка отвязывается
+    от явки (см. докстринг модели). Сверка с ведомостью подхватывает это сама — ``void`` из
+    ``paid_cash``-выборки выпадает, поэтому уже посчитанная ведомость становится «устаревшей»
+    (``run_has_stale_freelancer_settlements``) и требует пересчёта перед финализацией.
+
+    Финализированный период не трогаем: его ведомость уже вычла выданное налом, а вернуть
+    смену «к выдаче» некуда — открытым он больше не является. Такой случай отдаём отказом с
+    подсказкой про дефинализацию.
+    """
+    from app.services.kassa.payouts import kassa_today
+
+    settlement = await session.scalar(
+        select(FreelancerShiftSettlement).where(
+            FreelancerShiftSettlement.attendance_entry_id == attendance_entry_id,
+            FreelancerShiftSettlement.status == "paid_cash",
+        )
+    )
+    if settlement is None:
+        raise FreelancerShiftSettlementError(
+            "Наличная выдача за эту смену не найдена — возможно, она уже отменена"
+        )
+
+    period = await session.get(PayrollPeriod, settlement.period_id)
+    if period is not None and period.status == "finalized":
+        raise FreelancerShiftSettlementError(
+            "Ведомость этого периода уже финализирована — сначала откройте её "
+            "(дефинализация), потом отменяйте выдачу"
+        )
+
+    employee_name = (
+        await session.scalar(select(Employee.full_name).where(Employee.id == settlement.employee_id))
+        or "внештатник"
+    )
+
+    now = datetime.now(UTC)
+    operation_date = today or kassa_today()
+    transaction = (
+        await session.get(CashflowTransaction, settlement.cashflow_transaction_id)
+        if settlement.cashflow_transaction_id is not None
+        else None
+    )
+    reversal_id: uuid.UUID | None = None
+    mode = "no_transaction"
+    if transaction is not None:
+        if transaction.operation_date == operation_date:
+            await session.delete(transaction)
+            settlement.cashflow_transaction_id = None
+            mode = "deleted"
+        else:
+            reversal = CashflowTransaction(
+                wallet_id=transaction.wallet_id,
+                direction="in",
+                amount=settlement.amount,
+                operation_date=operation_date,
+                article_id=transaction.article_id,
+                source_kind=FREELANCER_SHIFT_PAYOUT_SOURCE_KIND,
+                source_id=settlement.attendance_entry_id,
+                payment_purpose=(
+                    f"Отмена выдачи внештатнику {employee_name}: "
+                    f"смена {settlement.work_date.isoformat()}"
+                ),
+                quality_status="final",
+                created_by_user_id=actor_user_id,
+            )
+            session.add(reversal)
+            await session.flush()
+            settlement.reversal_transaction_id = reversal.id
+            reversal_id = reversal.id
+            mode = "reversed"
+
+    settlement.status = "void"
+    # Явку больше не держим: иначе отменённая строка занимала бы уникальность (повторная
+    # выдача той же смены упала бы) и блокировала перезагрузку явок периода (FK RESTRICT).
+    settlement.attendance_entry_id = None
+    settlement.voided_at = now
+    settlement.voided_by_user_id = actor_user_id
+    await session.commit()
+
+    return {
+        "mode": mode,
+        "amount": money(settlement.amount),
+        "employee_id": settlement.employee_id,
+        "employee_name": employee_name,
+        "work_date": settlement.work_date,
+        "reversal_transaction_id": reversal_id,
+    }

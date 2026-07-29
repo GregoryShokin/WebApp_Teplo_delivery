@@ -9,7 +9,10 @@
 - «Выплатить»: out-проводка из ТК Черникова по статье производственной ЗП движком,
   мультивыбор по attendance_entry_id, paid_cash-записи; повтор смены — 409; сумма>остатка не блок;
 - ведомость исключает paid_cash из «к выплате» (в ФОТ остаётся); staleness-гейт;
-- «Синхронизировать» дёргает refresh_current_week_advance_window (мок iiko).
+- «Синхронизировать» дёргает refresh_current_week_advance_window (мок iiko);
+- отмена ошибочной выдачи: в день выдачи — удаление проводки, задним числом — сторно;
+  смена возвращается в «К выдаче», ведомость становится «устаревшей», финализированный
+  период — отказ.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from app.models import (
     CashflowTransaction,
     DdsArticle,
     Employee,
+    EmployeePositionAssignment,
     FreelancerShiftSettlement,
     PayrollLine,
     PayrollPeriod,
@@ -43,13 +47,15 @@ from app.services.freelancer.shift_settlement import (
     list_unpaid_freelancers,
     pay_freelancer_shifts,
     sync_freelancer_shifts,
+    void_freelancer_shift_payout,
 )
-from app.services.kassa.payouts import KASSA_WALLET_CODE, kassa_pending_payload
+from app.services.kassa.payouts import KASSA_WALLET_CODE, kassa_journal, kassa_pending_payload
 from app.services.payroll_calculator import base_shift_pay
 from app.services.payroll_freelancer_settlement import (
     apply_freelancer_cash_settlements,
     run_has_stale_freelancer_settlements,
 )
+from app.services.position_registry import production_payroll_positions
 
 # Открытая ЗП-неделя вт(07.07)→пн(13.07); as_of внутри неё.
 PERIOD_START = date(2026, 7, 7)
@@ -725,3 +731,324 @@ async def test_sync_calls_refresh_window_and_returns_list(
         assert called["today"] == AS_OF
         assert len(report["freelancers"]) == 1
         assert report["freelancers"][0]["unpaid_total"] == 3600.0
+
+
+# --------------------------------------------------------------------------- #
+# 6. Отмена ошибочной выдачи                                                   #
+# --------------------------------------------------------------------------- #
+async def _pay_one(
+    session: AsyncSession, entry_id: uuid.UUID, *, today: date = AS_OF
+) -> CashflowTransaction:
+    """Выдать одну смену и вернуть её проводку (у выдачи всегда одна)."""
+    await pay_freelancer_shifts(
+        session, attendance_entry_ids=[entry_id], actor_user_id=None, today=today
+    )
+    return (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND,
+                CashflowTransaction.source_id == entry_id,
+                CashflowTransaction.direction == "out",
+            )
+        )
+    ).one()
+
+
+async def test_void_in_day_of_payout_deletes_transaction_and_returns_shift(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отмена в день выдачи стирает расход целиком — канон кассовой правки.
+
+    Ошиблись человеком/сменой в тот же день → в журнале не должно остаться ни расхода,
+    ни сторно, а смена обязана вернуться в «К выдаче».
+    """
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        transaction = await _pay_one(session, entry.id)
+
+        result = await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None
+        )
+
+        assert result["mode"] == "deleted"
+        assert result["amount"] == 3500.0
+        assert await session.get(CashflowTransaction, transaction.id) is None
+        movements = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
+                )
+            )
+        ).all()
+        assert movements == []  # ни расхода, ни сторно
+
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.status == "void"
+        assert settlement.attendance_entry_id is None  # явку не держим
+        assert settlement.voided_at is not None
+        assert settlement.cashflow_transaction_id is None
+
+        # Смена снова числится неоплаченной.
+        rows = await list_unpaid_freelancers(session, as_of=AS_OF)
+        assert rows and rows[0]["unpaid_total"] == 3500.0
+        details = await freelancer_shift_details(session, employee.id, as_of=AS_OF)
+        assert [row["paid"] for row in details] == [False]
+
+
+async def test_void_of_backdated_payout_writes_reversal(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдачу за прошлую дату отменяем сторно-приходом: закрытый день не переписываем."""
+    async with async_session_factory() as session:
+        wallet = await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, name="Пётр Внештат", rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        transaction = await _pay_one(session, entry.id)
+        # Выдача «вчера» относительно дня отмены.
+        transaction.operation_date = date(2026, 7, 7)
+        await session.commit()
+
+        result = await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None, today=AS_OF
+        )
+
+        assert result["mode"] == "reversed"
+        original = await session.get(CashflowTransaction, transaction.id)
+        assert original is not None and original.direction == "out"  # исходная на месте
+
+        reversal = await session.get(CashflowTransaction, result["reversal_transaction_id"])
+        assert reversal is not None
+        assert reversal.direction == "in"
+        assert reversal.amount == Decimal("3500.00")
+        assert reversal.wallet_id == wallet.id
+        assert reversal.article_id == original.article_id
+        assert reversal.operation_date == AS_OF  # сторно датируется днём отмены
+        assert "Пётр Внештат" in (reversal.payment_purpose or "")
+
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.status == "void"
+        assert settlement.reversal_transaction_id == reversal.id
+        assert await list_unpaid_freelancers(session, as_of=AS_OF) != []
+
+
+async def test_shift_can_be_paid_again_after_void(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """После отмены ту же смену можно выдать заново (правильному человеку/повторно).
+
+    Ради этого отменённая строка и отвязывается от явки: уникальность по
+    ``attendance_entry_id`` иначе намертво занимала бы смену «мёртвой» записью.
+    """
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        await _pay_one(session, entry.id)
+        await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None
+        )
+
+        await pay_freelancer_shifts(
+            session, attendance_entry_ids=[entry.id], actor_user_id=None, today=AS_OF
+        )
+
+        statuses = sorted(
+            row.status for row in (await session.scalars(select(FreelancerShiftSettlement))).all()
+        )
+        assert statuses == ["paid_cash", "void"]
+        assert await list_unpaid_freelancers(session, as_of=AS_OF) == []
+
+
+async def test_void_twice_conflicts(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        await _pay_one(session, entry.id)
+        await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None
+        )
+
+        with pytest.raises(FreelancerShiftSettlementError, match="уже отменена"):
+            await void_freelancer_shift_payout(
+                session, attendance_entry_id=entry.id, actor_user_id=None
+            )
+
+
+async def test_void_after_finalization_conflicts(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Финализированный период не трогаем: ведомость уже вычла выданное.
+
+    Вернуть смену «к выдаче» некуда — период из «открытых» ушёл, — поэтому отмена без
+    дефинализации оставила бы человека недоплаченным без единого следа.
+    """
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        transaction = await _pay_one(session, entry.id)
+
+        period.status = "finalized"
+        await session.commit()
+
+        with pytest.raises(FreelancerShiftSettlementError, match="дефинализация"):
+            await void_freelancer_shift_payout(
+                session, attendance_entry_id=entry.id, actor_user_id=None
+            )
+        # Деньги и зачёт на месте — отказ ничего не тронул.
+        assert await session.get(CashflowTransaction, transaction.id) is not None
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.status == "paid_cash"
+
+
+async def test_void_after_calc_makes_run_stale(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отмена после расчёта ведомости обязана ронять гейт финализации.
+
+    Иначе ведомость ушла бы в финал со старым вычетом: смена оплаченной уже не считается,
+    а «к выплате» осталось уменьшенным — человек недополучил бы её сумму.
+    """
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3600"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, work_date=date(2026, 7, 7))
+        await session.commit()
+        await _pay_one(session, entry.id)
+
+        run = await _run(session, period)
+        line = _line(employee.id, base_pay=Decimal("3600.00"), total_payable=Decimal("3600.00"))
+        run.summary = await apply_freelancer_cash_settlements(session, period, run, [line])
+        await session.commit()
+        assert line.total_payable == Decimal("0.00")
+        assert await run_has_stale_freelancer_settlements(session, run, period) is False
+
+        await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None
+        )
+
+        assert await run_has_stale_freelancer_settlements(session, run, period) is True
+        # Пересчёт после отмены больше ничего не вычитает.
+        fresh = _line(employee.id, base_pay=Decimal("3600.00"), total_payable=Decimal("3600.00"))
+        summary = await apply_freelancer_cash_settlements(session, period, run, [fresh])
+        assert fresh.total_payable == Decimal("3600.00")
+        assert summary["freelancer_paid_cash_count"] == 0
+
+
+async def test_reload_recreates_entry_after_void(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отменённая смена снова обычная явка: перезагрузка её перечитывает.
+
+    Оплаченные явки переживают ``force_reload`` (иначе выдача осиротеет), но отменённая
+    выдача — не выдача: если бы «мёртвая» строка продолжала защищать явку, снимок смены
+    заморозился бы навсегда, а FK ``RESTRICT`` ронял бы саму перезагрузку.
+    """
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        # Загрузчик берёт из выгрузки только явки, относящиеся к ЗП: у внештатника-повара
+        # должность есть, задаём её назначением (position — effective-dated column_property).
+        session.add(
+            EmployeePositionAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                position=production_payroll_positions()[0],
+                effective_from=date(2020, 1, 1),
+                effective_to=None,
+            )
+        )
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=600)
+        await session.commit()
+        await _pay_one(session, entry.id)
+        await void_freelancer_shift_payout(
+            session, attendance_entry_id=entry.id, actor_user_id=None
+        )
+
+        await load_attendance_entries(
+            session,
+            period,
+            iiko_records=[
+                {
+                    "employeeId": employee.iiko_id,
+                    "dateFrom": "2026-07-07T10:00:00+03:00",
+                    "dateTo": "2026-07-07T22:00:00+03:00",
+                }
+            ],
+            force_reload=True,
+        )
+        await session.commit()
+
+        # Старая явка снесена и перечитана из выгрузки: 12 ч вместо 10.
+        assert await session.get(AttendanceEntry, entry.id) is None
+        details = await freelancer_shift_details(session, employee.id, as_of=AS_OF)
+        assert len(details) == 1
+        assert details[0]["hours"] == 12.0
+        assert details[0]["paid"] is False
+        # След отмены остался — с суммой и человеком, но без ссылки на явку.
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.status == "void"
+        assert settlement.amount == Decimal("2916.67")
+        assert settlement.employee_id == employee.id
+
+
+async def test_journal_marks_freelancer_payout_voidable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """В журнале выдача внештатнику не «editable», а «voidable» — с ключом явки.
+
+    Правка такой строки невозможна по смыслу (сумму считает движок), поэтому фронт
+    показывает отмену, а не форму. После финализации периода отмена гаснет.
+    """
+    _freeze_settlement_clock(monkeypatch)
+    async with async_session_factory() as session:
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, name="Анна Внештат", rate=Decimal("3500"))
+        period = await _period(session)
+        entry = await _attendance(session, employee.id, period.id, minutes=720)
+        await session.commit()
+        transaction = await _pay_one(session, entry.id)
+
+        journal = await kassa_journal(
+            session, date_from=PERIOD_START, date_to=date(2026, 12, 31), actor_user_id=None
+        )
+        row = next(item for item in journal["items"] if item["id"] == transaction.id)
+        assert row["kassa_flow"] == "freelancer_shift"
+        assert row["editable"] is False
+        assert row["voidable"] is True
+        assert row["source_id"] == entry.id
+        assert row["counterparty_label"] == "Анна Внештат"
+
+        period.status = "finalized"
+        await session.commit()
+        journal = await kassa_journal(
+            session, date_from=PERIOD_START, date_to=date(2026, 12, 31), actor_user_id=None
+        )
+        row = next(item for item in journal["items"] if item["id"] == transaction.id)
+        assert row["voidable"] is False

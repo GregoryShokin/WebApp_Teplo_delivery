@@ -417,6 +417,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Касса",
         "Выдавать наличные из кассы по разрешённым статьям",
     ),
+    (
+        "kassa.freelancer_shift.void",
+        "Касса",
+        "Отменять ошибочную выдачу внештатнику за смену",
+    ),
     ("settings.general.read", "Настройки и доступы", "Смотреть настройки"),
     ("settings.general.edit", "Настройки и доступы", "Редактировать настройки"),
     ("settings.positions.read", "Настройки и доступы", "Смотреть реестр должностей"),
@@ -806,6 +811,9 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.adjustments.create",
         # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).
         "kassa.penalty.waive",
+        # Отмена выдачи внештатнику: откат уже отданных наличных — точечное право
+        # (только owner/admin), намеренно отделённое от права выдавать.
+        "kassa.freelancer_shift.void",
         # ПИН внештатника — только у тех, кто выдаёт смены (owner/admin/управляющий).
         "staff.freelancer_pin.read",
         # Официальный контур (оклады, вычеты НДФЛ) — чувствительные данные, только owner/admin.

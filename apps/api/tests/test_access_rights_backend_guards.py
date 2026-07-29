@@ -425,6 +425,45 @@ def test_settings_read_and_edit_are_permission_based(
     )
 
 
+def test_freelancer_shift_void_is_separate_from_payout(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдать смену внештатнику и отменить выдачу — разные права.
+
+    Кассир получает ``kassa.payouts.create`` (он и выдаёт наличные), но откат уже отданных
+    денег — решение уровня владельца: отдельное ``kassa.freelancer_shift.void``.
+    """
+    payout_headers = _headers_for_permissions(
+        async_session_factory,
+        "kassa-payout-only@test.local",
+        ["kassa.payouts.create"],
+    )
+    void_headers = _headers_for_permissions(
+        async_session_factory,
+        "kassa-void-only@test.local",
+        ["kassa.freelancer_shift.void"],
+    )
+    payload = {"attendance_entry_id": str(uuid.uuid4())}
+
+    denied_void = client.post(
+        "/api/v1/kassa/freelancer-shifts/void", json=payload, headers=payout_headers
+    )
+    denied_payout = client.post(
+        "/api/v1/kassa/freelancer-shifts/payout",
+        json={"attendance_entry_ids": [str(uuid.uuid4())]},
+        headers=void_headers,
+    )
+    allowed_void = client.post(
+        "/api/v1/kassa/freelancer-shifts/void", json=payload, headers=void_headers
+    )
+
+    assert denied_void.status_code == 403
+    assert denied_payout.status_code == 403
+    # Право есть — гейт пройден; дальше отвечает бизнес-логика (такой выдачи нет).
+    assert allowed_void.status_code == 409
+
+
 def _headers_for_permissions(
     session_factory: async_sessionmaker[AsyncSession],
     email: str,

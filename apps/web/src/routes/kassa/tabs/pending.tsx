@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
   cancelKassaAdvancePermission,
@@ -34,6 +35,7 @@ import {
   payKassaPayrollTarget,
   payKassaTarget,
   syncKassaFreelancerShifts,
+  voidKassaFreelancerShift,
   type KassaAdvancePermission,
   type KassaFreelancer,
   type KassaTarget,
@@ -87,6 +89,9 @@ export function KassaPendingTab() {
   const queryClient = useQueryClient();
   const pendingQuery = useQuery({ queryKey: ["kassa", "pending"], queryFn: getKassaPending });
   const [activeFreelancer, setActiveFreelancer] = useState<KassaFreelancer | null>(null);
+  // Отмена ошибочной выдачи — отдельное право (owner/admin): выдавать может кассовый
+  // администратор, откатывать уже отданные наличные — нет.
+  const canVoidFreelancerShift = usePermissions().canPerformAction("kassa.freelancer_shift.void");
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["kassa"] });
@@ -162,6 +167,17 @@ export function KassaPendingTab() {
       invalidate();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось выдать")),
+  });
+
+  const voidShiftMutation = useMutation({
+    mutationFn: (attendanceEntryId: string) => voidKassaFreelancerShift(attendanceEntryId),
+    onSuccess: () => {
+      toast.success("Выдача отменена — смена снова в «К выдаче»");
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: ["kassa", "freelancer-shifts"] });
+      void queryClient.invalidateQueries({ queryKey: ["payroll-runs"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
   });
 
   const pending = pendingQuery.data;
@@ -304,8 +320,11 @@ export function KassaPendingTab() {
         freelancer={activeFreelancer}
         balance={pending?.balance ?? 0}
         paying={payShiftsMutation.isPending}
+        voiding={voidShiftMutation.isPending}
+        canVoid={canVoidFreelancerShift}
         onClose={() => setActiveFreelancer(null)}
         onPay={(ids) => payShiftsMutation.mutate(ids)}
+        onVoid={(id) => voidShiftMutation.mutate(id)}
       />
     </div>
   );
@@ -389,14 +408,20 @@ function FreelancerShiftsDialog({
   freelancer,
   balance,
   paying,
+  voiding,
+  canVoid,
   onClose,
   onPay,
+  onVoid,
 }: {
   freelancer: KassaFreelancer | null;
   balance: number;
   paying: boolean;
+  voiding: boolean;
+  canVoid: boolean;
   onClose: () => void;
   onPay: (attendanceEntryIds: string[]) => void;
+  onVoid: (attendanceEntryId: string) => void;
 }) {
   const employeeId = freelancer?.employee_id ?? null;
   const shiftsQuery = useQuery({
@@ -489,8 +514,25 @@ function FreelancerShiftsDialog({
                       </div>
                     </div>
                   </div>
-                  <div className="text-right font-medium tabular-nums">
-                    {shift.is_open ? "—" : formatRub(shift.amount)}
+                  <div className="flex items-center gap-2">
+                    <div className="text-right font-medium tabular-nums">
+                      {shift.is_open ? "—" : formatRub(shift.amount)}
+                    </div>
+                    {shift.paid && canVoid ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        disabled={paying || voiding}
+                        onClick={(event) => {
+                          // Строка — <label>: без stopPropagation клик уйдёт в чекбокс.
+                          event.preventDefault();
+                          onVoid(shift.attendance_entry_id);
+                        }}
+                      >
+                        Отменить
+                      </Button>
+                    ) : null}
                   </div>
                 </label>
               );

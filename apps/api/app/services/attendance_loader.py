@@ -118,7 +118,12 @@ async def load_attendance_entries(
                     select(AttendanceEntry).where(
                         AttendanceEntry.period_id == period.id,
                         AttendanceEntry.id.in_(
-                            select(FreelancerShiftSettlement.attendance_entry_id)
+                            select(FreelancerShiftSettlement.attendance_entry_id).where(
+                                # Только ДЕЙСТВУЮЩИЕ выдачи: отменённая строка от явки
+                                # отвязана (attendance_entry_id NULL), денег за смену нет —
+                                # такую явку перезагружаем как обычную.
+                                FreelancerShiftSettlement.status == "paid_cash",
+                            )
                         ),
                     )
                 )

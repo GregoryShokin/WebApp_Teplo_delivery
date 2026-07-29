@@ -24,6 +24,7 @@ from app.schemas.kassa import (
     KassaDdsArticleRead,
     KassaFreelancerShiftPayoutRequest,
     KassaFreelancerShiftsRead,
+    KassaFreelancerShiftVoidRequest,
     KassaFreelancerSyncReport,
     KassaJournalRead,
     KassaPayinCreate,
@@ -52,6 +53,7 @@ from app.services.freelancer.shift_settlement import (
     freelancer_shift_details,
     pay_freelancer_shifts,
     sync_freelancer_shifts,
+    void_freelancer_shift_payout,
 )
 from app.services.kassa.cheque import (
     ChequeBankPart,
@@ -144,6 +146,9 @@ KASSA_PENALTY_WAIVE = (Depends(require_permission("kassa.penalty.waive")),)
 # (finance.cashflow.* администратору не положены).
 KASSA_JOURNAL_READ = (Depends(require_permission("kassa.journal.read")),)
 KASSA_PAYOUTS_CREATE = (Depends(require_permission("kassa.payouts.create")),)
+# Отмена ошибочной выдачи внештатнику — ОТДЕЛЬНОЕ право (owner/admin): выдаёт кассовый
+# администратор, а откатывает уже отданные наличные — тот, кто отвечает за деньги.
+KASSA_FREELANCER_SHIFT_VOID = (Depends(require_permission("kassa.freelancer_shift.void")),)
 # Внесение по пресету — то же право, что и выплата (кассовые движения ТК Черникова).
 # Каталог пресетов курирует владелец — под общими правами Настроек.
 KASSA_SETTINGS_READ = (Depends(require_permission("settings.general.read")),)
@@ -971,6 +976,33 @@ async def pay_freelancer_shifts_endpoint(
         await pay_freelancer_shifts(
             session,
             attendance_entry_ids=payload.attendance_entry_ids,
+            actor_user_id=actor.user_id,
+        )
+    except FreelancerShiftSettlementError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return await kassa_pending_payload(session)
+
+
+@router.post(
+    "/freelancer-shifts/void",
+    response_model=KassaPendingRead,
+    dependencies=KASSA_FREELANCER_SHIFT_VOID,
+)
+async def void_freelancer_shift_endpoint(
+    payload: KassaFreelancerShiftVoidRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    """«Отменить выдачу»: откат ошибочной наличной выдачи внештатнику за смену.
+
+    Отменяется операция целиком (сумму выданного контур не пересчитывает никогда): деньги
+    снимаются — в день выдачи удалением проводки, за прошлую дату сторно-приходом, — а смена
+    возвращается в «К выдаче». Уже посчитанная ведомость периода после этого требует
+    пересчёта перед финализацией (staleness-гейт). Финализированный период — 409."""
+    try:
+        await void_freelancer_shift_payout(
+            session,
+            attendance_entry_id=payload.attendance_entry_id,
             actor_user_id=actor.user_id,
         )
     except FreelancerShiftSettlementError as exc:

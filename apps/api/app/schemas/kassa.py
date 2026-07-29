@@ -249,6 +249,11 @@ class KassaJournalItemRead(BaseModel):
     kassa_flow: str | None = None
     # Своя сегодняшняя кассовая запись — доступны «Изменить»/«Удалить».
     editable: bool
+    # Выдача внештатнику за смену, которую можно отменить как ошибочную (право
+    # kassa.freelancer_shift.void). Правке она не подлежит — только отмене целиком.
+    voidable: bool = False
+    # Ключ источника: у выдачи внештатнику — явка, которую отменяем.
+    source_id: uuid.UUID | None = None
     created_at: datetime
 
 
@@ -377,6 +382,14 @@ class KassaFreelancerShiftPayoutRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     attendance_entry_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class KassaFreelancerShiftVoidRequest(BaseModel):
+    """«Отменить выдачу»: ошибочная выдача за смену (не тому человеку / не за ту смену)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    attendance_entry_id: uuid.UUID
 
 
 class KassaFreelancerSyncReport(BaseModel):

@@ -138,10 +138,18 @@ class FreelancerShiftSettlement(Base):
     Статусы:
     - ``paid_cash`` — смена выдана наличными из кассы (ТК Черникова); ведомость исключает
                       её сумму из «к выплате» (в ФОТ/аналитике остаётся); повтор — 409;
-    - ``void``      — оплата аннулирована (реверс); из активной сверки исключается.
+    - ``void``      — выдача отменена как ошибочная (``freelancer.shift_settlement.void``):
+                      денег по ней нет, из сверки с ведомостью строка выпадает, а сама
+                      смена снова числится неоплаченной и доступна к выдаче.
 
-    «Непогашенные» смены = явки открытого периода МИНУС строки этой таблицы. При
-    финализации период уходит из «открытых» → неоплаченные смены исчезают из кассы,
+    Отменённая строка ОТВЯЗЫВАЕТСЯ от явки (``attendance_entry_id = NULL``) — иначе она
+    держала бы две вещи: уникальность (повторно выдать ту же смену стало бы нельзя) и
+    саму явку под ``RESTRICT`` (перезагрузка явок периода падала бы или обходила смену,
+    замораживая её снимок). Кто/когда/на что — остаётся в ``employee_id``, ``work_date``,
+    ``amount`` и полях ``voided_*``.
+
+    «Непогашенные» смены = явки открытого периода МИНУС ``paid_cash``-строки этой таблицы.
+    При финализации период уходит из «открытых» → неоплаченные смены исчезают из кассы,
     их платит ведомость (они в gross), а оплаченные налом вычтены из net.
     """
 
@@ -159,6 +167,8 @@ class FreelancerShiftSettlement(Base):
             "minutes >= 0",
             name="ck_freelancer_shift_settlement_minutes",
         ),
+        # Одна ДЕЙСТВУЮЩАЯ выдача на явку. Отменённые строки хранят NULL, а NULL в
+        # уникальном индексе Postgres не конфликтует — после отмены смену можно выдать заново.
         UniqueConstraint(
             "attendance_entry_id",
             name="uq_freelancer_shift_settlement_entry",
@@ -175,8 +185,9 @@ class FreelancerShiftSettlement(Base):
     # физически (``load_attendance_entries(force_reload=True)``), и CASCADE здесь уносил бы
     # вместе с ними сам факт выдачи денег — смена возвращалась в кассу «неоплаченной», а
     # ведомость переставала вычитать выданное. Оплаченная явка удалению не подлежит.
-    attendance_entry_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("attendance_entry.id", ondelete="RESTRICT"), nullable=False
+    # NULL — только у отменённых (``void``) строк: они явку больше не держат (см. докстринг).
+    attendance_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attendance_entry.id", ondelete="RESTRICT"), nullable=True
     )
     # Период явки — для сверки с ведомостью по границам периода (быстрый фильтр).
     period_id: Mapped[uuid.UUID] = mapped_column(
@@ -194,6 +205,16 @@ class FreelancerShiftSettlement(Base):
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     paid_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    # Сторно-приход, которым отменена выдача ЗА ПРОШЛУЮ ДАТУ. Отмена в день выдачи проводку
+    # не сторнирует, а удаляет (канон кассовой правки) — тогда здесь NULL, как и в
+    # ``cashflow_transaction_id`` (FK на удалённую проводку гасится в NULL).
+    reversal_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("cashflow_transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(

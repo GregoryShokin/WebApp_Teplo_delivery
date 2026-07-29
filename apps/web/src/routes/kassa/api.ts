@@ -259,8 +259,9 @@ export async function waiveKassaShiftPenalty(id: string): Promise<KassaShiftDeta
 export type KassaPayoutFlow =
   "expense" | "employee_advance" | "employee_loan" | "supplier_prepayment";
 
-// Маршрут строки журнала: выплаты + приход по пресету («Внесение в кассу»).
-export type KassaJournalFlow = KassaPayoutFlow | "payin";
+// Маршрут строки журнала: выплаты + приход по пресету («Внесение в кассу») + посменная
+// выдача внештатнику (её не правят, а отменяют целиком — см. voidable).
+export type KassaJournalFlow = KassaPayoutFlow | "payin" | "freelancer_shift";
 
 export type KassaJournalItem = {
   id: string;
@@ -277,6 +278,10 @@ export type KassaJournalItem = {
   counterparty_id: string | null;
   kassa_flow: KassaJournalFlow | null;
   editable: boolean;
+  /** Ошибочную выдачу внештатнику отменяют целиком (право kassa.freelancer_shift.void). */
+  voidable: boolean;
+  /** Ключ источника: у выдачи внештатнику — явка (её и отменяем). */
+  source_id: string | null;
   created_at: string;
 };
 
@@ -471,6 +476,20 @@ export async function payKassaFreelancerShifts(
 ): Promise<KassaPending> {
   const response = await api.post<KassaPending>(`${BASE}/freelancer-shifts/payout`, {
     attendance_entry_ids: attendanceEntryIds,
+  });
+  return response.data;
+}
+
+/**
+ * «Отменить выдачу»: откат ошибочной выдачи внештатнику за смену (не тому человеку /
+ * не за ту смену). Деньги снимаются, смена возвращается в «К выдаче». Сумму выданного
+ * контур не пересчитывает никогда — отменяется операция целиком.
+ */
+export async function voidKassaFreelancerShift(
+  attendanceEntryId: string,
+): Promise<KassaPending> {
+  const response = await api.post<KassaPending>(`${BASE}/freelancer-shifts/void`, {
+    attendance_entry_id: attendanceEntryId,
   });
   return response.data;
 }
