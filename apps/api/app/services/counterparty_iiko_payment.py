@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time as time_module  # алиас: из datetime импортирован одноимённый класс time
 import urllib.error
 import urllib.request
 import uuid
@@ -71,6 +72,20 @@ MAX_PUSH_ATTEMPTS = 6
 # проводки в учёте нет. Разреживаем серию; джоб редкий (5 мин) и накладных за проход единицы,
 # поэтому задержка ничего не тормозит. См. iiko_payment_verify — оно же ловит потери постфактум.
 ADD_PAYMENT_INTERVAL_SECONDS = 1.5
+
+# Паузы бэкоффа на 429, сек — только для ИДЕМПОТЕНТНЫХ шагов (выдача токена). Сам ``add_payment``
+# по лимиту частоты не повторяем ни здесь, ни авто-ретраем джоба: см. RATE_LIMITED_ERROR_PREFIX.
+RATE_LIMIT_RETRY_DELAYS = (1.0, 3.0, 7.0)
+# Машиночитаемый префикс ошибки «отказ по лимиту частоты» в ``IikoInvoicePaymentPush.error``.
+# Такой пуш — единственный случай, когда мы НЕ знаем, прошла ли оплата: ответа с фактом нет, а
+# add_payment неидемпотентен. Авто-повтор глушим (attempts = кап), а судьбу решает сверка по OLAP
+# (iiko_payment_verify): нашла проводку → ok, не нашла за несколько проходов → снимает блокировку
+# и джоб отправляет заново. Префикс, а не отдельный статус: колонка ``status`` живёт в фильтрах
+# половины контура, новое значение пришлось бы учить их все.
+RATE_LIMITED_ERROR_PREFIX = "rate_limited:"
+# Если сверка так и не разобрала такой пуш (OLAP лежит, или это дроблёная часть без invoice_id —
+# её verify не видит), через это окно заводим ручной кейс: молча висеть он не должен.
+RATE_LIMITED_REVIEW_AFTER = timedelta(hours=24)
 
 
 async def _throttle_add_payment(sent_in_pass: int) -> None:
@@ -185,6 +200,7 @@ IIKO_UNSETTLED_REASON_CODES = frozenset(
         "not_in_cloud_terminal",  # не появился за grace-окно — ретраить/ручной
         "iiko_rejected",  # перманентный отказ iiko (invalid amount и т.п.)
         "retry_cap_exhausted",  # исчерпан кап авто-ретраев транзиента — тихо выпадал из выборки
+        "rate_limited_unverified",  # отказ по лимиту частоты; сверка факт оплаты не разобрала
         "multi_invoice",  # мультиплатёж без честной банковской доли — только ручное
         "multi_invoice_residual",  # сумма честных долей не совпала с суммой банк-платежа
         "barter_counterparty",  # взаимозачёт: баланс iiko требует ручной сверки
@@ -197,6 +213,7 @@ IIKO_UNSETTLED_REASON_CODES = frozenset(
 # orphaned_pending СЮДА НЕ входит: осиротевший pending мог УЖЕ пройти в iiko (pending пишется до
 # HTTP add_payment), авто-повтор неидемпотентного add_payment задвоил бы платёж. Разрешение —
 # только ручное подтверждение после сверки в iiko (auto_sendable для pending возвращает False).
+# rate_limited_unverified — ровно та же логика: 429 не доказывает, что платёж не прошёл.
 IIKO_UNSETTLED_RETRIABLE = frozenset(
     {"not_in_cloud_grace", "not_in_cloud_terminal", "iiko_rejected", "retry_cap_exhausted"}
 )
@@ -432,6 +449,36 @@ def _iiko_auth_token(opener: urllib.request.OpenerDirector) -> str:
         return json.loads(response.read())["token"]
 
 
+def _iiko_auth_token_with_retry(opener: urllib.request.OpenerDirector) -> str:
+    """``_iiko_auth_token`` с бэкоффом на 429. Выдача токена — чистое чтение: если по лимиту
+    частоты не дали токен, ``add_payment`` вообще не отправлялся, поэтому повтор здесь безопасен
+    (в отличие от самого платежа, см. :func:`_is_rate_limited`)."""
+    delays = iter(RATE_LIMIT_RETRY_DELAYS)
+    while True:
+        try:
+            return _iiko_auth_token(opener)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429:
+                raise
+            delay = next(delays, None)
+            if delay is None:
+                raise
+            time_module.sleep(delay)
+
+
+def _is_rate_limited(status_code: int, response: dict | None) -> bool:
+    """iiko отказал по лимиту частоты (429 / ``TOO_MANY_REQUESTS``).
+
+    Для НЕидемпотентного ``add_payment`` это особый случай: отказ не доказывает, что платёж не
+    прошёл (на накладных 27.07 iiko вернула 429 на ``post``, а документ оказался проведён), а
+    повтор вслепую задвоил бы оплату в учёте. Поэтому такие пуши уходят под сверку по OLAP —
+    см. ``RATE_LIMITED_ERROR_PREFIX`` и :mod:`app.services.iiko_payment_verify`."""
+    if status_code == 429:
+        return True
+    blob = json.dumps(response, ensure_ascii=False).upper() if isinstance(response, dict) else ""
+    return "TOO_MANY_REQUESTS" in blob
+
+
 def _call_add_payment(payload: dict) -> tuple[int, dict]:
     """Синхронный вызов iiko ``add_payment`` (исполняется в треде): auth + POST в обход прокси.
 
@@ -441,7 +488,7 @@ def _call_add_payment(payload: dict) -> tuple[int, dict]:
     """
     opener = _iiko_opener()
     try:
-        token = _iiko_auth_token(opener)
+        token = _iiko_auth_token_with_retry(opener)
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(_IIKO_BASE + _ADD_PAYMENT_PATH, data=data, method="POST")
         req.add_header("Content-Type", "application/json")
@@ -699,6 +746,21 @@ async def push_invoice_payment_to_iiko(
     record.iiko_document_id = iiko_doc
     record.error = error
     record.response_payload = response if isinstance(response, dict) else {"raw": response}
+    # Отказ по лимиту частоты — единственная ошибка, после которой факт оплаты НЕИЗВЕСТЕН: iiko
+    # могла провести платёж и всё равно ответить отказом. Авто-повтор тут задваивает деньги в
+    # учёте, поэтому глушим его капом и передаём строку сверке по OLAP — она либо подтвердит
+    # проводку (→ ok), либо не найдёт её и сама разрешит переотправку.
+    if not ok and _is_rate_limited(status_code, record.response_payload):
+        record.error = (
+            f"{RATE_LIMITED_ERROR_PREFIX} iiko ограничила частоту запросов (429) — "
+            "прошёл платёж или нет, покажет сверка проводок"
+        )
+        record.attempts = MAX_PUSH_ATTEMPTS
+        error = record.error
+        logger.warning(
+            "iiko add_payment: лимит частоты по %s — платёж отдан на сверку проводок",
+            idempotency_key,
+        )
     # «Документ не найден в Cloud» — не перманентный отказ, а рассинхрон iikoServer↔Cloud: документ
     # есть в Server, add_payment пройдёт, когда он доедет в Cloud. НЕ засчитываем попыткой в кап
     # MAX_PUSH_ATTEMPTS — сверочный джоб продолжает ретраить; предохранитель по возрасту документа
@@ -1485,6 +1547,7 @@ async def sweep_unsettled_iiko_payments(
         "paid_outside_draft": 0,
         "correction_unsettled": 0,
         "retry_cap_exhausted": 0,
+        "rate_limited_unverified": 0,
         "orphaned_pending": 0,
     }
 
@@ -1600,6 +1663,11 @@ async def sweep_unsettled_iiko_payments(
             result["correction_unsettled"] += 1
 
     # --- 4. retry_cap_exhausted: транзиент добрался до капа БЕЗ кейса (тихо выпал из выборки) ---
+    # Пуши, заглушенные лимитом частоты, сюда НЕ попадают: у них кап стоит не потому, что попытки
+    # исчерпаны, а потому что факт оплаты неизвестен — их разбирает сверка проводок, а кейс
+    # `retry_cap_exhausted` дал бы кнопку авто-повтора и риск задвоить платёж. Свои, не разобранные
+    # сверкой за сутки, ловит категория 4б ниже.
+    rate_limited = IikoInvoicePaymentPush.error.like(f"{RATE_LIMITED_ERROR_PREFIX}%")
     capped_ids = (
         await session.scalars(
             select(IikoInvoicePaymentPush.invoice_id)
@@ -1607,6 +1675,7 @@ async def sweep_unsettled_iiko_payments(
                 IikoInvoicePaymentPush.invoice_id.is_not(None),
                 IikoInvoicePaymentPush.status == "error",
                 IikoInvoicePaymentPush.attempts >= MAX_PUSH_ATTEMPTS,
+                ~rate_limited,
             )
             .distinct()
             .limit(limit)
@@ -1631,6 +1700,42 @@ async def sweep_unsettled_iiko_payments(
             reason_code="retry_cap_exhausted",
         ):
             result["retry_cap_exhausted"] += 1
+
+    # --- 4б. rate_limited_unverified: 429 повис — сверка проводок его так и не разобрала ---
+    # Штатно такой пуш живёт часы: сверка (раз в 30 мин) либо подтвердит проводку, либо разрешит
+    # переотправку. Если он висит сутки — сверка до него не добирается (OLAP лежит; дроблёная
+    # часть без invoice_id ей не видна), и разбор нужен ручной. Авто-повтор не предлагаем: платёж
+    # мог пройти, повтор задвоил бы деньги в учёте.
+    limited_stale_before = datetime.now(UTC) - RATE_LIMITED_REVIEW_AFTER
+    limited_ids = (
+        await session.scalars(
+            select(IikoInvoicePaymentPush.invoice_id)
+            .where(
+                IikoInvoicePaymentPush.invoice_id.is_not(None),
+                IikoInvoicePaymentPush.status == "error",
+                rate_limited,
+                IikoInvoicePaymentPush.created_at <= limited_stale_before,
+            )
+            .distinct()
+            .limit(limit)
+        )
+    ).all()
+    for inv_id in limited_ids:
+        inv = await session.get(SupplierInvoice, inv_id)
+        if inv is None or inv.iiko_correction_new_external_id is not None:
+            continue
+        if await original_payment_settled_in_iiko(session, inv):
+            continue
+        if await _open_iiko_payment_case(
+            session, invoice_id=inv.id, external_id=inv.external_id or "",
+            amount=Decimal(str(inv.amount or 0)),
+            reason=(
+                "iiko отказала по лимиту частоты, и сверка проводок за сутки не показала, "
+                "прошла ли оплата — проверьте платёж в бэк-офисе iiko и подтвердите вручную"
+            ),
+            reason_code="rate_limited_unverified",
+        ):
+            result["rate_limited_unverified"] += 1
 
     # --- 5. orphaned_pending: застрявший pending-пуш (краш между commit pending и финализацией —
     #        платёж МОГ и не уйти). Ветка mirror для этого мертва (pending исключает из выборки).

@@ -13,6 +13,11 @@ TRANSACTIONS не отдаётся, а номера накладных повт�
 перепроверяем и только после этого переотправляем платёж (снимаем ``ok`` и done-маркер, чтобы
 зеркалящий джоб взял накладную снова). Переотправок не больше ``MAX_RESENDS`` — дальше кейс в
 owner-review, иначе при системном сбое iiko мы бы долбили его вечно и рисковали задвоить оплату.
+
+Сюда же приходят пуши, которым iiko отказала по лимиту частоты (429, префикс
+``RATE_LIMITED_ERROR_PREFIX``). Отказ не доказывает, что платёж не прошёл, поэтому авто-повтор у
+них заглушен, и решает именно сверка: проводка нашлась → пуш становится ``ok``; не нашлась за
+несколько проходов → блокировка снимается и зеркалящий джоб отправляет платёж заново.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import anyio
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import IikoInvoicePaymentPush, SupplierInvoice
@@ -137,13 +142,21 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
 
     Не бросает на пустой выборке; ошибка OLAP поднимается наверх (джоб залогирует и повторит
     следующим проходом — состояние в БД не тронуто)."""
+    from app.services.counterparty_iiko_payment import RATE_LIMITED_ERROR_PREFIX
+
     now = datetime.now(UTC)
+    # Кроме успешных отправок берём заглушенные лимитом частоты: у них факт оплаты неизвестен, и
+    # именно эта сверка решает — подтвердить пуш или разрешить переотправку.
+    rate_limited = IikoInvoicePaymentPush.error.like(f"{RATE_LIMITED_ERROR_PREFIX}%")
     rows = (
         await session.scalars(
             select(IikoInvoicePaymentPush)
             .join(SupplierInvoice, SupplierInvoice.id == IikoInvoicePaymentPush.invoice_id)
             .where(
-                IikoInvoicePaymentPush.status == "ok",
+                or_(
+                    IikoInvoicePaymentPush.status == "ok",
+                    and_(IikoInvoicePaymentPush.status == "error", rate_limited),
+                ),
                 IikoInvoicePaymentPush.amount > 0,
                 IikoInvoicePaymentPush.invoice_id.is_not(None),
                 IikoInvoicePaymentPush.verified_at.is_(None),
@@ -170,10 +183,16 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
     )
 
     for row in rows:
+        was_rate_limited = (row.error or "").startswith(RATE_LIMITED_ERROR_PREFIX)
         invoice = await session.get(SupplierInvoice, row.invoice_id)
         number = (invoice.number or "") if invoice is not None else ""
         if number and _covered(payments, number, row.amount):
             row.verified_at = now
+            if was_rate_limited:
+                # Отказ по лимиту был «шумом»: платёж iiko всё-таки провела. Пуш становится
+                # обычным успешным — накладная считается отзеркаленной, повтор не нужен.
+                row.status = "ok"
+                row.error = None
             result["verified"] += 1
             continue
 
@@ -182,10 +201,14 @@ async def verify_mirrored_payments(session: AsyncSession, *, limit: int = 200) -
             result["pending"] += 1
             continue
 
-        # Проводки нет и после нескольких проверок — платёж до учёта iiko не дошёл. Снимаем ok,
-        # чтобы зеркалящий джоб отправил его заново.
+        # Проводки нет и после нескольких проверок — платёж до учёта iiko не дошёл. Снимаем ok
+        # (для заглушенных лимитом — снимаем кап), чтобы зеркалящий джоб отправил его заново.
         row.status = "error"
-        row.error = "проводка в iiko не подтверждена — переотправка"
+        row.error = (
+            "iiko отказала по лимиту частоты, проводки в учёте нет — переотправка"
+            if was_rate_limited
+            else "проводка в iiko не подтверждена — переотправка"
+        )
         row.attempts = 0
         row.verify_attempts = 0
         row.resend_count += 1

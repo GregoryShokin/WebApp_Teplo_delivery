@@ -16,6 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import IikoInvoicePaymentPush, ReconciliationCase, SupplierInvoice
 from app.services import iiko_payment_verify as verify_mod
+from app.services.counterparty_iiko_payment import (
+    MAX_PUSH_ATTEMPTS,
+    RATE_LIMITED_ERROR_PREFIX,
+)
 from app.services.iiko_payment_verify import (
     MAX_RESENDS,
     VERIFY_ATTEMPTS_BEFORE_RESEND,
@@ -286,3 +290,97 @@ async def test_verify_no_rows_does_not_call_iiko(
     async with async_session_factory() as session:
         result = await verify_mirrored_payments(session)
     assert result == {"checked": 0, "verified": 0, "pending": 0, "resent": 0, "manual": 0}
+
+
+# ── пуши, заглушенные лимитом частоты iiko (429) ────────────────────────────────────────────────
+
+
+async def _rate_limited_row(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    amount: str,
+    verify_attempts: int = 0,
+) -> IikoInvoicePaymentPush:
+    """Пуш, которому iiko отказала по лимиту частоты: авто-повтор заглушен капом, факт оплаты
+    неизвестен — судьбу решает сверка проводок."""
+    row = IikoInvoicePaymentPush(
+        idempotency_key=f"invoice:{invoice.id}",
+        invoice_id=invoice.id,
+        external_id=invoice.external_id or "",
+        amount=Decimal(amount),
+        account_to="ACC-1",
+        status="error",
+        attempts=MAX_PUSH_ATTEMPTS,
+        error=f"{RATE_LIMITED_ERROR_PREFIX} iiko ограничила частоту запросов (429)",
+        verify_attempts=verify_attempts,
+    )
+    session.add(row)
+    await session.flush()
+    row.created_at = SENT_AT
+    await session.commit()
+    return row
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_push_confirmed_by_transaction(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Отказ по лимиту оказался шумом — платёж iiko всё-таки провела. Пуш становится обычным
+    успешным, повторять его не нужно."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="61", amount="1200.00")
+        row = await _rate_limited_row(session, invoice, amount="1200.00")
+        _patch_olap(monkeypatch, [("61", Decimal("1200.00"))])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["verified"] == 1
+        assert (row.status, row.error) == ("ok", None)
+        assert row.verified_at is not None
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_push_without_transaction_is_unblocked(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Проводки нет и после порога проверок — платёж не прошёл. Снимаем кап, чтобы зеркалящий
+    джоб отправил его заново."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="62", amount="1300.00")
+        row = await _rate_limited_row(
+            session, invoice, amount="1300.00", verify_attempts=VERIFY_ATTEMPTS_BEFORE_RESEND - 1
+        )
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["resent"] == 1
+        assert row.attempts == 0  # авто-повтор снова разрешён
+        assert row.status == "error"
+        assert not (row.error or "").startswith(RATE_LIMITED_ERROR_PREFIX)
+        assert row.resend_count == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_push_is_patient_before_threshold(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """До порога проверок кап не снимаем: проводка могла ещё не доехать, а лишняя отправка —
+    это задвоенные деньги в учёте."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="63", amount="1400.00")
+        row = await _rate_limited_row(session, invoice, amount="1400.00")
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["pending"] == 1
+        assert row.attempts == MAX_PUSH_ATTEMPTS
+        assert (row.error or "").startswith(RATE_LIMITED_ERROR_PREFIX)
