@@ -314,12 +314,14 @@ class KassaAdvancePermissionRead(BaseModel):
 
 
 class KassaFreelancerRead(BaseModel):
-    """Внештатник с непогашенным: одна строка (имя + Σ неоплаченных смен открытого периода)."""
+    """Внештатник с непогашенным: одна строка (имя + Σ неоплаченных ЗАКРЫТЫХ смен)."""
 
     employee_id: uuid.UUID
     name: str
     unpaid_total: float
     shift_count: int
+    # Смены, которые ещё идут: платить за них нельзя, но админ должен их видеть.
+    open_count: int = 0
 
 
 class KassaFreelancerShiftRead(BaseModel):
@@ -330,6 +332,8 @@ class KassaFreelancerShiftRead(BaseModel):
     hours: float
     amount: float
     paid: bool
+    # Смена ещё идёт: часы и сумма расчётные, выдача — только после закрытия в iiko.
+    is_open: bool = False
 
 
 class KassaFreelancerShiftsRead(BaseModel):

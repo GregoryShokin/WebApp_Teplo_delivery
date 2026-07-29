@@ -2255,6 +2255,10 @@ def test_open_shift_closes_at_22_msk() -> None:
     assert entry.ended_at == datetime(2026, 5, 19, 19, 0, tzinfo=UTC)
     assert entry.minutes_worked == 11 * 60
     assert entry.quality_status == "ok"
+    # Закрытие синтезировано, а не получено из iiko: смена ещё идёт. Без этого признака
+    # расчётные минуты неотличимы от отработанных, и посменная выдача внештатника платит
+    # полную ставку за неотработанное (см. test_open_shift_is_visible_but_not_payable).
+    assert entry.is_open is True
 
 
 def test_closed_shift_over_12_hours_is_capped_without_quality_review() -> None:
@@ -2274,6 +2278,8 @@ def test_closed_shift_over_12_hours_is_capped_without_quality_review() -> None:
     assert entry.minutes_worked == 12 * 60
     assert entry.quality_status == "ok"
     assert "capped_to_12h_from_780min" in (entry.notes or "")
+    # iiko отдал dateTo — смена закрыта, минуты фактические (пусть и обрезанные капом).
+    assert entry.is_open is False
 
 
 def test_cross_midnight_shift_is_warning_capped_on_open_date() -> None:

@@ -74,6 +74,9 @@ class _Shift:
     minutes: int
     amount: Decimal
     paid: bool
+    # Смена ЕЩЁ ИДЁТ (iiko не отдал закрытие, минуты синтезированы загрузчиком). Такую
+    # показываем в модалке серой — но не считаем «к выдаче» и не даём оплатить.
+    is_open: bool
 
 
 def _shift_amount(rate: Any, minutes: int) -> Decimal:
@@ -94,12 +97,16 @@ async def _collect_open_period_shifts(
     as_of: date | None = None,
     employee_id: uuid.UUID | None = None,
 ) -> tuple[PayrollPeriod | None, list[_Shift]]:
-    """Смены внештатников открытого недельного периода (с пометкой «оплачена налом»).
+    """Смены внештатников открытого недельного периода (с пометками «оплачена»/«идёт»).
 
     Единица смены — явка ``attendance_entry`` с завершённым интервалом (``ended_at``)
     и ненулевыми минутами; ставка карточки > 0 (иначе сумма 0 — смену не показываем/не
     берём в оплату). Открытый период определяется как в авансовом механизме
     (``_open_weekly_period``): недельный, не финализированный. Нет периода → пустой список.
+
+    ИДУЩИЕ смены (``is_open``) из выборки НЕ выбрасываем: их надо показать администратору
+    серой строкой, чтобы он видел, что человек на смене, и не искал деньги в обход системы.
+    Отсечка — уровнем выше: в сумму «к выдаче» они не входят и оплату получают отказом.
     """
     as_of = as_of or datetime.now(MOSCOW_TZ).date()
     period = await _open_weekly_period(session, as_of)
@@ -152,6 +159,7 @@ async def _collect_open_period_shifts(
                 minutes=entry.minutes_worked,
                 amount=amount,
                 paid=entry.id in paid_ids,
+                is_open=bool(getattr(entry, "is_open", False)),
             )
         )
     return period, shifts
@@ -160,9 +168,12 @@ async def _collect_open_period_shifts(
 async def list_unpaid_freelancers(
     session: AsyncSession, *, as_of: date | None = None
 ) -> list[dict[str, Any]]:
-    """Одна строка на внештатника с непогашенным: имя + Σ неоплаченных смен открытого периода.
+    """Одна строка на внештатника с непогашенным: имя + Σ неоплаченных ЗАКРЫТЫХ смен.
 
-    Внештатники без неоплаченных смен (всё выдано / нет явок) в список не попадают.
+    Идущая смена в ``unpaid_total`` и ``shift_count`` не входит — платить за неё нечего,
+    пока iiko не отдал время закрытия. Её видно отдельным счётчиком ``open_count``, ради
+    которого человек и попадает в список, даже когда выдавать ему прямо сейчас нечего.
+    Внештатники вовсе без смен (всё выдано / нет явок) в список не попадают.
     """
     _, shifts = await _collect_open_period_shifts(session, as_of=as_of)
     totals: dict[uuid.UUID, dict[str, Any]] = {}
@@ -171,8 +182,17 @@ async def list_unpaid_freelancers(
             continue
         bucket = totals.setdefault(
             shift.employee_id,
-            {"employee_id": shift.employee_id, "name": shift.employee_name, "unpaid_total": Decimal("0"), "shift_count": 0},
+            {
+                "employee_id": shift.employee_id,
+                "name": shift.employee_name,
+                "unpaid_total": Decimal("0"),
+                "shift_count": 0,
+                "open_count": 0,
+            },
         )
+        if shift.is_open:
+            bucket["open_count"] += 1
+            continue
         bucket["unpaid_total"] += shift.amount
         bucket["shift_count"] += 1
     result = [
@@ -181,6 +201,7 @@ async def list_unpaid_freelancers(
             "name": bucket["name"],
             "unpaid_total": money(bucket["unpaid_total"]),
             "shift_count": bucket["shift_count"],
+            "open_count": bucket["open_count"],
         }
         for bucket in totals.values()
     ]
@@ -191,9 +212,11 @@ async def list_unpaid_freelancers(
 async def freelancer_shift_details(
     session: AsyncSession, employee_id: uuid.UUID, *, as_of: date | None = None
 ) -> list[dict[str, Any]]:
-    """Смены внештатника открытого периода для модалки: дата · часы · сумма · оплачена ли.
+    """Смены внештатника открытого периода для модалки: дата · часы · сумма · статус.
 
-    Оплаченные помечены ``paid=true`` (в модалке — как выданные/недоступные).
+    Оплаченные помечены ``paid=true`` (в модалке — как выданные/недоступные), идущие —
+    ``is_open=true`` (серые, без галочки). У идущей смены часы и сумма расчётные: это
+    прикидка «если доработает до конца», а не то, что человек уже заработал.
     """
     _, shifts = await _collect_open_period_shifts(session, as_of=as_of, employee_id=employee_id)
     return [
@@ -203,6 +226,7 @@ async def freelancer_shift_details(
             "hours": round(shift.minutes / 60, 2),
             "amount": money(shift.amount),
             "paid": shift.paid,
+            "is_open": shift.is_open,
         }
         for shift in shifts
     ]
@@ -232,12 +256,18 @@ async def pay_freelancer_shifts(
 ) -> list[uuid.UUID]:
     """«Выплатить»: выдать наличные из ТК Черникова за выбранные смены (каждую целиком).
 
-    Атомарно за запрос: все явки должны быть внештатными сменами открытого периода и ещё
-    НЕ оплаченными налом (иначе 409, ничего не выдаём — повторная оплата смены исключена
-    уникальностью ``attendance_entry_id``). На каждую смену — своя out-проводка ДДС по
-    статье производственной ЗП (движок пишет статью сам; сумма — учётная, админ не вводит).
-    Сумма больше остатка кассы НЕ блокируется (предупреждение показывает фронт).
-    Возвращает id созданных проводок.
+    Атомарно за запрос: все явки должны быть внештатными сменами открытого периода,
+    ЗАКРЫТЫМИ в iiko и ещё НЕ оплаченными налом (иначе 409, ничего не выдаём — повторная
+    оплата смены исключена уникальностью ``attendance_entry_id``). На каждую смену — своя
+    out-проводка ДДС по статье производственной ЗП (движок пишет статью сам; сумма —
+    учётная, админ не вводит). Сумма больше остатка кассы НЕ блокируется (предупреждение
+    показывает фронт). Возвращает id созданных проводок.
+
+    Про закрытие смены: пока iiko не отдал время окончания, сумма считается от
+    синтезированных загрузчиком минут — за смену, начатую утром, это сразу ПОЛНАЯ
+    договорная ставка. Выдача окончательна и пересчёту не подлежит, поэтому платить по
+    допущению нельзя: ждём факта. Не забранная до дня зарплаты смена уедет в обычную
+    ведомость — деньги не теряются.
     """
     ids: list[uuid.UUID] = list(dict.fromkeys(attendance_entry_ids))
     if not ids:
@@ -256,6 +286,11 @@ async def pay_freelancer_shifts(
             raise FreelancerShiftSettlementError("Смена не найдена среди выдаваемых из кассы")
         if shift.paid:
             raise FreelancerShiftSettlementError("Смена уже выдана наличными")
+        if shift.is_open:
+            raise FreelancerShiftSettlementError(
+                f"Смена {shift.work_date.strftime('%d.%m.%Y')} ещё не закрыта — "
+                "выдача возможна после закрытия смены в iiko"
+            )
         chosen.append(shift)
 
     try:

@@ -143,7 +143,9 @@ export function KassaPendingTab() {
   const syncShiftsMutation = useMutation({
     mutationFn: () => syncKassaFreelancerShifts(),
     onSuccess: (report) => {
-      const count = report.freelancers.length;
+      // Считаем только тех, кому реально есть что выдать: человек с одной ещё идущей
+      // сменой в списке появится, но звать за деньгами по нему рано.
+      const count = report.freelancers.filter((item) => item.unpaid_total > 0).length;
       toast.success(
         count ? `Смены синхронизированы: внештатников к выдаче ${count}` : "Смены синхронизированы",
       );
@@ -188,7 +190,7 @@ export function KassaPendingTab() {
           variant="outline"
           disabled={busy}
           onClick={() => syncShiftsMutation.mutate()}
-          title="Подтянуть свежие закрытые смены внештатников из iiko"
+          title="Перечитать смены внештатников из iiko — закрывшиеся станут доступны к выдаче"
         >
           {syncShiftsMutation.isPending ? (
             <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
@@ -320,6 +322,20 @@ function formatShiftDay(iso: string): string {
  * Выплаты за смены внештатников: ОДНА строка на человека (имя + «к выдаче N ₽» = сумма его
  * неоплаченных смен). Клик открывает модалку со сменами построчно.
  */
+/** Русское склонение по числу: 1 смена, 2 смены, 5 смен. */
+function pluralShifts(count: number): string {
+  const tail = count % 10;
+  const hundred = count % 100;
+  if (tail === 1 && hundred !== 11) return `${count} смена`;
+  if (tail >= 2 && tail <= 4 && (hundred < 12 || hundred > 14)) return `${count} смены`;
+  return `${count} смен`;
+}
+
+/** «1 смена идёт» / «2 смены идут» — счётчик ещё не закрытых смен. */
+function openShiftsHint(count: number): string {
+  return `${pluralShifts(count)} ${count % 10 === 1 && count % 100 !== 11 ? "идёт" : "идут"}`;
+}
+
 function FreelancersSection({
   freelancers,
   busy,
@@ -343,7 +359,10 @@ function FreelancersSection({
           <div className="min-w-0">
             <div className="font-medium">{freelancer.name}</div>
             <div className="text-xs text-muted-foreground">
-              {freelancer.shift_count} смен · нажмите, чтобы выбрать
+              {freelancer.shift_count > 0
+                ? `${pluralShifts(freelancer.shift_count)} · нажмите, чтобы выбрать`
+                : "нажмите, чтобы посмотреть"}
+              {freelancer.open_count > 0 ? ` · ${openShiftsHint(freelancer.open_count)}` : ""}
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -360,8 +379,11 @@ function FreelancersSection({
 
 /**
  * Модалка смен внештатника: смены построчно (дата · часы · сумма) чекбоксами. Неоплаченные
- * по умолчанию отмечены; оплаченные — как выданные/недоступны. Внизу итог по отмеченным и
- * «Выплатить N ₽» — каждая выбранная смена выдаётся целиком (сумму/статью пишет движок).
+ * ЗАКРЫТЫЕ смены по умолчанию отмечены; оплаченные — как выданные/недоступны; ещё идущие —
+ * серые и неотмечаемые (за них платить нечего, пока iiko не отдал время закрытия: часы у
+ * них расчётные, и выдача ушла бы по полной ставке за неотработанное). Внизу итог по
+ * отмеченным и «Выплатить N ₽» — каждая выбранная смена выдаётся целиком (сумму и статью
+ * пишет движок).
  */
 function FreelancerShiftsDialog({
   freelancer,
@@ -389,11 +411,15 @@ function FreelancerShiftsDialog({
   const effectiveSelected = useMemo(() => {
     if (selected) return selected;
     if (!shifts) return new Set<string>();
-    return new Set(shifts.filter((shift) => !shift.paid).map((shift) => shift.attendance_entry_id));
+    return new Set(
+      shifts
+        .filter((shift) => !shift.paid && !shift.is_open)
+        .map((shift) => shift.attendance_entry_id),
+    );
   }, [selected, shifts]);
 
   const chosen = (shifts ?? []).filter(
-    (shift) => !shift.paid && effectiveSelected.has(shift.attendance_entry_id),
+    (shift) => !shift.paid && !shift.is_open && effectiveSelected.has(shift.attendance_entry_id),
   );
   const selectedTotal = chosen.reduce((sum, shift) => sum + shift.amount, 0);
   const overBalance = selectedTotal > 0 && selectedTotal > balance;
@@ -431,12 +457,13 @@ function FreelancerShiftsDialog({
         ) : shifts && shifts.length > 0 ? (
           <div className="grid max-h-[50vh] gap-2 overflow-y-auto">
             {shifts.map((shift) => {
+              const locked = shift.paid || shift.is_open;
               const checked = shift.paid || effectiveSelected.has(shift.attendance_entry_id);
               return (
                 <label
                   key={shift.attendance_entry_id}
                   className={
-                    shift.paid
+                    locked
                       ? "flex items-center justify-between gap-2 rounded-md border border-dashed p-3 text-sm opacity-60"
                       : "flex cursor-pointer items-center justify-between gap-2 rounded-md border p-3 text-sm hover:bg-muted/40"
                   }
@@ -446,18 +473,24 @@ function FreelancerShiftsDialog({
                       type="checkbox"
                       className="h-4 w-4 shrink-0"
                       checked={checked}
-                      disabled={shift.paid || paying}
+                      disabled={locked || paying}
                       onChange={() => toggle(shift.attendance_entry_id)}
                     />
                     <div className="min-w-0">
                       <div className="font-medium">смена {formatShiftDay(shift.work_date)}</div>
                       <div className="text-xs text-muted-foreground">
-                        {shift.hours} ч{shift.paid ? " · выдано" : ""}
+                        {shift.is_open ? (
+                          <>смена идёт — выдача после закрытия</>
+                        ) : (
+                          <>
+                            {shift.hours} ч{shift.paid ? " · выдано" : ""}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div className="text-right font-medium tabular-nums">
-                    {formatRub(shift.amount)}
+                    {shift.is_open ? "—" : formatRub(shift.amount)}
                   </div>
                 </label>
               );

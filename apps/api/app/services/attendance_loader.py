@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     AttendanceEntry,
     Employee,
     EmployeeRoleAssignment,
+    FreelancerShiftSettlement,
     PayrollPeriod,
     ShiftLedgerEntry,
 )
@@ -99,16 +100,39 @@ async def load_attendance_entries(
         # явки, отдаём что есть, даже при force_reload.
         return list(existing_entries)
 
+    protected_days: set[tuple[Any, date]] = set()
     if force_reload:
         # «Пересчитать» перечитывает явки из iiko: сносим старый снапшот периода и
         # строим заново. Иначе ленивый возврат выше отдаёт устаревший/неполный набор
         # (напр. смены, добавленные/исправленные в iiko уже после первого расчёта).
-        await session.execute(
-            text("DELETE FROM attendance_entry WHERE period_id = :period_id"),
-            {"period_id": period.id},
+        #
+        # ИСКЛЮЧЕНИЕ — явки, за которые внештатнику уже выдали наличные из кассы: на них
+        # ссылается строка `freelancer_shift_settlement`, то есть сам факт выдачи денег.
+        # Снос такой явки уносил бы и его: смена возвращалась в кассу «неоплаченной»
+        # (можно выдать второй раз), а ведомость переставала вычитать выданное. Эти явки
+        # переживают перезагрузку и заново из выгрузки НЕ создаются — сумма выдачи есть
+        # снимок на момент оплаты и пересчёту не подлежит.
+        protected = list(
+            (
+                await session.scalars(
+                    select(AttendanceEntry).where(
+                        AttendanceEntry.period_id == period.id,
+                        AttendanceEntry.id.in_(
+                            select(FreelancerShiftSettlement.attendance_entry_id)
+                        ),
+                    )
+                )
+            ).all()
         )
+        delete_stmt = delete(AttendanceEntry).where(AttendanceEntry.period_id == period.id)
+        if protected:
+            delete_stmt = delete_stmt.where(
+                AttendanceEntry.id.not_in([entry.id for entry in protected])
+            )
+        await session.execute(delete_stmt)
         await session.flush()
-        existing_entries = []
+        existing_entries = protected
+        protected_days = {(entry.employee_id, entry.work_date) for entry in protected}
 
     employees_by_iiko_id = {
         employee.iiko_id: employee for employee in (await session.scalars(select(Employee))).all()
@@ -160,6 +184,10 @@ async def load_attendance_entries(
                 continue
         entry = build_attendance_entry(record, period, employee, rules)
         if entry.work_date < period.start_date or entry.work_date > period.end_date:
+            continue
+        if (entry.employee_id, entry.work_date) in protected_days:
+            # Смена этого дня уже оплачена налом — её явка пережила снос выше. Создать
+            # вторую значило бы задвоить день и в ведомости, и в витрине кассы.
             continue
         if not await _attendance_entry_is_payroll_relevant(session, entry, employee):
             continue
@@ -226,6 +254,11 @@ def build_attendance_entry(
     quality_status = "ok"
     notes: list[str] = []
 
+    # iiko не отдал время закрытия — смена ЕЩЁ ИДЁТ. Ниже мы подставляем расчётное
+    # окончание, чтобы явку было чем показать и на что считать прогноз, но помечаем её
+    # `is_open`: это допущение, а не факт. Всё, что платит деньги по факту отработанного
+    # (посменная выдача внештатника, окно аванса), обязано такие явки пропускать.
+    is_open = ended_at is None
     if ended_at is None:
         close_local = datetime.combine(
             work_date,
@@ -276,6 +309,7 @@ def build_attendance_entry(
         source=source,
         quality_status=quality_status,
         notes=";".join(notes) if notes else None,
+        is_open=is_open,
     )
 
 

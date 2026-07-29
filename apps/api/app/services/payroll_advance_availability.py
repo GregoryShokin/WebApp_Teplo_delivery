@@ -230,12 +230,17 @@ async def _production_earned(
     earned_through = min(as_of, period.end_date)
     # Только уже загруженные явки внутри рабочего периода (без live-iiko). В день выплаты
     # as_of может быть позже end_date, но заработанное считаем только до конца недели.
+    # ИДУЩИЕ смены (is_open) исключены: у них ended_at/минуты синтезированы загрузчиком
+    # (min(22:00, старт+12ч)), то есть смена, начатая утром, сразу выглядит полной
+    # 12-часовой. Заработанное — это факт, а не прогноз: сегодняшняя смена войдёт в окно
+    # аванса после того, как её закроют в iiko.
     entries = list(
         (
             await session.scalars(
                 select(AttendanceEntry).where(
                     AttendanceEntry.period_id == period.id,
                     AttendanceEntry.work_date <= earned_through,
+                    AttendanceEntry.is_open.is_(False),
                 )
             )
         ).all()

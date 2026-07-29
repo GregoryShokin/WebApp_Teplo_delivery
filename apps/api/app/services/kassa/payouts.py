@@ -696,7 +696,12 @@ async def kassa_pending_payload(
         "permissions": permissions,
         "freelancers": freelancers,
         "targets_total": float(_money(targets_total)),
-        "pending_count": len(targets) + len(permissions) + len(freelancers),
+        # В счётчик вкладки идут только те внештатники, кому реально есть что выдать:
+        # человек с одной ИДУЩЕЙ сменой в списке виден (серой строкой), но выдавать
+        # ему нечего — бейдж «К выдаче» на него звать не должен.
+        "pending_count": len(targets)
+        + len(permissions)
+        + sum(1 for freelancer in freelancers if freelancer.get("unpaid_total", 0)),
     }
 
 

@@ -33,6 +33,7 @@ from app.models import (
     PayrollRun,
     Wallet,
 )
+from app.services.attendance_loader import load_attendance_entries
 from app.services.freelancer import shift_settlement
 from app.services.freelancer.shift_settlement import (
     FREELANCER_SHIFT_ARTICLE_CODE,
@@ -126,7 +127,15 @@ async def _attendance(
     work_date: date = PERIOD_START,
     minutes: int | None = 720,
     started_hour: int = 10,
+    is_open: bool = False,
 ) -> AttendanceEntry:
+    """Явка внештатника. ``is_open=True`` — смена ЕЩЁ ИДЁТ.
+
+    Важно: у идущей смены ``ended_at``/``minutes_worked`` тоже ЗАПОЛНЕНЫ — именно так их
+    кладёт настоящий загрузчик, синтезируя закрытие ``min(22:00, старт+12ч)``. Явки с
+    пустым ``ended_at`` он не создаёт никогда, поэтому проверять гейт через ``ended_at=None``
+    бессмысленно: такой тест зелёный на состоянии, которого в проде не бывает.
+    """
     started_at = datetime(work_date.year, work_date.month, work_date.day, started_hour, tzinfo=UTC)
     ended_at = started_at + timedelta(minutes=minutes) if minutes is not None else None
     entry = AttendanceEntry(
@@ -138,6 +147,8 @@ async def _attendance(
         ended_at=ended_at,
         minutes_worked=minutes or 0,
         source="iiko",
+        is_open=is_open,
+        notes="open_shift_auto_closed" if is_open else None,
     )
     session.add(entry)
     await session.flush()
@@ -244,18 +255,125 @@ async def test_list_empty_without_open_period(
         assert await list_unpaid_freelancers(session, as_of=AS_OF) == []
 
 
-async def test_list_ignores_zero_rate_and_open_shifts(
+async def test_list_ignores_zero_rate_and_entries_without_end(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
         period = await _period(session)
         no_rate = await _freelancer(session, name="Без ставки", rate=None)
         await _attendance(session, no_rate.id, period.id)
-        open_shift_emp = await _freelancer(session, name="Открытая смена", rate=Decimal("3600"))
-        await _attendance(session, open_shift_emp.id, period.id, minutes=None)  # нет ended_at
+        no_end = await _freelancer(session, name="Без окончания", rate=Decimal("3600"))
+        await _attendance(session, no_end.id, period.id, minutes=None)  # нет ended_at
         await session.commit()
 
-        # Ставка 0 и смена без ended_at не дают ни строк, ни сумм.
+        # Ставка 0 и явка без ended_at не дают ни строк, ни сумм.
+        assert await list_unpaid_freelancers(session, as_of=AS_OF) == []
+
+
+async def test_open_shift_is_visible_but_not_payable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Идущая смена: видна серой строкой, но в «к выдаче» не входит и не оплачивается.
+
+    Главный регресс задачи. Смена, начатая утром, приходит из загрузчика с синтетическим
+    закрытием и полными 720 минутами — до фикса касса предлагала выдать за неё ПОЛНУЮ
+    договорную ставку в первый же час работы.
+    """
+    async with async_session_factory() as session:
+        period = await _period(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        open_entry = await _attendance(session, employee.id, period.id, is_open=True)
+        await session.commit()
+
+        rows = await list_unpaid_freelancers(session, as_of=AS_OF)
+        # Человек в списке есть — админ должен видеть, что тот на смене…
+        assert len(rows) == 1
+        assert rows[0]["open_count"] == 1
+        # …но выдавать нечего: ни суммы, ни готовых к выдаче смен.
+        assert rows[0]["unpaid_total"] == 0.0
+        assert rows[0]["shift_count"] == 0
+
+        shifts = await freelancer_shift_details(session, employee.id, as_of=AS_OF)
+        assert len(shifts) == 1
+        assert shifts[0]["is_open"] is True
+
+        with pytest.raises(FreelancerShiftSettlementError, match="ещё не закрыта"):
+            await pay_freelancer_shifts(
+                session, attendance_entry_ids=[open_entry.id], actor_user_id=None, today=AS_OF
+            )
+        # Отказ — значит ни проводки, ни записи о выдаче.
+        assert (await session.scalars(select(FreelancerShiftSettlement))).all() == []
+
+
+async def test_closed_shift_pays_proportionally_to_hours(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Смена закрылась на 10 часах из 12 — платим пропорцию, а не полную ставку."""
+    async with async_session_factory() as session:
+        period = await _period(session)
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        entry = await _attendance(session, employee.id, period.id, minutes=600)
+        await session.commit()
+
+        rows = await list_unpaid_freelancers(session, as_of=AS_OF)
+        assert rows[0]["unpaid_total"] == 2916.67  # 3500 × 600/720
+        assert rows[0]["open_count"] == 0
+
+        await pay_freelancer_shifts(
+            session, attendance_entry_ids=[entry.id], actor_user_id=None, today=AS_OF
+        )
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.amount == Decimal("2916.67")
+
+
+async def test_reload_keeps_paid_shift_and_its_payout(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Перезагрузка явок не стирает уже сделанную выдачу.
+
+    ``load_attendance_entries(force_reload=True)`` физически сносит явки периода (ночное
+    окно 00:30 и кнопка «Синхронизировать смены»), а факт выдачи ссылается на явку. Пока
+    ссылка была CASCADE, синхронизация уносила выдачу вместе с явкой: смена возвращалась
+    в кассу неоплаченной (можно выдать второй раз), а ведомость переставала вычитать
+    выданное. Оплаченная явка обязана переживать перезагрузку.
+    """
+    async with async_session_factory() as session:
+        period = await _period(session)
+        await _tk_wallet(session)
+        await _payroll_article(session)
+        employee = await _freelancer(session, rate=Decimal("3500"))
+        entry = await _attendance(session, employee.id, period.id, minutes=600)
+        await session.commit()
+
+        await pay_freelancer_shifts(
+            session, attendance_entry_ids=[entry.id], actor_user_id=None, today=AS_OF
+        )
+
+        # Непустая выгрузка iiko — иначе загрузчик бережно ничего не трогает.
+        await load_attendance_entries(
+            session,
+            period,
+            iiko_records=[
+                {
+                    "employeeId": "нет-такого-сотрудника",
+                    "dateFrom": "2026-07-08T10:00:00+03:00",
+                    "dateTo": "2026-07-08T20:00:00+03:00",
+                }
+            ],
+            force_reload=True,
+        )
+        await session.commit()
+
+        assert await session.get(AttendanceEntry, entry.id) is not None
+        settlement = (await session.scalars(select(FreelancerShiftSettlement))).one()
+        assert settlement.attendance_entry_id == entry.id
+        assert settlement.status == "paid_cash"
+
+        # И смена по-прежнему помечена выданной — второй раз её не предложат.
+        shifts = await freelancer_shift_details(session, employee.id, as_of=AS_OF)
+        assert [shift["paid"] for shift in shifts] == [True]
         assert await list_unpaid_freelancers(session, as_of=AS_OF) == []
 
 

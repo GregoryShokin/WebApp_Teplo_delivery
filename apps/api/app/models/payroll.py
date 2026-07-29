@@ -80,6 +80,15 @@ class AttendanceEntry(Base):
     source: Mapped[str] = mapped_column(String(24), nullable=False, default="iiko")
     quality_status: Mapped[str] = mapped_column(String(64), nullable=False, default="ok")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Смена ещё ИДЁТ: iiko не отдал время закрытия, а ``ended_at``/``minutes_worked`` выше —
+    # синтезированы загрузчиком (``min(22:00, старт+12ч)``), это не факт, а допущение.
+    # Всё, что платит деньги по факту смены, обязано такие явки пропускать.
+    is_open: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
 
 
 class ShiftLedgerEntry(Base):
@@ -162,9 +171,12 @@ class FreelancerShiftSettlement(Base):
     employee_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("employee.id", ondelete="RESTRICT"), nullable=False
     )
-    # Оплаченная явка (единица смены). CASCADE: если явку удалят — факт оплаты не осиротеет.
+    # Оплаченная явка (единица смены). RESTRICT: перезагрузка явок периода сносит их
+    # физически (``load_attendance_entries(force_reload=True)``), и CASCADE здесь уносил бы
+    # вместе с ними сам факт выдачи денег — смена возвращалась в кассу «неоплаченной», а
+    # ведомость переставала вычитать выданное. Оплаченная явка удалению не подлежит.
     attendance_entry_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("attendance_entry.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("attendance_entry.id", ondelete="RESTRICT"), nullable=False
     )
     # Период явки — для сверки с ведомостью по границам периода (быстрый фильтр).
     period_id: Mapped[uuid.UUID] = mapped_column(

@@ -409,12 +409,14 @@ export type KassaAdvancePermission = {
   created_at: string;
 };
 
-/** Внештатник с непогашенным: одна строка (имя + Σ неоплаченных смен открытого периода). */
+/** Внештатник с непогашенным: одна строка (имя + Σ неоплаченных ЗАКРЫТЫХ смен). */
 export type KassaFreelancer = {
   employee_id: string;
   name: string;
   unpaid_total: number;
   shift_count: number;
+  /** Смены, которые ещё идут: в сумму «к выдаче» не входят, выдать их нельзя. */
+  open_count: number;
 };
 
 /** Смена внештатника открытого периода (для модалки): единица = явка. */
@@ -424,6 +426,8 @@ export type KassaFreelancerShift = {
   hours: number;
   amount: number;
   paid: boolean;
+  /** Смена ещё идёт: часы и сумма расчётные, выдача — после закрытия смены в iiko. */
+  is_open: boolean;
 };
 
 export type KassaPending = {
