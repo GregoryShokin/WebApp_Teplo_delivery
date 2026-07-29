@@ -3890,9 +3890,9 @@
     "semantic_hash": "8de1069bfac83023dcb58aeac0ca179f"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/00-index.md": {
-    "mtime": 1781894412.645263,
-    "ast_hash": "c629337f3b9062054682378c4688e6d8",
-    "semantic_hash": "c629337f3b9062054682378c4688e6d8"
+    "mtime": 1785349916.68588,
+    "ast_hash": "c19a746937263358625cd94b41163420",
+    "semantic_hash": "c19a746937263358625cd94b41163420"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/counterparties/counterparties.md": {
     "mtime": 1783500414.6642594,
@@ -6548,5 +6548,75 @@
     "mtime": 1785346279.998324,
     "ast_hash": "f343559c4889fc4618ea4f83f9dfbfca",
     "semantic_hash": "f343559c4889fc4618ea4f83f9dfbfca"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/.agents/kds_measurement_spec.md": {
+    "mtime": 1785349916.6839962,
+    "ast_hash": "b679ba99f37bdca68316135d98cf71c2",
+    "semantic_hash": "b679ba99f37bdca68316135d98cf71c2"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/.agents/product-marketing.md": {
+    "mtime": 1785349916.6841605,
+    "ast_hash": "2e011d998845bf585106f6c25723dcda",
+    "semantic_hash": "2e011d998845bf585106f6c25723dcda"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/loyalty/points-redemption-cap.md": {
+    "mtime": 1785349916.686232,
+    "ast_hash": "f141dde325ab5ce883013d0c9096ef82",
+    "semantic_hash": "f141dde325ab5ce883013d0c9096ef82"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/00-index.md": {
+    "mtime": 1785349916.6864586,
+    "ast_hash": "e000cbf466dff2d0762cc7ce7eeb960e",
+    "semantic_hash": "e000cbf466dff2d0762cc7ce7eeb960e"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/action-plan.md": {
+    "mtime": 1785349916.6866097,
+    "ast_hash": "2cbce619b4af28468d14ae4adb01855b",
+    "semantic_hash": "2cbce619b4af28468d14ae4adb01855b"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/data-channels.md": {
+    "mtime": 1785349916.6867821,
+    "ast_hash": "6e60eb737ca0be9c6615e3ed74b4c5c9",
+    "semantic_hash": "6e60eb737ca0be9c6615e3ed74b4c5c9"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/diagnostic.md": {
+    "mtime": 1785349916.687042,
+    "ast_hash": "20f26eed5f90c152d46178733908b727",
+    "semantic_hash": "20f26eed5f90c152d46178733908b727"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/operating-constraints.md": {
+    "mtime": 1785349916.6872077,
+    "ast_hash": "1ac20f1322deb7c097a89cfd5d932d88",
+    "semantic_hash": "1ac20f1322deb7c097a89cfd5d932d88"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/positioning.md": {
+    "mtime": 1785349916.6873791,
+    "ast_hash": "bd60aaf08e811d92832ab806ff439d6a",
+    "semantic_hash": "bd60aaf08e811d92832ab806ff439d6a"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/push-content-library.md": {
+    "mtime": 1785349916.6877923,
+    "ast_hash": "bc2083bbc3b86c0ae77dae463c130f48",
+    "semantic_hash": "bc2083bbc3b86c0ae77dae463c130f48"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/push-plan.md": {
+    "mtime": 1785349916.6879725,
+    "ast_hash": "c0a7ca31ba37a1e51753feff81475c0c",
+    "semantic_hash": "c0a7ca31ba37a1e51753feff81475c0c"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/roadmap.md": {
+    "mtime": 1785349916.6881173,
+    "ast_hash": "20c7fea6d2c23b8721478a7b4ba15d2d",
+    "semantic_hash": "20c7fea6d2c23b8721478a7b4ba15d2d"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/business-docs/marketing/solutions-arsenal.md": {
+    "mtime": 1785349916.6882896,
+    "ast_hash": "c960d75bfe91aba7e260fd713c3689c6",
+    "semantic_hash": "c960d75bfe91aba7e260fd713c3689c6"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/teplo-launch-board.html": {
+    "mtime": 1785349916.6885805,
+    "ast_hash": "715ea365a211e11147df9bfa33b9c06b",
+    "semantic_hash": "715ea365a211e11147df9bfa33b9c06b"
   }
 }
