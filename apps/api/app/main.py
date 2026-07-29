@@ -23,6 +23,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await iiko_location.warm_iiko_location_cache(session)
     except Exception:  # noqa: BLE001 - без БД работаем на встроенном каноне
         pass
+    # Фоновые джобы по умолчанию НЕ живут в веб-процессе: uvicorn поднимает несколько воркеров,
+    # и каждый стартовал бы свой планировщик — джоба шла бы во столько же экземпляров сразу
+    # (на проде это выбирало квоту iiko Cloud, см. app/core/config.py). Их дом —
+    # `python -m app.scheduler_runner` (контейнер scheduler).
+    if not get_settings().api_runs_background_jobs:
+        yield
+        return
     scheduler = get_scheduler()
     scheduler.start()
     try:

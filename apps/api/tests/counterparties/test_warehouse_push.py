@@ -287,6 +287,161 @@ def test_post_document_keeps_mismatch_when_not_processed(monkeypatch: pytest.Mon
     assert error is not None and "status mismatch" in error
 
 
+# ── лимит частоты Cloud (TOO_MANY_REQUESTS / 429) ───────────────────────────────────────────────
+
+
+def _no_pauses(monkeypatch: pytest.MonkeyPatch, attempts: int = 3) -> None:
+    """Паузы бэкоффа в ноль: число попыток то же, ждать в тесте нечего."""
+    monkeypatch.setattr(wip, "_RATE_LIMIT_RETRY_DELAYS", (0.0,) * attempts)
+
+
+def _patch_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(wip, "iiko_opener", lambda: None)
+    monkeypatch.setattr(wip, "iiko_auth_token", lambda opener: "TOKEN")
+
+
+_RATE_LIMITED = (429, {"error": "TOO_MANY_REQUESTS"})
+_CREATE_BODY = {"number": "W-10", "date": "2026-06-15T14:30:00.000+03:00"}
+
+
+def test_post_document_accepts_processed_after_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """429 на post не значит «не проведён»: iiko могла применить проводку и всё равно ответить
+    отказом (прод 27.07). Спрашиваем факт — PROCESSED → успех, а не вечный failed."""
+    _no_pauses(monkeypatch, attempts=1)
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: _RATE_LIMITED)
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {"status": "PROCESSED"}))
+
+    assert wip._post_document("payable", "ORG", "DOC", token="t", opener=None) is None
+
+
+def test_post_document_retries_rate_limit_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_pauses(monkeypatch)
+    answers = iter([_RATE_LIMITED, _RATE_LIMITED, (200, {})])
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: next(answers))
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {"status": "NEW"}))
+
+    assert wip._post_document("payable", "ORG", "DOC", token="t", opener=None) is None
+
+
+def test_post_document_reports_rate_limit_in_human_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Попытки исчерпаны, документ так и не проведён → в накладную садится понятный текст,
+    а не сырое TOO_MANY_REQUESTS."""
+    _no_pauses(monkeypatch)
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: _RATE_LIMITED)
+    monkeypatch.setattr(wip, "get_invoice", lambda *a, **kw: (200, {"status": "NEW"}))
+
+    error = wip._post_document("payable", "ORG", "DOC", token="t", opener=None)
+    assert error is not None and "частот" in error
+
+
+def test_create_after_rate_limit_adopts_existing_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Отказ по лимиту НЕ доказывает, что документ не создан. Прежде чем повторять create, ищем
+    его в iiko по номеру: нашли непроведённый — берём тот же id и просто проводим, второй
+    реальный документ не создаём."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    creates: list[dict] = []
+
+    def fake_create(direction, body, *, token, opener):
+        creates.append(body)
+        return _RATE_LIMITED
+
+    monkeypatch.setattr(wip, "create_invoice", fake_create)
+    monkeypatch.setattr(
+        wip, "list_invoices",
+        lambda *a, **kw: (200, [{"number": "W-10", "documentId": "DOC-1", "processed": False}]),
+    )
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: (200, {}))
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", _CREATE_BODY)
+    assert outcome.document_id == "DOC-1"
+    assert outcome.posted is True
+    assert len(creates) == 1  # повтора create не было — иначе дубль документа в iiko
+
+
+def test_create_after_rate_limit_accepts_already_processed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Тот же поиск нашёл документ УЖЕ проведённым — цель достигнута, post не нужен."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    monkeypatch.setattr(wip, "create_invoice", lambda *a, **kw: _RATE_LIMITED)
+    monkeypatch.setattr(
+        wip, "list_invoices",
+        lambda *a, **kw: (200, [{"number": "W-10", "documentId": "DOC-2", "processed": True}]),
+    )
+    posts: list[str] = []
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: posts.append("x") or (200, {}))
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", _CREATE_BODY)
+    assert (outcome.document_id, outcome.posted, outcome.error) == ("DOC-2", True, None)
+    assert posts == []
+
+
+def test_create_retries_rate_limit_when_document_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Документа с нашим номером в iiko нет → create не дошёл, повтор безопасен."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    answers = iter([_RATE_LIMITED, (200, {"documentId": "DOC-3"})])
+    monkeypatch.setattr(wip, "create_invoice", lambda *a, **kw: next(answers))
+    monkeypatch.setattr(wip, "list_invoices", lambda *a, **kw: (200, []))
+    monkeypatch.setattr(wip, "post_invoice", lambda *a, **kw: (200, {}))
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", _CREATE_BODY)
+    assert (outcome.document_id, outcome.posted, outcome.created) == ("DOC-3", True, True)
+
+
+def test_create_gives_up_on_rate_limit_with_human_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    monkeypatch.setattr(wip, "create_invoice", lambda *a, **kw: _RATE_LIMITED)
+    monkeypatch.setattr(wip, "list_invoices", lambda *a, **kw: (200, []))
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", _CREATE_BODY)
+    assert outcome.document_id is None
+    assert outcome.error is not None and "частот" in outcome.error
+
+
+def test_create_does_not_retry_without_number(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Номера нет (iiko нумерует сама) → найти свой документ нечем, значит и повторять create
+    нельзя: рискуем задвоить реальный документ."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    creates: list[int] = []
+    monkeypatch.setattr(
+        wip, "create_invoice", lambda *a, **kw: creates.append(1) or _RATE_LIMITED
+    )
+    listed: list[int] = []
+    monkeypatch.setattr(wip, "list_invoices", lambda *a, **kw: listed.append(1) or (200, []))
+
+    outcome = wip._cloud_create_and_post(
+        "payable", "ORG", {"date": "2026-06-15T14:30:00.000+03:00"}
+    )
+    assert outcome.document_id is None and outcome.error is not None
+    assert len(creates) == 1 and listed == []
+
+
+def test_create_reports_business_error_without_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Отказ по существу (не лимит) повторять бессмысленно — отдаём текст iiko как есть."""
+    _no_pauses(monkeypatch)
+    _patch_transport(monkeypatch)
+    creates: list[int] = []
+    monkeypatch.setattr(
+        wip, "create_invoice",
+        lambda *a, **kw: creates.append(1) or (500, {"message": "Склад не найден"}),
+    )
+
+    outcome = wip._cloud_create_and_post("payable", "ORG", _CREATE_BODY)
+    assert outcome.error == "Склад не найден"
+    assert len(creates) == 1
+
+
 async def test_push_skips_without_iiko_guid(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

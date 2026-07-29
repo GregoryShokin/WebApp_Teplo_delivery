@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ]
 
     scheduler_enabled: bool = True
+    # Фоновые джобы (app/jobs/scheduler.py) живут в ОТДЕЛЬНОМ процессе-планировщике
+    # (`python -m app.scheduler_runner`), а не в веб-воркерах. Прод поднимает uvicorn с
+    # `--workers 2`, и каждый воркер стартовал свой планировщик — джобы шли ПАРАМИ: два
+    # `counterparty_invoice_sync` каждые 15 минут выбирали квоту iiko Cloud, четверть прогонов
+    # падала с HTTP 429, а ручной пуш накладной в это окно получал TOO_MANY_REQUESTS
+    # (инцидент 29.07: бартерный возврат №515250 не ушёл в iiko). Флаг оставлен на случай
+    # стенда без scheduler-контейнера — включать его при `--workers > 1` нельзя.
+    api_runs_background_jobs: bool = False
     employee_sync_enabled: bool = True
     employee_sync_interval_hours: int = 6
     counterparty_invoice_sync_enabled: bool = True

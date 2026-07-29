@@ -16,12 +16,19 @@ payable → ``incoming_invoice`` (``counteragent`` = поставщик), receiv
 - Пуш — явное действие (авто-пуш на создание намеренно ВЫКЛ: создание реального документа iiko
   необратимо). Никогда не бросаем на ошибках iiko — фиксируем ``iiko_push_status`` +
   ``iiko_push_error`` вместо исключения.
+- Лимит частоты Cloud (``TOO_MANY_REQUESTS`` / HTTP 429) — не ошибка документа, а «занято»:
+  ретраим с бэкоффом, как реверс-синк. Повтор ``create`` вслепую запрещён (429 не доказывает,
+  что документ не создан), поэтому перед каждым повтором ищем документ в iiko по номеру за его
+  дату. См. project_iiko_cloud_rate_limit_dual_scheduler.
 """
 
 from __future__ import annotations
 
+import time as time_module
+import urllib.error
 import urllib.request
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
 
@@ -49,6 +56,7 @@ from app.services.iiko_invoice_cloud import (
     extract_document_id,
     extract_document_status,
     get_invoice,
+    list_invoices,
     post_invoice,
     unpost_invoice,
     update_invoice,
@@ -63,6 +71,52 @@ from app.services.warehouse_invoices import SUPPLIER_PAYMENT_ARTICLE_NAME
 
 STORE_SETTING_KEY = "iiko.default_store_guid"
 IIKO_SOURCE = "iiko"
+
+# Паузы между попытками при лимите частоты Cloud, сек. Короче, чем у ночного реверс-синка
+# (2/5/10/20/40 ≈ 77 с): пуш интерактивный — пользователь ждёт ответа на «Отправить в iiko».
+_RATE_LIMIT_RETRY_DELAYS = (1.0, 3.0, 7.0)
+_RATE_LIMIT_MESSAGE = "iiko ограничил частоту запросов (429) — попробуйте отправить ещё раз"
+
+
+def _is_rate_limited(status: int, response: dict | list | None) -> bool:
+    """Отказ по лимиту частоты. Смотрим и код, и текст: Cloud отдаёт бизнес-отказы кодом 500/409
+    с ``message``, поэтому опираться только на HTTP 429 нельзя."""
+    if status == 429:
+        return True
+    return "TOO_MANY_REQUESTS" in (business_error_message(response) or "").upper()
+
+
+def _call_with_rate_limit_retry(
+    call: Callable[[], tuple[int, dict | list]],
+) -> tuple[int, dict | list]:
+    """Повторять вызов, пока iiko отвечает «слишком часто». Отдаёт ПОСЛЕДНИЙ ответ — решение,
+    что с ним делать, принимает вызывающий. Только для идемпотентных операций (``get``/``list``/
+    ``post``/``update``/``unpost``/``cancel``); ``create`` повторяет :func:`_cloud_create_and_post`
+    со своей защитой от дубля."""
+    delays = iter(_RATE_LIMIT_RETRY_DELAYS)
+    while True:
+        status, response = call()
+        if not _is_rate_limited(status, response):
+            return status, response
+        delay = next(delays, None)
+        if delay is None:
+            return status, response
+        time_module.sleep(delay)
+
+
+def _auth_token_with_retry(opener: urllib.request.OpenerDirector) -> str:
+    """``iiko_auth_token`` с бэкоффом на 429: лимит частоты бьёт и по выдаче токена."""
+    delays = iter(_RATE_LIMIT_RETRY_DELAYS)
+    while True:
+        try:
+            return iiko_auth_token(opener)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429:
+                raise
+            delay = next(delays, None)
+            if delay is None:
+                raise
+            time_module.sleep(delay)
 
 
 class WarehousePushError(RuntimeError):
@@ -204,23 +258,61 @@ def _post_document(
 ) -> str | None:
     """``post`` документа. None — проведён, иначе текст ошибки.
 
-    Идемпотентность: «status mismatch» означает, что документ уже НЕ в ``NEW``. Если он при этом
-    ``PROCESSED`` — цель достигнута (прошлый ``post`` дошёл до iiko, а ответ до нас — нет), и
-    считать это ошибкой нельзя: накладная залипала бы в ``failed`` навсегда, потому что каждый
-    повтор бьётся в тот же mismatch."""
-    pstatus, presp = post_invoice(
-        direction, organization_id, document_id, token=token, opener=opener
+    Идемпотентность: ошибка ``post`` не означает, что документ не проведён. «status mismatch» —
+    он уже НЕ в ``NEW`` (прошлый ``post`` дошёл до iiko, а ответ до нас — нет); 429 — iiko
+    ответил отказом по лимиту, но проводку мог применить (прод 27.07: два бартерных документа
+    числились у нас ``failed``, а в iiko были ``PROCESSED``). Поэтому при ЛЮБОЙ ошибке спрашиваем
+    факт: документ ``PROCESSED`` → цель достигнута, иначе накладная залипала бы в ``failed``."""
+    pstatus, presp = _call_with_rate_limit_retry(
+        lambda: post_invoice(direction, organization_id, document_id, token=token, opener=opener)
     )
     if 200 <= pstatus < 300:
         return None
     message = business_error_message(presp) or f"post HTTP {pstatus}"
-    if "status mismatch" in message:
-        gstatus, gresp = get_invoice(
-            direction, organization_id, document_id, token=token, opener=opener
+    gstatus, gresp = _call_with_rate_limit_retry(
+        lambda: get_invoice(direction, organization_id, document_id, token=token, opener=opener)
+    )
+    if 200 <= gstatus < 300 and extract_document_status(gresp) == "PROCESSED":
+        return None
+    return _RATE_LIMIT_MESSAGE if _is_rate_limited(pstatus, presp) else message
+
+
+def _probe_key(body: dict) -> tuple[str, str] | None:
+    """``(номер, день)`` для поиска своего документа в iiko, либо None — искать нечем.
+
+    Номер у наших накладных сквозной, дата документа известна: этой пары хватает, чтобы отличить
+    «``create`` не дошёл» от «дошёл, а ответ потерялся». Без номера (iiko нумерует сама) отличить
+    нечем — и тогда повторять ``create`` нельзя вовсе."""
+    number = str(body.get("number") or "")
+    day = str(body.get("date") or "")[:10]
+    return (number, day) if number and len(day) == 10 else None
+
+
+def _document_id_by_number(
+    direction: str, organization_id: str, body: dict, *, token: str, opener
+) -> tuple[str | None, bool]:
+    """Найти документ в iiko по НОМЕРУ за его дату: ``(documentId, проведён)``.
+
+    Нужен ровно на одном повороте — повтор ``create`` после отказа по лимиту частоты. Отказ не
+    доказывает, что документ не создан, поэтому вслепую повторять нельзя (получим дубль реального
+    документа iiko)."""
+    probe = _probe_key(body)
+    if probe is None:
+        return None, False
+    number, day = probe
+    status, resp = _call_with_rate_limit_retry(
+        lambda: list_invoices(
+            direction, organization_id, date_from=day, date_to=day, token=token, opener=opener
         )
-        if 200 <= gstatus < 300 and extract_document_status(gresp) == "PROCESSED":
-            return None
-    return message
+    )
+    if not (200 <= status < 300) or not isinstance(resp, list):
+        return None, False
+    for item in resp:
+        if not isinstance(item, dict) or item.get("deleted"):
+            continue
+        if str(item.get("number") or "") == number and item.get("documentId"):
+            return str(item["documentId"]), bool(item.get("processed"))
+    return None, False
 
 
 def _cloud_create_and_post(
@@ -229,21 +321,45 @@ def _cloud_create_and_post(
     """Синхронно (в треде): один auth → create → post. Только для документа, которого в iiko ещё
     нет; существующий синхронизирует :func:`_cloud_update_and_post`. Не бросает — ошибки
     транспорта/бизнеса возвращаются в ``error``. iiko отдаёт бизнес-отказ кодом 500/409 с
-    ``message`` — парсим его."""
+    ``message`` — парсим его.
+
+    Отказ по лимиту частоты повторяем, но НЕ вслепую: перед каждой повторной попыткой ищем
+    документ в iiko по номеру (:func:`_document_id_by_number`) — нашли, значит прошлый ``create``
+    всё-таки дошёл, и остаётся только провести его."""
     opener = iiko_opener()
     try:
-        token = iiko_auth_token(opener)
+        token = _auth_token_with_retry(opener)
     except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
         return _CloudPushOutcome(None, False, f"auth: {exc}"[:400])
 
-    status, resp = create_invoice(direction, body, token=token, opener=opener)
-    if not (200 <= status < 300):
-        return _CloudPushOutcome(
-            None, False, business_error_message(resp) or f"create HTTP {status}"
+    document_id: str | None = None
+    delays = iter(_RATE_LIMIT_RETRY_DELAYS)
+    while document_id is None:
+        status, resp = create_invoice(direction, body, token=token, opener=opener)
+        if 200 <= status < 300:
+            document_id = extract_document_id(resp)
+            if not document_id:
+                return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
+            break
+        if not _is_rate_limited(status, resp):
+            return _CloudPushOutcome(
+                None, False, business_error_message(resp) or f"create HTTP {status}"
+            )
+        if _probe_key(body) is None:
+            # Проверить, не создан ли документ, нечем → повтор мог бы задвоить его в iiko.
+            return _CloudPushOutcome(None, False, _RATE_LIMIT_MESSAGE)
+        existing, processed = _document_id_by_number(
+            direction, organization_id, body, token=token, opener=opener
         )
-    document_id = extract_document_id(resp)
-    if not document_id:
-        return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
+        if existing:
+            if processed:
+                return _CloudPushOutcome(existing, True, None, created=True)
+            document_id = existing
+            break
+        delay = next(delays, None)
+        if delay is None:
+            return _CloudPushOutcome(None, False, _RATE_LIMIT_MESSAGE)
+        time_module.sleep(delay)
 
     error = _post_document(
         direction, organization_id, document_id, token=token, opener=opener
@@ -257,20 +373,24 @@ def _cloud_delete_document(direction: str, organization_id: str, document_id: st
     на ``unpost`` терпим — документ уже NEW. Возвращает None при успехе, иначе текст ошибки."""
     opener = iiko_opener()
     try:
-        token = iiko_auth_token(opener)
+        token = _auth_token_with_retry(opener)
     except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
         return f"auth: {exc}"[:400]
 
-    status, resp = unpost_invoice(direction, organization_id, document_id,
-                                  token=token, opener=opener)
+    status, resp = _call_with_rate_limit_retry(
+        lambda: unpost_invoice(direction, organization_id, document_id, token=token, opener=opener)
+    )
     if not (200 <= status < 300):
         message = business_error_message(resp) or f"unpost HTTP {status}"
         # Уже NEW (не проведён) — распроводить нечего, идём к cancel.
         if "status mismatch" not in message:
-            return message
-    cstatus, cresp = cancel_invoice(direction, organization_id, document_id,
-                                    token=token, opener=opener)
+            return _RATE_LIMIT_MESSAGE if _is_rate_limited(status, resp) else message
+    cstatus, cresp = _call_with_rate_limit_retry(
+        lambda: cancel_invoice(direction, organization_id, document_id, token=token, opener=opener)
+    )
     if not (200 <= cstatus < 300):
+        if _is_rate_limited(cstatus, cresp):
+            return _RATE_LIMIT_MESSAGE
         return business_error_message(cresp) or f"cancel HTTP {cstatus}"
     return None
 
@@ -290,15 +410,21 @@ def _cloud_update_and_post(
     direction: str, organization_id: str, body: dict, *, document_id: str
 ) -> _CloudPushOutcome:
     """Синхронно (в треде): один auth → update → post. ``update`` проведённого документа сам его
-    распроводит в NEW, поэтому после правки проводим заново. Не бросает — ошибки в ``error``."""
+    распроводит в NEW, поэтому после правки проводим заново. Не бросает — ошибки в ``error``.
+    ``update`` идемпотентен (документ уже есть, id в теле), поэтому отказ по лимиту частоты
+    просто повторяем."""
     opener = iiko_opener()
     try:
-        token = iiko_auth_token(opener)
+        token = _auth_token_with_retry(opener)
     except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
         return _CloudPushOutcome(document_id, False, f"auth: {exc}"[:400])
 
-    status, resp = update_invoice(direction, body, token=token, opener=opener)
+    status, resp = _call_with_rate_limit_retry(
+        lambda: update_invoice(direction, body, token=token, opener=opener)
+    )
     if not (200 <= status < 300):
+        if _is_rate_limited(status, resp):
+            return _CloudPushOutcome(document_id, False, _RATE_LIMIT_MESSAGE)
         return _CloudPushOutcome(
             document_id, False, business_error_message(resp) or f"update HTTP {status}"
         )
@@ -467,20 +593,30 @@ async def propagate_invoice_edit_to_iiko(
 
 def _cloud_create_and_post_return(organization_id: str, body: dict) -> _CloudPushOutcome:
     """Синхронно (в треде): один auth → create возвратной → post. Не бросает — ошибки транспорта/
-    бизнеса возвращаются в ``error`` (iiko отдаёт отказ кодом 500/409 с ``message``)."""
+    бизнеса возвращаются в ``error`` (iiko отдаёт отказ кодом 500/409 с ``message``).
+
+    ``create`` при отказе по лимиту частоты НЕ повторяем: у возвратных нет ``list``, значит нечем
+    проверить, не создан ли документ, а вслепую повторять — риск задвоить возврат в iiko. Такой
+    отказ уходит в ``iiko_return_error``, и ретрай (``retry-iiko-return``) остаётся ручным."""
     opener = iiko_opener()
     try:
-        token = iiko_auth_token(opener)
+        token = _auth_token_with_retry(opener)
     except Exception as exc:  # noqa: BLE001 — нет креды/сеть/прокси
         return _CloudPushOutcome(None, False, f"auth: {exc}"[:400])
     status, resp = create_returned_invoice(body, token=token, opener=opener)
     if not (200 <= status < 300):
+        if _is_rate_limited(status, resp):
+            return _CloudPushOutcome(None, False, _RATE_LIMIT_MESSAGE)
         return _CloudPushOutcome(None, False, business_error_message(resp) or f"create HTTP {status}")
     document_id = extract_document_id(resp)
     if not document_id:
         return _CloudPushOutcome(None, False, "create: iiko не вернул documentId")
-    pstatus, presp = post_returned_invoice(organization_id, document_id, token=token, opener=opener)
+    pstatus, presp = _call_with_rate_limit_retry(
+        lambda: post_returned_invoice(organization_id, document_id, token=token, opener=opener)
+    )
     if not (200 <= pstatus < 300):
+        if _is_rate_limited(pstatus, presp):
+            return _CloudPushOutcome(document_id, False, _RATE_LIMIT_MESSAGE)
         return _CloudPushOutcome(
             document_id, False, business_error_message(presp) or f"post HTTP {pstatus}"
         )
