@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import AssetCashflowLink, CashflowTransaction, DdsArticle, FixedAsset, Wallet
 from app.services.asset_analytics import (
     AssetLinkError,
+    ensure_asset_link_survives,
+    find_unlinked_asset_payments,
     link_transaction_to_asset,
     resolve_asset_context,
     unlink_transaction,
@@ -240,6 +242,103 @@ async def test_purchase_mismatch_goes_to_owner_review(
 
         assert Decimal(str(asset.initial_cost)) == Decimal("95000.00")
         assert asset.review_status == "requires_owner_review"
+
+
+async def test_net_catches_a_payment_without_an_asset(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сеть-ловушка: платёж по статье ОС, за которым не стоит ни один объект.
+
+    Статья попадает на проводку из шести десятков мест, и держать жёсткий гард в каждом
+    нереально — точка, добавленная через полгода, обойдёт его молча. Эта сверка ловит всё
+    остальное, включая автоматические контуры, где спрашивать некого.
+    """
+    async with async_session_factory() as session:
+        purchase = await _article(session, name="Покупка ОС", kind="purchase")
+        neutral = await _article(session, name="Продукты", kind=None)
+        caught = await _transaction(session, "95000.00")
+        caught.article_id = purchase.id
+        ignored = await _transaction(session, "1200.00")
+        ignored.article_id = neutral.id
+        await session.commit()
+
+        found = await find_unlinked_asset_payments(session)
+        assert [row.transaction_id for row in found] == [caught.id]
+        assert found[0].article_name == "Покупка ОС"
+        assert found[0].article_link_kind == "purchase"
+
+
+async def test_net_goes_quiet_once_the_asset_is_linked(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Привязали объект — платёж уходит из списка. Иначе на него перестанут смотреть."""
+    async with async_session_factory() as session:
+        article = await _article(session, name="Покупка ОС", kind="purchase")
+        asset = await _asset(session, cost="95000.00")
+        transaction = await _transaction(session, "95000.00")
+        transaction.article_id = article.id
+        await session.commit()
+
+        assert len(await find_unlinked_asset_payments(session)) == 1
+
+        context = await resolve_asset_context(
+            session, article=article, asset_id=asset.id, amount=Decimal("95000.00")
+        )
+        await link_transaction_to_asset(
+            session, context=context, transaction_id=transaction.id, amount=Decimal("95000.00")
+        )
+        await session.commit()
+
+        assert await find_unlinked_asset_payments(session) == []
+
+
+async def test_article_cannot_be_moved_away_from_a_linked_asset(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Обратная дыра, и она опаснее прямой.
+
+    Проводку, привязанную к объекту, нельзя одним движением переразметить в «Продукты»: связь
+    осталась бы висеть, и объект считал бы своей стоимостью деньги, которые в учёте стали
+    платежом за овощи. Капитализация при этом могла уже уехать в закрытый месяц.
+    """
+    async with async_session_factory() as session:
+        repair = await _article(session, name="Ремонт ОС", kind="repair")
+        neutral = await _article(session, name="Продукты", kind=None)
+        asset = await _asset(session, cost="100000.00")
+        transaction = await _transaction(session, "30000.00")
+
+        context = await resolve_asset_context(
+            session, article=repair, asset_id=asset.id, amount=Decimal("30000.00")
+        )
+        await link_transaction_to_asset(
+            session, context=context, transaction_id=transaction.id, amount=Decimal("30000.00")
+        )
+        await session.commit()
+
+        with pytest.raises(AssetLinkError) as error:
+            await ensure_asset_link_survives(
+                session, transaction_id=transaction.id, next_article=neutral
+            )
+        assert "Печь для пиццы" in str(error.value)
+
+        # Статью ОС на статью ОС менять можно: объект остаётся при своих деньгах.
+        await ensure_asset_link_survives(
+            session, transaction_id=transaction.id, next_article=repair
+        )
+
+
+async def test_unlinked_transaction_is_free_to_reclassify(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Проводка без привязки переразмечается как угодно — гард не должен мешать обычной работе."""
+    async with async_session_factory() as session:
+        neutral = await _article(session, name="Продукты", kind=None)
+        transaction = await _transaction(session, "1200.00")
+        await session.commit()
+
+        await ensure_asset_link_survives(
+            session, transaction_id=transaction.id, next_article=neutral
+        )
 
 
 async def test_resplit_drops_previous_links(

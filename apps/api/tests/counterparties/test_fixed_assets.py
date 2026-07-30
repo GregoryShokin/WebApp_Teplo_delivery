@@ -506,7 +506,10 @@ async def test_month_close_journals_the_run_and_is_repeatable(
         assert run.agent_name == "fixed_assets_month_close"
         assert run.status == "success"
         assert run.finished_at is not None
-        assert run.result == {"entries": 2, "amount": "2000.00"}
+        assert run.result["entries"] == 2
+        assert run.result["amount"] == "2000.00"
+        # Закрытие месяца заодно считает сеть-ловушку: платежи по статьям ОС без объекта.
+        assert run.result["unlinked_asset_payments"] == 0
 
         # Правка вручную, затем повторное закрытие того же месяца.
         await correct_depreciation(
@@ -518,7 +521,8 @@ async def test_month_close_journals_the_run_and_is_repeatable(
         await session.commit()
 
         again = await close_month(session, period_month=date(2026, 2, 1), reason="manual")
-        assert again.result == {"entries": 0, "amount": "0.00"}
+        assert again.result["entries"] == 0
+        assert again.result["amount"] == "0.00"
 
         corrected = await session.scalar(
             select(DepreciationEntry).where(

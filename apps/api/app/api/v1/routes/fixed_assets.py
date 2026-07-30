@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import AssetCategory, DepreciationEntry, FixedAsset, Location
+from app.services import asset_analytics
 from app.services import fixed_assets as service
 
 router = APIRouter()
@@ -301,9 +302,7 @@ async def get_summary(
             select(FixedAsset).where(FixedAsset.status.not_in(("disposed", "sold")))
         )
     ).all()
-    categories = {
-        row.id: row for row in (await session.scalars(select(AssetCategory))).all()
-    }
+    categories = {row.id: row for row in (await session.scalars(select(AssetCategory))).all()}
     accrued_map = await _accrued_by_asset(session, [asset.id for asset in assets])
 
     buckets: dict[uuid.UUID | None, CategoryTotalRead] = {}
@@ -351,6 +350,57 @@ async def get_summary(
     )
 
 
+class UnlinkedPaymentRead(BaseModel):
+    transaction_id: uuid.UUID
+    operation_date: date
+    amount: Decimal
+    article_name: str
+    article_link_kind: str
+    payment_purpose: str | None
+
+
+class UnlinkedPaymentListRead(BaseModel):
+    items: list[UnlinkedPaymentRead]
+    total: int
+
+
+@router.get(
+    "/unlinked-payments",
+    response_model=UnlinkedPaymentListRead,
+    dependencies=ASSETS_READ_ACCESS,
+)
+async def list_unlinked_payments(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    since: date | None = None,
+) -> UnlinkedPaymentListRead:
+    """Платежи по статьям основных средств, за которыми не стоит ни один объект.
+
+    Сеть-ловушка, а не отчёт. Статья попадает на проводку из шести десятков мест — разбор
+    выписки, касса, склад, оплата счетов, предоплаты, правила по мерчанту, подтверждение банка,
+    ночные джобы, скрипты. Жёсткий гард стоит там, где человек может указать объект; всё
+    остальное ловится здесь, включая автоматические контуры, где спрашивать некого, и любую
+    точку, которую добавят через полгода.
+
+    Каждая строка списка — покупка или ремонт, ушедшие мимо баланса. Пустой список означает,
+    что за деньгами на статьях ОС стоят настоящие объекты.
+    """
+    rows = await asset_analytics.find_unlinked_asset_payments(session, since=since)
+    return UnlinkedPaymentListRead(
+        items=[
+            UnlinkedPaymentRead(
+                transaction_id=row.transaction_id,
+                operation_date=row.operation_date,
+                amount=row.amount,
+                article_name=row.article_name,
+                article_link_kind=row.article_link_kind,
+                payment_purpose=row.payment_purpose,
+            )
+            for row in rows
+        ],
+        total=len(rows),
+    )
+
+
 @router.get("", response_model=FixedAssetListRead, dependencies=ASSETS_READ_ACCESS)
 async def list_assets(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -382,9 +432,7 @@ async def list_assets(
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = (
         await session.scalars(
-            query.order_by(FixedAsset.inventory_number, FixedAsset.name)
-            .limit(limit)
-            .offset(offset)
+            query.order_by(FixedAsset.inventory_number, FixedAsset.name).limit(limit).offset(offset)
         )
     ).all()
 
@@ -412,9 +460,7 @@ async def get_asset(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> FixedAssetDetailRead:
     asset = await _asset_or_404(session, asset_id)
-    category = (
-        await session.get(AssetCategory, asset.category_id) if asset.category_id else None
-    )
+    category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
     accrued = await service.accumulated_depreciation(session, asset.id)
     entries = (
@@ -480,9 +526,7 @@ async def create_asset_endpoint(
         ) from exc
     await session.commit()
     await session.refresh(asset)
-    category = (
-        await session.get(AssetCategory, asset.category_id) if asset.category_id else None
-    )
+    category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
     return _payload(
         asset,
@@ -521,9 +565,7 @@ async def update_asset(
     await session.commit()
     await session.refresh(asset)
 
-    category = (
-        await session.get(AssetCategory, asset.category_id) if asset.category_id else None
-    )
+    category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
     location = await session.get(Location, asset.location_id) if asset.location_id else None
     return _payload(
         asset,
@@ -590,9 +632,7 @@ async def close_month_endpoint(
     строки (в том числе поправленные вручную) не трогаются. Прогон пишется в журнал с
     пометкой ``manual``, чтобы ручное закрытие отличалось от ночного.
     """
-    run = await service.close_month(
-        session, period_month=payload.period_month, reason="manual"
-    )
+    run = await service.close_month(session, period_month=payload.period_month, reason="manual")
     return MonthCloseRead(
         period_month=service.month_start(payload.period_month),
         entries=int(run.result.get("entries", 0)),

@@ -94,6 +94,12 @@ from app.schemas.dds import (
 from app.schemas.kassa import KassaPendingRead
 from app.services import counterparty_registry
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
+from app.services.asset_analytics import (
+    AssetLinkError,
+    ensure_asset_link_survives,
+    link_transaction_to_asset,
+    resolve_asset_context,
+)
 from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
@@ -1604,6 +1610,22 @@ async def classify_owner_review_case(
     if payload.action == "set_article" and payload.article_id is None:
         raise HTTPException(status_code=400, detail="article_id is required for set_article")
 
+    # Разбор владельцем ставит ОДНУ статью на всю операцию — строк здесь нет, и объект указать
+    # нечем. Молча пропустить статью основных средств значило бы завести покупку без карточки
+    # тем самым путём, который гейт обходит: один платёж может купить три стеллажа, и это
+    # разные объекты. Отправляем в обычный разбор, где строки есть.
+    if payload.action == "set_article" and payload.article_id is not None:
+        article = await session.get(DdsArticle, payload.article_id)
+        if article is not None and article.asset_link_kind is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Статья «{article.name}» требует указать основное средство, а здесь "
+                    f"выбирается одна статья на всю операцию. Разберите её в обычном разборе "
+                    f"по строкам"
+                ),
+            )
+
     await apply_operation_action(
         session,
         operation,
@@ -2123,11 +2145,24 @@ async def classify_transaction(
         )
     except LocationAnalyticsError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    # Основные средства — та же логика, что у помещения, и обе стороны важны. Прямая: статья
+    # «Покупка ОС» без объекта — покупка мимо баланса. Обратная опаснее: увести проводку,
+    # к которой уже привязан объект, значит оставить ему стоимость из чужих денег.
+    try:
+        await ensure_asset_link_survives(session, transaction_id=txn.id, next_article=article)
+        asset_context = await resolve_asset_context(
+            session, article=article, asset_id=payload.asset_id, amount=txn.amount
+        )
+    except AssetLinkError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     txn.article_id = payload.article_id
     txn.counterparty_id = context.counterparty_id
     txn.location_id = context.location_id
     txn.lease_id = context.lease_id
     txn.quality_status = "manual_override"
+    await link_transaction_to_asset(
+        session, context=asset_context, transaction_id=txn.id, amount=txn.amount
+    )
     # Правило 1 канона: платёж поставщику гасит его открытую кредиторку, а излишек становится
     # дебиторкой. Канал денег роли не играет — наличная выплата из Сейфа обязана давать ДЗ так же,
     # как списание из выписки (иначе оплаченная вперёд аренда в свою дату превращалась бы в

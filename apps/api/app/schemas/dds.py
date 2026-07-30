@@ -374,6 +374,9 @@ class TransactionClassifyRequest(BaseModel):
     counterparty_id: uuid.UUID | None = None
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # Основное средство, которое покупает или ремонтирует этот платёж. Обязательно для статей
+    # с ``asset_link_kind`` и запрещено для остальных — правило в ``asset_analytics``.
+    asset_id: uuid.UUID | None = None
 
 
 class CashflowSplitItem(BaseModel):

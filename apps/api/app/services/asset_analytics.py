@@ -28,12 +28,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AssetCashflowLink, DdsArticle, FixedAsset
+from app.models import AssetCashflowLink, CashflowTransaction, DdsArticle, FixedAsset
 from app.services.fixed_assets import (
     INACTIVE_STATUSES,
     classify_asset_expense,
@@ -239,3 +240,102 @@ async def assets_linked_to_transaction(
             )
         ).all()
     )
+
+
+async def ensure_asset_link_survives(
+    session: AsyncSession,
+    *,
+    transaction_id: uuid.UUID,
+    next_article: DdsArticle | None,
+) -> None:
+    """Не дать увести проводку со статьи ОС, пока на ней висит объект.
+
+    Дыра обратной стороны гейта, и она опаснее прямой. Проводку, уже привязанную к объекту,
+    сегодня можно одним PATCH переразметить в «Продукты» или исключить — связь останется
+    висеть, и объект будет считать своей стоимостью деньги, которые в учёте стали платежом за
+    овощи. Капитализация при этом могла уже уехать в закрытый месяц, и отменить её нельзя.
+
+    Поэтому не чиним молча, а отказываем и говорим, что сделать: сначала снять привязку в
+    карточке объекта, потом менять статью. Решение о судьбе объекта принимает человек — код
+    угадать его не может.
+    """
+    links = await assets_linked_to_transaction(session, transaction_id)
+    if not links:
+        return
+
+    next_kind = next_article.asset_link_kind if next_article is not None else None
+    if next_kind is not None:
+        return
+
+    names = (
+        await session.scalars(
+            select(FixedAsset.name).where(FixedAsset.id.in_([link.asset_id for link in links]))
+        )
+    ).all()
+    listed = ", ".join(f"«{name}»" for name in names) or "основным средством"
+    raise AssetLinkError(
+        f"К этому платежу привязано основное средство ({listed}). Снимите привязку в карточке "
+        f"объекта, иначе он останется со стоимостью из денег, которых в учёте больше нет"
+    )
+
+
+@dataclass(frozen=True)
+class UnlinkedPayment:
+    """Платёж по статье основных средств, за которым не стоит ни одного объекта."""
+
+    transaction_id: uuid.UUID
+    operation_date: date
+    amount: Decimal
+    article_name: str
+    article_link_kind: str
+    payment_purpose: str | None
+
+
+async def find_unlinked_asset_payments(
+    session: AsyncSession, *, since: date | None = None
+) -> list[UnlinkedPayment]:
+    """Найти платежи по статьям ОС, к которым не привязан ни один объект.
+
+    ЗАЧЕМ ЭТО ЕСТЬ. Статья вешается на проводку из шестидесяти с лишним мест: разбор выписки,
+    касса, склад, оплата счетов, предоплаты, правила по мерчанту, подтверждение банка, ночные
+    джобы, CLI-скрипты. Держать жёсткий гард в каждом — значит писать диф по всему финансовому
+    контуру и всё равно проиграть: точка, добавленная через полгода, обойдёт его молча. Так уже
+    случилось с помещением — флаг ``location_required`` есть, а разбор владельцем и целевые
+    резервы Сейфа его не спрашивают.
+
+    Поэтому гард стоит там, где человек действительно может указать объект, а эта сверка ловит
+    ВСЁ остальное — включая автоматические контуры, где спрашивать некого, и любую будущую
+    точку. Она ничего не чинит и не блокирует: показывает список, по которому владелец заводит
+    недостающие карточки. Прятать такой платёж нельзя — это ровно та покупка, которая уходит
+    мимо баланса.
+
+    ``since`` ограничивает окно: исторические проводки до внедрения контура карточек не имеют
+    законно, и тащить их в список каждый месяц — шум, который заставит перестать смотреть.
+    """
+    linked = select(AssetCashflowLink.cashflow_transaction_id)
+    query = (
+        select(CashflowTransaction, DdsArticle)
+        .join(DdsArticle, CashflowTransaction.article_id == DdsArticle.id)
+        .where(
+            DdsArticle.asset_link_kind.is_not(None),
+            CashflowTransaction.id.not_in(linked),
+            # Исключённая проводка — уже признанная ошибкой разбора, звать по ней второй раз
+            # незачем.
+            CashflowTransaction.quality_status != "excluded",
+        )
+    )
+    if since is not None:
+        query = query.where(CashflowTransaction.operation_date >= since)
+
+    rows = (await session.execute(query.order_by(CashflowTransaction.operation_date.desc()))).all()
+    return [
+        UnlinkedPayment(
+            transaction_id=transaction.id,
+            operation_date=transaction.operation_date,
+            amount=Decimal(str(transaction.amount)),
+            article_name=article.name,
+            article_link_kind=article.asset_link_kind or "",
+            payment_purpose=transaction.payment_purpose,
+        )
+        for transaction, article in rows
+    ]

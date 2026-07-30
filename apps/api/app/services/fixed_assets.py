@@ -305,9 +305,20 @@ async def close_month(
     try:
         created = await accrue_depreciation(session, period_month=period)
         total = sum((_money(entry.amount) for entry in created), Decimal("0.00"))
+        # Сеть-ловушка: платежи по статьям ОС, за которыми не стоит ни один объект. Считаем
+        # ИМЕННО здесь — закрытие месяца единственный момент, когда на цифры точно смотрят.
+        # Импорт локальный: asset_analytics зависит от этого модуля, и верхнеуровневый
+        # импорт замкнул бы круг.
+        from app.services.asset_analytics import find_unlinked_asset_payments
+
+        unlinked = await find_unlinked_asset_payments(session, since=period)
         run.status = "success"
         run.finished_at = datetime.now(UTC)
-        run.result = {"entries": len(created), "amount": str(total)}
+        run.result = {
+            "entries": len(created),
+            "amount": str(total),
+            "unlinked_asset_payments": len(unlinked),
+        }
         await session.commit()
         return run
     except Exception as exc:
