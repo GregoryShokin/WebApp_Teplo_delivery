@@ -325,12 +325,22 @@ async def close_month(
         from app.services.asset_analytics import find_unlinked_asset_payments
 
         unlinked = await find_unlinked_asset_payments(session, since=period)
+
+        # Замораживаем строки баланса СРАЗУ после начисления: это единственный момент, когда
+        # цифра месяца окончательна. Позже её сдвинут переоценка, ручная коррекция или правка
+        # карточки — все три переписывают историю, и без снимка отчётность за закрытый месяц
+        # молча разошлась бы с тем, что уже перенесли в баланс.
+        from app.services.asset_balance import snapshot_month
+
+        lines = await snapshot_month(session, period_month=period)
+
         run.status = "success"
         run.finished_at = datetime.now(UTC)
         run.result = {
             "entries": len(created),
             "amount": str(total),
             "unlinked_asset_payments": len(unlinked),
+            "balance_lines": len(lines),
         }
         await session.commit()
         return run

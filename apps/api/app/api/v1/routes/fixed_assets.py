@@ -27,13 +27,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
+    AssetBalanceSnapshot,
     AssetCategory,
     AssetConditionReport,
     DepreciationEntry,
     FixedAsset,
     Location,
 )
-from app.services import asset_analytics, asset_revaluation
+from app.services import asset_analytics, asset_balance, asset_revaluation
 from app.services import fixed_assets as service
 from app.services.anthropic_client import LlmCallError
 
@@ -484,6 +485,112 @@ async def list_unlinked_payments(
             for row in rows
         ],
         total=len(rows),
+    )
+
+
+class BalanceLineRead(BaseModel):
+    line_name: str
+    asset_count: int
+    initial_cost: Decimal
+    accumulated: Decimal
+    residual: Decimal
+    depreciation: Decimal
+
+
+class LineDriftRead(BaseModel):
+    line_name: str
+    field: str
+    snapshot_value: Decimal
+    current_value: Decimal
+
+
+class MonthlyDepreciationRead(BaseModel):
+    period_month: date
+    amount: Decimal
+
+
+class ReportingRead(BaseModel):
+    period_month: date
+    # Одиннадцать строк внеоборотных активов: десять категорий плюс «Не работающее
+    # оборудование», которое собирается по статусу.
+    lines: list[BalanceLineRead]
+    residual_total: Decimal
+    depreciation_total: Decimal
+    # Месяц заморожен снимком — цифру можно переносить, она не поедет.
+    is_frozen: bool
+    # Прошлое сдвинули после заморозки: переоценка, коррекция или правка карточки.
+    drift: list[LineDriftRead]
+    series: list[MonthlyDepreciationRead]
+
+
+@router.get("/reporting", response_model=ReportingRead, dependencies=ASSETS_READ_ACCESS)
+async def get_reporting(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    period_month: date | None = None,
+) -> ReportingRead:
+    """Готовые к переносу числа для баланса и ОПиУ.
+
+    Балансового модуля и ОПиУ в приложении нет — они ведутся в таблицах, и по методологии
+    реестра «эта цифра переносится вручную пару раз в год». Здесь модуль ОС отдаёт ровно то,
+    что переносят: остаточную стоимость по одиннадцати строкам внеоборотных активов на конец
+    месяца и помесячный ряд амортизации для строки «УчОС Амортизация».
+
+    Без ``period_month`` берётся последний закрытый месяц: именно его цифры окончательны.
+    """
+    period = period_month
+    if period is None:
+        period = await session.scalar(select(func.max(DepreciationEntry.period_month)))
+    if period is None:
+        # Ни один месяц не закрыт — отдаём пустую форму, а не 404: страница должна открыться
+        # и объяснить, что переносить пока нечего.
+        return ReportingRead(
+            period_month=service.month_start(date.today()),
+            lines=[],
+            residual_total=Decimal("0.00"),
+            depreciation_total=Decimal("0.00"),
+            is_frozen=False,
+            drift=[],
+            series=[],
+        )
+
+    period = service.month_start(period)
+    frozen = await session.scalar(
+        select(func.count())
+        .select_from(AssetBalanceSnapshot)
+        .where(AssetBalanceSnapshot.period_month == period)
+    )
+    lines = await asset_balance.balance_lines(session, as_of=period)
+    drift = await asset_balance.compare_with_snapshot(session, period_month=period)
+    series = await asset_balance.depreciation_series(session)
+
+    return ReportingRead(
+        period_month=period,
+        lines=[
+            BalanceLineRead(
+                line_name=line.line_name,
+                asset_count=line.asset_count,
+                initial_cost=line.initial_cost,
+                accumulated=line.accumulated,
+                residual=line.residual,
+                depreciation=line.depreciation,
+            )
+            for line in lines
+        ],
+        residual_total=sum((line.residual for line in lines), Decimal("0.00")),
+        depreciation_total=sum((line.depreciation for line in lines), Decimal("0.00")),
+        is_frozen=bool(frozen),
+        drift=[
+            LineDriftRead(
+                line_name=item.line_name,
+                field=item.field,
+                snapshot_value=item.snapshot_value,
+                current_value=item.current_value,
+            )
+            for item in drift
+        ],
+        series=[
+            MonthlyDepreciationRead(period_month=month, amount=amount) for month, amount in series
+        ],
     )
 
 

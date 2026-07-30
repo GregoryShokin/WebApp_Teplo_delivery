@@ -86,6 +86,7 @@ from app.models.employee import (
 )
 from app.models.employee_position_assignment import EmployeePositionAssignment
 from app.models.fixed_asset import (
+    AssetBalanceSnapshot,
     AssetCashflowLink,
     AssetCategory,
     AssetConditionReport,
@@ -104,8 +105,8 @@ from app.models.inventory import (
 )
 from app.models.kassa import (
     ChequeIikoPayout,
-    IikoCashShift,
     IikoCashPayout,
+    IikoCashShift,
     IikoCashShiftPayout,
     KassaPayinPreset,
     KassaShiftPenalty,
@@ -174,6 +175,7 @@ __all__ = [
     "AgentRun",
     "AppSetting",
     "AppSettingHistory",
+    "AssetBalanceSnapshot",
     "AssetCashflowLink",
     "AssetCategory",
     "AssetConditionReport",

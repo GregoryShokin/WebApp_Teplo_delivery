@@ -213,6 +213,43 @@ class AssetCashflowLink(Base):
     )
 
 
+class AssetBalanceSnapshot(Base):
+    """Строка баланса по основным средствам, замороженная на конец закрытого месяца.
+
+    Остаточная стоимость выводится из первоначальной, а та меняется ЗАДНИМ ЧИСЛОМ: ручная
+    коррекция начисления, применённая переоценка и правка карточки — каждая зовёт
+    ``recompute_residuals``, который переписывает остатки по всей истории объекта. Без снимка
+    баланс за июль, уже перенесённый в отчётность, в сентябре тихо стал бы другим.
+
+    Строк одиннадцать, а категорий десять: «Не работающее оборудование» — это статус карточки.
+    Такой объект уходит в свою строку и исключается из строки своей категории, иначе считался
+    бы дважды. Поэтому ключ строки текстовый: у одной из одиннадцати категории нет.
+    """
+
+    __tablename__ = "asset_balance_snapshot"
+    __table_args__ = (
+        UniqueConstraint("period_month", "line_name", name="uq_asset_balance_snapshot_line"),
+        Index("ix_asset_balance_snapshot_period", "period_month"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    line_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("asset_category.id", ondelete="SET NULL"), nullable=True
+    )
+    asset_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    initial_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Накоплено за всё время по эту дату — то, что вычитается из первоначальной.
+    accumulated: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    residual: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Начислено именно в этом месяце — строка «УчОС Амортизация» в ОПиУ.
+    depreciation: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class AssetConditionReport(Base):
     """Сообщение менеджера о состоянии объекта и предложение модели по переоценке.
 

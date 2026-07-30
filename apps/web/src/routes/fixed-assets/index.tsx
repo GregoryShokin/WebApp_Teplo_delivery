@@ -68,6 +68,7 @@ import {
   getFixedAsset,
   getFixedAssets,
   getFixedAssetsSummary,
+  getReporting,
   getUnlinkedPayments,
   reportCondition,
 } from "./api";
@@ -216,6 +217,166 @@ function MetricCard({
         {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ReportingSection() {
+  const query = useQuery({
+    queryKey: [QUERY_ROOT, "reporting"],
+    queryFn: () => getReporting(),
+  });
+
+  if (query.isLoading) return <LoadingBlock rows={3} />;
+  if (query.isError) {
+    return (
+      <ErrorBlock
+        error={query.error}
+        fallback="Не удалось собрать числа для отчётности"
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const data = query.data;
+  if (!data || data.lines.length === 0) {
+    return (
+      <EmptyState
+        description="Числа появятся после первого закрытия месяца — тогда их можно будет перенести в баланс."
+        title="Переносить пока нечего"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="shadow-none">
+        <CardContent className="flex flex-col gap-2 p-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">Отчётность за {formatMonth(data.period_month)}</span>
+            {data.is_frozen ? (
+              <Badge
+                className="border-emerald-200 bg-emerald-50 font-normal text-emerald-700"
+                variant="outline"
+              >
+                месяц закрыт
+              </Badge>
+            ) : (
+              <Badge
+                className="border-amber-200 bg-amber-50 font-normal text-amber-700"
+                variant="outline"
+              >
+                месяц не закрыт — цифры предварительные
+              </Badge>
+            )}
+          </div>
+          <p className="text-muted-foreground">
+            Баланс и ОПиУ ведутся в таблицах. Здесь то, что в них переносят: остаточная
+            стоимость по строкам внеоборотных активов и амортизация месяца для строки «УчОС
+            Амортизация».
+          </p>
+        </CardContent>
+      </Card>
+
+      {data.drift.length > 0 ? (
+        <Card className="border-rose-200 bg-rose-50/70 shadow-none">
+          <CardContent className="space-y-2 p-4 text-sm text-rose-900">
+            <div className="flex items-start gap-2">
+              <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <b>Цифры за этот месяц изменились после закрытия.</b> Если отчётность уже
+                перенесли, её нужно поправить — иначе расхождение всплывёт при годовой сверке.
+              </span>
+            </div>
+            <ul className="ml-6 list-disc space-y-1">
+              {data.drift.map((item, index) => (
+                <li key={`${item.line_name}-${item.field}-${index}`}>
+                  {item.line_name} · {item.field}: было {moneyExact(item.snapshot_value)}, стало{" "}
+                  {moneyExact(item.current_value)}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <table className="w-full caption-bottom text-sm">
+          <thead>
+            <tr className="bg-muted">
+              <th className="h-10 w-10 px-4 text-left text-xs font-semibold uppercase">№</th>
+              <th className="h-10 px-4 text-left text-xs font-semibold uppercase">
+                Строка баланса
+              </th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">Единиц</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">
+                Первоначальная
+              </th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">Износ</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">Остаточная</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">За месяц</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.lines.map((line, index) => (
+              <tr className="border-t" key={line.line_name}>
+                <td className="px-4 py-2 text-muted-foreground">{index + 1}</td>
+                <td className="px-4 py-2">{line.line_name}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{line.asset_count}</td>
+                <td className="px-4 py-2 text-right tabular-nums">
+                  {moneyExact(line.initial_cost)}
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums text-rose-700">
+                  {moneyExact(line.accumulated)}
+                </td>
+                <td className="px-4 py-2 text-right font-medium tabular-nums text-sky-700">
+                  {moneyExact(line.residual)}
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">
+                  {moneyExact(line.depreciation)}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 bg-muted/40 font-semibold">
+              <td className="px-4 py-2" />
+              <td className="px-4 py-2">Итого внеоборотные активы</td>
+              <td className="px-4 py-2 text-right tabular-nums">
+                {data.lines.reduce((sum, line) => sum + line.asset_count, 0)}
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums">
+                {moneyExact(
+                  data.lines.reduce((sum, line) => sum + toNumber(line.initial_cost), 0),
+                )}
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums text-rose-700">
+                {moneyExact(data.lines.reduce((sum, line) => sum + toNumber(line.accumulated), 0))}
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums text-sky-700">
+                {moneyExact(data.residual_total)}
+              </td>
+              <td className="px-4 py-2 text-right tabular-nums">
+                {moneyExact(data.depreciation_total)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="border-b bg-muted px-4 py-2 text-xs font-semibold uppercase">
+          Строка ОПиУ «УчОС Амортизация» по месяцам
+        </div>
+        <table className="w-full text-sm">
+          <tbody>
+            {data.series.map((row) => (
+              <tr className="border-t" key={row.period_month}>
+                <td className="px-4 py-2">{formatMonth(row.period_month)}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{moneyExact(row.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -1340,10 +1501,12 @@ export function FixedAssetsRoute() {
             <TabsList>
               <TabsTrigger value="register">Реестр</TabsTrigger>
               <TabsTrigger value="summary">Свод</TabsTrigger>
+              <TabsTrigger value="reporting">Для отчётности</TabsTrigger>
             </TabsList>
           </Tabs>
           {tab === "register" ? <RegisterSection canEdit={canEdit} /> : null}
           {tab === "summary" ? <SummarySection /> : null}
+          {tab === "reporting" ? <ReportingSection /> : null}
         </>
       )}
     </div>

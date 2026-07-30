@@ -151,6 +151,40 @@ export type UpdateAssetPayload = Partial<Omit<CreateAssetPayload, "inventory_num
   review_reason?: string | null;
 };
 
+export type BalanceLine = {
+  line_name: string;
+  asset_count: number;
+  initial_cost: Money;
+  accumulated: Money;
+  residual: Money;
+  depreciation: Money;
+};
+
+/** Прошлое сдвинули после заморозки месяца: переоценка, коррекция или правка карточки. */
+export type LineDrift = {
+  line_name: string;
+  field: string;
+  snapshot_value: Money;
+  current_value: Money;
+};
+
+export type Reporting = {
+  period_month: string;
+  lines: BalanceLine[];
+  residual_total: Money;
+  depreciation_total: Money;
+  is_frozen: boolean;
+  drift: LineDrift[];
+  series: Array<{ period_month: string; amount: Money }>;
+};
+
+export async function getReporting(periodMonth?: string): Promise<Reporting> {
+  const response = await api.get<Reporting>(`${BASE}/reporting`, {
+    params: { period_month: periodMonth || undefined },
+  });
+  return response.data;
+}
+
 export type UnlinkedPayment = {
   transaction_id: string;
   operation_date: string;
