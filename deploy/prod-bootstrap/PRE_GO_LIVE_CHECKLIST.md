@@ -395,11 +395,10 @@
   Создать корректный dump без `source_credential` table data и повторить restore
   либо откатиться.
 
-- [ ] Запустить `api` и выполнить миграции.
+- [ ] Выполнить миграции (временным контейнером, до подъёма сервисов).
 
   ```bash
-  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api
-  docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
+  docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api \
     alembic upgrade head
   ```
 

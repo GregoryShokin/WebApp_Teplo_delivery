@@ -70,12 +70,16 @@ TBANK_API_TIMEOUT_SECONDS=90
 плательщика. Для импорта выписок счет также может прийти из справочника счетов
 или metadata, поэтому отсутствие этой переменной не должно ломать startup.
 
-После проверки:
+После проверки перечитай переменные — пересоздания контейнеров достаточно,
+пересобирать образ ради секретов не нужно (они приходят из `.env`, а не из кода):
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec api alembic upgrade head
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api scheduler
 ```
+
+Миграции к смене секретов отношения не имеют: если вместе с этим катится и новый
+код, иди по порядку из `deploy/README.md` («Updating after a git pull») — там
+миграция применяется ДО пересоздания контейнеров.
 
 Если БД восстанавливается из dev-дампа для go-live, следуй
 `deploy/prod-bootstrap/README.md`: там есть отдельный шаг смены пароля админа.
@@ -156,7 +160,7 @@ runbook для Sber credentials.
 - IIKO login/password: заменить `IIKO_SERVER_LOGIN` и `IIKO_SERVER_PASSWORD` в
   `.env.integrations`, затем перезапустить `api` и `scheduler`.
 
-Перед каждым `up -d --build` на проде запускай:
+Перед каждой выкаткой на прод запускай:
 
 ```bash
 cd /opt/teplo/deploy

@@ -310,13 +310,19 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres 
 На сервере:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api
+# Образ должен быть собран из текущего кода: миграции запечены в него (COPY . .).
+docker compose -f docker-compose.prod.yml --env-file .env.prod build api
 
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api \
   alembic upgrade head
 ```
 
 Ожидаемый результат: миграции применены без ошибок.
+
+`run --rm` поднимает временный контейнер из собранного образа и убирает его за
+собой — держать ради миграции работающий `api` не нужно. Тот же приём обязателен
+при обновлении боевого стенда, где `exec api` попал бы в СТАРЫЙ контейнер без
+новых файлов миграций (`deploy/README.md`, «Updating after a git pull»).
 
 ## 6. Секреты интеграций
 
@@ -380,16 +386,22 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres 
 
 ## 7. Запуск prod
 
+Порядок тот же, что и везде: собрать → мигрировать → поднять. Схему на этом шаге
+обычно уже накатили в §5.4, поэтому `alembic upgrade head` здесь просто
+подтверждает, что база на `head` (команда идемпотентна).
+
 На сервере:
 
 ```bash
 cd /opt/teplo/deploy
 ./check-prod-secrets.sh
 
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod build
 
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api \
   alembic upgrade head
+
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 ```
@@ -500,15 +512,38 @@ curl -fsS "https://$PROD_DOMAIN/api/v1/readiness"
 Если нужен rollback к предыдущему commit:
 
 ```bash
+cd /opt/teplo/deploy
+# 1. Схему откатывать НУЖНО НЕ ВСЕГДА — смотри ниже. Если нужно, делай это
+#    ДО отката кода, пока новый образ ещё содержит файлы этих миграций.
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api \
+  alembic downgrade <revision-до-которой-откатываем>
+
 cd /opt/teplo
 git log --oneline -5
+# ВНИМАНИЕ: checkout по хэшу оставляет /opt/teplo в detached HEAD, и следующий
+# штатный деплой упрётся в `git pull --ff-only`. Как только откат больше не нужен,
+# верни рабочую копию на ветку: `git checkout main && git pull --ff-only`.
 git checkout <previous-known-good-commit>
 cd deploy
 ./check-prod-secrets.sh
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
-  alembic upgrade head
+docker compose -f docker-compose.prod.yml --env-file .env.prod build api scheduler web
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api scheduler web
 ```
+
+**Откатывать ли схему.** Аддитивную миграцию (новые nullable-колонки, новые
+таблицы) откатывать НЕ надо: старый код их просто не видит — SQLAlchemy всегда
+перечисляет колонки явно и не делает `SELECT *`. Оставить схему впереди кода
+безопаснее, чем гонять лишний DDL на боевой базе. Откат схемы нужен, только если
+миграция что-то удалила или переименовала, и старый код без этого не работает.
+
+**Почему `downgrade` идёт первым шагом.** Исходники запечены в образ: как только
+`git checkout` вернёт старый код и образ пересоберётся, файлов новых миграций в
+нём не останется, и откатывать будет нечем. Если это уже случилось — восстанови
+базу из бэкапа `/opt/teplo/backups/pre-deploy-*.sql.gz`.
+
+`alembic upgrade head` при откате бесполезен: у старого кода «head» — это старая
+ревизия, а база уже впереди неё. Команда либо ничего не сделает, либо упадёт на
+неизвестной ревизии.
 
 Что делать с `.env.integrations` при rollback:
 

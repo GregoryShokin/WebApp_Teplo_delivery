@@ -195,11 +195,14 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres 
 Запусти `api`, примени миграции и подними рабочие сервисы:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api
-docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T api \
+docker compose -f docker-compose.prod.yml --env-file .env.prod run --rm api \
   alembic upgrade head
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d api scheduler web
 ```
+
+Миграция идёт временным контейнером (`run --rm`), а рабочие сервисы поднимаются
+уже на готовой схеме — тот же порядок, что и при обновлении боевого стенда
+(`deploy/README.md`, «Updating after a git pull»).
 
 ## 5. Синхронизация prod integration secrets
 
