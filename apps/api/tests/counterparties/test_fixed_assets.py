@@ -6,15 +6,18 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import AppSetting, AssetCategory, DepreciationEntry, FixedAsset
 from app.models.fixed_asset import FIXED_ASSET_THRESHOLD
+from app.scripts.import_fixed_assets_registry import run
 from app.services.fixed_assets import (
     CAPITALIZATION_THRESHOLD_KEY,
     FixedAssetError,
@@ -327,3 +330,91 @@ async def test_threshold_falls_back_to_constant_when_setting_is_missing(
         await session.commit()
 
         assert await capitalization_threshold(session) == FIXED_ASSET_THRESHOLD
+
+
+async def test_not_working_asset_is_not_depreciated(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Неработающий объект не амортизируется, даже когда категория со сроком у него есть.
+
+    Методология инвентаризации 2026: неработающая техника стоит по стоимости лома и ждёт
+    утилизации. Категорию ей ставим настоящую (починят — статус сменится и график поедет по
+    своей категории), поэтому останавливать начисление обязан именно статус.
+    """
+    async with async_session_factory() as session:
+        broken = await _asset(session, cost="4000.00", category_life=84, status="not_working")
+        working = await _asset(session, cost="84000.00", category_life=84)
+        await session.commit()
+
+        entries = await accrue_depreciation(session, period_month=date(2026, 2, 1))
+        await session.commit()
+
+        assert {entry.asset_id for entry in entries} == {working.id}
+        assert await residual_value(session, broken) == Decimal("4000.00")
+
+
+async def test_registry_import_expands_quantities_and_is_idempotent(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+) -> None:
+    """Позиция «3 шт» становится тремя карточками, повторный прогон ничего не задваивает.
+
+    Одна карточка = одна физическая единица: инвентарный номер на группу из трёх ларей
+    бессмыслен, а списать один из трёх нечем. Строка «ИТОГО» в конце листа не импортируется.
+    """
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Реестр ОС"
+    sheet.append(
+        [
+            "№",
+            "Источник",
+            "№ описи",
+            "Наименование",
+            "Бренд / модель",
+            "Кол-во",
+            "Стоимость за ед., ₽",
+            "Стоимость всего, ₽",
+            "Тип ОС",
+            "Стр. баланса",
+            "Дата ввода",
+        ]
+    )
+    cold = "Холодильное/морозильное оборудование"
+    heat = "Тепловое оборудование"
+    started = datetime(2026, 8, 1)
+    rows = [
+        [1, "Черникова", 27, "Ларь морозильный", "POLAIR", 3, 30000, 90000, cold, 2, started],
+        [2, "Склад", 12, "Печь для пиццы", "ItPizza ML44", 1, 60000, 60000, heat, 1, started],
+        # Итоговая строка листа: номера позиции у неё нет, импортировать её нельзя.
+        [None, None, None, "ИТОГО", None, 4, None, 150000, None, None, None],
+    ]
+    for row in rows:
+        sheet.append(row)
+    path = tmp_path / "Реестр.xlsx"
+    book.save(path)
+
+    async with async_session_factory() as session:
+        first = await run(session, path, dry_run=False)
+        assert first["created"] == 4
+        assert first["total"] == Decimal("150000")
+
+        assets = (await session.scalars(select(FixedAsset).order_by(FixedAsset.source_ref))).all()
+        refs = [asset.source_ref for asset in assets]
+        assert refs == [
+            "Склад №12",
+            "Черникова №27 (1 из 3)",
+            "Черникова №27 (2 из 3)",
+            "Черникова №27 (3 из 3)",
+        ]
+        # Каждая единица несёт СВОЮ стоимость, а не стоимость всей строки описи.
+        assert {asset.initial_cost for asset in assets if asset.name == "Ларь морозильный"} == {
+            Decimal("30000.00")
+        }
+        assert len({asset.inventory_number for asset in assets}) == 4
+        # СПИ карточке не проставляется — срок приходит из категории.
+        assert all(asset.useful_life_months is None for asset in assets)
+        assert all(asset.location_id is not None for asset in assets)
+
+        second = await run(session, path, dry_run=False)
+        assert (second["created"], second["skipped"]) == (0, 4)
