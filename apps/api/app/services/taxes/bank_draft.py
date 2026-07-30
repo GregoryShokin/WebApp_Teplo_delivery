@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -209,12 +209,24 @@ async def send_tax_draft_to_bank(
     draft.document_id = result.document_id
     draft.provider_ref = result.provider_ref
     draft.last_error = None
+    # Точка отсчёта протухания (bank_facts._match_draft): именно отправка, не подготовка.
+    draft.sent_to_bank_at = datetime.now(UTC)
     await session.flush()
     return draft
 
 
 async def cancel_tax_draft(session: AsyncSession, draft: TaxBankDraft) -> TaxBankDraft:
-    """Отменить подготовленный налоговый платёж (убрать из очереди активных платежей)."""
+    """Отменить налоговый платёж — и подготовленный, и уже отправленный в банк.
+
+    Отмена ``in_bank`` — единственный путь выхода из «отправлен в банк», кроме удачного матча
+    со списанием: платёжку, которую владелец не подтвердил в банк-клиенте (или удалил там),
+    иначе нечем закрыть, и она висит активной вечно. Отменённый черновик выбывает из разбора
+    выписки — постороннее списание той же суммы он уже не перехватит.
+
+    ЗДЕСЬ ОТМЕНЯЕТСЯ ТОЛЬКО НАША СТРОКА: черновик платёжки в банк-клиенте остаётся, его
+    владелец удаляет сам (у Т-Банка нет метода удаления черновика). Об этом предупреждает
+    подтверждение в UI — иначе платёж, снятый у нас, может уйти из банка.
+    """
     if draft.status in ("paid", "cancelled"):
         raise TaxDraftError("Платёж уже закрыт.")
     draft.status = "cancelled"

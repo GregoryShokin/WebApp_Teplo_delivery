@@ -605,6 +605,19 @@ class TaxBankDraft(Base):
     document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Момент отправки в банк — точка отсчёта протухания черновика (bank_facts._match_draft).
+    # Считать от created_at нельзя: платёж готовят заранее, а отправляют к сроку уплаты.
+    sent_to_bank_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Чем именно закрыт черновик. Раньше переход в 'paid' не оставлял следа: какое списание
+    # его закрыло, было видно только по совпадению суммы. Ссылка делает матч одноразовым
+    # (закрытый черновик не участвует в разборе повторно) и даёт разбор задним числом.
+    settled_operation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bank_operations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

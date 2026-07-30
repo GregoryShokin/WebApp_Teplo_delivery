@@ -143,3 +143,73 @@ def test_injury_payload_goes_to_sfr_not_enp() -> None:
     assert payload["bankAcnt"] == "03100643000000015800"
     assert payload["bankBik"] == "016015102"
     assert "ОСФР" in payload["recipientName"]
+
+
+async def test_cancel_closes_draft_sent_to_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отправленный в банк платёж снимается с очереди — и обратно уже не закрывается.
+
+    До этого выхода из ``in_bank`` не было вовсе, кроме удачного матча со списанием:
+    неподтверждённая платёжка висела активной вечно и оставалась кандидатом разбора выписки.
+    """
+    import pytest
+
+    from app.services.taxes.bank_draft import (
+        TaxDraftError,
+        cancel_tax_draft,
+        create_tax_payment_draft,
+    )
+
+    async with async_session_factory() as session:
+        draft = await create_tax_payment_draft(
+            session,
+            tax_kind="usn_advance",
+            amount=Decimal("478376"),
+            for_year=2026,
+            for_period="h1",
+        )
+        draft.status = "in_bank"
+        await session.flush()
+
+        cancelled = await cancel_tax_draft(session, draft)
+        assert cancelled.status == "cancelled"
+
+        # Повторная отмена (двойной клик) не должна выглядеть как успех.
+        with pytest.raises(TaxDraftError, match="уже закрыт"):
+            await cancel_tax_draft(session, cancelled)
+
+        # Снятый платёж освобождает слот обязательства — платёж можно подготовить заново.
+        again = await create_tax_payment_draft(
+            session,
+            tax_kind="usn_advance",
+            amount=Decimal("478376"),
+            for_year=2026,
+            for_period="h1",
+        )
+        assert again.id != draft.id and again.status == "ready_to_send"
+
+
+async def test_send_to_bank_stamps_sent_at(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отправка проставляет ``sent_to_bank_at`` — точку отсчёта протухания в матче выписки.
+
+    Считать от ``created_at`` нельзя: платёж готовят заранее, а отправляют к сроку уплаты.
+    """
+    from app.services.taxes.bank_draft import create_tax_payment_draft, send_tax_draft_to_bank
+
+    async with async_session_factory() as session:
+        draft = await create_tax_payment_draft(
+            session,
+            tax_kind="usn_advance",
+            amount=Decimal("478376"),
+            for_year=2026,
+            for_period="h1",
+        )
+        assert draft.sent_to_bank_at is None
+
+        # mock-режим банк-клиента: черновик создаётся без похода в сеть.
+        sent = await send_tax_draft_to_bank(session, draft, settings=get_settings())
+        assert sent.status == "in_bank"
+        assert sent.sent_to_bank_at is not None

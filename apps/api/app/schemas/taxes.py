@@ -492,6 +492,10 @@ class TaxPaymentDraftRead(BaseModel):
     document_id: str | None = None
     provider_ref: str | None = None
     last_error: str | None = None
+    # Когда ушёл в банк и какой операцией закрыт — видно, давно ли платёж ждёт подтверждения
+    # владельца и чем именно он в итоге оплачен.
+    sent_to_bank_at: datetime | None = None
+    settled_operation_id: uuid.UUID | None = None
     created_at: datetime | None = None
 
 

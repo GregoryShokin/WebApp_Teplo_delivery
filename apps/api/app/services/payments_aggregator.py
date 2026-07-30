@@ -832,7 +832,10 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                 can_edit=state == "ready_to_send",
                 can_send_to_bank=state == "ready_to_send",
                 can_pay=False,  # деньги уходят подтверждением в банк-клиенте, не отсюда
-                can_cancel=state == "ready_to_send",
+                # Отменять можно и отправленный: платёжку, которую владелец не подтвердил
+                # в банк-клиенте (или удалил там), иначе нечем снять — она висит активной
+                # вечно и остаётся кандидатом разбора выписки.
+                can_cancel=state in ("ready_to_send", "in_bank"),
                 extra={
                     "tax": True,
                     "tax_kind": d.tax_kind,
@@ -842,6 +845,9 @@ async def _tax_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                     "purpose": d.purpose,
                     "kbk": d.kbk or str(reqs["kbk"]),
                     "last_error": d.last_error,
+                    "sent_to_bank_at": (
+                        d.sent_to_bank_at.isoformat() if d.sent_to_bank_at else None
+                    ),
                     "requisites": {
                         "recipientName": str(reqs["recipientName"]),
                         "inn": str(reqs["inn"]),

@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { NewPaymentDialog } from "@/routes/dds/NewPaymentDialog";
 import { SendDialog } from "@/routes/payment-page/SendDialog";
 import { getIntake, type PaymentIntake } from "@/routes/payment-page/api";
+import { cancelTaxPaymentDraft } from "@/routes/taxes/api";
 import { navigateTo } from "@/router";
 
 import { PayPayrollReserveDialog } from "./PayPayrollReserveDialog";
@@ -148,6 +149,7 @@ export function ActivePaymentsModal({
   const [payRow, setPayRow] = useState<PaymentRow | null>(null);
   const [payrollRow, setPayrollRow] = useState<PaymentRow | null>(null);
   const [taxRow, setTaxRow] = useState<PaymentRow | null>(null);
+  const [cancelRow, setCancelRow] = useState<PaymentRow | null>(null);
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<string>("all");
 
@@ -249,25 +251,47 @@ export function ActivePaymentsModal({
     navigateTo("/payment-page");
   }
 
+  function sendButton(row: PaymentRow) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        onClick={() => openSendDialog(row)}
+        disabled={sendingId === row.id}
+      >
+        {sendingId === row.id ? (
+          <Loader2 className="animate-spin" size={14} />
+        ) : (
+          <>
+            <Send size={14} className="mr-1.5" /> В банк
+          </>
+        )}
+      </Button>
+    );
+  }
+
   function rowAction(row: PaymentRow) {
-    if (row.can_send_to_bank) {
+    // Налоговый платёж — единственный, который снимается с очереди уже ПОСЛЕ отправки в банк:
+    // платёжку, не подтверждённую владельцем в банк-клиенте, иначе нечем закрыть, и она
+    // остаётся кандидатом разбора выписки. Поэтому «Отменить» соседствует с «В банк».
+    if (row.source === "tax_draft" && row.can_cancel) {
       return (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8"
-          onClick={() => openSendDialog(row)}
-          disabled={sendingId === row.id}
-        >
-          {sendingId === row.id ? (
-            <Loader2 className="animate-spin" size={14} />
-          ) : (
-            <>
-              <Send size={14} className="mr-1.5" /> В банк
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {row.can_send_to_bank ? sendButton(row) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-muted-foreground"
+            onClick={() => setCancelRow(row)}
+          >
+            Отменить
+          </Button>
+        </div>
       );
+    }
+    if (row.can_send_to_bank) {
+      return sendButton(row);
     }
     if (row.bucket === "to_review") {
       return (
@@ -534,7 +558,84 @@ export function ActivePaymentsModal({
           void refetchAll();
         }}
       />
+
+      <TaxCancelDialog
+        row={cancelRow}
+        onClose={() => {
+          setCancelRow(null);
+          void refetchAll();
+        }}
+      />
     </>
+  );
+}
+
+// Снятие налогового платежа с очереди активных платежей. Для «отправлен в банк» это
+// единственный выход, кроме списания из выписки, поэтому диалог обязан сказать главное:
+// у нас платёж закрывается, а черновик платёжки в банк-клиенте остаётся — если его там не
+// удалить, деньги всё равно уйдут по подтверждению.
+function TaxCancelDialog({ row, onClose }: { row: PaymentRow | null; onClose: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const inBank = row?.state === "in_bank";
+
+  async function submit() {
+    if (!row) return;
+    setSubmitting(true);
+    try {
+      await cancelTaxPaymentDraft(row.ref_id);
+      toast.success("Платёж снят с очереди", {
+        description: inBank
+          ? "Не забудьте удалить платёжку в банк-клиенте — иначе она может уйти."
+          : undefined,
+      });
+      onClose();
+    } catch (error) {
+      toast.error(errorText(error, "Не удалось отменить платёж"));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={row !== null}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Отменить налоговый платёж?</DialogTitle>
+          <DialogDescription>{row?.title}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2.5 text-sm">
+          <p>
+            Платёж уйдёт из «Активных платежей» и перестанет ждать списания в выписке.
+            Подготовить его снова можно на странице «Налоги».
+          </p>
+          {inBank ? (
+            <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                Платёжка уже создана в банк-клиенте — отмена здесь её не удаляет. Удалите
+                её в банке, иначе деньги уйдут по вашему подтверждению.
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Не отменять
+          </Button>
+          <Button variant="destructive" onClick={submit} disabled={submitting}>
+            {submitting ? <Loader2 className="mr-1.5 animate-spin" size={15} /> : null}
+            Отменить платёж
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

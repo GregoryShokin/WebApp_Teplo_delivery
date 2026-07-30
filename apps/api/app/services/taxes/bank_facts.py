@@ -12,7 +12,10 @@ owner-locked констант: ИНН Казначейства/ФНС и ОСФ�
 Как определяем вид и период (по убыванию доверия):
 
 1. **Наш черновик** (``TaxBankDraft`` in_bank, точная сумма + получатель) — платёж ушёл
-   из системы, вид/период известны; черновик доводится до ``paid``.
+   из системы, вид/период известны; черновик доводится до ``paid`` и запоминает операцию,
+   которая его закрыла. Кандидатом он остаётся не вечно: не подтверждённая владельцем
+   платёжка протухает через ``DRAFT_MATCH_TTL_DAYS`` и больше не ловит чужие списания
+   по сумме (по своему номеру документа — ловит по-прежнему), см. ``_match_draft``.
 2. **Плановое обязательство** (``TaxPayment`` planned из продвинутой платёжки, ±1 ₽).
 3. **Платёжка бухгалтера** (``tax_document_intake``, ±1 ₽) — путь для зарплатного ЕНП,
    который в обязательства не продвигается.
@@ -43,7 +46,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -67,6 +70,11 @@ logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
 # Допуск матчинга с планом/платёжкой: налог округляется до рубля (как в obligations).
 TOLERANCE = Decimal("1")
+# Сколько дней черновик, отправленный в банк, ловит списания ПО СУММЕ (по своему номеру
+# документа — бессрочно, см. ``_match_draft``). Срок — налоговый цикл: ЕНП платится 28-го
+# каждого месяца, и черновик, переживший месяц, конкурирует уже с платежами следующего
+# периода. Не подтверждённая владельцем платёжка так перестаёт быть вечным кандидатом.
+DRAFT_MATCH_TTL_DAYS = 30
 
 FNS_INN = str(TREASURY_ENP_REQUISITES["inn"])
 FNS_ACCOUNT = str(TREASURY_ENP_REQUISITES["bankAcnt"])
@@ -105,6 +113,14 @@ def _recipient_for_operation(op: BankOperation) -> str | None:
     if inn == SFR_INN or account == SFR_ACCOUNT:
         return "sfr"
     return None
+
+
+def _aware(value: datetime | None) -> datetime:
+    """Отметка времени как aware-UTC. ``None`` (черновик без обеих дат) — «бесконечно старый»:
+    свежести он не подтверждает, значит по сумме ловиться не должен."""
+    if value is None:
+        return datetime.min.replace(tzinfo=UTC)
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _month_from_due(due: date) -> tuple[int, int]:
@@ -366,7 +382,7 @@ async def _match_draft(
     provider: str | None = None,
     document_number: str | None = None,
 ) -> TaxBankDraft | None:
-    """Наш черновик in_bank с точной суммой и тем же получателем.
+    """Наш черновик с точной суммой и тем же получателем.
 
     Номер платёжного документа — ПРИОРИТЕТ, а не фильтр. Ключ детерминирован: черновик
     коммитит ``document_id`` до вызова банка, а ``tbank._document_number`` выводит из него
@@ -378,36 +394,71 @@ async def _match_draft(
     могли оплатить руками из банк-клиента — там номер свой. Жёсткий фильтр увёл бы такой
     платёж в ``other``/``requires_review``, то есть мимо вычета УСН, и налог был бы завышен.
 
+    Из этого послабления растёт риск, который закрывают два ограничения ниже.
+
+    **Свежесть.** Черновик, отправленный в банк больше ``DRAFT_MATCH_TTL_DAYS`` назад, по
+    сумме и получателю больше НЕ ловится: не подтверждённая владельцем платёжка иначе висела
+    бы активной вечно и однажды перехватила бы постороннее списание той же суммы в ФНС/СФР.
+    Срок — налоговый цикл (месяц): переживший его черновик уже конкурирует с платежами
+    следующего периода. По СВОЕМУ номеру документа протухший черновик находится по-прежнему,
+    поэтому запоздалая оплата собственной платёжки не теряется. Отсчёт — от отправки в банк
+    (``sent_to_bank_at``); у строк до миграции 0221 его нет — падаем на ``created_at``.
+
+    **Одноразовость.** Закрытый черновик (``settled_operation_id``) из разбора выбывает:
+    при пере-разносе строк (``_ripen_review_bundles``) он иначе достался бы второй операции.
+
+    Кроме ``in_bank`` берём ``failed`` — но ТОЛЬКО по точному совпадению номера. Отказ банка
+    мог случиться после того, как платёжка в нём уже создалась (``document_id`` коммитится до
+    вызова банка), и такое списание раньше не подхватывалось вовсе. Послабление «по сумме»
+    для ``failed`` не годится: у него нет подтверждения, что платёжка вообще существует.
+
     При прочих равных берём черновик с ближайшим сроком — детерминированно; остальные
     доведёт следующая операция.
     """
     from app.services.banking.tbank import _document_number
 
-    drafts = (
-        await session.scalars(
-            select(TaxBankDraft).where(TaxBankDraft.status == "in_bank")
+    # Возраст берём ВЫРАЖЕНИЕМ, а не с атрибута: ``created_at`` заполняется server_default,
+    # и у только что вставленной строки обращение к нему ушло бы в ленивую догрузку — в
+    # асинхронной сессии это MissingGreenlet.
+    rows = (
+        await session.execute(
+            select(
+                TaxBankDraft,
+                func.coalesce(TaxBankDraft.sent_to_bank_at, TaxBankDraft.created_at),
+            ).where(TaxBankDraft.status.in_(("in_bank", "failed")))
         )
     ).all()
+    raw_number = (document_number or "").strip()
+
+    def _by_number(draft: TaxBankDraft) -> bool:
+        return bool(
+            raw_number and draft.document_id and _document_number(draft.document_id) == raw_number
+        )
+
+    fresh_before = datetime.now(UTC) - timedelta(days=DRAFT_MATCH_TTL_DAYS)
     candidates = []
-    for d in drafts:
+    for d, sent_at in rows:
         # Черновик уходил в свой банк: сберовское списание той же суммы — не он.
         if provider is not None and d.bank_provider != provider:
             continue
         d_recipient = "sfr" if d.tax_kind == "contrib_injury" else "fns"
         if d_recipient != recipient or Decimal(str(d.amount)) != amount:
             continue
+        if d.settled_operation_id is not None:
+            continue
+        if not _by_number(d):
+            # Без совпадения номера черновик обязан быть отправленным и свежим.
+            if d.status != "in_bank":
+                continue
+            if _aware(sent_at) < fresh_before:
+                continue
         candidates.append(d)
     if not candidates:
         return None
 
-    raw_number = (document_number or "").strip()
-
     def _rank(draft: TaxBankDraft) -> tuple[int, int, str]:
-        matched_number = bool(
-            raw_number and draft.document_id and _document_number(draft.document_id) == raw_number
-        )
         return (
-            0 if matched_number else 1,
+            0 if _by_number(draft) else 1,
             abs(((draft.due_date or op_date) - op_date).days),
             str(draft.id),
         )
@@ -697,6 +748,17 @@ async def _tax_operations_without_facts(
     return [op for op in ops if _recipient_for_operation(op) is not None]
 
 
+def _settle_draft(draft: TaxBankDraft, op: BankOperation) -> None:
+    """Закрыть черновик операцией, которая его оплатила.
+
+    Ссылка на операцию — не украшение: она и есть признак «этот черновик уже отработан».
+    Статуса ``paid`` для этого мало, потому что ``failed``-черновик тоже может быть закрыт
+    (платёжка в банке создалась до отказа), а пере-разнос строк переоткрывает разбор.
+    """
+    draft.status = "paid"
+    draft.settled_operation_id = op.id
+
+
 async def _ripen_review_bundles(
     session: AsyncSession, report: TaxFactsSyncReport
 ) -> None:
@@ -737,7 +799,7 @@ async def _ripen_review_bundles(
         for new_row in _build_rows(op, recipient, resolution):
             session.add(new_row)
         if draft is not None:
-            draft.status = "paid"
+            _settle_draft(draft, op)
             report.drafts_paid += 1
         report.bundles_ripened += 1
         report.details.append(
@@ -775,7 +837,7 @@ async def sync_tax_facts_from_bank(session: AsyncSession) -> TaxFactsSyncReport:
         if raced:
             continue  # операцию уже разнёс параллельный прогон — счётчики не двигаем
         if draft is not None:
-            draft.status = "paid"
+            _settle_draft(draft, op)
             report.drafts_paid += 1
         report.bundles_created += 1
         report.details.append(f"{op.operation_date} {op.amount} ₽: {resolution.note}")

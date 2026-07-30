@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -565,3 +565,204 @@ async def test_fact_rows_start_without_cashflow_link(
 
         facts = await _facts(session)
         assert facts and all(f.cashflow_transaction_id is None for f in facts)
+
+
+# ── Черновик не ловит списания вечно ──────────────────────────────────────────
+#
+# Единственными жёсткими условиями матча были получатель и точная сумма, а выхода из
+# `in_bank`, кроме удачного матча, у черновика не было вовсе. Платёжка, которую владелец
+# не подтвердил в банк-клиенте (или удалил там), висела активной вечно и однажды
+# перехватывала бы постороннее списание той же суммы, помечаясь оплаченной.
+
+
+def _stale(draft: TaxBankDraft, *, days: int = 60) -> TaxBankDraft:
+    """Черновик, отправленный в банк `days` дней назад (по умолчанию — заведомо протухший)."""
+    draft.sent_to_bank_at = datetime.now(UTC) - timedelta(days=days)
+    return draft
+
+
+async def test_stale_draft_does_not_capture_foreign_debit(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Протухший черновик не забирает чужое списание той же суммы.
+
+    Платёж уходит в ``other``/``requires_review`` — консервативно (мимо вычета, налог не
+    занижаем) и видимо на «Платежах», а черновик остаётся `in_bank`: снять его — решение
+    владельца, а не догадка синка.
+    """
+    async with async_session_factory() as session:
+        draft = _stale(_draft("usn_advance", "478376.00", period="h1", due=date(2026, 5, 28)))
+        draft.document_id = uuid.uuid4().hex
+        session.add(draft)
+        session.add(_operation("478376.00", date(2026, 7, 29), doc_number="900001"))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+        assert [(f.kind, f.quality_status) for f in facts] == [("other", "requires_review")]
+        refreshed = await session.get(TaxBankDraft, draft.id)
+        assert refreshed is not None
+        assert refreshed.status == "in_bank"
+        assert refreshed.settled_operation_id is None
+
+
+async def test_stale_draft_still_matches_by_own_document_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Своя платёжка, оплаченная с опозданием, не теряется: номер документа работает бессрочно.
+
+    Протухание бьёт только по послаблению «совпала сумма» — иначе запоздалый платёж уехал бы
+    мимо вычета УСН, и налог оказался бы завышен.
+    """
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        draft = _stale(_draft("usn_advance", "478376.00", period="h1", due=date(2026, 5, 28)))
+        draft.document_id = uuid.uuid4().hex
+        session.add(draft)
+        operation = _operation(
+            "478376.00", date(2026, 7, 29), doc_number=_document_number(draft.document_id)
+        )
+        session.add(operation)
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+        assert [(f.kind, f.quality_status) for f in facts] == [("usn_advance", "confirmed")]
+        refreshed = await session.get(TaxBankDraft, draft.id)
+        assert refreshed is not None and refreshed.status == "paid"
+        assert refreshed.settled_operation_id == operation.id
+
+
+async def test_cancelled_draft_never_matches(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отменённый черновик выбывает из разбора совсем — даже по своему номеру документа.
+
+    Отмена — это «платёж снят», и она обязана быть окончательной: иначе снятая с очереди
+    строка воскресала бы как `paid` от первого подходящего списания.
+    """
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        draft = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        draft.document_id = uuid.uuid4().hex
+        draft.status = "cancelled"
+        session.add(draft)
+        session.add(
+            _operation(
+                "478376.00", date(2026, 7, 29), doc_number=_document_number(draft.document_id)
+            )
+        )
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+        assert [(f.kind, f.quality_status) for f in facts] == [("other", "requires_review")]
+        refreshed = await session.get(TaxBankDraft, draft.id)
+        assert refreshed is not None and refreshed.status == "cancelled"
+
+
+async def test_failed_draft_matches_only_by_document_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отказ банка после реально созданной платёжки: списание подхватывается по номеру.
+
+    ``document_id`` коммитится ДО вызова банка, поэтому у `failed`-черновика номер платёжки
+    известен и детерминирован. По сумме такой черновик не матчится: подтверждения, что
+    платёжка вообще существует, у него нет.
+    """
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        by_number = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        by_number.document_id = uuid.uuid4().hex
+        by_number.status = "failed"
+        session.add(by_number)
+        session.add(
+            _operation(
+                "478376.00",
+                date(2026, 7, 29),
+                doc_number=_document_number(by_number.document_id),
+            )
+        )
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        assert [(f.kind, f.quality_status) for f in await _facts(session)] == [
+            ("usn_advance", "confirmed")
+        ]
+        assert (await session.get(TaxBankDraft, by_number.id)).status == "paid"
+
+
+async def test_failed_draft_ignores_debit_without_its_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Тот же `failed`-черновик и списание с ЧУЖИМ номером — матча нет."""
+    async with async_session_factory() as session:
+        draft = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        draft.document_id = uuid.uuid4().hex
+        draft.status = "failed"
+        session.add(draft)
+        session.add(_operation("478376.00", date(2026, 7, 29), doc_number="900001"))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        assert [f.kind for f in await _facts(session)] == ["other"]
+        assert (await session.get(TaxBankDraft, draft.id)).status == "failed"
+
+
+async def test_settled_draft_records_closing_operation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Закрытый черновик помнит, какое списание его оплатило.
+
+    Ссылка — не украшение: по ней закрытый черновик выбывает из разбора, поэтому второе
+    списание той же суммы забрать его уже не может.
+    """
+    async with async_session_factory() as session:
+        draft = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        session.add(draft)
+        first = _operation("478376.00", date(2026, 7, 27))
+        session.add(first)
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        refreshed = await session.get(TaxBankDraft, draft.id)
+        assert refreshed is not None and refreshed.status == "paid"
+        assert refreshed.settled_operation_id == first.id
+
+        # Второе списание той же суммы уже не может «переоткрыть» закрытый черновик.
+        session.add(_operation("478376.00", date(2026, 7, 30)))
+        await session.commit()
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        kinds = sorted(f.kind for f in await _facts(session))
+        assert kinds == ["other", "usn_advance"]
+        again = await session.get(TaxBankDraft, draft.id)
+        assert again is not None and again.settled_operation_id == first.id
+
+        # Статус можно вернуть руками (правка в БД, будущая дефинализация) — ссылка на
+        # закрывшую операцию остаётся и держит инвариант «оплачен один раз»: второе
+        # списание такой черновик не забирает даже в `in_bank`.
+        again.status = "in_bank"
+        await session.commit()
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        assert sorted(f.kind for f in await _facts(session)) == ["other", "usn_advance"]
+        reopened = await session.get(TaxBankDraft, draft.id)
+        assert reopened is not None and reopened.status == "in_bank"

@@ -605,3 +605,16 @@ export async function sendTaxPaymentDraftToBank(
   );
   return response.data;
 }
+
+/** Снять налоговый платёж с очереди — в том числе уже отправленный в банк.
+ *
+ * Для «отправлен в банк» это единственный выход, кроме списания: платёжку, которую владелец
+ * не подтвердил в банк-клиенте, иначе нечем закрыть. Черновик в самом банке при этом
+ * остаётся — его владелец удаляет там сам (диалог об этом предупреждает). */
+export async function cancelTaxPaymentDraft(draftId: string): Promise<TaxPaymentDraft> {
+  const response = await api.post<TaxPaymentDraft>(
+    `${BASE}/payment-drafts/${draftId}/cancel`,
+    {},
+  );
+  return response.data;
+}
