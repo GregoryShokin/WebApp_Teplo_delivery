@@ -338,6 +338,66 @@ function SummarySection() {
         />
       </div>
 
+      {/* Разрез «где стоит» — первым: по категориям не видно, что работает на точке, а что
+          лежит на складе, а это первый вопрос владельца к реестру. */}
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <table className="w-full caption-bottom text-sm">
+          <thead>
+            <tr className="bg-muted">
+              <th className="h-10 px-4 text-left text-xs font-semibold uppercase">Помещение</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">Единиц</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">
+                Первоначальная
+              </th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">Остаточная</th>
+              <th className="h-10 px-4 text-right text-xs font-semibold uppercase">В месяц</th>
+              <th className="h-10 px-4 text-left text-xs font-semibold uppercase">
+                Не делает выручку
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.by_location.map((row) => (
+              <tr className="border-t" key={row.location_id ?? "none"}>
+                <td className="px-4 py-2">
+                  {row.location_name}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {row.kind === "point"
+                      ? "торговая точка"
+                      : row.kind === "warehouse"
+                        ? "склад"
+                        : row.kind === "office"
+                          ? "офис"
+                          : ""}
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{row.count}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{money(row.initial_cost)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-sky-700">
+                  {money(row.residual)}
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums">{money(row.monthly_amount)}</td>
+                <td className="px-4 py-2 text-xs">
+                  {row.idle_count ? (
+                    <span className="text-amber-700">
+                      {row.idle_count} шт на {money(row.idle_residual)}
+                      <InfoHint label="Не делает выручку">
+                        Эти карточки числятся «В работе», но стоят не на торговой точке. Либо им
+                        нужен статус «На складе», либо оборудование пора вернуть в работу или
+                        продать: сейчас на нём начисляется амортизация, а выручку оно не
+                        приносит.
+                      </InfoHint>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div className="overflow-hidden rounded-lg border bg-card">
         <table className="w-full caption-bottom text-sm">
           <thead>
@@ -1020,20 +1080,28 @@ function RegisterSection({ canEdit }: { canEdit: boolean }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
   const [categoryFilter, setCategoryFilter] = useState<string>(ALL);
+  const [locationFilter, setLocationFilter] = useState<string>(ALL);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const listQuery = useQuery({
-    queryKey: [QUERY_ROOT, "list", statusFilter, categoryFilter],
+    queryKey: [QUERY_ROOT, "list", statusFilter, categoryFilter, locationFilter],
     queryFn: () =>
       getFixedAssets({
         status: statusFilter === ALL ? undefined : (statusFilter as AssetStatus),
         category_id: categoryFilter === ALL ? undefined : categoryFilter,
+        location_id: locationFilter === ALL ? undefined : locationFilter,
       }),
   });
   const categoriesQuery = useQuery({
     queryKey: [QUERY_ROOT, "categories"],
     queryFn: getAssetCategories,
+  });
+  // Список помещений берём из свода, а не из общего реестра помещений: у того своё право
+  // (source.locations.read), которого у кладовщика может не быть — фильтр бы молча опустел.
+  const summaryQuery = useQuery({
+    queryKey: [QUERY_ROOT, "summary"],
+    queryFn: getFixedAssetsSummary,
   });
 
   // Поиск клиентом по загруженному ответу: мгновенный и без мигания таблицы. Поля те же,
@@ -1076,7 +1144,14 @@ function RegisterSection({ canEdit }: { canEdit: boolean }) {
       key: "category",
       header: "Категория",
       className: "text-muted-foreground",
-      cell: (row) => <div className="w-[150px] max-w-full text-xs">{row.category_name ?? "—"}</div>,
+      cell: (row) => (
+        <div className="w-[150px] max-w-full text-xs">
+          <div>{row.category_name ?? "—"}</div>
+          <div className="text-muted-foreground/70">
+            {row.location_name ?? row.location ?? "помещение не указано"}
+          </div>
+        </div>
+      ),
     },
     {
       key: "status",
@@ -1110,7 +1185,11 @@ function RegisterSection({ canEdit }: { canEdit: boolean }) {
     },
   ];
 
-  const filtersOn = search.trim() !== "" || statusFilter !== ALL || categoryFilter !== ALL;
+  const filtersOn =
+    search.trim() !== "" ||
+    statusFilter !== ALL ||
+    categoryFilter !== ALL ||
+    locationFilter !== ALL;
 
   return (
     <div className="space-y-4">
@@ -1156,6 +1235,24 @@ function RegisterSection({ canEdit }: { canEdit: boolean }) {
             </SelectContent>
           </Select>
         </div>
+        <div className="flex w-full flex-col gap-2 lg:w-48">
+          <Label>Помещение</Label>
+          <Select onValueChange={setLocationFilter} value={locationFilter}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Везде</SelectItem>
+              {(summaryQuery.data?.by_location ?? [])
+                .filter((place) => place.location_id)
+                .map((place) => (
+                  <SelectItem key={place.location_id} value={place.location_id as string}>
+                    {place.location_name} ({place.count})
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex items-center gap-3">
           {filtersOn ? (
             <Button
@@ -1163,6 +1260,7 @@ function RegisterSection({ canEdit }: { canEdit: boolean }) {
                 setSearch("");
                 setStatusFilter(ALL);
                 setCategoryFilter(ALL);
+                setLocationFilter(ALL);
               }}
               variant="ghost"
             >

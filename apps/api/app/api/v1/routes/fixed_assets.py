@@ -112,6 +112,21 @@ class CategoryTotalRead(BaseModel):
     monthly_amount: Decimal
 
 
+class LocationTotalRead(BaseModel):
+    location_id: uuid.UUID | None
+    location_name: str
+    # 'point' — торговая точка, 'warehouse' — склад, 'office' — офис.
+    kind: str | None
+    count: int
+    initial_cost: Decimal
+    residual: Decimal
+    monthly_amount: Decimal
+    # Числятся «в работе», хотя лежат не на торговой точке. Управленческий вопрос, а не
+    # ошибка данных: столько денег в оборудовании, которое выручку не производит.
+    idle_count: int
+    idle_residual: Decimal
+
+
 class SummaryRead(BaseModel):
     count: int
     initial_cost: Decimal
@@ -121,6 +136,7 @@ class SummaryRead(BaseModel):
     # Последний месяц, за который вообще есть начисления: по нему видно, закрыт ли период.
     last_closed_month: date | None
     by_category: list[CategoryTotalRead]
+    by_location: list[LocationTotalRead]
 
 
 class DepreciationEntryRead(BaseModel):
@@ -342,9 +358,11 @@ async def get_summary(
         )
     ).all()
     categories = {row.id: row for row in (await session.scalars(select(AssetCategory))).all()}
+    locations = {row.id: row for row in (await session.scalars(select(Location))).all()}
     accrued_map = await _accrued_by_asset(session, [asset.id for asset in assets])
 
     buckets: dict[uuid.UUID | None, CategoryTotalRead] = {}
+    places: dict[uuid.UUID | None, LocationTotalRead] = {}
     totals = {
         "initial": Decimal("0.00"),
         "accrued": Decimal("0.00"),
@@ -377,6 +395,33 @@ async def get_summary(
         totals["residual"] += row.residual
         totals["monthly"] += row.monthly_amount
 
+        # Разрез «где стоит»: ось помещения отвечает на вопрос, который по категориям не
+        # виден — сколько имущества работает на точке, а сколько лежит на складе.
+        location = locations.get(asset.location_id) if asset.location_id else None
+        place = places.get(asset.location_id)
+        if place is None:
+            place = LocationTotalRead(
+                location_id=asset.location_id,
+                location_name=location.name if location else "Помещение не указано",
+                kind=location.kind if location else None,
+                count=0,
+                initial_cost=Decimal("0.00"),
+                residual=Decimal("0.00"),
+                monthly_amount=Decimal("0.00"),
+                idle_count=0,
+                idle_residual=Decimal("0.00"),
+            )
+            places[asset.location_id] = place
+        place.count += 1
+        place.initial_cost += row.initial_cost
+        place.residual += row.residual
+        place.monthly_amount += row.monthly_amount
+        # «В работе» вне торговой точки — не ошибка данных, а управленческий вопрос: это
+        # деньги в оборудовании, которое выручку не производит.
+        if asset.status == "in_use" and (location is None or location.kind != "point"):
+            place.idle_count += 1
+            place.idle_residual += row.residual
+
     last_month = await session.scalar(select(func.max(DepreciationEntry.period_month)))
     return SummaryRead(
         count=len(assets),
@@ -386,6 +431,7 @@ async def get_summary(
         monthly_amount=totals["monthly"],
         last_closed_month=last_month,
         by_category=sorted(buckets.values(), key=lambda item: -item.residual),
+        by_location=sorted(places.values(), key=lambda item: -item.residual),
     )
 
 

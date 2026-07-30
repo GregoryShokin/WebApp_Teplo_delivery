@@ -98,6 +98,20 @@ export type CategoryTotal = {
   monthly_amount: Money;
 };
 
+export type LocationTotal = {
+  location_id: string | null;
+  location_name: string;
+  /** 'point' — торговая точка, 'warehouse' — склад, 'office' — офис. */
+  kind: string | null;
+  count: number;
+  initial_cost: Money;
+  residual: Money;
+  monthly_amount: Money;
+  /** Числятся «в работе», хотя стоят не на торговой точке — деньги, не делающие выручку. */
+  idle_count: number;
+  idle_residual: Money;
+};
+
 export type FixedAssetsSummary = {
   count: number;
   initial_cost: Money;
@@ -106,6 +120,7 @@ export type FixedAssetsSummary = {
   monthly_amount: Money;
   last_closed_month: string | null;
   by_category: CategoryTotal[];
+  by_location: LocationTotal[];
 };
 
 export type AssetFilters = {
