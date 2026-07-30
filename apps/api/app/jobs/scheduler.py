@@ -7,6 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import get_settings
 from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync_job
+from app.jobs.depreciation_job import run_depreciation_job
 from app.jobs.employee_sync_job import run_employee_sync_job
 from app.jobs.lease_accrual_job import run_lease_accrual_job
 from app.jobs.sbis_sync_job import run_sbis_sync_job
@@ -45,6 +46,20 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
         hour=0,
         minute=3,
         id="lease_monthly_accrual",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # Закрытие месяца по ОС — 1-го числа, после ночной аренды. Начисляет амортизацию за
+    # ПРОШЕДШИЙ месяц (решение владельца 2026-07-30). Идемпотентно по паре «объект и месяц»,
+    # поэтому ручной перезапуск владельцем безопасен и не затирает правки.
+    scheduler.add_job(
+        run_depreciation_job,
+        "cron",
+        day=1,
+        hour=1,
+        minute=0,
+        id="fixed_assets_month_close",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

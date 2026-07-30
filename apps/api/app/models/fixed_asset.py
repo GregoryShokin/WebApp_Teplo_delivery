@@ -21,6 +21,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -217,6 +218,12 @@ class DepreciationEntry(Base):
 
     Одна строка на объект и месяц (``period_month`` — первое число месяца). Идемпотентность
     закрытия месяца держится уникальным индексом: повторный прогон не задваивает начисление.
+
+    Коррекция — ПРАВКА строки, а не сторнирующая проводка: вторую строку за месяц не пускает
+    уникальный индекс, а отрицательную сумму — ограничение. Ломать их дороже, чем пользы:
+    именно они делают безопасным повторный прогон ночного закрытия месяца. После правки
+    ``residual_after`` всех последующих месяцев объекта пересчитывается
+    (``correct_depreciation``) — иначе хранимый остаток превращается во враньё.
     """
 
     __tablename__ = "depreciation_entry"
@@ -234,6 +241,16 @@ class DepreciationEntry(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     # Остаточная стоимость ПОСЛЕ этого начисления — чтобы баланс не пересчитывал всю историю.
     residual_after: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Сумму поправил человек. Без этого признака нельзя отличить ошибку расчёта от осознанной
+    # правки владельца — а значит нельзя безопасно перезапустить закрытие месяца.
+    is_manual: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    corrected_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    corrected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

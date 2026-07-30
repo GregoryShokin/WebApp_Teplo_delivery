@@ -8,15 +8,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSetting, AssetCategory, DepreciationEntry, FixedAsset
+from app.models import AgentRun, AppSetting, AssetCategory, DepreciationEntry, FixedAsset
 from app.models.fixed_asset import FIXED_ASSET_THRESHOLD, UPGRADE_SHARE_THRESHOLD
+from app.services.taxes.concurrency import insert_or_reread
 
 # Статусы, при которых амортизация не начисляется. ``disposed``/``sold`` — объект выбыл.
 # ``not_working`` — методология инвентаризации 2026: неработающая техника стоит на балансе по
@@ -167,11 +168,163 @@ async def accrue_depreciation(
             amount=amount,
             residual_after=_money(residual - amount),
         )
-        session.add(entry)
-        created.append(entry)
+        # Проверка «строка уже есть» выше — это подсказка, а не защита: между SELECT и INSERT
+        # ночная джоба и ручной пересчёт успевают наложиться. Настоящая защита — уникальный
+        # индекс, а вложенная транзакция превращает проигранную гонку в «уже начислено»
+        # вместо падения всего прогона по 149 объектам.
+        stored, is_new = await insert_or_reread(
+            session,
+            entry,
+            reread=lambda asset_id=asset.id: session.scalar(
+                select(DepreciationEntry).where(
+                    DepreciationEntry.asset_id == asset_id,
+                    DepreciationEntry.period_month == period,
+                )
+            ),
+        )
+        if is_new:
+            created.append(stored)
 
     await session.flush()
     return created
+
+
+async def recompute_residuals(session: AsyncSession, asset_id: uuid.UUID) -> None:
+    """Пересчитать хранимый остаток по всей истории объекта.
+
+    ``residual_after`` — снимок, а не вычисляемое поле (баланс не должен пересчитывать всю
+    историю на каждый показ). Цена снимка: правка суммы за август делает остатки сентября и
+    всех следующих месяцев враньём. Поэтому любая правка обязана прогнать хвост заново.
+
+    Идём по ВСЕЙ истории объекта, а не с месяца правки: месяцев у объекта столько же, сколько
+    в СПИ (десятки, максимум 120), а полный проход исключает накопленный перекос, если
+    какой-то месяц уже был испорчен раньше.
+    """
+    asset = await session.get(FixedAsset, asset_id)
+    if asset is None:
+        return
+    entries = (
+        await session.scalars(
+            select(DepreciationEntry)
+            .where(DepreciationEntry.asset_id == asset_id)
+            .order_by(DepreciationEntry.period_month)
+        )
+    ).all()
+
+    residual = _money(asset.initial_cost)
+    for entry in entries:
+        residual = _money(residual - _money(entry.amount))
+        entry.residual_after = residual
+    await session.flush()
+
+
+async def correct_depreciation(
+    session: AsyncSession,
+    *,
+    asset_id: uuid.UUID,
+    period_month: date,
+    amount: Decimal,
+    user_id: uuid.UUID | None = None,
+    note: str | None = None,
+) -> DepreciationEntry:
+    """Поправить сумму начисления за месяц вручную.
+
+    Коррекция — правка строки месяца, а не сторнирующая проводка: вторую строку за месяц не
+    пускает уникальный индекс, а отрицательную сумму — ограничение. Обе защиты оставлены
+    сознательно, потому что именно они делают безопасным повторный прогон ночного закрытия.
+
+    Строка помечается ручной. Без этой пометки нельзя отличить ошибку расчёта от осознанной
+    правки владельца, а значит нельзя перезапустить закрытие месяца, не затерев решение
+    человека.
+    """
+    period = month_start(period_month)
+    entry = await session.scalar(
+        select(DepreciationEntry).where(
+            DepreciationEntry.asset_id == asset_id,
+            DepreciationEntry.period_month == period,
+        )
+    )
+    if entry is None:
+        raise FixedAssetError(f"За {period:%m.%Y} по этому объекту начисления нет — править нечего")
+
+    value = _money(amount)
+    if value < 0:
+        raise FixedAssetError("Сумма амортизации не может быть отрицательной")
+
+    asset = await session.get(FixedAsset, asset_id)
+    if asset is None:
+        raise FixedAssetError("Объект не найден")
+
+    # Больше первоначальной стоимости объект самортизировать не может: иначе остаток уйдёт
+    # в минус и баланс покажет отрицательный актив.
+    others = await session.scalar(
+        select(func.coalesce(func.sum(DepreciationEntry.amount), 0)).where(
+            DepreciationEntry.asset_id == asset_id,
+            DepreciationEntry.period_month != period,
+        )
+    )
+    ceiling = _money(asset.initial_cost) - _money(others)
+    if value > ceiling:
+        raise FixedAssetError(
+            f"Больше {ceiling:.2f} ₽ за этот месяц начислить нельзя: "
+            f"объект самортизируется сверх первоначальной стоимости"
+        )
+
+    entry.amount = value
+    entry.is_manual = True
+    entry.corrected_by_user_id = user_id
+    entry.corrected_at = datetime.now(UTC)
+    entry.note = note
+    await session.flush()
+    await recompute_residuals(session, asset_id)
+    return entry
+
+
+async def close_month(
+    session: AsyncSession, *, period_month: date, reason: str = "cron"
+) -> AgentRun:
+    """Закрыть месяц: начислить амортизацию по всем объектам и записать прогон в журнал.
+
+    Прогон логируется в ``agent_run`` — тем же журналом, что и синки. Без него результат
+    ночного закрытия жил бы только в логах контейнера, а они ротируются и обнуляются при
+    пересборке: «почему за сентябрь начислено на 3 000 меньше» ответить было бы нечем.
+
+    Перезапуск безопасен: начисление идемпотентно по паре «объект и месяц», уже посчитанные
+    строки (в том числе поправленные вручную) не трогаются.
+    """
+    period = month_start(period_month)
+    run = AgentRun(
+        agent_name="fixed_assets_month_close",
+        status="running",
+        params={"period_month": period.isoformat(), "reason": reason},
+        result={},
+    )
+    session.add(run)
+    await session.flush()
+
+    try:
+        created = await accrue_depreciation(session, period_month=period)
+        total = sum((_money(entry.amount) for entry in created), Decimal("0.00"))
+        run.status = "success"
+        run.finished_at = datetime.now(UTC)
+        run.result = {"entries": len(created), "amount": str(total)}
+        await session.commit()
+        return run
+    except Exception as exc:
+        await session.rollback()
+        # Журнал пишем ОТДЕЛЬНОЙ транзакцией: откат неудачного начисления не должен уносить
+        # с собой запись о том, что прогон был и упал.
+        session.add(
+            AgentRun(
+                agent_name="fixed_assets_month_close",
+                status="failed",
+                params={"period_month": period.isoformat(), "reason": reason},
+                result={"error": str(exc)[:500]},
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+        raise
 
 
 def classify_asset_expense(

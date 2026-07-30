@@ -15,6 +15,7 @@ from openpyxl import Workbook
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.jobs.depreciation_job import previous_month
 from app.models import AppSetting, AssetCategory, DepreciationEntry, FixedAsset
 from app.models.fixed_asset import FIXED_ASSET_THRESHOLD
 from app.scripts.import_fixed_assets_registry import run
@@ -25,6 +26,8 @@ from app.services.fixed_assets import (
     capitalization_threshold,
     capitalize_upgrade,
     classify_asset_expense,
+    close_month,
+    correct_depreciation,
     create_asset,
     is_fixed_asset_purchase,
     next_inventory_number,
@@ -418,3 +421,118 @@ async def test_registry_import_expands_quantities_and_is_idempotent(
 
         second = await run(session, path, dry_run=False)
         assert (second["created"], second["skipped"]) == (0, 4)
+
+
+async def test_correction_rewrites_the_residual_tail(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Правка прошлого месяца пересчитывает остатки всех следующих.
+
+    ``residual_after`` хранится, а не считается на лету. Без пересчёта хвоста правка августа
+    оставила бы сентябрь и октябрь с остатками, посчитанными от старой суммы, — и баланс
+    показывал бы цифру, которой ни в одной строке нет.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session, cost="120000.00", life=120)
+        await session.commit()
+
+        for month in (date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)):
+            await accrue_depreciation(session, period_month=month, asset_id=asset.id)
+        await session.commit()
+
+        entry = await correct_depreciation(
+            session,
+            asset_id=asset.id,
+            period_month=date(2026, 1, 1),
+            amount=Decimal("400.00"),
+            note="Объект введён позже, чем стояло в карточке",
+        )
+        await session.commit()
+
+        assert entry.is_manual is True
+        assert entry.corrected_at is not None
+
+        tail = (
+            await session.scalars(
+                select(DepreciationEntry)
+                .where(DepreciationEntry.asset_id == asset.id)
+                .order_by(DepreciationEntry.period_month)
+            )
+        ).all()
+        # 120 000 − 400 − 1 000 − 1 000: хвост поехал на 600 ₽, которые не начислили в январе.
+        assert [row.residual_after for row in tail] == [
+            Decimal("119600.00"),
+            Decimal("118600.00"),
+            Decimal("117600.00"),
+        ]
+        assert await residual_value(session, asset) == Decimal("117600.00")
+
+
+async def test_correction_cannot_exceed_initial_cost(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Объект нельзя самортизировать сверх первоначальной стоимости — иначе актив уйдёт в минус."""
+    async with async_session_factory() as session:
+        asset = await _asset(session, cost="10000.00", life=10)
+        await session.commit()
+
+        await accrue_depreciation(session, period_month=date(2026, 1, 1), asset_id=asset.id)
+        await accrue_depreciation(session, period_month=date(2026, 2, 1), asset_id=asset.id)
+        await session.commit()
+
+        with pytest.raises(FixedAssetError):
+            await correct_depreciation(
+                session,
+                asset_id=asset.id,
+                period_month=date(2026, 2, 1),
+                amount=Decimal("9500.00"),  # плюс уже начисленная тысяча января — перебор
+            )
+
+
+async def test_month_close_journals_the_run_and_is_repeatable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Закрытие месяца пишет прогон в журнал, а повтор не задваивает и не затирает правки.
+
+    Результат ночного закрытия в логах контейнера не переживёт пересборку, а на вопрос
+    «почему за месяц начислено столько» нужно уметь ответить и через полгода.
+    """
+    async with async_session_factory() as session:
+        first = await _asset(session, cost="120000.00", life=120)
+        await _asset(session, cost="60000.00", life=60)
+        await session.commit()
+
+        run = await close_month(session, period_month=date(2026, 2, 1))
+        assert run.agent_name == "fixed_assets_month_close"
+        assert run.status == "success"
+        assert run.finished_at is not None
+        assert run.result == {"entries": 2, "amount": "2000.00"}
+
+        # Правка вручную, затем повторное закрытие того же месяца.
+        await correct_depreciation(
+            session,
+            asset_id=first.id,
+            period_month=date(2026, 2, 1),
+            amount=Decimal("250.00"),
+        )
+        await session.commit()
+
+        again = await close_month(session, period_month=date(2026, 2, 1), reason="manual")
+        assert again.result == {"entries": 0, "amount": "0.00"}
+
+        corrected = await session.scalar(
+            select(DepreciationEntry).where(
+                DepreciationEntry.asset_id == first.id,
+                DepreciationEntry.period_month == date(2026, 2, 1),
+            )
+        )
+        assert corrected.amount == Decimal("250.00")
+        assert corrected.is_manual is True
+
+
+def test_job_closes_the_month_that_just_ended() -> None:
+    """1-го числа закрывается ПРОШЕДШИЙ месяц: за идущий начислять нечего."""
+    assert previous_month(date(2026, 9, 1)) == date(2026, 8, 1)
+    assert previous_month(date(2027, 1, 1)) == date(2026, 12, 1)
+    # Ручной запуск в середине месяца ведёт себя так же — закрывает предыдущий.
+    assert previous_month(date(2026, 9, 17)) == date(2026, 8, 1)
