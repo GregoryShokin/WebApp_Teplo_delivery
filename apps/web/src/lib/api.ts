@@ -3558,6 +3558,36 @@ export async function getAssetOptions(): Promise<AssetOption[]> {
   return response.data.items;
 }
 
+export type AssetCategoryOption = {
+  id: string;
+  name: string;
+  useful_life_months: number;
+  note: string | null;
+};
+
+/** Категории ОС со сроками — для заведения карточки прямо из разбора платежа. */
+export async function getAssetCategories(): Promise<AssetCategoryOption[]> {
+  const response = await api.get<{ items: AssetCategoryOption[] }>("/fixed-assets/categories");
+  return response.data.items;
+}
+
+/** Завести карточку ОС из платежа: стоимость = сумма строки, оценка = «по платежу».
+ *
+ * Купили новое — карточки ещё нет, и привязывать в разборе не к чему. Без этого пути покупка
+ * уходит в расход мимо баланса: оператор выберет статью попроще, лишь бы платёж провёлся.
+ */
+export async function createAssetFromPayment(payload: {
+  name: string;
+  initial_cost: string;
+  category_id?: string | null;
+  location_id?: string | null;
+  brand_model?: string | null;
+  commissioned_on?: string | null;
+}): Promise<AssetOption> {
+  const response = await api.post<AssetOption>("/fixed-assets/from-payment", payload);
+  return response.data;
+}
+
 /** Помещения и их арендодатели для платежа по статье с аналитикой по помещению. */
 export async function getLocationOptionsForArticle(
   articleId: string,

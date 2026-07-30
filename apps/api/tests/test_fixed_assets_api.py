@@ -262,3 +262,67 @@ def test_options_hide_assets_that_can_no_longer_take_money(
         item["name"] for item in client.get(f"{BASE}/options", headers=headers).json()["items"]
     }
     assert names == {"Живая печь", "Сломанная печь"}
+
+
+def test_asset_created_from_payment_is_ready_to_depreciate(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Карточка из платежа обязана быть ГОТОВОЙ к начислению, а не заготовкой.
+
+    Купили рисоварку — карточки ещё нет, и привязывать в разборе не к чему. Поэтому карточка
+    заводится прямо из платежа. Но заведённая наполовину она хуже отсутствующей: объект без
+    даты ввода ``accrue_depreciation`` молча ПРОПУСКАЕТ — ошибки нет, амортизации нет, а
+    расхождение всплывает через полгода в балансе.
+
+    Стоимость при этом равна сумме платежа и оценкой не является: ``valuation_basis='payment'``.
+    """
+    manager = _manager(async_session_factory)
+    categories = client.get(f"{BASE}/categories", headers=manager).json()["items"]
+    heat = next(item for item in categories if item["name"] == "Тепловое оборудование")
+
+    created = client.post(
+        f"{BASE}/from-payment",
+        headers=manager,
+        json={
+            "name": "  Рисоварка промышленная  ",
+            "initial_cost": "17422.00",
+            "category_id": heat["id"],
+            "brand_model": "Gastrorag DH-RC-2",
+            "commissioned_on": "2026-07-30",
+        },
+    )
+    assert created.status_code == 201, created.text
+    option = created.json()
+    assert option["name"] == "Рисоварка промышленная"
+    assert option["inventory_number"], "номер присваивается сам"
+
+    card = client.get(f"{BASE}/{option['asset_id']}", headers=_admin(async_session_factory)).json()
+    assert card["commissioned_on"] == "2026-07-30"
+    assert card["valuation_basis"] == "payment"
+    assert card["status"] == "in_use"
+    # Срок в карточке не задан — он разрешается из категории, и именно это делает объект
+    # амортизируемым сразу, без визита в реестр.
+    assert card["useful_life_months"] == heat["useful_life_months"]
+    assert card["depreciating"] is True, "иначе объект молча выпал бы из начисления"
+    assert card["monthly_amount"] != "0.00"
+
+
+def test_asset_from_payment_without_date_still_depreciates(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Дату не прислали — подставляем сегодня, а не оставляем пустой.
+
+    Пустая дата ввода не ошибка на входе и не видна глазами: она просто выключает начисление
+    по объекту навсегда.
+    """
+    headers = _manager(async_session_factory)
+    created = client.post(
+        f"{BASE}/from-payment",
+        headers=headers,
+        json={"name": "Ларь морозильный", "initial_cost": "31000.00"},
+    )
+    assert created.status_code == 201, created.text
+    card = client.get(
+        f"{BASE}/{created.json()['asset_id']}", headers=_admin(async_session_factory)
+    ).json()
+    assert card["commissioned_on"] is not None

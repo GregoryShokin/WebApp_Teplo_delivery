@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -335,12 +335,16 @@ def _payload(
     )
 
 
-@router.get("/categories", response_model=CategoryListRead, dependencies=ASSETS_READ_ACCESS)
+@router.get("/categories", response_model=CategoryListRead, dependencies=ASSETS_PICK_ACCESS)
 async def list_categories(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CategoryListRead:
     """Справочник категорий со сроками. Маршрут стоит ДО ``/{asset_id}``, иначе слаг
-    перехватится как идентификатор."""
+    перехватится как идентификатор.
+
+    Доступен и тому, кто разбирает ДДС: при заведении карточки из платежа категорию выбирают
+    здесь, а без неё объект остался бы без срока и молча выпал из начисления амортизации.
+    Десять названий со сроками — не денежные данные."""
     rows = (await session.scalars(select(AssetCategory).order_by(AssetCategory.name))).all()
     return CategoryListRead(
         items=[
@@ -416,6 +420,85 @@ async def list_asset_options(
             )
             for asset, location_name in rows
         ]
+    )
+
+
+class AssetFromPaymentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    # Сумма ПЛАТЕЖА, а не оценка: по методологии для покупки первоначальная стоимость и есть
+    # уплаченные деньги (``valuation_basis='payment'``). Поэтому поле не «стоимость объекта»,
+    # а «сколько заплатили», и фронт подставляет его из строки разбора.
+    initial_cost: Decimal = Field(gt=0)
+    category_id: uuid.UUID | None = None
+    location_id: uuid.UUID | None = None
+    brand_model: str | None = Field(default=None, max_length=255)
+    # День покупки. Амортизация пойдёт с месяца ввода — по умолчанию это дата платежа.
+    commissioned_on: date | None = None
+
+
+@router.post(
+    "/from-payment",
+    response_model=AssetOptionRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ASSETS_PICK_ACCESS,
+)
+async def create_asset_from_payment(
+    payload: AssetFromPaymentRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AssetOptionRead:
+    """Завести карточку прямо из разбора платежа — купили новое, карточки ещё нет.
+
+    ЗАЧЕМ ОТДЕЛЬНЫЙ МАРШРУТ. Выбор объекта в разборе показывает только УЖЕ заведённые карточки,
+    и на главном случае это тупик: купили рисоварку — привязывать не к чему. Отправлять человека
+    заводить карточку в другой раздел и возвращаться значит гарантировать, что покупка уйдёт в
+    расход мимо баланса: гейт откажет, оператор выберет статью попроще, и всё.
+
+    ПОЧЕМУ ПРАВО ТО ЖЕ, ЧТО У ВЫБОРА. Полный ``POST ""`` даёт завести карточку с любой
+    стоимостью, оценкой и датой — это работа бухгалтера по ОС. Здесь же стоимость НЕ
+    произвольная: она равна сумме платежа, а ``valuation_basis`` жёстко ``payment``. То есть
+    человек не оценивает имущество, а фиксирует то, что уже видно в выписке. Отдавать это право
+    отдельно бессмысленно: кто разбирает покупку, тот и знает, что купили.
+
+    Статус и СПИ не спрашиваем: объект куплен и работает (``in_use``), а срок берётся из
+    категории — так карточка сразу попадает в начисление, а не зависает без амортизации.
+
+    ДАТА ВВОДА ПОДСТАВЛЯЕТСЯ ОБЯЗАТЕЛЬНО. ``accrue_depreciation`` начисляет с месяца ввода, и
+    карточка с пустой датой молча выпадает из начисления: ошибки нет, амортизации нет, а
+    заметить это можно только по расхождению баланса через полгода. Поэтому пустое значение
+    заменяем сегодняшним днём, а не оставляем как есть.
+    """
+    commissioned_on = payload.commissioned_on or datetime.now(UTC).date()
+    try:
+        asset = await service.create_asset(
+            session,
+            name=payload.name.strip(),
+            initial_cost=payload.initial_cost,
+            category_id=payload.category_id,
+            valuation_basis="payment",
+            valued_on=commissioned_on,
+            commissioned_on=commissioned_on,
+            status="in_use",
+            location_id=payload.location_id,
+            brand_model=(payload.brand_model or "").strip() or None,
+        )
+    except service.FixedAssetError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(asset)
+    location = await session.get(Location, asset.location_id) if asset.location_id else None
+    return AssetOptionRead(
+        asset_id=asset.id,
+        inventory_number=asset.inventory_number,
+        name=asset.name,
+        brand_model=asset.brand_model,
+        location_name=location.name if location else None,
+        status=asset.status,  # type: ignore[arg-type]
+        status_title=STATUS_TITLES.get(asset.status, asset.status),
+        initial_cost=Decimal(str(asset.initial_cost)),
     )
 
 
