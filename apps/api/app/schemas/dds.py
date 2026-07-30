@@ -96,6 +96,10 @@ class DdsAliasRead(BaseModel):
     source: str | None = None
 
 
+# Что расход по статье делает с основным средством. Пусто — статья к ОС отношения не имеет.
+AssetLinkKind = Literal["purchase", "repair", "maintenance"]
+
+
 class DdsArticleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,6 +116,9 @@ class DdsArticleRead(BaseModel):
     # Статья-аренда помещения: фронт скрывает свободный выбор контрагента и требует арендодателя
     # из договора аренды.
     lease_bound: bool = False
+    # Что расход по статье делает с основным средством: purchase / repair / maintenance / пусто.
+    # Фронт по этому полю показывает выбор объекта в строке разбора — и требует его заполнить.
+    asset_link_kind: str | None = None
     description: str | None = None
     aliases: list[DdsAliasRead] = Field(default_factory=list)
 
@@ -126,6 +133,7 @@ class DdsArticleCreate(BaseModel):
     parent_id: uuid.UUID | None = None
     is_active: bool = True
     kassa_enabled: bool = False
+    asset_link_kind: AssetLinkKind | None = None
     description: str | None = None
 
 
@@ -139,6 +147,10 @@ class DdsArticlePatch(BaseModel):
     parent_id: uuid.UUID | None = None
     is_active: bool | None = None
     kassa_enabled: bool | None = None
+    # Правится через интерфейс сознательно: «Ремонт оборудования» владелец завёл сам, в
+    # репозитории её нет, и проставить ей признак миграцией не по чему. Каталог курирует
+    # владелец — как и флаг «доступна в кассе».
+    asset_link_kind: AssetLinkKind | None = None
     description: str | None = None
 
 
@@ -328,6 +340,10 @@ class OperationSplitItem(BaseModel):
     # когда платёж закрывает конкретный договор (её арендодатель подставится в контрагента).
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # Основное средство ЭТОЙ доли: обязательно для статей с ``asset_link_kind`` и запрещено
+    # для остальных. Объект — свойство строки по той же причине, что и контрагент: один платёж
+    # часто покупает три стеллажа, и это три разные карточки.
+    asset_id: uuid.UUID | None = None
     # Контрагент этой доли — тот, кого создаём из распознанных данных операции
     # (``new_counterparty_name``/``_inn``). Без флага новый контрагент остаётся лишь общим
     # дефолтом и в доли, где контрагент осознанно не указан, не протекает.

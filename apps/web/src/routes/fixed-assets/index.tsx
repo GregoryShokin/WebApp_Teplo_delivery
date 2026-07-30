@@ -65,6 +65,7 @@ import {
   getFixedAsset,
   getFixedAssets,
   getFixedAssetsSummary,
+  getUnlinkedPayments,
 } from "./api";
 
 const ALL = "all";
@@ -112,6 +113,16 @@ function formatMonth(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(
     new Date(anchored),
   );
+}
+
+/** Русское склонение по числу: 1 платёж, 2 платежа, 5 платежей. */
+function plural(count: number, one: string, few: string, many: string): string {
+  const mod100 = Math.abs(count) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
 }
 
 /** Первое число прошедшего месяца — период, который закрывает ночная джоба. */
@@ -199,6 +210,75 @@ function MetricCard({
         </div>
         <div className={cn("text-xl font-semibold tabular-nums", accent)}>{value}</div>
         {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UnlinkedPaymentsStrip() {
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: [QUERY_ROOT, "unlinked"],
+    queryFn: () => getUnlinkedPayments(),
+  });
+
+  const items = query.data?.items ?? [];
+  if (query.isLoading || query.isError || items.length === 0) {
+    return null;
+  }
+
+  const total = items.reduce((sum, item) => sum + toNumber(item.amount), 0);
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/70 shadow-none">
+      <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-900">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <b>
+                {items.length} {plural(items.length, "платёж", "платежа", "платежей")} на{" "}
+                {rubExactFormatter.format(total)}
+              </b>{" "}
+              {plural(items.length, "проведён", "проведены", "проведены")} по статьям основных
+              средств, но объект к ним не привязан — эти деньги прошли мимо баланса.
+            </span>
+          </div>
+          <Button onClick={() => setOpen((value) => !value)} size="sm" variant="outline">
+            {open ? "Свернуть" : "Показать"}
+          </Button>
+        </div>
+
+        {open ? (
+          <div className="overflow-hidden rounded-md border border-amber-200 bg-card">
+            <table className="w-full text-sm text-foreground">
+              <thead>
+                <tr className="bg-amber-100/60 text-amber-900">
+                  <th className="h-9 px-3 text-left text-xs font-semibold uppercase">Дата</th>
+                  <th className="h-9 px-3 text-left text-xs font-semibold uppercase">Статья</th>
+                  <th className="h-9 px-3 text-left text-xs font-semibold uppercase">Назначение</th>
+                  <th className="h-9 px-3 text-right text-xs font-semibold uppercase">Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr className="border-t" key={item.transaction_id}>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatDate(item.operation_date)}
+                    </td>
+                    <td className="px-3 py-2">{item.article_name}</td>
+                    <td className="max-w-md truncate px-3 py-2 text-muted-foreground">
+                      {item.payment_purpose ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {moneyExact(item.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -978,6 +1058,9 @@ export function FixedAssetsRoute() {
         />
       ) : (
         <>
+          {/* Улов сети-ловушки стоит НАД вкладками: это не раздел, а сигнал, и он одинаково
+              важен на обеих. Полоса исчезает сама, когда ловить нечего. */}
+          <UnlinkedPaymentsStrip />
           <Tabs onValueChange={setTab} value={tab}>
             <TabsList>
               <TabsTrigger value="register">Реестр</TabsTrigger>

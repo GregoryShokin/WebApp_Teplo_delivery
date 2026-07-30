@@ -164,10 +164,23 @@ async def link_transaction_to_asset(
     transaction_id: uuid.UUID,
     amount: Decimal,
 ) -> AssetCashflowLink | None:
-    """Записать связь платежа с объектом и применить последствия.
+    """Записать связь платежа с объектом.
 
     Идемпотентно по тройке «объект, проводка, вид связи» — уникальный индекс из ``0201``.
-    Повторный разбор той же операции не задваивает ни связь, ни капитализацию.
+
+    КАПИТАЛИЗАЦИЯ ЗДЕСЬ НЕ ПРИМЕНЯЕТСЯ, и это осознанно. Соблазн был: правило 15% уже дало
+    вердикт, остаётся прибавить сумму к первоначальной стоимости. Но переразбор операции
+    УДАЛЯЕТ прежние проводки и заводит новые с другими идентификаторами — идемпотентность по
+    проводке при этом теряется, и вторая капитализация легла бы поверх первой. Откатить её
+    нельзя: она могла уже уехать в закрытый месяц.
+
+    Плюс сам сценарий нездоровый: база амортизации объекта менялась бы из экрана разбора
+    банковской выписки, где про основные средства речи нет, и владелец узнал бы об этом из
+    графика через месяц.
+
+    Поэтому вердикт правила ЗАПИСЫВАЕТСЯ (вид связи ``upgrade``), а объект уходит владельцу
+    на подтверждение с готовой цифрой. Стоимость меняет человек — в карточке объекта, где
+    пересчитается и хвост остатков.
     """
     if context.asset_id is None or context.link_kind is None:
         return None
@@ -192,13 +205,17 @@ async def link_transaction_to_asset(
 
     asset = await session.get(FixedAsset, context.asset_id)
     if asset is not None:
+        reason = context.review_reason
         if context.capitalize:
-            # Модернизация увеличивает базу амортизации. Прошлые месяцы не пересчитываем:
-            # они закрыты, а остаточная стоимость честно вырастет на сумму работ.
-            asset.initial_cost = Decimal(str(asset.initial_cost)) + Decimal(str(amount))
-        if context.review_reason:
+            new_cost = Decimal(str(asset.initial_cost)) + Decimal(str(amount))
+            reason = (
+                f"Работы на {Decimal(str(amount)):.2f} ₽ — это больше 15% стоимости, то есть "
+                f"модернизация. Подтвердите новую первоначальную стоимость "
+                f"{new_cost:.2f} ₽ — после этого амортизация пойдёт от неё"
+            )
+        if reason:
             asset.review_status = "requires_owner_review"
-            asset.review_reason = context.review_reason
+            asset.review_reason = reason
 
     await session.flush()
     return link

@@ -6,21 +6,42 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import AssetCashflowLink, CashflowTransaction, DdsArticle, FixedAsset, Wallet
-from app.services.asset_analytics import (
+sys.path.append(str(Path(__file__).parent / "counterparties"))
+
+from cp_helpers import (  # noqa: E402
+    make_account,
+    make_bank_operation,
+    make_expense_article,
+    make_wallet,
+)
+
+from app.models import (  # noqa: E402
+    AssetCashflowLink,
+    CashflowTransaction,
+    DdsArticle,
+    FixedAsset,
+    Wallet,
+)
+from app.services.asset_analytics import (  # noqa: E402
     AssetLinkError,
     ensure_asset_link_survives,
     find_unlinked_asset_payments,
     link_transaction_to_asset,
     resolve_asset_context,
     unlink_transaction,
+)
+from app.services.banking.classifier import (  # noqa: E402
+    OperationSplitLine,
+    apply_operation_split,
 )
 
 
@@ -169,10 +190,16 @@ async def test_maintenance_article_never_capitalizes(
             )
 
 
-async def test_upgrade_raises_the_depreciation_base(
+async def test_upgrade_asks_the_owner_instead_of_raising_the_base_silently(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Капитализация увеличивает первоначальную стоимость, привязка идёт видом «upgrade»."""
+    """Вердикт «модернизация» записывается, а стоимость меняет человек.
+
+    Прибавить сумму к стоимости прямо здесь было заманчиво, но переразбор операции удаляет
+    прежние проводки и заводит новые с другими идентификаторами — идемпотентность по проводке
+    теряется, и вторая капитализация легла бы поверх первой. Откатить её нельзя: она могла уже
+    уехать в закрытый месяц. Поэтому объект уходит владельцу с готовой цифрой.
+    """
     async with async_session_factory() as session:
         article = await _article(session, name="Ремонт ОС", kind="repair")
         asset = await _asset(session, cost="100000.00")
@@ -186,16 +213,18 @@ async def test_upgrade_raises_the_depreciation_base(
         )
         await session.commit()
 
-        assert Decimal(str(asset.initial_cost)) == Decimal("130000.00")
+        assert Decimal(str(asset.initial_cost)) == Decimal("100000.00")
+        assert asset.review_status == "requires_owner_review"
+        assert "130000.00" in (asset.review_reason or "")
         link = await session.scalar(select(AssetCashflowLink))
         assert link is not None
         assert link.kind == "upgrade"
 
 
-async def test_link_is_idempotent_and_does_not_double_capitalize(
+async def test_link_is_idempotent(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Повторный разбор той же операции не задваивает ни связь, ни стоимость объекта."""
+    """Повторный разбор той же проводки не задваивает связь."""
     async with async_session_factory() as session:
         article = await _article(session, name="Ремонт ОС", kind="repair")
         asset = await _asset(session, cost="100000.00")
@@ -213,7 +242,6 @@ async def test_link_is_idempotent_and_does_not_double_capitalize(
             )
         await session.commit()
 
-        assert Decimal(str(asset.initial_cost)) == Decimal("130000.00")
         links = (await session.scalars(select(AssetCashflowLink))).all()
         assert len(links) == 1
 
@@ -339,6 +367,81 @@ async def test_unlinked_transaction_is_free_to_reclassify(
         await ensure_asset_link_survives(
             session, transaction_id=transaction.id, next_article=neutral
         )
+
+
+async def test_split_line_carries_its_own_asset(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Объект указывается НА СТРОКЕ разбора: один платёж покупает три стеллажа.
+
+    Именно поэтому объект — свойство доли, а не операции: три стеллажа из одного перевода это
+    три разные карточки со своими инвентарными номерами, и списать один из них надо уметь
+    отдельно.
+    """
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        article = await make_expense_article(session, code="test_pokupka_os", name="Покупка ОС")
+        article.asset_link_kind = "purchase"
+        first = await _asset(session, cost="30000.00")
+        second = await _asset(session, cost="20000.00")
+        operation = await make_bank_operation(
+            session, amount="50000.00", direction="out", account_id=account.id
+        )
+        await session.commit()
+
+        created = await apply_operation_split(
+            session,
+            operation,
+            splits=[
+                OperationSplitLine(
+                    article_id=article.id, amount=Decimal("30000.00"), asset_id=first.id
+                ),
+                OperationSplitLine(
+                    article_id=article.id, amount=Decimal("20000.00"), asset_id=second.id
+                ),
+            ],
+        )
+        await session.commit()
+
+        assert len(created) == 2
+        links = (await session.scalars(select(AssetCashflowLink))).all()
+        assert {link.asset_id for link in links} == {first.id, second.id}
+        assert {Decimal(str(link.amount)) for link in links} == {
+            Decimal("30000.00"),
+            Decimal("20000.00"),
+        }
+
+
+async def test_split_without_asset_is_refused_before_any_write(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разбор со статьёй ОС без объекта отвергается, и ни одной проводки не остаётся.
+
+    Проверка идёт ДО записей — как и у помещения. Иначе половина разбора легла бы в базу, а
+    вторая упала, и операция осталась бы в неопределённом состоянии.
+    """
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        article = await make_expense_article(session, code="test_pokupka_os2", name="Покупка ОС")
+        article.asset_link_kind = "purchase"
+        operation = await make_bank_operation(
+            session, amount="95000.00", direction="out", account_id=account.id
+        )
+        await session.commit()
+
+        with pytest.raises(ValueError, match="укажите основное средство"):
+            await apply_operation_split(
+                session,
+                operation,
+                splits=[
+                    OperationSplitLine(article_id=article.id, amount=Decimal("95000.00")),
+                ],
+            )
+        await session.rollback()
+
+        assert (await session.scalars(select(AssetCashflowLink))).all() == []
 
 
 async def test_resplit_drops_previous_links(

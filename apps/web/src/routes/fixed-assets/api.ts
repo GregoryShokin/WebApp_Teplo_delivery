@@ -113,6 +113,15 @@ export type UpdateAssetPayload = Partial<Omit<CreateAssetPayload, "inventory_num
   review_reason?: string | null;
 };
 
+export type UnlinkedPayment = {
+  transaction_id: string;
+  operation_date: string;
+  amount: Money;
+  article_name: string;
+  article_link_kind: string;
+  payment_purpose: string | null;
+};
+
 export type MonthCloseResult = {
   period_month: string;
   entries: number;
@@ -170,6 +179,23 @@ export async function correctDepreciation(
   payload: { period_month: string; amount: string; note?: string | null },
 ): Promise<DepreciationEntry> {
   const response = await api.patch<DepreciationEntry>(`${BASE}/${assetId}/depreciation`, payload);
+  return response.data;
+}
+
+/** Платежи по статьям ОС, за которыми не стоит ни один объект.
+ *
+ * Сеть-ловушка: жёсткий гард стоит там, где человек может указать объект, а статья попадает на
+ * проводку из шести десятков мест. Каждая строка списка — покупка или ремонт, ушедшие мимо
+ * баланса.
+ */
+export async function getUnlinkedPayments(since?: string): Promise<{
+  items: UnlinkedPayment[];
+  total: number;
+}> {
+  const response = await api.get<{ items: UnlinkedPayment[]; total: number }>(
+    `${BASE}/unlinked-payments`,
+    { params: { since: since || undefined } },
+  );
   return response.data;
 }
 

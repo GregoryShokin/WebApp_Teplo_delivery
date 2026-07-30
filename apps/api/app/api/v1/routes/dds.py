@@ -1951,6 +1951,7 @@ async def classify_operation(
                         ),
                         location_id=item.location_id,
                         lease_id=item.lease_id,
+                        asset_id=item.asset_id,
                     )
                     for item in payload.splits
                 ],

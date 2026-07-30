@@ -24,6 +24,12 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services.asset_analytics import (
+    AssetContext,
+    AssetLinkError,
+    link_transaction_to_asset,
+    resolve_asset_context,
+)
 from app.services.banking.base import clean_digits
 from app.services.location_analytics import (
     LocationAnalyticsError,
@@ -801,6 +807,9 @@ class OperationSplitLine(NamedTuple):
     # Аналитика «где». Новые поля строго последние: строка собирается и из голых кортежей.
     location_id: UUID | None = None
     lease_id: UUID | None = None
+    # Основное средство, которое покупает или ремонтирует эта доля. Объект — свойство СТРОКИ,
+    # а не операции: один платёж часто покупает три стеллажа, и это три разные карточки.
+    asset_id: UUID | None = None
 
 
 async def apply_operation_split(
@@ -908,6 +917,18 @@ async def apply_operation_split(
                 on_date=operation.operation_date,
             )
         except LocationAnalyticsError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # Основные средства: то же правило и та же причина считать ДО записей. Объект берём со
+    # СТРОКИ — один платёж покупает три стеллажа, и это три разные карточки.
+    asset_context: dict[int, AssetContext] = {}
+    for index, line in enumerate(lines):
+        article = await session.get(DdsArticle, line.article_id)
+        try:
+            asset_context[index] = await resolve_asset_context(
+                session, article=article, asset_id=line.asset_id, amount=line.amount
+            )
+        except AssetLinkError as exc:
             raise ValueError(str(exc)) from exc
 
     # Привязки накладных: валидируем статью и пригодность ДО любых записей.
@@ -1032,6 +1053,16 @@ async def apply_operation_split(
         session.add(transaction)
         await session.flush()
         created.append(transaction.id)
+        # Привязка к основному средству. Прежние связи этой операции ушли вместе с прежними
+        # проводками (ON DELETE CASCADE), поэтому переразбор не оставляет хвостов.
+        asset_line_context = asset_context.get(index)
+        if asset_line_context is not None:
+            await link_transaction_to_asset(
+                session,
+                context=asset_line_context,
+                transaction_id=transaction.id,
+                amount=amount,
+            )
         # Аванс поставщику → дебиторка, привязанная к этой проводке (на контрагента ЭТОЙ доли).
         if advance_article_id is not None and article_id == advance_article_id:
             session.add(
@@ -1162,9 +1193,7 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
             await session.scalars(
                 select(CashflowTransaction).where(
                     CashflowTransaction.source_id == operation.id,
-                    CashflowTransaction.source_kind.in_(
-                        ("bank_operation", SAFE_TOPUP_SOURCE_KIND)
-                    ),
+                    CashflowTransaction.source_kind.in_(("bank_operation", SAFE_TOPUP_SOURCE_KIND)),
                 )
             )
         ).all()
