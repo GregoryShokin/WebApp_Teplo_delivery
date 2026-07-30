@@ -29,6 +29,7 @@ TEMPLATE = DEPLOY / "env.integrations.example"
 CHECK_SCRIPT = DEPLOY / "check-prod-secrets.sh"
 CONFIG = REPO_ROOT / "apps" / "api" / "app" / "core" / "config.py"
 PROD_TEMPLATE = DEPLOY / "env.prod.example"
+INIT_SCRIPT = DEPLOY / "init-prod-env.sh"
 
 
 def _required_keys() -> tuple[str, ...]:
@@ -141,6 +142,80 @@ def test_templates_carry_settings_requirements() -> None:
     assert not missing, (
         "ни в env.prod.example, ни в env.integrations.example нет обязательных для "
         f"прода ключей: {missing}"
+    )
+
+
+def _env_keys(text: str) -> set[str]:
+    keys = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            continue
+        keys.add(line.split("=", 1)[0].strip())
+    return keys
+
+
+def _generated_prod_keys() -> set[str]:
+    """Ключи, которые ``init-prod-env.sh`` реально пишет в ``.env.prod``.
+
+    Берём ровно тело heredoc: остальной скрипт — обычный shell, и его присваивания к
+    содержимому файла отношения не имеют.
+    """
+    text = INIT_SCRIPT.read_text(encoding="utf-8")
+    start = text.find('cat >"$env_file" <<EOF')
+    assert start != -1, "heredoc, которым init-prod-env.sh пишет .env.prod, не найден"
+    end = text.find("\nEOF", start)
+    assert end != -1, "конец heredoc не найден — тест устарел"
+    return _env_keys(text[start:end])
+
+
+def test_init_script_and_prod_template_agree() -> None:
+    """Шаблон ``.env.prod`` и генератор обязаны описывать один и тот же набор.
+
+    Файл на сервере создаёт ``init-prod-env.sh`` СВОИМ heredoc, а не копией шаблона (в
+    отличие от ``.env.integrations``, который копируется). Поэтому переменная, добавленная
+    только в ``env.prod.example``, до сервера не доезжает: развернувший по докам её не
+    увидит и о выключенном контуре не узнает. Обратное так же плохо — сгенерированный ключ,
+    которого нет в шаблоне, ниоткуда не объяснён.
+    """
+    template = _env_keys(PROD_TEMPLATE.read_text(encoding="utf-8"))
+    generated = _generated_prod_keys()
+    assert template == generated, (
+        "env.prod.example и init-prod-env.sh разошлись: только в шаблоне "
+        f"{sorted(template - generated)}, только в генераторе {sorted(generated - template)}"
+    )
+
+
+def _check_script_keys() -> set[str]:
+    """Все переменные, которые ``check-prod-secrets.sh`` читает из env-файлов."""
+    readers = (
+        "require_value",
+        "require_value_either",
+        "require_equal",
+        "require_integrations_value",
+        "require_integrations_number",
+        "optional_integrations_value",
+        "optional_integrations_number",
+        "env_value",
+        "any_env_value",
+        "integrations_env_value",
+    )
+    pattern = rf"\b(?:{'|'.join(readers)})\s+([A-Z][A-Z0-9_]*)"
+    return set(re.findall(pattern, CHECK_SCRIPT.read_text(encoding="utf-8")))
+
+
+def test_check_script_reads_only_documented_keys() -> None:
+    """Проверка не должна опираться на переменную, которой нет ни в одном шаблоне.
+
+    Иначе человек читает про ключ в выводе скрипта, идёт вписывать его — и не находит места:
+    ни ``env.prod.example``, ни ``env.integrations.example`` о нём не знают. Так и появился
+    этот разъезд: код читал ``ANTHROPIC_*``, ``MAILRU_*`` и ``SBIS_*``, а шаблоны молчали.
+    """
+    documented = _env_keys(PROD_TEMPLATE.read_text(encoding="utf-8")) | _template_keys()
+    undocumented = sorted(_check_script_keys() - documented)
+    assert not undocumented, (
+        "check-prod-secrets.sh читает переменные, которых нет ни в env.prod.example, ни в "
+        f"env.integrations.example: {undocumented}"
     )
 
 

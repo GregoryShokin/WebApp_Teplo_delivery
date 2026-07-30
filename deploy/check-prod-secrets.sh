@@ -69,14 +69,28 @@ is_placeholder() {
   [[ -z "$value" || "$value" == *change-me* || "$value" == *placeholder* || "$value" == *replace-with* || "$value" == *example.com* ]]
 }
 
-require_value_either() {
-  # Значение годится из любого из двух env-файлов: контейнеры грузят оба
-  # (docker-compose.prod.yml, env_file: .env.prod + .env.integrations), и требовать
-  # конкретный файл — значит отказать исправному стенду, где ключ лежит в соседнем.
+any_env_value() {
+  # Значение из любого из двух env-файлов: контейнеры грузят оба
+  # (docker-compose.prod.yml, env_file: .env.prod + .env.integrations), и привязывать
+  # проверку к конкретному файлу — значит отказать исправному стенду, где ключ лежит в соседнем.
   local key="$1"
   local value
   value="$(env_value "$key")"
   [[ -n "$value" ]] || value="$(integrations_env_value "$key")"
+  printf '%s' "$value"
+}
+
+is_off() {
+  # Выключатель контура: пусто = дефолт кода (включено). Гасят его явным false/0/no.
+  local value
+  value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [[ "$value" == "false" || "$value" == "0" || "$value" == "no" ]]
+}
+
+require_value_either() {
+  local key="$1"
+  local value
+  value="$(any_env_value "$key")"
   if [[ -z "$value" ]]; then
     errors+=("$key is missing or empty in .env.prod and .env.integrations")
     return
@@ -233,6 +247,52 @@ if [[ -f "$integrations_env_file" ]]; then
     require_integrations_value SBER_API_TLS_CERT_PATH
     require_integrations_value SBER_API_TLS_KEY_PATH
   fi
+fi
+
+# --- Контуры, которые старт не роняют, а выключаются молча ---------------------------------
+# Ни одно значение ниже не мешает подняться api и scheduler, поэтому здесь только WARN: пустое
+# поле — законный выбор (Sber, Mango и Telegram так и живут). Молчать о нём всё же нельзя:
+# отличить «выключено осознанно» от «забыли заполнить» по работающему стенду невозможно —
+# почтовые проходы не пишут в лог даже «не настроено».
+
+anthropic_key="$(any_env_value ANTHROPIC_API_KEY)"
+if [[ -z "$anthropic_key" ]]; then
+  warnings+=("ANTHROPIC_API_KEY is missing; PDF invoices are recognized by the deterministic layer only, and «ИИ-разбор» in Налоги plus fixed-asset revaluation answer 422")
+else
+  if [[ -z "$(any_env_value ANTHROPIC_BASE_URL)" ]]; then
+    warnings+=("ANTHROPIC_BASE_URL is missing while ANTHROPIC_API_KEY is set; from a Russian IP Anthropic answers 403 to a valid key, so every model call fails unless the container reaches an allowed region through HTTPS_PROXY")
+  elif [[ -z "$(any_env_value ANTHROPIC_RELAY_SECRET)" ]]; then
+    warnings+=("ANTHROPIC_RELAY_SECRET is missing while ANTHROPIC_BASE_URL is set; deploy/anthropic-relay-worker.js answers 403 to callers without the shared secret, and that failure looks like a bad API key")
+  fi
+fi
+
+mailru_configured=""
+if [[ -n "$(any_env_value MAILRU_EMAIL)" && -n "$(any_env_value MAILRU_APP_PASSWORD)" ]]; then
+  mailru_configured=1
+fi
+if [[ -n "$(any_env_value MAILRU_WORKMAIL)" && -n "$(any_env_value MAILRU_WORKMAIL_PASSWORD)" ]]; then
+  mailru_configured=1
+fi
+if [[ -z "$mailru_configured" ]]; then
+  if ! is_off "$(any_env_value MAIL_POLL_ENABLED)"; then
+    warnings+=("MAILRU_* are missing while MAIL_POLL_ENABLED is on; the invoice mail poll returns not_configured and the scheduler logs nothing — «Страница на оплату» stays empty in silence")
+  fi
+  if ! is_off "$(any_env_value TAX_DOCUMENT_POLL_ENABLED)"; then
+    warnings+=("MAILRU_* are missing while TAX_DOCUMENT_POLL_ENABLED is on; the accountant's documents are never fetched into the tax staging, also without a log line")
+  fi
+fi
+
+if [[ -z "$(any_env_value SBIS_APP_CLIENT_ID)" || -z "$(any_env_value SBIS_SECRET_KEY)" ]]; then
+  if ! is_off "$(any_env_value SBIS_SYNC_ENABLED)"; then
+    warnings+=("SBIS_APP_CLIENT_ID/SBIS_SECRET_KEY are missing while SBIS_SYNC_ENABLED is on; the hourly EDO sync exits immediately and «Синхронизировать» answers 409")
+  fi
+fi
+
+# Пустой токен не отключает вебхук, а отключает ЕГО ПРОВЕРКУ: app/api/v1/routes/webhooks.py
+# (_verify_bearer) пропускает запрос без Authorization, и POST /api/v1/webhooks/iiko открыт
+# любому — а он открывает и закрывает смены курьеров, то есть двигает учёт смен и ЗП.
+if [[ -z "$(any_env_value IIKO_WEBHOOK_TOKEN)" ]]; then
+  warnings+=("IIKO_WEBHOOK_TOKEN is missing; POST /api/v1/webhooks/iiko accepts unauthenticated courier shift events from anyone")
 fi
 
 jwt_secret="$(env_value JWT_SECRET_KEY)"
