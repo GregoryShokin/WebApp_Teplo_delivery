@@ -644,3 +644,48 @@ async def test_owner_row_survives_even_when_fact_points_at_it(
         rows = await _rows(session, operation)
         assert [row.id for row in rows] == [owner_row.id]
         assert rows[0].quality_status == "owner_review"
+
+
+async def test_exclude_takes_the_tax_row_out_and_keeps_the_fact_link(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Исключить» на налоговой операции: расход уходит, ссылка факта остаётся валидной.
+
+    Решение по ссылке ``TaxPayment.cashflow_transaction_id`` (30.07.2026): при мягком
+    исключении её НЕ сбрасываем. Строка жива, просто помечена ``excluded``, поэтому ссылка
+    никуда не «протухает» и никакого расхода за собой не тянет — исключённую проводку не
+    считает ни один денежный контур. Сброс же в ``None`` дал бы ровно обратное: факты
+    выглядели бы неразнесёнными, а связь пришлось бы восстанавливать заново.
+
+    Сам автомат расход назад не вернёт: ``_operations_needing_projection`` не берёт операции
+    со статусом ``excluded``, и самозалечивание молча не отменяет решение владельца.
+    """
+    from app.services.banking.classifier import apply_operation_action
+
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        await _articles(session)
+        operation = await _operation(session, wallet, "478376.00")
+        fact = _fact(operation, "usn_advance", "478376.00")
+        session.add(fact)
+        await session.commit()
+
+        await project_tax_facts_to_dds(session)
+        await session.commit()
+        booked_id = (await _rows(session, operation))[0].id
+        await session.refresh(fact)
+        assert fact.cashflow_transaction_id == booked_id
+
+        await apply_operation_action(session, operation, action="exclude")
+        await session.commit()
+
+        rows = await _rows(session, operation)
+        assert [row.quality_status for row in rows] == ["excluded"]
+        await session.refresh(fact)
+        assert fact.cashflow_transaction_id == booked_id, "ссылка ведёт на живую строку"
+
+        # Повторный прогон проектора не воскрешает расход по исключённой операции.
+        report = await project_tax_facts_to_dds(session)
+        await session.commit()
+        assert report.projected == 0
+        assert [row.quality_status for row in await _rows(session, operation)] == ["excluded"]

@@ -374,6 +374,11 @@ async def apply_operation_action(
                 operation.classification_status = "classified"
                 return
         if transaction is None:
+            # Операцию уже исключали: её собственная строка жива, но помечена ``excluded``.
+            # Поднимаем ЕЁ, а не заводим вторую — иначе рядом с новым расходом навсегда
+            # осталась бы исключённая копия того же платежа.
+            transaction = await _revive_excluded_operation_cashflow(session, operation)
+        if transaction is None:
             transaction = CashflowTransaction(
                 wallet_id=wallet.id,
                 direction=operation.direction,
@@ -434,6 +439,7 @@ async def apply_operation_action(
         if operation.cashflow_transaction_id is not None:
             operation_transaction_ids.add(operation.cashflow_transaction_id)
         await _drop_untouched_bank_prepayments(session, operation_transaction_ids)
+        await _soft_exclude_operation_cashflow(session, operation)
         operation.classification_status = (
             "internal_transfer" if action == "mark_internal_transfer" else "excluded"
         )
@@ -727,6 +733,84 @@ async def _drop_untouched_bank_prepayments(
                 "Платёж уже погасил кредиторку, отправленную в банк-черновик — "
                 "сначала откатите черновик"
             )
+
+
+async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
+    """Убрать из ДДС проводки, порождённые ЭТОЙ операцией (``exclude`` / внутренний перевод).
+
+    Операция перестаёт быть расходом — значит и её проводка не должна дальше сидеть в статье.
+    Без этого «Исключить» снимало предоплаты и обнуляло якорь, а сама строка оставалась в
+    журнале размеченным расходом: владелец жал «Исключить», а сумма из отчёта по статье не
+    уходила. Достижимо для любой операции, размеченной ПРАВИЛОМ (``set_article`` заводит
+    проводку), то есть для всего потока оплат поставщикам, а не только для налогов.
+
+    Мягко (``quality_status='excluded'``), а не удалением — ровно как исключение ручной
+    проводки (``cashflow_classify.apply_cashflow_exclude``): действие обратимо, все фильтры по
+    ``EXCLUDED_QUALITY`` (баланс наличных, карточка контрагента, резервы ЗП, репроекция
+    накладных) уже написаны, а ``id`` строки переживает исключение — на него ссылаются
+    налоговые факты (``TaxPayment.cashflow_transaction_id``), и ссылка остаётся валидной.
+
+    Баланс банковского кошелька не двигается ни на копейку: он считается от выписки
+    (``_wallet_movement_deltas``), а не от проводок; задета только аналитика по статьям.
+
+    Чужую prebooked-проводку (иной ``source_kind``), на которую операция лишь ссылалась, не
+    трогаем — её денежный факт завёл доменный контур, там же он и отменяется. Тот же принцип,
+    что в ``_clear_operation_cashflow``.
+    """
+    from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
+
+    rows = (
+        await session.scalars(
+            select(CashflowTransaction).where(
+                CashflowTransaction.source_kind == "bank_operation",
+                CashflowTransaction.source_id == operation.id,
+            )
+        )
+    ).all()
+    if not rows:
+        return
+    for transaction in rows:
+        transaction.quality_status = EXCLUDED_QUALITY
+    await session.flush()
+
+
+async def _revive_excluded_operation_cashflow(
+    session: AsyncSession, operation: BankOperation
+) -> CashflowTransaction | None:
+    """Поднять строку, мягко исключённую прошлым ``exclude``, вместо создания второй.
+
+    Повторная разметка исключённой операции обязана вернуть ТУ ЖЕ проводку: иначе в журнале
+    рядом с новым расходом навсегда останется исключённая копия, а налоговые факты будут
+    ссылаться на неё, а не на действующую строку. Вызывающий перезапишет у поднятой строки все
+    поля разбора, включая ``quality_status``, — этим исключение и снимается.
+
+    Прежний мультисплит схлопываем в якорную долю: ``set_article`` ставит одну статью на всю
+    сумму, поэтому лишние доли удаляем вместе с их дебиторкой (иначе она осиротеет по
+    FK ``SET NULL``). Порядок долей — тот же, что у ``read_operation_split``.
+    """
+    from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
+
+    rows = list(
+        (
+            await session.scalars(
+                select(CashflowTransaction)
+                .where(
+                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_id == operation.id,
+                    CashflowTransaction.quality_status == EXCLUDED_QUALITY,
+                )
+                .order_by(CashflowTransaction.created_at, CashflowTransaction.id)
+            )
+        ).all()
+    )
+    if not rows:
+        return None
+    await _drop_untouched_bank_prepayments(session, {row.id for row in rows})
+    for extra in rows[1:]:
+        await session.delete(extra)
+    operation.cashflow_transaction_id = rows[0].id
+    await session.flush()
+    return rows[0]
 
 
 async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
