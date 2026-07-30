@@ -26,6 +26,7 @@ import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
 import { DzKzRoute } from "@/routes/accounting/dz-kz";
+import { FixedAssetsRoute } from "@/routes/fixed-assets";
 import { TaxesRoute } from "@/routes/taxes";
 
 type Navigate = (path: string) => void;
@@ -481,7 +482,7 @@ const routes: AppRoute[] = [
   },
   {
     path: "/fixed-assets",
-    render: () => <EmptyModule name="Учёт ОС" />,
+    render: () => <FixedAssetsRoute />,
   },
   {
     path: "/dz-kz",
