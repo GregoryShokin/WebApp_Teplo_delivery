@@ -7,7 +7,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -15,18 +15,26 @@ from app.models import (
     Counterparty,
     CounterpartyPayableProfile,
     DdsArticle,
+    InvoicePaymentAllocation,
     Location,
     LocationLease,
     Organization,
+    SafeAllocation,
     SupplierExpenseAccrual,
     SupplierInvoice,
+    SupplierPrepayment,
     Wallet,
 )
+from app.services.banking.safe_allocations import pay_allocation
 from app.services.lease_accruals import (
     ensure_lease_invoice,
     invoice_date_for,
     rebuild_lease_invoice,
     settle_lease_invoice_from_cash,
+)
+from app.services.supplier_prepayments import (
+    activate_due_closing_invoices,
+    counterparty_prepayment_balance,
 )
 
 
@@ -286,48 +294,230 @@ def test_rebuild_without_create_skips_missing(async_session_factory) -> None:
     asyncio.run(run())
 
 
+async def _safe_wallet(session: AsyncSession) -> Wallet:
+    wallet = await session.scalar(select(Wallet).where(Wallet.type == "cash_safe").limit(1))
+    if wallet is None:
+        wallet = Wallet(id=uuid.uuid4(), name="Сейф", type="cash_safe", status="active")
+        session.add(wallet)
+        await session.flush()
+    return wallet
+
+
+async def _cash_leg(
+    session: AsyncSession, lease: LocationLease, *, amount: str, on: date
+) -> CashflowTransaction:
+    wallet = await _safe_wallet(session)
+    txn = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=Decimal(amount),
+        operation_date=on,
+        article_id=lease.dds_article_id,
+        counterparty_id=lease.counterparty_id,
+        location_id=lease.location_id,
+        lease_id=lease.id,
+        source_kind="safe_payout",
+        quality_status="final",
+    )
+    session.add(txn)
+    await session.flush()
+    return txn
+
+
+async def _prepayments(session: AsyncSession, lease: LocationLease) -> list[SupplierPrepayment]:
+    return list(
+        (
+            await session.scalars(
+                select(SupplierPrepayment).where(
+                    SupplierPrepayment.counterparty_id == lease.counterparty_id
+                )
+            )
+        ).all()
+    )
+
+
 def test_cash_payment_settles_lease_obligation(async_session_factory) -> None:
-    """Наличная оплата гасит долг адресно: правило 1 живёт только в банковском контуре."""
+    """Наличная оплата гасит ДЕЙСТВУЮЩИЙ долг адресно и дебиторки при этом не плодит."""
 
     async def run() -> None:
         async with async_session_factory() as session:
             lease = await _lease(session)
-            invoice = await ensure_lease_invoice(session, lease, date(2026, 6, 1))
-            assert invoice is not None
-
-            wallet = await session.scalar(select(Wallet).where(Wallet.type == "cash_safe").limit(1))
-            if wallet is None:
-                wallet = Wallet(
-                    id=uuid.uuid4(), name="Сейф", type="cash_safe", status="active"
-                )
-                session.add(wallet)
-                await session.flush()
-
-            txn = CashflowTransaction(
-                wallet_id=wallet.id,
-                direction="out",
-                amount=Decimal("100000"),
-                operation_date=date(2026, 6, 30),
-                article_id=lease.dds_article_id,
-                counterparty_id=lease.counterparty_id,
-                location_id=lease.location_id,
-                lease_id=lease.id,
-                source_kind="safe_payout",
-                quality_status="final",
+            invoice = await ensure_lease_invoice(
+                session, lease, date(2026, 6, 1), as_of=date(2026, 7, 1)
             )
-            session.add(txn)
-            await session.flush()
+            assert invoice is not None
+            assert invoice.activation_status == "active"
 
+            txn = await _cash_leg(session, lease, amount="100000", on=date(2026, 7, 1))
             await settle_lease_invoice_from_cash(
-                session,
-                lease_id=lease.id,
-                transaction_id=txn.id,
-                amount=Decimal("100000"),
-                operation_date=date(2026, 6, 30),
+                session, lease_id=lease.id, transaction_id=txn.id, amount=Decimal("100000")
             )
             await session.flush()
             await session.refresh(invoice)
             assert invoice.payment_status == "paid"
+            assert await _prepayments(session, lease) == []
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_cash_payment_to_pending_obligation_becomes_receivable(async_session_factory) -> None:
+    """Правило 4: будущий документ — ещё не долг, платить по нему нельзя, деньги = дебиторка.
+
+    Прод-кейс 30.07.2026 (Виталий): выплата из Сейфа закрыла арендный документ от 31.07 за день
+    до его вступления в силу. Предоплаты не возникло, гасить было нечего — 50 000 выпали из ДЗ/КЗ.
+    """
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, payment_mode="prepaid", payment_day=28, amount="50000")
+            invoice = await ensure_lease_invoice(
+                session, lease, date(2026, 7, 1), as_of=date(2026, 7, 30)
+            )
+            assert invoice is not None
+            assert invoice.activation_status == "pending"
+
+            txn = await _cash_leg(session, lease, amount="50000", on=date(2026, 7, 30))
+            await settle_lease_invoice_from_cash(
+                session, lease_id=lease.id, transaction_id=txn.id, amount=Decimal("50000")
+            )
+            await session.flush()
+            await session.refresh(invoice)
+
+            assert invoice.payment_status == "unpaid"
+            assert invoice.activation_status == "pending"
+            allocated = await session.scalar(
+                select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+                    InvoicePaymentAllocation.invoice_id == invoice.id
+                )
+            )
+            assert Decimal(allocated) == Decimal("0")
+
+            prepayments = await _prepayments(session, lease)
+            assert len(prepayments) == 1
+            assert Decimal(prepayments[0].amount) == Decimal("50000")
+            assert prepayments[0].status == "open"
+            assert prepayments[0].cashflow_transaction_id == txn.id
+            # Не залог: колонка lease_id в леджере договора означает именно залог.
+            assert prepayments[0].lease_id is None
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_activation_settles_receivable_left_by_cash_prepayment(async_session_factory) -> None:
+    """Сквозной сценарий владельца: два аванса → ДЗ 100 000, документ 31.07 съедает один."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, payment_mode="prepaid", payment_day=28, amount="50000")
+            invoice = await ensure_lease_invoice(
+                session, lease, date(2026, 7, 1), as_of=date(2026, 7, 30)
+            )
+            assert invoice is not None
+
+            for day in (date(2026, 7, 1), date(2026, 7, 30)):
+                txn = await _cash_leg(session, lease, amount="50000", on=day)
+                await settle_lease_invoice_from_cash(
+                    session, lease_id=lease.id, transaction_id=txn.id, amount=Decimal("50000")
+                )
+            await session.flush()
+
+            assert await counterparty_prepayment_balance(
+                session, lease.counterparty_id
+            ) == Decimal("100000.00")
+
+            await activate_due_closing_invoices(
+                session, as_of=date(2026, 7, 31), commit=False
+            )
+            await session.refresh(invoice)
+            assert invoice.activation_status == "active"
+            assert invoice.payment_status == "paid"
+            assert await counterparty_prepayment_balance(
+                session, lease.counterparty_id
+            ) == Decimal("50000.00")
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_cash_payment_splits_between_active_debt_and_receivable(async_session_factory) -> None:
+    """Смешанный платёж: сначала FIFO по действующим обязательствам, остаток — в дебиторку."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, payment_mode="prepaid", payment_day=28, amount="50000")
+            june = await ensure_lease_invoice(
+                session, lease, date(2026, 6, 1), as_of=date(2026, 7, 30)
+            )
+            july = await ensure_lease_invoice(
+                session, lease, date(2026, 7, 1), as_of=date(2026, 7, 30)
+            )
+            assert june is not None and july is not None
+            assert june.activation_status == "active"
+            assert july.activation_status == "pending"
+
+            txn = await _cash_leg(session, lease, amount="80000", on=date(2026, 7, 30))
+            await settle_lease_invoice_from_cash(
+                session, lease_id=lease.id, transaction_id=txn.id, amount=Decimal("80000")
+            )
+            await session.flush()
+            await session.refresh(june)
+            await session.refresh(july)
+
+            assert june.payment_status == "paid"
+            assert july.payment_status == "unpaid"
+            prepayments = await _prepayments(session, lease)
+            assert len(prepayments) == 1
+            assert Decimal(prepayments[0].amount) == Decimal("30000")
+            await session.rollback()
+
+    asyncio.run(run())
+
+
+def test_safe_payout_with_lease_creates_receivable_end_to_end(async_session_factory) -> None:
+    """Боевая дверь целиком: резерв Сейфа с lease_id → pay_allocation → дебиторка, не аллокация."""
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            lease = await _lease(session, payment_mode="prepaid", payment_day=28, amount="50000")
+            invoice = await ensure_lease_invoice(
+                session, lease, date(2026, 7, 1), as_of=date(2026, 7, 30)
+            )
+            assert invoice is not None
+            assert invoice.activation_status == "pending"
+
+            wallet = await _safe_wallet(session)
+            allocation = SafeAllocation(
+                id=uuid.uuid4(),
+                wallet_id=wallet.id,
+                amount=Decimal("50000"),
+                amount_paid=Decimal("0"),
+                article_id=lease.dds_article_id,
+                counterparty_id=lease.counterparty_id,
+                purpose="Аренда торговых точек",
+                status="reserved",
+                location="safe",
+                location_id=lease.location_id,
+                lease_id=lease.id,
+            )
+            session.add(allocation)
+            await session.flush()
+
+            await pay_allocation(
+                session,
+                allocation,
+                amount=Decimal("50000"),
+                operation_date=date(2026, 7, 30),
+            )
+            await session.flush()
+            await session.refresh(invoice)
+
+            assert invoice.payment_status == "unpaid"
+            prepayments = await _prepayments(session, lease)
+            assert len(prepayments) == 1
+            assert Decimal(prepayments[0].amount) == Decimal("50000")
+            assert prepayments[0].wallet_id == wallet.id
             await session.rollback()
 
     asyncio.run(run())

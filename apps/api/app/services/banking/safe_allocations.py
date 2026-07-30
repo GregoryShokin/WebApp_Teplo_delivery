@@ -249,8 +249,9 @@ async def pay_allocation(
     )
     await session.flush()
 
-    # Аренда: наличная оплата гасит обязательство этого договора. Банковский платёж
-    # закрывает его сам (правило 1), а наличный контур правило 1 не зовёт.
+    # Аренда: наличная оплата гасит ДЕЙСТВУЮЩИЕ обязательства этого договора, остаток становится
+    # дебиторкой (аренда вперёд). Банковский платёж проходит обе половины канона сам (правило 1),
+    # а наличный контур правило 1 не зовёт — см. settle_lease_invoice_from_cash.
     if allocation.lease_id is not None:
         from app.services.lease_accruals import settle_lease_invoice_from_cash
 
@@ -259,13 +260,20 @@ async def pay_allocation(
             lease_id=allocation.lease_id,
             transaction_id=leg.id,
             amount=amount,
-            operation_date=operation_date,
+            wallet_id=allocation.wallet_id,
+            created_by_user_id=created_by_user_id,
         )
 
     # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
     # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
     # Код статьи продублирован из supplier_prepayments (циклический импорт через kassa).
-    if allocation.article_id is not None and allocation.counterparty_id is not None:
+    # Арендный резерв сюда не заходит: его деньгами уже распорядился блок выше — и гашением
+    # действующих обязательств, и остатком в дебиторку. Иначе на одну выплату две предоплаты.
+    if (
+        allocation.lease_id is None
+        and allocation.article_id is not None
+        and allocation.counterparty_id is not None
+    ):
         article = await session.get(DdsArticle, allocation.article_id)
         if article is not None and article.code == "advance_to_supplier":
             from app.models import SupplierPrepayment

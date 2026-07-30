@@ -10,9 +10,10 @@ P&L — по ``SupplierExpenseAccrual`` с ``invoice_id`` (``list_supplier_accou
 уникумом ``uq_supplier_invoice_source_external``, поэтому повторный прогон джобы (или ручной
 пересбор) ничего не задваивает.
 
-Дата документа зависит от порядка расчётов: постоплату признаём последним днём месяца, а
-предоплату — днём платежа месяцем раньше. Будущую дату ``apply_closing_document`` сам положит
-в ``pending`` и активирует ночью в свою дату — обязательство не появится раньше срока.
+Дата документа — всегда последний день периода, независимо от порядка расчётов (решение
+владельца 23.07, см. ``invoice_date_for``). Значит текущий месяц почти весь стоит в ``pending``:
+``apply_closing_document`` кладёт будущую дату в ожидание, а активирует её ночная джоба в свою
+дату — обязательство не появляется раньше срока, и до него деньги вперёд — это дебиторка.
 
 Уже созданные накладные при смене ставки НЕ переписываем: за прошлый месяц долг был другим,
 и переписать его задним числом означало бы подделать историю. Новая ставка действует со
@@ -70,11 +71,18 @@ async def ensure_lease_invoice(
     session: AsyncSession,
     lease: LocationLease,
     month: date,
+    *,
+    as_of: date | None = None,
 ) -> SupplierInvoice | None:
     """Завести обязательство по аренде за месяц. Идемпотентно. Не коммитит.
 
     Возвращает ``None``, если начислять нечего: выключено, нет статьи, договор не действовал
     в этом месяце или обязательство уже есть.
+
+    ``as_of`` — «сегодня» для правила 4 (вступил документ в силу или лёг в ``pending``); по
+    умолчанию реальная дата. Явный параметр нужен тестам: без него активность накладной зависит
+    от дня прогона, и сценарий «платёж пришёл к ещё не вступившему в силу документу» на одних
+    датах исполняется, а на других — нет. Ровно на этом дефект гашения из Сейфа и прожил месяц.
     """
     if not lease.accrual_enabled:
         return None
@@ -120,7 +128,7 @@ async def ensure_lease_invoice(
 
     # Порядок важен: сначала проводим документ (активация или pending для будущей даты и
     # FIFO-гашение открытой дебиторки), затем строка признания расхода в P&L.
-    await supplier_prepayments.apply_closing_document(session, invoice)
+    await supplier_prepayments.apply_closing_document(session, invoice, as_of=as_of)
     await supplier_service_periods.sync_invoice_accrual(session, invoice)
     return invoice
 
@@ -194,55 +202,91 @@ async def settle_lease_invoice_from_cash(
     lease_id: UUID,
     transaction_id: UUID,
     amount: Decimal,
-    operation_date: date,
+    wallet_id: UUID | None = None,
+    created_by_user_id: UUID | None = None,
 ) -> None:
-    """Погасить арендное обязательство наличной оплатой.
+    """Провести наличную выплату по договору аренды по канону ДЗ/КЗ. Не коммитит.
 
-    Банковский платёж закрывает аренду сам — правило 1 (``ensure_prepayment_from_bank_transaction``)
-    ищет открытую КЗ контрагента. Наличный контур этого правила не зовёт, поэтому здесь гасим
-    адресно: только по конкретному договору и только его обязательство, без побочек на весь
-    наличный контур.
+    Канон владельца (17.07) не различает канал денег: платёж гасит ДЕЙСТВУЮЩИЕ обязательства
+    FIFO, а всё, чему обязательства ещё нет, становится дебиторкой. Банковский платёж проходит
+    обе половины сам — правилом 1 (``ensure_prepayment_from_bank_transaction``). Наличный контур
+    в правило 1 не заходит (``safe_payout`` в ``DEDICATED_MONEY_SOURCE_KINDS``: слепой FIFO снял
+    бы адресную привязку к договору), поэтому тот же канон исполняем здесь — но только по
+    накладным СВОЕГО договора.
 
-    Месяц берём по дате операции; если за него обязательства ещё нет (заплатили вперёд), берём
-    ближайшее непогашенное этого договора — платёж не должен повисать в никуда.
+    Гасим ТОЛЬКО ``activation_status='active'``. Будущий закрывающий документ (правило 4: аренда
+    за июль датирована 31.07) обязательством ещё не является, и платить по нему нельзя. Раньше
+    фильтра не было, и на этом терялись деньги: выплата 30.07.2026 по Виталию закрыла июльский
+    документ за день до его вступления в силу — предоплаты не возникло, гасить было нечего, и
+    50 000 просто выпали из ДЗ/КЗ (витрина показала 50 000 вместо 100 000). Вторая половина —
+    остаток в дебиторку — обязательна: один фильтр без неё оставил бы платёж вообще без следа.
+
+    Месяц платежа роли не играет: ``payment_mode`` — про то, КОГДА платят, а не когда возникает
+    долг (решение владельца 23.07, см. ``invoice_date_for``). Гасим строго по возрастанию даты
+    документа, как FIFO правила 1.
     """
-    from app.models import InvoicePaymentAllocation
+    from app.models import InvoicePaymentAllocation, SupplierPrepayment
     from app.services import counterparty_matching
 
-    month_key = lease_external_id(lease_id, operation_date)
-    invoice = await session.scalar(
-        select(SupplierInvoice).where(
-            SupplierInvoice.source == LEASE_INVOICE_SOURCE,
-            SupplierInvoice.external_id == month_key,
-            SupplierInvoice.payment_status != "paid",
-        )
-    )
-    if invoice is None:
-        prefix = f"lease:{lease_id}:"
-        invoice = await session.scalar(
+    if amount <= 0:
+        return
+    lease = await session.get(LocationLease, lease_id)
+    if lease is None:
+        return
+
+    invoices = (
+        await session.scalars(
             select(SupplierInvoice)
             .where(
                 SupplierInvoice.source == LEASE_INVOICE_SOURCE,
-                SupplierInvoice.external_id.like(f"{prefix}%"),
-                SupplierInvoice.payment_status != "paid",
+                SupplierInvoice.external_id.like(f"lease:{lease_id}:%"),
+                SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")),
+                SupplierInvoice.activation_status == "active",
             )
-            .order_by(SupplierInvoice.invoice_date)
+            .order_by(SupplierInvoice.invoice_date, SupplierInvoice.created_at)
         )
-    if invoice is None:
-        return
+    ).all()
 
-    allocated = await counterparty_matching._allocated_amount(session, invoice.id)
-    outstanding = Decimal(invoice.amount) - allocated
-    if outstanding <= 0:
-        return
+    left = amount
+    for invoice in invoices:
+        if left <= 0:
+            break
+        allocated = await counterparty_matching._allocated_amount(session, invoice.id)
+        outstanding = Decimal(invoice.amount) - allocated
+        if outstanding <= 0:
+            continue
+        part = min(outstanding, left)
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=transaction_id,
+                amount=part,
+                created_by_user_id=created_by_user_id,
+            )
+        )
+        await session.flush()
+        await counterparty_matching._recompute_status(session, invoice)
+        left -= part
 
+    if left <= 0:
+        return
+    # Действующих обязательств не осталось — деньги вперёд. Вид ``subscription`` тот же, что у
+    # правила 1: аванс не целевой, поэтому ``auto_settle_invoice_from_open_prepayments`` сам
+    # зачтёт его, когда документ вступит в силу. ``lease_id`` НЕ проставляем: в леджере договора
+    # эта колонка означает залог (``deposit_outstanding``), а это обычная предоплата за период.
     session.add(
-        InvoicePaymentAllocation(
-            invoice_id=invoice.id,
-            source_kind="cash",
+        SupplierPrepayment(
+            counterparty_id=lease.counterparty_id,
+            kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+            wallet_id=wallet_id,
+            amount=left,
+            amount_settled=Decimal("0.00"),
+            status="open",
             cashflow_transaction_id=transaction_id,
-            amount=min(outstanding, amount),
+            article_id=lease.dds_article_id,
+            note="Аренда вперёд: обязательство ещё не вступило в силу",
+            created_by_user_id=created_by_user_id,
         )
     )
     await session.flush()
-    await counterparty_matching._recompute_status(session, invoice)

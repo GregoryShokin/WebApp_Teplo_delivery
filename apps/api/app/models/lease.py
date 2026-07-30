@@ -35,8 +35,8 @@ class LocationLease(Base):
     monthly_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     # Число месяца, когда платим. Пусто — договорённость «по факту», напоминания не строим.
     payment_day: Mapped[int | None] = mapped_column(nullable=True)
-    # prepaid — платим за месяц вперёд, postpaid — по его окончании. От этого зависит, за какой
-    # период считается начисленный долг в момент платежа.
+    # prepaid — платим за месяц вперёд, postpaid — по его окончании. Признак платёжного
+    # календаря: на датировку долга НЕ влияет (долг возникает концом периода в любом режиме).
     payment_mode: Mapped[str] = mapped_column(
         String(16), nullable=False, default="prepaid", server_default="prepaid"
     )
