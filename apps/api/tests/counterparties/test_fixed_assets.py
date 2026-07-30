@@ -419,6 +419,12 @@ async def test_registry_import_expands_quantities_and_is_idempotent(
         assert all(asset.useful_life_months is None for asset in assets)
         assert all(asset.location_id is not None for asset in assets)
 
+        # Статус — это «работает ли», а не «где стоит». На складе не работает НИЧЕГО, всё в
+        # резерве (решение владельца 30.07.2026); реестр инвентаризации это не различал.
+        by_source = {asset.source_ref: asset.status for asset in assets}
+        assert by_source["Склад №12"] == "in_storage"
+        assert by_source["Черникова №27 (1 из 3)"] == "in_use"
+
         second = await run(session, path, dry_run=False)
         assert (second["created"], second["skipped"]) == (0, 4)
 

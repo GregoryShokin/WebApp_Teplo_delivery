@@ -121,8 +121,8 @@ class LocationTotalRead(BaseModel):
     initial_cost: Decimal
     residual: Decimal
     monthly_amount: Decimal
-    # Числятся «в работе», хотя лежат не на торговой точке. Управленческий вопрос, а не
-    # ошибка данных: столько денег в оборудовании, которое выручку не производит.
+    # Не приносит выручку: резерв, поломка или имущество вне торговой точки. Амортизация на
+    # нём при этом идёт — исправная техника в запасе стареет так же, как в работе.
     idle_count: int
     idle_residual: Decimal
 
@@ -416,9 +416,10 @@ async def get_summary(
         place.initial_cost += row.initial_cost
         place.residual += row.residual
         place.monthly_amount += row.monthly_amount
-        # «В работе» вне торговой точки — не ошибка данных, а управленческий вопрос: это
-        # деньги в оборудовании, которое выручку не производит.
-        if asset.status == "in_use" and (location is None or location.kind != "point"):
+        # Выручку делает только исправное оборудование НА ТОРГОВОЙ ТОЧКЕ. Всё остальное —
+        # резерв, поломка или имущество вне точки — стоит денег и амортизируется, а выручки
+        # не приносит. Считаем обе причины сразу: владельцу важна сумма, а не её разбор.
+        if asset.status != "in_use" or location is None or location.kind != "point":
             place.idle_count += 1
             place.idle_residual += row.residual
 
