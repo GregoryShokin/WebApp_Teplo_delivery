@@ -28,7 +28,7 @@ import {
   getWallets,
   type CounterpartyInvoice,
 } from "./api";
-import { formatRub } from "./shared";
+import { formatRub, isNotYetInForce } from "./shared";
 import { todayIso } from "@/lib/date";
 
 
@@ -54,9 +54,14 @@ export function BulkPayDialog({
   const [progress, setProgress] = useState<string | null>(null);
 
   // Оплачиваемые: без банковского черновика и не оплаченные (draft/paid отсеяны и в inbox,
-  // но страхуемся — диалог не должен слать уже уехавшее).
+  // но страхуемся — диалог не должен слать уже уехавшее). Не вступившие в силу закрывающие
+  // документы отсеиваем здесь же: банк их отклонит, а наличная ветка оплатила бы долг, которого
+  // по канону ещё нет (правило 4).
   const payable = useMemo(
-    () => invoices.filter((item) => !item.draft_id && item.payment_status !== "paid"),
+    () =>
+      invoices.filter(
+        (item) => !item.draft_id && item.payment_status !== "paid" && !isNotYetInForce(item),
+      ),
     [invoices],
   );
   const total = payable.reduce((sum, item) => sum + (item.remaining || item.amount), 0);

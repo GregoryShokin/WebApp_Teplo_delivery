@@ -48,6 +48,7 @@ import {
   formatDate,
   formatRub,
   formatVat,
+  isNotYetInForce,
   isOverdue,
 } from "../shared";
 import { PayInvoiceDialog } from "../PayInvoiceDialog";
@@ -167,9 +168,12 @@ export function InboxTab({
   const selectedInvoices = invoices.filter((item) => selected.has(item.id));
   // К оплате пригодны выбранные без банковского черновика и не оплаченные; способ
   // (банк-черновик Т-Банк / наличные Сейф·ТК) выбирается в модалке «Оплатить».
+  // Не вступивший в силу закрывающий документ исключён: по канону это ещё не долг, и банк его
+  // всё равно отклонит. В списке он остаётся видимым со статусом «Вступает в силу ДД.ММ».
   const selectedPayable = selectedInvoices.filter(
-    (item) => !item.draft_id && item.payment_status !== "paid",
+    (item) => !item.draft_id && item.payment_status !== "paid" && !isNotYetInForce(item),
   );
+  const selectedNotInForce = selectedInvoices.filter(isNotYetInForce);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -270,6 +274,18 @@ export function InboxTab({
             </Badge>
           );
         }
+        // Правило 4 канона: до своей даты закрывающий документ — ещё не долг. Оплате не
+        // подлежит, но и прятать его нельзя: показываем, с какой даты он вступит в силу.
+        if (isNotYetInForce(invoice)) {
+          return (
+            <Badge
+              className="border-slate-200 bg-slate-50 text-slate-600"
+              title="Документ вступит в силу своей датой — до неё долга нет и оплатить его нельзя"
+            >
+              Вступает в силу {formatDate(invoice.invoice_date)}
+            </Badge>
+          );
+        }
         // Пока накладная не оплачена, статус ведёт привязанный черновик. Оплаченный статус
         // приоритетнее: после гашения draft_id остаётся, но показываем «Оплачено».
         if (invoice.draft_id && invoice.payment_status !== "paid") {
@@ -357,7 +373,10 @@ export function InboxTab({
       header: "",
       className: "text-right",
       cell: (invoice) =>
-        canPay && !invoice.draft_id && invoice.payment_status !== "paid" ? (
+        canPay &&
+        !invoice.draft_id &&
+        invoice.payment_status !== "paid" &&
+        !isNotYetInForce(invoice) ? (
           <Button
             size="sm"
             variant="outline"
@@ -485,9 +504,13 @@ export function InboxTab({
               title={
                 selectedInvoices.length === 0
                   ? "Выберите накладные"
-                  : selectedPayable.length === 0
-                    ? "Выбранные уже оплачены или отправлены в банк"
-                    : undefined
+                  : selectedPayable.length === 0 && selectedNotInForce.length > 0
+                    ? "Документ ещё не вступил в силу — до его даты долга нет и оплатить нельзя"
+                    : selectedPayable.length === 0
+                      ? "Выбранные уже оплачены или отправлены в банк"
+                      : selectedNotInForce.length > 0
+                        ? `Оплатим ${selectedPayable.length}: ещё не вступившие в силу документы пропускаем`
+                        : undefined
               }
             >
               <Banknote size={16} aria-hidden="true" />

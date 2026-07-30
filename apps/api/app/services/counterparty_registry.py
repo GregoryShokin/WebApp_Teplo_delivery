@@ -159,6 +159,11 @@ class InvoiceItem:
     # Контроль ошибочных цен: clean/flagged/confirmed — для подсветки строки в списке
     # («flagged» = подозрительные цены, оплата/банк заблокированы до подтверждения).
     price_control_status: str = "clean"
+    # Правило 4 канона: закрывающий документ с будущей датой (activation_status='pending') ещё
+    # не долг — платить по нему нельзя (гард в create_payment_draft_for_invoices). Отдаём пару
+    # наружу, чтобы UI не предлагал такую накладную к оплате и объяснял, с какой даты можно.
+    doc_kind: str = "closing"
+    activation_status: str = "active"
 
 
 @dataclass
@@ -389,6 +394,8 @@ def _build_invoice_item(
         draft_status=draft.status if draft else None,
         draft_pays_via_safe=bool(draft.pays_via_safe) if draft else False,
         price_control_status=invoice.price_control_status,
+        doc_kind=invoice.doc_kind,
+        activation_status=invoice.activation_status,
     )
 
 

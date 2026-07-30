@@ -157,6 +157,9 @@ class InvoiceRead(BaseModel):
     draft_pays_via_safe: bool = False
     # Контроль цен: flagged → строку подсвечиваем в списке (подозрительные цены).
     price_control_status: str = "clean"
+    # Правило 4: закрывающий документ с будущей датой ещё не долг — UI не предлагает его к оплате.
+    doc_kind: str = "closing"
+    activation_status: str = "active"
 
 
 class InvoiceServicePeriodIn(BaseModel):

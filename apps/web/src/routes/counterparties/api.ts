@@ -44,6 +44,11 @@ export type CounterpartyInvoice = {
   // Контроль цен: clean — норма; flagged — подозрительные цены (строку подсвечиваем,
   // оплата/банк заблокированы); confirmed — подтверждено человеком.
   price_control_status?: "clean" | "flagged" | "confirmed";
+  // bill — счёт (основание для платежа, не долг); closing — УПД/акт/накладная.
+  doc_kind?: string;
+  // active — документ в силе; pending — дата ещё не наступила, долга нет и платить нечего
+  // (правило 4 канона). См. isNotYetInForce в shared.tsx.
+  activation_status?: string;
 };
 
 export type RegistryItem = {

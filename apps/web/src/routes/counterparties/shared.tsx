@@ -104,6 +104,19 @@ export function isOverdue(dueDate: string | null | undefined, status: string) {
   return new Date(dueDate) < today;
 }
 
+/** Закрывающий документ, чья дата ещё не наступила: по канону (правило 4) это пока не долг.
+ *
+ * Оплатить такой документ нельзя — бэкенд отклоняет отправку в банк
+ * (``create_payment_draft_for_invoices``). UI обязан не предлагать его к оплате, но и не прятать:
+ * строка остаётся в списке со статусом «Вступает в силу ДД.ММ», иначе накладная молча пропадёт
+ * из «к оплате» и менеджер будет искать, куда она делась. */
+export function isNotYetInForce(invoice: {
+  doc_kind?: string;
+  activation_status?: string;
+}): boolean {
+  return invoice.doc_kind === "closing" && invoice.activation_status === "pending";
+}
+
 // Роль сведённой бартер-накладной (направление + хронологическая роль) → подпись.
 // Ранний по дате — заём, поздний — возврат; чей заём видно по направлению товара.
 const BARTER_ROLE_LABELS: Record<string, string> = {
