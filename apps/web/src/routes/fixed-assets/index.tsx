@@ -56,16 +56,20 @@ import { cn } from "@/lib/utils";
 
 import {
   type AssetStatus,
+  type ConditionStatus,
   type FixedAsset,
+  type FixedAssetDetail,
   type Money,
   closeDepreciationMonth,
   correctDepreciation,
   createFixedAsset,
+  decideCondition,
   getAssetCategories,
   getFixedAsset,
   getFixedAssets,
   getFixedAssetsSummary,
   getUnlinkedPayments,
+  reportCondition,
 } from "./api";
 
 const ALL = "all";
@@ -643,6 +647,169 @@ function CorrectionDialog({
   );
 }
 
+const CONDITION_STATUS: Record<ConditionStatus, { label: string; className: string }> = {
+  pending: { label: "Модель смотрит", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  proposed: { label: "Ждёт решения", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  applied: { label: "Применено", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  dismissed: { label: "Отклонено", className: "border-zinc-200 bg-zinc-50 text-zinc-600" },
+  failed: { label: "Модель не ответила", className: "border-rose-200 bg-rose-50 text-rose-700" },
+};
+
+function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: boolean }) {
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState("");
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: [QUERY_ROOT] });
+
+  const report = useMutation({
+    mutationFn: () => reportCondition(asset.id, message.trim()),
+    onSuccess: () => {
+      setMessage("");
+      toast.success("Записал. Оценку модель даст в ближайшие минуты");
+      void invalidate();
+    },
+    onError: (error) => {
+      toast.error(
+        apiErrorStatus(error) === 409
+          ? "По этому объекту уже есть сообщение в работе — дождитесь оценки"
+          : apiErrorMessage(error, "Не удалось сохранить сообщение"),
+      );
+    },
+  });
+
+  const decide = useMutation({
+    mutationFn: (input: { reportId: string; accept: boolean }) =>
+      decideCondition(asset.id, input.reportId, input.accept),
+    onSuccess: (_data, input) => {
+      toast.success(input.accept ? "Стоимость объекта обновлена" : "Предложение отклонено");
+      void invalidate();
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось применить решение"));
+    },
+  });
+
+  const busy = report.isPending || decide.isPending;
+  const waiting = asset.condition_reports.some((item) => item.status === "pending");
+
+  return (
+    <div className="space-y-4">
+      {canEdit ? (
+        <div className="space-y-2 rounded-lg border bg-card p-3">
+          <Label htmlFor="condition-message">Что с объектом?</Label>
+          <Textarea
+            disabled={busy || waiting}
+            id="condition-message"
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Сломался компрессор, холод не держит"
+            rows={3}
+            value={message}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Опишите своими словами. Оценку предложит модель, стоимость изменится только после
+              вашего подтверждения.
+            </p>
+            <Button
+              disabled={message.trim().length < 3 || busy || waiting}
+              onClick={() => report.mutate()}
+            >
+              {report.isPending ? "Сохраняем…" : "Сохранить"}
+            </Button>
+          </div>
+          {waiting ? (
+            <p className="text-xs text-sky-700">
+              Предыдущее сообщение ещё в работе — новое можно будет добавить после оценки.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {asset.condition_reports.length === 0 ? (
+        <EmptyState
+          description="Здесь копится история: что ломалось, когда и как это меняло стоимость."
+          title="Сообщений о состоянии пока нет"
+        />
+      ) : (
+        <div className="space-y-3">
+          {asset.condition_reports.map((item) => {
+            const badge = CONDITION_STATUS[item.status];
+            const drop = item.proposed_cost
+              ? toNumber(item.cost_before) - toNumber(item.proposed_cost)
+              : 0;
+            return (
+              <Card className="shadow-none" key={item.id}>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Badge className={cn("font-normal", badge.className)} variant="outline">
+                      {badge.label}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(item.created_at)}
+                    </span>
+                  </div>
+
+                  <p className="text-sm">{item.message}</p>
+
+                  {item.status === "failed" ? (
+                    <p className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+                      {item.error}
+                    </p>
+                  ) : null}
+
+                  {item.proposed_reason ? (
+                    <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                      <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                        Оценка модели
+                        {item.confidence
+                          ? ` · уверенность ${Math.round(toNumber(item.confidence) * 100)}%`
+                          : ""}
+                      </div>
+                      {item.proposed_reason}
+                      {item.proposed_cost ? (
+                        <div className="mt-2 tabular-nums">
+                          {moneyExact(item.cost_before)} → <b>{moneyExact(item.proposed_cost)}</b>
+                          <span className="ml-2 text-rose-700">−{moneyExact(drop)}</span>
+                        </div>
+                      ) : (
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Оценить в деньгах не удалось — решайте сами.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {item.status === "proposed" && canEdit ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {item.proposed_cost ? (
+                        <Button
+                          disabled={busy}
+                          onClick={() => decide.mutate({ reportId: item.id, accept: true })}
+                          size="sm"
+                        >
+                          Применить {moneyExact(item.proposed_cost)}
+                        </Button>
+                      ) : null}
+                      <Button
+                        disabled={busy}
+                        onClick={() => decide.mutate({ reportId: item.id, accept: false })}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Оставить как есть
+                      </Button>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AssetSheet({
   assetId,
   canEdit,
@@ -689,8 +856,14 @@ function AssetSheet({
             <Tabs className="mt-4" defaultValue="card">
               <TabsList>
                 <TabsTrigger value="card">Карточка</TabsTrigger>
+                <TabsTrigger value="condition">
+                  Состояние
+                  {asset.condition_reports.some((item) => item.status === "proposed")
+                    ? " ●"
+                    : ""}
+                </TabsTrigger>
                 <TabsTrigger value="history">
-                  История начислений ({asset.entries.length})
+                  Начисления ({asset.entries.length})
                 </TabsTrigger>
               </TabsList>
 
@@ -742,6 +915,10 @@ function AssetSheet({
                     {asset.review_reason ? `: ${asset.review_reason}` : ""}
                   </div>
                 ) : null}
+              </TabsContent>
+
+              <TabsContent value="condition">
+                <ConditionTab asset={asset} canEdit={canEdit} />
               </TabsContent>
 
               <TabsContent value="history">

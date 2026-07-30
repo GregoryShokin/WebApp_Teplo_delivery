@@ -63,7 +63,30 @@ export type DepreciationEntry = {
   note: string | null;
 };
 
-export type FixedAssetDetail = FixedAsset & { entries: DepreciationEntry[] };
+export type ConditionStatus = "pending" | "proposed" | "applied" | "dismissed" | "failed";
+
+/** Сообщение менеджера о состоянии объекта и предложение модели по нему.
+ *
+ * `proposed_cost` пуст, когда модель не смогла связать сообщение со стоимостью — запись всё
+ * равно доходит до владельца: свидетельство о поломке ценно само по себе.
+ */
+export type ConditionReport = {
+  id: string;
+  message: string;
+  status: ConditionStatus;
+  cost_before: Money;
+  proposed_cost: Money | null;
+  proposed_reason: string | null;
+  confidence: Money | null;
+  model: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+export type FixedAssetDetail = FixedAsset & {
+  entries: DepreciationEntry[];
+  condition_reports: ConditionReport[];
+};
 
 export type CategoryTotal = {
   category_id: string | null;
@@ -195,6 +218,32 @@ export async function getUnlinkedPayments(since?: string): Promise<{
   const response = await api.get<{ items: UnlinkedPayment[]; total: number }>(
     `${BASE}/unlinked-payments`,
     { params: { since: since || undefined } },
+  );
+  return response.data;
+}
+
+/** Менеджер пишет, что случилось с объектом. Оценку даст модель — в фоне.
+ *
+ * Отвечает 202: вызов модели идёт до двух минут, держать на нём запрос нельзя. Стоимость сама
+ * не изменится ни при каком ответе — предложение ждёт решения владельца.
+ */
+export async function reportCondition(
+  assetId: string,
+  message: string,
+): Promise<ConditionReport> {
+  const response = await api.post<ConditionReport>(`${BASE}/${assetId}/condition`, { message });
+  return response.data;
+}
+
+/** Решение владельца по предложению модели: применить или отклонить. */
+export async function decideCondition(
+  assetId: string,
+  reportId: string,
+  accept: boolean,
+): Promise<ConditionReport> {
+  const response = await api.post<ConditionReport>(
+    `${BASE}/${assetId}/condition/${reportId}/decision`,
+    { accept },
   );
   return response.data;
 }
