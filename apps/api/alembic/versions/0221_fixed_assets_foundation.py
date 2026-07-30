@@ -37,8 +37,15 @@
 карточка сходится с описью и фотографиями; без него после заливки нельзя доказать, откуда
 взялась цифра в балансе.
 
+ПРО НОМЕР В ИМЕНИ ФАЙЛА. Пока ветка жила, в ``main`` влилась чужая ``0221_tax_draft_settlement``
+от того же родителя ``0220``. Два номера ``0221`` в каталоге — не опечатка: alembic смотрит на
+``revision``/``down_revision``, а не на имя файла, и цепочка здесь ЛИНЕЙНАЯ — эта миграция
+идёт ПОСЛЕ налоговой. Переименовывать семь файлов ради косметики дороже, чем один раз
+объяснить; merge-миграция тоже не нужна — голова остаётся одна. Тот же случай уже был с
+парами ``0212``/``0213``/``0214``.
+
 Revision ID: 0221_fixed_assets_foundation
-Revises: 0220_iiko_cash_payout
+Revises: 0221_tax_draft_settlement
 Create Date: 2026-07-30
 """
 
@@ -52,7 +59,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0221_fixed_assets_foundation"
-down_revision = "0220_iiko_cash_payout"
+down_revision = "0221_tax_draft_settlement"
 branch_labels = None
 depends_on = None
 
