@@ -34,9 +34,9 @@ def _create(client: TestClient, headers: dict[str, str], **overrides) -> dict:
         "name": "Печь для пиццы",
         "initial_cost": "120000.00",
         "useful_life_months": 120,
-        "commissioned_on": "2026-08-01",
+        "commissioned_on": "2026-01-01",
         "valuation_basis": "market",
-        "valued_on": "2026-08-01",
+        "valued_on": "2026-01-01",
     }
     payload.update(overrides)
     response = client.post(BASE, headers=headers, json=payload)
@@ -127,10 +127,10 @@ def test_cost_cannot_drop_below_what_is_already_accrued(
     headers = _admin(async_session_factory)
     asset = _create(client, headers)
     closed = client.post(
-        f"{BASE}/close-month", headers=headers, json={"period_month": "2026-08-01"}
+        f"{BASE}/close-month", headers=headers, json={"period_month": "2026-02-01"}
     )
     assert closed.status_code == 200, closed.text
-    assert closed.json() == {"period_month": "2026-08-01", "entries": 1, "amount": "1000.00"}
+    assert closed.json() == {"period_month": "2026-02-01", "entries": 1, "amount": "1000.00"}
 
     response = client.patch(
         f"{BASE}/{asset['id']}", headers=headers, json={"initial_cost": "500.00"}
@@ -145,13 +145,13 @@ def test_manual_correction_survives_repeated_month_close(
     """Ночная джоба не имеет права отменять решение человека при первом же перезапуске."""
     headers = _admin(async_session_factory)
     asset = _create(client, headers)
-    client.post(f"{BASE}/close-month", headers=headers, json={"period_month": "2026-08-01"})
+    client.post(f"{BASE}/close-month", headers=headers, json={"period_month": "2026-02-01"})
 
     corrected = client.patch(
         f"{BASE}/{asset['id']}/depreciation",
         headers=headers,
         json={
-            "period_month": "2026-08-01",
+            "period_month": "2026-02-01",
             "amount": "400.00",
             "note": "Печь запущена только 20 августа",
         },
@@ -161,7 +161,7 @@ def test_manual_correction_survives_repeated_month_close(
     assert corrected.json()["residual_after"] == "119600.00"
 
     repeat = client.post(
-        f"{BASE}/close-month", headers=headers, json={"period_month": "2026-08-01"}
+        f"{BASE}/close-month", headers=headers, json={"period_month": "2026-02-01"}
     )
     assert repeat.json()["entries"] == 0
 
@@ -177,12 +177,12 @@ def test_correction_beyond_initial_cost_is_rejected(
     """Потолок — первоначальная стоимость: сверх неё амортизировать нечего."""
     headers = _admin(async_session_factory)
     asset = _create(client, headers)
-    client.post(f"{BASE}/close-month", headers=headers, json={"period_month": "2026-08-01"})
+    client.post(f"{BASE}/close-month", headers=headers, json={"period_month": "2026-02-01"})
 
     response = client.patch(
         f"{BASE}/{asset['id']}/depreciation",
         headers=headers,
-        json={"period_month": "2026-08-01", "amount": "999999.00"},
+        json={"period_month": "2026-02-01", "amount": "999999.00"},
     )
     assert response.status_code == 422
     assert "первоначальной стоимости" in response.json()["detail"]
@@ -197,6 +197,6 @@ def test_correction_of_month_without_accrual_is_rejected(
     response = client.patch(
         f"{BASE}/{asset['id']}/depreciation",
         headers=headers,
-        json={"period_month": str(date(2026, 8, 1)), "amount": "100.00"},
+        json={"period_month": str(date(2026, 2, 1)), "amount": "100.00"},
     )
     assert response.status_code == 422

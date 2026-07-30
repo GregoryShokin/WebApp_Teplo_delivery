@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy import func, select
@@ -291,8 +291,21 @@ async def close_month(
 
     Перезапуск безопасен: начисление идемпотентно по паре «объект и месяц», уже посчитанные
     строки (в том числе поправленные вручную) не трогаются.
+
+    НЕЗАКОНЧЕННЫЙ МЕСЯЦ ЗАКРЫТЬ НЕЛЬЗЯ. Амортизация начисляется за отработанное время, и
+    начислить её за месяц, который ещё идёт (тем более за будущий), — значит завысить износ и
+    занизить баланс на величину, которой пока не существует. Ошибка при этом тихая: цифра
+    выглядит правдоподобно, а «последнее закрытие — август» посреди июля замечает только
+    внимательный человек. Ночная джоба закрывает ПРОШЕДШИЙ месяц и в это ограничение не
+    упирается; гард нужен ручному запуску, где месяц выбирает пользователь.
     """
     period = month_start(period_month)
+    current = month_start(datetime.now(UTC).date())
+    if period >= current:
+        raise FixedAssetError(
+            f"{period:%m.%Y} ещё не закончился — амортизацию начисляют за отработанное время. "
+            f"Последний месяц, который можно закрыть, — {(current - timedelta(days=1)):%m.%Y}"
+        )
     run = AgentRun(
         agent_name="fixed_assets_month_close",
         status="running",

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -546,3 +546,32 @@ def test_job_closes_the_month_that_just_ended() -> None:
     assert previous_month(date(2027, 1, 1)) == date(2026, 12, 1)
     # Ручной запуск в середине месяца ведёт себя так же — закрывает предыдущий.
     assert previous_month(date(2026, 9, 17)) == date(2026, 8, 1)
+
+
+async def test_unfinished_month_cannot_be_closed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Начислить за месяц, который ещё идёт (тем более за будущий), нельзя.
+
+    Амортизация начисляется за ОТРАБОТАННОЕ время. Закрытие незаконченного месяца завышает
+    износ и занижает баланс на величину, которой пока не существует, и ошибка при этом тихая:
+    цифра выглядит правдоподобно. Поймать её можно только заметив, что «последнее закрытие —
+    август» стоит посреди июля.
+    """
+    async with async_session_factory() as session:
+        await _asset(session, cost="120000.00", life=120)
+        await session.commit()
+
+        today = date.today()
+        current = today.replace(day=1)
+        future = (current + timedelta(days=32)).replace(day=1)
+
+        with pytest.raises(FixedAssetError, match="ещё не закончился"):
+            await close_month(session, period_month=future)
+        # Текущий месяц — тоже незаконченный, и он частая ошибка: «закрою сегодня».
+        with pytest.raises(FixedAssetError, match="ещё не закончился"):
+            await close_month(session, period_month=current)
+
+        previous = (current - timedelta(days=1)).replace(day=1)
+        run = await close_month(session, period_month=previous)
+        assert run.status == "success"
