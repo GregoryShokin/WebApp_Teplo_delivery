@@ -173,6 +173,9 @@ require_value POSTGRES_PASSWORD
 require_value TEPLO_ADMIN_EMAIL
 require_value TEPLO_ADMIN_PASSWORD
 require_value JWT_SECRET_KEY
+# Без него Settings падает валидацией на импорте — api и scheduler не стартуют вовсе
+# (app/core/config.py: "TBANK_WEBHOOK_TOKEN must be set in production").
+require_value TBANK_WEBHOOK_TOKEN
 
 require_equal ENVIRONMENT production
 require_equal AUTH_COOKIE_SECURE true

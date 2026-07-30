@@ -23,8 +23,8 @@ Single-host deployment on Ubuntu 24.04 with Docker Compose and Caddy
 cd /opt/teplo/deploy
 TEPLO_DOMAIN=app.company.ru TEPLO_ADMIN_EMAIL=admin@company.ru ./init-prod-env.sh
 nano .env.prod                       # fill in domain/account fallbacks if needed
-nano .env.integrations               # fill integration tokens if needed
-./check-prod-secrets.sh
+nano .env.integrations               # integration secrets — REQUIRED, see SECRETS.md
+./check-prod-secrets.sh              # names every missing value; it must pass first
 
 # Build the images.
 docker compose -f docker-compose.prod.yml --env-file .env.prod build

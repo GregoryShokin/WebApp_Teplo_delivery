@@ -37,11 +37,11 @@ PROD_DOMAIN=<prod-domain>
 - Код на локальной машине в рабочем состоянии.
 - На сервере есть каталог `/opt/teplo`.
 - На сервере есть `/opt/teplo/deploy/.env.prod` с правами `600`.
-- На сервере создан `/opt/teplo/deploy/.env.integrations` с IIKO + T-Bank
-  значениями и правами `600`.
+- На сервере создан `/opt/teplo/deploy/.env.integrations` с правами `600` и
+  заполненным обязательным набором — iiko Server (3 ключа), iiko Cloud (3 ключа)
+  и T-Bank (3 ключа); подробности и почему Cloud обязателен — в разделе 6.
 - IIKO credentials остаются env-only: они читаются из `.env.integrations` и не
   синхронизируются в БД.
-- В `.env.integrations` задан `TBANK_API_ACCESS_TOKEN`.
 - Проверка production-секретов проходит:
 
   ```bash
@@ -335,13 +335,43 @@ nano .env.integrations
 chmod 600 .env.integrations
 ```
 
-Минимально нужны:
+Обязательный набор — девять ключей, а не четыре:
 
-- `IIKO_SERVER_BASE_URL`
-- `IIKO_SERVER_LOGIN`
-- `IIKO_SERVER_PASSWORD`
-- `TBANK_API_ACCESS_TOKEN`
-- `TBANK_API_ACCOUNT_NUMBER`, если планируется создание черновиков платежей
+- `IIKO_SERVER_BASE_URL`, `IIKO_SERVER_LOGIN`, `IIKO_SERVER_PASSWORD` — iiko Server API;
+- `IIKO_CLOUD_APP_ID`, `IIKO_CLOUD_API_LOGIN`, `IIKO_CLOUD_CLIENT_SECRET` — приложение
+  iiko Cloud. Через него идёт КАЖДЫЙ облачный вызов: создание, правка, проведение и
+  отмена накладной, `add_payment`, Cloud-синк. Без них пуш падает с `KeyError`, а в
+  карточке накладной видно `auth: 'IIKO_CLOUD_APP_ID'` — ровно так лёг облачный контур
+  21.07.2026, когда эти ключи выпали из `.env.integrations`. У
+  `IIKO_CLOUD_CLIENT_SECRET` значащий хвостовой `=` — обрежешь, iiko ответит 401;
+- `TBANK_API_BASE_URL`, `TBANK_PAYMENT_BASE_URL`, `TBANK_API_ACCESS_TOKEN` — T-Bank.
+  Первые два уже заполнены боевыми адресами в `env.integrations.example`: их не надо
+  добывать, но и затирать пустыми нельзя.
+
+Сверх этого:
+
+- `TBANK_API_ACCOUNT_NUMBER` — если планируется создание черновиков платежей;
+- набор `SBER_API_*` (включая пути к mTLS-сертификатам) — обязателен, только когда
+  `BANK_SYNC_PROVIDERS` в `.env.prod` содержит `sber`.
+
+Список не держи в голове и не сверяй глазами: канон — `REQUIRED_KEYS` в
+`deploy/scripts/build_integrations_env.py`, и ровно его проверяет
+`./check-prod-secrets.sh` — он назовёт каждое недостающее значение, а заодно поймает
+незаменённые плейсхолдеры, короткий `JWT_SECRET_KEY` и неверные `ENVIRONMENT` /
+`AUTH_COOKIE_SECURE` / `TEPLO_BANK_CLIENT_MODE`.
+
+Что будет, если ключа всё-таки нет — ломается по-разному, и это стоит знать заранее:
+
+- **`IIKO_SERVER_BASE_URL` роняет процесс.** `IikoClient` бросает `SystemExit`, а он как
+  `BaseException` проходит мимо обработчиков FastAPI и убивает uvicorn: один заход на
+  страницу, дёргающую iiko, кладёт стенд целиком, причём контейнер остаётся `Up`.
+- **`IIKO_CLOUD_*` деградируют тихо.** Процесс жив, но каждый облачный вызов возвращает
+  `KeyError`, и это видно только в карточке накладной как `auth: 'IIKO_CLOUD_APP_ID'`.
+- **`TBANK_API_ACCESS_TOKEN` приложение из окружения не читает вовсе.** Токен живёт в БД
+  (`source_credential`), а переменная нужна ровно одному потребителю —
+  `python -m app.scripts.sync_integration_secrets`, который переносит её туда (раздел
+  «Синхронизация T-Bank token» в `SECRETS.md`). Пока синк не выполнен, банковский контур
+  не работает независимо от того, что стоит в `.env.integrations`.
 
 Проверить секреты:
 

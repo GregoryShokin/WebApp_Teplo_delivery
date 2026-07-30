@@ -67,6 +67,12 @@ JWT_SECRET_KEY=$(random_hex 64)
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=90
 
+# Наш shared secret для входящего вебхука «Статус платежа» T-Банка: банк присылает его
+# в Authorization: Bearer. В production без него api и scheduler НЕ СТАРТУЮТ (валидация
+# Settings падает на импорте). Генерируем сразу — значение надо сообщить банку при
+# подключении вебхука (openapi@tbank.ru).
+TBANK_WEBHOOK_TOKEN=$(random_hex 32)
+
 BACKEND_CORS_ORIGINS=[]
 
 TEPLO_BANK_CLIENT_MODE=live

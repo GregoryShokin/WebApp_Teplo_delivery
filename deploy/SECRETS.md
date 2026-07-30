@@ -15,7 +15,14 @@ history, audit log или список процессов.
 ## Что где хранится
 
 - `/opt/teplo/deploy/.env.prod` - домен, Postgres password, пароль первого
-  админа, JWT и prod-режимы приложения. Права `600`.
+  админа, JWT, токен входящего вебхука T-Банка и prod-режимы приложения.
+  Права `600`.
+- `TBANK_WEBHOOK_TOKEN` - НАШ shared secret, а не выданный банком: банк присылает
+  его в `Authorization: Bearer` на вебхук «Статус платежа». Вебхук мутирует финучёт
+  (гасит и откатывает накладные), а фильтр по IP за прокси ненадёжен, поэтому токен —
+  основная защита. В production он обязателен: без него валидация `Settings` падает
+  на импорте, и `api` со `scheduler` не стартуют вовсе. `init-prod-env.sh` генерирует
+  значение сам; его нужно сообщить банку при подключении вебхука.
 - `/opt/teplo/deploy/.env.integrations` - IIKO и T-Bank runtime-секреты для
   `api` и `scheduler`. Права `600`.
 - Таблица `source_credential` - активный T-Bank credential
