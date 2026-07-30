@@ -736,6 +736,49 @@ async def _drop_untouched_bank_prepayments(
             )
 
 
+async def cancel_payouts_of_excluded_transactions(
+    session: AsyncSession, transaction_ids: set[UUID]
+) -> None:
+    """Снять «выплачено» с проводок, уходящих из учёта при исключении.
+
+    ``EmployeePayout`` — леджер «сотруднику уже выдано»: расчёт ЗП вычитает его из «к выдаче».
+    Если деньги исключены из учёта, выдачи за ними больше не стоит, и оставленный payout
+    занижает зарплату к выплате на сумму, которой в ДДС уже нет. Сотрудник недополучает
+    ровно столько, сколько «выплатила» вычеркнутая проводка.
+
+    Мягко (``status='cancelled'``), в тон мягкому исключению самой проводки: этот статус уже
+    выведен из всех расчётов (``_ONDEMAND_PAYOUT_STATUSES`` в payroll_admin; offset-контур
+    берёт только ``paid``), поэтому потребителей править не нужно, запись остаётся видна, а
+    повторный разбор со сплитом заводит выплату заново.
+
+    Зачтённую в проведённой ведомости выплату (``offset_amount > 0``) не отменяем, а
+    ОТКАЗЫВАЕМ — как ``apply_operation_split`` при переразборе: снять зачёт вправе только
+    дефинализация ведомости, молча разошедшийся баланс дороже отказа. Проверяем все выплаты
+    до первой записи, чтобы отказ не отменил половину.
+    """
+    if not transaction_ids:
+        return
+    payouts = (
+        await session.scalars(
+            select(EmployeePayout).where(
+                EmployeePayout.cashflow_transaction_id.in_(transaction_ids),
+                EmployeePayout.status != "cancelled",
+            )
+        )
+    ).all()
+    if not payouts:
+        return
+    for payout in payouts:
+        if Decimal(payout.offset_amount) > 0:
+            raise ValueError(
+                "Выплата сотруднику по этой проводке уже зачтена в проведённой ведомости — "
+                "сначала откатите ведомость (дефинализация)"
+            )
+    for payout in payouts:
+        payout.status = "cancelled"
+    await session.flush()
+
+
 async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
     """Убрать из ДДС проводки, порождённые ЭТОЙ операцией (``exclude`` / внутренний перевод).
 
@@ -763,6 +806,10 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
     денег, которых в учёте больше нет, а капитализация могла уже уехать в закрытый месяц.
     Судьбу объекта решает человек — сначала снимает привязку в карточке. Проверяем ВСЕ строки
     до первой записи, чтобы отказ не оставил операцию исключённой наполовину.
+
+    Вслед за деньгами уходит и «выплачено» сотруднику
+    (``cancel_payouts_of_excluded_transactions``) — иначе расчёт ЗП продолжал бы вычитать из
+    «к выдаче» выплату, которой в учёте больше нет.
     """
     from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 
@@ -778,6 +825,7 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
         return
     for transaction in rows:
         await ensure_asset_link_survives(session, transaction_id=transaction.id, next_article=None)
+    await cancel_payouts_of_excluded_transactions(session, {row.id for row in rows})
     for transaction in rows:
         transaction.quality_status = EXCLUDED_QUALITY
     await session.flush()

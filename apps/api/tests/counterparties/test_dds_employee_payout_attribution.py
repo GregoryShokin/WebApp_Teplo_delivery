@@ -328,3 +328,123 @@ async def test_offset_reduces_net_and_carries_remainder(
             session, run, datetime.now(UTC), reverse=True
         )
         assert payout.offset_amount == Decimal("0.00")
+
+
+async def test_exclude_cancels_the_payout_of_the_operation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Исключить» операцию снимает и «выплачено» — иначе ЗП недоплачена на эту сумму.
+
+    Хвост фикса 30.07.2026: исключение убрало проводку из статьи, но ``EmployeePayout``
+    оставался, и расчёт продолжал вычитать из «к выдаче» выплату, за которой в учёте больше
+    нет денег. Отмена мягкая (``status='cancelled'``) — этот статус уже выведен из расчётов.
+    """
+    from app.services.banking.classifier import apply_operation_action
+
+    async with async_session_factory() as session:
+        salary, op = await _salary_op(session)
+        employee = await _employee(session)
+        await session.commit()
+
+        await apply_operation_split(
+            session, op, splits=[(salary.id, Decimal("100000.00"), None, None, employee.id)]
+        )
+        await session.commit()
+        payout = (await session.scalars(select(EmployeePayout))).one()
+        assert payout.status == "paid"
+
+        await apply_operation_action(session, op, action="exclude")
+        await session.commit()
+
+        await session.refresh(payout)
+        assert payout.status == "cancelled"
+        assert await session.scalar(select(func.count()).select_from(EmployeePayout)) == 1, (
+            "отмена мягкая — запись выплаты остаётся видна"
+        )
+
+
+async def test_exclude_refuses_when_the_payout_is_already_offset(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Зачтённую в проведённой ведомости выплату исключение не отменяет, а отказывает.
+
+    Тот же гард, что у переразбора: снять зачёт вправе только дефинализация ведомости.
+    Молча разошедшийся баланс «к выдаче» дороже отказа.
+    """
+    from app.services.banking.classifier import apply_operation_action
+
+    async with async_session_factory() as session:
+        salary, op = await _salary_op(session)
+        employee = await _employee(session)
+        await session.commit()
+
+        await apply_operation_split(
+            session, op, splits=[(salary.id, Decimal("100000.00"), None, None, employee.id)]
+        )
+        await session.commit()
+        payout = (await session.scalars(select(EmployeePayout))).one()
+        payout.offset_amount = Decimal("40000.00")
+        await session.commit()
+        # id держим отдельно: после rollback объекты сессии истекают, и обращение к
+        # ``op.id`` полезло бы за ленивой загрузкой уже вне async-контекста.
+        payout_id, op_id = payout.id, op.id
+
+        with pytest.raises(ValueError) as error:
+            await apply_operation_action(session, op, action="exclude")
+        assert "дефинализация" in str(error.value)
+
+        await session.rollback()
+        refreshed = await session.get(EmployeePayout, payout_id)
+        assert refreshed.status == "paid", "отказ не меняет ни выплату, ни разметку"
+        rows = (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_id == op_id,
+                )
+            )
+        ).all()
+        assert [row.quality_status for row in rows] != ["excluded"]
+
+
+async def test_manual_cashflow_exclude_cancels_its_payout(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Та же дыра в ручном контуре: исключение проводки снимает её «выплачено».
+
+    ``apply_cashflow_split`` заводит выплату так же, как разбор выписки, поэтому и отменять
+    её обязаны оба входа — иначе исключение ручной проводки тихо занижало бы «к выдаче».
+    """
+    from app.services.banking.cashflow_classify import apply_cashflow_exclude
+
+    async with async_session_factory() as session:
+        wallet = await make_wallet(session, name="Сейф выплат", wallet_type="cash_safe")
+        salary = await make_expense_article(
+            session, code=SALARY_CODE, name="Зарплата административного персонала"
+        )
+        employee = await _employee(session)
+        txn = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("50000.00"),
+            operation_date=date(2026, 7, 20),
+            source_kind="kassa_payout",
+            payment_purpose="Выплата сотруднику",
+            quality_status="manual_override",
+        )
+        session.add(txn)
+        await session.flush()
+        await session.commit()
+
+        await apply_cashflow_split(
+            session, txn, splits=[(salary.id, Decimal("50000.00"), None, None, employee.id)]
+        )
+        await session.commit()
+        payout = (await session.scalars(select(EmployeePayout))).one()
+        assert payout.status == "paid"
+
+        await apply_cashflow_exclude(session, txn)
+        await session.commit()
+
+        await session.refresh(payout)
+        assert payout.status == "cancelled"

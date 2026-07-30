@@ -403,9 +403,18 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     вернуть их нечем — FIFO правила 1 подбирает только финансовые закрывающие, а поля накладной
     в ручном разборе нет, так что «обратимое» действие оставило бы документ в кредиторке с
     риском повторной оплаты. Такую проводку сначала отвязывают от документа.
+
+    Уходит и «выплачено» сотруднику по этой строке: ``apply_cashflow_split`` заводит
+    ``EmployeePayout`` на долю с зарплатной статьёй, и без отмены расчёт ЗП продолжал бы
+    вычитать из «к выдаче» выплату, за которой в учёте больше нет денег. Доли сплита
+    (``manual_split``) — самостоятельные строки журнала со своими выплатами: их исключают
+    отдельно, поэтому здесь трогаем только выплаты ЭТОЙ строки.
     """
     ensure_cashflow_reclassifiable(txn)
     await _clear_transfer_counter_leg(session, txn)
+    from app.services.banking.classifier import cancel_payouts_of_excluded_transactions
+
+    await cancel_payouts_of_excluded_transactions(session, {txn.id})
     txn.quality_status = EXCLUDED_QUALITY
     from app.services.supplier_prepayments import sync_manual_payment_receivable
 
