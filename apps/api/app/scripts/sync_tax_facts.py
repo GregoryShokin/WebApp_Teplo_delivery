@@ -27,6 +27,11 @@ from app.services.taxes.dds_projection import sync_tax_bank_pipeline
 async def _run(apply: bool) -> None:
     async with AsyncSessionLocal() as session:
         result = await sync_tax_bank_pipeline(session)
+        # Шаг, упавший внутри пайплайна, возвращает None. Молча напечатать по нему нули —
+        # значит выдать аварию за «нечего делать» и с --apply закоммитить половину работы.
+        for step, title in (("tax_facts", "факт-слой"), ("tax_dds", "проекция в ДДС")):
+            if result[step] is None:
+                print(f"ВНИМАНИЕ: {title} НЕ отработал (см. лог) — результат неполон.")
         facts = result["tax_facts"] or {}
         projection = result["tax_dds"] or {}
         print(

@@ -560,3 +560,87 @@ async def test_since_filter_limits_history(
 
         assert report.operations_seen == 0
         assert await _rows(session, operation) == []
+
+
+async def test_operation_with_own_prebooked_payment_is_left_alone(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж в бюджет, заведённый через «Новый платёж», уже описан своей проводкой.
+
+    Классификатор привязывает такую операцию к её prebooked-строке ДО налогового блока.
+    Проектор обязан отступить — иначе один платёж лёг бы в журнал дважды: prebooked-строкой
+    и строкой проектора.
+    """
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        articles = await _articles(session)
+        operation = await _operation(session, wallet, "478376.00", status="classified")
+        prebooked = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("478376.00"),
+            operation_date=OP_DATE,
+            article_id=articles[TAX_ARTICLE_CODE].id,
+            source_kind="counterparty_payment",
+            quality_status="final",
+        )
+        session.add(prebooked)
+        await session.flush()
+        operation.cashflow_transaction_id = prebooked.id
+        session.add(_fact(operation, "usn_advance", "478376.00"))
+        await session.commit()
+
+        report = await project_tax_facts_to_dds(session)
+        await session.commit()
+
+        assert report.skipped == 1
+        assert report.projected == 0
+        assert await _rows(session, operation) == []
+        refreshed = await session.get(BankOperation, operation.id)
+        assert refreshed is not None and refreshed.cashflow_transaction_id == prebooked.id
+
+
+async def test_owner_row_survives_even_when_fact_points_at_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Замок на инвариант «человек сильнее автомата».
+
+    Ссылку факта на строку владельца мог поставить предыдущий прогон, который перед этой
+    разметкой отступил. Если считать такую строку «своей», следующий прогон снёс бы работу
+    владельца через ``_clear_operation_cashflow``.
+    """
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        articles = await _articles(session)
+        operation = await _operation(session, wallet, "14902.30")
+        owner_row = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("14902.30"),
+            operation_date=OP_DATE,
+            article_id=articles[TAX_ARTICLE_CODE].id,
+            source_kind="bank_operation",
+            source_id=operation.id,
+            quality_status="owner_review",
+        )
+        session.add(owner_row)
+        await session.flush()
+        bundle = uuid.uuid4()
+        facts = [
+            _fact(operation, "ndfl", "6331.00", quality="reconstructed", bundle_id=bundle),
+            _fact(
+                operation, "contrib_employees", "8571.30", quality="reconstructed", bundle_id=bundle
+            ),
+        ]
+        for fact in facts:
+            fact.cashflow_transaction_id = owner_row.id
+        session.add_all(facts)
+        await session.commit()
+
+        report = await project_tax_facts_to_dds(session)
+        await session.commit()
+
+        assert report.projected == 0
+        rows = await _rows(session, operation)
+        assert [row.id for row in rows] == [owner_row.id]
+        assert rows[0].quality_status == "owner_review"

@@ -475,9 +475,16 @@ async def run_payment_status_poll(
     # без реквизитов получателя (факта ещё не было), а выписка дозалила их позже; либо
     # оборотка бухгалтера приехала после платежа и разнос ЕНП дозрел. Только проектор, без
     # факт-слоя: его отбор идёт по всем исходящим операциям и минутному циклу дорог.
+    # В савпоинте и под except: доводка аналитики не вправе отменить всю работу поллинга
+    # (статусы платежей, закрытые черновики, гашение счетов) — она доберётся через минуту.
     from app.services.taxes.dds_projection import project_tax_facts_to_dds
 
-    result["tax_dds"] = (await project_tax_facts_to_dds(session)).projected
+    result["tax_dds"] = 0
+    try:
+        async with session.begin_nested():
+            result["tax_dds"] = (await project_tax_facts_to_dds(session)).projected
+    except Exception:  # noqa: BLE001
+        logger.warning("poll: проекция налогов в ДДС не отработала", exc_info=True)
     await session.commit()
     return result
 
@@ -1113,16 +1120,6 @@ async def ingest_operations(
         # чтобы возврат не осел в needs_review.
         await match_card_refund_operations(session)
         await session.flush()
-    # Налоговый контур — ДО общей классификации, тем же приёмом, что чеки Кассы выше:
-    # факт-слой (списания на реквизиты ФНС/СФР → tax_payment) и следом проекция фактов в
-    # проводки ДДС. Разнесённая здесь операция уже не уйдёт в needs_review, не заведёт кейс
-    # разбора и не успеет забрать по FIFO чужую prebooked-проводку. Провайдера не сужаем:
-    # налоги можно платить и со сберовского счёта. Ошибка внутри ингест не роняет —
-    # выписка важнее, недоделанное доберёт следующий прогон (оба сервиса идемпотентны).
-    from app.services.taxes.dds_projection import sync_tax_bank_pipeline
-
-    tax = await sync_tax_bank_pipeline(session)
-    await session.flush()
     pending_operations = (
         await session.scalars(
             select(BankOperation).where(
@@ -1132,6 +1129,19 @@ async def ingest_operations(
         )
     ).all()
     classification = await run_classification_rules(session, pending_operations)
+    # Налоговый контур — ПОСЛЕ классификации, и порядок здесь принципиален. Классификатор
+    # успевает (а) привязать операцию к её собственной prebooked-проводке, если платёж в
+    # бюджет заводили через «Новый платёж» — иначе он описался бы дважды: prebooked-строкой
+    # и строкой проектора; (б) применить правило владельца, в том числе «исключить» —
+    # исключённую операцию проектор не трогает. Кражу чужой prebooked-проводки по FIFO
+    # закрывает гард в _find_prebooked_payment, а заведённый классификатором кейс разбора
+    # проектор тут же закрывает сам. Провайдера не сужаем: налоги платятся и со Сбера.
+    # Ошибка внутри ингест не роняет — выписка важнее, недоделанное доберёт следующий
+    # прогон (оба сервиса идемпотентны и работают от состояния).
+    from app.services.taxes.dds_projection import sync_tax_bank_pipeline
+
+    tax = await sync_tax_bank_pipeline(session)
+    await session.flush()
     return {
         "inserted": inserted,
         "updated": updated,

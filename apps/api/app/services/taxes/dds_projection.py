@@ -140,10 +140,18 @@ async def project_tax_facts_to_dds(session: AsyncSession) -> TaxDdsProjectionRep
     if not settings.tax_dds_projection_enabled:
         return report
 
-    # Сериализуем проекцию: ингест, минутный добор и CLI могут идти одновременно, а
-    # уникального индекса на cashflow_transactions нет — два параллельных разноса дали бы
-    # двойной комплект проводок.
-    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('tax_dds_projection'))"))
+    # Сериализуем проекцию: ингест, минутный добор и CLI могут идти одновременно.
+    # Лок именно НЕблокирующий. Он живёт до конца чужой транзакции (приём выписки), а
+    # ждать её нельзя: вебхук банка уже держит `bank_ingest:<провайдер>`, таймаутов на
+    # соединении нет, и блокирующий лок (а) заставил бы вебхук Т-Банка ждать сберовский
+    # часовой синк, (б) давал бы цикл блокировок с минутным добором, который берёт строку
+    # операции под FOR UPDATE. Проиграть гонку не страшно: контур работает от состояния,
+    # и следующий прогон (минутный или очередной вебхук) доберёт всё сам.
+    acquired = await session.scalar(
+        text("SELECT pg_try_advisory_xact_lock(hashtext('tax_dds_projection'))")
+    )
+    if not acquired:
+        return report
 
     operations = await _operations_out_of_sync(session, since=settings.tax_dds_projection_since)
     report.operations_seen = len(operations)
@@ -291,10 +299,11 @@ async def _project_one(
             )
         ).all()
     )
-    ours = {f.cashflow_transaction_id for f in facts if f.cashflow_transaction_id}
+    # Проверяем КАЖДУЮ строку, в том числе ту, на которую уже ссылается факт: исключение
+    # «своя — значит можно» опасно, потому что ссылку факта мог поставить предыдущий прогон,
+    # отступивший перед разметкой владельца. Собственные строки проектора исключения не
+    # требуют — они помечены `final` и проходят проверку по общему правилу.
     for transaction in actual:
-        if transaction.id in ours:
-            continue
         if (
             transaction.quality_status not in REWRITABLE_QUALITY
             or transaction.counterparty_id is not None
@@ -418,12 +427,18 @@ async def _desired_lines(
     return lines
 
 
-def _signature(transactions: list[CashflowTransaction]) -> list[tuple[str, str]]:
-    return sorted((str(t.article_id), str(Decimal(str(t.amount)))) for t in transactions)
+def _signature(transactions: list[CashflowTransaction]) -> list[tuple[str, str, str]]:
+    # Комментарий — часть подписи: платёж, разнесённый до прихода оборотки, подписан
+    # «состав уточнится по документам», и когда состав становится известен, статья с суммой
+    # могут не измениться (обе части ЕНП ведут в «Налоги с з/п»). Без комментария в подписи
+    # такой платёж навсегда остался бы в журнале с устаревшим пояснением.
+    return sorted(
+        (str(t.article_id), str(Decimal(str(t.amount))), t.comment or "") for t in transactions
+    )
 
 
-def _signature_of(lines: list[_DesiredLine]) -> list[tuple[str, str]]:
-    return sorted((str(line.article_id), str(line.amount)) for line in lines)
+def _signature_of(lines: list[_DesiredLine]) -> list[tuple[str, str, str]]:
+    return sorted((str(line.article_id), str(line.amount), line.comment) for line in lines)
 
 
 def _link_all(facts: list[TaxPayment], transaction_id: UUID | None) -> None:
@@ -496,14 +511,21 @@ async def sync_tax_bank_pipeline(session: AsyncSession) -> dict:
     доберёт следующий прогон, оба сервиса идемпотентны и работают от состояния.
     """
     result: dict = {"tax_facts": None, "tax_dds": None}
+    # SAVEPOINT вокруг КАЖДОГО шага обязателен, а не только except. Ошибка уровня БД
+    # переводит транзакцию в aborted, и голый except лишь проглотил бы исключение — упал бы
+    # следующий flush вызывающего, то есть приём выписки: вебхук ответил бы 500, а банк
+    # после серии отказов отключает endpoint (инцидент 30.06.2026). Откат до савпоинта
+    # оставляет транзакцию приёма живой.
     try:
         from app.services.taxes.bank_facts import sync_tax_facts_from_bank
 
-        result["tax_facts"] = (await sync_tax_facts_from_bank(session)).as_dict()
+        async with session.begin_nested():
+            result["tax_facts"] = (await sync_tax_facts_from_bank(session)).as_dict()
     except Exception:  # noqa: BLE001
         logger.warning("bank ingest: налоговый факт-слой не отработал", exc_info=True)
     try:
-        result["tax_dds"] = (await project_tax_facts_to_dds(session)).as_dict()
+        async with session.begin_nested():
+            result["tax_dds"] = (await project_tax_facts_to_dds(session)).as_dict()
     except Exception:  # noqa: BLE001
         logger.warning("bank ingest: проекция налогов в ДДС не отработала", exc_info=True)
     return result
