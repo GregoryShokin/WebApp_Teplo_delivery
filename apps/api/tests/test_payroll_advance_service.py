@@ -827,9 +827,13 @@ async def test_cash_advance_tk_chernikova_triggers_iiko(
 ) -> None:
     """Наличная выдача с ТК Черникова (= iiko «Главная касса») → изъятие в iiko (source='cash')."""
     calls: list[dict] = []
+
+    async def _record(_session: AsyncSession, **kw: object) -> None:
+        calls.append(kw)
+
     monkeypatch.setattr(
         "app.services.payroll_advance_service.post_advance_payout_to_iiko",
-        lambda **kw: calls.append(kw),
+        _record,
     )
     async with async_session_factory() as session:
         emp = await _make_okladnik(session)
@@ -848,7 +852,7 @@ async def test_cash_advance_tk_chernikova_triggers_iiko(
     assert len(calls) == 1
     assert calls[0]["source"] == "cash"
     assert calls[0]["is_loan"] is False
-    assert calls[0]["source_id"] == adv.id
+    assert calls[0]["source_id"] == str(adv.id)
     assert calls[0]["amount"] == Decimal("10000.00")
 
 

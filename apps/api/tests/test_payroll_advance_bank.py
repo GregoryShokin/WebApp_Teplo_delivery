@@ -376,9 +376,13 @@ async def test_disburse_triggers_iiko_bank(
 ) -> None:
     """«Выплачено» по банк-выдаче → изъятие в iiko «эквайринг» (source='bank'); до выдачи — нет."""
     calls: list[dict] = []
+
+    async def _record(_session: AsyncSession, **kw: object) -> None:
+        calls.append(kw)
+
     monkeypatch.setattr(
         "app.services.payroll_advance_service.post_advance_payout_to_iiko",
-        lambda **kw: calls.append(kw),
+        _record,
     )
     async with async_session_factory() as session:
         wallet = await _make_bank_wallet(session)
@@ -392,7 +396,7 @@ async def test_disburse_triggers_iiko_bank(
         await disburse_bank_advance(session, advance_id=advance.id)
     assert len(calls) == 1
     assert calls[0]["source"] == "bank"
-    assert calls[0]["source_id"] == advance.id
+    assert calls[0]["source_id"] == str(advance.id)
     assert calls[0]["amount"] == Decimal("10000.00")
 
 
