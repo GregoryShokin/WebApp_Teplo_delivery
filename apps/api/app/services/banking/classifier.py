@@ -27,6 +27,7 @@ from app.models import (
 from app.services.asset_analytics import (
     AssetContext,
     AssetLinkError,
+    ensure_asset_link_survives,
     link_transaction_to_asset,
     resolve_asset_context,
 )
@@ -756,6 +757,12 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
     Чужую prebooked-проводку (иной ``source_kind``), на которую операция лишь ссылалась, не
     трогаем — её денежный факт завёл доменный контур, там же он и отменяется. Тот же принцип,
     что в ``_clear_operation_cashflow``.
+
+    Строку с привязанным основным средством не исключаем, а ОТКАЗЫВАЕМ (тот же гард, что у
+    ручной переразметки в ``classify_transaction``): иначе объект остался бы со стоимостью из
+    денег, которых в учёте больше нет, а капитализация могла уже уехать в закрытый месяц.
+    Судьбу объекта решает человек — сначала снимает привязку в карточке. Проверяем ВСЕ строки
+    до первой записи, чтобы отказ не оставил операцию исключённой наполовину.
     """
     from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 
@@ -769,6 +776,8 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
     ).all()
     if not rows:
         return
+    for transaction in rows:
+        await ensure_asset_link_survives(session, transaction_id=transaction.id, next_article=None)
     for transaction in rows:
         transaction.quality_status = EXCLUDED_QUALITY
     await session.flush()
@@ -787,6 +796,11 @@ async def _revive_excluded_operation_cashflow(
     Прежний мультисплит схлопываем в якорную долю: ``set_article`` ставит одну статью на всю
     сумму, поэтому лишние доли удаляем вместе с их дебиторкой (иначе она осиротеет по
     FK ``SET NULL``). Порядок долей — тот же, что у ``read_operation_split``.
+
+    Долю с привязанным основным средством не удаляем молча — тем же гардом отказываем: связь
+    ушла бы по ``ON DELETE CASCADE``, а объект остался бы со стоимостью, за которой нет
+    проводки. Досюда такая доля дойти не должна (её исключение уже отклонил
+    ``_soft_exclude_operation_cashflow``), но удаление слишком дорого, чтобы полагаться на это.
     """
     from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 
@@ -805,6 +819,8 @@ async def _revive_excluded_operation_cashflow(
     )
     if not rows:
         return None
+    for extra in rows[1:]:
+        await ensure_asset_link_survives(session, transaction_id=extra.id, next_article=None)
     await _drop_untouched_bank_prepayments(session, {row.id for row in rows})
     for extra in rows[1:]:
         await session.delete(extra)

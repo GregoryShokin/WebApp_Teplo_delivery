@@ -252,6 +252,61 @@ async def test_exclude_keeps_a_prebooked_row_of_another_circuit(
         assert operation.cashflow_transaction_id is None
 
 
+async def test_exclude_refuses_while_an_asset_hangs_on_the_row(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Проводку с привязанным ОС не исключаем молча — отказываем, как ручной переразметке.
+
+    Тот же гард, что в ``classify_transaction``: иначе объект остался бы со стоимостью из
+    денег, которых в учёте больше нет, а капитализация могла уже уехать в закрытый месяц.
+    Мягкое исключение — новый путь к этой дыре, поэтому гард нужен и здесь.
+    """
+    from app.models import AssetCashflowLink, FixedAsset
+    from app.services.asset_analytics import AssetLinkError
+
+    async with async_session_factory() as session:
+        _wallet, article, operation = await _bank_fixture(session)
+        article.asset_link_kind = "purchase"
+        asset = FixedAsset(
+            name="Печь для пиццы",
+            initial_cost=Decimal(OP_AMOUNT),
+            useful_life_months=84,
+            commissioned_on=OP_DATE,
+            status="in_use",
+            valuation_basis="payment",
+        )
+        session.add(asset)
+        await session.flush()
+        await session.commit()
+
+        await apply_operation_action(
+            session, operation, action="set_article", article_id=article.id
+        )
+        await session.commit()
+        booked = (await _operation_rows(session, operation.id))[0]
+        session.add(
+            AssetCashflowLink(
+                asset_id=asset.id,
+                cashflow_transaction_id=booked.id,
+                kind="purchase",
+                amount=Decimal(OP_AMOUNT),
+            )
+        )
+        await session.commit()
+
+        # id держим отдельно: после rollback объекты сессии истекают, и обращение к
+        # ``operation.id`` полезло бы за ленивой загрузкой уже вне async-контекста.
+        operation_id = operation.id
+
+        with pytest.raises(AssetLinkError) as error:
+            await apply_operation_action(session, operation, action="exclude")
+        assert "Печь для пиццы" in str(error.value)
+
+        await session.rollback()
+        rows = await _operation_rows(session, operation_id)
+        assert rows[0].quality_status != "excluded", "отказ не оставляет операцию исключённой"
+
+
 @pytest.mark.parametrize("action", ["exclude", "mark_internal_transfer"])
 def test_journal_stops_showing_the_excluded_row_as_an_expense(
     client: TestClient,
