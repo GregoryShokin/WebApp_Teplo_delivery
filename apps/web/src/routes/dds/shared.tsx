@@ -27,6 +27,7 @@ import {
 import {
   apiErrorMessage,
   apiErrorStatus,
+  getAssetOptions,
   getLocationOptionsForArticle,
   triggerBankSync,
   type DdsProvider,
@@ -416,6 +417,29 @@ export function locationOptionsQuery(articleId: string) {
     queryFn: () => getLocationOptionsForArticle(articleId),
     enabled: Boolean(articleId),
     // 403 — не «моргание сети»: право не появится от повтора, а ретрай лишь тянет заглушку.
+    retry: (failureCount: number, error: Error) =>
+      apiErrorStatus(error) !== 403 && failureCount < 1,
+  };
+}
+
+/**
+ * Тот же урок, что и с помещениями, но 403 здесь маловероятен: маршрут пускает и по праву
+ * «разбирать ДДС». Сообщение всё равно нужно — роль могли настроить так, что разбор есть, а
+ * этого права нет, и «Объекты не найдены» соврало бы про пустой реестр.
+ */
+export const ASSETS_FORBIDDEN_HINT =
+  "Нет доступа к списку основных средств — попросите Собственника выдать право «Смотреть основные средства» (Настройки → Доступы).";
+
+/**
+ * Объекты для строк «объектных» статей. Список ОДИН на весь диалог (не зависит от статьи, в
+ * отличие от помещений), поэтому и ключ без параметров: сколько бы строк ни было, запрос уходит
+ * один.
+ */
+export function assetOptionsQuery(enabled: boolean) {
+  return {
+    queryKey: ["asset-options"],
+    queryFn: getAssetOptions,
+    enabled,
     retry: (failureCount: number, error: Error) =>
       apiErrorStatus(error) !== 403 && failureCount < 1,
   };

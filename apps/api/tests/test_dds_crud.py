@@ -138,3 +138,41 @@ def test_dds_articles_counterparties_and_rules_crud(client: TestClient) -> None:
     assert (
         client.delete(f"/api/v1/dds/articles/{article['id']}", headers=headers).status_code == 204
     )
+
+
+def test_articles_list_carries_asset_link_kind(client: TestClient) -> None:
+    """Признак «что статья делает с ОС» обязан доезжать до фронта.
+
+    РЕГРЕССИЯ, найденная вживую 30.07.2026. Поле было объявлено в схеме и заполнялось
+    миграцией, но ``_article_payloads`` собирает ответ ПОЛЕМ ЗА ПОЛЕМ — и про него забыли.
+    Схема подставила своё умолчание ``None``, ответ остался валидным, тесты бэкенда прошли
+    (гейт читает статью из базы, а не из HTTP), а фронт молча решил, что ни одна статья к
+    основным средствам не относится: выбор объекта в разборе не показывался нигде.
+
+    Ошибка такого рода не падает — она тихо выключает функцию. Поэтому проверяем именно
+    HTTP-ответ, а не модель.
+    """
+    headers = {"X-User-Role": "finance_manager"}
+    created = client.post(
+        "/api/v1/dds/articles",
+        headers=headers,
+        json={
+            "code": "asset_kind_roundtrip",
+            "name": "Покупка ОС (тест)",
+            "movement_type": "outflow",
+            "activity_type": "investing",
+            "asset_link_kind": "purchase",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    listed = client.get("/api/v1/dds/articles", headers=headers)
+    assert listed.status_code == 200, listed.text
+    article = next(
+        item for item in listed.json() if item["code"] == "asset_kind_roundtrip"
+    )
+    assert article["asset_link_kind"] == "purchase"
+
+    # И обратная сторона: обычная статья приходит с пустым признаком, а не с чужим.
+    plain = next(item for item in listed.json() if item["code"] != "asset_kind_roundtrip")
+    assert plain["asset_link_kind"] is None

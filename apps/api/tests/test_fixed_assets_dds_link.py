@@ -527,3 +527,89 @@ async def test_resplit_drops_previous_links(
 
         assert removed == 1
         assert (await session.scalars(select(AssetCashflowLink))).all() == []
+
+
+async def test_split_read_returns_the_asset_so_reopening_does_not_drop_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Диалог обязан открыться на выбранном объекте, а не на пустом поле.
+
+    ЭТО НЕ КОСМЕТИКА. Объект хранится в ``AssetCashflowLink``, а не в проводке, и раньше чтение
+    разбора его не возвращало. Оператор открывал уже разобранную покупку, чтобы поправить
+    сумму, — поле объекта приходило пустым, «Разнести» переразбирало операцию, а переразбор
+    СНИМАЕТ прежние связи. Покупка тихо уходила с баланса, и заметить это можно было только по
+    сверке «платежи без объекта».
+    """
+    from app.api.v1.routes.dds import read_operation_split
+
+    async with async_session_factory() as session:
+        account = await make_account(session)
+        await make_wallet(session, wallet_type="bank", account_id=account.id)
+        article = await make_expense_article(session, code="test_pokupka_os2", name="Покупка ОС")
+        article.asset_link_kind = "purchase"
+        asset = await _asset(session, cost="95000.00")
+        operation = await make_bank_operation(
+            session, amount="95000.00", direction="out", account_id=account.id
+        )
+        await session.commit()
+
+        await apply_operation_split(
+            session,
+            operation,
+            splits=[
+                OperationSplitLine(
+                    article_id=article.id, amount=Decimal("95000.00"), asset_id=asset.id
+                )
+            ],
+        )
+        await session.commit()
+
+        payload = await read_operation_split(operation.id, session)
+        lines = payload["lines"]  # type: ignore[index]
+        assert len(lines) == 1
+        assert lines[0]["asset_id"] == asset.id
+
+
+async def test_manual_transaction_split_also_demands_an_asset(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разбор РУЧНОЙ проводки требует объект так же, как разбор банк-операции.
+
+    ДЫРА, найденная вживую 30.07.2026. Гейт стоял только на пути банк-операции, а покупка,
+    заведённая через кассу или «Новый платёж», разбиралась по статье «Покупка ОС» вообще без
+    карточки — то есть уходила мимо баланса. Ловила её только сверка «платежи без объекта»,
+    и уже постфактум.
+    """
+    from app.services.banking.cashflow_classify import CashflowSplitLine, apply_cashflow_split
+
+    async with async_session_factory() as session:
+        article = await _article(session, name="Покупка ОС", kind="purchase")
+        asset = await _asset(session, cost="40000.00")
+        without = await _transaction(session, "40000.00")
+        await session.commit()
+        article_id, asset_id = article.id, asset.id
+
+        # Отказ приходит ДО любых записей, поэтому сессию можно продолжать использовать.
+        with pytest.raises(ValueError, match="укажите основное средство"):
+            await apply_cashflow_split(
+                session,
+                without,
+                splits=[CashflowSplitLine(article_id=article_id, amount=Decimal("40000.00"))],
+            )
+        assert (await session.scalars(select(AssetCashflowLink))).all() == []
+
+        await apply_cashflow_split(
+            session,
+            without,
+            splits=[
+                CashflowSplitLine(
+                    article_id=article_id, amount=Decimal("40000.00"), asset_id=asset_id
+                )
+            ],
+        )
+        await session.commit()
+
+        link = await session.scalar(select(AssetCashflowLink))
+        assert link is not None
+        assert link.asset_id == asset_id
+        assert Decimal(str(link.amount)) == Decimal("40000.00")

@@ -2345,6 +2345,10 @@ export type DdsArticleRead = {
   location_required: boolean;
   // Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
   lease_bound: boolean;
+  // Что расход по статье делает с основным средством. purchase — платёж покупает объект;
+  // repair — капитальный ремонт, увеличивает стоимость; maintenance — текущий ремонт, стоимость
+  // не трогает. Пусто — статья к ОС отношения не имеет, и объект на ней бэкенд отвергнет.
+  asset_link_kind: "purchase" | "repair" | "maintenance" | null;
   description: string | null;
   aliases: DdsAliasRead[];
 };
@@ -2456,6 +2460,9 @@ export type OperationSplitItem = {
   // платёж закрывает договор (арендодатель подставится в контрагента).
   location_id?: string | null;
   lease_id?: string | null;
+  // Основное средство ЭТОЙ доли: один платёж покупает три стеллажа — это три разные карточки,
+  // поэтому объект живёт в строке, а не в разборе целиком.
+  asset_id?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2487,6 +2494,8 @@ export type CashflowSplitItem = {
   counterparty_id?: string | null;
   location_id?: string | null;
   lease_id?: string | null;
+  // Основное средство ЭТОЙ строки (см. OperationSplitItem).
+  asset_id?: string | null;
 };
 
 // Полный разбор РУЧНОЙ проводки ДДС (без bank-операции), сохраняющий баланс кошелька.
@@ -2711,6 +2720,9 @@ export type JournalRow = {
   // Карт-операция (получатель в банке — эквайер): при ручной привязке к накладной диалог
   // показывает мягкое предупреждение вместо жёсткой ошибки. Для проводок всегда false.
   is_card: boolean;
+  // Основное средство проводки. У банк-операции объект берётся из /split, а у РУЧНОЙ
+  // проводки другого источника нет — без него переоткрытие разбора снимало бы привязку.
+  asset_id?: string | null;
 };
 
 export type JournalQuery = {
@@ -2997,6 +3009,9 @@ export type DdsOperationSplitLine = {
   employee_id: string | null;
   location_id: string | null;
   lease_id: string | null;
+  // Основное средство доли. Без него повторное открытие диалога отдавало бы пустое поле, и
+  // «Разнести» сняло бы привязку, по которой покупка стоит на балансе.
+  asset_id: string | null;
 };
 
 export type DdsOperationSplit = {
@@ -3521,6 +3536,27 @@ export type LocationOption = {
   status: "active" | "inactive";
   leases: LocationLeaseOption[];
 };
+
+export type AssetOption = {
+  asset_id: string;
+  inventory_number: string | null;
+  name: string;
+  brand_model: string | null;
+  location_name: string | null;
+  status: "in_use" | "in_storage" | "not_working";
+  status_title: string;
+  initial_cost: string | number;
+};
+
+/** Объекты для выбора в разборе платежа по статье, привязанной к основным средствам.
+ *
+ * Свой лёгкий маршрут, не реестр: реестр требует права бухгалтера по ОС и тянет начисления по
+ * каждой карточке. Выбывшие объекты сюда не приходят — гейт их всё равно отклонит.
+ */
+export async function getAssetOptions(): Promise<AssetOption[]> {
+  const response = await api.get<{ items: AssetOption[] }>("/fixed-assets/options");
+  return response.data.items;
+}
 
 /** Помещения и их арендодатели для платежа по статье с аналитикой по помещению. */
 export async function getLocationOptionsForArticle(

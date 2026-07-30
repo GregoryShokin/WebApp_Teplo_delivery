@@ -27,6 +27,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CashflowTransaction, DdsArticle, EmployeePayout, TransferGroup, Wallet
+from app.services.asset_analytics import (
+    AssetContext,
+    AssetLinkError,
+    link_transaction_to_asset,
+    resolve_asset_context,
+    unlink_transaction,
+)
 from app.services.banking.classifier import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     SUPPLIER_PAYMENT_ARTICLE_CODE,
@@ -161,6 +168,8 @@ class CashflowSplitLine(NamedTuple):
     # Аналитика «где» — строго последние поля (строка собирается и из голых кортежей).
     location_id: UUID | None = None
     lease_id: UUID | None = None
+    # Основное средство ЭТОЙ доли. Тоже строго последним по той же причине.
+    asset_id: UUID | None = None
 
 
 async def apply_cashflow_split(
@@ -221,6 +230,22 @@ async def apply_cashflow_split(
                 on_date=txn.operation_date,
             )
         except LocationAnalyticsError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # Основные средства — то же правило и та же причина считать ДО любых записей.
+    #
+    # Гейт здесь ОТСУТСТВОВАЛ, и это была дыра: разбор банк-операции объект требовал, а разбор
+    # РУЧНОЙ проводки — нет. Покупка, заведённая через кассу или «Новый платёж», спокойно
+    # уходила по статье «Покупка ОС» без карточки, то есть мимо баланса. Ловила её только
+    # сверка «платежи без объекта», уже постфактум.
+    asset_context: dict[int, AssetContext] = {}
+    for index, line in enumerate(splits):
+        article = await session.get(DdsArticle, line.article_id)
+        try:
+            asset_context[index] = await resolve_asset_context(
+                session, article=article, asset_id=line.asset_id, amount=line.amount
+            )
+        except AssetLinkError as exc:
             raise ValueError(str(exc)) from exc
 
     # «Оплата поставщикам» без контрагента — расход в никуда: платёж не попадает в карточку и в
@@ -335,6 +360,14 @@ async def apply_cashflow_split(
             session.add(leg)
             await session.flush()
         created.append(leg.id)
+        # Привязка к основному средству. Переразбор пересобирает доли, поэтому прежние связи
+        # снимаются: иначе объект остался бы со стоимостью из денег, которых на нём больше нет.
+        await unlink_transaction(session, leg.id)
+        asset_line_context = asset_context.get(index)
+        if asset_line_context is not None:
+            await link_transaction_to_asset(
+                session, context=asset_line_context, transaction_id=leg.id, amount=amount
+            )
         # Транзитную долю в правило 1 не отдаём: перевод Сейф→Касса деньги компании не покидают,
         # и «погасить» им долг поставщика нельзя, даже если контрагент на строке остался с
         # прежнего разбора (диалог его не сбрасывает при смене статьи на транзитную).

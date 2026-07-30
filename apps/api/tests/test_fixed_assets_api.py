@@ -200,3 +200,65 @@ def test_correction_of_month_without_accrual_is_rejected(
         json={"period_month": str(date(2026, 2, 1)), "amount": "100.00"},
     )
     assert response.status_code == 422
+
+
+def test_options_open_to_whoever_classifies_dds(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Разбирает выписку финансист, а не бухгалтер по ОС — и объект ему выбрать нужно.
+
+    Роль ``manager`` имеет ``finance.cashflow.classify``, но не имеет
+    ``accounting.fixed_assets.read``: реестр для неё закрыт (проверено выше), а справочник для
+    выбора — открыт. Иначе статья, которая объект ТРЕБУЕТ, сделала бы платёж неразносимым
+    вообще. Ровно это уже случилось с помещениями.
+    """
+    admin = _admin(async_session_factory)
+    _create(client, admin, name="Печь для пиццы", inventory_number="ОС-0001")
+
+    manager = _manager(async_session_factory)
+    assert client.get(BASE, headers=manager).status_code == 403
+
+    response = client.get(f"{BASE}/options", headers=manager)
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert [item["name"] for item in items] == ["Печь для пиццы"]
+    # Списку нужны номер, где стоит и статус — по ним один «Стол производственный» отличают от
+    # четырёх других. Начислений здесь нет сознательно: это запрос на каждую карточку.
+    assert set(items[0]) == {
+        "asset_id",
+        "inventory_number",
+        "name",
+        "brand_model",
+        "location_name",
+        "status",
+        "status_title",
+        "initial_cost",
+    }
+
+
+def test_options_hide_assets_that_can_no_longer_take_money(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Выбывший объект гейт всё равно отклонит — показывать его значит вести в тупик.
+
+    Неработающий при этом остаётся: его чинят, и покупка запчасти к нему законна.
+    """
+    headers = _admin(async_session_factory)
+    _create(client, headers, name="Живая печь")
+    sold = _create(client, headers, name="Проданная печь")
+    broken = _create(client, headers, name="Сломанная печь")
+    assert (
+        client.patch(f"{BASE}/{sold['id']}", headers=headers, json={"status": "sold"}).status_code
+        == 200
+    )
+    assert (
+        client.patch(
+            f"{BASE}/{broken['id']}", headers=headers, json={"status": "not_working"}
+        ).status_code
+        == 200
+    )
+
+    names = {
+        item["name"] for item in client.get(f"{BASE}/options", headers=headers).json()["items"]
+    }
+    assert names == {"Живая печь", "Сломанная печь"}

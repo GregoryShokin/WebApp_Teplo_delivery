@@ -24,7 +24,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import (
+    CurrentActor,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
 from app.db.session import get_session
 from app.models import (
     AssetBalanceSnapshot,
@@ -41,6 +46,12 @@ from app.services.anthropic_client import LlmCallError
 router = APIRouter()
 ASSETS_READ_ACCESS = (Depends(require_permission("accounting.fixed_assets.read")),)
 ASSETS_EDIT_ACCESS = (Depends(require_permission("accounting.fixed_assets.edit")),)
+# Выбор объекта в разборе платежа: пускаем и того, кто разбирает ДДС. Подробности — в докстринге
+# ``list_asset_options``; коротко: без этого право «разбирать выписку» упирается в 403 на статье,
+# которая карточку требует, и платёж становится неразносимым вообще.
+ASSETS_PICK_ACCESS = (
+    Depends(require_any_permission(("accounting.fixed_assets.read", "finance.cashflow.classify"))),
+)
 # Закрытие месяца — это закрытие учётного периода, а не правка карточки: право отдельное,
 # чтобы «редактировать ОС» не давало права двигать отчётность.
 PERIOD_CLOSE_ACCESS = (Depends(require_permission("accounting.periods.close")),)
@@ -340,6 +351,70 @@ async def list_categories(
                 note=row.note,
             )
             for row in rows
+        ]
+    )
+
+
+class AssetOptionRead(BaseModel):
+    asset_id: uuid.UUID
+    inventory_number: str | None
+    name: str
+    brand_model: str | None
+    location_name: str | None
+    status: AssetStatus
+    status_title: str
+    initial_cost: Decimal
+
+
+class AssetOptionListRead(BaseModel):
+    items: list[AssetOptionRead]
+
+
+@router.get("/options", response_model=AssetOptionListRead, dependencies=ASSETS_PICK_ACCESS)
+async def list_asset_options(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AssetOptionListRead:
+    """Справочник объектов для выбора в разборе платежа.
+
+    ОТДЕЛЬНЫЙ ОТ РЕЕСТРА МАРШРУТ, и по двум причинам.
+
+    Первая — доступ. Выписку разбирает финансист, а не бухгалтер по основным средствам. Повесь
+    сюда только ``accounting.fixed_assets.read`` — и человек с правом разбирать ДДС упрётся в
+    403 на статье, которая объект ТРЕБУЕТ: разнести платёж станет нельзя вообще. Ровно это уже
+    случилось с помещениями (``source.locations.read`` менеджеру не выдан). Поэтому пускаем по
+    любому из двух прав: видеть объекты в списке ≠ видеть их стоимость, историю и начисления.
+
+    Вторая — вес. Карточка реестра тянет накопленную амортизацию, месячную сумму и признак
+    «амортизируется» — это запрос начислений по каждому объекту. Для выпадающего списка нужны
+    номер, имя и где стоит.
+
+    ВЫБЫВШИЕ НЕ ОТДАЮТСЯ: расход на проданный или списанный объект гейт всё равно отклонит
+    (``resolve_asset_context``), и показывать его в списке значило бы вести оператора в тупик.
+    Неработающие остаются — их чинят, и покупка запчасти к ним законна.
+
+    Маршрут стоит ДО ``/{asset_id}``, иначе слаг перехватится как идентификатор.
+    """
+    rows = (
+        await session.execute(
+            select(FixedAsset, Location.name)
+            .outerjoin(Location, Location.id == FixedAsset.location_id)
+            .where(FixedAsset.status.not_in(("disposed", "sold")))
+            .order_by(FixedAsset.inventory_number, FixedAsset.name)
+        )
+    ).all()
+    return AssetOptionListRead(
+        items=[
+            AssetOptionRead(
+                asset_id=asset.id,
+                inventory_number=asset.inventory_number,
+                name=asset.name,
+                brand_model=asset.brand_model,
+                location_name=location_name,
+                status=asset.status,  # type: ignore[arg-type]
+                status_title=STATUS_TITLES.get(asset.status, asset.status),
+                initial_cost=Decimal(str(asset.initial_cost)),
+            )
+            for asset, location_name in rows
         ]
     )
 

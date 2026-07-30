@@ -27,6 +27,7 @@ import {
   getDdsUnpaidInvoices,
   getDdsWallets,
   getPayrollAdvanceAvailability,
+  type AssetOption,
   type CashflowClassifyPayload,
   type JournalRow,
   type LocationOption,
@@ -34,9 +35,11 @@ import {
 } from "@/lib/api";
 import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 import {
+  ASSETS_FORBIDDEN_HINT,
   DdsStatusBadge,
   DirectionBadge,
   LOCATIONS_FORBIDDEN_HINT,
+  assetOptionsQuery,
   compactText,
   formatDate,
   formatDdsMoney,
@@ -76,6 +79,9 @@ type SplitRow = {
   // Аналитика «где»: помещение обязательно для арендных статей, аренда подставляет арендодателя.
   locationId: string;
   leaseId: string;
+  // Основное средство ЭТОЙ строки. Объект живёт в строке, а не в разборе: один платёж покупает
+  // три стеллажа — это три карточки, и раскидать их можно только по строкам.
+  assetId: string;
 };
 
 const ACTION_TOAST: Record<string, string> = {
@@ -88,6 +94,12 @@ const ACTION_TOAST: Record<string, string> = {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** Подпись объекта: инвентарный номер + имя. Номер первым — по нему объект ищут на наклейке. */
+function assetTitle(asset: AssetOption): string {
+  const number = asset.inventory_number ? `${asset.inventory_number} · ` : "";
+  return `${number}${asset.name}`;
 }
 /**
  * Единая модалка разбора движения ДДС — и операции выписки, и ручной проводки (дискриминатор
@@ -152,6 +164,10 @@ export function OperationClassifyDialog({
           createNewCounterparty: false,
           locationId: "",
           leaseId: "",
+          // У банк-операции объект приедет из splitQuery ниже; у РУЧНОЙ проводки другого
+          // источника нет — берём его прямо из строки журнала. Иначе переоткрытие разбора
+          // отдало бы пустое поле, и «Разнести» сняло бы привязку к объекту.
+          assetId: isOperation ? "" : row.asset_id ?? "",
         },
       ]);
       setRememberAsRule(false);
@@ -182,6 +198,7 @@ export function OperationClassifyDialog({
         createNewCounterparty: false,
         locationId: line.location_id ?? "",
         leaseId: line.lease_id ?? "",
+        assetId: line.asset_id ?? "",
       })),
     );
   }, [splitQuery.data]);
@@ -282,6 +299,15 @@ export function OperationClassifyDialog({
     queries: locationArticleIds.map((articleId) => locationOptionsQuery(articleId)),
   });
   const locationsForbidden = locationQueries.some((query) => apiErrorStatus(query.error) === 403);
+  // Объекты: список ОДИН на диалог (не зависит от статьи), поэтому и запрос один — грузим его
+  // только когда в разборе есть хоть одна «объектная» строка, иначе он ушёл бы на каждый
+  // открытый диалог ради ничего.
+  const usesAssetArticle = rows.some((item) =>
+    articles.some((article) => article.id === item.articleId && article.asset_link_kind),
+  );
+  const assetsQuery = useQuery(assetOptionsQuery(usesAssetArticle));
+  const assetsForbidden = apiErrorStatus(assetsQuery.error) === 403;
+  const assets: AssetOption[] = assetsQuery.data ?? [];
   // Сотрудники для зарплатной строки — активные + увольняемые (обходит запрет /staff кассиру).
   const usesAdvanceArticle = rows.some((item) => employeeAdvanceArticleIds.has(item.articleId));
   const payoutEmployeesQuery = useQuery({
@@ -346,6 +372,10 @@ export function OperationClassifyDialog({
         createNewCounterparty: current[current.length - 1]?.createNewCounterparty ?? false,
         locationId: current[current.length - 1]?.locationId ?? "",
         leaseId: current[current.length - 1]?.leaseId ?? "",
+        // Объект НЕ наследуется от предыдущей строки, в отличие от контрагента и помещения:
+        // вторая строка почти всегда — второй объект, а унаследованный молча повесил бы на
+        // одну карточку деньги за два предмета.
+        assetId: "",
       },
     ]);
   }
@@ -369,6 +399,10 @@ export function OperationClassifyDialog({
     }
     if (rowMissingLocation) {
       toast.error("Для арендной статьи укажите помещение");
+      return;
+    }
+    if (rowMissingAsset) {
+      toast.error("Для статьи по основным средствам укажите объект");
       return;
     }
     if (rows.some((item) => salaryArticleIds.has(item.articleId) && !item.employeeId)) {
@@ -398,6 +432,7 @@ export function OperationClassifyDialog({
           create_counterparty: item.createNewCounterparty,
           location_id: item.locationId || null,
           lease_id: item.leaseId || null,
+          asset_id: requiresAsset(item) ? item.assetId || null : null,
         })),
         counterparty_id: null,
         new_counterparty_name: createsCounterparty ? row?.counterparty_name_raw ?? null : null,
@@ -419,6 +454,7 @@ export function OperationClassifyDialog({
           counterparty_id: item.counterpartyId || null,
           location_id: item.locationId || null,
           lease_id: item.leaseId || null,
+          asset_id: requiresAsset(item) ? item.assetId || null : null,
         })),
         counterparty_id: null,
       });
@@ -501,6 +537,14 @@ export function OperationClassifyDialog({
     articles.filter((a) => a.lease_bound).map((a) => a.id),
   );
   const isLeaseBoundRow = (item: SplitRow) => leaseBoundArticleIds.has(item.articleId);
+  // Статьи, где карточка ОС обязательна: «Покупка ОС» (иначе покупка уходит в расход мимо
+  // баланса), «Ремонт ОС» и «Ремонт оборудования» (иначе не собрать историю ремонтов объекта).
+  // Признак берём со статьи, а не из списка кодов: каталог курирует владелец, и «Ремонт
+  // оборудования» он завёл сам — захардкоженный код её бы не увидел.
+  const assetArticleKind = (item: SplitRow) =>
+    articles.find((article) => article.id === item.articleId)?.asset_link_kind ?? null;
+  const requiresAsset = (item: SplitRow) => Boolean(assetArticleKind(item));
+  const rowMissingAsset = rows.some((item) => requiresAsset(item) && !item.assetId);
   const rowMissingLocation = rows.some(
     (item) =>
       requiresLocation(item) &&
@@ -536,6 +580,14 @@ export function OperationClassifyDialog({
           : { text: "нужен счёт-получатель", missing: true };
       }
       case "counterparty": {
+        // Объект показываем ПЕРВЫМ: для «объектных» статей он обязателен, а контрагент у них
+        // чаще всего необязателен — сводка должна называть то, что блокирует «Разнести».
+        if (requiresAsset(item)) {
+          const asset = assets.find((option) => option.asset_id === item.assetId);
+          return asset
+            ? { text: `Объект: ${assetTitle(asset)}`, missing: false }
+            : { text: "нужен объект основных средств", missing: true };
+        }
         const counterpartyName = counterpartyNameOf(item);
         if (counterpartyName) {
           const inv = invoicesFor(item.counterpartyId).find((x) => x.id === item.invoiceId);
@@ -724,6 +776,16 @@ export function OperationClassifyDialog({
               </div>
             ) : null}
 
+            {rowMissingAsset ? (
+              // Та же причина, что и у помещения: серая кнопка без объяснения читается как
+              // поломка. Отдельно случай без права — объект выбрать нечем.
+              <p className="text-sm text-amber-700">
+                {assetsForbidden
+                  ? ASSETS_FORBIDDEN_HINT
+                  : "Для этой статьи нужно основное средство: откройте строку статьи и выберите объект. Без карточки покупка уйдёт в расход мимо баланса."}
+              </p>
+            ) : null}
+
             {rowMissingLocation ? (
               // «Разнести» блокируется молча — причину называем словами, иначе серая кнопка
               // выглядит поломкой. Отдельно случай без права: помещение выбрать нечем.
@@ -741,6 +803,7 @@ export function OperationClassifyDialog({
                   !balanced ||
                   rowMissingCounterparty ||
                   rowMissingLocation ||
+                  rowMissingAsset ||
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
                   usesAdvanceArticle ||
@@ -927,6 +990,16 @@ export function OperationClassifyDialog({
             ) : null}
             {rowDetailKind(detailRow) === "counterparty" ? (
               <>
+                {requiresAsset(detailRow) ? (
+                  <OperationAssetPicker
+                    assets={assets}
+                    forbidden={assetsForbidden}
+                    isLoading={assetsQuery.isLoading}
+                    kind={assetArticleKind(detailRow)}
+                    onChange={(assetId) => updateRow(detailRow.key, { assetId })}
+                    value={detailRow.assetId}
+                  />
+                ) : null}
                 {requiresLocation(detailRow) ? (
                   <OperationLocationPicker
                     articleId={detailRow.articleId}
@@ -1149,6 +1222,82 @@ function OperationLocationPicker({
           Помещения).
         </p>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Выбор основного средства в под-модалке разбора. Список общий на весь диалог (в отличие от
+ * помещений, где он зависит от статьи), поэтому приходит пропсом — а не грузится здесь ещё раз
+ * на каждую открытую строку.
+ *
+ * Подсказка зависит от вида статьи, потому что последствия у них РАЗНЫЕ, и оператор должен
+ * понимать, что именно он сейчас делает с балансом: покупка заводит стоимость объекта,
+ * капитальный ремонт её увеличивает, текущий — не трогает вовсе.
+ */
+function OperationAssetPicker({
+  assets,
+  forbidden,
+  isLoading,
+  kind,
+  onChange,
+  value,
+}: {
+  assets: AssetOption[];
+  forbidden: boolean;
+  isLoading: boolean;
+  kind: "purchase" | "repair" | "maintenance" | null;
+  onChange: (assetId: string) => void;
+  value: string;
+}) {
+  const options: ComboboxOption[] = assets.map((asset) => ({
+    value: asset.asset_id,
+    // Где стоит и в каком состоянии — то, чем один «Стол производственный» отличается от
+    // четырёх других в списке. Без этого выбрать нужный можно только угадав.
+    label: [
+      assetTitle(asset),
+      asset.location_name ?? "без помещения",
+      asset.status === "in_use" ? null : asset.status_title,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    // Ищут и по номеру, и по названию, и по модели с наклейки на корпусе.
+    keywords: [asset.inventory_number, asset.name, asset.brand_model, asset.location_name]
+      .filter(Boolean)
+      .join(" "),
+  }));
+
+  const hint =
+    kind === "purchase"
+      ? "Платёж покупает этот объект — его сумма станет первоначальной стоимостью карточки."
+      : kind === "repair"
+        ? "Капитальный ремонт: если работы тянут больше 15% стоимости объекта, владелец подтвердит новую стоимость в карточке."
+        : "Текущий ремонт: стоимость объекта не изменится, но расход попадёт в его историю.";
+
+  return (
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="space-y-1">
+        <Label className="text-sm">Основное средство</Label>
+        {forbidden ? (
+          <p className="text-xs text-destructive">{ASSETS_FORBIDDEN_HINT}</p>
+        ) : (
+          <>
+            <InlineOptionList
+              options={options}
+              value={value}
+              onChange={onChange}
+              searchPlaceholder="Поиск по номеру, названию или модели…"
+              emptyMessage={
+                isLoading
+                  ? "Загружаем объекты…"
+                  : "Объектов нет. Заведите карточку на странице «Учёт ОС» — без неё покупка не попадёт на баланс."
+              }
+              listClassName="max-h-48"
+            />
+            <p className="text-xs text-muted-foreground">{hint}</p>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -23,6 +23,7 @@ from app.auth.permissions import permission_is_granted
 from app.db.session import get_session
 from app.models import (
     Account,
+    AssetCashflowLink,
     BankOperation,
     CashflowTransaction,
     ClassificationRule,
@@ -392,6 +393,24 @@ async def list_journal(
             for cf in cashflow_list
             if cf.source_kind == "bank_operation" and cf.source_id is not None
         }
+        # Объект проводки — одним запросом по той же причине, что и ``posted_at``: без него
+        # диалог разбора РУЧНОЙ проводки открылся бы с пустым полем и снял бы привязку.
+        asset_by_cf: dict[UUID, UUID] = {}
+        if cashflow_list:
+            asset_by_cf = {
+                cf_id: asset_id
+                for asset_id, cf_id in (
+                    await session.execute(
+                        select(
+                            AssetCashflowLink.asset_id, AssetCashflowLink.cashflow_transaction_id
+                        ).where(
+                            AssetCashflowLink.cashflow_transaction_id.in_(
+                                [cf.id for cf in cashflow_list]
+                            )
+                        )
+                    )
+                ).all()
+            }
         posted_at_by_op: dict[UUID, datetime | None] = {}
         if bank_source_ids:
             posted_at_by_op = dict(
@@ -437,6 +456,7 @@ async def list_journal(
                     "payment_purpose": cf.payment_purpose,
                     "counterparty_name_raw": None,
                     "counterparty_inn_raw": None,
+                    "asset_id": asset_by_cf.get(cf.id),
                 }
             )
     if status in ("all", "unmarked"):
@@ -1833,6 +1853,7 @@ async def read_operation_split(
     tx_ids = [tx.id for tx in transactions]
     invoice_by_tx: dict[UUID, UUID] = {}
     employee_by_tx: dict[UUID, UUID] = {}
+    asset_by_tx: dict[UUID, UUID] = {}
     if tx_ids:
         invoice_by_tx = {
             tx_id: invoice_id
@@ -1855,6 +1876,19 @@ async def read_operation_split(
                 )
             ).all()
         }
+        # Объект живёт в связи, а не в проводке. Не вернуть его — значит открыть диалог с пустым
+        # полем: оператор поправит сумму, нажмёт «Разнести», и переразбор снимет привязку, по
+        # которой покупка стояла на балансе.
+        asset_by_tx = {
+            tx_id: asset_id
+            for asset_id, tx_id in (
+                await session.execute(
+                    select(
+                        AssetCashflowLink.asset_id, AssetCashflowLink.cashflow_transaction_id
+                    ).where(AssetCashflowLink.cashflow_transaction_id.in_(tx_ids))
+                )
+            ).all()
+        }
     return {
         "bank_operation_id": operation.id,
         "amount": _money(operation.amount),
@@ -1869,6 +1903,7 @@ async def read_operation_split(
                 "employee_id": employee_by_tx.get(tx.id),
                 "location_id": tx.location_id,
                 "lease_id": tx.lease_id,
+                "asset_id": asset_by_tx.get(tx.id),
             }
             for tx in transactions
         ],
@@ -2240,6 +2275,7 @@ async def classify_transaction_full(
                         counterparty_id=item.counterparty_id,
                         location_id=item.location_id,
                         lease_id=item.lease_id,
+                        asset_id=item.asset_id,
                     )
                     for item in payload.splits
                 ],
@@ -2768,6 +2804,11 @@ async def _article_payloads(
             "kassa_enabled": article.kassa_enabled,
             "location_required": article.location_required,
             "lease_bound": article.lease_bound,
+            # Поле перечисляют РУКАМИ, а не через from_attributes: пропустишь его здесь — схема
+            # подставит своё умолчание ``None``, ответ останется валидным, и фронт молча решит,
+            # что статья к основным средствам отношения не имеет. Ровно это и случилось: гейт на
+            # бэке работал, а выбор объекта в разборе не показывался ни на одной статье.
+            "asset_link_kind": article.asset_link_kind,
             "description": article.description,
             "aliases": aliases_by_article.get(article.id, []),
         }

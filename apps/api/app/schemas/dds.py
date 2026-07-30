@@ -411,6 +411,9 @@ class CashflowSplitItem(BaseModel):
     counterparty_id: uuid.UUID | None = None
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # Основное средство ЭТОЙ доли — как у разбора банк-операции. Поля здесь не было, и разбор
+    # ручной проводки оставался единственным входом, где покупка ОС проходила без карточки.
+    asset_id: uuid.UUID | None = None
 
 
 class CashflowClassifyRequest(BaseModel):
@@ -445,6 +448,10 @@ class OperationSplitLineRead(BaseModel):
     # Без этих полей повторное открытие диалога затёрло бы помещение пустым значением.
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # То же и для основного средства — с той разницей, что объект хранится не в проводке, а в
+    # ``AssetCashflowLink``. Пустое поле здесь означало бы «объект сняли», и переразбор увёл бы
+    # покупку с баланса.
+    asset_id: uuid.UUID | None = None
 
 
 class OperationSplitRead(BaseModel):
@@ -817,6 +824,11 @@ class JournalRow(BaseModel):
     # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое предупреждение при
     # ручной привязке к накладной. Для проводок (kind="cashflow") всегда False.
     is_card: bool = False
+    # Основное средство проводки. У банк-операции диалог берёт объект из ``/split``, а у РУЧНОЙ
+    # проводки такого источника нет — форма собирается из этой строки. Без поля переоткрытие
+    # разбора отдавало бы пустой объект, и «Разнести» сняло бы привязку, по которой покупка
+    # стоит на балансе. Для ``kind="operation"`` всегда пусто: там объект живёт в долях.
+    asset_id: uuid.UUID | None = None
 
 
 class JournalListRead(BaseModel):
