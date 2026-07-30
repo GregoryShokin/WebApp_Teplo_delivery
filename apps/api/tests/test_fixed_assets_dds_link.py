@@ -131,11 +131,11 @@ async def test_disposed_asset_cannot_take_new_money(
 
         with pytest.raises(AssetLinkError):
             await resolve_asset_context(
-                session, article=article, asset_id=sold.id, amount=Decimal("1000.00")
+                session, article=article, asset_id=sold.id, amount=Decimal("30000.00")
             )
 
         context = await resolve_asset_context(
-            session, article=article, asset_id=broken.id, amount=Decimal("1000.00")
+            session, article=article, asset_id=broken.id, amount=Decimal("30000.00")
         )
         assert context.asset_id == broken.id
 
@@ -143,15 +143,10 @@ async def test_disposed_asset_cannot_take_new_money(
 async def test_repair_article_splits_by_the_fifteen_percent_rule(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Правило владельца: меньше 15% — расход периода, больше — капитализация."""
+    """Правило владельца: больше 15% — капитализация, ровно на границе решает владелец."""
     async with async_session_factory() as session:
         article = await _article(session, name="Ремонт ОС", kind="repair")
         asset = await _asset(session, cost="100000.00")
-
-        small = await resolve_asset_context(
-            session, article=article, asset_id=asset.id, amount=Decimal("14999.00")
-        )
-        assert (small.link_kind, small.capitalize) == ("repair", False)
 
         big = await resolve_asset_context(
             session, article=article, asset_id=asset.id, amount=Decimal("30000.00")
@@ -167,27 +162,93 @@ async def test_repair_article_splits_by_the_fifteen_percent_rule(
         assert edge.review_reason is not None
 
 
-async def test_maintenance_article_never_capitalizes(
+async def test_repair_article_refuses_an_expense_that_will_not_capitalize(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Расход, который стоимость не увеличит, по инвестиционной статье не проходит.
+
+    «Ремонт ОС» в каталоге ``investing``: всё, что по ней прошло, ДДС покажет как инвестицию.
+    Расход, остающийся расходом периода, развёл бы ДДС с ОПиУ — деньги в инвестициях, затрата
+    в операционных. Отказ здесь дешёвый: рядом лежит «Ремонт оборудования».
+    """
+    async with async_session_factory() as session:
+        article = await _article(session, name="Ремонт ОС", kind="repair")
+        asset = await _asset(session, cost="100000.00")
+
+        # Доля мала — 14 999 из 100 000 это 15,0% минус копейка.
+        with pytest.raises(AssetLinkError) as by_share:
+            await resolve_asset_context(
+                session, article=article, asset_id=asset.id, amount=Decimal("14999.00")
+            )
+        assert "Ремонт оборудования" in str(by_share.value)
+
+        # Пол сильнее доли: 4 000 ₽ у объекта за 10 000 ₽ — это 40%, но капитальным ремонтом
+        # такая сумма не бывает.
+        cheap = await _asset(session, cost="10000.00")
+        with pytest.raises(AssetLinkError) as by_floor:
+            await resolve_asset_context(
+                session, article=article, asset_id=cheap.id, amount=Decimal("4000.00")
+            )
+        assert "5000.00" in str(by_floor.value)
+
+
+async def test_maintenance_article_never_capitalizes_but_warns_when_it_looks_capital(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """«Ремонт оборудования» — операционная статья: объект указать надо, стоимость не трогаем.
 
     Даже расход в половину стоимости объекта остаётся расходом периода: правило 15% относится
-    к капитальному ремонту, а не к текущему.
+    к капитальному ремонту, а не к текущему. Но молчать про такую сумму нельзя — так
+    капитальный ремонт по невнимательности уходит в расход, и баланс отстаёт от реальности.
+
+    Отказывать здесь, симметрично «Ремонту ОС», НЕЛЬЗЯ: дорогой текущий ремонт законен
+    (годовое обслуживание, выезд мастера на несколько единиц), и отказ вытолкнул бы его в
+    инвестиционную статью — ровно то искажение, от которого защищает обратная сторона гейта.
     """
     async with async_session_factory() as session:
         article = await _article(session, name="Ремонт оборудования", kind="maintenance")
         asset = await _asset(session, cost="100000.00")
 
-        context = await resolve_asset_context(
+        loud = await resolve_asset_context(
             session, article=article, asset_id=asset.id, amount=Decimal("50000.00")
         )
-        assert (context.link_kind, context.capitalize) == ("repair", False)
+        assert (loud.link_kind, loud.capitalize) == ("repair", False)
+        assert loud.review_reason is not None
+        assert "Ремонт ОС" in loud.review_reason
+
+        # Обычное обслуживание проходит молча — иначе предупреждения станут фоном.
+        quiet = await resolve_asset_context(
+            session, article=article, asset_id=asset.id, amount=Decimal("3000.00")
+        )
+        assert (quiet.link_kind, quiet.capitalize, quiet.review_reason) == ("repair", False, None)
 
         with pytest.raises(AssetLinkError):
             await resolve_asset_context(
                 session, article=article, asset_id=None, amount=Decimal("500.00")
             )
+
+
+async def test_maintenance_warning_reaches_the_owner_through_the_asset_card(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Предупреждение бесполезно, если о нём никто не узнает: флаг обязан лечь на карточку."""
+    async with async_session_factory() as session:
+        article = await _article(session, name="Ремонт оборудования", kind="maintenance")
+        asset = await _asset(session, cost="100000.00")
+        transaction = await _transaction(session, "50000.00")
+
+        context = await resolve_asset_context(
+            session, article=article, asset_id=asset.id, amount=Decimal("50000.00")
+        )
+        await link_transaction_to_asset(
+            session, context=context, transaction_id=transaction.id, amount=Decimal("50000.00")
+        )
+        await session.commit()
+
+        assert asset.review_status == "requires_owner_review"
+        assert "Ремонт ОС" in (asset.review_reason or "")
+        # Стоимость при этом не сдвинулась ни на копейку — статья операционная.
+        assert Decimal(str(asset.initial_cost)) == Decimal("100000.00")
 
 
 async def test_upgrade_asks_the_owner_instead_of_raising_the_base_silently(
@@ -451,13 +512,13 @@ async def test_resplit_drops_previous_links(
     async with async_session_factory() as session:
         article = await _article(session, name="Ремонт ОС", kind="repair")
         asset = await _asset(session, cost="100000.00")
-        transaction = await _transaction(session, "5000.00")
+        transaction = await _transaction(session, "30000.00")
 
         context = await resolve_asset_context(
-            session, article=article, asset_id=asset.id, amount=Decimal("5000.00")
+            session, article=article, asset_id=asset.id, amount=Decimal("30000.00")
         )
         await link_transaction_to_asset(
-            session, context=context, transaction_id=transaction.id, amount=Decimal("5000.00")
+            session, context=context, transaction_id=transaction.id, amount=Decimal("30000.00")
         )
         await session.commit()
 

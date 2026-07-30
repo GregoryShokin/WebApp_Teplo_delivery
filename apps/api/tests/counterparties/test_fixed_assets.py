@@ -206,8 +206,29 @@ def test_repair_vs_upgrade_threshold() -> None:
     assert classify_asset_expense(base, Decimal("14999.00")) == "repair"
     assert classify_asset_expense(base, Decimal("15000.00")) == "requires_owner_review"
     assert classify_asset_expense(base, Decimal("15001.00")) == "upgrade"
-    # Нулевая база (legacy без оценки) сама по себе требует разбора.
-    assert classify_asset_expense(Decimal("0"), Decimal("100.00")) == "requires_owner_review"
+    # Нулевая база (legacy без оценки) сама по себе требует разбора — но только если сумма
+    # вообще прошла пол: иначе это заведомо расход периода и звать владельца незачем.
+    assert classify_asset_expense(Decimal("0"), Decimal("9000.00")) == "requires_owner_review"
+
+
+def test_capital_repair_floor_beats_the_share() -> None:
+    """Пол сильнее доли: на дешёвом объекте мелкий ремонт — не модернизация.
+
+    Одной доли мало, потому что она измеряет расход ОТНОСИТЕЛЬНО объекта, а капитальность
+    работ величина абсолютная. У стула за 1 200 ₽ ремонт за 300 ₽ даёт 25% — по чистой доле
+    это «модернизация», хотя речь про подтяжку винтов.
+    """
+    chair = Decimal("1200.00")
+    assert classify_asset_expense(chair, Decimal("300.00"), floor=Decimal("0")) == "upgrade", (
+        "предпосылка теста: без пола такая доля даёт модернизацию"
+    )
+    assert classify_asset_expense(chair, Decimal("300.00")) == "repair"
+
+    # Пол проверяется ДО спорной зоны: работы за копейки не должны идти владельцу на разбор
+    # только потому, что доля вышла ровно 15%.
+    assert classify_asset_expense(Decimal("2000.00"), Decimal("300.00")) == "repair"
+    # Граница ВКЛЮЧИТЕЛЬНАЯ — ровно на полу капитальный ремонт уже возможен.
+    assert classify_asset_expense(Decimal("10000.00"), Decimal("5000.00")) == "upgrade"
 
 
 async def test_upgrade_capitalizes_and_raises_future_depreciation(

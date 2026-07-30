@@ -21,6 +21,7 @@ CRITICAL_SETTING_KEYS = frozenset(
         "fixed_assets.threshold_rub",
         "fixed_assets.repair_modernization_threshold_ratio",
         "fixed_assets.repair_vs_modernization_pct",
+        "fixed_assets.capital_repair_floor_rub",
     }
 )
 

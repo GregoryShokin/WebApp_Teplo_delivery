@@ -16,7 +16,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AgentRun, AppSetting, AssetCategory, DepreciationEntry, FixedAsset
-from app.models.fixed_asset import FIXED_ASSET_THRESHOLD, UPGRADE_SHARE_THRESHOLD
+from app.models.fixed_asset import (
+    CAPITAL_REPAIR_FLOOR,
+    FIXED_ASSET_THRESHOLD,
+    UPGRADE_SHARE_THRESHOLD,
+)
 from app.services.taxes.concurrency import insert_or_reread
 
 # Статусы, при которых амортизация не начисляется. ``disposed``/``sold`` — объект выбыл.
@@ -31,6 +35,7 @@ INACTIVE_STATUSES = ("disposed", "sold", "not_working")
 # обязан спрашивать базу, а не константу: иначе цифра в интерфейсе и цифра в расчёте разъедутся.
 CAPITALIZATION_THRESHOLD_KEY = "fixed_assets.capitalization_threshold_rub"
 UPGRADE_SHARE_KEY = "fixed_assets.repair_modernization_threshold_ratio"
+CAPITAL_REPAIR_FLOOR_KEY = "fixed_assets.capital_repair_floor_rub"
 
 # Серия инвентарных номеров. Сквозная, без кодирования категории или локации: категория
 # карточки может смениться, а номер на объекте наклеен один раз и меняться не должен.
@@ -76,6 +81,11 @@ async def capitalization_threshold(session: AsyncSession) -> Decimal:
 async def upgrade_share_threshold(session: AsyncSession) -> Decimal:
     """Доля от первоначальной стоимости, разделяющая ремонт и модернизацию."""
     return await _setting_decimal(session, UPGRADE_SHARE_KEY, UPGRADE_SHARE_THRESHOLD)
+
+
+async def capital_repair_floor(session: AsyncSession) -> Decimal:
+    """Сумма, дешевле которой работы не капитализируются ни при какой доле."""
+    return await _setting_decimal(session, CAPITAL_REPAIR_FLOOR_KEY, CAPITAL_REPAIR_FLOOR)
 
 
 async def is_fixed_asset_purchase(session: AsyncSession, amount: Decimal) -> bool:
@@ -362,18 +372,34 @@ async def close_month(
 
 
 def classify_asset_expense(
-    initial_cost: Decimal, expense_amount: Decimal, *, share_threshold: Decimal | None = None
+    initial_cost: Decimal,
+    expense_amount: Decimal,
+    *,
+    share_threshold: Decimal | None = None,
+    floor: Decimal | None = None,
 ) -> str:
     """Ремонт, модернизация или решение владельца — по доле расхода от первоначальной стоимости.
 
     Правило владельца: меньше 15% — ремонт (расход периода), больше 15% — модернизация
     (капитализируется и меняет базу амортизации), РОВНО 15% — спорная зона, решает владелец.
 
-    ``share_threshold`` даёт вызывающему подставить долю из настроек владельца
-    (``upgrade_share_threshold``). Функция остаётся синхронной и без сессии: она чистая
-    арифметика, и это позволяет проверять правило без базы.
+    ПОЛ ПЕРЕД ДОЛЕЙ (решение владельца 2026-07-30). Одной доли мало: она измеряет расход
+    относительно объекта, а «капитальность» работ — величина абсолютная. У стула за 1 200 ₽
+    ремонт за 300 ₽ даёт 25% и по чистой доле стал бы модернизацией, хотя это подтяжка винтов.
+    Поэтому всё, что дешевле пола, — расход периода при любой доле. Граница ВКЛЮЧИТЕЛЬНАЯ:
+    ровно 5 000 ₽ капитальный ремонт уже возможен, как и ровно 10 000 ₽ — уже основное средство.
+
+    Пол проверяется ПЕРВЫМ и до спорной зоны: работы за 300 ₽ не должны попадать владельцу на
+    разбор только потому, что доля вышла ровно 15%.
+
+    ``share_threshold`` и ``floor`` дают вызывающему подставить значения из настроек владельца
+    (``upgrade_share_threshold``, ``capital_repair_floor``). Функция остаётся синхронной и без
+    сессии: она чистая арифметика, и это позволяет проверять правило без базы.
     """
     threshold = UPGRADE_SHARE_THRESHOLD if share_threshold is None else share_threshold
+    minimum = CAPITAL_REPAIR_FLOOR if floor is None else floor
+    if _money(expense_amount) < minimum:
+        return "repair"
     base = _money(initial_cost)
     if base <= 0:
         return "requires_owner_review"

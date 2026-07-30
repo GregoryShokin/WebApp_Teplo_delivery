@@ -9,12 +9,28 @@
 Что решает статья (``DdsArticle.asset_link_kind``):
 
 * ``purchase`` — платёж покупает объект: карточка обязательна;
-* ``repair`` — расход на существующий объект, капитализация по правилу 15% (меньше доли —
-  расход периода, больше — увеличивает первоначальную стоимость);
+* ``repair`` — капитальный ремонт: увеличивает первоначальную стоимость. Расход, который по
+  правилу на это не тянет, статью НЕ ПРОХОДИТ — см. ниже;
 * ``maintenance`` — текущий ремонт: НИКОГДА не капитализируется, но объект указать надо,
   иначе не собрать историю ремонтов и не понять, что технику пора менять;
 * пусто — статья к основным средствам отношения не имеет, и объект на ней отвергается так же,
   как помещение на статье без ``location_required``.
+
+СУММА ТОЖЕ ПРОВЕРЯЕТСЯ, И НЕСИММЕТРИЧНО (решение владельца 2026-07-30). Две ремонтные статьи
+различаются не названием, а тем, в какой раздел ДДС попадут деньги: «Ремонт ОС» —
+``investing``, «Ремонт оборудования» — ``operating``. Поэтому сумма обязана сходиться с
+выбранной статьёй, а реакция на расхождение у сторон разная:
+
+* дешёвый расход по «Ремонту ОС» — ОТКАЗ. Стоимость объекта он не увеличит, значит деньги
+  ушли бы в инвестиции, а затрата осталась бы в расходах периода. Исправление бесплатное:
+  рядом лежит операционная статья;
+* дорогой расход по «Ремонту оборудования» — ПРЕДУПРЕЖДЕНИЕ. Дорогой текущий ремонт законен
+  (годовое обслуживание, выезд мастера на несколько единиц), и отказ вытолкнул бы его в
+  инвестиции — то самое искажение, от которого защищает первый пункт.
+
+Разделитель — тот же, по которому потом считается капитализация: доля 15% плюс абсолютный пол
+(``classify_asset_expense``). Взять вместо него круглую сумму нельзя: у 131 карточки из 149 в
+реестре 2026 доля в 15% меньше 5 000 ₽, и плоский порог развёл бы статью с последствием.
 
 Обратное правило держим симметрично: объект на статье без признака — мусор в учёте, потому
 что по такой связи ничего не считается и никто её не читает.
@@ -37,6 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AssetCashflowLink, CashflowTransaction, DdsArticle, FixedAsset
 from app.services.fixed_assets import (
     INACTIVE_STATUSES,
+    capital_repair_floor,
     classify_asset_expense,
     upgrade_share_threshold,
 )
@@ -96,10 +113,7 @@ async def resolve_asset_context(
     if kind == "purchase":
         return _purchase_context(asset, amount)
     if kind == "maintenance":
-        # Текущий ремонт: привязка ради истории объекта, стоимость не трогаем никогда.
-        return AssetContext(
-            asset_id=asset.id, link_kind="repair", capitalize=False, review_reason=None
-        )
+        return await _maintenance_context(session, asset, amount)
     if kind == "repair":
         return await _repair_context(session, asset, amount)
 
@@ -127,22 +141,56 @@ def _purchase_context(asset: FixedAsset, amount: Decimal) -> AssetContext:
     )
 
 
-async def _repair_context(
-    session: AsyncSession, asset: FixedAsset, amount: Decimal
-) -> AssetContext:
-    """Ремонт или модернизация — по доле расхода от первоначальной стоимости."""
-    verdict = classify_asset_expense(
+async def _classify(session: AsyncSession, asset: FixedAsset, amount: Decimal) -> str:
+    """Вердикт правила по паре «объект и сумма» — с порогами из настроек владельца."""
+    return classify_asset_expense(
         asset.initial_cost,
         amount,
         share_threshold=await upgrade_share_threshold(session),
+        floor=await capital_repair_floor(session),
     )
+
+
+def _share_text(asset: FixedAsset, amount: Decimal) -> str:
+    """Доля расхода от стоимости объекта словами — чтобы отказ объяснял себя цифрой."""
+    base = Decimal(str(asset.initial_cost or 0))
+    if base <= 0:
+        return "стоимость объекта не заполнена"
+    return f"это {Decimal(str(amount)) / base:.1%} его стоимости ({base:.2f} ₽)"
+
+
+async def _repair_context(
+    session: AsyncSession, asset: FixedAsset, amount: Decimal
+) -> AssetContext:
+    """Капитальный ремонт: статья инвестиционная, поэтому расход обязан на неё тянуть.
+
+    ОТКАЗ, А НЕ ПРЕДУПРЕЖДЕНИЕ (решение владельца 2026-07-30). «Ремонт ОС» в каталоге —
+    ``investing``, и всё, что по ней прошло, ДДС покажет как инвестицию. Расход, который по
+    правилу останется расходом периода, разведёт ДДС с ОПиУ: деньги в инвестициях, затрата в
+    операционных. Исправить это человеку ничего не стоит — рядом лежит «Ремонт оборудования»,
+    поэтому здесь отказываем и говорим, куда переложить.
+
+    Обратная сторона (дорогой текущий ремонт по операционной статье) отказом НЕ лечится —
+    см. ``_maintenance_context``.
+    """
+    verdict = await _classify(session, asset, amount)
     if verdict == "upgrade":
         return AssetContext(
             asset_id=asset.id, link_kind="upgrade", capitalize=True, review_reason=None
         )
     if verdict == "repair":
-        return AssetContext(
-            asset_id=asset.id, link_kind="repair", capitalize=False, review_reason=None
+        floor = await capital_repair_floor(session)
+        reason = (
+            f"дешевле {floor:.2f} ₽ — столько не стоит ни один капитальный ремонт"
+            if Decimal(str(amount)) < floor
+            else f"{_share_text(asset, amount)}, а капитальным ремонт становится с "
+            f"{await upgrade_share_threshold(session):.0%}"
+        )
+        raise AssetLinkError(
+            f"Расход {Decimal(str(amount)):.2f} ₽ на объект «{asset.name}» — {reason}. "
+            f"Стоимость объекта он не увеличит, поэтому проведите его как «Ремонт "
+            f"оборудования»: иначе деньги уйдут в инвестиции, а затрата останется в расходах "
+            f"периода"
         )
     # Ровно на границе или нулевая база — решает владелец. Расход при этом проводим как
     # ремонт: занизить стоимость объекта безопаснее, чем завысить баланс на спорную сумму.
@@ -154,6 +202,35 @@ async def _repair_context(
             f"Расход {Decimal(str(amount)):.2f} ₽ на границе правила 15% — решите, "
             f"ремонт это или модернизация"
         ),
+    )
+
+
+async def _maintenance_context(
+    session: AsyncSession, asset: FixedAsset, amount: Decimal
+) -> AssetContext:
+    """Текущий ремонт: привязка ради истории объекта, стоимость не трогаем никогда.
+
+    ПРЕДУПРЕЖДЕНИЕ, А НЕ ОТКАЗ (решение владельца 2026-07-30). Соблазн был запретить
+    симметрично: раз расход тянет на капитальный ремонт, пусть идёт по «Ремонту ОС». Но
+    дорогой ТЕКУЩИЙ ремонт законен — годовое обслуживание, выезд мастера сразу на несколько
+    единиц, разовая замена расходников пачкой. Он операционный по природе и не капитализируется
+    ни при какой сумме, а отказ вытолкнул бы его в инвестиционную статью — ровно то искажение,
+    от которого мы защищаемся на другой стороне.
+
+    Поэтому пропускаем, но поднимаем объекту флаг: владелец увидит сумму в карточке и решит,
+    ошибка это в статье или действительно дорогое обслуживание. Молчать нельзя — так
+    капитальный ремонт по невнимательности уходит в расход, и баланс отстаёт от реальности.
+    """
+    verdict = await _classify(session, asset, amount)
+    reason: str | None = None
+    if verdict == "upgrade":
+        reason = (
+            f"Работы на {Decimal(str(amount)):.2f} ₽ проведены как текущий ремонт, но "
+            f"{_share_text(asset, amount)} — это тянет на капитальный. Если объект после них "
+            f"стал дороже, проведите расход по статье «Ремонт ОС»"
+        )
+    return AssetContext(
+        asset_id=asset.id, link_kind="repair", capitalize=False, review_reason=reason
     )
 
 
