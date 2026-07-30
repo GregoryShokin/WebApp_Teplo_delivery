@@ -69,6 +69,23 @@ is_placeholder() {
   [[ -z "$value" || "$value" == *change-me* || "$value" == *placeholder* || "$value" == *replace-with* || "$value" == *example.com* ]]
 }
 
+require_value_either() {
+  # Значение годится из любого из двух env-файлов: контейнеры грузят оба
+  # (docker-compose.prod.yml, env_file: .env.prod + .env.integrations), и требовать
+  # конкретный файл — значит отказать исправному стенду, где ключ лежит в соседнем.
+  local key="$1"
+  local value
+  value="$(env_value "$key")"
+  [[ -n "$value" ]] || value="$(integrations_env_value "$key")"
+  if [[ -z "$value" ]]; then
+    errors+=("$key is missing or empty in .env.prod and .env.integrations")
+    return
+  fi
+  if is_placeholder "$value"; then
+    errors+=("$key still looks like a placeholder")
+  fi
+}
+
 require_value() {
   local key="$1"
   local value
@@ -175,7 +192,7 @@ require_value TEPLO_ADMIN_PASSWORD
 require_value JWT_SECRET_KEY
 # Без него Settings падает валидацией на импорте — api и scheduler не стартуют вовсе
 # (app/core/config.py: "TBANK_WEBHOOK_TOKEN must be set in production").
-require_value TBANK_WEBHOOK_TOKEN
+require_value_either TBANK_WEBHOOK_TOKEN
 
 require_equal ENVIRONMENT production
 require_equal AUTH_COOKIE_SECURE true

@@ -111,7 +111,11 @@ def test_preflight_check_covers_settings_production_requirements() -> None:
     # Переменная может жить и в .env.prod, и в .env.integrations — скрипт проверяет их
     # разными функциями. Для контракта важно одно: проверяется ли она вообще.
     checked = set(
-        re.findall(r"^\s*require_(?:value|equal|integrations_value)\s+(\w+)", script, re.M)
+        re.findall(
+            r"^\s*require_(?:value|value_either|equal|integrations_value)\s+(\w+)",
+            script,
+            re.M,
+        )
     )
     missing = sorted(_config_production_requirements() - checked)
     assert not missing, (

@@ -45,6 +45,26 @@ def test_production_settings_require_live_bank_mode() -> None:
     assert "TEPLO_BANK_CLIENT_MODE" in str(exc_info.value)
 
 
+def test_production_settings_require_webhook_token() -> None:
+    """Без токена вебхука прод не собирается — и это единственная защита эндпоинта.
+
+    Вебхук «Статус платежа» мутирует финучёт (гасит и откатывает накладные), а фильтр по IP
+    за прокси ненадёжен. Настройки читаются на импорте (``app/db/session.py``), поэтому
+    отсутствие токена валит подъём api и scheduler целиком, а не отдельный запрос — что и
+    делает предполётную проверку в ``deploy/check-prod-secrets.sh`` обязательной.
+    """
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            _env_file=None,
+            environment="production",
+            jwt_secret_key="a" * 64,
+            auth_cookie_secure=True,
+            teplo_bank_client_mode="live",
+        )
+
+    assert "TBANK_WEBHOOK_TOKEN" in str(exc_info.value)
+
+
 def test_production_settings_accept_realistic_values() -> None:
     settings = Settings(
         _env_file=None,
