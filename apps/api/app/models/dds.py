@@ -116,6 +116,16 @@ class DdsArticle(Base):
     lease_bound: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Что расход по статье делает с основным средством. Поле, а не булев флаг: статьи ведут
+    # себя с ОС по-разному, и разница не в названии, а в последствиях.
+    #   'purchase'    — платёж покупает объект, становится его первоначальной стоимостью;
+    #   'repair'      — расход на объект, капитализация по правилу 15% («Ремонт ОС»);
+    #   'maintenance' — текущий ремонт, НИКОГДА не капитализируется, но объект указать надо:
+    #                   без этого не собрать историю ремонтов («Ремонт оборудования»);
+    #   NULL          — к основным средствам отношения не имеет, карточка на такой статье
+    #                   отвергается, как помещение на статье без ``location_required``.
+    # Как и соседние флаги, курируется владельцем в карточке статьи.
+    asset_link_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
