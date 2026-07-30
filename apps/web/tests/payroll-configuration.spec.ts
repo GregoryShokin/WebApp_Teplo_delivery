@@ -3,6 +3,22 @@ import { expect, test, type Route } from "@playwright/test";
 const createdAt = "2026-05-28T10:00:00+03:00";
 
 test.beforeEach(async ({ page }) => {
+  // Роутер бутстрапится через restoreSession() → POST /auth/refresh: без ответа сессия пустая
+  // и AppRouter уводит на /login, до страницы конфигурации дело не доходит. Роль owner входит
+  // в FULL_ACCESS_ROLES, поэтому все source.*-права на вкладках выдаются целиком.
+  await page.route("**/api/v1/auth/refresh", (route) =>
+    fulfillJson(route, {
+      access_token: "test-token",
+      refresh_token: "test-refresh-token",
+      token_type: "bearer",
+      user: {
+        id: "user-owner",
+        email: "owner@example.com",
+        full_name: "Владелец",
+        roles: ["owner"],
+      },
+    }),
+  );
   await page.route("**/api/v1/payroll/config/rates**", (route) =>
     fulfillJson(route, [
       rate("rate-sushi-1", "Сушист", "category_1", 2800, true),
