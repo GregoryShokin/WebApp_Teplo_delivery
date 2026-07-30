@@ -6,6 +6,7 @@ Runs against the mock bank client (``TEPLO_BANK_CLIENT_MODE=mock`` from conftest
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -214,6 +215,55 @@ async def test_create_draft_rejects_already_queued_invoice(
             await create_payment_draft_for_invoices(
                 session, invoice_ids=[invoice.id], actor_user_id=None
             )
+
+
+async def test_create_draft_rejects_closing_not_yet_in_force(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Правило 4: будущий УПД — ещё не долг, целить в него банковский платёж нельзя.
+
+    Ниже по течению не чинится: draft_id у оплаченного черновика не снимается, а
+    auto_settle_invoice_from_open_prepayments документы с draft_id не гасит — предоплата на такой
+    платёж зависла бы навсегда, а документ в свою дату встал бы ещё и кредиторкой.
+    """
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        invoice = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="100.00",
+            number="УТ-777",
+            doc_kind="closing",
+            activation_status="pending",
+            invoice_date=date(2026, 8, 31),
+        )
+        await session.commit()
+
+        with pytest.raises(CounterpartyPaymentError, match="не является долгом"):
+            await create_payment_draft_for_invoices(
+                session, invoice_ids=[invoice.id], actor_user_id=None
+            )
+
+
+async def test_create_draft_allows_bill_regardless_of_activation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт — не закрывающий документ: очередь оплат живёт именно им, гард его не трогает."""
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        invoice = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="100.00",
+            doc_kind="bill",
+            activation_status="active",
+        )
+        await session.commit()
+
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+        assert draft.amount == Decimal("100.00")
 
 
 async def test_create_draft_rejects_paid_invoice(

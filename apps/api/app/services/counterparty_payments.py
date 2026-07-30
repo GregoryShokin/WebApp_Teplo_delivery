@@ -215,6 +215,27 @@ async def create_payment_draft_for_invoices(
         raise CounterpartyPaymentError("Доходные накладные нельзя отправить в банк")
     if any(inv.draft_id is not None for inv in invoices):
         raise CounterpartyPaymentError("Некоторые накладные уже отправлены в банк")
+    # Правило 4 канона: закрывающий документ действует своей датой. Пока она не наступила
+    # (activation_status='pending'), долга нет — платить нечего, и целить в него деньги нельзя.
+    # Это ЕДИНСТВЕННАЯ дверь, проставляющая draft_id, поэтому проверка здесь закрывает контур
+    # целиком: пере-разбор письма документ в черновике не передатирует (_resync_closing_after_edit
+    # работает только при draft_id is None), а гашение наличными из Сейфа
+    # (_settle_draft_invoices) ходит строго по накладным черновика.
+    # Чинить ниже по течению нельзя: у накладной оплаченного черновика draft_id НЕ снимается,
+    # а auto_settle_invoice_from_open_prepayments для документов с draft_id всегда возвращает 0
+    # (защита от двойной оплаты). Заведи мы на такой платёж предоплату — она зависла бы навсегда,
+    # а документ в свою дату встал бы ещё и кредиторкой: ДЗ и КЗ на одни и те же деньги.
+    not_in_force = [
+        inv for inv in invoices if inv.doc_kind == "closing" and inv.activation_status != "active"
+    ]
+    if not_in_force:
+        first = not_in_force[0]
+        number = f"№{first.number}" if first.number else "документ"
+        date_hint = f" вступает в силу {first.invoice_date:%d.%m.%Y}" if first.invoice_date else ""
+        raise CounterpartyPaymentError(
+            f"{number}{date_hint} — до этой даты он не является долгом и оплатить его нельзя. "
+            "Дождитесь даты документа или оплатите по счёту."
+        )
     # Контроль ошибочных цен: подозрительную (неподтверждённую) накладную в банк не пускаем —
     # сначала человек сверяет цены и подтверждает («ОК, всё верно»).
     flagged = [inv for inv in invoices if inv.price_control_status == "flagged"]
