@@ -461,3 +461,107 @@ async def test_small_payment_without_matching_shortfall_stays_unallocated(
     assert [(f.kind, f.amount) for f in facts if f.kind == "other"] == [
         ("other", Decimal("5.00"))
     ]
+
+
+async def test_draft_match_prefers_document_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Два черновика одной суммы разводятся по номеру платёжки, а не «как повезёт».
+
+    Травматизм 100 ₽ за разные месяцы законно висит `in_bank` одновременно (уникум слота —
+    по виду и периоду). Номер документа детерминирован: он выведен из `document_id`,
+    закоммиченного до вызова банка, и возвращается в выписке.
+    """
+    from app.services.banking.tbank import _document_number
+
+    async with async_session_factory() as session:
+        target = _draft(
+            "contrib_injury", "100.00", period="2026-06", due=date(2026, 7, 15), title="июнь"
+        )
+        target.document_id = uuid.uuid4().hex
+        other = _draft(
+            "contrib_injury", "100.00", period="2026-07", due=date(2026, 8, 15), title="июль"
+        )
+        other.document_id = uuid.uuid4().hex
+        session.add_all([target, other])
+        operation = _operation(
+            "100.00",
+            date(2026, 7, 29),
+            inn=SFR_INN,
+            purpose="Страховые взносы (травматизм)",
+            doc_number=_document_number(target.document_id),
+        )
+        session.add(operation)
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        # Закрылся именно тот черновик, чей номер стоит в операции, хотя ближе по сроку — другой.
+        assert (await session.get(TaxBankDraft, target.id)).status == "paid"
+        assert (await session.get(TaxBankDraft, other.id)).status == "in_bank"
+
+
+async def test_draft_match_falls_back_when_number_differs(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёжку подготовили у нас, а оплатили руками из банк-клиента — номер чужой.
+
+    Замок против соблазна сделать номер жёстким фильтром: такой платёж ушёл бы в
+    ``other``/``requires_review``, то есть мимо вычета УСН, и налог был бы завышен.
+    """
+    async with async_session_factory() as session:
+        draft = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        draft.document_id = uuid.uuid4().hex
+        session.add(draft)
+        session.add(_operation("478376.00", date(2026, 7, 29), doc_number="900001"))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+        assert [(f.kind, f.quality_status) for f in facts] == [("usn_advance", "confirmed")]
+        assert (await session.get(TaxBankDraft, draft.id)).status == "paid"
+
+
+async def test_draft_match_ignores_other_bank(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик уходил в Сбер — списание Т-Банка той же суммы закрывать его не вправе."""
+    async with async_session_factory() as session:
+        draft = _draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28))
+        draft.bank_provider = "sber"
+        session.add(draft)
+        session.add(_operation("478376.00", date(2026, 7, 29)))
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        assert (await session.get(TaxBankDraft, draft.id)).status == "in_bank"
+        facts = await _facts(session)
+        assert [f.kind for f in facts] == ["other"]
+
+
+async def test_fact_rows_start_without_cashflow_link(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ссылку на проводку ставит проектор ДДС — факт-слой её не выдумывает.
+
+    Замок на правку, без которой контур молча перестаёт переразносить дозревшие платежи:
+    «факт без проводки» — единственный признак, по которому проектор понимает, что надо
+    пересобрать разнос.
+    """
+    async with async_session_factory() as session:
+        operation = _operation("478376.00", date(2026, 7, 29))
+        operation.cashflow_transaction_id = None
+        session.add(_draft("usn_advance", "478376.00", period="h1", due=date(2026, 7, 28)))
+        session.add(operation)
+        await session.commit()
+
+        await sync_tax_facts_from_bank(session)
+        await session.commit()
+
+        facts = await _facts(session)
+        assert facts and all(f.cashflow_transaction_id is None for f in facts)

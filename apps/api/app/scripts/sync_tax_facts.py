@@ -1,10 +1,14 @@
-"""Бэкфилл налогового факт-слоя: выписка (``bank_operations``) → ``tax_payment``.
+"""Бэкфилл налогового контура: выписка (``bank_operations``) → ``tax_payment`` → проводки ДДС.
 
-Для регулярной работы скрипт не нужен — факты создаются автоматически при каждом
-приёме выписки (вебхук/поллинг, см. ``ingest_operations``). Скрипт нужен для
-ПЕРВОГО прогона на проде: операции с начала года уже лежат в БД (а недостающий
-период добирается ручкой POST /api/v1/dds/bank-sync/tbank с date_from/date_to),
-и по ним нужно разово построить факты.
+Для регулярной работы скрипт не нужен — и факты, и разнос по статьям строятся автоматически
+при каждом приёме выписки (вебхук/поллинг, см. ``ingest_operations``). Скрипт нужен для
+ПЕРВОГО прогона на проде: операции с начала года уже лежат в БД (а недостающий период
+добирается ручкой POST /api/v1/dds/bank-sync/tbank с date_from/date_to), и по ним нужно
+разово построить факты и разнести их в журнал ДДС.
+
+Сухой прогон печатает ОБА отчёта и откатывает транзакцию — по нему видно, сколько операций
+и на какую сумму получат проводки, прежде чем расход по налоговым статьям изменится задним
+числом. Глубину истории ограничивает настройка ``TAX_DDS_PROJECTION_SINCE``.
 
 Usage:
     python -m app.scripts.sync_tax_facts             # dry-run: показать, что будет создано
@@ -17,20 +21,30 @@ import argparse
 import asyncio
 
 from app.db.session import AsyncSessionLocal
-from app.services.taxes.bank_facts import sync_tax_facts_from_bank
+from app.services.taxes.dds_projection import sync_tax_bank_pipeline
 
 
 async def _run(apply: bool) -> None:
     async with AsyncSessionLocal() as session:
-        report = await sync_tax_facts_from_bank(session)
+        result = await sync_tax_bank_pipeline(session)
+        facts = result["tax_facts"] or {}
+        projection = result["tax_dds"] or {}
         print(
-            f"операций без фактов: {report.operations_seen}; "
-            f"создано bundle'ов: {report.bundles_created}; "
-            f"дозрело: {report.bundles_ripened}; "
-            f"черновиков доведено до paid: {report.drafts_paid}; "
-            f"ждут проверки: {report.review_pending}"
+            f"операций без фактов: {facts.get('operations_seen', 0)}; "
+            f"создано bundle'ов: {facts.get('bundles_created', 0)}; "
+            f"дозрело: {facts.get('bundles_ripened', 0)}; "
+            f"черновиков доведено до paid: {facts.get('drafts_paid', 0)}; "
+            f"ждут проверки: {facts.get('review_pending', 0)}"
         )
-        for line in report.details:
+        for line in facts.get("details", []):
+            print(" ·", line)
+        print(
+            f"ДДС — операций с отставшим разносом: {projection.get('operations_seen', 0)}; "
+            f"разнесено: {projection.get('projected', 0)}; "
+            f"уже верно: {projection.get('unchanged', 0)}; "
+            f"пропущено: {projection.get('skipped', 0)}"
+        )
+        for line in projection.get("details", []):
             print(" ·", line)
         if apply:
             await session.commit()

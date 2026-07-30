@@ -75,6 +75,8 @@ async def test_poll_settles_executed_draft(
             "matched_by_operation": 0,
             "reconciled": 0,
             "absorbed": 0,
+            # Минутный добор налоговой проекции в ДДС: налоговых операций в тесте нет.
+            "tax_dds": 0,
         }
         assert client.calls == ["pay-1"]
         await session.refresh(inv)

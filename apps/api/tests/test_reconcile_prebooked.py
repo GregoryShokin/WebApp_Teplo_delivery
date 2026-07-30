@@ -233,3 +233,57 @@ async def test_reconcile_skips_mismatched_inn(
     async with async_session_factory() as session:
         op = await session.get(BankOperation, op_id)
     assert op.cashflow_transaction_id is None
+
+
+async def test_reconcile_skips_budget_operation_without_inn(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Бюджетный платёж без реквизитов не забирает чужую prebooked-проводку по FIFO.
+
+    Вебхук Т-Банка приходит раньше, чем выписка дозаливает ИНН получателя, а суммы налогов
+    круглые: травматизм 100 ₽ легко совпал бы с оплатой поставщику и «съел» бы её проводку.
+    Свою пару такому платежу найдёт налоговый контур по owner-locked реквизитам.
+    """
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        op = await _needs_review_op(session, account_id=wallet.account_id, amount=Decimal("100.00"))
+        op.raw_payload = {"category": "budget"}
+        op.payment_purpose = "Страховые взносы (травматизм)"
+        await _prebooked(session, wallet_id=wallet.id, amount=Decimal("100.00"))
+        await session.commit()
+        op_id = op.id
+
+    async with async_session_factory() as session:
+        linked = await reconcile_needs_review_prebooked(session)
+        await session.commit()
+    assert linked == 0
+
+    async with async_session_factory() as session:
+        op = await session.get(BankOperation, op_id)
+    assert op.cashflow_transaction_id is None
+    assert op.classification_status == "needs_review"
+
+
+async def test_reconcile_still_links_ordinary_operation_without_inn(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Парный замок: обычная операция без ИНН по-прежнему склеивается по FIFO.
+
+    Гард обязан сужать только бюджетные платежи — иначе он тихо сломает основной контур
+    сведения оплат поставщикам.
+    """
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        op = await _needs_review_op(session, account_id=wallet.account_id, amount=Decimal("100.00"))
+        ct = await _prebooked(session, wallet_id=wallet.id, amount=Decimal("100.00"))
+        await session.commit()
+        op_id, ct_id = op.id, ct.id
+
+    async with async_session_factory() as session:
+        linked = await reconcile_needs_review_prebooked(session)
+        await session.commit()
+    assert linked == 1
+
+    async with async_session_factory() as session:
+        op = await session.get(BankOperation, op_id)
+    assert op.cashflow_transaction_id == ct_id

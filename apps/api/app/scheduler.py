@@ -471,6 +471,13 @@ async def run_payment_status_poll(
     # И поглощаем авто-классифицированные (правилом) операции той же prebooked-проводкой оплаты —
     # иначе платёж поставщику с правилом классификации двоится (auto-строка + prebooked-проводка).
     result["absorbed"] = await absorb_auto_classified_counterparty_payment(session)
+    # Налоговая проекция добирает то, что не сошлось на ингесте: операция пришла вебхуком
+    # без реквизитов получателя (факта ещё не было), а выписка дозалила их позже; либо
+    # оборотка бухгалтера приехала после платежа и разнос ЕНП дозрел. Только проектор, без
+    # факт-слоя: его отбор идёт по всем исходящим операциям и минутному циклу дорог.
+    from app.services.taxes.dds_projection import project_tax_facts_to_dds
+
+    result["tax_dds"] = (await project_tax_facts_to_dds(session)).projected
     await session.commit()
     return result
 
@@ -1106,6 +1113,16 @@ async def ingest_operations(
         # чтобы возврат не осел в needs_review.
         await match_card_refund_operations(session)
         await session.flush()
+    # Налоговый контур — ДО общей классификации, тем же приёмом, что чеки Кассы выше:
+    # факт-слой (списания на реквизиты ФНС/СФР → tax_payment) и следом проекция фактов в
+    # проводки ДДС. Разнесённая здесь операция уже не уйдёт в needs_review, не заведёт кейс
+    # разбора и не успеет забрать по FIFO чужую prebooked-проводку. Провайдера не сужаем:
+    # налоги можно платить и со сберовского счёта. Ошибка внутри ингест не роняет —
+    # выписка важнее, недоделанное доберёт следующий прогон (оба сервиса идемпотентны).
+    from app.services.taxes.dds_projection import sync_tax_bank_pipeline
+
+    tax = await sync_tax_bank_pipeline(session)
+    await session.flush()
     pending_operations = (
         await session.scalars(
             select(BankOperation).where(
@@ -1115,23 +1132,13 @@ async def ingest_operations(
         )
     ).all()
     classification = await run_classification_rules(session, pending_operations)
-    # Налоговый факт-слой: списания на реквизиты ФНС/СФР → tax_payment (слой «Факт»
-    # вычета и сверки). Отдельно от классификатора ДДС намеренно: факт нужен независимо
-    # от того, размечена ли операция статьёй. Ошибка здесь не должна ронять ингест —
-    # выписка важнее, недоделанное доберёт следующий прогон (сервис идемпотентен).
-    tax_facts: dict | None = None
-    try:
-        from app.services.taxes.bank_facts import sync_tax_facts_from_bank
-
-        tax_facts = (await sync_tax_facts_from_bank(session)).as_dict()
-    except Exception:  # noqa: BLE001 - факт-слой не должен останавливать приём выписки
-        logger.warning("bank ingest: налоговый факт-слой не отработал", exc_info=True)
     return {
         "inserted": inserted,
         "updated": updated,
         "own_accounts_added": own_accounts_added,
         "classification": classification.__dict__,
-        "tax_facts": tax_facts,
+        "tax_facts": tax["tax_facts"],
+        "tax_dds": tax["tax_dds"],
     }
 
 

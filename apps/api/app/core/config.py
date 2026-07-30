@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
@@ -139,6 +140,14 @@ class Settings(BaseSettings):
     # Фоновый забор налоговых документов планировщиком (в дополнение к кнопке «Проверить почту»).
     tax_document_poll_enabled: bool = True
     tax_document_poll_interval_minutes: int = 30
+
+    # Проекция налоговых фактов в журнал ДДС (services/taxes/dds_projection). Выключатель —
+    # аварийный: контур пишет проводки в общий журнал, и при сомнении его надо гасить
+    # мгновенно, не выкатывая код. `since` ограничивает глубину истории: без него первый же
+    # прогон разнесёт налоговые операции с начала года и задним числом изменит расход по
+    # статьям за закрытые месяцы.
+    tax_dds_projection_enabled: bool = True
+    tax_dds_projection_since: date | None = None
 
     # Распознавание счёта — гибрид: детерминированный парсер (регексы по тексту PDF) +
     # LLM-фолбэк (Claude по самому PDF) для незнакомых макетов. Без ключа работает только

@@ -358,13 +358,31 @@ async def _resolve_via_kind(
 
 
 async def _match_draft(
-    session: AsyncSession, *, amount: Decimal, recipient: str, op_date: date
+    session: AsyncSession,
+    *,
+    amount: Decimal,
+    recipient: str,
+    op_date: date,
+    provider: str | None = None,
+    document_number: str | None = None,
 ) -> TaxBankDraft | None:
     """Наш черновик in_bank с точной суммой и тем же получателем.
 
-    При нескольких кандидатах берём с ближайшим сроком — детерминированно; остальные
-    доведёт следующая операция (суммы у нас нетипизированные, коллизии редки).
+    Номер платёжного документа — ПРИОРИТЕТ, а не фильтр. Ключ детерминирован: черновик
+    коммитит ``document_id`` до вызова банка, а ``tbank._document_number`` выводит из него
+    номер, который уходит в платёжке и возвращается в выписке. Это разводит по своим
+    операциям черновики одной суммы, которые законно висят одновременно (травматизм 100 ₽
+    за разные месяцы — частичный уникум слота уникален по виду+периоду).
+
+    Фильтром номер делать НЕЛЬЗЯ: платёжку, подготовленную у нас, владелец или бухгалтер
+    могли оплатить руками из банк-клиента — там номер свой. Жёсткий фильтр увёл бы такой
+    платёж в ``other``/``requires_review``, то есть мимо вычета УСН, и налог был бы завышен.
+
+    При прочих равных берём черновик с ближайшим сроком — детерминированно; остальные
+    доведёт следующая операция.
     """
+    from app.services.banking.tbank import _document_number
+
     drafts = (
         await session.scalars(
             select(TaxBankDraft).where(TaxBankDraft.status == "in_bank")
@@ -372,13 +390,29 @@ async def _match_draft(
     ).all()
     candidates = []
     for d in drafts:
+        # Черновик уходил в свой банк: сберовское списание той же суммы — не он.
+        if provider is not None and d.bank_provider != provider:
+            continue
         d_recipient = "sfr" if d.tax_kind == "contrib_injury" else "fns"
         if d_recipient != recipient or Decimal(str(d.amount)) != amount:
             continue
         candidates.append(d)
     if not candidates:
         return None
-    candidates.sort(key=lambda d: (abs(((d.due_date or op_date) - op_date).days), str(d.id)))
+
+    raw_number = (document_number or "").strip()
+
+    def _rank(draft: TaxBankDraft) -> tuple[int, int, str]:
+        matched_number = bool(
+            raw_number and draft.document_id and _document_number(draft.document_id) == raw_number
+        )
+        return (
+            0 if matched_number else 1,
+            abs(((draft.due_date or op_date) - op_date).days),
+            str(draft.id),
+        )
+
+    candidates.sort(key=_rank)
     return candidates[0]
 
 
@@ -507,7 +541,12 @@ async def _resolve_operation(
     amount = Decimal(str(op.amount))
 
     draft = await _match_draft(
-        session, amount=amount, recipient=recipient, op_date=op.operation_date
+        session,
+        amount=amount,
+        recipient=recipient,
+        op_date=op.operation_date,
+        provider=op.provider,
+        document_number=op.document_number,
     )
     if draft is not None:
         resolution = await _resolve_via_kind(
@@ -611,7 +650,11 @@ def _build_rows(
                 source_kind="bank_statement",
                 quality_status=quality,
                 bank_operation_id=op.id,
-                cashflow_transaction_id=op.cashflow_transaction_id,
+                # Ссылку ставит проектор ДДС (services/taxes/dds_projection) — на СВОЮ
+                # проводку каждой строки. Слепая копия якоря операции здесь врала бы: после
+                # дозревания строка пересоздаётся, и «факт без проводки» — единственный
+                # признак, по которому проектор понимает, что разнос надо пересобрать.
+                cashflow_transaction_id=None,
                 document_number=op.document_number,
                 purpose=op.payment_purpose,
                 note=resolution.note,

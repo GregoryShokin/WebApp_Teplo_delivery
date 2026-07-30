@@ -597,6 +597,14 @@ async def _find_prebooked_payment(
 
     op_inn = clean_digits(operation.counterparty_inn_raw)
     if not op_inn:
+        # Бюджетный платёж без реквизитов забирать по FIFO нельзя. Вебхук Т-Банка приходит
+        # раньше, чем выписка дозаливает ИНН получателя, а суммы налогов круглые (травматизм
+        # 100 ₽) и легко совпадают с оплатой поставщику — тогда налог «съел» бы чужую
+        # prebooked-проводку. Свою пару такой операции найдёт налоговый контур по
+        # owner-locked реквизитам, когда выписка их принесёт (services/taxes/bank_facts).
+        raw_payload = operation.raw_payload if isinstance(operation.raw_payload, dict) else {}
+        if str(raw_payload.get("category") or "").casefold() in ("tax", "budget"):
+            return None
         # Statement has no INN to disambiguate — fall back to the oldest candidate (FIFO).
         return candidates[0]
     fallback: CashflowTransaction | None = None
