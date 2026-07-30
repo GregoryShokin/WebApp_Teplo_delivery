@@ -482,6 +482,19 @@ class SafeAllocationPayRequest(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+class AllocationPayoutVoidRead(BaseModel):
+    """Итог отмены ошибочной выплаты резерва (Сейф или касса)."""
+
+    # deleted — выплата была сегодняшней, проводка снята целиком; reversed — за прошлую дату,
+    # исходный расход остался, к нему написан сторно-приход.
+    mode: str
+    amount: float
+    wallet_name: str | None = None
+    # Предоплата поставщику снимается собственным откатом контура предоплат.
+    prepayment_cancelled: bool = False
+    reversal_transaction_id: uuid.UUID | None = None
+
+
 class AllocationMoveRequest(BaseModel):
     """Перемещение резерва между Сейфом и Кассой (весь непогашенный остаток)."""
 
@@ -817,6 +830,11 @@ class JournalRow(BaseModel):
     # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое предупреждение при
     # ручной привязке к накладной. Для проводок (kind="cashflow") всегда False.
     is_card: bool = False
+    # Источник проводки (у банковских операций пусто) — по нему фронт узнаёт выплату резерва.
+    source_kind: str | None = None
+    # Выплату резерва можно отменить как ошибочную (право finance.allocation_payout.void).
+    # Предварительный отбор: окончательную проверку делает сама отмена, отвечая 409 с причиной.
+    voidable: bool = False
 
 
 class JournalListRead(BaseModel):

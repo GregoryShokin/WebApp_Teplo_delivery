@@ -2711,7 +2711,35 @@ export type JournalRow = {
   // Карт-операция (получатель в банке — эквайер): при ручной привязке к накладной диалог
   // показывает мягкое предупреждение вместо жёсткой ошибки. Для проводок всегда false.
   is_card: boolean;
+  // Источник проводки (у банковских операций пусто).
+  source_kind?: string | null;
+  // Выплата резерва, которую можно отменить как ошибочную.
+  voidable?: boolean;
 };
+
+/** Итог отмены ошибочной выплаты резерва (Сейф или касса). */
+export type AllocationPayoutVoidResult = {
+  /** deleted — выплата была сегодняшней и снята целиком; reversed — написано сторно. */
+  mode: string;
+  amount: number;
+  wallet_name: string | null;
+  prepayment_cancelled: boolean;
+  reversal_transaction_id: string | null;
+};
+
+/**
+ * «Отменить выплату»: откат ошибочной выплаты резерва — с Сейфа или из кассы.
+ * Снимается одна выплата, резерв возвращается в активные. Выплату, уже погасившую
+ * накладные/аренду/депозит/аванс/зарплату, сервер не отменяет и объясняет причину.
+ */
+export async function voidAllocationPayout(
+  transactionId: string,
+): Promise<AllocationPayoutVoidResult> {
+  const response = await api.post<AllocationPayoutVoidResult>(
+    `/dds/allocation-payouts/${transactionId}/void`,
+  );
+  return response.data;
+}
 
 export type JournalQuery = {
   status?: "all" | "marked" | "unmarked" | "transfers";

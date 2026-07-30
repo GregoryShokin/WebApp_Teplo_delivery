@@ -1,7 +1,18 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { DateRangePopover } from "@/components/ui/date-range-popover";
@@ -16,9 +27,11 @@ import {
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { usePermissions } from "@/lib/permissions";
 import {
+  apiErrorMessage,
   getDdsArticles,
   getDdsJournal,
   getDdsWallets,
+  voidAllocationPayout,
   type JournalQuery,
   type JournalRow,
 } from "@/lib/api";
@@ -40,6 +53,24 @@ const LIMIT = 50;
 type StatusFilter = "all" | "marked" | "unmarked" | "transfers";
 
 export function LedgerTab() {
+  const queryClient = useQueryClient();
+  // Откат уже выплаченного резерва — право владельца/админа, отдельное от прав выдавать.
+  const canVoidPayout = usePermissions().canPerformAction("finance.allocation_payout.void");
+  const [voidRow, setVoidRow] = useState<JournalRow | null>(null);
+  const voidMutation = useMutation({
+    mutationFn: (transactionId: string) => voidAllocationPayout(transactionId),
+    onSuccess: (result) => {
+      toast.success(
+        result.mode === "reversed"
+          ? "Выплата отменена — в ленте появилось сторно"
+          : "Выплата отменена — операция снята",
+      );
+      setVoidRow(null);
+      void queryClient.invalidateQueries({ queryKey: ["dds"] });
+      void queryClient.invalidateQueries({ queryKey: ["kassa"] });
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить выплату")),
+  });
   const [status, setStatus] = useState<StatusFilter>("all");
   const [dateFrom, setDateFrom] = useState(isoDateDaysAgo(30));
   const [dateTo, setDateTo] = useState(toIsoDate(new Date()));
@@ -190,6 +221,26 @@ export function LedgerTab() {
       key: "status",
       header: "Статус",
       cell: (row) => <DdsStatusBadge status={row.status} />,
+    },
+    {
+      key: "actions",
+      header: "",
+      className: "text-right",
+      // Выплата резерва — единственное, что отсюда правится: не суммой, а отменой целиком.
+      cell: (row) =>
+        row.voidable && canVoidPayout ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              // Строка кликабельна (разметка операции) — не открываем её заодно.
+              event.stopPropagation();
+              setVoidRow(row);
+            }}
+          >
+            Отменить выплату
+          </Button>
+        ) : null,
     },
   ];
 
@@ -345,6 +396,31 @@ export function LedgerTab() {
         canClassify={canClassify}
         onClose={() => setSelectedRow(null)}
       />
+
+      <AlertDialog open={Boolean(voidRow)} onOpenChange={() => setVoidRow(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить выплату резерва?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {voidRow
+                ? `${compactText(voidRow.payment_purpose) || "Выплата"} · ${formatDdsMoney(voidRow.amount)}. ` +
+                  "Деньги вернутся на счёт, резерв снова станет активным на эту сумму. " +
+                  "Если выплата уже погасила накладные, аренду, депозит или аванс — " +
+                  "отмена не пройдёт и система скажет, где это распроводится."
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Не отменять</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={voidMutation.isPending}
+              onClick={() => voidRow && voidMutation.mutate(voidRow.id)}
+            >
+              Отменить выплату
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -53,7 +53,6 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
-from app.services.freelancer.shift_settlement import FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
     KASSA_TARGET_PAYOUT_SOURCE_KIND,
@@ -61,6 +60,7 @@ from app.services.banking.safe_allocations import (
     kassa_targets_total,
     pay_allocation,
 )
+from app.services.freelancer.shift_settlement import FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
 from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
@@ -853,6 +853,7 @@ async def kassa_journal(
     employee_names = await _employee_names(session, advances.values())
     counterparty_names = await _counterparty_names(session, transactions)
     freelancer_payouts = await _freelancer_shift_payouts(session, transactions)
+    target_payout_purposes = await _target_payout_purposes(session, transactions)
 
     today = kassa_today()
     items: list[dict[str, Any]] = []
@@ -862,7 +863,15 @@ async def kassa_journal(
         voidable = False
         label: str | None = None
         employee_id: uuid.UUID | None = None
-        if transaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND:
+        if transaction.source_kind == KASSA_TARGET_PAYOUT_SOURCE_KIND:
+            # Выдача целёвки из кассы. Правки нет (сумма и статья — от резерва), но ошибочную
+            # операцию можно отменить целиком: деньги вернутся, резерв — в «К выдаче».
+            # Зарплатный пул сюда не попадает (его выдаёт окно ведомости), поэтому отбор
+            # дешёвый: расходная нога с резервом-источником.
+            flow = "target_payout"
+            label = target_payout_purposes.get(transaction.source_id)
+            voidable = transaction.direction == "out" and transaction.source_id is not None
+        elif transaction.source_kind == FREELANCER_SHIFT_PAYOUT_SOURCE_KIND:
             # Посменная выдача внештатнику. Правке она не подлежит (сумма учётная, её
             # считает движок), но ошибочную операцию можно отменить целиком — отдельным
             # правом ``kassa.freelancer_shift.void``. Приход-сторно уже отменённой выдачи
@@ -1012,6 +1021,28 @@ async def _freelancer_shift_payouts(
         }
         for entry_id, employee_id, full_name, period_status in rows
     }
+
+
+async def _target_payout_purposes(
+    session: AsyncSession, transactions: list[CashflowTransaction]
+) -> dict[uuid.UUID, str | None]:
+    """Назначение резерва для строк выдачи целёвки из кассы (ключ — id резерва)."""
+    allocation_ids = {
+        transaction.source_id
+        for transaction in transactions
+        if transaction.source_kind == KASSA_TARGET_PAYOUT_SOURCE_KIND
+        and transaction.source_id is not None
+    }
+    if not allocation_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(SafeAllocation.id, SafeAllocation.purpose).where(
+                SafeAllocation.id.in_(allocation_ids)
+            )
+        )
+    ).all()
+    return dict(rows)
 
 
 async def _employee_names(

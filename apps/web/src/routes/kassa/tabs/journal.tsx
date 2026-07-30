@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
-import { apiErrorMessage } from "@/lib/api";
+import { apiErrorMessage, voidAllocationPayout } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { formatRub } from "@/routes/counterparties/shared";
 import {
@@ -72,7 +72,10 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
   const [voidItem, setVoidItem] = useState<KassaJournalItem | null>(null);
   // Отмена выдачи внештатнику — отдельное право: выдаёт кассовый администратор, а
   // откатывает уже отданные наличные тот, кто отвечает за деньги (owner/admin).
-  const canVoidFreelancerShift = usePermissions().canPerformAction("kassa.freelancer_shift.void");
+  const permissions = usePermissions();
+  const canVoidFreelancerShift = permissions.canPerformAction("kassa.freelancer_shift.void");
+  // Выдача целёвки — свой контур (резерв Сейфа), поэтому и право на её откат своё.
+  const canVoidTargetPayout = permissions.canPerformAction("finance.allocation_payout.void");
 
   const range = useMemo(() => monthRange(month), [month]);
   const journalQuery = useQuery({
@@ -100,9 +103,23 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
   });
 
   const voidMutation = useMutation({
-    mutationFn: (item: KassaJournalItem) => voidKassaFreelancerShift(item.source_id as string),
-    onSuccess: () => {
-      toast.success("Выдача отменена — смена снова в «К выдаче»");
+    // Обе отмены отдают деньги обратно, но контуры разные: смена внештатника
+    // возвращается в «К выдаче», целёвка — в активные резервы кассы.
+    // Ответы у контуров разные (целёвка отдаёт сводку отмены, внештатник — «К выдаче»),
+    // а вызывающему нужен лишь факт успеха — приводим к void.
+    mutationFn: async (item: KassaJournalItem): Promise<void> => {
+      if (item.kassa_flow === "target_payout") {
+        await voidAllocationPayout(item.id);
+        return;
+      }
+      await voidKassaFreelancerShift(item.source_id as string);
+    },
+    onSuccess: (_result, item) => {
+      toast.success(
+        item.kassa_flow === "target_payout"
+          ? "Выплата отменена — целёвка снова в «К выдаче»"
+          : "Выдача отменена — смена снова в «К выдаче»",
+      );
       setVoidItem(null);
       void queryClient.invalidateQueries({ queryKey: ["kassa"] });
       void queryClient.invalidateQueries({ queryKey: ["dds"] });
@@ -154,6 +171,16 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       header: "",
       className: "text-right",
       cell: (item) => {
+        // Выплата целёвки правке не подлежит (сумма и статья — от резерва): только отмена.
+        if (item.voidable && item.kassa_flow === "target_payout") {
+          return canVoidTargetPayout ? (
+            <div className="flex justify-end">
+              <Button size="sm" variant="ghost" onClick={() => setVoidItem(item)}>
+                Отменить выплату
+              </Button>
+            </div>
+          ) : null;
+        }
         // Выдача внештатнику не правится (сумму считает движок) — её отменяют целиком.
         if (item.voidable && item.source_id) {
           return canVoidFreelancerShift ? (
@@ -291,13 +318,22 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
       <AlertDialog open={Boolean(voidItem)} onOpenChange={() => setVoidItem(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Отменить выдачу внештатнику?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {voidItem?.kassa_flow === "target_payout"
+                ? "Отменить выплату целёвки?"
+                : "Отменить выдачу внештатнику?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {voidItem
-                ? `${voidItem.counterparty_label ?? "Внештатник"} · ${formatRub(voidItem.amount)}. ` +
-                  "Расход снимется с кассы, смена вернётся в «К выдаче». " +
-                  "Если ведомость этой недели уже посчитана — её нужно будет пересчитать."
-                : null}
+              {voidItem?.kassa_flow === "target_payout"
+                ? `${voidItem.counterparty_label ?? "Целёвка"} · ${formatRub(voidItem.amount)}. ` +
+                  "Расход снимется с кассы, целёвка вернётся в «К выдаче» на эту сумму. " +
+                  "Если выплата уже погасила накладные, аренду, депозит или аванс — " +
+                  "отмена не пройдёт и система скажет, где это распроводится."
+                : voidItem
+                  ? `${voidItem.counterparty_label ?? "Внештатник"} · ${formatRub(voidItem.amount)}. ` +
+                    "Расход снимется с кассы, смена вернётся в «К выдаче». " +
+                    "Если ведомость этой недели уже посчитана — её нужно будет пересчитать."
+                  : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -306,7 +342,7 @@ export function KassaJournalTab({ canPayout }: { canPayout: boolean }) {
               disabled={voidMutation.isPending}
               onClick={() => voidItem && voidMutation.mutate(voidItem)}
             >
-              Отменить выдачу
+              {voidItem?.kassa_flow === "target_payout" ? "Отменить выплату" : "Отменить выдачу"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

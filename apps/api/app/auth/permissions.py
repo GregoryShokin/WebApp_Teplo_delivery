@@ -317,6 +317,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
     ("finance.safe.allocate", "Финансы", "Резервировать средства Сейфа"),
     ("finance.safe.confirm_paid", "Финансы", "Подтверждать оплаты с Сейфа"),
     (
+        "finance.allocation_payout.void",
+        "Финансы",
+        "Отменять ошибочную выплату резерва (Сейф и касса)",
+    ),
+    (
         "finance.payout_channel.cash_tk",
         "Финансы",
         "Выдавать с торговой кассы Черникова",
@@ -811,9 +816,10 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "kassa.adjustments.create",
         # Отмена авто-штрафов за недостачу — точечное право (только owner/admin).
         "kassa.penalty.waive",
-        # Отмена выдачи внештатнику: откат уже отданных наличных — точечное право
-        # (только owner/admin), намеренно отделённое от права выдавать.
+        # Откат уже выданных денег — точечные права владельца/админа, намеренно отделённые
+        # от прав выдавать: выдаёт кассовый администратор, отменяет ответственный за деньги.
         "kassa.freelancer_shift.void",
+        "finance.allocation_payout.void",
         # ПИН внештатника — только у тех, кто выдаёт смены (owner/admin/управляющий).
         "staff.freelancer_pin.read",
         # Официальный контур (оклады, вычеты НДФЛ) — чувствительные данные, только owner/admin.

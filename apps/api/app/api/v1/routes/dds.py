@@ -44,6 +44,7 @@ from app.models import (
 from app.scheduler import run_bank_sync_job
 from app.schemas.dds import (
     AllocationMoveRequest,
+    AllocationPayoutVoidRead,
     BankOperationListRead,
     BankSyncQueuedRead,
     BankSyncRequest,
@@ -101,6 +102,11 @@ from app.services.asset_analytics import (
     resolve_asset_context,
 )
 from app.services.banking import BankCredentialsError, BankFetchError
+from app.services.banking.allocation_payout_void import (
+    VOIDABLE_PAYOUT_SOURCE_KINDS,
+    AllocationPayoutVoidError,
+    void_allocation_payout,
+)
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
     CashflowClassificationConflictError,
@@ -197,6 +203,10 @@ DDS_RULES_MANAGE_ACCESS = (Depends(require_permission("finance.classification_ru
 DDS_CLASSIFY_ACCESS = (Depends(require_permission("finance.cashflow.classify")),)
 DDS_SAFE_ALLOCATE_ACCESS = (Depends(require_permission("finance.safe.allocate")),)
 DDS_SAFE_CONFIRM_PAID_ACCESS = (Depends(require_permission("finance.safe.confirm_paid")),)
+# Откат уже выданных денег — отдельное право (owner/admin), не право выдавать.
+DDS_ALLOCATION_PAYOUT_VOID_ACCESS = (
+    Depends(require_permission("finance.allocation_payout.void")),
+)
 DDS_INTEGRATIONS_MANAGE_ACCESS = (
     Depends(require_permission("finance.cashflow.integrations.manage")),
 )
@@ -403,6 +413,27 @@ async def list_journal(
                     )
                 ).all()
             )
+        # Резервы выплаты ЗП (source_run_id) отменяются только через окно ведомости —
+        # в ленте кнопку не показываем. Один запрос на всю страницу вместо запроса на строку.
+        payout_allocation_ids = {
+            cf.source_id
+            for cf in cashflow_list
+            if cf.source_kind in VOIDABLE_PAYOUT_SOURCE_KINDS and cf.source_id is not None
+        }
+        payroll_pool_allocation_ids: set[UUID] = set()
+        if payout_allocation_ids:
+            payroll_pool_allocation_ids = {
+                allocation_id
+                for (allocation_id,) in (
+                    await session.execute(
+                        select(SafeAllocation.id).where(
+                            SafeAllocation.id.in_(payout_allocation_ids),
+                            SafeAllocation.source_run_id.is_not(None),
+                        )
+                    )
+                ).all()
+            }
+
         for cf in cashflow_list:
             time_source = cf.created_at
             if cf.source_kind == "bank_operation" and cf.source_id is not None:
@@ -437,6 +468,17 @@ async def list_journal(
                     "payment_purpose": cf.payment_purpose,
                     "counterparty_name_raw": None,
                     "counterparty_inn_raw": None,
+                    "source_kind": cf.source_kind,
+                    # Выплата резерва, которую можно отменить как ошибочную. Здесь только
+                    # дешёвый отбор (расход нужного вида, не зарплатный пул) — остальное
+                    # (накладные, депозит, аванс, аренда) проверяет сама отмена и отвечает
+                    # 409 с причиной: тянуть это в ленту значило бы N запросов на строку.
+                    "voidable": (
+                        cf.source_kind in VOIDABLE_PAYOUT_SOURCE_KINDS
+                        and cf.direction == "out"
+                        and cf.source_id is not None
+                        and cf.source_id not in payroll_pool_allocation_ids
+                    ),
                 }
             )
     if status in ("all", "unmarked"):
@@ -2473,6 +2515,31 @@ async def cancel_safe_allocation(
     return _safe_allocation_payload(
         allocation, await _allocation_counterparty_name(session, allocation)
     )
+
+
+@router.post(
+    "/allocation-payouts/{transaction_id}/void",
+    response_model=AllocationPayoutVoidRead,
+    dependencies=DDS_ALLOCATION_PAYOUT_VOID_ACCESS,
+)
+async def void_allocation_payout_endpoint(
+    transaction_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict[str, object]:
+    """Отменить ошибочную выплату резерва — с Сейфа или из кассы.
+
+    Снимается ОДНА выплата (у резерва их может быть несколько): деньги уходят из ДДС —
+    в день выплаты удалением проводки, за прошлую дату сторно-приходом, — а резерв
+    возвращается в активные на её сумму. Выплату, которая уже что-то погасила в чужом
+    учёте (накладные, аренда, депозит, аванс, зарплата), контур не трогает: 409 с
+    указанием, что именно держит и где это распроводится."""
+    try:
+        return await void_allocation_payout(
+            session, transaction_id=transaction_id, actor_user_id=actor.user_id
+        )
+    except AllocationPayoutVoidError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @router.post(

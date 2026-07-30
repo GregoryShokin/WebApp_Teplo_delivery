@@ -9,6 +9,9 @@
 - Разрешения на авансы/займы: pending-выдача без проводок и удержаний,
   исполнение админом (проводка + активация датой подтверждения), двусторонняя
   отмена, гонки → конфликты.
+- Отмена ошибочной выплаты резерва (и с Сейфа, и из кассы): деньги снимаются (в день
+  выплаты удалением, задним числом сторно), резерв возвращается в активные; выплату,
+  зацепившую чужой учёт (накладные, зарплатный пул), контур не трогает.
 """
 
 from __future__ import annotations
@@ -28,11 +31,19 @@ from app.models import (
     DdsArticle,
     Employee,
     EmployeePositionAssignment,
+    InvoicePaymentAllocation,
+    PayrollPeriod,
     PayrollRate,
+    PayrollRun,
     SafeAllocation,
     SalaryAdvance,
     SalaryAdvanceBankDraft,
+    SupplierInvoice,
     Wallet,
+)
+from app.services.banking.allocation_payout_void import (
+    AllocationPayoutVoidError,
+    void_allocation_payout,
 )
 from app.services.banking.classifier import SAFE_WALLET_CODE
 from app.services.banking.safe_allocations import (
@@ -600,3 +611,203 @@ async def test_pending_payload_mixes_targets_and_permissions(
         assert target["counterparty_name"] is not None
         assert [perm["id"] for perm in payload["permissions"]] == [advance.id]
         assert payload["targets_total"] == pytest.approx(2500.0)
+
+
+# --------------------------------------------------------------------------- #
+# Отмена ошибочной выплаты резерва (Сейф и касса)                              #
+# --------------------------------------------------------------------------- #
+async def test_void_returns_money_and_reopens_reserve_in_kassa(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отмена выдачи целёвки в день выплаты: расход исчезает, резерв снова «К выдаче»."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="2500.00")
+        await transfer_allocation_to_kassa(session, allocation, operation_date=kassa_today())
+        transaction_id = await pay_kassa_target(
+            session, allocation_id=allocation.id, amount=Decimal("2500.00")
+        )
+        await session.refresh(allocation)
+        assert allocation.status == "paid"
+
+        result = await void_allocation_payout(session, transaction_id=transaction_id)
+
+        assert result["mode"] == "deleted"
+        assert result["amount"] == pytest.approx(2500.0)
+        assert await session.get(CashflowTransaction, transaction_id) is None
+        await session.refresh(allocation)
+        assert allocation.status == "reserved"
+        assert Decimal(str(allocation.amount_paid)) == Decimal("0.00")
+        # Резерв снова виден в «К выдаче» — деньги можно выдать заново.
+        payload = await kassa_pending_payload(session)
+        assert [target["id"] for target in payload["targets"]] == [allocation.id]
+
+
+async def test_void_of_backdated_safe_payout_writes_reversal(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплата с Сейфа за прошлую дату отменяется сторно-приходом, исходный расход цел."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="4000.00")
+        transaction_id = await pay_allocation(
+            session, allocation, amount=Decimal("4000.00"), operation_date=date(2026, 7, 1)
+        )
+        await session.commit()
+
+        result = await void_allocation_payout(session, transaction_id=transaction_id)
+
+        assert result["mode"] == "reversed"
+        original = await session.get(CashflowTransaction, transaction_id)
+        assert original is not None and original.direction == "out"
+        reversal = await session.get(CashflowTransaction, result["reversal_transaction_id"])
+        assert reversal is not None
+        assert reversal.direction == "in"
+        assert Decimal(str(reversal.amount)) == Decimal("4000.00")
+        assert reversal.wallet_id == original.wallet_id
+        assert reversal.operation_date == kassa_today()
+        await session.refresh(allocation)
+        assert allocation.status == "reserved"
+
+
+async def test_void_of_partial_payout_leaves_other_payments(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Отменяется одна выплата, а не резерв: вторая частичная оплата остаётся в силе."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="5000.00")
+        first = await pay_allocation(
+            session, allocation, amount=Decimal("2000.00"), operation_date=date(2026, 7, 1)
+        )
+        await pay_allocation(
+            session, allocation, amount=Decimal("1000.00"), operation_date=date(2026, 7, 2)
+        )
+        await session.commit()
+        await session.refresh(allocation)
+        assert Decimal(str(allocation.amount_paid)) == Decimal("3000.00")
+
+        await void_allocation_payout(session, transaction_id=first)
+
+        await session.refresh(allocation)
+        # Снята ровно отменённая выплата; вторая оплата на месте.
+        assert Decimal(str(allocation.amount_paid)) == Decimal("1000.00")
+        assert allocation.status == "partially_paid"
+
+
+async def test_void_refuses_payroll_pool_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Зарплатный пул-резерв отсюда не отменяется — у него своё окно ведомости."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="1500.00")
+        transaction_id = await pay_allocation(
+            session, allocation, amount=Decimal("1500.00"), operation_date=date(2026, 7, 1)
+        )
+        period = PayrollPeriod(
+            period_type="week",
+            start_date=date(2026, 7, 7),
+            end_date=date(2026, 7, 13),
+            payroll_date=date(2026, 7, 14),
+            status="open",
+        )
+        session.add(period)
+        await session.flush()
+        run = PayrollRun(
+            period_id=period.id,
+            started_at=datetime(2026, 7, 14, tzinfo=UTC),
+            status="running",
+            blocking_issues=[],
+            summary={},
+        )
+        session.add(run)
+        await session.flush()
+        allocation.source_run_id = run.id
+        await session.commit()
+
+        with pytest.raises(AllocationPayoutVoidError, match="окне ведомости"):
+            await void_allocation_payout(session, transaction_id=transaction_id)
+        assert await session.get(CashflowTransaction, transaction_id) is not None
+
+
+async def test_void_refuses_when_payout_settled_invoices(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выплата, погасившая документы поставщика, не отменяется молча.
+
+    Иначе деньги вернулись бы, а накладная осталась «оплаченной» — ровно то расхождение,
+    из-за которого этот контур и чинился.
+    """
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="3000.00")
+        transaction_id = await pay_allocation(
+            session, allocation, amount=Decimal("3000.00"), operation_date=date(2026, 7, 1)
+        )
+        invoice = SupplierInvoice(
+            counterparty_id=allocation.counterparty_id,
+            source="manual",
+            direction="payable",
+            doc_kind="closing",
+            operational_scope="unknown",
+            activation_status="active",
+            number=f"Ч-{uuid.uuid4().hex[:5]}",
+            amount=Decimal("3000.00"),
+            staff_amount=Decimal("0.00"),
+            vat_total=Decimal("0.00"),
+            vat_breakdown={},
+            line_items=[],
+            invoice_date=date(2026, 7, 1),
+            payment_status="paid",
+        )
+        session.add(invoice)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=transaction_id,
+                amount=Decimal("3000.00"),
+            )
+        )
+        await session.commit()
+
+        with pytest.raises(AllocationPayoutVoidError, match="документы поставщика"):
+            await void_allocation_payout(session, transaction_id=transaction_id)
+        assert await session.get(CashflowTransaction, transaction_id) is not None
+
+
+async def test_void_refuses_reversal_row(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сторно уже отменённой выплаты повторно не отменяется."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="1200.00")
+        transaction_id = await pay_allocation(
+            session, allocation, amount=Decimal("1200.00"), operation_date=date(2026, 7, 1)
+        )
+        await session.commit()
+        result = await void_allocation_payout(session, transaction_id=transaction_id)
+
+        with pytest.raises(AllocationPayoutVoidError, match="сторно"):
+            await void_allocation_payout(
+                session, transaction_id=result["reversal_transaction_id"]
+            )
+
+
+async def test_kassa_journal_marks_target_payout_voidable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """В кассовом журнале выдача целёвки не «editable», а «voidable», с назначением резерва."""
+    async with async_session_factory() as session:
+        allocation = await _safe_target(session, amount="2500.00")
+        await transfer_allocation_to_kassa(session, allocation, operation_date=kassa_today())
+        transaction_id = await pay_kassa_target(
+            session, allocation_id=allocation.id, amount=Decimal("2500.00")
+        )
+
+        journal = await kassa_journal(
+            session, date_from=date(2026, 1, 1), date_to=date(2026, 12, 31), actor_user_id=None
+        )
+        row = next(item for item in journal["items"] if item["id"] == transaction_id)
+        assert row["kassa_flow"] == "target_payout"
+        assert row["editable"] is False
+        assert row["voidable"] is True
+        assert row["source_id"] == allocation.id
+        assert row["counterparty_label"] == allocation.purpose

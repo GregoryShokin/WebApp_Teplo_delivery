@@ -261,7 +261,12 @@ export type KassaPayoutFlow =
 
 // Маршрут строки журнала: выплаты + приход по пресету («Внесение в кассу») + посменная
 // выдача внештатнику (её не правят, а отменяют целиком — см. voidable).
-export type KassaJournalFlow = KassaPayoutFlow | "payin" | "freelancer_shift";
+export type KassaJournalFlow =
+  | KassaPayoutFlow
+  | "payin"
+  | "freelancer_shift"
+  // Выдача целёвки из кассы: не правится (сумма и статья — от резерва), только отменяется.
+  | "target_payout";
 
 export type KassaJournalItem = {
   id: string;

@@ -464,6 +464,45 @@ def test_freelancer_shift_void_is_separate_from_payout(
     assert allowed_void.status_code == 409
 
 
+def test_allocation_payout_void_is_separate_from_paying(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплатить резерв и отменить уже выплаченное — разные права.
+
+    Оплату проводит тот, кто ведёт Сейф (``finance.safe.confirm_paid``), а откат уже
+    отданных денег — решение уровня владельца: ``finance.allocation_payout.void``.
+    """
+    pay_headers = _headers_for_permissions(
+        async_session_factory,
+        "safe-pay-only@test.local",
+        ["finance.safe.confirm_paid"],
+    )
+    void_headers = _headers_for_permissions(
+        async_session_factory,
+        "safe-void-only@test.local",
+        ["finance.allocation_payout.void"],
+    )
+    transaction_id = uuid.uuid4()
+
+    denied_void = client.post(
+        f"/api/v1/dds/allocation-payouts/{transaction_id}/void", headers=pay_headers
+    )
+    denied_pay = client.post(
+        f"/api/v1/dds/allocations/{uuid.uuid4()}/pay",
+        json={"amount": "100.00"},
+        headers=void_headers,
+    )
+    allowed_void = client.post(
+        f"/api/v1/dds/allocation-payouts/{transaction_id}/void", headers=void_headers
+    )
+
+    assert denied_void.status_code == 403
+    assert denied_pay.status_code == 403
+    # Право есть — гейт пройден; дальше отвечает бизнес-логика (такой операции нет).
+    assert allowed_void.status_code == 409
+
+
 def _headers_for_permissions(
     session_factory: async_sessionmaker[AsyncSession],
     email: str,
