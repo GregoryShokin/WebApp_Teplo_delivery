@@ -213,6 +213,76 @@ class AssetCashflowLink(Base):
     )
 
 
+class AssetConditionReport(Base):
+    """Сообщение менеджера о состоянии объекта и предложение модели по переоценке.
+
+    Отдельной таблицей, а не полем в карточке: ``note`` и ``review_reason`` одиночные, второе
+    сообщение затёрло бы первое. А история состояния и есть главная ценность — по ней видно,
+    что техника ломается третий раз за полгода и её пора менять, а не чинить.
+
+    Предложение модели хранится как ГИПОТЕЗА, а не факт: с уверенностью, обоснованием, именем
+    модели и временем. Без этого следа нельзя ни проверить решение через полгода, ни объяснить,
+    почему стоимость упала на сорок тысяч.
+
+    Порога автоприменения НЕТ сознательно: стоимость актива меняет только человек, какой бы
+    уверенной модель ни была.
+    """
+
+    __tablename__ = "asset_condition_report"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','proposed','applied','dismissed','failed')",
+            name="ck_asset_condition_report_status",
+        ),
+        CheckConstraint(
+            "proposed_cost IS NULL OR proposed_cost >= 0",
+            name="ck_asset_condition_report_cost_non_negative",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_asset_condition_report_confidence",
+        ),
+        Index("ix_asset_condition_report_asset", "asset_id", "created_at"),
+        Index("ix_asset_condition_report_status", "status"),
+        # Одна необработанная запись на объект: двойное «Сохранить» не должно дать два
+        # параллельных вызова модели по одному поводу.
+        Index(
+            "uq_asset_condition_report_pending",
+            "asset_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("fixed_asset.id", ondelete="CASCADE"), nullable=False
+    )
+    # Дословно то, что написал менеджер: это и вход модели, и свидетельство для владельца.
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # Стоимость на момент обращения — чтобы предложение читалось и через полгода.
+    cost_before: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    proposed_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    proposed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reported_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DepreciationEntry(Base):
     """Помесячное начисление амортизации по объекту.
 

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models.tax import TaxDocumentIntake
+from app.services.anthropic_client import LlmCallError, call_failure_reason, call_tool
 from app.services.taxes.document_ingest import REVIEW_TAX_KINDS, set_intake_review
 from app.services.taxes.document_parser import _docx_text
 
@@ -170,68 +171,29 @@ _AUDIT_TOOL = {
 async def _call_claude(
     settings: Settings, *, tool: dict, prompt: str, max_tokens: int = 2048
 ) -> dict:
-    """Один структурированный вызов Claude (forced tool_use). Бросает TaxAiError."""
-    if not settings.anthropic_api_key:
-        raise TaxAiError(
-            "ИИ-ревьюер не настроен: добавьте ANTHROPIC_API_KEY в окружение API."
-        )
-    try:
-        from anthropic import AsyncAnthropic
-    except Exception as exc:  # noqa: BLE001 - до пересборки образа пакета может не быть
-        raise TaxAiError("Пакет anthropic недоступен в этом окружении.") from exc
+    """Один структурированный вызов Claude (forced tool_use). Бросает TaxAiError.
 
-    # Базовый URL SDK берёт из ANTHROPIC_BASE_URL сам (на проде это адрес релея —
-    # Anthropic блокирует регион сервера). Секрет релея шлём заголовком: ключ остаётся у нас,
-    # релей его не хранит и без секрета никого не пускает.
-    client = AsyncAnthropic(
-        api_key=settings.anthropic_api_key,
-        timeout=settings.anthropic_timeout_seconds,
-        max_retries=settings.anthropic_max_retries,
-        default_headers=(
-            {"x-relay-secret": settings.anthropic_relay_secret}
-            if settings.anthropic_relay_secret
-            else None
-        ),
-    )
-    try:
-        message = await client.messages.create(
-            model=settings.tax_ai_reviewer_model,
-            max_tokens=max_tokens,
-            system=_SYSTEM,
-            tools=[tool],
-            tool_choice={"type": "tool", "name": str(tool["name"])},
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except Exception as exc:  # noqa: BLE001 - сеть/лимиты не должны ронять страницу
-        logger.warning("ИИ-ревьюер: вызов Claude не удался", exc_info=True)
-        raise TaxAiError(_call_failure_reason(exc)) from exc
-
-    for block in message.content:
-        if getattr(block, "type", None) == "tool_use":
-            return dict(block.input)  # type: ignore[arg-type]
-    raise TaxAiError("Модель не вернула структурированный ответ.")
-
-
-def _call_failure_reason(exc: Exception) -> str:
-    """Человеческая причина отказа вместо сырого текста исключения.
-
-    Отдельно ловим региональную блокировку: с российского IP Anthropic отвечает
-    403 «Request not allowed» ДАЖЕ на верный ключ (проверено на проде 27.07.2026 — 403
-    приходит и на заведомо неправильный ключ, то есть дело не в нём). Без этого владелец
-    видел «Не удалось получить ответ модели: Error code: 403…» и шёл искать проблему в ключе.
+    Сам вызов живёт в общем модуле ``app.services.anthropic_client``: раньше блок создания
+    клиента был скопирован сюда и в распознавание счетов ДОСЛОВНО, байт в байт. Цена
+    расхождения высокая — клиент без заголовка релея на проде получает 403, и владелец идёт
+    искать проблему в ключе. Здесь остаётся только перевод ошибки в доменную.
     """
-    text = str(exc)
-    if "403" in text and "not allowed" in text.casefold():
-        return (
-            "Anthropic не обслуживает запросы с IP этого сервера (403). Ключ тут ни при чём: "
-            "нужен выход через разрешённый регион — задайте HTTPS_PROXY в окружении API "
-            "либо запускайте ИИ-разбор с машины, у которой доступ есть."
+    try:
+        return await call_tool(
+            settings,
+            tool=tool,
+            prompt=prompt,
+            model=settings.tax_ai_reviewer_model,
+            system=_SYSTEM,
+            max_tokens=max_tokens,
         )
-    if "401" in text or "authentication" in text.casefold():
-        return "Ключ ANTHROPIC_API_KEY не принят (401): проверьте значение и срок действия."
-    if "429" in text:
-        return "Лимит запросов к модели исчерпан (429) — попробуйте позже."
-    return f"Не удалось получить ответ модели: {exc}"
+    except LlmCallError as exc:
+        logger.warning("ИИ-ревьюер: вызов Claude не удался", exc_info=True)
+        raise TaxAiError(str(exc)) from exc
+
+
+# Причина отказа общая для всех сервисов; имя оставлено прежним — на него ссылаются тесты.
+_call_failure_reason = call_failure_reason
 
 
 def _extract_text(intake: TaxDocumentIntake) -> str | None:
@@ -430,8 +392,7 @@ def _fmt_diff(documented: Decimal | None, calculated: Decimal | None) -> str | N
         return "документ равен расчёту"
     if diff > 0:
         return (
-            f"документ БОЛЬШЕ расчёта на {diff} ₽ — безопасная сторона "
-            f"(переплата зачтётся на ЕНС)"
+            f"документ БОЛЬШЕ расчёта на {diff} ₽ — безопасная сторона (переплата зачтётся на ЕНС)"
         )
     return f"документ МЕНЬШЕ расчёта на {-diff} ₽ — сторона риска недоплаты"
 
@@ -480,9 +441,7 @@ async def _build_snapshot(session: AsyncSession) -> str:
 
     lines.append("\n## Документы по статусам:")
     rows = (
-        await session.execute(
-            select(TaxDocumentIntake.status, TaxDocumentIntake.filename)
-        )
+        await session.execute(select(TaxDocumentIntake.status, TaxDocumentIntake.filename))
     ).all()
     by_status: dict[str, list[str]] = {}
     for status, filename in rows:
@@ -511,9 +470,7 @@ async def review_all(
     ).all()
     documents: list[AiDocumentReview] = []
     for intake in pending:
-        documents.append(
-            await review_document(session, intake, settings=settings, call=call)
-        )
+        documents.append(await review_document(session, intake, settings=settings, call=call))
 
     snapshot = await _build_snapshot(session)
     payload = await call(

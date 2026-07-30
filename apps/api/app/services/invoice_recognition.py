@@ -25,6 +25,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from app.core.config import Settings
+from app.services.anthropic_client import LlmCallError, call_tool
 
 logger = logging.getLogger(__name__)
 
@@ -749,57 +750,33 @@ _LLM_PROMPT = (
 async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice | None:
     """Распознать счёт по самому PDF через Claude (structured tool-output). None — если ключа
     нет, пакет недоступен или модель не сочла документ счётом."""
-    if not settings.anthropic_api_key:
-        return None
-    try:
-        from anthropic import AsyncAnthropic
-    except Exception:  # noqa: BLE001 - до пересборки образа пакета может не быть
-        logger.warning("anthropic SDK недоступен — LLM-фолбэк выключен", exc_info=True)
-        return None
-    # Через тот же релей, что и ИИ-ревьюер налогов: с прод-IP Anthropic отдаёт 403 по региону.
-    client = AsyncAnthropic(
-        api_key=settings.anthropic_api_key,
-        timeout=settings.anthropic_timeout_seconds,
-        max_retries=settings.anthropic_max_retries,
-        default_headers=(
-            {"x-relay-secret": settings.anthropic_relay_secret}
-            if settings.anthropic_relay_secret
-            else None
-        ),
-    )
+    # Клиент и релей — в общем модуле: раньше этот блок был скопирован сюда из ИИ-ревьюера
+    # налогов дословно, байт в байт. Здесь остаётся только МЯГКИЙ отказ: распознавание по
+    # модели — второй слой поверх детерминированного парсера, и его падение не должно валить
+    # весь проход почты. Поэтому любая беда — просто None, а не исключение наружу.
     b64 = base64.standard_b64encode(pdf).decode("ascii")
     try:
-        message = await client.messages.create(
+        payload: dict[str, object] | None = await call_tool(
+            settings,
+            tool=_LLM_TOOL,
             model=settings.invoice_recognition_model,
             max_tokens=1024,
-            tools=[_LLM_TOOL],
-            tool_choice={"type": "tool", "name": "record_invoice"},
-            messages=[
+            content=[
                 {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": b64,
-                            },
-                        },
-                        {"type": "text", "text": _LLM_PROMPT},
-                    ],
-                }
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": b64,
+                    },
+                },
+                {"type": "text", "text": _LLM_PROMPT},
             ],
         )
-    except Exception:  # noqa: BLE001 - сетевая/лимитная ошибка не должна валить весь проход
+    except LlmCallError:
         logger.warning("LLM-распознавание не удалось", exc_info=True)
         return None
 
-    payload: dict[str, object] | None = None
-    for block in message.content:
-        if getattr(block, "type", None) == "tool_use":
-            payload = dict(block.input)  # type: ignore[arg-type]
-            break
     if not payload or not payload.get("is_invoice"):
         return None
 

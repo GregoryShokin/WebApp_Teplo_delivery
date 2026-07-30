@@ -744,6 +744,35 @@ async def poll_mail_invoices() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    minutes=get_settings().fixed_asset_revaluation_interval_minutes,
+    id="assess_asset_condition_reports",
+    max_instances=1,
+    coalesce=True,
+)
+async def assess_asset_condition_reports() -> None:
+    """Переоценка ОС: разобрать сообщения менеджеров о состоянии объектов.
+
+    Менеджер написал в карточке «сломался компрессор» и ждёт ответа — отсюда короткий
+    интервал, в отличие от почтового прохода. Стоимость сама не меняется: модель предлагает,
+    решение принимает владелец в карточке объекта.
+    """
+    settings = get_settings()
+    if not settings.fixed_asset_revaluation_enabled:
+        return
+    from app.services.asset_revaluation import process_pending
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await process_pending(session, settings=settings)
+        except Exception:  # noqa: BLE001 - проход не должен ронять планировщик
+            logger.warning("assess_asset_condition_reports: проход упал", exc_info=True)
+            return
+    if result.get("processed"):
+        logger.info("assess_asset_condition_reports: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=get_settings().tax_document_poll_interval_minutes,
     id="poll_tax_documents",
     max_instances=1,

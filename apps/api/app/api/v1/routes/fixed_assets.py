@@ -21,13 +21,21 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
-from app.models import AssetCategory, DepreciationEntry, FixedAsset, Location
-from app.services import asset_analytics
+from app.models import (
+    AssetCategory,
+    AssetConditionReport,
+    DepreciationEntry,
+    FixedAsset,
+    Location,
+)
+from app.services import asset_analytics, asset_revaluation
 from app.services import fixed_assets as service
+from app.services.anthropic_client import LlmCallError
 
 router = APIRouter()
 ASSETS_READ_ACCESS = (Depends(require_permission("accounting.fixed_assets.read")),)
@@ -124,8 +132,39 @@ class DepreciationEntryRead(BaseModel):
     note: str | None
 
 
+class ConditionReportRead(BaseModel):
+    """Сообщение менеджера о состоянии объекта и предложение модели по нему."""
+
+    id: uuid.UUID
+    message: str
+    status: Literal["pending", "proposed", "applied", "dismissed", "failed"]
+    cost_before: Decimal
+    proposed_cost: Decimal | None
+    proposed_reason: str | None
+    # Уверенность модели показывается, но НЕ управляет применением: стоимость актива меняет
+    # человек, какой бы уверенной модель ни была.
+    confidence: Decimal | None
+    model: str | None
+    error: str | None
+    created_at: date
+
+
+class ConditionReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=3, max_length=4000)
+
+
+class ConditionDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accept: bool
+
+
 class FixedAssetDetailRead(FixedAssetRead):
     entries: list[DepreciationEntryRead]
+    # История сообщений о состоянии с предложениями модели — свежие первыми.
+    condition_reports: list[ConditionReportRead] = Field(default_factory=list)
 
 
 class FixedAssetCreateRequest(BaseModel):
@@ -470,6 +509,13 @@ async def get_asset(
             .order_by(DepreciationEntry.period_month.desc())
         )
     ).all()
+    reports = (
+        await session.scalars(
+            select(AssetConditionReport)
+            .where(AssetConditionReport.asset_id == asset.id)
+            .order_by(AssetConditionReport.created_at.desc())
+        )
+    ).all()
     base = _payload(
         asset,
         category=category,
@@ -489,6 +535,7 @@ async def get_asset(
             )
             for entry in entries
         ],
+        condition_reports=[_report_payload(report) for report in reports],
     )
 
 
@@ -615,6 +662,95 @@ async def correct_depreciation_endpoint(
         corrected_at=entry.corrected_at.date() if entry.corrected_at else None,
         note=entry.note,
     )
+
+
+def _report_payload(report: AssetConditionReport) -> ConditionReportRead:
+    return ConditionReportRead(
+        id=report.id,
+        message=report.message,
+        status=report.status,  # type: ignore[arg-type]
+        cost_before=Decimal(str(report.cost_before)),
+        proposed_cost=(
+            Decimal(str(report.proposed_cost)) if report.proposed_cost is not None else None
+        ),
+        proposed_reason=report.proposed_reason,
+        confidence=Decimal(str(report.confidence)) if report.confidence is not None else None,
+        model=report.model,
+        error=report.error,
+        created_at=report.created_at.date(),
+    )
+
+
+@router.post(
+    "/{asset_id}/condition",
+    response_model=ConditionReportRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=ASSETS_EDIT_ACCESS,
+)
+async def report_condition(
+    asset_id: uuid.UUID,
+    payload: ConditionReportRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ConditionReportRead:
+    """Менеджер пишет, что случилось с объектом. Оценку даст модель — в фоне.
+
+    Отвечаем 202 и записью в статусе «ожидает»: вызов модели идёт до двух минут, держать на
+    нём HTTP-запрос нельзя. Стоимость сама не изменится ни при каком ответе — предложение
+    ждёт решения владельца.
+    """
+    await _asset_or_404(session, asset_id)
+    try:
+        report = await asset_revaluation.submit_report(
+            session, asset_id=asset_id, message=payload.message, user_id=actor.user_id
+        )
+    except LlmCallError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except IntegrityError as exc:
+        # Частичный уникальный индекс: одна необработанная запись на объект. Двойное
+        # «Сохранить» не должно дать два платных вызова модели по одному поводу.
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="По этому объекту уже есть сообщение в работе — дождитесь оценки",
+        ) from exc
+    await session.commit()
+    await session.refresh(report)
+    return _report_payload(report)
+
+
+@router.post(
+    "/{asset_id}/condition/{report_id}/decision",
+    response_model=ConditionReportRead,
+    dependencies=ASSETS_EDIT_ACCESS,
+)
+async def decide_condition(
+    asset_id: uuid.UUID,
+    report_id: uuid.UUID,
+    payload: ConditionDecisionRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ConditionReportRead:
+    """Решение владельца по предложению модели: применить или отклонить.
+
+    Автоприменения нет ни при какой уверенности модели — стоимость актива меняет человек.
+    """
+    report = await session.get(AssetConditionReport, report_id)
+    if report is None or report.asset_id != asset_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Обращение не найдено")
+    try:
+        await asset_revaluation.decide_report(
+            session, report=report, accept=payload.accept, user_id=actor.user_id
+        )
+    except LlmCallError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(report)
+    return _report_payload(report)
 
 
 @router.post(

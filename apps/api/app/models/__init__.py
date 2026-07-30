@@ -88,6 +88,7 @@ from app.models.employee_position_assignment import EmployeePositionAssignment
 from app.models.fixed_asset import (
     AssetCashflowLink,
     AssetCategory,
+    AssetConditionReport,
     AssetMovement,
     DepreciationEntry,
     FixedAsset,
@@ -175,6 +176,7 @@ __all__ = [
     "AppSettingHistory",
     "AssetCashflowLink",
     "AssetCategory",
+    "AssetConditionReport",
     "AssetMovement",
     "AttendanceEntry",
     "BankOperation",
