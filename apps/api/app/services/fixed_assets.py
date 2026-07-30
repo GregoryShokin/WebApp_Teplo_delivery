@@ -9,16 +9,29 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AssetCategory, DepreciationEntry, FixedAsset
-from app.models.fixed_asset import UPGRADE_SHARE_THRESHOLD
+from app.models import AppSetting, AssetCategory, DepreciationEntry, FixedAsset
+from app.models.fixed_asset import FIXED_ASSET_THRESHOLD, UPGRADE_SHARE_THRESHOLD
 
 # Объект, выбывший из учёта, больше не амортизируется.
 INACTIVE_STATUSES = ("disposed", "sold")
+
+# Настройки на странице «Настройки» → «Учёт ОС». Владелец правит их сам, поэтому расчёт
+# обязан спрашивать базу, а не константу: иначе цифра в интерфейсе и цифра в расчёте разъедутся.
+CAPITALIZATION_THRESHOLD_KEY = "fixed_assets.capitalization_threshold_rub"
+UPGRADE_SHARE_KEY = "fixed_assets.repair_modernization_threshold_ratio"
+
+# Серия инвентарных номеров. Сквозная, без кодирования категории или локации: категория
+# карточки может смениться, а номер на объекте наклеен один раз и меняться не должен.
+INVENTORY_NUMBER_PREFIX = "ОС-"
+INVENTORY_NUMBER_WIDTH = 4
+# Сколько раз пробуем подобрать свободный номер, если гонка увела предыдущий.
+_NUMBER_ATTEMPTS = 5
 
 
 class FixedAssetError(Exception):
@@ -31,6 +44,45 @@ def _money(value: object) -> Decimal:
 
 def month_start(value: date) -> date:
     return value.replace(day=1)
+
+
+async def _setting_decimal(session: AsyncSession, key: str, default: Decimal) -> Decimal:
+    """Числовая настройка из ``app_setting``; отсутствует или испорчена — значение по умолчанию.
+
+    Падать здесь нельзя: пустая настройка не должна ронять начисление амортизации или разбор
+    платежа. Умолчание — та же цифра, что в константе модели, поэтому поведение предсказуемо
+    и на пустой базе (тесты, свежий стенд).
+    """
+    raw = await session.scalar(select(AppSetting.value).where(AppSetting.key == key))
+    if raw is None or isinstance(raw, bool):
+        return default
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, TypeError, ValueError):
+        return default
+
+
+async def capitalization_threshold(session: AsyncSession) -> Decimal:
+    """Порог признания основным средством."""
+    return await _setting_decimal(session, CAPITALIZATION_THRESHOLD_KEY, FIXED_ASSET_THRESHOLD)
+
+
+async def upgrade_share_threshold(session: AsyncSession) -> Decimal:
+    """Доля от первоначальной стоимости, разделяющая ремонт и модернизацию."""
+    return await _setting_decimal(session, UPGRADE_SHARE_KEY, UPGRADE_SHARE_THRESHOLD)
+
+
+async def is_fixed_asset_purchase(session: AsyncSession, amount: Decimal) -> bool:
+    """Покупка признаётся основным средством, а не расходом периода.
+
+    Правило детерминированное, без модели: сравнение с порогом и ничего больше (решение
+    владельца 2026-07-30 — классификация по правилам). Граница ВКЛЮЧИТЕЛЬНАЯ: ровно 10 000 ₽
+    это уже основное средство.
+
+    Порог сравнивается со стоимостью ЕДИНИЦЫ, а не суммой платежа: семь стульев по 3 000 ₽ —
+    это семь вещей по 3 000, а не одна за 21 000. Иначе порог обходится закупкой пачкой.
+    """
+    return _money(amount) >= await capitalization_threshold(session)
 
 
 async def resolve_useful_life(session: AsyncSession, asset: FixedAsset) -> int | None:
@@ -117,21 +169,126 @@ async def accrue_depreciation(
     return created
 
 
-def classify_asset_expense(initial_cost: Decimal, expense_amount: Decimal) -> str:
+def classify_asset_expense(
+    initial_cost: Decimal, expense_amount: Decimal, *, share_threshold: Decimal | None = None
+) -> str:
     """Ремонт, модернизация или решение владельца — по доле расхода от первоначальной стоимости.
 
     Правило владельца: меньше 15% — ремонт (расход периода), больше 15% — модернизация
     (капитализируется и меняет базу амортизации), РОВНО 15% — спорная зона, решает владелец.
+
+    ``share_threshold`` даёт вызывающему подставить долю из настроек владельца
+    (``upgrade_share_threshold``). Функция остаётся синхронной и без сессии: она чистая
+    арифметика, и это позволяет проверять правило без базы.
     """
+    threshold = UPGRADE_SHARE_THRESHOLD if share_threshold is None else share_threshold
     base = _money(initial_cost)
     if base <= 0:
         return "requires_owner_review"
     # Долю НЕ округляем: 14 999 из 100 000 — это 0,14999, честный ремонт, а любое округление
     # до сотых/тысячных превратило бы его ровно в 15% и увело на разбор владельцу.
     share = _money(expense_amount) / base
-    if share == UPGRADE_SHARE_THRESHOLD:
+    if share == threshold:
         return "requires_owner_review"
-    return "upgrade" if share > UPGRADE_SHARE_THRESHOLD else "repair"
+    return "upgrade" if share > threshold else "repair"
+
+
+async def next_inventory_number(session: AsyncSession) -> str:
+    """Следующий свободный номер серии «ОС-NNNN».
+
+    Считаем максимум по своей серии и прибавляем единицу. Номера не из серии (наклейки со
+    старых описей вроде «Холодильный стол № 2», ручной ввод) в счёт не идут — иначе чужая
+    нумерация сдвигала бы нашу.
+
+    Это только ПОДСКАЗКА: единственность держит частичный уникальный индекс из ``0221``, а
+    проигранную гонку разруливает ``create_asset``.
+    """
+    numbers = (
+        await session.scalars(
+            select(FixedAsset.inventory_number).where(
+                FixedAsset.inventory_number.like(f"{INVENTORY_NUMBER_PREFIX}%")
+            )
+        )
+    ).all()
+    top = 0
+    for raw in numbers:
+        tail = (raw or "")[len(INVENTORY_NUMBER_PREFIX) :].strip()
+        if tail.isdigit():
+            top = max(top, int(tail))
+    return f"{INVENTORY_NUMBER_PREFIX}{top + 1:0{INVENTORY_NUMBER_WIDTH}d}"
+
+
+async def create_asset(
+    session: AsyncSession,
+    *,
+    name: str,
+    initial_cost: Decimal,
+    category_id: uuid.UUID | None = None,
+    valuation_basis: str = "payment",
+    valued_on: date | None = None,
+    commissioned_on: date | None = None,
+    useful_life_months: int | None = None,
+    status: str = "in_use",
+    location: str | None = None,
+    location_id: uuid.UUID | None = None,
+    brand_model: str | None = None,
+    source_ref: str | None = None,
+    inventory_number: str | None = None,
+    note: str | None = None,
+    review_status: str = "ok",
+    review_reason: str | None = None,
+) -> FixedAsset:
+    """Завести карточку ОС, присвоив инвентарный номер.
+
+    Номер генерируется автоматически (решение владельца 2026-07-30) — на сотрудника его не
+    вешаем. Явный ``inventory_number`` перекрывает генератор: так переносятся объекты с уже
+    наклеенным номером.
+
+    Гонку разбираем ПЕРЕПОДБОРОМ номера, а не переиспользованием чужой строки: номер здесь не
+    личность объекта, а его ярлык. Две карточки, одновременно взявшие «ОС-0007», — это два
+    разных предмета, и второму нужен свой номер, а не первая карточка (поэтому общий
+    ``taxes.concurrency.insert_or_reread``, который возвращает выигравшую строку, тут не подходит).
+    """
+    explicit = (inventory_number or "").strip() or None
+    attempts = 1 if explicit else _NUMBER_ATTEMPTS
+
+    for _ in range(attempts):
+        candidate = explicit or await next_inventory_number(session)
+        asset = FixedAsset(
+            name=name,
+            initial_cost=_money(initial_cost),
+            category_id=category_id,
+            valuation_basis=valuation_basis,
+            valued_on=valued_on,
+            commissioned_on=commissioned_on,
+            useful_life_months=useful_life_months,
+            status=status,
+            location=location,
+            location_id=location_id,
+            brand_model=brand_model,
+            source_ref=source_ref,
+            inventory_number=candidate,
+            note=note,
+            review_status=review_status,
+            review_reason=review_reason,
+        )
+        try:
+            # SAVEPOINT: конфликт по номеру не должен отравлять внешнюю транзакцию —
+            # заливка реестра на 149 карточек не имеет права упасть целиком из-за одной.
+            async with session.begin_nested():
+                session.add(asset)
+                await session.flush()
+        except IntegrityError:
+            if asset in session:
+                session.expunge(asset)
+            if explicit:
+                raise FixedAssetError(
+                    f"Инвентарный номер «{candidate}» уже занят другой карточкой"
+                ) from None
+            continue
+        return asset
+
+    raise FixedAssetError("Не удалось подобрать свободный инвентарный номер — попробуйте ещё раз")
 
 
 async def capitalize_upgrade(

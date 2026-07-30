@@ -1,7 +1,8 @@
 """Учёт основных средств: карточка, категории (СПИ), движения, амортизация.
 
-Методология владельца (см. решения 2026-05-24/25 и 2026-07-19):
-* порог признания ОС — 5 000 ₽;
+Методология владельца (см. решения 2026-05-24/25, 2026-07-19 и 2026-07-30):
+* порог признания ОС — 10 000 ₽ включительно; применяется к покупкам, а не к первичной
+  загрузке реестра инвентаризации 2026 (та ставится на баланс целиком);
 * амортизация — ЕДИНЫЙ линейный помесячный метод для всех категорий, СПИ задаётся категорией и
   может переопределяться в карточке;
 * старт амортизации — с месяца ввода в эксплуатацию (объект «куплен в резерв» начинает позже);
@@ -31,14 +32,19 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
-# Порог признания основным средством: дешевле — расход периода, не карточка.
-FIXED_ASSET_THRESHOLD = Decimal("5000.00")
+# Порог признания основным средством: дешевле — расход периода, не карточка. Граница
+# ВКЛЮЧИТЕЛЬНАЯ: ровно 10 000 ₽ — уже основное средство (решение владельца 2026-07-30).
+# Значение по умолчанию: рабочий источник правды — настройка
+# ``fixed_assets.capitalization_threshold_rub``, её владелец правит на странице «Настройки».
+# Константа отвечает только за случай, когда настройки нет (тесты, пустая база).
+FIXED_ASSET_THRESHOLD = Decimal("10000.00")
 # Доля от первоначальной стоимости, разделяющая ремонт и модернизацию.
 UPGRADE_SHARE_THRESHOLD = Decimal("0.15")
 
@@ -88,10 +94,22 @@ class FixedAsset(Base):
         Index("ix_fixed_asset_status", "status"),
         Index("ix_fixed_asset_review", "review_status"),
         Index("ix_fixed_asset_category", "category_id"),
+        Index("ix_fixed_asset_location", "location_id"),
+        # Частичный: карточка без номера допустима, две карточки с одним номером — нет.
+        # Генератор номеров читает максимум и прибавляет единицу, а такая схема не защищает
+        # от гонки — индекс превращает её в честную ошибку вставки вместо тихого дубля.
+        Index(
+            "uq_fixed_asset_inventory_number",
+            "inventory_number",
+            unique=True,
+            postgresql_where=text("inventory_number IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Опознание объекта при следующем обходе: в реестре инвентаризации заполнено у 76 позиций.
+    brand_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
     inventory_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("asset_category.id", ondelete="SET NULL"), nullable=True
@@ -107,7 +125,16 @@ class FixedAsset(Base):
     # Переопределяет СПИ категории, если задан.
     useful_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="in_use")
+    # Текст источника («Склад (гараж)») — сохраняется как есть, чтобы не терять формулировки
+    # старых описей; ссылка на реестр помещений идёт рядом и служит осью аналитики «где»
+    # (та же, по которой размечены проводки ДДС).
     location: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="SET NULL"), nullable=True
+    )
+    # След до описи и фотографий: «Черникова №33», «Склад №12». Без него после заливки нельзя
+    # доказать, откуда взялась цифра в балансе.
+    source_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Групповые legacy-строки (qty>1), нулевая стоимость, неясная принадлежность — владельцу.
     review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="ok")
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

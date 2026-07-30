@@ -9,14 +9,22 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select
+import pytest
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import AssetCategory, DepreciationEntry, FixedAsset
+from app.models import AppSetting, AssetCategory, DepreciationEntry, FixedAsset
+from app.models.fixed_asset import FIXED_ASSET_THRESHOLD
 from app.services.fixed_assets import (
+    CAPITALIZATION_THRESHOLD_KEY,
+    FixedAssetError,
     accrue_depreciation,
+    capitalization_threshold,
     capitalize_upgrade,
     classify_asset_expense,
+    create_asset,
+    is_fixed_asset_purchase,
+    next_inventory_number,
     residual_value,
 )
 
@@ -217,3 +225,105 @@ async def test_upgrade_capitalizes_and_raises_future_depreciation(
         await session.commit()
         assert entries[0].amount == Decimal("1500.00")
         assert await residual_value(session, asset) == Decimal("177500.00")
+
+
+async def test_inventory_number_is_generated_in_sequence(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Номер присваивается сам и растёт по серии — на сотрудника нумерацию не вешаем."""
+    async with async_session_factory() as session:
+        first = await create_asset(session, name="Печь", initial_cost=Decimal("120000.00"))
+        second = await create_asset(session, name="Стеллаж", initial_cost=Decimal("15000.00"))
+        await session.commit()
+
+        assert first.inventory_number == "ОС-0001"
+        assert second.inventory_number == "ОС-0002"
+
+
+async def test_foreign_numbering_does_not_shift_the_series(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Наклейки со старых описей серию не двигают.
+
+    На холодильниках Черниковой физически наклеены «Холодильный стол № 2» и подобные. Если
+    считать максимум по ним, генератор начал бы выдавать номера из чужой нумерации.
+    """
+    async with async_session_factory() as session:
+        await create_asset(
+            session,
+            name="Стол холодильный",
+            initial_cost=Decimal("60000.00"),
+            inventory_number="Холодильный стол № 2",
+        )
+        await session.commit()
+
+        assert await next_inventory_number(session) == "ОС-0001"
+
+
+async def test_taken_inventory_number_is_reported_not_silently_reused(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явно заданный занятый номер — ошибка, а не тихий дубль на двух разных предметах."""
+    async with async_session_factory() as session:
+        await create_asset(
+            session, name="Печь", initial_cost=Decimal("120000.00"), inventory_number="ОС-0007"
+        )
+        await session.commit()
+
+        with pytest.raises(FixedAssetError):
+            await create_asset(
+                session,
+                name="Другая печь",
+                initial_cost=Decimal("90000.00"),
+                inventory_number="ОС-0007",
+            )
+
+        # Внешняя транзакция цела — конфликт заперт в SAVEPOINT. Это и есть смысл вложенной
+        # транзакции: заливка реестра на 149 карточек не должна падать целиком из-за одной.
+        nxt = await create_asset(session, name="Стеллаж", initial_cost=Decimal("15000.00"))
+        await session.commit()
+        assert nxt.inventory_number == "ОС-0008"
+
+
+async def test_recognition_threshold_boundary_is_inclusive(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ровно 10 000 ₽ — уже основное средство (решение владельца 2026-07-30)."""
+    async with async_session_factory() as session:
+        assert await capitalization_threshold(session) == Decimal("10000.00")
+        assert await is_fixed_asset_purchase(session, Decimal("10000.00")) is True
+        assert await is_fixed_asset_purchase(session, Decimal("9999.99")) is False
+        assert await is_fixed_asset_purchase(session, Decimal("10000.01")) is True
+
+
+async def test_threshold_follows_owner_setting_not_the_constant(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Владелец меняет порог на странице «Настройки» — расчёт обязан пойти за ним.
+
+    Порог жил в двух местах сразу: константой в модели и настройкой в базе. Пока код читал
+    константу, правка в интерфейсе не меняла ничего, и два источника расходились молча.
+    """
+    async with async_session_factory() as session:
+        await session.execute(
+            update(AppSetting)
+            .where(AppSetting.key == CAPITALIZATION_THRESHOLD_KEY)
+            .values(value=50000)
+        )
+        await session.commit()
+
+        assert await capitalization_threshold(session) == Decimal("50000")
+        assert await is_fixed_asset_purchase(session, Decimal("20000.00")) is False
+
+
+async def test_threshold_falls_back_to_constant_when_setting_is_missing(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Без настройки правило не падает, а берёт умолчание — пустая база не ломает разбор платежа."""
+    async with async_session_factory() as session:
+        await session.execute(
+            delete(AppSetting).where(AppSetting.key == CAPITALIZATION_THRESHOLD_KEY)
+        )
+        await session.commit()
+
+        assert await capitalization_threshold(session) == FIXED_ASSET_THRESHOLD
