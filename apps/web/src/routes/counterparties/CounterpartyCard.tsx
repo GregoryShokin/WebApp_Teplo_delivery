@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LoaderCircle, Trash2 } from "lucide-react";
+import { LoaderCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -38,6 +38,7 @@ import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 
 import { BarterSection } from "./BarterSection";
 import { LeasedLocationsSection } from "./LeasedLocationsSection";
+import { RequisitesHistoryButton } from "./RequisitesHistoryButton";
 import {
   addCollectionSource,
   addRoutingRule,
@@ -48,7 +49,6 @@ import {
   getCounterpartyCard,
   getMerchantRules,
   getRegistry,
-  getRequisitesSuggestion,
   setKassaEnabled,
   setRequisites,
   unarchiveCounterparty,
@@ -556,23 +556,6 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [card.counterparty_id]);
 
-  const suggestionMutation = useMutation({
-    mutationFn: () => getRequisitesSuggestion(card.counterparty_id),
-    onSuccess: (suggestion) => {
-      setValues((prev) => {
-        const next = { ...prev };
-        COUNTERPARTY_REQUISITE_FIELDS.forEach(({ key }) => {
-          if (suggestion[key] != null) {
-            next[key] = String(suggestion[key]);
-          }
-        });
-        return next;
-      });
-      toast.success("Реквизиты подтянуты из истории платежей — проверьте и подтвердите");
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Нет данных в истории платежей")),
-  });
-
   const saveMutation = useMutation({
     mutationFn: () => {
       const requisites: Record<string, string> = {};
@@ -647,14 +630,22 @@ function RequisitesSection({ card, canAdmin }: { card: CardData; canAdmin: boole
       </div>
       {canAdmin ? (
         <div className="flex flex-wrap items-center gap-4">
-          <Button
-            variant="outline"
-            disabled={suggestionMutation.isPending}
-            onClick={() => suggestionMutation.mutate()}
-          >
-            <Download size={16} aria-hidden="true" />
-            Подтянуть из истории
-          </Button>
+          <RequisitesHistoryButton
+            label="Подтянуть из истории"
+            query={card.inn || card.name}
+            ignoreCounterpartyId={card.counterparty_id}
+            onPick={(found) =>
+              setValues((prev) => {
+                const next = { ...prev };
+                COUNTERPARTY_REQUISITE_FIELDS.forEach(({ key }) => {
+                  if (found[key]) {
+                    next[key] = found[key];
+                  }
+                });
+                return next;
+              })
+            }
+          />
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={verified} onCheckedChange={setVerified} />
             Реквизиты проверены

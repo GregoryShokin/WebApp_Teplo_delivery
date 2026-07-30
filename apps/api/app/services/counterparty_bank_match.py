@@ -36,9 +36,13 @@ from app.services.counterparty_matching import (
     _recompute_status,
     payment_allocated_amount,
 )
+from app.services.counterparty_requisites_history import BANK_NOISE_INNS as _BANK_NOISE_INNS
+from app.services.counterparty_requisites_history import requisites_from_operation
 
 # Acquirer / bank own INNs whose payments are card operations, not real payees.
-BANK_NOISE_INNS = frozenset({"7710140679"})
+# Общий список с поиском реквизитов в истории — там он отсекает те же строки из
+# кандидатов автозаполнения карточки.
+BANK_NOISE_INNS = _BANK_NOISE_INNS
 
 # Warehouse invoice ↔ bank time-match defaults (issued_at receipt time ↔ posted_at).
 # Owner's rule: amount may be fuzzy (±10%) ONLY when the time is tight, so a fuzzy-amount
@@ -73,16 +77,9 @@ def _is_card_noise(operation: BankOperation) -> bool:
 
 
 def _payee_requisites(operation: BankOperation) -> dict[str, Any]:
-    receiver = _receiver_block(operation.raw_payload)
-    requisites = {
-        "recipientName": receiver.get("name") or operation.counterparty_name_raw,
-        "inn": receiver.get("inn") or operation.counterparty_inn_raw,
-        "kpp": receiver.get("kpp"),
-        "bankAcnt": receiver.get("acct") or operation.counterparty_account_raw,
-        "bankBik": receiver.get("bicRu") or receiver.get("bic"),
-        "recipientCorrAccountNumber": receiver.get("corAcct"),
-    }
-    return {key: str(value).strip() for key, value in requisites.items() if value not in (None, "")}
+    """Реквизиты получателя платежа. Раскладка ключей по провайдерам (Т-Банк ``receiver``,
+    Сбер ``rurTransfer``) живёт в одном месте — ``counterparty_requisites_history``."""
+    return requisites_from_operation(operation)
 
 
 @dataclass

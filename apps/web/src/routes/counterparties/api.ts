@@ -451,8 +451,27 @@ export async function setRequisites(
   return response.data;
 }
 
-export async function getRequisitesSuggestion(id: string): Promise<Record<string, unknown>> {
-  const response = await api.get<Record<string, unknown>>(`${BASE}/${id}/requisites/suggestion`);
+export type RequisitesCandidate = {
+  key: string;
+  source: "bank" | "email";
+  source_label: string;
+  bank_name: string | null;
+  last_seen_on: string | null;
+  last_amount: string | null;
+  hits: number;
+  requisites: Record<string, string>;
+  missing: string[];
+  existing_counterparty_id: string | null;
+  existing_counterparty_name: string | null;
+  own_account: boolean;
+};
+
+/** Реквизиты из истории платежей и распознанных счетов — по ИНН, названию или счёту.
+ *  Не привязано к карточке: работает и в окне «Новый контрагент», до её создания. */
+export async function searchRequisitesInHistory(query: string): Promise<RequisitesCandidate[]> {
+  const response = await api.get<RequisitesCandidate[]>(`${BASE}/requisites/search`, {
+    params: { query },
+  });
   return response.data;
 }
 

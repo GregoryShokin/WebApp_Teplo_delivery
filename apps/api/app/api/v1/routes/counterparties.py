@@ -35,6 +35,7 @@ from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
 from app.services import counterparty_registry as registry
+from app.services import counterparty_requisites_history as requisites_history
 from app.services import merchant_rules
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
@@ -274,6 +275,26 @@ class RequisitesUpdate(BaseModel):
 
     requisites: dict[str, Any]
     verified: bool = False
+
+
+class RequisitesCandidateRead(BaseModel):
+    """Найденный в истории набор реквизитов — предложение, а не готовая карточка."""
+
+    key: str
+    source: str
+    source_label: str
+    bank_name: str | None
+    last_seen_on: date | None
+    last_amount: Decimal | None
+    hits: int
+    requisites: dict[str, str]
+    # Каких обязательных полей не хватает (человеческие подписи) — кандидат с непустым
+    # списком карточку не закроет, но ИНН и название из него всё равно экономят ввод.
+    missing: list[str]
+    # Карточка с таким ИНН уже есть: дедуп до того, как создание упрётся в 409.
+    existing_counterparty_id: uuid.UUID | None
+    existing_counterparty_name: str | None
+    own_account: bool
 
 
 class KassaEnabledUpdate(BaseModel):
@@ -990,6 +1011,25 @@ async def get_wallets(
     return [WalletRead.model_validate(wallet) for wallet in await registry.list_wallets(session)]
 
 
+@router.get(
+    "/requisites/search", response_model=list[RequisitesCandidateRead], dependencies=ADMIN
+)
+async def search_requisites(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    query: Annotated[str, Query(min_length=3, max_length=255)],
+) -> list[RequisitesCandidateRead]:
+    """Реквизиты из истории по ИНН, названию или расчётному счёту.
+
+    Объявлено ДО ``/{counterparty_id}``: иначе FastAPI разберёт «requisites» как UUID
+    контрагента и вернёт 422. Работает без карточки — это и есть смысл: заполнить
+    реквизиты в окне «Новый контрагент», а не после его создания.
+    """
+    candidates = await requisites_history.search_history_requisites(session, query)
+    return [
+        RequisitesCandidateRead.model_validate(item, from_attributes=True) for item in candidates
+    ]
+
+
 @router.get("/expense-articles", response_model=list[ExpenseArticleRead], dependencies=INVOICE_REFS)
 async def get_expense_articles(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -1082,14 +1122,6 @@ async def post_kassa_enabled(
         raise _conflict(exc) from exc
     card = await registry.get_counterparty_card(session, counterparty_id)
     return CardRead.model_validate(card)
-
-
-@router.get("/{counterparty_id}/requisites/suggestion", dependencies=ADMIN)
-async def get_requisites_suggestion(
-    counterparty_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> dict[str, Any]:
-    return await registry.autofill_requisites_from_bank(session, counterparty_id)
 
 
 @router.put("/{counterparty_id}/requisites", response_model=CardRead, dependencies=ADMIN)

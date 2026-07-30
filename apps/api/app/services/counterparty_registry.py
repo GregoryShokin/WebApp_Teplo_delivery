@@ -20,7 +20,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    BankOperation,
     Counterparty,
     CounterpartyAlias,
     CounterpartyCollectionSource,
@@ -37,7 +36,13 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as service_periods
-from app.services.banking.requisites import payee_account_error
+
+# Минимальный набор для платёжки — общий канон банковского слоя. Здесь он ре-экспортом:
+# на ``registry.OFFICIAL_SUPPLIER_REQUIRED_REQUISITES`` ссылается аренда помещений.
+from app.services.banking.requisites import (
+    OFFICIAL_SUPPLIER_REQUIRED_REQUISITES,
+    payee_account_error,
+)
 
 COLLECTION_SOURCE_KINDS = frozenset({"iiko", "email", "telegram", "manual", "sbis"})
 RELATIONSHIP_KINDS = frozenset({"official", "informal", "barter"})
@@ -54,12 +59,6 @@ CROSS_CHANNEL_DEDUP_WINDOW_DAYS = 7
 # Банк и налоговая — не поставщики, платёжных реквизитов у них не требуем. Роль при
 # создании выводится из типа ровно по этому же правилу (routes/counterparties.py).
 NON_SUPPLIER_TYPES = frozenset({"bank", "tax_authority"})
-OFFICIAL_SUPPLIER_REQUIRED_REQUISITES = {
-    "bankBik": "БИК банка",
-    "inn": "ИНН",
-    "bankAcnt": "расчётный счёт",
-    "recipientCorrAccountNumber": "корреспондентский счёт",
-}
 
 
 class CounterpartyRegistryError(RuntimeError):
@@ -934,48 +933,9 @@ async def set_requisites(
     return profile
 
 
-async def autofill_requisites_from_bank(
-    session: AsyncSession, counterparty_id: uuid.UUID
-) -> dict[str, Any]:
-    """Best-effort suggestion of requisites from the latest outgoing bank op by INN."""
-    counterparty = await session.get(Counterparty, counterparty_id)
-    if counterparty is None or not counterparty.inn:
-        return {}
-    operation = await session.scalar(
-        select(BankOperation)
-        .where(
-            BankOperation.direction == "out",
-            BankOperation.counterparty_inn_raw == counterparty.inn,
-        )
-        .order_by(BankOperation.operation_date.desc())
-        .limit(1)
-    )
-    suggestion: dict[str, Any] = {"recipientName": counterparty.name, "inn": counterparty.inn}
-    if operation is None:
-        return suggestion
-    payload = operation.raw_payload or {}
-    receiver = payload.get("receiver") if isinstance(payload.get("receiver"), dict) else {}
-
-    def pick(*keys: str) -> Any:
-        for source in (receiver, payload):
-            for key in keys:
-                value = source.get(key)
-                if value not in (None, "") and not isinstance(value, (dict, list)):
-                    return str(value)
-        return None
-
-    for target, keys in {
-        "kpp": ("kpp", "recipientKpp"),
-        "bankAcnt": ("acct", "account", "accountNumber", "bankAccount"),
-        "bankBik": ("bic", "bik", "bankBic", "bankBik"),
-        "recipientCorrAccountNumber": ("corrAccount", "bankCorrAccount", "correspondentAccount"),
-    }.items():
-        value = pick(*keys)
-        if value:
-            suggestion[target] = value
-    if operation.counterparty_account_raw:
-        suggestion.setdefault("bankAcnt", operation.counterparty_account_raw)
-    return suggestion
+# Автозаполнение реквизитов из прошлых платежей переехало в
+# ``counterparty_requisites_history``: оно нужно и до создания карточки (окно «Новый
+# контрагент»), поэтому больше не привязано к ``counterparty_id``.
 
 
 # --- manual invoice -----------------------------------------------------------

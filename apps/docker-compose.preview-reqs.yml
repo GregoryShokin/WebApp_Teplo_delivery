@@ -1,0 +1,77 @@
+# Превью-стенд ветки agent/reqs-cp-requisites-history (слот 7: web 5243 / api 8070 / pg 5502).
+#
+#   docker compose -p teplo-reqs -f docker-compose.preview-reqs.yml up -d --build
+#   docker exec -w /app/apps/api -e PYTHONPATH=/app/apps/api teplo-api-reqs alembic upgrade head
+#   docker exec -w /app/apps/api -e PYTHONPATH=/app/apps/api teplo-api-reqs python -m app.scripts.seed_preview_admin
+#
+# Стенд НАМЕРЕННО не читает общий ../.env: боевые ключи (Сбер, Т-Банк, Telegram, почта,
+# iiko) на превью не носим — стенд не должен уметь писать во внешние системы.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-reqs
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5502:5432"
+    volumes:
+      - teplo_pgdata_reqs:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-reqs
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      ENVIRONMENT: local
+      # Фон выключен: стенд ничего не синкает и никуда не пишет сам.
+      SCHEDULER_ENABLED: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      COUNTERPARTY_INVOICE_SYNC_ENABLED: "false"
+      SBIS_SYNC_ENABLED: "false"
+      MAIL_POLL_ENABLED: "false"
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko обязательна: без переменной IikoClient.__init__ бросает SystemExit,
+      # а он как BaseException пробивает обработчики FastAPI и убивает uvicorn — один заход
+      # на «График» кладёт весь стенд. С заглушкой тот же запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5243","http://127.0.0.1:5243"]'
+    ports:
+      - "8070:8000"
+    volumes:
+      - ./api:/app/apps/api
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-reqs
+    environment:
+      VITE_API_BASE_URL: http://localhost:8070
+    ports:
+      - "5243:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_reqs:

@@ -27,6 +27,7 @@ import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 
 import { createCounterparty, getIikoSuppliers, type CounterpartyCard } from "./api";
+import { RequisitesHistoryButton } from "./RequisitesHistoryButton";
 import {
   COUNTERPARTY_REQUISITE_FIELDS,
   COUNTERPARTY_TYPE_LABELS,
@@ -105,6 +106,15 @@ export function CreateCounterpartyDialog({
       // прочитать подсказку, и вернуться. В payload для неофициала они всё равно не
       // уходят (фильтр на сабмите) — терять ввод до отправки формы незачем.
       setActiveTab("general");
+    }
+  }
+
+  function applyFoundRequisites(found: Record<string, string>) {
+    setRequisites((current) => ({ ...current, ...found }));
+    // Название карточки берём из платёжки, только если человек его ещё не ввёл: в банке
+    // контрагент подписан официально, а в форме может стоять привычное рабочее имя.
+    if (!name.trim() && found.recipientName) {
+      setName(found.recipientName);
     }
   }
 
@@ -225,6 +235,16 @@ export function CreateCounterpartyDialog({
 
             <Field label="Официальное название *">
               <Input value={name} onChange={(event) => setName(event.target.value)} />
+              {relationship === "official" ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Кнопка стоит и здесь, и на вкладке реквизитов: название вводят первым,
+                      и находить контрагента логично сразу, не переключая вкладку. */}
+                  <RequisitesHistoryButton query={name} onPick={applyFoundRequisites} />
+                  <span className="text-xs text-muted-foreground">
+                    Подставит ИНН и банковские реквизиты из прошлых платежей и счетов.
+                  </span>
+                </div>
+              ) : null}
             </Field>
 
             <Field label="Тип контрагента">
@@ -327,6 +347,15 @@ export function CreateCounterpartyDialog({
             <p className="text-sm text-muted-foreground">
               Реквизиты официального контрагента для создания платёжного поручения в банке.
             </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <RequisitesHistoryButton
+                query={(requisites.inn ?? "").trim() || name}
+                onPick={applyFoundRequisites}
+              />
+              <span className="text-xs text-muted-foreground">
+                Ищем по ИНН, названию или расчётному счёту в наших платежах и счетах из почты.
+              </span>
+            </div>
             {isOfficialSupplier ? (
               <p className="text-xs text-muted-foreground">
                 Обязательны БИК банка, ИНН, расчётный и корреспондентский счета. КПП можно не
