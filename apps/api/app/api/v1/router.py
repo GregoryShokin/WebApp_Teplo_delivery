@@ -11,6 +11,7 @@ from app.api.v1.routes.dds import router as dds_router
 from app.api.v1.routes.deposits import router as deposits_router
 from app.api.v1.routes.employees import router as employees_router
 from app.api.v1.routes.finance_payments import router as finance_payments_router
+from app.api.v1.routes.fixed_assets import router as fixed_assets_router
 from app.api.v1.routes.health import router as health_router
 from app.api.v1.routes.integrations import router as integrations_router
 from app.api.v1.routes.inventory import router as inventory_router
@@ -57,6 +58,7 @@ api_router.include_router(positions_router, prefix="/settings/positions", tags=[
 api_router.include_router(sbis_router, prefix="/sbis", tags=["sbis"])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(locations_router, prefix="/locations", tags=["locations"])
+api_router.include_router(fixed_assets_router, prefix="/fixed-assets", tags=["fixed-assets"])
 api_router.include_router(shift_schedule_router, prefix="/schedule", tags=["schedule"])
 api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])
 api_router.include_router(taxes_router, prefix="/taxes", tags=["taxes"])
