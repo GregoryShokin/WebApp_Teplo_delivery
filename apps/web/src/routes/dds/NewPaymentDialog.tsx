@@ -27,6 +27,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -69,11 +70,12 @@ import {
   getRegistry,
 } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
-import { AssetPicker } from "@/routes/dds/AssetPicker";
+import { AssetPicker, assetTitle } from "@/routes/dds/AssetPicker";
 import {
   ASSETS_FORBIDDEN_HINT,
   LOCATIONS_FORBIDDEN_HINT,
   assetOptionsQuery,
+  formatDdsMoney,
   locationOptionsQuery,
 } from "@/routes/dds/shared";
 
@@ -1150,6 +1152,19 @@ function ExpenseForm({
   const usesAssetArticle = rows.some((row) => articleById.get(row.articleId)?.asset_link_kind);
   const assetsQuery = useQuery(assetOptionsQuery(usesAssetArticle));
   const assetsForbidden = apiErrorStatus(assetsQuery.error) === 403;
+  // Какая строка сейчас выбирает объект. Ключ строки, а не индекс: строки добавляют и удаляют,
+  // и по индексу модалка после удаления соседа открылась бы на чужой строке.
+  const [assetRowKey, setAssetRowKey] = useState<string | null>(null);
+  const assetRow = assetRowKey ? (rows.find((item) => item.key === assetRowKey) ?? null) : null;
+  const assetRowArticle = assetRow ? articleById.get(assetRow.articleId) : undefined;
+
+  /** Подпись строки-ссылки: что уже выбрано либо чего не хватает. */
+  const assetSummary = (row: ExpenseRow): string => {
+    const asset = (assetsQuery.data ?? []).find((item) => item.asset_id === row.assetId);
+    if (asset) return `Объект: ${assetTitle(asset)}`;
+    const kind = articleById.get(row.articleId)?.asset_link_kind;
+    return kind === "purchase" ? "нужен объект основных средств" : "нужен объект — что ремонтируем";
+  };
 
   const total = rows.reduce(
     (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
@@ -1314,9 +1329,14 @@ function ExpenseForm({
     summary = "Выберите счёт списания.";
   } else if (missingAssetRow) {
     tone = "warning";
+    // Причина у покупки и у ремонта разная, и общая формулировка врала бы в одну из сторон:
+    // покупка без карточки уходит мимо баланса, а ремонт без объекта — мимо истории объекта,
+    // по которой потом решают, чинить его дальше или менять.
     summary = assetsForbidden
       ? ASSETS_FORBIDDEN_HINT
-      : "Укажите основное средство — без карточки покупка уйдёт в расход мимо баланса.";
+      : articleById.get(missingAssetRow.articleId)?.asset_link_kind === "purchase"
+        ? "Укажите основное средство — без карточки покупка уйдёт в расход мимо баланса."
+        : "Укажите, что ремонтируем — иначе расход не попадёт в историю объекта.";
   } else if (missingLocationRow) {
     tone = "warning";
     summary = locationsForbidden
@@ -1496,26 +1516,19 @@ function ExpenseForm({
                   ) : null}
                 </div>
                 {article?.asset_link_kind ? (
-                  <div className="rounded-md border p-2">
-                    <Label className="mb-1.5 block text-xs font-medium">Основное средство</Label>
-                    <AssetPicker
-                      amount={String(amountOf(row.amount))}
-                      assets={assetsQuery.data ?? []}
-                      forbidden={assetsForbidden}
-                      isLoading={assetsQuery.isLoading}
-                      kind={article.asset_link_kind}
-                      onChange={(assetId) => onUpdateRow(row.key, { assetId })}
-                      onCreated={(asset) => {
-                        // Карточку кладём в кэш общего списка сразу: иначе она появится лишь
-                        // после повторного запроса, а выбрать её надо прямо сейчас.
-                        queryClient.setQueryData<AssetOption[]>(["asset-options"], (current) =>
-                          current ? [...current, asset] : [asset],
-                        );
-                        onUpdateRow(row.key, { assetId: asset.asset_id });
-                      }}
-                      value={row.assetId}
-                    />
-                  </div>
+                  // Строкой-ссылкой, а не развёрнутым блоком (замечание владельца 31.07.2026):
+                  // окно платежа и без того длинное, а объект нужен считанным статьям. Выбор
+                  // уезжает в отдельную модалку — ровно так же, как в разборе ДДС, чтобы одно и
+                  // то же действие в двух окнах не выглядело двумя разными.
+                  <button
+                    className={`text-left text-xs underline-offset-2 hover:underline ${
+                      row.assetId ? "text-muted-foreground" : "font-medium text-amber-700"
+                    }`}
+                    onClick={() => setAssetRowKey(row.key)}
+                    type="button"
+                  >
+                    {assetSummary(row)}
+                  </button>
                 ) : null}
                 {article?.location_required ? (
                   <ExpenseLocationPicker
@@ -1607,6 +1620,41 @@ function ExpenseForm({
         disabled={!canSubmit}
         pending={busy}
       />
+
+      {assetRow && assetRowArticle?.asset_link_kind ? (
+        <Dialog open onOpenChange={(open) => !open && setAssetRowKey(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Основное средство</DialogTitle>
+              <DialogDescription>
+                {assetRowArticle.name} · {formatDdsMoney(amountOf(assetRow.amount))}
+              </DialogDescription>
+            </DialogHeader>
+            <AssetPicker
+              amount={String(amountOf(assetRow.amount))}
+              assets={assetsQuery.data ?? []}
+              forbidden={assetsForbidden}
+              isLoading={assetsQuery.isLoading}
+              kind={assetRowArticle.asset_link_kind}
+              onChange={(assetId) => onUpdateRow(assetRow.key, { assetId })}
+              onCreated={(asset) => {
+                // Карточку кладём в кэш общего списка сразу: иначе она появится лишь
+                // после повторного запроса, а выбрать её надо прямо сейчас.
+                queryClient.setQueryData<AssetOption[]>(["asset-options"], (current) =>
+                  current ? [...current, asset] : [asset],
+                );
+                onUpdateRow(assetRow.key, { assetId: asset.asset_id });
+              }}
+              value={assetRow.assetId}
+            />
+            <DialogFooter>
+              <Button onClick={() => setAssetRowKey(null)} type="button">
+                Готово
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

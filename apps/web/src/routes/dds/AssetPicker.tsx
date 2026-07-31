@@ -524,25 +524,33 @@ export function AssetPicker({
 
   return (
     <div className="space-y-2">
-      {/* Кнопка ПЕРЕД списком: для покупки заведение нового — обычный случай, а привязка к
-          существующему объекту (ремонт, вторая часть оплаты) — более редкий. */}
-      <Button
-        className="w-full justify-start"
-        onClick={() => setCreating(true)}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <Plus size={16} aria-hidden="true" />
-        Завести новый объект на эту сумму
-      </Button>
+      {/* Заводить карточку можно ТОЛЬКО у покупки (замечание владельца 31.07.2026). Ремонт и
+          обслуживание — это работы по объекту, который уже стоит на балансе; кнопка здесь
+          завела бы второй такой же объект стоимостью в сумму ремонта, и в балансе появился бы
+          несуществующий пароконвектомат за двенадцать тысяч. */}
+      {kind === "purchase" ? (
+        <Button
+          className="w-full justify-start"
+          onClick={() => setCreating(true)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <Plus size={16} aria-hidden="true" />
+          Завести новый объект на эту сумму
+        </Button>
+      ) : null}
       <InlineOptionList
         options={options}
         value={value}
         onChange={onChange}
         searchPlaceholder="Поиск по номеру, названию или модели…"
         emptyMessage={
-          isLoading ? "Загружаем объекты…" : "Объектов пока нет — заведите первый кнопкой выше."
+          isLoading
+            ? "Загружаем объекты…"
+            : kind === "purchase"
+              ? "Объектов пока нет — заведите первый кнопкой выше."
+              : "Объектов пока нет. Ремонтировать нечего: сначала должна появиться покупка."
         }
         listClassName="max-h-48"
         autoFocus={false}
