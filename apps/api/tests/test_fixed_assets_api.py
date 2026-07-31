@@ -12,11 +12,14 @@ from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 sys.path.append(str(Path(__file__).parent / "counterparties"))
 
 from cp_helpers import admin_headers, headers_for  # noqa: E402
+
+from app.models import AssetConditionReport  # noqa: E402
 
 BASE = "/api/v1/fixed-assets"
 
@@ -410,6 +413,9 @@ def test_used_asset_goes_into_the_valuation_queue(
     assert len(reports) == 1, "б/у объект обязан встать в очередь на оценку"
     assert reports[0]["status"] == "pending"
     assert "компрессор менялся" in reports[0]["message"]
+    # Вид обращения задаёт САМ ВОПРОС к модели: у покупки это остаток срока, у поломки —
+    # стоимость. Перепутанный вид отдал бы карточке скидку с цены, в которой износ уже сидит.
+    assert reports[0]["kind"] == "purchase"
 
 
 def test_new_asset_does_not_call_the_model(
@@ -437,3 +443,46 @@ def test_new_asset_does_not_call_the_model(
     ).json()
     assert card["condition"] == "new"
     assert card["condition_reports"] == []
+
+
+def test_manager_message_about_a_breakdown_is_not_a_purchase(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Сообщение из карточки — поломка, даже если объект куплен б/у.
+
+    Вид обращения задаётся точкой входа, а не выводится из карточки: «объект помечен б/у» не
+    делает каждое следующее сообщение о нём разговором про покупку. Иначе через полгода
+    сломавшийся компрессор попросил бы у модели остаток срока вместо оценки ущерба.
+    """
+    admin = _admin(async_session_factory)
+    created = client.post(
+        f"{BASE}/from-payment",
+        headers=admin,
+        json={
+            "name": "Шкаф холодильный",
+            "initial_cost": "45000.00",
+            "condition": "used",
+            "condition_note": "2019 года, работает",
+        },
+    )
+    assert created.status_code == 201, created.text
+    asset_id = created.json()["asset_id"]
+
+    # Первое обращение — покупка; ждём его оценки, иначе частичный уникальный индекс не пустит
+    # второе. Проще снять его руками, чем гонять фоновую джобу в HTTP-тесте.
+    async def _release() -> None:
+        async with async_session_factory() as session:
+            report = await session.scalar(select(AssetConditionReport))
+            assert report is not None
+            report.status = "proposed"
+            await session.commit()
+
+    asyncio.run(_release())
+
+    reported = client.post(
+        f"{BASE}/{asset_id}/condition",
+        headers=admin,
+        json={"message": "Отказал компрессор, холод не держит"},
+    )
+    assert reported.status_code == 202, reported.text
+    assert reported.json()["kind"] == "incident"

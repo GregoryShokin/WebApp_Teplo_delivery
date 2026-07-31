@@ -27,6 +27,7 @@ from app.models import AssetConditionReport, FixedAsset  # noqa: E402
 from app.services.anthropic_client import LlmCallError  # noqa: E402
 from app.services.asset_revaluation import (  # noqa: E402
     build_prompt,
+    build_purchase_prompt,
     decide_report,
     process_pending,
     submit_report,
@@ -280,3 +281,186 @@ def test_settings_reuse_the_shared_anthropic_credentials() -> None:
     assert settings.fixed_asset_ai_model
     assert hasattr(settings, "anthropic_relay_secret")
     assert settings.anthropic_timeout_seconds > 0
+
+
+def _life_answer(**overrides: Any):
+    """Ответ модели про ОСТАТОК СРОКА — второй вид обращения (покупка б/у)."""
+    payload = {
+        "life_used_share": "0.5",
+        "reasoning": "Объект 2018 года, отработал примерно половину срока, состояние рабочее.",
+        "confidence": 0.7,
+        "needs_human": False,
+    }
+    payload.update(overrides)
+
+    async def call(_settings, **_kwargs) -> dict[str, Any]:
+        return payload
+
+    return call
+
+
+async def test_purchase_prompt_asks_about_life_and_not_about_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """У покупки б/у предмет разговора — СРОК, а не стоимость.
+
+    Цена б/у объекта износ уже содержит: продавец его учёл, за поношенное берут меньше. Просить
+    у модели ещё и скидку значило бы посчитать износ дважды. А вот срок приходит из категории и
+    считает объект новым — это и есть незакрытая дыра, ради которой второй вид обращения заведён.
+
+    Срок категории обязан быть в промпте: доля, которую вернёт модель, берётся именно от него.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session, cost="180000.00")
+        asset.name = "Пароконвектомат Rational SCC WE 101"
+        asset.condition = "used"
+        report = await submit_report(
+            session,
+            asset_id=asset.id,
+            message="Куплен б/у. 2018 года, дверь не закрывается плотно",
+            user_id=None,
+            kind="purchase",
+        )
+        await session.commit()
+
+        prompt = await build_purchase_prompt(session, report)
+
+    assert report.kind == "purchase"
+    assert "Срок службы для НОВОГО объекта этой категории: 84 мес (7 лет)" in prompt
+    assert "2018 года, дверь не закрывается плотно" in prompt
+    assert "Месяцы и деньги НЕ считай" in prompt
+
+
+async def test_code_computes_remaining_months_from_the_share(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Модель дала долю 0.5 — месяцы считает код: 84 × (1 − 0.5) = 42.
+
+    То же правило, что и с деньгами: дело модели — интерпретация, не арифметика. Стоимость при
+    этом не двигается ни на копейку, и срок в карточке ждёт решения владельца.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session, cost="180000.00")
+        await submit_report(
+            session,
+            asset_id=asset.id,
+            message="Куплен б/у. 2018 года",
+            user_id=None,
+            kind="purchase",
+        )
+        await session.commit()
+
+        assert await process_pending(session, call=_life_answer()) == {
+            "processed": 1,
+            "proposed": 1,
+            "failed": 0,
+        }
+        report = await session.scalar(select(AssetConditionReport))
+
+    assert report is not None
+    assert report.proposed_useful_life_months == 42
+    # Денег покупка не касается вовсе — иначе износ был бы посчитан дважды.
+    assert report.proposed_cost is None
+    assert Decimal(str(asset.initial_cost)) == Decimal("180000.00")
+    assert asset.useful_life_months == 84, "срок меняет человек, а не джоба"
+
+
+async def test_worn_out_object_keeps_a_tenth_of_its_life(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Доля 1.0 не даёт нулевого срока: за лом денег не платят.
+
+    Карточка с нулевым сроком не амортизируется ВОВСЕ — то есть остаётся на балансе навсегда.
+    Это ровно та ошибка, которую контур чинит, только с другого края.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session)
+        await submit_report(
+            session, asset_id=asset.id, message="Куплен б/у, убитый", user_id=None, kind="purchase"
+        )
+        await session.commit()
+
+        await process_pending(session, call=_life_answer(life_used_share="1"))
+        report = await session.scalar(select(AssetConditionReport))
+
+    # Потолок доли — 0.9, значит объекту остаётся десятая часть срока категории.
+    assert report is not None
+    assert report.proposed_useful_life_months == 8
+
+
+async def test_purchase_without_age_or_condition_reaches_the_owner_anyway(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оценить нечем — предложения нет, но запись доходит.
+
+    Молчание было бы хуже пустого предложения: владелец не узнал бы, что объект б/у, и карточка
+    осталась бы «как новая» по сроку из категории.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session)
+        await submit_report(
+            session, asset_id=asset.id, message="Куплен б/у", user_id=None, kind="purchase"
+        )
+        await session.commit()
+
+        await process_pending(session, call=_life_answer(needs_human=True, reasoning=""))
+        report = await session.scalar(select(AssetConditionReport))
+
+    assert report is not None
+    assert report.status == "proposed"
+    assert report.proposed_useful_life_months is None
+    assert report.proposed_reason == "Из описания не понять, сколько объект уже отработал"
+
+
+async def test_owner_decision_moves_the_term_and_leaves_the_cost_alone(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Применение предложения по покупке ставит СРОК и не трогает стоимость.
+
+    Стоимость и есть уплаченная сумма — менять её после покупки не на чем и незачем.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session, cost="180000.00")
+        await submit_report(
+            session,
+            asset_id=asset.id,
+            message="Куплен б/у. 2018 года",
+            user_id=None,
+            kind="purchase",
+        )
+        await session.commit()
+        await process_pending(session, call=_life_answer())
+
+        report = await session.scalar(select(AssetConditionReport))
+        assert report is not None
+        await decide_report(session, report=report, accept=True, user_id=None)
+        await session.commit()
+        await session.refresh(asset)
+
+    assert report.status == "applied"
+    assert asset.useful_life_months == 42
+    assert Decimal(str(asset.initial_cost)) == Decimal("180000.00")
+
+
+async def test_breakdown_still_talks_about_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Поломка у работающего объекта осталась разговором о стоимости.
+
+    Проверка сторожит РАЗВИЛКУ: перепутанный вид обращения задал бы модели не тот вопрос, а
+    заметить это можно было бы только по странному предложению в карточке.
+    """
+    async with async_session_factory() as session:
+        asset = await _asset(session)
+        report = await submit_report(
+            session, asset_id=asset.id, message="Отказал компрессор", user_id=None
+        )
+        assert report.kind == "incident", "умолчание — поломка, а не покупка"
+        await session.commit()
+
+        await process_pending(session, call=_answer())
+        stored = await session.scalar(select(AssetConditionReport))
+
+    assert stored is not None
+    assert Decimal(str(stored.proposed_cost)) == Decimal("20000.00")
+    assert stored.proposed_useful_life_months is None

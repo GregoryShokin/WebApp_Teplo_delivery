@@ -251,9 +251,7 @@ export function AssetPicker({
           <div className="space-y-2">
             <div className="rounded-md bg-muted/40 p-2">
               <p className="text-sm font-medium">{step.question}</p>
-              {step.why ? (
-                <p className="mt-0.5 text-xs text-muted-foreground">{step.why}</p>
-              ) : null}
+              {step.why ? <p className="mt-0.5 text-xs text-muted-foreground">{step.why}</p> : null}
             </div>
             {step.suggestions.length ? (
               <div className="flex flex-wrap gap-1.5">
@@ -380,17 +378,13 @@ export function AssetPicker({
             listClassName="max-h-40"
             autoFocus={false}
           />
-          {category?.note ? (
-            <p className="text-xs text-muted-foreground">{category.note}</p>
-          ) : null}
+          {category?.note ? <p className="text-xs text-muted-foreground">{category.note}</p> : null}
         </div>
 
         {profile ? (
           <>
             {aiReason ? (
-              <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                {aiReason}
-              </p>
+              <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">{aiReason}</p>
             ) : null}
             <div className="space-y-1">
               <Label className="text-sm">Наименование</Label>
@@ -496,10 +490,9 @@ export function AssetPicker({
             ) : null}
 
             <p className="text-xs text-muted-foreground">
-              Стоимость карточки — {formatDdsMoney(Number(amount) || 0)}, сумма этой строки
-              платежа. Амортизация пойдёт с{" "}
-              {commissionedOn ? formatDate(commissionedOn) : "дня оплаты"}. Инвентарный номер
-              присвоится сам.
+              Стоимость карточки — {formatDdsMoney(Number(amount) || 0)}, сумма этой строки платежа.
+              Амортизация пойдёт с {commissionedOn ? formatDate(commissionedOn) : "дня оплаты"}.
+              Инвентарный номер присвоится сам.
             </p>
           </>
         ) : (

@@ -64,6 +64,7 @@ ValuationBasis = Literal["market", "payment"]
 ReviewStatus = Literal["ok", "requires_owner_review"]
 SpecProfile = Literal["equipment", "furniture", "other"]
 AssetCondition = Literal["new", "used"]
+ConditionReportKind = Literal["purchase", "incident"]
 
 STATUS_TITLES: dict[str, str] = {
     "in_use": "В работе",
@@ -177,9 +178,14 @@ class ConditionReportRead(BaseModel):
 
     id: uuid.UUID
     message: str
+    # 'incident' — поломка у работающего объекта: предмет разговора стоимость.
+    # 'purchase'  — купили б/у: предмет разговора остаток срока службы, цену не трогаем.
+    kind: ConditionReportKind
     status: Literal["pending", "proposed", "applied", "dismissed", "failed"]
     cost_before: Decimal
     proposed_cost: Decimal | None
+    # Сколько объекту осталось работать по мнению модели. Только у покупок б/у.
+    proposed_useful_life_months: int | None
     proposed_reason: str | None
     # Уверенность модели показывается, но НЕ управляет применением: стоимость актива меняет
     # человек, какой бы уверенной модель ни была.
@@ -587,9 +593,14 @@ async def create_asset_from_payment(
 
     Б/У ОБЪЕКТ СРАЗУ ВСТАЁТ В ОЧЕРЕДЬ НА ОЦЕНКУ. Описание состояния уходит в
     ``asset_condition_report`` — ту же таблицу, куда менеджер пишет о поломке, — и его
-    подхватывает уже существующий контур оценки моделью. Отдельного пути не заводим: он
-    отличался бы только точкой входа, а владельцу пришлось бы смотреть предложения в двух
-    местах. Стоимость при этом не меняется ни на копейку: предложение ждёт решения человека.
+    подхватывает существующий контур оценки моделью. Отдельного пути не заводим: он отличался
+    бы только точкой входа, а владельцу пришлось бы смотреть предложения в двух местах.
+
+    Вид обращения — ``purchase``, и это меняет сам вопрос к модели: не «сколько объект теперь
+    стоит», а «сколько ему осталось работать». Цена б/У объекта износ уже содержит (продавец
+    его учёл), а срок приходит из категории и считает объект новым — семь лет амортизации у
+    пароконвектомата 2018 года. Стоимость при этом не меняется ни на копейку ни сейчас, ни
+    после решения владельца: применяется только срок.
     """
     commissioned_on = payload.commissioned_on or datetime.now(UTC).date()
     condition_note = (payload.condition_note or "").strip()
@@ -631,6 +642,7 @@ async def create_asset_from_payment(
                 asset_id=asset.id,
                 message=f"Куплен б/у. Состояние со слов покупателя: {condition_note}",
                 user_id=actor.user_id,
+                kind="purchase",
             )
         except LlmCallError:
             logger.warning("Не удалось поставить б/у объект %s в очередь на оценку", asset.id)
@@ -1127,11 +1139,13 @@ def _report_payload(report: AssetConditionReport) -> ConditionReportRead:
     return ConditionReportRead(
         id=report.id,
         message=report.message,
+        kind=report.kind,  # type: ignore[arg-type]
         status=report.status,  # type: ignore[arg-type]
         cost_before=Decimal(str(report.cost_before)),
         proposed_cost=(
             Decimal(str(report.proposed_cost)) if report.proposed_cost is not None else None
         ),
+        proposed_useful_life_months=report.proposed_useful_life_months,
         proposed_reason=report.proposed_reason,
         confidence=Decimal(str(report.confidence)) if report.confidence is not None else None,
         model=report.model,

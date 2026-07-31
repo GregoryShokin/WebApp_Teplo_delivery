@@ -41,7 +41,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -56,6 +62,7 @@ import { cn } from "@/lib/utils";
 
 import {
   type AssetStatus,
+  type ConditionReportKind,
   type ConditionStatus,
   type FixedAsset,
   type FixedAssetDetail,
@@ -128,6 +135,18 @@ function plural(count: number, one: string, few: string, many: string): string {
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
+}
+
+/** Срок в месяцах человеческими словами: «3 года 6 месяцев». Годы читаются, месяцы считаются —
+ *  поэтому в интерфейсе рядом стоят оба, а не одни годы с округлением. */
+function monthsAsYears(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts = [
+    years ? `${years} ${plural(years, "год", "года", "лет")}` : "",
+    rest ? `${rest} ${plural(rest, "месяц", "месяца", "месяцев")}` : "",
+  ].filter(Boolean);
+  return parts.join(" ") || "меньше месяца";
 }
 
 /** Первое число прошедшего месяца — период, который закрывает ночная джоба. */
@@ -270,9 +289,8 @@ function ReportingSection() {
             )}
           </div>
           <p className="text-muted-foreground">
-            Баланс и ОПиУ ведутся в таблицах. Здесь то, что в них переносят: остаточная
-            стоимость по строкам внеоборотных активов и амортизация месяца для строки «УчОС
-            Амортизация».
+            Баланс и ОПиУ ведутся в таблицах. Здесь то, что в них переносят: остаточная стоимость по
+            строкам внеоборотных активов и амортизация месяца для строки «УчОС Амортизация».
           </p>
         </CardContent>
       </Card>
@@ -283,8 +301,8 @@ function ReportingSection() {
             <div className="flex items-start gap-2">
               <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                <b>Цифры за этот месяц изменились после закрытия.</b> Если отчётность уже
-                перенесли, её нужно поправить — иначе расхождение всплывёт при годовой сверке.
+                <b>Цифры за этот месяц изменились после закрытия.</b> Если отчётность уже перенесли,
+                её нужно поправить — иначе расхождение всплывёт при годовой сверке.
               </span>
             </div>
             <ul className="ml-6 list-disc space-y-1">
@@ -343,9 +361,7 @@ function ReportingSection() {
                 {data.lines.reduce((sum, line) => sum + line.asset_count, 0)}
               </td>
               <td className="px-4 py-2 text-right tabular-nums">
-                {moneyExact(
-                  data.lines.reduce((sum, line) => sum + toNumber(line.initial_cost), 0),
-                )}
+                {moneyExact(data.lines.reduce((sum, line) => sum + toNumber(line.initial_cost), 0))}
               </td>
               <td className="px-4 py-2 text-right tabular-nums text-rose-700">
                 {moneyExact(data.lines.reduce((sum, line) => sum + toNumber(line.accumulated), 0))}
@@ -435,9 +451,7 @@ function UnlinkedPaymentsStrip() {
                     <td className="max-w-md truncate px-3 py-2 text-muted-foreground">
                       {item.payment_purpose ?? "—"}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {moneyExact(item.amount)}
-                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{moneyExact(item.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -543,10 +557,10 @@ function SummarySection() {
                     <span className="text-amber-700">
                       {row.idle_count} шт на {money(row.idle_residual)}
                       <InfoHint label="Не делает выручку">
-                        Резерв, поломка или имущество вне торговой точки. Амортизация на нём
-                        идёт — исправная техника в запасе стареет и устаревает так же, как в
-                        работе, — а выручки оно не приносит. Это деньги, которые стоит либо
-                        вернуть в работу, либо продать.
+                        Резерв, поломка или имущество вне торговой точки. Амортизация на нём идёт —
+                        исправная техника в запасе стареет и устаревает так же, как в работе, — а
+                        выручки оно не приносит. Это деньги, которые стоит либо вернуть в работу,
+                        либо продать.
                       </InfoHint>
                     </span>
                   ) : (
@@ -630,9 +644,9 @@ function CloseMonthButton() {
           <AlertDialogHeader>
             <AlertDialogTitle>Начислить амортизацию за месяц</AlertDialogTitle>
             <AlertDialogDescription>
-              Обычно это делает планировщик 1-го числа. Ручной запуск нужен, когда он не
-              отработал. Повторять безопасно: уже посчитанные месяцы не задваиваются, а суммы,
-              поправленные вручную, остаются нетронутыми.
+              Обычно это делает планировщик 1-го числа. Ручной запуск нужен, когда он не отработал.
+              Повторять безопасно: уже посчитанные месяцы не задваиваются, а суммы, поправленные
+              вручную, остаются нетронутыми.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="grid gap-2">
@@ -832,8 +846,8 @@ function CorrectionDialog({
         </DialogHeader>
         <div className="grid gap-4">
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            Месяц уже закрыт. Правка изменит остаточную стоимость этого месяца и всех
-            последующих — они пересчитаются заново.
+            Месяц уже закрыт. Правка изменит остаточную стоимость этого месяца и всех последующих —
+            они пересчитаются заново.
           </div>
           <div className="grid gap-2">
             <Label htmlFor="correction-amount">Сумма, ₽</Label>
@@ -899,10 +913,15 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
   });
 
   const decide = useMutation({
-    mutationFn: (input: { reportId: string; accept: boolean }) =>
+    mutationFn: (input: { reportId: string; accept: boolean; kind: ConditionReportKind }) =>
       decideCondition(asset.id, input.reportId, input.accept),
     onSuccess: (_data, input) => {
-      toast.success(input.accept ? "Стоимость объекта обновлена" : "Предложение отклонено");
+      // У покупки б/у применяется срок, у поломки — стоимость. Сказать «стоимость обновлена»
+      // там, где не изменилось ни рубля, значит соврать в единственном месте, где владелец
+      // узнаёт результат своего решения.
+      const applied =
+        input.kind === "purchase" ? "Срок службы обновлён" : "Стоимость объекта обновлена";
+      toast.success(input.accept ? applied : "Предложение отклонено");
       void invalidate();
     },
     onError: (error) => {
@@ -958,6 +977,11 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
             const drop = item.proposed_cost
               ? toNumber(item.cost_before) - toNumber(item.proposed_cost)
               : 0;
+            // У покупки б/у предмет разговора — СРОК, а не деньги: за объект уже заплатили с
+            // учётом износа, а срок пришёл из категории и считает его новым.
+            const purchase = item.kind === "purchase";
+            const months = item.proposed_useful_life_months;
+            const proposal = purchase ? months : item.proposed_cost;
             return (
               <Card className="shadow-none" key={item.id}>
                 <CardContent className="space-y-3 p-4">
@@ -987,14 +1011,32 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
                           : ""}
                       </div>
                       {item.proposed_reason}
-                      {item.proposed_cost ? (
+                      {purchase && months ? (
+                        <div className="mt-2 tabular-nums">
+                          Срок службы:{" "}
+                          {/* Слева стоит ТЕКУЩИЙ срок карточки. У применённого предложения он
+                              уже равен предложенному, и стрелка «78 → 78» была бы бессмыслицей —
+                              показываем просто итог. */}
+                          {item.status === "applied" ? null : (
+                            <>{asset.useful_life_months ?? "—"} → </>
+                          )}
+                          <b>{months} мес</b>
+                          <span className="ml-2 text-muted-foreground">
+                            ({monthsAsYears(months)})
+                          </span>
+                        </div>
+                      ) : null}
+                      {!purchase && item.proposed_cost ? (
                         <div className="mt-2 tabular-nums">
                           {moneyExact(item.cost_before)} → <b>{moneyExact(item.proposed_cost)}</b>
                           <span className="ml-2 text-rose-700">−{moneyExact(drop)}</span>
                         </div>
-                      ) : (
+                      ) : null}
+                      {proposal ? null : (
                         <div className="mt-2 text-xs text-muted-foreground">
-                          Оценить в деньгах не удалось — решайте сами.
+                          {purchase
+                            ? "Понять, сколько объект отработал, не удалось — поставьте срок сами."
+                            : "Оценить в деньгах не удалось — решайте сами."}
                         </div>
                       )}
                     </div>
@@ -1002,18 +1044,24 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
 
                   {item.status === "proposed" && canEdit ? (
                     <div className="flex flex-wrap items-center gap-2">
-                      {item.proposed_cost ? (
+                      {proposal ? (
                         <Button
                           disabled={busy}
-                          onClick={() => decide.mutate({ reportId: item.id, accept: true })}
+                          onClick={() =>
+                            decide.mutate({ reportId: item.id, accept: true, kind: item.kind })
+                          }
                           size="sm"
                         >
-                          Применить {moneyExact(item.proposed_cost)}
+                          {purchase
+                            ? `Поставить срок ${months} мес`
+                            : `Применить ${moneyExact(item.proposed_cost as Money)}`}
                         </Button>
                       ) : null}
                       <Button
                         disabled={busy}
-                        onClick={() => decide.mutate({ reportId: item.id, accept: false })}
+                        onClick={() =>
+                          decide.mutate({ reportId: item.id, accept: false, kind: item.kind })
+                        }
                         size="sm"
                         variant="outline"
                       >
@@ -1079,21 +1127,14 @@ function AssetSheet({
                 <TabsTrigger value="card">Карточка</TabsTrigger>
                 <TabsTrigger value="condition">
                   Состояние
-                  {asset.condition_reports.some((item) => item.status === "proposed")
-                    ? " ●"
-                    : ""}
+                  {asset.condition_reports.some((item) => item.status === "proposed") ? " ●" : ""}
                 </TabsTrigger>
-                <TabsTrigger value="history">
-                  Начисления ({asset.entries.length})
-                </TabsTrigger>
+                <TabsTrigger value="history">Начисления ({asset.entries.length})</TabsTrigger>
               </TabsList>
 
               <TabsContent className="space-y-4" value="card">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <MetricCard
-                    title="Первоначальная"
-                    value={moneyExact(asset.initial_cost)}
-                  />
+                  <MetricCard title="Первоначальная" value={moneyExact(asset.initial_cost)} />
                   <MetricCard
                     accent="text-sky-700"
                     title="Остаточная"

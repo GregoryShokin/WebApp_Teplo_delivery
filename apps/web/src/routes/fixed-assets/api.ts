@@ -24,6 +24,9 @@ export type AssetCategory = {
   id: string;
   name: string;
   useful_life_months: number;
+  /** Какие поля спрашивать при заведении: техника — марка и модель, мебель — материал и
+   *  размеры. Здесь не используется, но объявлено — этот файл зеркалит схему один в один. */
+  spec_profile: "equipment" | "furniture" | "other";
   note: string | null;
 };
 
@@ -65,17 +68,26 @@ export type DepreciationEntry = {
 
 export type ConditionStatus = "pending" | "proposed" | "applied" | "dismissed" | "failed";
 
-/** Сообщение менеджера о состоянии объекта и предложение модели по нему.
+/** О чём обращение: поломка у работающего объекта или покупка б/у. */
+export type ConditionReportKind = "purchase" | "incident";
+
+/** Сообщение о состоянии объекта и предложение модели по нему.
  *
- * `proposed_cost` пуст, когда модель не смогла связать сообщение со стоимостью — запись всё
- * равно доходит до владельца: свидетельство о поломке ценно само по себе.
+ * У поломки (`incident`) предмет разговора — СТОИМОСТЬ, у покупки б/у (`purchase`) — остаток
+ * СРОКА службы: цена б/у объекта износ уже содержит, а срок из категории считает его новым.
+ *
+ * Оба предложения бывают пустыми: модель не смогла связать сообщение со стоимостью или не
+ * поняла из описания, сколько объект отработал. Запись всё равно доходит до владельца —
+ * свидетельство ценно само по себе.
  */
 export type ConditionReport = {
   id: string;
   message: string;
+  kind: ConditionReportKind;
   status: ConditionStatus;
   cost_before: Money;
   proposed_cost: Money | null;
+  proposed_useful_life_months: number | null;
   proposed_reason: string | null;
   confidence: Money | null;
   model: string | null;
@@ -276,10 +288,7 @@ export async function getUnlinkedPayments(since?: string): Promise<{
  * Отвечает 202: вызов модели идёт до двух минут, держать на нём запрос нельзя. Стоимость сама
  * не изменится ни при каком ответе — предложение ждёт решения владельца.
  */
-export async function reportCondition(
-  assetId: string,
-  message: string,
-): Promise<ConditionReport> {
+export async function reportCondition(assetId: string, message: string): Promise<ConditionReport> {
   const response = await api.post<ConditionReport>(`${BASE}/${assetId}/condition`, { message });
   return response.data;
 }

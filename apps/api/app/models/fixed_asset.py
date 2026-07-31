@@ -62,6 +62,8 @@ CAPITAL_REPAIR_FLOOR = Decimal("5000.00")
 SPEC_PROFILES = ("equipment", "furniture", "other")
 # Новым куплен объект или с рук. NULL — неизвестно (карточки описи 2026).
 ASSET_CONDITIONS = ("new", "used")
+# О чём обращение: поломка у работающего объекта или покупка б/у. См. ``AssetConditionReport``.
+CONDITION_REPORT_KINDS = ("purchase", "incident")
 
 
 class AssetCategory(Base):
@@ -293,6 +295,11 @@ class AssetConditionReport(Base):
 
     Порога автоприменения НЕТ сознательно: стоимость актива меняет только человек, какой бы
     уверенной модель ни была.
+
+    ДВА РАЗНЫХ РАЗГОВОРА В ОДНОЙ ТАБЛИЦЕ (``kind``). ``incident`` — менеджер пишет, что
+    сломалось: вопрос «сколько объект теперь стоит». ``purchase`` — купили б/у: вопрос «сколько
+    ему осталось работать». Второй появился потому, что цена б/у объекта износ уже содержит, а
+    срок из категории — нет, и скидывать цену ещё раз значило бы посчитать износ дважды.
     """
 
     __tablename__ = "asset_condition_report"
@@ -300,6 +307,11 @@ class AssetConditionReport(Base):
         CheckConstraint(
             "status IN ('pending','proposed','applied','dismissed','failed')",
             name="ck_asset_condition_report_status",
+        ),
+        CheckConstraint("kind IN ('purchase','incident')", name="ck_asset_condition_report_kind"),
+        CheckConstraint(
+            "proposed_useful_life_months IS NULL OR proposed_useful_life_months > 0",
+            name="ck_asset_condition_report_life_positive",
         ),
         CheckConstraint(
             "proposed_cost IS NULL OR proposed_cost >= 0",
@@ -327,10 +339,17 @@ class AssetConditionReport(Base):
     )
     # Дословно то, что написал менеджер: это и вход модели, и свидетельство для владельца.
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    # 'incident' — поломка у работающего объекта, 'purchase' — покупка б/у.
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="incident", server_default=text("'incident'")
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     # Стоимость на момент обращения — чтобы предложение читалось и через полгода.
     cost_before: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     proposed_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Сколько объекту осталось работать. Заполняется только у покупок б/у: у поломки предметом
+    # разговора остаётся стоимость.
+    proposed_useful_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     proposed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
