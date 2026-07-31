@@ -20,8 +20,14 @@
 аналитики.
 
 Revision ID: 0228_asset_through_payment
-Revises: 0227_capital_repair_floor
+Revises: 0228_dishwasher_shift_rate
 Create Date: 2026-07-31
+
+Номер 0228 достался двум веткам сразу: ЗП-контур мойщиц вошёл в ``main`` первым, пока эта
+ветка жила отдельно. Перепривязано на его ревизию, а не сведено merge-миграцией: цепочка
+линейна, обе правки независимы (у одной ``asset_id`` на черновиках, у другой ставка смены),
+и лишний узел в графе миграций стоил бы дороже переименования одной строки. Имя файла
+оставлено прежним — alembic ходит по ``revision``, а не по имени.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0228_asset_through_payment"
-down_revision = "0227_capital_repair_floor"
+down_revision = "0228_dishwasher_shift_rate"
 branch_labels = None
 depends_on = None
 
