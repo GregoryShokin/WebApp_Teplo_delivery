@@ -214,7 +214,7 @@ async def test_maintenance_article_never_capitalizes_but_warns_when_it_looks_cap
         )
         assert (loud.link_kind, loud.capitalize) == ("repair", False)
         assert loud.review_reason is not None
-        assert "Ремонт ОС" in loud.review_reason
+        assert "Капитальный ремонт ОС" in loud.review_reason
 
         # Обычное обслуживание проходит молча — иначе предупреждения станут фоном.
         quiet = await resolve_asset_context(
@@ -246,7 +246,7 @@ async def test_maintenance_warning_reaches_the_owner_through_the_asset_card(
         await session.commit()
 
         assert asset.review_status == "requires_owner_review"
-        assert "Ремонт ОС" in (asset.review_reason or "")
+        assert "Капитальный ремонт ОС" in (asset.review_reason or "")
         # Стоимость при этом не сдвинулась ни на копейку — статья операционная.
         assert Decimal(str(asset.initial_cost)) == Decimal("100000.00")
 
@@ -630,7 +630,8 @@ async def test_asset_travels_from_payment_draft_through_reserve_to_transaction(
     дойдёт до ДДС без карточки, то есть мимо баланса, а «Новый платёж» останется дырой,
     которую гейт разбора не закрывает.
     """
-    from app.models import SafeAllocation, Wallet as WalletModel
+    from app.models import SafeAllocation
+    from app.models import Wallet as WalletModel
     from app.services.banking.safe_allocations import pay_allocation
 
     async with async_session_factory() as session:
@@ -672,7 +673,8 @@ async def test_partial_reserve_payment_links_every_tranche(
     Частичная оплата даёт несколько проводок. Привязать только первую значило бы недосчитать
     на балансе часть денег, которыми за объект заплатили.
     """
-    from app.models import SafeAllocation, Wallet as WalletModel
+    from app.models import SafeAllocation
+    from app.models import Wallet as WalletModel
     from app.services.banking.safe_allocations import pay_allocation
 
     async with async_session_factory() as session:
@@ -703,3 +705,69 @@ async def test_partial_reserve_payment_links_every_tranche(
         links = (await session.scalars(select(AssetCashflowLink))).all()
         assert len(links) == 2
         assert sum(Decimal(str(link.amount)) for link in links) == Decimal("60000.00")
+
+
+async def test_hint_names_the_article_as_the_catalogue_calls_it_now(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Подсказка «проведите по такой-то статье» читает имя из КАТАЛОГА, а не из кода.
+
+    Каталог статей владелец правит из интерфейса. Захардкоженное имя переживает ровно одно
+    переименование: после него сообщение отправляет человека искать статью, которой больше
+    нет, — и выглядит это враньём системы, а не его собственной ошибкой в выборе статьи.
+    Ловушка не гипотетическая: 31.07.2026 «Ремонт ОС» стал «Капитальным ремонтом ОС», и оба
+    текста указывали в пустоту.
+    """
+    async with async_session_factory() as session:
+        capital = await _article(session, name="Капитальный ремонт ОС", kind="repair")
+        await _article(session, name="Текущий ремонт по-новому", kind="maintenance")
+        asset = await _asset(session, cost="100000.00")
+
+        # Дешёвый расход по капитальной статье — отказ, и он зовёт ТЕКУЩУЮ статью по имени.
+        with pytest.raises(AssetLinkError) as cheap:
+            await resolve_asset_context(
+                session, article=capital, asset_id=asset.id, amount=Decimal("14999.00")
+            )
+        assert "Текущий ремонт по-новому" in str(cheap.value)
+
+
+async def test_expensive_maintenance_points_back_at_the_capital_article_by_name(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Обратная сторона: дорогой текущий ремонт проходит, но зовёт капитальную статью по имени.
+
+    Отказывать здесь нельзя — дорогой текущий ремонт законен и не капитализируется ни при
+    какой сумме. Но промолчать тоже: так капитальный ремонт по невнимательности уходит в
+    расход, и баланс отстаёт от реальности.
+    """
+    async with async_session_factory() as session:
+        await _article(session, name="Капитальный ремонт ОС", kind="repair")
+        maintenance = await _article(session, name="Ремонт оборудования", kind="maintenance")
+        asset = await _asset(session, cost="100000.00")
+
+        context = await resolve_asset_context(
+            session, article=maintenance, asset_id=asset.id, amount=Decimal("30000.00")
+        )
+        # Прошёл, стоимость не тронул, но карточка помечена — и в пометке настоящее имя.
+        assert (context.link_kind, context.capitalize) == ("repair", False)
+        assert context.review_reason is not None
+        assert "Капитальный ремонт ОС" in context.review_reason
+
+
+async def test_hint_survives_an_empty_catalogue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Парной статьи в каталоге нет — сообщение всё равно осмысленно, а проверка не падает.
+
+    Справочник на стенде или чистой базе бывает неполным. Отказ провести платёж из-за того,
+    что не нашлось имени для подсказки, был бы хуже самой подсказки.
+    """
+    async with async_session_factory() as session:
+        capital = await _article(session, name="Капитальный ремонт ОС", kind="repair")
+        asset = await _asset(session, cost="100000.00")
+
+        with pytest.raises(AssetLinkError) as exc:
+            await resolve_asset_context(
+                session, article=capital, asset_id=asset.id, amount=Decimal("14999.00")
+            )
+        assert "Ремонт оборудования" in str(exc.value)
