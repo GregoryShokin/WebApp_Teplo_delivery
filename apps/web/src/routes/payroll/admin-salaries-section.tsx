@@ -18,12 +18,12 @@ import {
   apiErrorMessage,
   deleteAdminSalaryOverride,
   getAdminSalaries,
-  getDishwasherPool,
+  getDishwasherShiftRate,
   getEmployees,
   putAdminPayoutMode,
   putAdminSalaryDefault,
   putAdminSalaryOverride,
-  putDishwasherPool,
+  putDishwasherShiftRate,
   setAdminPayrollExclusion,
   type AdminPayoutMode,
 } from "@/lib/api";
@@ -75,15 +75,15 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     queryFn: () => getEmployees({ status: "active" }),
   });
 
-  const poolQuery = useQuery({
-    queryKey: ["dishwasher-pool"],
-    queryFn: getDishwasherPool,
+  const shiftRateQuery = useQuery({
+    queryKey: ["dishwasher-shift-rate"],
+    queryFn: getDishwasherShiftRate,
   });
 
   const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom());
   const [defaultAmounts, setDefaultAmounts] = useState<Record<string, string>>({});
   const [overrideAmounts, setOverrideAmounts] = useState<Record<string, string>>({});
-  const [poolDraft, setPoolDraft] = useState<string>("");
+  const [shiftRateDraft, setShiftRateDraft] = useState<string>("");
   const [assistantCashierId, setAssistantCashierId] = useState("");
   const [assistantAmount, setAssistantAmount] = useState("");
 
@@ -203,12 +203,12 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     onError: onMutationError,
   });
 
-  const savePool = useMutation({
-    mutationFn: (pool: number) => putDishwasherPool(pool),
+  const saveShiftRate = useMutation({
+    mutationFn: (rate: number) => putDishwasherShiftRate(rate),
     onSuccess: async () => {
-      setPoolDraft("");
-      await queryClient.invalidateQueries({ queryKey: ["dishwasher-pool"] });
-      toast.success("Пул мойщиц сохранён — пересчитайте ведомость");
+      setShiftRateDraft("");
+      await queryClient.invalidateQueries({ queryKey: ["dishwasher-shift-rate"] });
+      toast.success("Ставка мойщиц сохранена — пересчитайте ведомость");
     },
     onError: onMutationError,
   });
@@ -229,12 +229,12 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
     clearOverride.isPending ||
     saveAssistant.isPending ||
     savePayoutMode.isPending ||
-    savePool.isPending ||
+    saveShiftRate.isPending ||
     toggleExclusion.isPending;
 
-  const pool = poolQuery.data?.pool ?? null;
-  const poolParsed = Number(poolDraft);
-  const canSavePool = canWrite && poolDraft.trim() !== "" && poolParsed >= 0;
+  const shiftRate = shiftRateQuery.data?.rate ?? null;
+  const shiftRateParsed = Number(shiftRateDraft);
+  const canSaveShiftRate = canWrite && shiftRateDraft.trim() !== "" && shiftRateParsed > 0;
 
   return (
     <div className="space-y-6">
@@ -341,35 +341,34 @@ export function AdminSalariesSection({ canWrite }: { canWrite: boolean }) {
       </section>
 
       <section className="space-y-3">
-        <div className="text-sm font-semibold">Пул мойщиц</div>
+        <div className="text-sm font-semibold">Ставка мойщиц</div>
         <div className="rounded-lg border bg-card p-4">
           <div className="flex flex-wrap items-end gap-3">
             <Label className="grid gap-1 text-sm">
-              <span className="text-muted-foreground">Пул мойщиц, ₽/мес</span>
+              <span className="text-muted-foreground">Ставка за смену, ₽</span>
               <Input
                 className="w-44"
                 disabled={!canWrite || isBusy}
                 inputMode="numeric"
-                onChange={(event) => setPoolDraft(event.target.value)}
-                placeholder={pool != null ? String(pool) : "0"}
-                value={poolDraft}
+                onChange={(event) => setShiftRateDraft(event.target.value)}
+                placeholder={shiftRate != null ? String(shiftRate) : "0"}
+                value={shiftRateDraft}
               />
             </Label>
             <Button
-              disabled={!canSavePool || isBusy}
-              onClick={() => savePool.mutate(poolParsed)}
+              disabled={!canSaveShiftRate || isBusy}
+              onClick={() => saveShiftRate.mutate(shiftRateParsed)}
               size="sm"
               variant="outline"
             >
               Сохранить
             </Button>
             <div className="text-sm tabular-nums text-muted-foreground">
-              Текущий пул: {formatMoney(pool)}
+              Текущая ставка: {formatMoney(shiftRate)}
             </div>
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            Половина месячного пула идёт в каждую полумесячную ведомость. Ставка за смену = ½ пула
-            ÷ календарных дней ведомости. Каждая получает (её смены в периоде) × ставку. Смены
+            Мойщица получает (её смены в периоде) × ставку — одна ставка на всех мойщиц. Смены
             отмечает управляющий в «График сотрудников → График мойщиц».
           </div>
         </div>

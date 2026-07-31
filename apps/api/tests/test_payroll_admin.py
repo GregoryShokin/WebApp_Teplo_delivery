@@ -22,12 +22,14 @@ from app.models import (
 from app.services.payroll_admin import (
     compute_on_demand_debt,
     create_included_payout,
+    get_dishwasher_shift_rate,
     latest_admin_period_dates,
     next_admin_period_dates,
     okladnik_earned_to_date,
     run_admin_payroll,
     set_admin_payroll_exclusion,
     set_dishwasher_shift,
+    set_dishwasher_shift_rate,
     set_okladnik_payout_mode,
 )
 from app.services.payroll_runner import PayrollConflictError
@@ -587,9 +589,14 @@ async def _make_second_half_period(session: AsyncSession) -> PayrollPeriod:
     return period
 
 
-async def test_dishwasher_pool_is_split_equally_between_half_month_runs(
+async def test_dishwasher_shift_costs_the_same_in_both_half_month_runs(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Смена стоит одинаково в обеих половинах месяца — платим за работу, не за календарь.
+
+    При старом месячном пуле ставка плавала от длины полупериода (500 ₽ в 1–15 против
+    468,75 ₽ в 16–31), и 16 отработанных дней приносили столько же, сколько 15.
+    """
     async with async_session_factory() as session:
         employee = await _make_admin_employee(session, position="Посудомойка")
         first = await _make_period(session)
@@ -607,12 +614,46 @@ async def test_dishwasher_pool_is_split_equally_between_half_month_runs(
         first_line = (await _lines(session, first_run.id))[0]
         second_line = (await _lines(session, second_run.id))[0]
 
+        # 15 смен × 500 и 16 смен × 500 — вторая половина длиннее, значит и платит больше.
         assert first_line.base_pay == Decimal("7500.00")
-        assert first_line.components["period_days"] == 15
+        assert first_line.components["shifts"] == 15
         assert first_line.components["shift_rate"] == "500.00"
-        assert second_line.base_pay == Decimal("7500.00")
-        assert second_line.components["period_days"] == 16
-        assert second_line.components["shift_rate"] == "468.75"
+        assert second_line.base_pay == Decimal("8000.00")
+        assert second_line.components["shifts"] == 16
+        assert second_line.components["shift_rate"] == "500.00"
+
+
+async def test_dishwasher_rate_from_settings_is_used(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ставка правится в «Исходных данных» и сразу идёт в расчёт."""
+    async with async_session_factory() as session:
+        employee = await _make_admin_employee(session, position="Посудомойка")
+        period = await _make_period(session)
+        for day in (1, 2, 3):
+            session.add(
+                DishwasherShift(
+                    id=uuid.uuid4(), employee_id=employee.id, work_date=date(2026, 5, day)
+                )
+            )
+        await session.commit()
+
+        await set_dishwasher_shift_rate(session, Decimal("650"))
+        run = await run_admin_payroll(session, period.id)
+        line = (await _lines(session, run.id))[0]
+
+        assert line.components["shift_rate"] == "650.00"
+        assert line.base_pay == Decimal("1950.00")
+
+
+async def test_dishwasher_rate_rejects_non_positive(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        with pytest.raises(PayrollConflictError):
+            await set_dishwasher_shift_rate(session, Decimal("0"))
+        # Без записи в настройки действует умолчание 500 ₽.
+        assert await get_dishwasher_shift_rate(session) == Decimal("500")
 
 
 async def test_cleaner_first_half_mode_pays_full_oklad_on_15th(
@@ -647,7 +688,7 @@ async def test_cleaner_first_half_mode_skips_second_half(
         assert await _lines(session, run.id) == []
 
 
-async def test_dishwasher_period_pool_is_distributed_by_employee_shifts(
+async def test_dishwasher_pay_follows_own_shift_count(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with async_session_factory() as session:
@@ -668,7 +709,8 @@ async def test_dishwasher_period_pool_is_distributed_by_employee_shifts(
         lines = await _lines(session, run.id)
         by_employee = {line.employee_id: line for line in lines}
 
-        # Половина пула на ведомость = 7500; 7500 / 15 дней = 500 за смену.
+        # Каждая получает за СВОИ смены по 500 ₽; общая сумма ведомости не ограничена
+        # пулом — сколько отработали, столько и стоит.
         assert [by_employee[employee.id].base_pay for employee in employees] == [
             Decimal("3500.00"),
             Decimal("2000.00"),
@@ -677,9 +719,6 @@ async def test_dishwasher_period_pool_is_distributed_by_employee_shifts(
         assert sum((line.total_payable for line in lines), Decimal("0")) == Decimal("7500.00")
         for line in lines:
             assert line.role == "Посудомойка"
-            assert line.components["monthly_pool"] == "15000.00"
-            assert line.components["period_pool"] == "7500.00"
-            assert line.components["period_days"] == 15
             assert line.components["shift_rate"] == "500.00"
 
 

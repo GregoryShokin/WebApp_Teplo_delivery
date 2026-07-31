@@ -53,8 +53,8 @@ ADMIN_OKLAD_CATEGORY = "admin"
 HALF_MONTH_SPLIT_DAY = 15
 _CENTS = Decimal("0.01")
 
-# Окладные должности (оклад/2 за полупериод) и посменные из месячного пула
-# (мойщицы) читаются из реестра должностей: archetype okladnik / shift_pool →
+# Окладные должности (оклад/2 за полупериод) и посменные (мойщицы: смены × ставку)
+# читаются из реестра должностей: archetype okladnik / shift_pool →
 # position_registry.okladnik_positions() / dishwasher_positions().
 
 # Режим выплаты оклада за полумесяц. split — пополам (½ на 15-е, ½ на 1-е);
@@ -74,8 +74,14 @@ PAYOUT_MODES = (
 )
 OKLADNIK_PAYOUT_MODES_KEY = "payroll.okladnik_payout_modes"
 
-DISHWASHER_POOL_KEY = "payroll.dishwasher_pool"
-DISHWASHER_POOL_DEFAULT = Decimal("15000")
+# Мойщица оплачивается за смену: (смены в полупериоде) × ставку. Ставка — одна на всех
+# мойщиц, правится в «Исходных данных → Оклады администрации». До 31.07.2026 здесь был
+# месячный пул 15 000 ₽, который делился пополам между ведомостями и дальше на календарные
+# дни периода: ставка плавала (500 ₽ в 15-дневном полупериоде, 468,75 ₽ в 16-дневном), а
+# сумма к выплате зависела от длины месяца, а не от отработанного. Решение владельца —
+# фиксированная цена смены.
+DISHWASHER_SHIFT_RATE_KEY = "payroll.dishwasher_shift_rate"
+DISHWASHER_SHIFT_RATE_DEFAULT = Decimal("500")
 
 
 # --------------------------------------------------------------------------- #
@@ -315,10 +321,7 @@ async def calculate_admin_payroll_lines(
     # Суммы, включённые в выплату этой ведомости вручную («Включить в выплату») — формируют
     # total_payable on_demand-строк (платятся вместе с ведомостью).
     included_by_employee = await load_included_payouts_by_employee(session, run_id)
-    dishwasher_pool = await _load_dishwasher_pool(session)
-    dishwasher_rate = _dishwasher_shift_rate(dishwasher_pool, period)
-    dishwasher_period_pool = dishwasher_pool / Decimal("2")
-    dishwasher_period_days = (period.end_date - period.start_date).days + 1
+    dishwasher_rate = await _load_dishwasher_shift_rate(session)
     shift_counts = await _load_dishwasher_shift_counts(
         session, employee_ids, period.start_date, period.end_date
     )
@@ -359,7 +362,7 @@ async def calculate_admin_payroll_lines(
         has_adjustments = bool(bonus_items or penalty_items)
 
         if position in dishwasher_positions():
-            # Посменная оплата: смены в полупериоде × ставку-из-пула.
+            # Посменная оплата: смены в полупериоде × ставку за смену.
             shifts = shift_counts.get(employee.id, 0)
             if shifts <= 0 and not has_adjustments:
                 continue
@@ -368,9 +371,6 @@ async def calculate_admin_payroll_lines(
                 "kind": "dishwasher_shifts",
                 "shifts": shifts,
                 "shift_rate": money_string(dishwasher_rate),
-                "monthly_pool": money_string(dishwasher_pool),
-                "period_pool": money_string(dishwasher_period_pool),
-                "period_days": dishwasher_period_days,
                 "base_pay": money_string(base_pay),
                 "adjustments": {"bonuses": bonus_items, "penalties": penalty_items},
             }
@@ -883,30 +883,18 @@ async def _load_okladnik_payout_modes(session: AsyncSession) -> dict[str, str]:
     return {str(key): str(mode) for key, mode in value.items() if str(mode) in PAYOUT_MODES}
 
 
-async def _load_dishwasher_pool(session: AsyncSession) -> Decimal:
+async def _load_dishwasher_shift_rate(session: AsyncSession) -> Decimal:
+    """Цена одной смены мойщицы. Не задана/битая/непозитивная — дефолт 500 ₽."""
     setting = await session.scalar(
-        select(AppSetting).where(AppSetting.key == DISHWASHER_POOL_KEY)
+        select(AppSetting).where(AppSetting.key == DISHWASHER_SHIFT_RATE_KEY)
     )
     if setting is None or setting.value is None:
-        return DISHWASHER_POOL_DEFAULT
+        return DISHWASHER_SHIFT_RATE_DEFAULT
     try:
-        pool = decimal(setting.value)
+        rate = decimal(setting.value)
     except (TypeError, ValueError, ArithmeticError):
-        return DISHWASHER_POOL_DEFAULT
-    return pool if pool > 0 else DISHWASHER_POOL_DEFAULT
-
-
-def _dishwasher_shift_rate(pool: Decimal, period: PayrollPeriod) -> Decimal:
-    """Ставка за смену = половина месячного пула ÷ дни полумесячной ведомости.
-
-    Каждая админская ведомость получает ровно половину месячного пула посудомоек.
-    Внутри ведомости эта половина распределяется по её календарным дням, после чего
-    ставка умножается на число смен сотрудника. Округление выполняется уже для итоговой
-    суммы строки, чтобы промежуточная ставка не создавала лишний остаток пула.
-    """
-    period_days = (period.end_date - period.start_date).days + 1
-    period_pool = pool / Decimal("2")
-    return period_pool / Decimal(period_days)
+        return DISHWASHER_SHIFT_RATE_DEFAULT
+    return rate if rate > 0 else DISHWASHER_SHIFT_RATE_DEFAULT
 
 
 async def _load_dishwasher_shift_counts(
@@ -1172,23 +1160,23 @@ async def set_okladnik_payout_mode(
     )
 
 
-async def get_dishwasher_pool(session: AsyncSession) -> Decimal:
-    return await _load_dishwasher_pool(session)
+async def get_dishwasher_shift_rate(session: AsyncSession) -> Decimal:
+    return await _load_dishwasher_shift_rate(session)
 
 
-async def set_dishwasher_pool(session: AsyncSession, pool: Decimal) -> Decimal:
-    pool_dec = decimal(pool)
-    if pool_dec <= 0:
-        raise PayrollConflictError("Пул должен быть больше нуля")
+async def set_dishwasher_shift_rate(session: AsyncSession, rate: Decimal) -> Decimal:
+    rate_dec = decimal(rate)
+    if rate_dec <= 0:
+        raise PayrollConflictError("Ставка должна быть больше нуля")
     await _upsert_setting(
         session,
-        key=DISHWASHER_POOL_KEY,
-        value=float(pool_dec),
+        key=DISHWASHER_SHIFT_RATE_KEY,
+        value=float(rate_dec),
         value_type="decimal",
-        display_name="Пул мойщиц, ₽/мес",
+        display_name="Ставка мойщицы за смену, ₽",
         unit="₽",
     )
-    return pool_dec
+    return rate_dec
 
 
 # --------------------------------------------------------------------------- #

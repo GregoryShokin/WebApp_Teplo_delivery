@@ -122,8 +122,8 @@ export function DishwasherScheduleSection({ canEdit }: { canEdit: boolean }) {
         <div>
           <div className="font-semibold">График мойщиц</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            Отметьте отработанные дни. Ставка за смену = пул ÷ дней месяца. 1–15 — выплата 15-го,
-            16–{total} — выплата 1-го числа следующего месяца.
+            Отметьте отработанные дни. Каждая смена оплачивается по ставке из «Исходных данных».
+            1–15 — выплата 15-го, 16–{total} — выплата 1-го числа следующего месяца.
           </div>
         </div>
         <div className="flex items-center gap-2">

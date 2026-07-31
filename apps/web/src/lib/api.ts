@@ -3992,13 +3992,15 @@ export async function putAdminPayoutMode(
   return response.data;
 }
 
-export async function getDishwasherPool(): Promise<{ pool: number }> {
-  const response = await api.get<{ pool: number }>("/payroll/admin/dishwasher/pool");
+export async function getDishwasherShiftRate(): Promise<{ rate: number }> {
+  const response = await api.get<{ rate: number }>("/payroll/admin/dishwasher/shift-rate");
   return response.data;
 }
 
-export async function putDishwasherPool(pool: number): Promise<{ pool: number }> {
-  const response = await api.put<{ pool: number }>("/payroll/admin/dishwasher/pool", { pool });
+export async function putDishwasherShiftRate(rate: number): Promise<{ rate: number }> {
+  const response = await api.put<{ rate: number }>("/payroll/admin/dishwasher/shift-rate", {
+    rate,
+  });
   return response.data;
 }
 

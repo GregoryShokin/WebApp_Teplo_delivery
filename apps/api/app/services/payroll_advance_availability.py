@@ -40,10 +40,9 @@ from app.services.payroll_admin import (
     PAYOUT_MODE_FIRST_HALF,
     PAYOUT_MODE_ON_DEMAND,
     PAYOUT_MODE_SECOND_HALF,
-    _dishwasher_shift_rate,
     _first_half,
-    _load_dishwasher_pool,
     _load_dishwasher_shift_counts,
+    _load_dishwasher_shift_rate,
     _load_okladnik_payout_modes,
     _okladnik_payout_mode,
     _second_half,
@@ -203,15 +202,7 @@ async def _dishwasher_earned(
     as_of: date,
 ) -> tuple[Decimal, date, date]:
     start, end = _half_month_bounds(as_of)
-    period = PayrollPeriod(
-        period_type="half_month",
-        start_date=start,
-        end_date=end,
-        payroll_date=end,
-        status="open",
-    )
-    pool = await _load_dishwasher_pool(session)
-    rate = _dishwasher_shift_rate(pool, period)
+    rate = await _load_dishwasher_shift_rate(session)
     # Смены только по прошедшие дни (≤ as_of) текущего полупериода.
     counts = await _load_dishwasher_shift_counts(session, [employee.id], start, as_of)
     shifts = counts.get(employee.id, 0)

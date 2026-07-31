@@ -40,7 +40,7 @@ from app.services.payroll_admin import (
     clear_admin_oklad_override,
     compute_on_demand_debt,
     create_included_payout,
-    get_dishwasher_pool,
+    get_dishwasher_shift_rate,
     list_on_demand_employees,
     list_admin_oklady,
     list_admin_runs,
@@ -48,8 +48,8 @@ from app.services.payroll_admin import (
     list_dishwasher_shifts,
     run_admin_payroll,
     set_admin_payroll_exclusion,
-    set_dishwasher_pool,
     set_dishwasher_shift,
+    set_dishwasher_shift_rate,
     set_okladnik_payout_mode,
     upsert_admin_oklad,
 )
@@ -119,14 +119,14 @@ class AdminPayoutModeUpsert(BaseModel):
     mode: str
 
 
-class DishwasherPoolRead(BaseModel):
-    pool: float
+class DishwasherShiftRateRead(BaseModel):
+    rate: float
 
 
-class DishwasherPoolUpsert(BaseModel):
+class DishwasherShiftRateUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pool: Decimal = Field(gt=0)
+    rate: Decimal = Field(gt=0)
 
 
 class DishwasherEmployeeRead(BaseModel):
@@ -417,29 +417,33 @@ async def put_admin_payout_mode(
 # Мойщицы (посменно)
 # --------------------------------------------------------------------------- #
 @router.get(
-    "/dishwasher/pool", response_model=DishwasherPoolRead, dependencies=SOURCE_RATES_READ_ACCESS
+    "/dishwasher/shift-rate",
+    response_model=DishwasherShiftRateRead,
+    dependencies=SOURCE_RATES_READ_ACCESS,
 )
-async def get_dishwasher_pool_endpoint(
+async def get_dishwasher_shift_rate_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> DishwasherPoolRead:
-    pool = await get_dishwasher_pool(session)
-    return DishwasherPoolRead(pool=float(pool))
+) -> DishwasherShiftRateRead:
+    rate = await get_dishwasher_shift_rate(session)
+    return DishwasherShiftRateRead(rate=float(rate))
 
 
 @router.put(
-    "/dishwasher/pool", response_model=DishwasherPoolRead, dependencies=SOURCE_RATES_EDIT_ACCESS
+    "/dishwasher/shift-rate",
+    response_model=DishwasherShiftRateRead,
+    dependencies=SOURCE_RATES_EDIT_ACCESS,
 )
-async def put_dishwasher_pool_endpoint(
-    payload: DishwasherPoolUpsert,
+async def put_dishwasher_shift_rate_endpoint(
+    payload: DishwasherShiftRateUpsert,
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> DishwasherPoolRead:
+) -> DishwasherShiftRateRead:
     try:
-        pool = await set_dishwasher_pool(session, payload.pool)
+        rate = await set_dishwasher_shift_rate(session, payload.rate)
     except PayrollConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    return DishwasherPoolRead(pool=float(pool))
+    return DishwasherShiftRateRead(rate=float(rate))
 
 
 @router.get(
