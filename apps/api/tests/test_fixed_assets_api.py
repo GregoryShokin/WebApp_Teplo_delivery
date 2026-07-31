@@ -326,3 +326,114 @@ def test_asset_from_payment_without_date_still_depreciates(
         f"{BASE}/{created.json()['asset_id']}", headers=_admin(async_session_factory)
     ).json()
     assert card["commissioned_on"] is not None
+
+
+def test_categories_carry_field_profile_over_http(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Профиль полей обязан ДОЕХАТЬ ДО ФРОНТА, а не остаться в базе.
+
+    Форма заведения начинается с категории и по её профилю решает, что спрашивать: у техники
+    марку и модель, у мебели материал и размеры. Значение живёт в колонке, но между базой и
+    формой стоит ``response_model``, который молча выбрасывает поля, не объявленные в схеме.
+    Именно так в этом модуле трижды пропадал ``asset_link_kind``: в базе флаг стоял, на экране
+    контур не появлялся, а тесты сервиса были зелёными — они читают модель, а не HTTP.
+    """
+    items = {
+        item["name"]: item["spec_profile"]
+        for item in client.get(f"{BASE}/categories", headers=_admin(async_session_factory)).json()[
+            "items"
+        ]
+    }
+    assert items["Тепловое оборудование"] == "equipment"
+    assert items["Электроника и оргтехника"] == "equipment"
+    # Стеллажи и столы из нержавейки: марки у них нет, а материал и размеры есть.
+    assert items["Вспомогательное оборудование"] == "furniture"
+    assert items["Мебель и предметы интерьера"] == "furniture"
+    assert items["Прочий кухонный инвентарь"] == "other"
+
+
+def test_used_asset_without_condition_description_is_rejected(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Б/У без описания состояния не принимаем — оценивать было бы нечем.
+
+    Такая карточка знает ровно одно: износ у объекта уже есть. Какой — неизвестно, и объект
+    начинает амортизироваться по сроку НОВОГО, то есть завышает баланс несколько лет подряд.
+    Проверка стоит на сервере, а не только в форме: платежи приходят и не из формы.
+    """
+    response = client.post(
+        f"{BASE}/from-payment",
+        headers=_manager(async_session_factory),
+        json={
+            "name": "Пароконвектомат",
+            "initial_cost": "90000.00",
+            "condition": "used",
+            "condition_note": "   ",
+        },
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_used_asset_goes_into_the_valuation_queue(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Описание состояния б/У объекта встаёт в очередь на оценку и остаётся в карточке.
+
+    Очередь — та же таблица, куда менеджер пишет о поломке: у владельца одно место, где он
+    видит предложения модели, а не два. Стоимость при этом не меняется ни на копейку —
+    предложение ждёт решения человека.
+
+    Дубль описания в заметке не избыточность: запись в очереди можно отклонить, а вызов модели
+    может провалиться. Свидетельство о том, что объект куплен изношенным, обязано пережить оба
+    случая.
+    """
+    created = client.post(
+        f"{BASE}/from-payment",
+        headers=_manager(async_session_factory),
+        json={
+            "name": "Шкаф холодильный",
+            "initial_cost": "45000.00",
+            "condition": "used",
+            "condition_note": "2019 года, дверь провисла, компрессор менялся",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    admin = _admin(async_session_factory)
+    card = client.get(f"{BASE}/{created.json()['asset_id']}", headers=admin).json()
+    assert card["condition"] == "used"
+    assert "компрессор менялся" in (card["note"] or "")
+    assert card["initial_cost"] == "45000.00", "оценка ничего не меняет сама"
+
+    reports = card["condition_reports"]
+    assert len(reports) == 1, "б/у объект обязан встать в очередь на оценку"
+    assert reports[0]["status"] == "pending"
+    assert "компрессор менялся" in reports[0]["message"]
+
+
+def test_new_asset_does_not_call_the_model(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Новый объект в очередь на оценку не встаёт: у него нечего оценивать.
+
+    Иначе каждая покупка стоила бы вызова модели, а владелец получал бы поток предложений
+    «износа нет» — и перестал бы их читать ровно к тому моменту, когда появится настоящее.
+    """
+    created = client.post(
+        f"{BASE}/from-payment",
+        headers=_manager(async_session_factory),
+        json={
+            "name": "Рисоварка промышленная",
+            "initial_cost": "17422.00",
+            "condition": "new",
+            # Описание для нового объекта смысла не имеет и должно игнорироваться.
+            "condition_note": "коробка не вскрыта",
+        },
+    )
+    assert created.status_code == 201, created.text
+    card = client.get(
+        f"{BASE}/{created.json()['asset_id']}", headers=_admin(async_session_factory)
+    ).json()
+    assert card["condition"] == "new"
+    assert card["condition_reports"] == []

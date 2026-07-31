@@ -1,14 +1,15 @@
 import { expect, test, type Route } from "@playwright/test";
 
-// Заведение карточки ОС диалогом. Ответы модели подменены: проверяется не её сообразительность,
-// а поведение окна вокруг неё — то, что ломается молча.
+// Заведение карточки ОС из разбора платежа. Ответы модели подменены: проверяется не её
+// сообразительность, а поведение окна вокруг неё — то, что ломается молча.
 //
-// Почему это важно проверять отдельно: категория задаёт срок амортизации. Если окно потеряет
-// предложенную категорию или не даст её поправить, объект будет амортизироваться не те годы, и
-// увидят это через годы.
+// Почему это важно проверять отдельно: категория задаёт срок амортизации и решает, какие поля
+// вообще показывать. Если окно потеряет категорию, спрячет обязательное поле или пропустит б/у
+// без описания, объект будет амортизироваться не те годы, и увидят это через годы.
 
 const ASSET_ARTICLE_ID = "11111111-1111-1111-1111-111111111111";
-const CATEGORY_ID = "99999999-9999-9999-9999-999999999999";
+const HEAT_ID = "99999999-9999-9999-9999-999999999999";
+const FURNITURE_ID = "88888888-8888-8888-8888-888888888888";
 const WALLET_ID = "44444444-4444-4444-4444-444444444444";
 const TXN_ID = "55555555-5555-5555-5555-555555555555";
 
@@ -18,6 +19,28 @@ function fulfillJson(route: Route, body: unknown) {
     contentType: "application/json",
     body: JSON.stringify(body),
   });
+}
+
+/** Ответ модели: поля те же, что у ``IntakeRead``, — молчаливый пропуск ловится типами. */
+function intakeReply(overrides: Record<string, unknown>) {
+  return {
+    status: "ready",
+    question: null,
+    why: null,
+    suggestions: [],
+    name: null,
+    brand: null,
+    model: null,
+    category_id: null,
+    category_name: null,
+    material: null,
+    dimensions: null,
+    specs: null,
+    condition: null,
+    condition_note: null,
+    reason: null,
+    ...overrides,
+  };
 }
 
 async function mockBase(page: import("@playwright/test").Page) {
@@ -60,7 +83,20 @@ async function mockBase(page: import("@playwright/test").Page) {
   await page.route("**/api/v1/fixed-assets/categories**", (route) =>
     fulfillJson(route, {
       items: [
-        { id: CATEGORY_ID, name: "Тепловое оборудование", useful_life_months: 84, note: null },
+        {
+          id: HEAT_ID,
+          name: "Тепловое оборудование",
+          useful_life_months: 84,
+          spec_profile: "equipment",
+          note: null,
+        },
+        {
+          id: FURNITURE_ID,
+          name: "Вспомогательное оборудование",
+          useful_life_months: 120,
+          spec_profile: "furniture",
+          note: null,
+        },
       ],
     }),
   );
@@ -93,7 +129,7 @@ async function mockBase(page: import("@playwright/test").Page) {
   );
 }
 
-async function openIntake(page: import("@playwright/test").Page) {
+async function openCreate(page: import("@playwright/test").Page) {
   await page.goto("/dds");
   await page.getByRole("tab", { name: /Журнал ДДС/ }).click();
   await page.getByRole("row").filter({ hasText: "Покупка ОС" }).first().click();
@@ -101,46 +137,118 @@ async function openIntake(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: /Завести новый объект/ }).click();
 }
 
-test("модель уточняет, ответ уходит в следующий запрос вместе со всей перепиской", async ({
+test("по умолчанию открывается форма, и категория решает, какие поля спрашивать", async ({
   page,
 }) => {
+  await mockBase(page);
+  await openCreate(page);
+  const dialog = page.getByRole("dialog").last();
+
+  // Первый вопрос — категория. Диалог с моделью здесь ОПЦИЯ, а не единственный вход: без ключа
+  // или при лежащем релее покупку всё равно надо записать.
+  await expect(dialog.getByText("Что за оборудование")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Внести с помощью ИИ/ })).toBeVisible();
+  await expect(dialog.getByText("Наименование")).toBeHidden();
+
+  // Техника — марка и модель: без них объект не опознать при следующей инвентаризации.
+  await dialog.getByRole("button", { name: /Тепловое оборудование · 7 лет/ }).click();
+  await expect(dialog.getByText("Марка")).toBeVisible();
+  await expect(dialog.getByText("Модель")).toBeVisible();
+  await expect(dialog.getByText("Материал")).toBeHidden();
+
+  // Мебель — материал и размеры, марки у производственного стола обычно нет вовсе.
+  await dialog.getByRole("button", { name: /Вспомогательное оборудование · 10 лет/ }).click();
+  await expect(dialog.getByText("Материал")).toBeVisible();
+  await expect(dialog.getByText("Размеры")).toBeVisible();
+  await expect(dialog.getByText("Марка")).toBeHidden();
+});
+
+test("б/у без описания состояния завести нельзя", async ({ page }) => {
+  await mockBase(page);
+  const created: unknown[] = [];
+  await page.route("**/api/v1/fixed-assets/from-payment", async (route) => {
+    created.push(route.request().postDataJSON());
+    return route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        asset_id: "77777777-7777-7777-7777-777777777777",
+        inventory_number: "ОС-0150",
+        name: "Шкаф холодильный",
+        brand_model: "Polair CM105-S",
+        location_name: null,
+        status: "in_use",
+        status_title: "В работе",
+        initial_cost: "40000.00",
+      }),
+    });
+  });
+
+  await openCreate(page);
+  const dialog = page.getByRole("dialog").last();
+  await dialog.getByRole("button", { name: /Тепловое оборудование · 7 лет/ }).click();
+  await dialog.getByPlaceholder(/Рисоварка промышленная/).fill("Шкаф холодильный");
+  await dialog.getByPlaceholder("Gastrorag").fill("Polair");
+  await dialog.getByPlaceholder("DH-RC-2").fill("CM105-S");
+
+  // Состояние обязательно: карточка без него амортизируется как новая, сколько бы лет объект
+  // ни отработал у прошлого хозяина.
+  const submit = dialog.getByRole("button", { name: "Завести и выбрать" });
+  await expect(submit).toBeDisabled();
+
+  await dialog.getByRole("button", { name: "Б/У", exact: true }).click();
+  await expect(submit).toBeDisabled();
+
+  await dialog.getByPlaceholder(/дверь провисла/).fill("2019 года, компрессор менялся");
+  await expect(submit).toBeEnabled();
+  // Ждём ОТВЕТ, а не запрос: обработчик маршрута отрабатывает после события запроса, и на
+  // `waitForRequest` массив ещё пуст.
+  const sent = page.waitForResponse("**/api/v1/fixed-assets/from-payment");
+  await submit.click();
+  await sent;
+
+  expect(created).toHaveLength(1);
+  expect(created[0]).toMatchObject({
+    name: "Шкаф холодильный",
+    brand_model: "Polair CM105-S",
+    condition: "used",
+    condition_note: "2019 года, компрессор менялся",
+  });
+});
+
+test("ИИ — кнопка: предложение модели приземляется в ту же форму", async ({ page }) => {
   await mockBase(page);
   const asked: unknown[] = [];
   await page.route("**/api/v1/fixed-assets/intake", async (route) => {
     const body = route.request().postDataJSON();
     asked.push(body);
     if (body.history.length === 0) {
-      return fulfillJson(route, {
-        status: "need_more",
-        question: "Что за стол?",
-        why: "От материала зависит категория и срок службы.",
-        suggestions: ["из нержавеющей стали", "деревянный"],
-        name: null,
-        brand: null,
-        model: null,
-        category_id: null,
-        category_name: null,
-        specs: null,
-        reason: null,
-      });
+      return fulfillJson(
+        route,
+        intakeReply({
+          status: "need_more",
+          question: "Что за стол?",
+          why: "От материала зависит категория и срок службы.",
+          suggestions: ["из нержавеющей стали", "деревянный"],
+        }),
+      );
     }
-    return fulfillJson(route, {
-      status: "ready",
-      question: null,
-      why: null,
-      suggestions: [],
-      name: "Стол производственный из нержавеющей стали",
-      brand: null,
-      model: null,
-      category_id: CATEGORY_ID,
-      category_name: "Тепловое оборудование",
-      specs: "нержавеющая сталь",
-      reason: "Кухонное оборудование, а не офисная мебель.",
-    });
+    return fulfillJson(
+      route,
+      intakeReply({
+        name: "Стол производственный из нержавеющей стали",
+        category_id: FURNITURE_ID,
+        category_name: "Вспомогательное оборудование",
+        material: "нержавеющая сталь",
+        dimensions: "1200×600×850 мм",
+        reason: "Кухонное оборудование, а не офисная мебель.",
+      }),
+    );
   });
 
-  await openIntake(page);
+  await openCreate(page);
   const dialog = page.getByRole("dialog").last();
+  await dialog.getByRole("button", { name: /Внести с помощью ИИ/ }).click();
 
   // Одно поле вместо формы — сотрудник пишет своими словами.
   await dialog.getByPlaceholder(/купили рисоварку/).fill("купили стол");
@@ -153,12 +261,17 @@ test("модель уточняет, ответ уходит в следующи
   // Быстрый ответ одним тапом — окно заводят с планшета.
   await dialog.getByRole("button", { name: "из нержавеющей стали" }).click();
 
-  // Карточка-предложение показана целиком и с объяснением выбора категории.
+  // Готовая карточка — это ТА ЖЕ форма: человек видит поля своей категории и правит любое.
+  // Материал и размеры приезжают порознь, а не строкой: иначе они не попали бы в свои поля.
   await expect(dialog.getByText(/Кухонное оборудование, а не офисная мебель/)).toBeVisible();
   await expect(
     dialog.locator(`input[value="Стол производственный из нержавеющей стали"]`),
   ).toBeVisible();
   await expect(dialog.locator(`input[value="нержавеющая сталь"]`)).toBeVisible();
+  await expect(dialog.locator(`input[value="1200×600×850 мм"]`)).toBeVisible();
+
+  // Состояние модель не угадывала — переключатель остался пустым, и «Завести» заблокировано.
+  await expect(dialog.getByRole("button", { name: "Завести и выбрать" })).toBeDisabled();
 
   // Вся переписка ушла во второй запрос: без неё модель спросила бы то же самое заново.
   expect(asked).toHaveLength(2);
@@ -168,7 +281,7 @@ test("модель уточняет, ответ уходит в следующи
   });
 });
 
-test("модель недоступна — окно переходит к ручной форме, а не встаёт", async ({ page }) => {
+test("модель недоступна — окно возвращается к форме, а не встаёт", async ({ page }) => {
   await mockBase(page);
   await page.route("**/api/v1/fixed-assets/intake", (route) =>
     route.fulfill({
@@ -178,46 +291,15 @@ test("модель недоступна — окно переходит к ру�
     }),
   );
 
-  await openIntake(page);
+  await openCreate(page);
   const dialog = page.getByRole("dialog").last();
+  await dialog.getByRole("button", { name: /Внести с помощью ИИ/ }).click();
   await dialog.getByPlaceholder(/купили рисоварку/).fill("рисоварка");
   await dialog.getByRole("button", { name: "Дальше" }).click();
 
   // Платёж должен провестись в любом случае: недоступность модели не повод не записать
-  // покупку. Поэтому вместо тупика — обычные поля, уже с тем, что человек успел написать.
-  await expect(dialog.getByText("Наименование")).toBeVisible();
+  // покупку. Поэтому вместо тупика — обычная форма, уже с тем, что человек успел написать.
+  await expect(dialog.getByText("Что за оборудование")).toBeVisible();
+  await dialog.getByRole("button", { name: /Тепловое оборудование · 7 лет/ }).click();
   await expect(dialog.locator(`input[value="рисоварка"]`)).toBeVisible();
-  await expect(dialog.getByText("Категория")).toBeVisible();
-});
-
-test("категорию, предложенную моделью, можно поправить до записи", async ({ page }) => {
-  await mockBase(page);
-  await page.route("**/api/v1/fixed-assets/intake", (route) =>
-    fulfillJson(route, {
-      status: "ready",
-      question: null,
-      why: null,
-      suggestions: [],
-      name: "Рисоварка промышленная",
-      brand: "Gastrorag",
-      model: "DH-RC-2",
-      // Категорию модель предложить не смогла (её не было в справочнике) — поле пустое, и
-      // «Завести» обязано быть заблокировано: объект без срока не амортизируется вовсе.
-      category_id: null,
-      category_name: null,
-      specs: null,
-      reason: null,
-    }),
-  );
-
-  await openIntake(page);
-  const dialog = page.getByRole("dialog").last();
-  await dialog.getByPlaceholder(/купили рисоварку/).fill("рисоварка");
-  await dialog.getByRole("button", { name: "Дальше" }).click();
-
-  await expect(dialog.locator(`input[value="Gastrorag"]`)).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Завести и выбрать" })).toBeDisabled();
-
-  await dialog.getByText(/Тепловое оборудование · 7 лет/).click();
-  await expect(dialog.getByRole("button", { name: "Завести и выбрать" })).toBeEnabled();
 });

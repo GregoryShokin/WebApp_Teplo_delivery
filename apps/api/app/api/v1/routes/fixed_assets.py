@@ -13,13 +13,14 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,8 @@ from app.services import asset_analytics, asset_balance, asset_intake, asset_rev
 from app.services import fixed_assets as service
 from app.services.anthropic_client import LlmCallError
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 ASSETS_READ_ACCESS = (Depends(require_permission("accounting.fixed_assets.read")),)
 ASSETS_EDIT_ACCESS = (Depends(require_permission("accounting.fixed_assets.edit")),)
@@ -59,6 +62,8 @@ PERIOD_CLOSE_ACCESS = (Depends(require_permission("accounting.periods.close")),)
 AssetStatus = Literal["in_use", "in_storage", "not_working", "disposed", "sold"]
 ValuationBasis = Literal["market", "payment"]
 ReviewStatus = Literal["ok", "requires_owner_review"]
+SpecProfile = Literal["equipment", "furniture", "other"]
+AssetCondition = Literal["new", "used"]
 
 STATUS_TITLES: dict[str, str] = {
     "in_use": "В работе",
@@ -73,6 +78,11 @@ class AssetCategoryRead(BaseModel):
     id: uuid.UUID
     name: str
     useful_life_months: int
+    # Какие поля спрашивать при заведении: у техники марка и модель, у мебели материал и
+    # размеры. Поле ОБЯЗАНО быть объявлено здесь: ``response_model`` молча выбрасывает всё, чего
+    # нет в схеме, и форма получила бы профиль пустым при живом значении в базе — этот дефект в
+    # модуле повторялся уже трижды.
+    spec_profile: SpecProfile
     note: str | None
 
 
@@ -85,6 +95,8 @@ class FixedAssetRead(BaseModel):
     name: str
     inventory_number: str | None
     brand_model: str | None
+    # Новым куплен объект или с рук; NULL у карточек описи 2026 — «неизвестно».
+    condition: AssetCondition | None
     category_id: uuid.UUID | None
     category_name: str | None
     initial_cost: Decimal
@@ -312,6 +324,7 @@ def _payload(
         name=asset.name,
         inventory_number=asset.inventory_number,
         brand_model=asset.brand_model,
+        condition=asset.condition,  # type: ignore[arg-type]
         category_id=asset.category_id,
         category_name=category.name if category else None,
         initial_cost=initial,
@@ -352,6 +365,7 @@ async def list_categories(
                 id=row.id,
                 name=row.name,
                 useful_life_months=row.useful_life_months,
+                spec_profile=row.spec_profile,  # type: ignore[arg-type]
                 note=row.note,
             )
             for row in rows
@@ -439,6 +453,23 @@ class AssetFromPaymentRequest(BaseModel):
     # Материал, размеры, объём — то, по чему объект узнают на следующей инвентаризации.
     # Отдельного поля под характеристики в карточке нет, поэтому кладём их в заметку.
     note: str | None = Field(default=None, max_length=2000)
+    condition: AssetCondition | None = None
+    # Описание состояния б/у объекта: уходит в ``asset_condition_report``, оттуда его заберёт
+    # контур оценки моделью. Для нового объекта смысла не имеет и игнорируется.
+    condition_note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _used_needs_description(self) -> AssetFromPaymentRequest:
+        """Б/У без описания состояния не принимаем.
+
+        Проверка на СЕРВЕРЕ, а не только в форме: признак «б/у» без описания — это карточка,
+        про которую известно ровно то, что износ у неё уже есть, и неизвестно какой. Оценить
+        такую нечем, и она молча амортизируется по сроку нового объекта — то есть завышает
+        баланс несколько лет подряд. Пусть лучше запрос откажет.
+        """
+        if self.condition == "used" and not (self.condition_note or "").strip():
+            raise ValueError("Для б/у объекта опишите состояние — по нему считается оценка")
+        return self
 
 
 class IntakeTurnIn(BaseModel):
@@ -467,7 +498,11 @@ class IntakeRead(BaseModel):
     model: str | None = None
     category_id: uuid.UUID | None = None
     category_name: str | None = None
+    material: str | None = None
+    dimensions: str | None = None
     specs: str | None = None
+    condition: AssetCondition | None = None
+    condition_note: str | None = None
     reason: str | None = None
 
 
@@ -509,7 +544,11 @@ async def asset_intake_step(
         model=result.model,
         category_id=result.category_id,  # type: ignore[arg-type]
         category_name=result.category_name,
+        material=result.material,
+        dimensions=result.dimensions,
         specs=result.specs,
+        condition=result.condition,  # type: ignore[arg-type]
+        condition_note=result.condition_note,
         reason=result.reason,
     )
 
@@ -523,6 +562,7 @@ async def asset_intake_step(
 async def create_asset_from_payment(
     payload: AssetFromPaymentRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> AssetOptionRead:
     """Завести карточку прямо из разбора платежа — купили новое, карточки ещё нет.
 
@@ -544,8 +584,23 @@ async def create_asset_from_payment(
     карточка с пустой датой молча выпадает из начисления: ошибки нет, амортизации нет, а
     заметить это можно только по расхождению баланса через полгода. Поэтому пустое значение
     заменяем сегодняшним днём, а не оставляем как есть.
+
+    Б/У ОБЪЕКТ СРАЗУ ВСТАЁТ В ОЧЕРЕДЬ НА ОЦЕНКУ. Описание состояния уходит в
+    ``asset_condition_report`` — ту же таблицу, куда менеджер пишет о поломке, — и его
+    подхватывает уже существующий контур оценки моделью. Отдельного пути не заводим: он
+    отличался бы только точкой входа, а владельцу пришлось бы смотреть предложения в двух
+    местах. Стоимость при этом не меняется ни на копейку: предложение ждёт решения человека.
     """
     commissioned_on = payload.commissioned_on or datetime.now(UTC).date()
+    condition_note = (payload.condition_note or "").strip()
+    # Описание состояния дублируем в заметку карточки СОЗНАТЕЛЬНО. Запись в очереди на оценку
+    # живёт своей жизнью: её можно отклонить, а вызов модели — провалить. Свидетельство о том,
+    # что объект куплен изношенным, должно остаться в карточке в любом из этих случаев.
+    note_parts = [
+        (payload.note or "").strip(),
+        f"Куплен б/у. Состояние при покупке: {condition_note}" if condition_note else "",
+    ]
+    note = "\n".join(part for part in note_parts if part) or None
     try:
         asset = await service.create_asset(
             session,
@@ -558,12 +613,27 @@ async def create_asset_from_payment(
             status="in_use",
             location_id=payload.location_id,
             brand_model=(payload.brand_model or "").strip() or None,
-            note=(payload.note or "").strip() or None,
+            condition=payload.condition,
+            note=note,
         )
     except service.FixedAssetError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+
+    if payload.condition == "used" and condition_note:
+        # Неудача постановки в очередь не должна отменять карточку: покупка уже состоялась, а
+        # оценка — надстройка над ней. Свидетельство при этом не теряется: описание состояния
+        # остаётся в заметке карточки.
+        try:
+            await asset_revaluation.submit_report(
+                session,
+                asset_id=asset.id,
+                message=f"Куплен б/у. Состояние со слов покупателя: {condition_note}",
+                user_id=actor.user_id,
+            )
+        except LlmCallError:
+            logger.warning("Не удалось поставить б/у объект %s в очередь на оценку", asset.id)
     await session.commit()
     await session.refresh(asset)
     location = await session.get(Location, asset.location_id) if asset.location_id else None

@@ -21,8 +21,6 @@ import {
   apiErrorStatus,
   classifyCashflowTransaction,
   classifyOperation,
-  createAssetFromPayment,
-  getAssetCategories,
   getDdsArticles,
   getDdsOperationSplit,
   getDdsPayoutEmployees,
@@ -1108,7 +1106,13 @@ export function OperationClassifyDialog({
 
     {assetRow ? (
       <Dialog open onOpenChange={(open) => !open && setAssetRowKey(null)}>
-        <DialogContent className="overflow-visible sm:max-w-lg">
+        {/* Окно ДОЛЖНО прокручиваться. ``overflow-visible`` в соседних окнах стоит ради
+            выпадающих списков, которым надо выходить за границу, — здесь таких нет
+            (``InlineOptionList`` рисуется в потоке), а форма заведения карточки высокая:
+            категория, наименование, поля профиля, состояние и описание. С отключённой
+            прокруткой кнопка «Завести и выбрать» уезжает за край экрана и становится
+            недостижимой — ровно это и поймал playwright-тест. */}
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Основное средство</DialogTitle>
             <DialogDescription>

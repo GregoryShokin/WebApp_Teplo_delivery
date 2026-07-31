@@ -187,3 +187,74 @@ async def test_suggestions_are_trimmed_to_four(
             await _categories(session),
         )
     assert result.suggestions == ("нержавейка", "дерево", "пластик", "стекло")
+
+
+async def test_prompt_tells_the_model_which_fields_the_form_will_show(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Профиль категории уходит в промпт вместе со сроком.
+
+    Это не вежливая подсказка: ровно эти поля покажет ручная форма после выбора категории.
+    Модель, предложившая марку для производственного стола, заполнила бы поле, которого на
+    экране нет, — предложение молча потерялось бы между диалогом и формой.
+    """
+    async with async_session_factory() as session:
+        prompt = build_prompt(
+            purchase="купили стол",
+            history=[],
+            categories=await _categories(session),
+            questions_left=3,
+        )
+
+    assert "Тепловое оборудование — 7 лет (важны марка и модель)" in prompt
+    assert "Мебель и предметы интерьера — 7 лет (важны материал и размеры)" in prompt
+
+
+async def test_material_and_dimensions_come_back_as_separate_fields(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Материал и размеры разбираются по отдельности, как их показывает форма."""
+    async with async_session_factory() as session:
+        categories = await _categories(session)
+        result = parse_answer(
+            {
+                "status": "ready",
+                "name": "Стол производственный",
+                "category_name": "Вспомогательное оборудование",
+                "material": " нержавеющая сталь ",
+                "dimensions": "1200×600×850 мм",
+            },
+            categories,
+        )
+
+    assert result.material == "нержавеющая сталь"
+    assert result.dimensions == "1200×600×850 мм"
+
+
+async def test_condition_outside_the_dictionary_is_dropped(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Состояние берём только словарным значением — иначе модель угадывает за человека.
+
+    «Скорее всего б/у» в карточке означало бы, что объект куплен изношенным, и отправило бы его
+    в очередь на оценку по догадке. Переключатель ставит человек; пустое значение честнее.
+    """
+    async with async_session_factory() as session:
+        categories = await _categories(session)
+        guessed = parse_answer(
+            {"status": "ready", "name": "Шкаф", "condition": "скорее всего б/у"}, categories
+        )
+        told = parse_answer(
+            {
+                "status": "ready",
+                "name": "Шкаф",
+                "condition": "used",
+                "condition_note": "дверь провисла",
+            },
+            categories,
+        )
+
+    assert guessed.condition is None
+    # А то, что сотрудник сказал сам, доезжает до формы без переспроса.
+    assert told.condition == "used"
+    assert told.condition_note == "дверь провисла"

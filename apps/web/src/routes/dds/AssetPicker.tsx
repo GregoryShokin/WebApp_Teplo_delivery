@@ -1,20 +1,23 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { LoaderCircle, Plus } from "lucide-react";
+import { LoaderCircle, Plus, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { InlineOptionList, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   apiErrorMessage,
   assetIntakeStep,
   createAssetFromPayment,
   getAssetCategories,
+  type AssetCondition,
   type AssetIntakeStep,
   type AssetIntakeTurn,
   type AssetOption,
+  type AssetSpecProfile,
 } from "@/lib/api";
 import { ASSETS_FORBIDDEN_HINT, formatDate, formatDdsMoney } from "@/routes/dds/shared";
 
@@ -32,6 +35,13 @@ export function assetTitle(asset: AssetOption): string {
  * заводит НОВЫЙ объект: купили рисоварку — привязывать не к чему. Отправлять человека в
  * «Учёт ОС» и обратно значит гарантировать, что он выберет статью попроще, и покупка уйдёт в
  * расход мимо баланса — ровно та дыра, которую весь контур и закрывает.
+ *
+ * ФОРМА — ОСНОВНОЙ ПУТЬ, МОДЕЛЬ — КНОПКА (уточнение владельца 31.07.2026). Первый вопрос формы —
+ * категория: она задаёт срок амортизации, и она же решает, что спрашивать дальше. У техники
+ * опознавательный признак — марка и модель, у производственного стола — материал и размеры, а
+ * марки у него обычно нет вовсе. Набор полей приходит с категории (``spec_profile``), а не
+ * зашит здесь списком имён: категории владелец правит из интерфейса, и захардкоженный перечень
+ * после одиннадцатой начал бы врать молча.
  *
  * Стоимость НЕ спрашиваем: для покупки первоначальная стоимость и есть сумма платежа
  * (``valuation_basis='payment'``). Спросить её отдельно значит позволить двум цифрам
@@ -64,45 +74,57 @@ export function AssetPicker({
   value: string;
 }) {
   const [creating, setCreating] = useState(false);
-  // Ручная форма остаётся ЗАПАСНЫМ путём, а не основным: без ключа или при лежащем релее
-  // диалог невозможен, но покупку записать надо всё равно. Контур, который защищает баланс,
-  // не должен сам мешать провести платёж.
-  const [manual, setManual] = useState(false);
+  // Диалог с моделью — надстройка над формой, а не замена ей: он ЗАПОЛНЯЕТ те же поля, а
+  // подтверждает карточку всё равно человек в форме. Поэтому состояние формы одно на оба пути.
+  const [ai, setAi] = useState(false);
 
-  // --- диалог ---
+  // --- диалог с моделью ---
   const [purchase, setPurchase] = useState("");
   const [history, setHistory] = useState<AssetIntakeTurn[]>([]);
   const [step, setStep] = useState<AssetIntakeStep | null>(null);
   const [answer, setAnswer] = useState("");
+  const [aiReason, setAiReason] = useState<string | null>(null);
 
-  // --- ручная форма (и правка того, что предложила модель) ---
+  // --- форма карточки ---
   const [newName, setNewName] = useState("");
+  const [newCategoryId, setNewCategoryId] = useState("");
   // Марка и модель — ДВА поля, а не одно (замечание владельца 31.07.2026). В карточке они
   // хранятся одной строкой ``brand_model``, как в реестре инвентаризации: дробить колонку ради
   // формы значило бы мигрировать 149 существующих карточек, разрезая их текст догадками.
   const [newBrand, setNewBrand] = useState("");
   const [newModel, setNewModel] = useState("");
-  const [newCategoryId, setNewCategoryId] = useState("");
+  const [material, setMaterial] = useState("");
+  const [dimensions, setDimensions] = useState("");
   const [specs, setSpecs] = useState("");
+  const [condition, setCondition] = useState<AssetCondition | "">("");
+  const [conditionNote, setConditionNote] = useState("");
 
   const categoriesQuery = useQuery({
     queryKey: ["asset-categories"],
     queryFn: getAssetCategories,
     enabled: creating,
   });
+  const categories = categoriesQuery.data ?? [];
+  const category = categories.find((item) => item.id === newCategoryId) ?? null;
+  const profile: AssetSpecProfile | null = category?.spec_profile ?? null;
 
   function resetDraft() {
     setCreating(false);
-    setManual(false);
+    setAi(false);
     setPurchase("");
     setHistory([]);
     setStep(null);
     setAnswer("");
+    setAiReason(null);
     setNewName("");
+    setNewCategoryId("");
     setNewBrand("");
     setNewModel("");
-    setNewCategoryId("");
+    setMaterial("");
+    setDimensions("");
     setSpecs("");
+    setCondition("");
+    setConditionNote("");
   }
 
   const intakeMutation = useMutation({
@@ -111,24 +133,46 @@ export function AssetPicker({
     onSuccess: (result) => {
       setStep(result);
       setAnswer("");
-      if (result.status === "ready") {
-        // Предложение модели кладём в те же поля, что и ручной ввод: человек видит карточку
-        // целиком и правит любое поле перед записью. Ошибка модели остаётся видимой ДО
-        // создания, а не всплывает потом в балансе.
-        setNewName(result.name ?? purchase.trim());
-        setNewBrand(result.brand ?? "");
-        setNewModel(result.model ?? "");
-        setNewCategoryId(result.category_id ?? "");
-        setSpecs(result.specs ?? "");
-      }
+      if (result.status !== "ready") return;
+      // Предложение модели приземляется в ту же форму, что и ручной ввод: человек видит
+      // карточку целиком и правит любое поле перед записью. Ошибка модели остаётся видимой ДО
+      // создания, а не всплывает потом в балансе.
+      setNewName(result.name ?? purchase.trim());
+      setNewCategoryId(result.category_id ?? "");
+      setNewBrand(result.brand ?? "");
+      setNewModel(result.model ?? "");
+      setMaterial(result.material ?? "");
+      setDimensions(result.dimensions ?? "");
+      setSpecs(result.specs ?? "");
+      // Состояние модель ставит, только если сотрудник сам о нём сказал. Пустое не затираем:
+      // переключатель всё равно обязателен, и пусть лучше человек выберет, чем модель угадает.
+      if (result.condition) setCondition(result.condition);
+      if (result.condition_note) setConditionNote(result.condition_note);
+      setAiReason(result.reason);
+      setAi(false);
     },
     onError: (error) => {
-      // Модель недоступна — не тупик: переводим на ручную форму и говорим почему.
-      setManual(true);
-      setNewName(purchase.trim());
-      toast.error(apiErrorMessage(error, "Модель недоступна — заполните карточку вручную"));
+      // Модель недоступна — не тупик: возвращаемся в форму и говорим почему. Платёж должен
+      // провестись в любом случае.
+      setAi(false);
+      setNewName((prev) => prev || purchase.trim());
+      toast.error(apiErrorMessage(error, "Модель недоступна — заполните карточку сами"));
     },
   });
+
+  // В карточку уходит только то, что человек ВИДИТ: набор полей задан профилем категории, и
+  // скрытое поле не имеет права попасть в запись. Иначе стол, заведённый после переключения
+  // категории с техники, унёс бы в заметку чужую марку.
+  const brandModel =
+    profile === "equipment" ? [newBrand.trim(), newModel.trim()].filter(Boolean).join(" ") : "";
+  const noteParts =
+    profile === "furniture"
+      ? [
+          material.trim() ? `Материал: ${material.trim()}` : "",
+          dimensions.trim() ? `Размеры: ${dimensions.trim()}` : "",
+          specs.trim(),
+        ]
+      : [specs.trim()];
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -136,13 +180,15 @@ export function AssetPicker({
         name: newName.trim(),
         initial_cost: amount,
         category_id: newCategoryId || null,
-        brand_model: [newBrand.trim(), newModel.trim()].filter(Boolean).join(" ") || null,
+        brand_model: brandModel || null,
         // Характеристики (материал, размеры) кладём в заметку карточки: по ним объект узнают
         // при следующей инвентаризации, а отдельного поля под них в карточке нет.
-        note: specs.trim() || null,
+        note: noteParts.filter(Boolean).join(". ") || null,
         // Купили в день платежа — с этого месяца и амортизируем. Без даты объект молча
         // выпал бы из начисления: ошибки нет, амортизации нет.
         commissioned_on: commissionedOn || null,
+        condition: condition || null,
+        condition_note: condition === "used" ? conditionNote.trim() : null,
       }),
     onSuccess: (asset) => {
       onCreated(asset);
@@ -176,57 +222,32 @@ export function AssetPicker({
         ? "Капитальный ремонт: если работы тянут больше 15% стоимости объекта, владелец подтвердит новую стоимость в карточке."
         : "Текущий ремонт: стоимость объекта не изменится, но расход попадёт в его историю.";
 
+  // Профильные поля обязательны: без марки и модели технику не опознать при инвентаризации и
+  // не оценить, если она б/у; у мебели ту же роль играют материал и размеры.
+  const specsFilled =
+    profile === "equipment"
+      ? Boolean(newBrand.trim() && newModel.trim())
+      : profile === "furniture"
+        ? Boolean(material.trim() && dimensions.trim())
+        : true;
+  const conditionFilled =
+    condition === "used" ? Boolean(conditionNote.trim()) : condition === "new";
+  const canCreate = Boolean(newName.trim() && newCategoryId) && specsFilled && conditionFilled;
+
+  function askModel(turn?: AssetIntakeTurn) {
+    const next = turn ? [...history, turn] : [];
+    if (turn) setHistory(next);
+    intakeMutation.mutate({ purchase, history: next });
+  }
+
   if (forbidden) {
     return <p className="text-sm text-destructive">{ASSETS_FORBIDDEN_HINT}</p>;
   }
 
-  if (creating) {
-    const asking = step?.status === "need_more" && !manual;
-    const ready = manual || step?.status === "ready";
+  if (creating && ai) {
     return (
       <div className="space-y-3 rounded-md border p-3">
-        {!step && !manual ? (
-          <>
-            <div className="space-y-1">
-              <Label className="text-sm">Что купили</Label>
-              {/* ОДНО поле вместо формы (решение владельца 31.07.2026). Категорию, от которой
-                  зависит срок амортизации, определяет модель уточняющими вопросами: покупку
-                  заводит тот, кто платил, а не бухгалтер по ОС. */}
-              <Input
-                autoFocus
-                onChange={(event) => setPurchase(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && purchase.trim()) {
-                    intakeMutation.mutate({ purchase, history: [] });
-                  }
-                }}
-                placeholder="Например: купили рисоварку"
-                value={purchase}
-              />
-              <p className="text-xs text-muted-foreground">
-                Напишите своими словами. Если чего-то не хватит — спросим.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={!purchase.trim() || intakeMutation.isPending}
-                onClick={() => intakeMutation.mutate({ purchase, history: [] })}
-                size="sm"
-                type="button"
-              >
-                {intakeMutation.isPending ? (
-                  <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
-                ) : null}
-                Дальше
-              </Button>
-              <Button onClick={resetDraft} size="sm" type="button" variant="ghost">
-                Отмена
-              </Button>
-            </div>
-          </>
-        ) : null}
-
-        {asking && step?.question ? (
+        {step?.status === "need_more" && step.question ? (
           <div className="space-y-2">
             <div className="rounded-md bg-muted/40 p-2">
               <p className="text-sm font-medium">{step.question}</p>
@@ -239,11 +260,7 @@ export function AssetPicker({
                 {step.suggestions.map((option) => (
                   <Button
                     key={option}
-                    onClick={() => {
-                      const turn = { question: step.question!, answer: option };
-                      setHistory((prev) => [...prev, turn]);
-                      intakeMutation.mutate({ purchase, history: [...history, turn] });
-                    }}
+                    onClick={() => askModel({ question: step.question!, answer: option })}
                     size="sm"
                     type="button"
                     variant="outline"
@@ -258,9 +275,7 @@ export function AssetPicker({
               onChange={(event) => setAnswer(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && answer.trim()) {
-                  const turn = { question: step.question!, answer: answer.trim() };
-                  setHistory((prev) => [...prev, turn]);
-                  intakeMutation.mutate({ purchase, history: [...history, turn] });
+                  askModel({ question: step.question!, answer: answer.trim() });
                 }
               }}
               placeholder="Свой ответ…"
@@ -269,11 +284,7 @@ export function AssetPicker({
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={!answer.trim() || intakeMutation.isPending}
-                onClick={() => {
-                  const turn = { question: step.question!, answer: answer.trim() };
-                  setHistory((prev) => [...prev, turn]);
-                  intakeMutation.mutate({ purchase, history: [...history, turn] });
-                }}
+                onClick={() => askModel({ question: step.question!, answer: answer.trim() })}
                 size="sm"
                 type="button"
               >
@@ -282,18 +293,103 @@ export function AssetPicker({
                 ) : null}
                 Ответить
               </Button>
-              <Button onClick={() => setManual(true)} size="sm" type="button" variant="ghost">
+              <Button onClick={() => setAi(false)} size="sm" type="button" variant="ghost">
                 Заполнить самому
               </Button>
             </div>
           </div>
-        ) : null}
-
-        {ready ? (
+        ) : (
           <>
-            {step?.reason && !manual ? (
+            <div className="space-y-1">
+              <Label className="text-sm">Что купили</Label>
+              {/* Одно поле вместо формы: категорию, от которой зависит срок амортизации,
+                  модель определит уточняющими вопросами. Путь ОПЦИОНАЛЬНЫЙ — его включают,
+                  когда непонятно, куда объект отнести. */}
+              <Input
+                autoFocus
+                onChange={(event) => setPurchase(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && purchase.trim()) askModel();
+                }}
+                placeholder="Например: купили рисоварку"
+                value={purchase}
+              />
+              <p className="text-xs text-muted-foreground">
+                Напишите своими словами. Если чего-то не хватит — спросим и заполним форму сами.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={!purchase.trim() || intakeMutation.isPending}
+                onClick={() => askModel()}
+                size="sm"
+                type="button"
+              >
+                {intakeMutation.isPending ? (
+                  <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
+                ) : null}
+                Дальше
+              </Button>
+              <Button onClick={() => setAi(false)} size="sm" type="button" variant="ghost">
+                Назад к форме
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (creating) {
+    return (
+      <div className="space-y-3 rounded-md border p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">Новый объект</p>
+          <Button
+            onClick={() => {
+              // Диалог всегда начинается с чистого листа: незакрытая переписка прошлого захода
+              // прислалась бы моделью как контекст к другому объекту.
+              setStep(null);
+              setHistory([]);
+              setAnswer("");
+              setAi(true);
+            }}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <Sparkles size={16} aria-hidden="true" />
+            Внести с помощью ИИ
+          </Button>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-sm">Что за оборудование</Label>
+          {/* ПЕРВЫЙ вопрос формы. Категория задаёт срок службы — без неё амортизация по объекту
+              молча не пойдёт, — и она же решает, какие поля показывать ниже. */}
+          <InlineOptionList
+            options={categories.map((item) => ({
+              value: item.id,
+              label: `${item.name} · ${Math.round(item.useful_life_months / 12)} лет`,
+              keywords: `${item.name} ${item.note ?? ""}`,
+            }))}
+            value={newCategoryId}
+            onChange={setNewCategoryId}
+            searchPlaceholder="Поиск категории…"
+            emptyMessage={categoriesQuery.isLoading ? "Загружаем…" : "Категорий нет"}
+            listClassName="max-h-40"
+            autoFocus={false}
+          />
+          {category?.note ? (
+            <p className="text-xs text-muted-foreground">{category.note}</p>
+          ) : null}
+        </div>
+
+        {profile ? (
+          <>
+            {aiReason ? (
               <p className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                {step.reason}
+                {aiReason}
               </p>
             ) : null}
             <div className="space-y-1">
@@ -304,76 +400,131 @@ export function AssetPicker({
                 value={newName}
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-sm">Марка</Label>
-                <Input
-                  onChange={(event) => setNewBrand(event.target.value)}
-                  placeholder="Gastrorag"
-                  value={newBrand}
-                />
+
+            {profile === "equipment" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-sm">Марка</Label>
+                  <Input
+                    onChange={(event) => setNewBrand(event.target.value)}
+                    placeholder="Gastrorag"
+                    value={newBrand}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm">Модель</Label>
+                  <Input
+                    onChange={(event) => setNewModel(event.target.value)}
+                    placeholder="DH-RC-2"
+                    value={newModel}
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-sm">Модель</Label>
-                <Input
-                  onChange={(event) => setNewModel(event.target.value)}
-                  placeholder="DH-RC-2"
-                  value={newModel}
-                />
+            ) : null}
+
+            {profile === "furniture" ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-sm">Материал</Label>
+                  <Input
+                    onChange={(event) => setMaterial(event.target.value)}
+                    placeholder="Нержавеющая сталь"
+                    value={material}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm">Размеры</Label>
+                  <Input
+                    onChange={(event) => setDimensions(event.target.value)}
+                    placeholder="1200×600×850 мм"
+                    value={dimensions}
+                  />
+                </div>
               </div>
-            </div>
-            {specs ? (
+            ) : null}
+
+            {profile !== "equipment" ? (
               <div className="space-y-1">
-                <Label className="text-sm">Характеристики</Label>
+                <Label className="text-sm">Характеристики (необязательно)</Label>
                 <Input
                   onChange={(event) => setSpecs(event.target.value)}
-                  placeholder="Материал, размеры"
+                  placeholder="Объём, мощность, комплектация"
                   value={specs}
                 />
               </div>
             ) : null}
+
             <div className="space-y-1">
-              <Label className="text-sm">Категория</Label>
-              {/* Категория задаёт срок службы. Без неё амортизация по объекту молча не пойдёт —
-                  поэтому поле обязательно, хотя в модели допускает пустоту. */}
-              <InlineOptionList
-                options={(categoriesQuery.data ?? []).map((category) => ({
-                  value: category.id,
-                  label: `${category.name} · ${Math.round(category.useful_life_months / 12)} лет`,
-                  keywords: category.name,
-                }))}
-                value={newCategoryId}
-                onChange={setNewCategoryId}
-                searchPlaceholder="Поиск категории…"
-                emptyMessage={categoriesQuery.isLoading ? "Загружаем…" : "Категорий нет"}
-                listClassName="max-h-40"
-                autoFocus={false}
-              />
+              <Label className="text-sm">Состояние</Label>
+              {/* Новое или б/у — не формальность: у купленного с рук объекта износ уже есть, а
+                  ни сумма платежа, ни срок из категории его не видят. Карточка без этого
+                  признака амортизировалась бы как новая несколько лет подряд. */}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => setCondition("new")}
+                  size="sm"
+                  type="button"
+                  variant={condition === "new" ? "default" : "outline"}
+                >
+                  Новое
+                </Button>
+                <Button
+                  onClick={() => setCondition("used")}
+                  size="sm"
+                  type="button"
+                  variant={condition === "used" ? "default" : "outline"}
+                >
+                  Б/У
+                </Button>
+              </div>
             </div>
+
+            {condition === "used" ? (
+              <div className="space-y-1">
+                <Label className="text-sm">Что с ним</Label>
+                <Textarea
+                  onChange={(event) => setConditionNote(event.target.value)}
+                  placeholder="Например: 2019 года, работает, дверь провисла, компрессор менялся"
+                  rows={3}
+                  value={conditionNote}
+                />
+                <p className="text-xs text-muted-foreground">
+                  По описанию модель оценит износ и предложит владельцу стоимость. Само описание
+                  останется в карточке.
+                </p>
+              </div>
+            ) : null}
+
             <p className="text-xs text-muted-foreground">
               Стоимость карточки — {formatDdsMoney(Number(amount) || 0)}, сумма этой строки
               платежа. Амортизация пойдёт с{" "}
               {commissionedOn ? formatDate(commissionedOn) : "дня оплаты"}. Инвентарный номер
               присвоится сам.
             </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={!newName.trim() || !newCategoryId || createMutation.isPending}
-                onClick={() => createMutation.mutate()}
-                size="sm"
-                type="button"
-              >
-                {createMutation.isPending ? (
-                  <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
-                ) : null}
-                Завести и выбрать
-              </Button>
-              <Button onClick={resetDraft} size="sm" type="button" variant="ghost">
-                Отмена
-              </Button>
-            </div>
           </>
-        ) : null}
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Выберите категорию — от неё зависит срок амортизации и что спросим дальше. Не знаете,
+            куда отнести, — нажмите «Внести с помощью ИИ».
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={!canCreate || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+            size="sm"
+            type="button"
+          >
+            {createMutation.isPending ? (
+              <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
+            ) : null}
+            Завести и выбрать
+          </Button>
+          <Button onClick={resetDraft} size="sm" type="button" variant="ghost">
+            Отмена
+          </Button>
+        </div>
       </div>
     );
   }

@@ -55,6 +55,14 @@ UPGRADE_SHARE_THRESHOLD = Decimal("0.15")
 # ремонт уже возможен.
 CAPITAL_REPAIR_FLOOR = Decimal("5000.00")
 
+# Какие поля имеет смысл спрашивать при заведении карточки. Профиль хранится НА КАТЕГОРИИ:
+# у рисоварки опознавательный признак — марка и модель, у производственного стола — материал
+# и размеры, а марки у него обычно нет. Подробности и причина «флаг на категории, а не список
+# имён во фронте» — в миграции ``0229_asset_spec_profile``.
+SPEC_PROFILES = ("equipment", "furniture", "other")
+# Новым куплен объект или с рук. NULL — неизвестно (карточки описи 2026).
+ASSET_CONDITIONS = ("new", "used")
+
 
 class AssetCategory(Base):
     """Категория ОС — задаёт СПИ по умолчанию для карточек внутри неё."""
@@ -63,11 +71,20 @@ class AssetCategory(Base):
     __table_args__ = (
         UniqueConstraint("name", name="uq_asset_category_name"),
         CheckConstraint("useful_life_months > 0", name="ck_asset_category_life_positive"),
+        CheckConstraint(
+            "spec_profile IN ('equipment','furniture','other')",
+            name="ck_asset_category_spec_profile",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     useful_life_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Набор полей формы заведения: 'equipment' — марка и модель, 'furniture' — материал и
+    # размеры, 'other' — свободная строка характеристик.
+    spec_profile: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="other", server_default=text("'other'")
+    )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -98,6 +115,9 @@ class FixedAsset(Base):
         CheckConstraint(
             "review_status IN ('ok','requires_owner_review')", name="ck_fixed_asset_review_status"
         ),
+        CheckConstraint(
+            "condition IS NULL OR condition IN ('new','used')", name="ck_fixed_asset_condition"
+        ),
         Index("ix_fixed_asset_status", "status"),
         Index("ix_fixed_asset_review", "review_status"),
         Index("ix_fixed_asset_category", "category_id"),
@@ -117,6 +137,10 @@ class FixedAsset(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     # Опознание объекта при следующем обходе: в реестре инвентаризации заполнено у 76 позиций.
     brand_model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    # 'new' — куплен новым, 'used' — с рук. NULL — неизвестно: 149 карточек описи 2026 заведены
+    # обходом помещений, и чем объект был в момент покупки, не знает никто. Признак нужен
+    # оценке: у б/у объекта износ уже есть, а ни сумма платежа, ни срок из категории его не видят.
+    condition: Mapped[str | None] = mapped_column(String(8), nullable=True)
     inventory_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("asset_category.id", ondelete="SET NULL"), nullable=True

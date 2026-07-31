@@ -3563,10 +3563,19 @@ export async function getAssetOptions(): Promise<AssetOption[]> {
   return response.data.items;
 }
 
+/** Новым куплен объект или с рук. У карточек описи 2026 неизвестно — там null. */
+export type AssetCondition = "new" | "used";
+
+/** Какие поля спрашивать при заведении: техника — марка и модель, мебель — материал и размеры. */
+export type AssetSpecProfile = "equipment" | "furniture" | "other";
+
 export type AssetCategoryOption = {
   id: string;
   name: string;
   useful_life_months: number;
+  /** Профиль полей приходит С КАТЕГОРИИ: список категорий владелец правит из интерфейса, и
+   *  захардкоженный здесь перечень «эти шесть — техника» после одиннадцатой начал бы врать. */
+  spec_profile: AssetSpecProfile;
   note: string | null;
 };
 
@@ -3590,6 +3599,10 @@ export async function createAssetFromPayment(payload: {
   commissioned_on?: string | null;
   /** Материал, размеры — то, по чему объект узнают на следующей инвентаризации. */
   note?: string | null;
+  condition?: AssetCondition | null;
+  /** Состояние б/у объекта своими словами: уходит в очередь на оценку моделью. Для нового
+   *  объекта бэкенд его игнорирует, для б/у — требует непустым. */
+  condition_note?: string | null;
 }): Promise<AssetOption> {
   const response = await api.post<AssetOption>("/fixed-assets/from-payment", payload);
   return response.data;
@@ -3608,7 +3621,14 @@ export type AssetIntakeStep = {
   model: string | null;
   category_id: string | null;
   category_name: string | null;
+  /** Материал и размеры — отдельными полями: это те же поля, что показывает ручная форма для
+   *  категорий-«мебели», и предложение модели должно ложиться в них один в один. */
+  material: string | null;
+  dimensions: string | null;
   specs: string | null;
+  /** Заполнено, только если сотрудник сам сказал «новое» или «б/у» — модель не угадывает. */
+  condition: AssetCondition | null;
+  condition_note: string | null;
   /** Почему выбрана эта категория — показываем перед подтверждением карточки. */
   reason: string | null;
 };

@@ -12,6 +12,12 @@
 здесь важнее марки. Для рисоварки наоборот: марка и модель обязательны, без них объект не
 опознать при следующей инвентаризации.
 
+ЭТО ЗАПАСНОЙ ПУТЬ, А НЕ ЕДИНСТВЕННЫЙ (уточнение владельца 2026-07-31). По умолчанию карточку
+заводят обычной формой: выбрал категорию — получил её поля. Диалог включают кнопкой, когда
+непонятно, куда объект отнести. Обратное — «только через модель» — означало бы, что при лежащем
+релее покупку записать нечем, и разница между «удобнее» и «невозможно» стоила бы платежа.
+Поэтому модель здесь ускоряет ввод, а не владеет им.
+
 ГРАНИЦЫ, КОТОРЫЕ МОДЕЛИ НЕ ОТДАНЫ.
 
 * КАТЕГОРИЯ — ТОЛЬКО ИЗ СПРАВОЧНИКА. Список из десяти категорий с их сроками кладётся в
@@ -83,9 +89,29 @@ INTAKE_TOOL: dict[str, Any] = {
                 "type": "string",
                 "description": "Категория ТОЧНО из предложенного списка.",
             },
+            # Материал и размеры — отдельными полями, а не строкой: у категорий с профилем
+            # ``furniture`` это ровно те поля, которые показывает ручная форма, и предложение
+            # модели обязано ложиться в них один в один.
+            "material": {
+                "type": "string",
+                "description": "Материал: нержавеющая сталь, дерево, пластик, стекло.",
+            },
+            "dimensions": {
+                "type": "string",
+                "description": "Размеры: «1200×600×850 мм», «2 м», объём в литрах.",
+            },
             "specs": {
                 "type": "string",
-                "description": "Существенные характеристики одной строкой (материал, размеры).",
+                "description": "Прочие существенные характеристики одной строкой.",
+            },
+            "condition": {
+                "type": "string",
+                "enum": ["new", "used"],
+                "description": "Ставить, ТОЛЬКО если сотрудник сам сказал, новый объект или б/у.",
+            },
+            "condition_note": {
+                "type": "string",
+                "description": "Что сотрудник сказал о состоянии б/у объекта — его словами.",
             },
             "reason": {
                 "type": "string",
@@ -107,11 +133,22 @@ SYSTEM_PROMPT = """Ты помогаешь сотруднику ресторан
 2. Спрашивай ТОЛЬКО то, что меняет категорию или позволяет опознать объект. Не спрашивай цену,
    дату, поставщика, количество — это уже известно.
 3. Один вопрос за раз, коротко, по-русски. Давай 2–4 варианта ответа для быстрого выбора.
-4. Для техники (рисоварка, холодильник, ноутбук, кондиционер) марка и модель важны — спроси их,
-   если не названы. Для мебели важнее материал и размер, марка обычно не нужна.
-5. Если из ответа уже всё понятно — не тяни, отдавай карточку (status=ready).
-6. Наименование пиши как в накладной: «Стол производственный из нержавеющей стали», а не «стол».
+4. Какие поля важны, сказано у каждой категории в скобках. Для техники это марка и модель —
+   спроси их, если не названы. Для мебели материал и размеры, марка обычно не нужна.
+5. НЕ спрашивай, новый объект или б/у: это отдельный переключатель в карточке, сотрудник
+   поставит его сам. Но если он написал «б/у» или описал состояние — перенеси это в condition
+   и condition_note, не переспрашивая.
+6. Если из ответа уже всё понятно — не тяни, отдавай карточку (status=ready).
+7. Наименование пиши как в накладной: «Стол производственный из нержавеющей стали», а не «стол».
 """
+
+# Профиль категории → подсказка модели, что у объектов этой категории вообще спрашивают.
+# Держим рядом с промптом, чтобы словарь домена не разошёлся с тем, что видит модель.
+PROFILE_HINTS: dict[str, str] = {
+    "equipment": "важны марка и модель",
+    "furniture": "важны материал и размеры",
+    "other": "марка и модель обычно не нужны",
+}
 
 
 class AssetIntakeError(RuntimeError):
@@ -139,7 +176,11 @@ class IntakeResult:
     model: str | None = None
     category_id: object | None = None
     category_name: str | None = None
+    material: str | None = None
+    dimensions: str | None = None
     specs: str | None = None
+    condition: str | None = None
+    condition_note: str | None = None
     reason: str | None = None
 
 
@@ -153,15 +194,19 @@ def build_prompt(
     """Собрать промпт: что купили, о чём уже спросили и из каких категорий выбирать.
 
     Срок службы у каждой категории — не украшение: он объясняет модели, ЧЕМ категории
-    отличаются, и удерживает её от выбора «по звучанию названия».
+    отличаются, и удерживает её от выбора «по звучанию названия». Профиль полей — тоже не
+    подсказка вежливости: это ровно те поля, которые покажет ручная форма после выбора
+    категории, и предложение модели обязано попадать в них, а не в соседние.
     """
     lines = [f"Сотрудник написал, что купили: «{purchase.strip()}»."]
     if history:
         lines.append("\nУже уточнили:")
         lines.extend(f"— {turn.question} → {turn.answer}" for turn in history)
-    lines.append("\nДоступные категории (название — срок службы):")
+    lines.append("\nДоступные категории (название — срок службы — что спрашивать):")
     lines.extend(
-        f"— {category.name} — {category.useful_life_months // 12} лет" for category in categories
+        f"— {category.name} — {category.useful_life_months // 12} лет "
+        f"({PROFILE_HINTS.get(category.spec_profile, PROFILE_HINTS['other'])})"
+        for category in categories
     )
     if questions_left <= 0:
         lines.append(
@@ -210,6 +255,12 @@ def parse_answer(payload: dict[str, Any], categories: list[AssetCategory]) -> In
         # это готовностью — человек всё равно увидит карточку и поправит.
         status = "ready"
 
+    # Состояние берём, только если модель назвала его словарным значением. «б/у, наверное» и
+    # прочие вольности отбрасываем: переключатель в карточке всё равно ставит человек, и пустое
+    # значение честнее выдуманного.
+    raw_condition = _clean(payload.get("condition"))
+    condition = raw_condition if raw_condition in ("new", "used") else None
+
     return IntakeResult(
         status=status,
         question=question,
@@ -220,7 +271,11 @@ def parse_answer(payload: dict[str, Any], categories: list[AssetCategory]) -> In
         model=_clean(payload.get("model")),
         category_id=category.id if category is not None else None,
         category_name=category.name if category is not None else None,
+        material=_clean(payload.get("material")),
+        dimensions=_clean(payload.get("dimensions")),
         specs=_clean(payload.get("specs")),
+        condition=condition,
+        condition_note=_clean(payload.get("condition_note")),
         reason=_clean(payload.get("reason")),
     )
 
@@ -276,7 +331,11 @@ async def next_step(
             model=result.model,
             category_id=result.category_id,
             category_name=result.category_name,
+            material=result.material,
+            dimensions=result.dimensions,
             specs=result.specs,
+            condition=result.condition,
+            condition_note=result.condition_note,
             reason=result.reason,
         )
     return result
