@@ -629,6 +629,11 @@ class NewPaymentArticleRead(BaseModel):
     location_required: bool = False
     # Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
     lease_bound: bool = False
+    # Что расход по статье делает с основным средством. Забудешь объявить поле ЗДЕСЬ — и
+    # response_model молча вырежет его из ответа, даже если сервис его положил: форма решит,
+    # что статья к ОС отношения не имеет, и покупка уйдёт мимо баланса. Ровно так поле уже
+    # терялось в ``/dds/articles``.
+    asset_link_kind: AssetLinkKind | None = None
     # Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
     counterparties: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
 
@@ -693,6 +698,9 @@ class NewPaymentExpenseLineIn(BaseModel):
     # платёж закрывает конкретный договор (арендодатель подставится в получателя).
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # Основное средство: окно «Новый платёж» — главный вход покупки оборудования, и требовать
+    # объект надо здесь, пока рядом человек, который знает, что купили.
+    asset_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _complete_service_period(self) -> NewPaymentExpenseLineIn:

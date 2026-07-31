@@ -36,6 +36,7 @@ import {
   type OperationClassifyPayload,
 } from "@/lib/api";
 import { getCounterpartyDirectory } from "@/routes/counterparties/api";
+import { AssetPicker, assetTitle } from "@/routes/dds/AssetPicker";
 import {
   ASSETS_FORBIDDEN_HINT,
   DdsStatusBadge,
@@ -98,11 +99,6 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-/** Подпись объекта: инвентарный номер + имя. Номер первым — по нему объект ищут на наклейке. */
-function assetTitle(asset: AssetOption): string {
-  const number = asset.inventory_number ? `${asset.inventory_number} · ` : "";
-  return `${number}${asset.name}`;
-}
 /**
  * Единая модалка разбора движения ДДС — и операции выписки, и ручной проводки (дискриминатор
  * ``row.kind``). Показывает по статье нужные подполя: накладная (поставщик, только операция) ·
@@ -1120,7 +1116,7 @@ export function OperationClassifyDialog({
               {formatDdsMoney(Number(assetRow.amount) || 0)}
             </DialogDescription>
           </DialogHeader>
-          <OperationAssetPicker
+          <AssetPicker
             amount={assetRow.amount}
             commissionedOn={row.operation_date}
             assets={assets}
@@ -1269,208 +1265,6 @@ function OperationLocationPicker({
           Помещения).
         </p>
       ) : null}
-    </div>
-  );
-}
-
-/**
- * Выбор основного средства: список уже заведённых + заведение новой карточки.
- *
- * КНОПКА «ЗАВЕСТИ НОВЫЙ» — НЕ УДОБСТВО, А УСЛОВИЕ РАБОТОСПОСОБНОСТИ (замечание владельца
- * 31.07.2026). Список показывает только существующие карточки, а покупка по определению
- * заводит НОВЫЙ объект: купили рисоварку — привязывать не к чему. Отправлять человека в
- * «Учёт ОС» и обратно значит гарантировать, что он выберет статью попроще, и покупка уйдёт в
- * расход мимо баланса — ровно та дыра, которую весь контур и закрывает.
- *
- * Стоимость НЕ спрашиваем: для покупки первоначальная стоимость и есть сумма платежа
- * (``valuation_basis='payment'``). Спросить её отдельно значит позволить двум цифрам
- * разойтись, а потом искать, какая из них правда.
- */
-function OperationAssetPicker({
-  amount,
-  commissionedOn,
-  assets,
-  forbidden,
-  isLoading,
-  kind,
-  onChange,
-  onCreated,
-  value,
-}: {
-  amount: string;
-  /** Дата платежа = дата ввода в эксплуатацию: амортизация пойдёт с этого месяца. */
-  commissionedOn: string;
-  assets: AssetOption[];
-  forbidden: boolean;
-  isLoading: boolean;
-  kind: "purchase" | "repair" | "maintenance" | null;
-  onChange: (assetId: string) => void;
-  onCreated: (asset: AssetOption) => void;
-  value: string;
-}) {
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  // Марка и модель — ДВА поля, а не одно (замечание владельца 31.07.2026). В карточке они
-  // хранятся одной строкой ``brand_model``, как в реестре инвентаризации: дробить колонку ради
-  // формы значило бы мигрировать 149 существующих карточек, разрезая их текст догадками.
-  const [newBrand, setNewBrand] = useState("");
-  const [newModel, setNewModel] = useState("");
-  const [newCategoryId, setNewCategoryId] = useState("");
-  const categoriesQuery = useQuery({
-    queryKey: ["asset-categories"],
-    queryFn: getAssetCategories,
-    enabled: creating,
-  });
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createAssetFromPayment({
-        name: newName.trim(),
-        initial_cost: amount,
-        category_id: newCategoryId || null,
-        brand_model: [newBrand.trim(), newModel.trim()].filter(Boolean).join(" ") || null,
-        // Купили в день платежа — с этого месяца и амортизируем. Без даты объект молча
-        // выпал бы из начисления: ошибки нет, амортизации нет.
-        commissioned_on: commissionedOn,
-      }),
-    onSuccess: (asset) => {
-      onCreated(asset);
-      setCreating(false);
-      setNewName("");
-      setNewBrand("");
-      setNewModel("");
-      setNewCategoryId("");
-      toast.success(`Заведена карточка ${asset.inventory_number ?? asset.name}`);
-    },
-    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось завести карточку")),
-  });
-
-  const options: ComboboxOption[] = assets.map((asset) => ({
-    value: asset.asset_id,
-    // Где стоит и в каком состоянии — то, чем один «Стол производственный» отличается от
-    // четырёх других в списке. Без этого выбрать нужный можно только угадав.
-    label: [
-      assetTitle(asset),
-      asset.location_name ?? "без помещения",
-      asset.status === "in_use" ? null : asset.status_title,
-    ]
-      .filter(Boolean)
-      .join(" · "),
-    // Ищут и по номеру, и по названию, и по модели с наклейки на корпусе.
-    keywords: [asset.inventory_number, asset.name, asset.brand_model, asset.location_name]
-      .filter(Boolean)
-      .join(" "),
-  }));
-
-  const hint =
-    kind === "purchase"
-      ? "Платёж покупает этот объект — его сумма станет первоначальной стоимостью карточки."
-      : kind === "repair"
-        ? "Капитальный ремонт: если работы тянут больше 15% стоимости объекта, владелец подтвердит новую стоимость в карточке."
-        : "Текущий ремонт: стоимость объекта не изменится, но расход попадёт в его историю.";
-
-  if (forbidden) {
-    return <p className="text-sm text-destructive">{ASSETS_FORBIDDEN_HINT}</p>;
-  }
-
-  if (creating) {
-    return (
-      <div className="space-y-3 rounded-md border p-3">
-        <div className="space-y-1">
-          <Label className="text-sm">Что купили</Label>
-          <Input
-            autoFocus
-            onChange={(event) => setNewName(event.target.value)}
-            placeholder="Например: Рисоварка промышленная"
-            value={newName}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <Label className="text-sm">Марка</Label>
-            <Input
-              onChange={(event) => setNewBrand(event.target.value)}
-              placeholder="Gastrorag"
-              value={newBrand}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-sm">Модель</Label>
-            <Input
-              onChange={(event) => setNewModel(event.target.value)}
-              placeholder="DH-RC-2"
-              value={newModel}
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-sm">Категория</Label>
-          {/* Категория задаёт срок службы. Без неё амортизация по объекту молча не пойдёт —
-              поэтому поле обязательно, хотя в модели допускает пустоту. */}
-          <InlineOptionList
-            options={(categoriesQuery.data ?? []).map((category) => ({
-              value: category.id,
-              label: `${category.name} · ${Math.round(category.useful_life_months / 12)} лет`,
-              keywords: category.name,
-            }))}
-            value={newCategoryId}
-            onChange={setNewCategoryId}
-            searchPlaceholder="Поиск категории…"
-            emptyMessage={categoriesQuery.isLoading ? "Загружаем…" : "Категорий нет"}
-            listClassName="max-h-40"
-            autoFocus={false}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Стоимость карточки — {formatDdsMoney(Number(amount) || 0)}, сумма этой строки платежа.
-          Амортизация пойдёт с {formatDate(commissionedOn)}. Инвентарный номер присвоится сам.
-          Помещение можно уточнить в карточке на странице «Учёт ОС».
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={!newName.trim() || !newCategoryId || createMutation.isPending}
-            onClick={() => createMutation.mutate()}
-            size="sm"
-            type="button"
-          >
-            {createMutation.isPending ? (
-              <LoaderCircle className="mr-2 animate-spin" size={16} aria-hidden="true" />
-            ) : null}
-            Завести и выбрать
-          </Button>
-          <Button onClick={() => setCreating(false)} size="sm" type="button" variant="ghost">
-            Отмена
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {/* Кнопка ПЕРЕД списком: для покупки заведение нового — обычный случай, а привязка к
-          существующему объекту (ремонт, вторая часть оплаты) — более редкий. */}
-      <Button
-        className="w-full justify-start"
-        onClick={() => setCreating(true)}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <Plus size={16} aria-hidden="true" />
-        Завести новый объект на эту сумму
-      </Button>
-      <InlineOptionList
-        options={options}
-        value={value}
-        onChange={onChange}
-        searchPlaceholder="Поиск по номеру, названию или модели…"
-        emptyMessage={
-          isLoading ? "Загружаем объекты…" : "Объектов пока нет — заведите первый кнопкой выше."
-        }
-        listClassName="max-h-48"
-        autoFocus={false}
-      />
-      <p className="text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }

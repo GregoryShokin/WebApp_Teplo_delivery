@@ -613,3 +613,93 @@ async def test_manual_transaction_split_also_demands_an_asset(
         assert link is not None
         assert link.asset_id == asset_id
         assert Decimal(str(link.amount)) == Decimal("40000.00")
+
+
+async def test_asset_travels_from_payment_draft_through_reserve_to_transaction(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Объект доезжает от резерва Сейфа до проводки, которую рождает оплата.
+
+    Окно «Новый платёж» — главный вход покупки оборудования, но проводки оно НЕ создаёт:
+    делается черновик, деньги уходят позже, и цепочка такая:
+
+        строка черновика → резерв Сейфа → оплата резерва → проводка ДДС
+
+    Привязать объект к проводке, которой ещё нет, нечем, поэтому намерение ведётся через все
+    три звена. Здесь проверяется последнее и самое хрупкое: потеряй связь тут — и покупка
+    дойдёт до ДДС без карточки, то есть мимо баланса, а «Новый платёж» останется дырой,
+    которую гейт разбора не закрывает.
+    """
+    from app.models import SafeAllocation, Wallet as WalletModel
+    from app.services.banking.safe_allocations import pay_allocation
+
+    async with async_session_factory() as session:
+        article = await _article(session, name="Покупка ОС", kind="purchase")
+        asset = await _asset(session, cost="60000.00")
+        wallet = await session.scalar(select(WalletModel))
+        assert wallet is not None
+        allocation = SafeAllocation(
+            wallet_id=wallet.id,
+            amount=Decimal("60000.00"),
+            amount_paid=Decimal("0.00"),
+            status="reserved",
+            article_id=article.id,
+            asset_id=asset.id,
+            purpose="Рисоварка",
+        )
+        session.add(allocation)
+        await session.commit()
+
+        await pay_allocation(
+            session,
+            allocation,
+            amount=Decimal("60000.00"),
+            operation_date=date(2026, 8, 1),
+        )
+        await session.commit()
+
+        link = await session.scalar(select(AssetCashflowLink))
+        assert link is not None, "оплата резерва обязана привязать объект к проводке"
+        assert link.asset_id == asset.id
+        assert Decimal(str(link.amount)) == Decimal("60000.00")
+
+
+async def test_partial_reserve_payment_links_every_tranche(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Резерв оплатили двумя частями — объект должен собрать ОБЕ, а не первую.
+
+    Частичная оплата даёт несколько проводок. Привязать только первую значило бы недосчитать
+    на балансе часть денег, которыми за объект заплатили.
+    """
+    from app.models import SafeAllocation, Wallet as WalletModel
+    from app.services.banking.safe_allocations import pay_allocation
+
+    async with async_session_factory() as session:
+        article = await _article(session, name="Покупка ОС", kind="purchase")
+        asset = await _asset(session, cost="60000.00")
+        wallet = await session.scalar(select(WalletModel))
+        assert wallet is not None
+        allocation = SafeAllocation(
+            wallet_id=wallet.id,
+            amount=Decimal("60000.00"),
+            amount_paid=Decimal("0.00"),
+            status="reserved",
+            article_id=article.id,
+            asset_id=asset.id,
+            purpose="Рисоварка",
+        )
+        session.add(allocation)
+        await session.commit()
+
+        await pay_allocation(
+            session, allocation, amount=Decimal("40000.00"), operation_date=date(2026, 8, 1)
+        )
+        await pay_allocation(
+            session, allocation, amount=Decimal("20000.00"), operation_date=date(2026, 8, 5)
+        )
+        await session.commit()
+
+        links = (await session.scalars(select(AssetCashflowLink))).all()
+        assert len(links) == 2
+        assert sum(Decimal(str(link.amount)) for link in links) == Decimal("60000.00")

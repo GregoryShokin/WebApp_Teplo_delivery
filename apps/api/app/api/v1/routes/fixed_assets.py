@@ -39,7 +39,7 @@ from app.models import (
     FixedAsset,
     Location,
 )
-from app.services import asset_analytics, asset_balance, asset_revaluation
+from app.services import asset_analytics, asset_balance, asset_intake, asset_revaluation
 from app.services import fixed_assets as service
 from app.services.anthropic_client import LlmCallError
 
@@ -436,6 +436,82 @@ class AssetFromPaymentRequest(BaseModel):
     brand_model: str | None = Field(default=None, max_length=255)
     # День покупки. Амортизация пойдёт с месяца ввода — по умолчанию это дата платежа.
     commissioned_on: date | None = None
+    # Материал, размеры, объём — то, по чему объект узнают на следующей инвентаризации.
+    # Отдельного поля под характеристики в карточке нет, поэтому кладём их в заметку.
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class IntakeTurnIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str
+    answer: str
+
+
+class IntakeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Что написал сотрудник в единственном поле: «купили стол», «рисоварка».
+    purchase: str = Field(min_length=1, max_length=500)
+    # Вся переписка целиком: состояние диалога держит клиент, на сервере его нет.
+    history: list[IntakeTurnIn] = Field(default_factory=list, max_length=10)
+
+
+class IntakeRead(BaseModel):
+    status: Literal["need_more", "ready"]
+    question: str | None = None
+    why: str | None = None
+    suggestions: list[str] = Field(default_factory=list)
+    name: str | None = None
+    brand: str | None = None
+    model: str | None = None
+    category_id: uuid.UUID | None = None
+    category_name: str | None = None
+    specs: str | None = None
+    reason: str | None = None
+
+
+@router.post("/intake", response_model=IntakeRead, dependencies=ASSETS_PICK_ACCESS)
+async def asset_intake_step(
+    payload: IntakeRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Ход диалога заведения карточки: уточняющий вопрос либо готовая карточка.
+
+    Сотрудник пишет «купили стол» — и дальше отвечает на короткие вопросы, вместо того чтобы
+    самому решать, офисная это мебель или кухонное оборудование. От этого решения зависит срок
+    амортизации, а покупку заводит тот, кто платил, а не бухгалтер по ОС.
+
+    Ошибку модели отдаём как 422 с человеческой причиной: интерфейс по ней возвращается к
+    ручной форме. Недоступность модели не должна мешать записать покупку — иначе контур,
+    который защищает баланс, сам же его и ломает.
+    """
+    try:
+        result = await asset_intake.next_step(
+            session,
+            purchase=payload.purchase,
+            history=[
+                asset_intake.IntakeTurn(question=turn.question, answer=turn.answer)
+                for turn in payload.history
+            ],
+        )
+    except asset_intake.AssetIntakeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return IntakeRead(
+        status=result.status,  # type: ignore[arg-type]
+        question=result.question,
+        why=result.why,
+        suggestions=list(result.suggestions),
+        name=result.name,
+        brand=result.brand,
+        model=result.model,
+        category_id=result.category_id,  # type: ignore[arg-type]
+        category_name=result.category_name,
+        specs=result.specs,
+        reason=result.reason,
+    )
 
 
 @router.post(
@@ -482,6 +558,7 @@ async def create_asset_from_payment(
             status="in_use",
             location_id=payload.location_id,
             brand_model=(payload.brand_model or "").strip() or None,
+            note=(payload.note or "").strip() or None,
         )
     except service.FixedAssetError as exc:
         raise HTTPException(

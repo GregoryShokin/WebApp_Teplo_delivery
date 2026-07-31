@@ -709,6 +709,7 @@ async def post_new_payment_expense_draft(
             service_period_end=line.service_period_end,
             location_id=line.location_id,
             lease_id=line.lease_id,
+            asset_id=line.asset_id,
         )
         for line in payload.normalized_lines()
     ]

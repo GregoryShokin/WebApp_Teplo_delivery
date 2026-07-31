@@ -468,6 +468,11 @@ class SafeAllocation(Base):
     lease_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("location_lease.id", ondelete="RESTRICT"), nullable=True
     )
+    # Основное средство: намерение из строки черновика доезжает сюда, а отсюда — в проводку,
+    # которую рождает оплата резерва. Без этого звена объект терялся бы ровно посередине пути.
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fixed_asset.id", ondelete="SET NULL"), nullable=True
+    )
     # Банковская операция, из разбора которой «через Сейф» заведён резерв — для
     # идемпотентности повторного разбора (снять прежний неоплаченный резерв этой операции).
     source_operation_id: Mapped[uuid.UUID | None] = mapped_column(

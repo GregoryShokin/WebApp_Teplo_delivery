@@ -45,6 +45,7 @@ from app.services.banking.payout import (
 )
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+from app.services.asset_analytics import AssetLinkError, resolve_asset_context
 from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
@@ -493,6 +494,8 @@ class ExpenseLineInput:
     service_period_end: date | None = None
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
+    # Основное средство строки: окно «Новый платёж» — главный вход покупки оборудования.
+    asset_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -505,6 +508,7 @@ class PreparedExpenseLine:
     service_period_end: date | None
     location_id: uuid.UUID | None
     lease_id: uuid.UUID | None
+    asset_id: uuid.UUID | None
 
 
 async def create_expense_payment_draft(
@@ -571,6 +575,16 @@ async def create_expense_payment_draft(
             )
         except LocationAnalyticsError as exc:
             raise CounterpartyPaymentError(str(exc)) from exc
+        # Основное средство — то же правило и та же причина проверять ДО записей. Гейт нужен
+        # именно здесь, а не при разборе будущей проводки: к тому моменту человек, который
+        # знает, ЧТО купили, давно ушёл — платёж создаёт один, а выписку разбирает другой и
+        # через неделю. Так покупки и уходили в расход мимо баланса.
+        try:
+            asset_context = await resolve_asset_context(
+                session, article=article, asset_id=line.asset_id, amount=line_amount
+            )
+        except AssetLinkError as exc:
+            raise CounterpartyPaymentError(str(exc)) from exc
         # Аренда знает арендодателя — он и определяет маршрут (informal → Сейф).
         line = replace(line, counterparty_id=location_context.counterparty_id)
         # Назначение необязательно: пустое → имя статьи (в банк и в целёвку Сейфа).
@@ -622,6 +636,7 @@ async def create_expense_payment_draft(
                 service_period_end=line.service_period_end,
                 location_id=location_context.location_id,
                 lease_id=location_context.lease_id,
+                asset_id=asset_context.asset_id,
             )
         )
         total += line_amount
@@ -735,6 +750,7 @@ async def create_expense_payment_draft(
             ),
             location_id=prepared_line.location_id,
             lease_id=prepared_line.lease_id,
+            asset_id=prepared_line.asset_id,
         )
         session.add(line)
         await session.flush()

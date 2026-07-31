@@ -243,6 +243,9 @@ async def _settle_draft_via_safe(
                 # Аналитика «где» доезжает до проводки через оплату резерва.
                 location_id=line.location_id,
                 lease_id=line.lease_id,
+                # Объект — тем же путём: черновик → резерв → проводка. Потеряй его здесь, и
+                # покупка дойдёт до ДДС без карточки, то есть мимо баланса.
+                asset_id=line.asset_id,
             )
         return
 

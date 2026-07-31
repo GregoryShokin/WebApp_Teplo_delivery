@@ -2792,6 +2792,9 @@ export type NewPaymentArticle = {
   location_required?: boolean;
   // Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
   lease_bound?: boolean;
+  // Что расход по статье делает с основным средством: форма требует объект и ведёт его до
+  // проводки через черновик и резерв Сейфа.
+  asset_link_kind?: "purchase" | "repair" | "maintenance" | null;
 };
 
 export type NewPaymentWallet = {
@@ -2828,6 +2831,8 @@ export type NewPaymentExpenseLine = {
   service_period_end?: string | null;
   location_id?: string | null;
   lease_id?: string | null;
+  // Основное средство строки: окно платежа — главный вход покупки оборудования.
+  asset_id?: string | null;
 };
 
 export type NewPaymentExpenseDraftPayload = {
@@ -3583,8 +3588,43 @@ export async function createAssetFromPayment(payload: {
   location_id?: string | null;
   brand_model?: string | null;
   commissioned_on?: string | null;
+  /** Материал, размеры — то, по чему объект узнают на следующей инвентаризации. */
+  note?: string | null;
 }): Promise<AssetOption> {
   const response = await api.post<AssetOption>("/fixed-assets/from-payment", payload);
+  return response.data;
+}
+
+export type AssetIntakeTurn = { question: string; answer: string };
+
+export type AssetIntakeStep = {
+  status: "need_more" | "ready";
+  question: string | null;
+  /** Зачем спрашиваем — чтобы человек понимал, на что влияет его ответ. */
+  why: string | null;
+  suggestions: string[];
+  name: string | null;
+  brand: string | null;
+  model: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  specs: string | null;
+  /** Почему выбрана эта категория — показываем перед подтверждением карточки. */
+  reason: string | null;
+};
+
+/** Ход диалога заведения карточки: уточняющий вопрос либо готовая карточка.
+ *
+ * Состояния на сервере нет — вся переписка уходит целиком каждый раз.
+ */
+export async function assetIntakeStep(payload: {
+  purchase: string;
+  history: AssetIntakeTurn[];
+}): Promise<AssetIntakeStep> {
+  const response = await api.post<AssetIntakeStep>("/fixed-assets/intake", payload, {
+    // Ответ модели идёт секунды, но под нагрузкой релея бывает и дольше дефолтных 15 с.
+    timeout: 60_000,
+  });
   return response.data;
 }
 

@@ -280,6 +280,9 @@ async def list_new_payment_articles(
             "activity": article.activity_type,
             "location_required": article.location_required,
             "lease_bound": article.lease_bound,
+            # Без этого признака окно не знает, что статья требует объект, и покупка уходит
+            # в расход мимо баланса. Ровно так поле уже терялось в /dds/articles.
+            "asset_link_kind": article.asset_link_kind,
         }
         for article in articles
         if (flow := new_payment_article_flow(article)) is not None and flow in allowed

@@ -59,6 +59,7 @@ import {
   type LocationLeaseOption,
   type NewPaymentExpenseLine,
   type NewPaymentWallet,
+  type AssetOption,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -68,7 +69,13 @@ import {
   getRegistry,
 } from "@/routes/counterparties/api";
 import { formatRub } from "@/routes/counterparties/shared";
-import { LOCATIONS_FORBIDDEN_HINT, locationOptionsQuery } from "@/routes/dds/shared";
+import { AssetPicker } from "@/routes/dds/AssetPicker";
+import {
+  ASSETS_FORBIDDEN_HINT,
+  LOCATIONS_FORBIDDEN_HINT,
+  assetOptionsQuery,
+  locationOptionsQuery,
+} from "@/routes/dds/shared";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
@@ -149,6 +156,10 @@ type ExpenseRow = {
   servicePeriodEnd: string;
   locationId: string; // помещение — для статей с location_required (аренда, коммуналка)
   leaseId: string; // договор аренды — подставляет арендодателя в counterpartyId
+  // Основное средство — для статей с asset_link_kind («Покупка ОС», «Ремонт ОС»). Через это
+  // окно покупку оборудования и заводят, поэтому объект спрашиваем здесь, пока рядом человек,
+  // который знает, что купили: разбирать выписку будет другой и через неделю.
+  assetId: string;
   leaseRecipient: LeaseRecipient | null; // арендодатель договора для реквизитной маршрутизации
 };
 
@@ -285,6 +296,7 @@ export function NewPaymentDialog({
       servicePeriodEnd: "",
       locationId: "",
       leaseId: "",
+      assetId: "",
       leaseRecipient: null,
     };
   }
@@ -322,6 +334,7 @@ export function NewPaymentDialog({
       purpose: "",
       locationId: "",
       leaseId: "",
+      assetId: "",
       leaseRecipient: null,
       ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
     });
@@ -1078,6 +1091,7 @@ function ExpenseForm({
   onDone: () => Promise<void>;
   onCancel: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
   const [officialViaSafeConsent, setOfficialViaSafeConsent] = useState<string | null>(null);
@@ -1131,6 +1145,11 @@ function ExpenseForm({
     queries: Array.from(new Set(locationArticleIds)).map((id) => locationOptionsQuery(id)),
   });
   const locationsForbidden = locationQueries.some((query) => apiErrorStatus(query.error) === 403);
+  // Объекты грузим, только если в форме есть «объектная» строка: список один на всё окно, и
+  // тянуть его на каждое открытие ради ничего незачем.
+  const usesAssetArticle = rows.some((row) => articleById.get(row.articleId)?.asset_link_kind);
+  const assetsQuery = useQuery(assetOptionsQuery(usesAssetArticle));
+  const assetsForbidden = apiErrorStatus(assetsQuery.error) === 403;
 
   const total = rows.reduce(
     (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
@@ -1182,6 +1201,10 @@ function ExpenseForm({
         : null;
     })
     .find(Boolean);
+  const missingAssetRow = rows.find((row) => {
+    const article = articleById.get(row.articleId);
+    return Boolean(article?.asset_link_kind) && !row.assetId;
+  });
   const missingLocationRow = rows.find((row) => {
     const article = articleById.get(row.articleId);
     if (!article?.location_required) return false;
@@ -1216,7 +1239,10 @@ function ExpenseForm({
       const locationReady =
         !article?.location_required ||
         (Boolean(row.locationId) && (!article.lease_bound || Boolean(row.leaseId)));
-      return row.articleId && amountOf(row.amount) > 0 && periodReady && locationReady;
+      const assetReady = !article?.asset_link_kind || Boolean(row.assetId);
+      return (
+        row.articleId && amountOf(row.amount) > 0 && periodReady && locationReady && assetReady
+      );
     }) &&
     !directRouteBlocked &&
     !fallbackRouteBlocked;
@@ -1231,6 +1257,7 @@ function ExpenseForm({
       service_period_end: row.servicePeriodEnd || null,
       location_id: row.locationId || null,
       lease_id: row.leaseId || null,
+      asset_id: row.assetId || null,
     }));
 
   const mutation = useMutation({
@@ -1285,6 +1312,11 @@ function ExpenseForm({
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт списания.";
+  } else if (missingAssetRow) {
+    tone = "warning";
+    summary = assetsForbidden
+      ? ASSETS_FORBIDDEN_HINT
+      : "Укажите основное средство — без карточки покупка уйдёт в расход мимо баланса.";
   } else if (missingLocationRow) {
     tone = "warning";
     summary = locationsForbidden
@@ -1463,6 +1495,28 @@ function ExpenseForm({
                     </Select>
                   ) : null}
                 </div>
+                {article?.asset_link_kind ? (
+                  <div className="rounded-md border p-2">
+                    <Label className="mb-1.5 block text-xs font-medium">Основное средство</Label>
+                    <AssetPicker
+                      amount={String(amountOf(row.amount))}
+                      assets={assetsQuery.data ?? []}
+                      forbidden={assetsForbidden}
+                      isLoading={assetsQuery.isLoading}
+                      kind={article.asset_link_kind}
+                      onChange={(assetId) => onUpdateRow(row.key, { assetId })}
+                      onCreated={(asset) => {
+                        // Карточку кладём в кэш общего списка сразу: иначе она появится лишь
+                        // после повторного запроса, а выбрать её надо прямо сейчас.
+                        queryClient.setQueryData<AssetOption[]>(["asset-options"], (current) =>
+                          current ? [...current, asset] : [asset],
+                        );
+                        onUpdateRow(row.key, { assetId: asset.asset_id });
+                      }}
+                      value={row.assetId}
+                    />
+                  </div>
+                ) : null}
                 {article?.location_required ? (
                   <ExpenseLocationPicker
                     articleId={article.id}

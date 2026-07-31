@@ -104,6 +104,7 @@ async def create_allocation(
     location: str = "safe",
     location_id: UUID | None = None,
     lease_id: UUID | None = None,
+    asset_id: UUID | None = None,
     created_by_user_id: UUID | None = None,
 ) -> SafeAllocation:
     """Создать резерв. Запрет перерезервирования: ``amount`` ≤ свободно (``free_amount``).
@@ -138,6 +139,7 @@ async def create_allocation(
         location=location,
         location_id=location_id,
         lease_id=lease_id,
+        asset_id=asset_id,
         created_by_user_id=created_by_user_id,
     )
     session.add(allocation)
@@ -248,6 +250,30 @@ async def pay_allocation(
         "paid" if allocation.amount_paid >= Decimal(allocation.amount) else "partially_paid"
     )
     await session.flush()
+
+    # КОНЕЦ ПУТИ ОБЪЕКТА: строка «Нового платежа» → резерв → эта проводка. Только здесь
+    # появляется то, к чему привязку вообще можно прицепить, — сама проводка ДДС.
+    #
+    # Частичная оплата резерва даёт НЕСКОЛЬКО проводок, и каждая получает свою связь на свою
+    # сумму: объект должен собрать все деньги, которыми за него заплатили, а не только первый
+    # транш. Идемпотентность держит уникальный индекс по тройке «объект, проводка, вид связи».
+    if allocation.asset_id is not None:
+        # Локальный импорт — против кольца: asset_analytics тянет fixed_assets, а тот банк.
+        # DdsArticle НЕ импортируем повторно: локальный импорт затенил бы модульный на всю
+        # функцию, и обращение к нему ВЫШЕ по коду упало бы UnboundLocalError.
+        from app.services.asset_analytics import link_transaction_to_asset, resolve_asset_context
+
+        article = (
+            await session.get(DdsArticle, allocation.article_id)
+            if allocation.article_id is not None
+            else None
+        )
+        context = await resolve_asset_context(
+            session, article=article, asset_id=allocation.asset_id, amount=amount
+        )
+        await link_transaction_to_asset(
+            session, context=context, transaction_id=leg.id, amount=amount
+        )
 
     # Аренда: наличная оплата гасит ДЕЙСТВУЮЩИЕ обязательства этого договора, остаток становится
     # дебиторкой (аренда вперёд). Банковский платёж проходит обе половины канона сам (правило 1),

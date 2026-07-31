@@ -343,6 +343,13 @@ class ExpenseDraftLine(Base):
     lease_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("location_lease.id", ondelete="RESTRICT"), nullable=True
     )
+    # Основное средство, которое покупает или ремонтирует эта строка. Живёт здесь по той же
+    # причине, что и помещение: окно «Новый платёж» создаёт ЧЕРНОВИК, проводки ещё нет, и
+    # намерение приходится вести до неё через резерв Сейфа. ``SET NULL``: деньги важнее
+    # аналитики — исчезнувшая карточка не должна утащить строку черновика.
+    asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fixed_asset.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class SupplierInvoice(Base):
