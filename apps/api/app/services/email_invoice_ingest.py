@@ -609,7 +609,12 @@ async def confirm_intake_with_review(
         rec["service_period_ambiguous"] = False
     clean_req = {k: v.strip() for k, v in (requisites or {}).items() if v and v.strip()}
     if requisites is not None:
-        rec["requisites"] = clean_req
+        # Правки оператора кладём РЯДОМ с распознанным, а не поверх. ``rec["requisites"]`` —
+        # снимок того, что стояло в PDF: по нему окно разбора отличает «из счёта» от «из
+        # карточки» (форма предзаполняется карточкой, когда счёт реквизитов не дал) и ловит
+        # смену расчётного счёта поставщиком. Затирали бы его — карточка молча стала бы
+        # «реквизитами из счёта», а сравнивать было бы уже не с чем.
+        rec["requisites_reviewed"] = clean_req
     intake.recognition = rec
     intake.counterparty_id = cp_id
 

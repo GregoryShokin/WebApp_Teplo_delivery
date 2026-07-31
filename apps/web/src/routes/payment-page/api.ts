@@ -30,7 +30,10 @@ export type PaymentIntake = {
   service_period_status: string | null;
   service_period_confidence: number | null;
   service_period_required: boolean;
+  // Что распознано в самом PDF. Правки оператора сюда не пишутся — они в reviewed_requisites.
   requisites: Record<string, string>;
+  // Правки оператора с прошлого разбора этого счёта: приоритетный источник для формы.
+  reviewed_requisites: Record<string, string>;
   requisites_verified: boolean;
   invoice_payment_status: string | null;
   invoice_in_draft: boolean;
@@ -56,6 +59,16 @@ export type ConfirmPayload = {
 
 export type CounterpartyOption = { value: string; label: string };
 
+// Реквизиты карточки контрагента — то, чем платёж реально уйдёт в банк. Окно разбора берёт
+// их, когда в счёте реквизиты не распознались, и перечитывает при смене контрагента.
+export type CounterpartyRequisites = {
+  counterparty_id: string;
+  name: string;
+  inn: string | null;
+  requisites: Record<string, string>;
+  requisites_verified: boolean;
+};
+
 const BASE = "/payment-page";
 
 export async function listCounterpartyOptions(): Promise<CounterpartyOption[]> {
@@ -66,6 +79,15 @@ export async function listCounterpartyOptions(): Promise<CounterpartyOption[]> {
       label: r.inn ? `${r.name} · ИНН ${r.inn}` : r.name,
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
+}
+
+export async function getCounterpartyRequisites(
+  counterpartyId: string,
+): Promise<CounterpartyRequisites> {
+  const response = await api.get<CounterpartyRequisites>(
+    `${BASE}/counterparties/${counterpartyId}/requisites`,
+  );
+  return response.data;
 }
 
 export async function listIntakes(status?: string): Promise<PaymentIntake[]> {

@@ -23,6 +23,8 @@ import {
   type CounterpartyOption,
   type PaymentIntake,
 } from "./api";
+import { RequisitesFields } from "./RequisitesFields";
+import { useRequisitesForm } from "./requisites";
 
 function Field({
   label,
@@ -74,14 +76,17 @@ export function ReviewDialog({
   const [invoiceDate, setInvoiceDate] = useState(intake.invoice_date ?? "");
   const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
   const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
-  const [r, setR] = useState({
-    recipientName: req.recipientName ?? intake.recipient_name ?? "",
-    inn: req.inn ?? intake.inn ?? "",
-    kpp: req.kpp ?? "",
-    bankAcnt: req.bankAcnt ?? "",
-    bankBik: req.bankBik ?? "",
-    recipientCorrAccountNumber: req.recipientCorrAccountNumber ?? "",
-  });
+  // Реквизиты формы: распознанное из PDF, а чего в счёте нет — из карточки выбранного
+  // контрагента (при создании нового карточки ещё нет, поэтому только счёт).
+  const {
+    values: r,
+    sources,
+    setValue: setReq,
+    applyCandidate,
+    cardLoading,
+    differsFromCard,
+    mismatch,
+  } = useRequisitesForm(intake, mode === "existing" ? counterpartyId || null : null);
   const [applyReq, setApplyReq] = useState(true);
 
   useEffect(() => {
@@ -105,8 +110,6 @@ export function ReviewDialog({
     };
   }, [intake.id, intake.has_pdf]);
 
-  const setReq = (key: keyof typeof r, value: string) => setR((prev) => ({ ...prev, [key]: value }));
-
   const canConfirm =
     amount.trim() !== "" &&
     (mode === "existing" ? counterpartyId !== "" : newName.trim() !== "") &&
@@ -123,7 +126,9 @@ export function ReviewDialog({
     service_period_start: periodStart || null,
     service_period_end: periodEnd || null,
     requisites: r,
-    apply_requisites: apply,
+    // Переносить нечего, когда в форме ровно то, что уже лежит в карточке: иначе каждое
+    // подтверждение молча ставило бы отметку «реквизиты проверены» за человека.
+    apply_requisites: apply && differsFromCard,
   });
 
   const invalidate = () =>
@@ -244,33 +249,30 @@ export function ReviewDialog({
               ) : null}
             </div>
 
-            <div className="grid gap-2 rounded-md border p-3">
-              <div className="text-xs font-medium uppercase text-muted-foreground">Реквизиты</div>
-              <Field
-                label="Получатель"
-                value={r.recipientName}
-                onChange={(v) => setReq("recipientName", v)}
+            <div className="grid gap-2">
+              <RequisitesFields
+                values={r}
+                sources={sources}
+                onChange={setReq}
+                mismatch={mismatch}
+                onPickFromHistory={applyCandidate}
+                searchQuery={(mode === "new" ? newInn || newName : r.inn || r.recipientName) ?? ""}
+                counterpartyId={mode === "existing" ? counterpartyId : undefined}
+                loading={cardLoading}
               />
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Field label="ИНН" value={r.inn} onChange={(v) => setReq("inn", v)} />
-                <Field label="КПП" value={r.kpp} onChange={(v) => setReq("kpp", v)} />
-              </div>
-              <Field label="Расчётный счёт" value={r.bankAcnt} onChange={(v) => setReq("bankAcnt", v)} />
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Field label="БИК" value={r.bankBik} onChange={(v) => setReq("bankBik", v)} />
-                <Field
-                  label="Корр. счёт"
-                  value={r.recipientCorrAccountNumber}
-                  onChange={(v) => setReq("recipientCorrAccountNumber", v)}
-                />
-              </div>
-              <label className="mt-1 flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={applyReq}
-                  onChange={(e) => setApplyReq(e.target.checked)}
-                />
-                Перенести реквизиты в карточку контрагента и пометить проверенными
-              </label>
+              {differsFromCard ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={applyReq}
+                    onChange={(e) => setApplyReq(e.target.checked)}
+                  />
+                  Перенести реквизиты в карточку контрагента и пометить проверенными
+                </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  В карточке контрагента уже эти реквизиты — переносить нечего.
+                </p>
+              )}
             </div>
           </div>
         </div>

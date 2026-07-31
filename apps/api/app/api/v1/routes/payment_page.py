@@ -66,9 +66,12 @@ class IntakeRead(BaseModel):
     service_period_status: str | None
     service_period_confidence: float | None
     service_period_required: bool
-    # Распознанные банковские реквизиты (recipientName/inn/kpp/bankAcnt/bankBik/corr) — для
-    # предзаполнения окна разбора.
+    # Распознанные банковские реквизиты (recipientName/inn/kpp/bankAcnt/bankBik/corr) —
+    # снимок того, что стояло в самом PDF. Правки оператора сюда не пишутся: по этому полю
+    # ищутся кандидаты в истории и сверяется, не сменил ли поставщик банк.
     requisites: dict[str, Any]
+    # Правки оператора в окне разбора — приоритетный источник для формы при повторном заходе.
+    reviewed_requisites: dict[str, Any]
     # Подтверждены ли реквизиты контрагента (нужно для отправки в банк).
     requisites_verified: bool
     # Состояние связанной накладной: оплачена/частично и заведён ли банк-черновик.
@@ -82,6 +85,16 @@ class IntakeRead(BaseModel):
     # Дата плановой авто-отправки в банк (ISO). None = отправка только вручную.
     scheduled_send_date: str | None
     created_at: datetime
+
+
+class CounterpartyRequisitesRead(BaseModel):
+    """Реквизиты карточки контрагента — фолбэк формы разбора, когда в счёте их не распознали."""
+
+    counterparty_id: uuid.UUID
+    name: str
+    inn: str | None
+    requisites: dict[str, Any]
+    requisites_verified: bool
 
 
 class ReviewRequisites(BaseModel):
@@ -197,6 +210,7 @@ def _to_read(
         ),
         service_period_required=bool(service_period_required),
         requisites=rec.get("requisites") or {},
+        reviewed_requisites=rec.get("requisites_reviewed") or {},
         requisites_verified=bool(requisites_verified),
         invoice_payment_status=invoice_payment_status,
         invoice_in_draft=invoice_draft_id is not None,
@@ -377,6 +391,39 @@ async def list_intakes(
             period_required,
         ) in rows
     ]
+
+
+@router.get(
+    "/counterparties/{counterparty_id}/requisites",
+    response_model=CounterpartyRequisitesRead,
+    dependencies=READ,
+)
+async def get_counterparty_requisites(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> CounterpartyRequisitesRead:
+    """Реквизиты карточки контрагента для окна разбора счёта.
+
+    Окно предзаполняет форму по цепочке «распознано из PDF → карточка → пусто», а контрагента
+    в нём можно переключить — поэтому отдаём по выбранному id, а не только по сматченному.
+    Лёгкий ответ вместо полной карточки (``/counterparties/{id}``): списку разбора нужны ровно
+    шесть полей платёжки, а карточка тянет агрегаты ДЗ/КЗ и историю документов.
+    """
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    return CounterpartyRequisitesRead(
+        counterparty_id=counterparty.id,
+        name=counterparty.name,
+        inn=counterparty.inn,
+        requisites=(profile.requisites or {}) if profile else {},
+        requisites_verified=bool(profile.requisites_verified) if profile else False,
+    )
 
 
 @router.get("/intakes/{intake_id}/pdf", dependencies=READ)

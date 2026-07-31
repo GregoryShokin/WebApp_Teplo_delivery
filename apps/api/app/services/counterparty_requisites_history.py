@@ -24,7 +24,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BankOperation, Counterparty, EmailInvoiceIntake, OwnAccountsRegistry
@@ -298,15 +298,25 @@ async def _bank_candidates(
     return buckets
 
 
+def _intake_requisite(key: str) -> Any:
+    """Поле реквизитов счёта из почты: правка оператора важнее сырого распознавания.
+
+    ``requisites`` — что вытащил парсер из PDF, ``requisites_reviewed`` — что оператор
+    исправил в окне разбора. Исправлял он ровно потому, что распознанное врало, поэтому
+    кандидату в подсказку идёт проверенное значение, а сырое остаётся фолбэком.
+    """
+    return func.coalesce(
+        EmailInvoiceIntake.recognition["requisites_reviewed"][key].astext,
+        EmailInvoiceIntake.recognition["requisites"][key].astext,
+    )
+
+
 async def _email_candidates(session: AsyncSession, text: str, digits: str) -> dict[str, _Bucket]:
-    requisites_field = EmailInvoiceIntake.recognition["requisites"]
-    conditions = [
-        requisites_field["recipientName"].astext.ilike(_like_pattern(text), escape="\\")
-    ]
+    conditions = [_intake_requisite("recipientName").ilike(_like_pattern(text), escape="\\")]
     if len(digits) in (10, 12):
-        conditions.append(requisites_field["inn"].astext == digits)
+        conditions.append(_intake_requisite("inn") == digits)
     if len(digits) == 20:
-        conditions.append(requisites_field["bankAcnt"].astext == digits)
+        conditions.append(_intake_requisite("bankAcnt") == digits)
 
     rows = (
         await session.scalars(
@@ -321,11 +331,21 @@ async def _email_candidates(session: AsyncSession, text: str, digits: str) -> di
     buckets: dict[str, _Bucket] = {}
     for row in rows:
         recognition = row.recognition if isinstance(row.recognition, dict) else {}
-        raw = recognition.get("requisites")
-        if not isinstance(raw, dict):
+        blocks = [
+            block
+            for block in (
+                recognition.get("requisites_reviewed"),
+                recognition.get("requisites"),
+            )
+            if isinstance(block, dict)
+        ]
+        if not blocks:
             continue
-        requisites = {}
-        _collect(requisites, raw, {key: (key,) for key in REQUISITE_KEYS})
+        requisites: dict[str, str] = {}
+        # Порядок = приоритет: ``_collect`` не перетирает уже найденное, поэтому правки
+        # оператора выигрывают у сырого распознавания — как и в фильтре выше.
+        for block in blocks:
+            _collect(requisites, block, {key: (key,) for key in REQUISITE_KEYS})
         key = _bucket_key("email", requisites)
         if key is None:
             continue

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -25,29 +25,8 @@ import {
   sendToBank,
   type PaymentIntake,
 } from "./api";
-
-function ReqField({
-  label,
-  value,
-  onChange,
-  missing,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  missing?: boolean;
-}) {
-  return (
-    <div className="grid gap-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={missing ? "border-amber-400" : undefined}
-      />
-    </div>
-  );
-}
+import { RequisitesFields } from "./RequisitesFields";
+import { useRequisitesForm } from "./requisites";
 
 // Окно отправки счёта в банк: сверка реквизитов получателя + выбор даты (дефолт — сегодня).
 // Сегодня → уходит сразу; будущая дата → запланированная авто-отправка. Реквизиты подтверждаются
@@ -60,7 +39,6 @@ export function SendDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const req = useMemo(() => intake.requisites ?? {}, [intake.requisites]);
   const today = todayIso();
 
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
@@ -73,15 +51,17 @@ export function SendDialog({
   );
   const [rememberForCp, setRememberForCp] = useState(false);
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
-  const [r, setR] = useState({
-    recipientName: req.recipientName ?? intake.recipient_name ?? "",
-    inn: req.inn ?? intake.inn ?? "",
-    kpp: req.kpp ?? "",
-    bankAcnt: req.bankAcnt ?? "",
-    bankBik: req.bankBik ?? "",
-    recipientCorrAccountNumber: req.recipientCorrAccountNumber ?? "",
-  });
-  const setField = (k: keyof typeof r, v: string) => setR((p) => ({ ...p, [k]: v }));
+  // Реквизиты: распознанное из счёта, а чего в нём нет — из карточки контрагента. Раньше
+  // окно показывало только распознанное, и по нераспознанному счёту кнопка «Отправить»
+  // оставалась заблокированной, пока человек не перебьёт с бумажки то, что в системе есть.
+  const {
+    values: r,
+    sources,
+    setValue: setField,
+    applyCandidate,
+    cardLoading,
+    mismatch,
+  } = useRequisitesForm(intake, intake.counterparty_id);
 
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
@@ -159,45 +139,18 @@ export function SendDialog({
             </div>
           </div>
 
-          <div className="grid gap-2 rounded-md border p-3">
-            <div className="text-xs font-medium uppercase text-muted-foreground">
-              Реквизиты получателя
-            </div>
-            <ReqField
-              label="Официальное название"
-              value={r.recipientName}
-              onChange={(v) => setField("recipientName", v)}
-              missing={r.recipientName.trim() === ""}
+          <div className="grid gap-2">
+            <RequisitesFields
+              values={r}
+              sources={sources}
+              onChange={setField}
+              mismatch={mismatch}
+              onPickFromHistory={applyCandidate}
+              searchQuery={r.inn || r.recipientName || intake.counterparty_name || ""}
+              counterpartyId={intake.counterparty_id}
+              highlightMissing
+              loading={cardLoading}
             />
-            <ReqField
-              label="Расчётный счёт"
-              value={r.bankAcnt}
-              onChange={(v) => setField("bankAcnt", v)}
-              missing={r.bankAcnt.trim() === ""}
-            />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <ReqField
-                label="БИК"
-                value={r.bankBik}
-                onChange={(v) => setField("bankBik", v)}
-                missing={r.bankBik.trim() === ""}
-              />
-              <ReqField
-                label="ИНН"
-                value={r.inn}
-                onChange={(v) => setField("inn", v)}
-                missing={r.inn.trim() === ""}
-              />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <ReqField label="КПП" value={r.kpp} onChange={(v) => setField("kpp", v)} />
-              <ReqField
-                label="Корр. счёт"
-                value={r.recipientCorrAccountNumber}
-                onChange={(v) => setField("recipientCorrAccountNumber", v)}
-                missing={r.recipientCorrAccountNumber.trim() === ""}
-              />
-            </div>
             {!ready ? (
               <p className="text-xs text-amber-600">
                 Заполните название, ИНН, БИК, расчётный и корреспондентский счета.
