@@ -238,6 +238,14 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
     },
   });
 
+  // Недельная (производственная) ведомость по админской ссылке — уводим на её страницу:
+  // «Пересчитать» здесь пересобирает оклады администрации, для производственников это не то.
+  useEffect(() => {
+    if (run?.period?.period_type === "week") {
+      onNavigate(`/payroll/runs/${runId}`);
+    }
+  }, [onNavigate, run?.period?.period_type, runId]);
+
   function finalize() {
     if (isFinal || !canFinalize) {
       return;

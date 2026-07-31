@@ -199,7 +199,16 @@ async def auto_create_next_period(
     if pending is not None:
         return pending
 
-    existing = await session.scalar(select(PayrollPeriod).order_by(desc(PayrollPeriod.start_date)))
+    # Аппендим строго за последней НЕДЕЛЕЙ. Без фильтра по типу сюда попадал
+    # последний полумесячный (административный) период — и «следующая неделя»
+    # отсчитывалась от его границ: при админском периоде 01–15 августа кнопка
+    # «Запустить расчёт» создавала неделю с 16 августа, перепрыгнув незакрытые
+    # недели производственного контура.
+    existing = await session.scalar(
+        select(PayrollPeriod)
+        .where(PayrollPeriod.period_type == "week")
+        .order_by(desc(PayrollPeriod.start_date))
+    )
     if existing is None:
         start_date, end_date, payroll_date = compute_next_payroll_period_dates(
             today or datetime.now(UTC).date()
@@ -320,6 +329,15 @@ async def run_payroll(
     period = await session.get(PayrollPeriod, period_id)
     if period is None:
         raise PayrollNotFoundError("Payroll period not found")
+    # Производственный расчёт — только по недельным периодам. Полумесячный период
+    # принадлежит ведомости администрации (`run_admin_payroll`), а этот расчёт
+    # сносит строки прогона и пересобирает их из явок: запуск на админском периоде
+    # затирал бы оклады управляющих/менеджеров производственными строками.
+    # Зеркало гарда `run_admin_payroll` («период не является полумесячным»).
+    if period.period_type != "week":
+        raise PayrollConflictError(
+            "Период полумесячный (административный) — пересчитывается во вкладке «Администрация»"
+        )
     imported_run = await session.scalar(
         select(PayrollRun)
         .where(
@@ -1411,9 +1429,17 @@ def money_text(value: Any) -> str:
 
 
 async def list_runs(session: AsyncSession) -> list[dict[str, Any]]:
+    """Ведомости ПРОИЗВОДСТВЕННОГО персонала — только недельные периоды.
+
+    Полумесячные периоды принадлежат администрации и отдаются своим списком
+    (`list_admin_runs`). Без фильтра админские ведомости приезжали во вкладку
+    «Расчёты» вперемешку с производственными, а построчная кнопка «Пересчитать»
+    отправляла их в `run_payroll` — производственный расчёт по админскому периоду.
+    """
     result = await session.execute(
         select(PayrollRun, PayrollPeriod)
         .join(PayrollPeriod, PayrollRun.period_id == PayrollPeriod.id)
+        .where(PayrollPeriod.period_type == "week")
         .order_by(desc(PayrollRun.started_at))
     )
     rows = result.all()

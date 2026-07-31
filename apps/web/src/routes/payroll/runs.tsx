@@ -130,7 +130,10 @@ export function PayrollRunsRoute({
   const [recalculatingRunIds, setRecalculatingRunIds] = useState<string[]>([]);
 
   // Недоплаченные ведомости закреплены наверху (не уходят вниз по дате), затем — по периоду убыв.
-  const runs = [...(runsQuery.data ?? [])].sort((a, b) => {
+  // Полумесячные (административные) ведомости во вкладку «Расчёты» не пускаем: их место —
+  // вкладка «Администрация». Бэкенд уже отдаёт только недельные, фильтр здесь — страховка
+  // от кэша старого ответа, чтобы «Пересчитать» не оказалось на админской строке.
+  const runs = [...(runsQuery.data ?? [])].filter(isProductionRun).sort((a, b) => {
     const rankA = isPartiallyPaid(a) ? 0 : 1;
     const rankB = isPartiallyPaid(b) ? 0 : 1;
     if (rankA !== rankB) {
@@ -315,7 +318,7 @@ export function PayrollRunsRoute({
                   recalculateRunMutation.mutate(run);
                 }}
                 size="sm"
-                title="Пересчитать ЗП за этот период"
+                title="Пересчитать ЗП производственного персонала за этот период"
                 variant="outline"
               >
                 {isRecalculating ? (
@@ -482,7 +485,7 @@ export function PayrollRunsRoute({
                 </div>
               ) : null}
 
-              {(runsQuery.data ?? []).length === 0 && !runsQuery.isLoading ? (
+              {runs.length === 0 && !runsQuery.isLoading ? (
                 <EmptyState
                   icon={<Play className="h-5 w-5" aria-hidden="true" />}
                   title="Расчётов пока нет"
@@ -929,6 +932,12 @@ function RatioDelta({ ratio, target }: { ratio: number; target: number }) {
       {isHigh ? "Выше цели" : "В пределах цели"}
     </span>
   );
+}
+
+// Производственная ведомость = недельный период. Период без данных считаем производственным:
+// список «Расчёты» и так приходит отфильтрованным, а прятать строку из-за пустого period нельзя.
+function isProductionRun(run: PayrollRun) {
+  return run.period?.period_type !== "half_month";
 }
 
 function getPreviousRun(runs: PayrollRun[], currentStartDate: string) {

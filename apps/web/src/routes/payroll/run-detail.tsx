@@ -235,6 +235,14 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     enabled: canManageBankDraft && Boolean(bankDraftQuery.data),
   });
 
+  // Ведомость администрации по производственной ссылке (старая закладка, ручной URL):
+  // уводим на её собственную страницу — там «Пересчитать» считает оклады, а не явки.
+  useEffect(() => {
+    if (run?.period?.period_type === "half_month") {
+      onNavigate(`/payroll/admin/runs/${runId}`);
+    }
+  }, [onNavigate, run?.period?.period_type, runId]);
+
   useEffect(() => {
     if (bankDraftQuery.isError) {
       toast.error(apiErrorMessage(bankDraftQuery.error, "Не удалось загрузить черновик выплаты"));

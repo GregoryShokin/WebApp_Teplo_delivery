@@ -1,11 +1,14 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, LoaderCircle, Play } from "lucide-react";
+import { Eye, LoaderCircle, Play, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { EmptyState } from "@/components/ui-app/EmptyState";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
+  apiErrorMessage,
   createAdminPayrollRun,
   getAdminPayrollRunLines,
   getAdminPayrollRuns,
@@ -24,6 +27,8 @@ export function PayrollAdminRunsTab({ onNavigate }: PayrollAdminRunsTabProps) {
   const queryClient = useQueryClient();
   const permissions = usePermissions();
   const canStartRuns = permissions.canPerformAction("payroll.runs.admin.start");
+  const canRecalculateRuns = permissions.canPerformAction("payroll.runs.admin.recalculate");
+  const [recalculatingRunIds, setRecalculatingRunIds] = useState<string[]>([]);
 
   const runsQuery = useQuery({
     queryKey: ["payroll-admin-runs"],
@@ -48,6 +53,36 @@ export function PayrollAdminRunsTab({ onNavigate }: PayrollAdminRunsTabProps) {
     onSuccess: async (run) => {
       await queryClient.invalidateQueries({ queryKey: ["payroll-admin-runs"] });
       onNavigate(`/payroll/admin/runs/${run.id}`);
+    },
+  });
+
+  // Пересчёт КОНКРЕТНОГО полумесячного периода — только администрация
+  // (`/payroll/admin/runs` → `run_admin_payroll`). Производственный `POST /payroll/runs`
+  // здесь не используется: он пересобрал бы строки из явок и затёр оклады.
+  const recalculateRunMutation = useMutation({
+    mutationFn: (run: PayrollRun) =>
+      createAdminPayrollRun({ periodId: run.period_id, forceRefresh: true }),
+    onMutate: (run) => {
+      setRecalculatingRunIds((ids) => (ids.includes(run.id) ? ids : [...ids, run.id]));
+    },
+    onSuccess: async (updatedRun, run) => {
+      const runIds = new Set([run.id, updatedRun.id]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-admin-runs"] }),
+        ...[...runIds].flatMap((id) => [
+          queryClient.invalidateQueries({ queryKey: ["payroll-admin-run", id] }),
+          queryClient.invalidateQueries({ queryKey: ["payroll-admin-run-lines", id] }),
+        ]),
+      ]);
+      toast.success("Ведомость обновлена");
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "Не удалось пересчитать, попробуйте ещё раз")),
+    onSettled: (_updatedRun, _error, run) => {
+      if (!run) {
+        return;
+      }
+      setRecalculatingRunIds((ids) => ids.filter((id) => id !== run.id));
     },
   });
 
@@ -90,21 +125,43 @@ export function PayrollAdminRunsTab({ onNavigate }: PayrollAdminRunsTabProps) {
       key: "actions",
       header: "Действия",
       className: "text-right",
-      cell: (run) => (
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button
-            onClick={(event) => {
-              event.stopPropagation();
-              onNavigate(`/payroll/admin/runs/${run.id}`);
-            }}
-            size="sm"
-            variant="outline"
-          >
-            <Eye size={16} aria-hidden="true" />
-            Открыть
-          </Button>
-        </div>
-      ),
+      cell: (run) => {
+        const isRecalculating = recalculatingRunIds.includes(run.id);
+        return (
+          <div className="flex flex-wrap justify-end gap-2">
+            {canRecalculateRuns ? (
+              <Button
+                disabled={isRecalculating}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  recalculateRunMutation.mutate(run);
+                }}
+                size="sm"
+                title="Пересчитать ЗП администрации за этот период"
+                variant="outline"
+              >
+                {isRecalculating ? (
+                  <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+                Пересчитать
+              </Button>
+            ) : null}
+            <Button
+              onClick={(event) => {
+                event.stopPropagation();
+                onNavigate(`/payroll/admin/runs/${run.id}`);
+              }}
+              size="sm"
+              variant="outline"
+            >
+              <Eye size={16} aria-hidden="true" />
+              Открыть
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
