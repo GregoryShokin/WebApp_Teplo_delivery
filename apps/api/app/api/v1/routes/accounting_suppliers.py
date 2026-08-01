@@ -20,6 +20,7 @@ from app.models import (
     BarterReturnLine,
     CashflowTransaction,
     Counterparty,
+    CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
     CourierDepositAccount,
     CourierDepositTransaction,
@@ -67,8 +68,24 @@ EDIT = (Depends(require_permission("accounting.suppliers.edit")),)
 
 
 class SupplierAccountingItem(BaseModel):
+    """Строка признания расхода — и что с ней делать человеку.
+
+    ``stage`` — состояние на языке владельца, а не бухгалтерии (правка 01.08.2026): прежние
+    ``receivable/payable/scheduled`` человеку ничего не говорили, а «период не указан»
+    выглядело претензией без действия. Четыре состояния отвечают на один вопрос — «этот
+    платёж уже стал расходом, и если нет, то чего ждём»:
+
+    * ``in_expense`` — уже в прибыли своего месяца, трогать нечего;
+    * ``period_running`` — период ещё идёт, признаем 1-го числа сами;
+    * ``waiting_document`` — ждём УПД: сумму расхода принесёт документ (Манго, реклама);
+    * ``needs_period`` — непонятно, за какой период платили. Единственное состояние, которое
+      требует действия человека, и оно же — почти вся очередь: на проде 01.08.2026 период не
+      указан у ВСЕХ 19 открытых предоплат, потому что спросить его было негде.
+    """
+
     id: uuid.UUID
     source_kind: Literal["service_period", "legacy_prepayment"]
+    stage: Literal["in_expense", "period_running", "waiting_document", "needs_period"]
     counterparty_id: uuid.UUID
     counterparty_name: str
     article_id: uuid.UUID | None = None
@@ -92,6 +109,13 @@ class SupplierAccountingList(BaseModel):
     payable_total: float
     scheduled_total: float
     needs_review_total: float
+    # Итоги по состояниям — плитки экрана. Считаются по ВСЕМ строкам, независимо от фильтра:
+    # иначе, отфильтровав «нужен период», человек увидит нули в остальных и решит, что там
+    # пусто.
+    in_expense_total: float = 0
+    period_running_total: float = 0
+    waiting_document_total: float = 0
+    needs_period_total: float = 0
 
 
 class ServicePeriodUpdate(BaseModel):
@@ -111,6 +135,19 @@ async def list_supplier_accounting(
     session: Annotated[AsyncSession, Depends(get_session)],
     view: Literal["open", "all", "needs_review", "recognized"] = Query(default="open"),
 ) -> SupplierAccountingList:
+    today = datetime.now(MOSCOW_TZ).date()
+    # Режим контрагента решает, чего ждёт строка без периода: документа или человека.
+    billing_modes = {
+        cp_id: mode
+        for cp_id, mode in (
+            await session.execute(
+                select(
+                    CounterpartyPayableProfile.counterparty_id,
+                    CounterpartyPayableProfile.service_billing_mode,
+                ).where(CounterpartyPayableProfile.service_billing_mode.is_not(None))
+            )
+        ).all()
+    }
     allocated = (
         select(
             InvoicePaymentAllocation.invoice_id.label("invoice_id"),
@@ -170,8 +207,17 @@ async def list_supplier_accounting(
         else:
             balance = total
             balance_type = "scheduled"
+        if accrual.status == "recognized":
+            stage = "in_expense"
+        elif accrual.service_period_end is not None and accrual.service_period_end >= today:
+            stage = "period_running"
+        else:
+            # Период кончился, а расход не признан: признание идёт ночной джобой, к утру
+            # состояние станет in_expense. Показываем как «период идёт» — действий не требует.
+            stage = "period_running"
         item = SupplierAccountingItem(
             id=accrual.id,
+            stage=stage,
             source_kind="service_period",
             counterparty_id=accrual.counterparty_id,
             counterparty_name=cp_name,
@@ -216,9 +262,21 @@ async def list_supplier_accounting(
             or prepayment.service_period_start is None
             or prepayment.service_period_end is None
         )
+        # «Ждём документ» отличается от «нужен период» тем, КТО должен сделать шаг: у режима
+        # «счёт + УПД» сумму расхода принесёт контрагент, и требовать период от человека
+        # бессмысленно — он его не знает (Манго: 5 000 ₽ пополнения, а расход по звонкам
+        # 372,08 / 6 108,69). У остальных период знает человек, и он же его укажет.
+        waits_document = billing_modes.get(prepayment.counterparty_id) == "per_invoice"
+        if not needs_review:
+            prepayment_stage = "period_running"
+        elif waits_document:
+            prepayment_stage = "waiting_document"
+        else:
+            prepayment_stage = "needs_period"
         items.append(
             SupplierAccountingItem(
                 id=prepayment.id,
+                stage=prepayment_stage,
                 source_kind="legacy_prepayment",
                 counterparty_id=prepayment.counterparty_id,
                 counterparty_name=cp_name,
@@ -235,6 +293,9 @@ async def list_supplier_accounting(
             )
         )
 
+    # Плитки состояний считаем ДО фильтра: иначе, выбрав «нужен период», человек увидит нули
+    # в остальных плитках и решит, что там пусто.
+    all_items = list(items)
     if view == "open":
         items = [item for item in items if item.balance_type != "closed"]
     elif view == "needs_review":
@@ -242,8 +303,15 @@ async def list_supplier_accounting(
     elif view == "recognized":
         items = [item for item in items if item.recognized]
 
+    def stage_total(stage: str) -> float:
+        return sum(item.balance_amount for item in all_items if item.stage == stage)
+
     return SupplierAccountingList(
         items=items,
+        in_expense_total=stage_total("in_expense"),
+        period_running_total=stage_total("period_running"),
+        waiting_document_total=stage_total("waiting_document"),
+        needs_period_total=stage_total("needs_period"),
         receivable_total=sum(
             item.balance_amount for item in items if item.balance_type == "receivable"
         ),
