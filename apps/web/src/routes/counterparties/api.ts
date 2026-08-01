@@ -102,6 +102,8 @@ export type CounterpartyProfile = {
   closing_doc_expected_day: number | null;
   // 'goods' | 'service' | null (определять по факту складских накладных).
   settlement_contour: string | null;
+  // 'fixed_tariff' | 'per_invoice' | 'one_off' | null — чего экран признания ждёт от платежа.
+  service_billing_mode: string | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;
@@ -501,6 +503,7 @@ export type ProfileUpdatePayload = {
   bank_payments_create_prepayment?: boolean | null;
   closing_doc_expected_day?: number | null;
   settlement_contour?: string | null;
+  service_billing_mode?: string | null;
   status?: string | null;
 };
 

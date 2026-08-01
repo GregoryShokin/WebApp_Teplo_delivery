@@ -268,6 +268,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [periodOffset, setPeriodOffset] = useState("0");
   // "auto" — определить по факту складских накладных (на бэке это NULL).
   const [contour, setContour] = useState("auto");
+  const [billingMode, setBillingMode] = useState("auto");
   // "0" — ждём с 1-го числа (на бэке NULL): у большинства контрагентов так и есть.
   const [expectedDay, setExpectedDay] = useState("0");
 
@@ -285,6 +286,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         : "0",
     );
     setContour((profile?.settlement_contour as string | null) ?? "auto");
+    setBillingMode((profile?.service_billing_mode as string | null) ?? "auto");
     setExpectedDay(
       profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0",
     );
@@ -309,6 +311,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         bank_payments_create_prepayment: bankPrepayment,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
         settlement_contour: contour === "auto" ? null : contour,
+        service_billing_mode: billingMode === "auto" ? null : billingMode,
         closing_doc_expected_day: expectedDay === "0" ? null : Number(expectedDay),
       }),
     onSuccess: async () => {
@@ -351,6 +354,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     bankPrepayment !== (profile?.bank_payments_create_prepayment ?? false) ||
     (servicePeriodRequired && periodOffset !== periodOffsetSaved) ||
     contour !== ((profile?.settlement_contour as string | null) ?? "auto") ||
+    billingMode !== ((profile?.service_billing_mode as string | null) ?? "auto") ||
     expectedDay !==
       (profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0");
   useReportDirty("profile", dirty);
@@ -497,6 +501,22 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </Select>
               <span className="text-xs text-muted-foreground">
                 Товарные контрагенты не попадают в сводку разрывов: их накладные гасит склад.
+              </span>
+            </Field>
+            <Field label="Как признаём расход по услугам">
+              <Select disabled={disabled} value={billingMode} onValueChange={setBillingMode}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Ждём закрывающий документ</SelectItem>
+                  <SelectItem value="fixed_tariff">Счёт за период — признаём по окончании</SelectItem>
+                  <SelectItem value="per_invoice">Счёт + УПД — сумму приносит документ</SelectItem>
+                  <SelectItem value="one_off">Разовые работы — документов не ждём</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                Решает, что скажет строка на «Признании расходов»: ждать документ, ничего не
+                делать или спросить период у вас. «Счёт + УПД» — единственный режим, где период
+                при оплате не спрашивают: его знает только контрагент.
               </span>
             </Field>
             <Field label="Закрывающий документ приходит до">

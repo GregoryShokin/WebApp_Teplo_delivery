@@ -272,6 +272,8 @@ class ProfileUpdate(BaseModel):
     closing_doc_expected_day: int | None = Field(default=None, ge=1, le=28)
     # 'goods' | 'service' | None (определить по факту складских накладных).
     settlement_contour: str | None = None
+    # 'fixed_tariff' | 'per_invoice' | 'one_off' | None — чего ждёт от платежа экран признания.
+    service_billing_mode: str | None = None
     status: str | None = None
 
 

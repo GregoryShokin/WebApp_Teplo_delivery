@@ -654,6 +654,7 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "default_service_period_offset_months": profile.default_service_period_offset_months,
         "closing_doc_expected_day": profile.closing_doc_expected_day,
         "settlement_contour": profile.settlement_contour,
+        "service_billing_mode": profile.service_billing_mode,
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
         "default_dds_article_id": profile.default_dds_article_id,
@@ -796,6 +797,7 @@ async def update_profile(
     bank_payments_create_prepayment: bool | None | object = _UNSET,
     closing_doc_expected_day: int | None | object = _UNSET,
     settlement_contour: str | None | object = _UNSET,
+    service_billing_mode: str | None | object = _UNSET,
     status: str | None | object = _UNSET,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
@@ -888,6 +890,17 @@ async def update_profile(
         if settlement_contour is not None and settlement_contour not in ("goods", "service"):
             raise CounterpartyRegistryError("Неизвестный контур расчётов")
         profile.settlement_contour = settlement_contour
+    # Режим признания услуг решает, чего экран признания ждёт от строки: документа,
+    # человека или ничего. None — «как обычно»: документ ожидается, срок считается по
+    # календарю. См. counterparty_settlement_ledger.documents_not_expected.
+    if service_billing_mode is not _UNSET:
+        if service_billing_mode is not None and service_billing_mode not in (
+            "fixed_tariff",
+            "per_invoice",
+            "one_off",
+        ):
+            raise CounterpartyRegistryError("Неизвестный режим признания услуг")
+        profile.service_billing_mode = service_billing_mode
     if status is not _UNSET and status:
         profile.status = status
     await activate_configured_placeholder(session, counterparty, profile)
