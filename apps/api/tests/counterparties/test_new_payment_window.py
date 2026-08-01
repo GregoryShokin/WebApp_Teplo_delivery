@@ -51,10 +51,12 @@ from app.services.kassa.payouts import PROTECTED_ARTICLE_CODES
 from app.services.new_payment import (
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     FLOW_BY_ARTICLE_CODE,
+    build_new_payment_context,
     ensure_expense_article_allowed,
     ensure_income_article_allowed,
     ensure_reservable_article_allowed,
     list_new_payment_articles,
+    list_new_payment_counterparties,
     list_new_payment_employees,
     new_payment_article_flow,
 )
@@ -748,6 +750,49 @@ async def test_context_marks_official_counterparty_for_requisites_route(
         assert pinned["relationship"] == "official"
         assert pinned["has_requisites"] is True
         assert pinned["requisites_verified"] is True
+
+
+async def test_context_lists_counterparties_without_pinned_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Контрагент без закреплённой статьи всё равно виден окну.
+
+    До этого справочник приходил только вложенным в статьи, и такой контрагент был в окне
+    недостижим: поле «Кому платим» показывалось лишь у статей с закреплёнными получателями.
+    Платить ему приходилось «в никуда» — без атрибуции, а значит и без сверки расчётов.
+    """
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        pinned_cp = await make_counterparty(session, name="ООО «Со статьёй»")
+        free_cp = await make_counterparty(session, name="ИП Без Статьи")
+        archived_cp = await make_counterparty(session, name="ООО «Архивное»")
+        archived_cp.status = "archived"
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == pinned_cp.id
+            )
+        )
+        assert profile is not None
+        profile.default_dds_article_id = article.id
+        await session.flush()
+
+        items = await list_new_payment_counterparties(session)
+        by_id = {row["counterparty_id"]: row for row in items}
+        assert by_id[free_cp.id]["default_dds_article_id"] is None
+        assert by_id[pinned_cp.id]["default_dds_article_id"] == article.id
+        assert archived_cp.id not in by_id
+
+        # Закрепление за статьёй никуда не делось: маршрут «сначала статья» работает как был.
+        articles = await list_new_payment_articles(
+            session, permissions=frozenset({"finance.safe.allocate"}), counterparties=items
+        )
+        item = next(row for row in articles if row["id"] == article.id)
+        assert [row["counterparty_id"] for row in item["counterparties"]] == [pinned_cp.id]
+
+        context = await build_new_payment_context(
+            session, permissions=frozenset({"finance.safe.allocate"})
+        )
+        assert free_cp.id in {row["counterparty_id"] for row in context["counterparties"]}
 
 
 async def _make_employee(session: AsyncSession, *, full_name: str, position: str) -> Employee:

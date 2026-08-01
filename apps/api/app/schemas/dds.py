@@ -675,8 +675,22 @@ class PayoutAttributionEmployeeRead(BaseModel):
     status: str
 
 
+class NewPaymentCounterpartyRead(NewPaymentArticleCounterpartyRead):
+    """Контрагент справочника окна — вход в платёж «от получателя».
+
+    ``default_dds_article_id`` подставляет статью из карточки; ``confirm_no_dds_article``
+    отличает «статьи у контрагента нет — так решили» от «карточку не дозаполнили»: в первом
+    случае окно просто просит выбрать статью, во втором — заодно советует закрепить её.
+    """
+
+    default_dds_article_id: uuid.UUID | None = None
+    confirm_no_dds_article: bool = False
+
+
 class NewPaymentContextRead(BaseModel):
     articles: list[NewPaymentArticleRead]
+    # Все контрагенты, а не только закреплённые за статьями: окно умеет начинать с получателя.
+    counterparties: list[NewPaymentCounterpartyRead] = Field(default_factory=list)
     wallets: list[NewPaymentWalletRead]
     employees: list[NewPaymentEmployeeRead]
 

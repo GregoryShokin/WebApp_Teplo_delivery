@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
+import { CounterpartyCombobox } from "@/components/ui-app/CounterpartyCombobox";
 import {
   Select,
   SelectContent,
@@ -55,6 +56,7 @@ import {
   getOnDemandEmployees,
   getPayrollAdvanceAvailability,
   type NewPaymentArticle,
+  type NewPaymentCounterparty,
   type NewPaymentEmployee,
   type LocationOption,
   type LocationLeaseOption,
@@ -288,6 +290,10 @@ export function NewPaymentDialog({
     enabled: open,
   });
   const articles = useMemo(() => contextQuery.data?.articles ?? [], [contextQuery.data]);
+  const counterparties = useMemo(
+    () => contextQuery.data?.counterparties ?? [],
+    [contextQuery.data],
+  );
   const wallets = useMemo(() => contextQuery.data?.wallets ?? [], [contextQuery.data]);
   const employees = useMemo(() => contextQuery.data?.employees ?? [], [contextQuery.data]);
 
@@ -375,6 +381,35 @@ export function NewPaymentDialog({
       assetId: "",
       leaseRecipient: null,
       ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
+    });
+  }
+
+  /** Клик по контрагенту в палитре: платёж «от получателя», а не от статьи.
+   *
+   *  Так платёж и заводят на практике — «надо заплатить Наумченко», а не «надо провести
+   *  расход по статье ФД». Статья подставляется из карточки контрагента; если её там нет,
+   *  строка остаётся без статьи и форма прямо просит её выбрать. */
+  function selectCounterparty(counterparty: NewPaymentCounterparty) {
+    setMode("expense");
+    const articleId =
+      counterparty.default_dds_article_id &&
+      expenseArticles.some((item) => item.id === counterparty.default_dds_article_id)
+        ? counterparty.default_dds_article_id
+        : "";
+    setExpenseRows((prev) => {
+      if (prev.some((row) => row.counterpartyId === counterparty.counterparty_id)) {
+        return prev;
+      }
+      const patch = {
+        articleId,
+        counterpartyId: counterparty.counterparty_id,
+        ...defaultServicePeriod(counterparty.default_service_period_offset_months),
+      };
+      const emptyIndex = prev.findIndex((row) => !row.articleId && !row.counterpartyId);
+      if (emptyIndex >= 0) {
+        return prev.map((row, index) => (index === emptyIndex ? { ...row, ...patch } : row));
+      }
+      return [...prev, { ...emptyExpenseRow(), ...patch }];
     });
   }
 
@@ -538,11 +573,27 @@ export function NewPaymentDialog({
   const showLoan = loanArticle !== null && matches(loanLabel);
   const showPayout = payoutArticles.length > 0 && matches(payoutLabel);
   const showTransfer = transferArticle !== null && matches(transferLabel);
+
+  // Контрагенты — только по поиску: их сотни, вываливать список рядом с десятком статей
+  // нельзя. Ищем и по ИНН — у контрагентов бывают тёзки.
+  const COUNTERPARTY_HITS = 6;
+  const matchedCounterparties = q
+    ? counterparties.filter(
+        (item) => item.name.toLowerCase().includes(q) || (item.inn ?? "").includes(q),
+      )
+    : [];
+  const visibleCounterparties = matchedCounterparties.slice(0, COUNTERPARTY_HITS);
+  const hiddenCounterpartyCount = matchedCounterparties.length - visibleCounterparties.length;
+
   const expenseGroupVisible = visibleExpense.length > 0 || showPrepayment;
   const incomeGroupVisible = matchedIncome.length > 0;
   const employeeGroupVisible = showAdvance || showLoan || showPayout;
   const nothingFound =
-    !expenseGroupVisible && !incomeGroupVisible && !employeeGroupVisible && !showTransfer;
+    !expenseGroupVisible &&
+    !incomeGroupVisible &&
+    !employeeGroupVisible &&
+    !showTransfer &&
+    visibleCounterparties.length === 0;
 
   const context = contextQuery.data ?? null;
 
@@ -570,7 +621,7 @@ export function NewPaymentDialog({
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Статья или операция…"
+                  placeholder="Статья, контрагент или операция…"
                   className="h-8 pl-8 text-sm"
                 />
               </div>
@@ -613,6 +664,34 @@ export function NewPaymentDialog({
                 <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
               ) : (
                 <>
+                  {visibleCounterparties.length > 0 ? (
+                    <PaletteGroup title="Контрагенты">
+                      {visibleCounterparties.map((counterparty) => (
+                        <PaletteItem
+                          key={counterparty.counterparty_id}
+                          icon={Building2}
+                          label={counterparty.name}
+                          title={
+                            counterparty.default_dds_article_id
+                              ? `${counterparty.name} — статья подставится из карточки`
+                              : `${counterparty.name} — статью нужно будет выбрать`
+                          }
+                          active={
+                            mode === "expense" &&
+                            expenseRows.some(
+                              (row) => row.counterpartyId === counterparty.counterparty_id,
+                            )
+                          }
+                          onClick={() => selectCounterparty(counterparty)}
+                        />
+                      ))}
+                      {hiddenCounterpartyCount > 0 ? (
+                        <div className="px-2.5 py-1 text-xs text-muted-foreground">
+                          ещё {hiddenCounterpartyCount} — уточните поиск
+                        </div>
+                      ) : null}
+                    </PaletteGroup>
+                  ) : null}
                   {expenseGroupVisible ? (
                     <PaletteGroup title="Расходы">
                       {visibleExpense.map((article) => (
@@ -713,7 +792,9 @@ export function NewPaymentDialog({
                   <MousePointerClick className="text-muted-foreground" size={22} />
                 </div>
                 <div className="max-w-64 text-sm text-muted-foreground">
-                  Выберите операцию слева: расходную статью, выплату сотруднику или перевод.
+                  Выберите операцию слева: расходную статью, выплату сотруднику или перевод. Либо
+                  начните с получателя — найдите контрагента по названию или ИНН, статья подставится
+                  из его карточки.
                 </div>
               </div>
             ) : null}
@@ -723,6 +804,7 @@ export function NewPaymentDialog({
                   <ExpenseForm
                     key={`expense-${sessionKey}-${formEpoch.expense ?? 0}`}
                     articles={expenseArticles}
+                    counterparties={counterparties}
                     wallets={wallets}
                     kassaWallet={kassaWallet}
                     canConfirmPaid={canConfirmPaid}
@@ -1106,6 +1188,7 @@ function SummaryPanel({
 
 function ExpenseForm({
   articles,
+  counterparties,
   wallets,
   kassaWallet,
   canConfirmPaid,
@@ -1118,6 +1201,7 @@ function ExpenseForm({
   onCancel,
 }: {
   articles: NewPaymentArticle[];
+  counterparties: NewPaymentCounterparty[];
   wallets: NewPaymentWallet[];
   kassaWallet: NewPaymentWallet | null;
   canConfirmPaid: boolean;
@@ -1132,6 +1216,9 @@ function ExpenseForm({
   const queryClient = useQueryClient();
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
+  // Строки, где период раскрыт вручную: у контрагентов без галки «период обязателен» блок
+  // прячется за ссылкой — иначе форма разрастается там, где период не нужен.
+  const [periodRowKeys, setPeriodRowKeys] = useState<ReadonlySet<string>>(new Set());
   const [officialViaSafeConsent, setOfficialViaSafeConsent] = useState<string | null>(null);
   const recipientSignature = rows
     .map((row) => `${row.key}:${row.articleId}:${row.counterpartyId}`)
@@ -1172,6 +1259,16 @@ function ExpenseForm({
     articles.forEach((item) => map.set(item.id, item));
     return map;
   }, [articles]);
+
+  // Справочник получателей — общий, а не «закреплённые за статьёй». Маршрут платежа
+  // (по реквизитам / на карту ИП → Сейф) считается по свойствам контрагента, и пока эти
+  // свойства брались из списка статьи, свободно выбранный официальный контрагент выглядел
+  // для формы как «получателя нет» — платёж ушёл бы мимо реквизитов.
+  const counterpartyById = useMemo(() => {
+    const map = new Map<string, NewPaymentCounterparty>();
+    counterparties.forEach((item) => map.set(item.counterparty_id, item));
+    return map;
+  }, [counterparties]);
 
   // Реестр помещений закрыт правом source.locations.read: без него поле «Помещение» не заполнить
   // в принципе, и сводка «Укажите помещение» вводит в заблуждение — причина блокировки другая.
@@ -1224,13 +1321,14 @@ function ExpenseForm({
               requisites_verified: recipient.requisites_verified,
               service_period_required: false,
               default_service_period_offset_months: null,
+              // Статья у арендного платежа своя (сама арендная), из карточки её не берут.
+              default_dds_article_id: null,
+              confirm_no_dds_article: false,
             },
           ]
         : [];
     }
-    const counterparty = article?.counterparties?.find(
-      (item) => item.counterparty_id === row.counterpartyId,
-    );
+    const counterparty = counterpartyById.get(row.counterpartyId);
     return counterparty ? [counterparty] : [];
   });
   const officialRecipient = selectedCounterparties.find((item) => item.relationship !== "informal");
@@ -1242,16 +1340,16 @@ function ExpenseForm({
   );
   const missingServicePeriodRecipient = rows
     .map((row) => {
-      const article = articleById.get(row.articleId);
-      const counterparty = article?.counterparties?.find(
-        (item) => item.counterparty_id === row.counterpartyId,
-      );
+      const counterparty = counterpartyById.get(row.counterpartyId);
       return counterparty?.service_period_required &&
         (!row.servicePeriodStart || !row.servicePeriodEnd)
         ? counterparty
         : null;
     })
     .find(Boolean);
+  // Вход «от контрагента»: получателя выбрали, статью из карточки подставить не удалось.
+  // Молча отправить нельзя — расход попал бы в ДДС без статьи и выпал из всей аналитики.
+  const missingArticleRow = rows.find((row) => row.counterpartyId && !row.articleId);
   const missingAssetRow = rows.find((row) => {
     const article = articleById.get(row.articleId);
     return Boolean(article?.asset_link_kind) && !row.assetId;
@@ -1281,9 +1379,7 @@ function ExpenseForm({
     rows.length > 0 &&
     rows.every((row) => {
       const article = articleById.get(row.articleId);
-      const counterparty = article?.counterparties?.find(
-        (item) => item.counterparty_id === row.counterpartyId,
-      );
+      const counterparty = counterpartyById.get(row.counterpartyId);
       const periodReady =
         !counterparty?.service_period_required ||
         Boolean(row.servicePeriodStart && row.servicePeriodEnd);
@@ -1365,6 +1461,11 @@ function ExpenseForm({
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт списания.";
+  } else if (missingArticleRow) {
+    tone = "warning";
+    summary = `Выберите статью ДДС для платежа ${shortName(
+      counterpartyById.get(missingArticleRow.counterpartyId)?.name ?? "контрагенту",
+    )} — без статьи расход выпадет из аналитики.`;
   } else if (missingAssetRow) {
     tone = "warning";
     // Причина у покупки и у ремонта разная, и общая формулировка врала бы в одну из сторон:
@@ -1478,13 +1579,22 @@ function ExpenseForm({
         <div className="space-y-2">
           {rows.map((row) => {
             const article = articleById.get(row.articleId) ?? null;
-            const pinned = article?.counterparties ?? [];
-            const selectedCounterparty = pinned.find(
-              (item) => item.counterparty_id === row.counterpartyId,
+            const pinnedIds = new Set(
+              (article?.counterparties ?? []).map((item) => item.counterparty_id),
             );
-            // Свободный «кому платим» — только у неарендных статей: у аренды получатель приходит
-            // из договора (блок «Помещение» ниже), а не из закреплённого списка контрагентов.
-            const showPinned = pinned.length > 0 && !article?.lease_bound;
+            const selectedCounterparty = counterpartyById.get(row.counterpartyId);
+            // Свободный «кому платим» — у всех неарендных статей, даже если за статьёй никто не
+            // закреплён: получателя выбирают из общего справочника. У аренды получатель приходит
+            // из договора (блок «Помещение» ниже), выбирать его руками нельзя.
+            const showRecipient = !article?.lease_bound;
+            // Период — переменная платежа, а не свойство карточки: обязателен там, где карточка
+            // этого требует, но указать его можно для любого получателя (оплата за квартал
+            // вперёд бывает и у тех, у кого галки нет).
+            const periodOpen =
+              Boolean(selectedCounterparty) &&
+              (selectedCounterparty?.service_period_required ||
+                Boolean(row.servicePeriodStart) ||
+                periodRowKeys.has(row.key));
             return (
               <div className="space-y-1.5 rounded-md border p-2.5" key={row.key}>
                 <div className="grid grid-cols-[minmax(0,1fr)_130px_auto] items-center gap-2">
@@ -1513,7 +1623,7 @@ function ExpenseForm({
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <div className={cn("gap-2", showPinned ? "grid grid-cols-2" : "")}>
+                <div className={cn("gap-2", showRecipient ? "grid grid-cols-2" : "")}>
                   <Input
                     className="h-8 text-sm"
                     maxLength={210}
@@ -1521,38 +1631,41 @@ function ExpenseForm({
                     placeholder="Назначение (необязательно)"
                     value={row.purpose}
                   />
-                  {showPinned ? (
-                    <Select
-                      onValueChange={(value) =>
-                        (() => {
-                          const counterpartyId = value === "none" ? "" : value;
-                          const counterparty = pinned.find(
-                            (item) => item.counterparty_id === counterpartyId,
-                          );
-                          onUpdateRow(row.key, {
-                            counterpartyId,
-                            ...defaultServicePeriod(
-                              counterparty?.default_service_period_offset_months,
-                            ),
-                          });
-                        })()
-                      }
-                      value={row.counterpartyId || "none"}
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Кому платим" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Кому платим: не указан</SelectItem>
-                        {pinned.map((cp) => (
-                          <SelectItem key={cp.counterparty_id} value={cp.counterparty_id}>
-                            {cp.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  {showRecipient ? (
+                    <CounterpartyCombobox
+                      counterparties={counterparties}
+                      onChange={(counterpartyId) => {
+                        const counterparty = counterpartyById.get(counterpartyId);
+                        // Статью подставляем из карточки — но только в пустую строку: если
+                        // человек уже выбрал статью сам, менять её под получателя нельзя.
+                        // Патч один: через onChangeArticle получатель бы затёрся, эта ветка
+                        // сбрасывает строку под новую статью.
+                        const articleFromCard =
+                          !row.articleId &&
+                          counterparty?.default_dds_article_id &&
+                          articleById.has(counterparty.default_dds_article_id)
+                            ? { articleId: counterparty.default_dds_article_id }
+                            : {};
+                        onUpdateRow(row.key, {
+                          counterpartyId,
+                          ...articleFromCard,
+                          ...defaultServicePeriod(
+                            counterparty?.default_service_period_offset_months,
+                          ),
+                        });
+                      }}
+                      pinnedIds={pinnedIds}
+                      value={row.counterpartyId}
+                    />
                   ) : null}
                 </div>
+                {row.counterpartyId && !row.articleId ? (
+                  <div className="text-xs text-amber-700">
+                    {counterpartyById.get(row.counterpartyId)?.confirm_no_dds_article
+                      ? "У контрагента статья ДДС не закреплена — выберите её для этого платежа."
+                      : "В карточке контрагента нет статьи ДДС — выберите её здесь (и закрепите в карточке, чтобы дальше подставлялась сама)."}
+                  </div>
+                ) : null}
                 {article?.asset_link_kind ? (
                   // Строкой-ссылкой, а не развёрнутым блоком (замечание владельца 31.07.2026):
                   // окно платежа и без того длинное, а объект нужен считанным статьям. Выбор
@@ -1577,11 +1690,24 @@ function ExpenseForm({
                     onChange={(patch) => onUpdateRow(row.key, patch)}
                   />
                 ) : null}
-                {selectedCounterparty?.service_period_required ? (
+                {selectedCounterparty && !periodOpen ? (
+                  <button
+                    className="text-left text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => setPeriodRowKeys((prev) => new Set(prev).add(row.key))}
+                    type="button"
+                  >
+                    Указать период услуги — если платим за месяц вперёд или за несколько
+                  </button>
+                ) : null}
+                {periodOpen ? (
                   <div className="rounded-md bg-muted/40 p-2">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <Label className="text-xs font-medium">Период оказания услуги</Label>
-                      <span className="text-[11px] text-muted-foreground">обязательное поле</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {selectedCounterparty?.service_period_required
+                          ? "обязательное поле"
+                          : "необязательно"}
+                      </span>
                     </div>
                     {/* Месяцами, а не двумя датами: почти все такие контрагенты работают по
                         абонентской плате помесячно, а «оплата за 3 месяца» руками — это две
@@ -1641,9 +1767,7 @@ function ExpenseForm({
                         }
                       />
                       <span>
-                        <span className="block font-medium">
-                          Закрывающих документов не будет
-                        </span>
+                        <span className="block font-medium">Закрывающих документов не будет</span>
                         <span className="block text-muted-foreground">
                           Расход признаём сами, помесячно. Если УПД всё-таки придёт — он заменит
                           наше признание, расход не задвоится.

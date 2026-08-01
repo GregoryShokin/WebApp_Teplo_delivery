@@ -2779,6 +2779,14 @@ export type NewPaymentArticleCounterparty = {
   default_service_period_offset_months: number | null;
 };
 
+/** Контрагент справочника окна: платёж можно начать не со статьи, а с получателя. */
+export type NewPaymentCounterparty = NewPaymentArticleCounterparty & {
+  // Статья из карточки контрагента — подставляется при выборе получателя.
+  default_dds_article_id: string | null;
+  // «Статьи у контрагента нет» как осознанное решение, а не незаполненная карточка.
+  confirm_no_dds_article: boolean;
+};
+
 export type NewPaymentArticle = {
   id: string;
   code: string;
@@ -2817,6 +2825,7 @@ export type NewPaymentEmployee = {
 
 export type NewPaymentContext = {
   articles: NewPaymentArticle[];
+  counterparties: NewPaymentCounterparty[];
   wallets: NewPaymentWallet[];
   employees: NewPaymentEmployee[];
 };
@@ -2829,6 +2838,10 @@ export type NewPaymentExpenseLine = {
   counterparty_id?: string | null;
   service_period_start?: string | null;
   service_period_end?: string | null;
+  // Абонентская оплата вперёд: сколько месяцев покрывает платёж и признавать ли расход
+  // помесячно самим, когда закрывающих документов от контрагента не будет.
+  service_period_months?: number | null;
+  auto_recognize_monthly?: boolean;
   location_id?: string | null;
   lease_id?: string | null;
   // Основное средство строки: окно платежа — главный вход покупки оборудования.

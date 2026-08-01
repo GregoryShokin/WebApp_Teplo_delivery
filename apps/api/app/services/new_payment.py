@@ -191,16 +191,19 @@ def ensure_income_article_allowed(article: DdsArticle) -> None:
         raise ValueError("У этой статьи собственная форма в окне — ручной приход недоступен")
 
 
-async def _counterparties_by_article(
-    session: AsyncSession, article_ids: list[Any]
-) -> dict[Any, list[dict[str, Any]]]:
-    """Контрагенты, закреплённые за статьёй (``default_dds_article_id``, галка «Закрепить
-    за контрагентом»). Для атрибуции свободного вывода: кому платим по этой статье."""
-    if not article_ids:
-        return {}
+async def list_new_payment_counterparties(session: AsyncSession) -> list[dict[str, Any]]:
+    """Все контрагенты, которым можно платить, — справочник окна «Новый платёж».
+
+    Плоский список, а не только закреплённые за статьями: платёж заводят и «от получателя» —
+    сначала выбирают контрагента, статья подставляется из его карточки. Пока список приходил
+    вложенным в статьи, контрагент без ``default_dds_article_id`` был недостижим в окне вовсе:
+    поле «Кому платим» у такой статьи просто не показывалось.
+
+    ``default_dds_article_id`` + ``confirm_no_dds_article`` — вход через контрагента: статья
+    подставляется из карточки, а если её там нет (осознанно или нет) — окно просит выбрать.
+    """
     rows = await session.execute(
         select(
-            CounterpartyPayableProfile.default_dds_article_id,
             Counterparty.id,
             Counterparty.name,
             Counterparty.inn,
@@ -209,44 +212,60 @@ async def _counterparties_by_article(
             CounterpartyPayableProfile.requisites_verified,
             CounterpartyPayableProfile.service_period_required,
             CounterpartyPayableProfile.default_service_period_offset_months,
+            CounterpartyPayableProfile.default_dds_article_id,
+            CounterpartyPayableProfile.confirm_no_dds_article,
         )
         .join(Counterparty, Counterparty.id == CounterpartyPayableProfile.counterparty_id)
-        .where(
-            CounterpartyPayableProfile.default_dds_article_id.in_(article_ids),
-            # notin_: легаси-статус 'inactive' — тоже архив, в пикер попадать не должен.
-            Counterparty.status.notin_(ARCHIVED_STATUSES),
-        )
+        # notin_: легаси-статус 'inactive' — тоже архив, в пикер попадать не должен.
+        .where(Counterparty.status.notin_(ARCHIVED_STATUSES))
         .order_by(Counterparty.name)
     )
+    return [
+        {
+            "counterparty_id": cp_id,
+            "name": name,
+            "inn": inn,
+            "relationship": relationship,
+            "has_requisites": bool(requisites),
+            "requisites_verified": bool(requisites_verified),
+            "service_period_required": bool(service_period_required),
+            "default_service_period_offset_months": default_service_period_offset_months,
+            "default_dds_article_id": default_dds_article_id,
+            "confirm_no_dds_article": bool(confirm_no_dds_article),
+        }
+        for (
+            cp_id,
+            name,
+            inn,
+            relationship,
+            requisites,
+            requisites_verified,
+            service_period_required,
+            default_service_period_offset_months,
+            default_dds_article_id,
+            confirm_no_dds_article,
+        ) in rows
+    ]
+
+
+def _counterparties_by_article(
+    counterparties: list[dict[str, Any]],
+) -> dict[Any, list[dict[str, Any]]]:
+    """Контрагенты, закреплённые за статьёй (``default_dds_article_id``, галка «Закрепить
+    за контрагентом»). Для атрибуции свободного вывода: кому платим по этой статье."""
     by_article: dict[Any, list[dict[str, Any]]] = {}
-    for (
-        article_id,
-        cp_id,
-        name,
-        inn,
-        relationship,
-        requisites,
-        requisites_verified,
-        service_period_required,
-        default_service_period_offset_months,
-    ) in rows:
-        by_article.setdefault(article_id, []).append(
-            {
-                "counterparty_id": cp_id,
-                "name": name,
-                "inn": inn,
-                "relationship": relationship,
-                "has_requisites": bool(requisites),
-                "requisites_verified": bool(requisites_verified),
-                "service_period_required": bool(service_period_required),
-                "default_service_period_offset_months": default_service_period_offset_months,
-            }
-        )
+    for item in counterparties:
+        article_id = item["default_dds_article_id"]
+        if article_id is not None:
+            by_article.setdefault(article_id, []).append(item)
     return by_article
 
 
 async def list_new_payment_articles(
-    session: AsyncSession, *, permissions: frozenset[str]
+    session: AsyncSession,
+    *,
+    permissions: frozenset[str],
+    counterparties: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Статьи селекта окна: только маршруты, доступные пользователю по правам.
 
@@ -287,7 +306,9 @@ async def list_new_payment_articles(
         for article in articles
         if (flow := new_payment_article_flow(article)) is not None and flow in allowed
     ]
-    pinned = await _counterparties_by_article(session, [item["id"] for item in result])
+    if counterparties is None:
+        counterparties = await list_new_payment_counterparties(session)
+    pinned = _counterparties_by_article(counterparties)
     for item in result:
         item["counterparties"] = pinned.get(item["id"], [])
     return result
@@ -410,8 +431,11 @@ async def list_payout_attribution_employees(session: AsyncSession) -> list[dict[
 async def build_new_payment_context(
     session: AsyncSession, *, permissions: frozenset[str]
 ) -> dict[str, Any]:
-    """Контекст окна одним запросом: статьи по правам, счета, сотрудники (если нужны)."""
-    articles = await list_new_payment_articles(session, permissions=permissions)
+    """Контекст окна одним запросом: статьи по правам, контрагенты, счета, сотрудники."""
+    counterparties = await list_new_payment_counterparties(session)
+    articles = await list_new_payment_articles(
+        session, permissions=permissions, counterparties=counterparties
+    )
     wallets = await list_new_payment_wallets(session)
     flows = {article["flow"] for article in articles}
     employees: list[dict[str, Any]] = []
@@ -420,7 +444,12 @@ async def build_new_payment_context(
         # операционно нужен); c одним правом выплат отдаём только on_demand.
         include_all = bool(flows.intersection(("employee_advance", "employee_loan")))
         employees = await list_new_payment_employees(session, include_all=include_all)
-    return {"articles": articles, "wallets": wallets, "employees": employees}
+    return {
+        "articles": articles,
+        "counterparties": counterparties,
+        "wallets": wallets,
+        "employees": employees,
+    }
 
 
 __all__ = [
@@ -433,6 +462,7 @@ __all__ = [
     "ensure_income_article_allowed",
     "ensure_reservable_article_allowed",
     "list_new_payment_articles",
+    "list_new_payment_counterparties",
     "list_new_payment_employees",
     "list_payout_attribution_employees",
     "list_new_payment_wallets",
