@@ -328,7 +328,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         default_dds_article_id: ddsArticleId || null,
         confirm_no_dds_article: confirmNoDdsArticle,
         default_service_period_offset_months:
-          contour === "goods" || periodOffset === "none" ? null : Number(periodOffset),
+          !offsetRelevant || periodOffset === "none" ? null : Number(periodOffset),
         settlement_contour: contour,
         // У товарного контрагента признавать нечего: его накладные гасит склад, а расход по
         // сырью идёт фудкостом. Настройки услуг чистим, чтобы они не всплыли при возврате.
@@ -366,6 +366,15 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
       : "none";
   // Сравниваем ТО, что уйдёт при сохранении (trim) — иначе хвостовой пробел оставляет
   // форму «вечно несохранённой» после успешного сохранения и даёт ложный гард закрытия.
+  // Подсказка периода в «Новом платеже» уместна только там, где период вообще спрашивают:
+  // у «счёт + УПД» его знает контрагент, у «договора» платёж гасит начисленное, у разовых
+  // подсказывать нечего. Показывать поле этим типам — предлагать настройку без эффекта.
+  const offsetRelevant =
+    contour !== "goods" && !["per_invoice", "agreement", "one_off"].includes(billingMode);
+  // Срок закрывающего документа осмыслен только там, где документ ЖДУТ: у «счёт за период»,
+  // договора и разовых строка в «ждём документ» не попадает, и срок ни на что не влияет.
+  const expectedDayRelevant =
+    contour !== "goods" && !["fixed_tariff", "agreement", "one_off"].includes(billingMode);
   const dirty =
     relationship !== (profile?.relationship ?? "official") ||
     (relationship !== "official" && name.trim() !== card.name) ||
@@ -508,7 +517,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </span>
             </Field>
             )}
-            {contour === "goods" ? null : (
+            {!expectedDayRelevant ? null : (
             <Field label="Закрывающий документ приходит до">
               <Select disabled={disabled} value={expectedDay} onValueChange={setExpectedDay}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -527,7 +536,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </span>
             </Field>
             )}
-            {contour === "goods" ? null : (
+            {!offsetRelevant ? null : (
             <Field label="Подставлять период в ручной платёж">
               <Select disabled={disabled} value={periodOffset} onValueChange={setPeriodOffset}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
