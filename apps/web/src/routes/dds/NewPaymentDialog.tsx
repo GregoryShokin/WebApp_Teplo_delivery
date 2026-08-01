@@ -205,15 +205,44 @@ function formatPeriod(start: string, end: string) {
   return `${fmt(start)} — ${fmt(end)}`;
 }
 
-function defaultServicePeriod(offsetMonths: number | null | undefined) {
-  if (offsetMonths == null) return { servicePeriodStart: "", servicePeriodEnd: "" };
+/** Период при смене получателя всегда сбрасывается в пустой.
+ *
+ *  Подставлять его «по умолчанию» нельзя (правило владельца 01.08.2026): предзаполненный
+ *  период не перечитывают — он выглядит как уже принятое решение. Ошибиться месяцем тут
+ *  дороже, чем забыть: признание разложит расход не по тем месяцам, а увидят это только
+ *  на сверке. Пустое поле, наоборот, само себя требует — платёж не отправить. */
+function emptyServicePeriod() {
+  return { servicePeriodStart: "", servicePeriodEnd: "", servicePeriodMonths: "1" };
+}
+
+const MONTH_NAMES = [
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
+];
+
+/** «2026-07» → «июль 2026»: подсказка читается словами, а не датой в формате input. */
+function monthLabel(value: string): string {
+  const [year, month] = value.split("-");
+  return `${MONTH_NAMES[Number(month) - 1] ?? value} ${year}`;
+}
+
+/** Месяц из настройки карточки (``default_service_period_offset_months``): 0 — текущий,
+ *  −1 — прошлый. Не подставляется сам, а предлагается кнопкой в окне периода. */
+function offsetMonthValue(offsetMonths: number | null | undefined): string | null {
+  if (offsetMonths == null) return null;
   const now = new Date();
   const first = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
-  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
-  return {
-    servicePeriodStart: dateInput(first.getFullYear(), first.getMonth(), 1),
-    servicePeriodEnd: dateInput(last.getFullYear(), last.getMonth(), last.getDate()),
-  };
+  return dateInput(first.getFullYear(), first.getMonth(), 1).slice(0, 7);
 }
 
 function normalizeAmount(value: string): string {
@@ -359,32 +388,18 @@ export function NewPaymentDialog({
       ? article.counterparties![0].counterparty_id
       : "";
   }
-  /** Период сеем ТОЛЬКО от реально предвыбранного контрагента (ровно один закреплённый).
-   *  Иначе (2+ закреплённых, выбран «Без контрагента») строка уносила бы в черновик
-   *  скрытый период от первого попавшегося — поля периода при этом даже не показываются. */
-  function presetServicePeriod(article: NewPaymentArticle) {
-    const counterpartyId = presetCounterparty(article);
-    const counterparty = article.counterparties?.find(
-      (item) => item.counterparty_id === counterpartyId,
-    );
-    return defaultServicePeriod(counterparty?.default_service_period_offset_months);
-  }
   function changeExpenseArticle(key: string, articleId: string) {
     const article = expenseArticles.find((item) => item.id === articleId) ?? null;
-    const counterpartyId = presetCounterparty(article);
-    const counterparty = article?.counterparties?.find(
-      (item) => item.counterparty_id === counterpartyId,
-    );
     // Смена статьи сбрасывает доп-данные строки — они относились к прежней статье.
     updateExpenseRow(key, {
       articleId,
-      counterpartyId,
+      counterpartyId: presetCounterparty(article),
       purpose: "",
       locationId: "",
       leaseId: "",
       assetId: "",
       leaseRecipient: null,
-      ...defaultServicePeriod(counterparty?.default_service_period_offset_months),
+      ...emptyServicePeriod(),
     });
   }
 
@@ -407,7 +422,7 @@ export function NewPaymentDialog({
       const patch = {
         articleId,
         counterpartyId: counterparty.counterparty_id,
-        ...defaultServicePeriod(counterparty.default_service_period_offset_months),
+        ...emptyServicePeriod(),
       };
       const emptyIndex = prev.findIndex((row) => !row.articleId && !row.counterpartyId);
       if (emptyIndex >= 0) {
@@ -434,13 +449,12 @@ export function NewPaymentDialog({
                   ...row,
                   articleId: article.id,
                   counterpartyId: presetCounterparty(article),
-                  ...presetServicePeriod(article),
+                  ...emptyServicePeriod(),
                 }
               : row,
           );
         }
-        const next = emptyExpenseRow(article.id, presetCounterparty(article));
-        return [...prev, { ...next, ...presetServicePeriod(article) }];
+        return [...prev, emptyExpenseRow(article.id, presetCounterparty(article))];
       });
       return;
     }
@@ -1689,9 +1703,7 @@ function ExpenseForm({
                         onUpdateRow(row.key, {
                           counterpartyId,
                           ...articleFromCard,
-                          ...defaultServicePeriod(
-                            counterparty?.default_service_period_offset_months,
-                          ),
+                          ...emptyServicePeriod(),
                         });
                       }}
                       pinnedIds={pinnedIds}
@@ -1867,6 +1879,7 @@ function ServicePeriodDialog({
 }) {
   const months = Number(row.servicePeriodMonths || "1");
   const filled = Boolean(row.servicePeriodStart && row.servicePeriodEnd);
+  const suggestedMonth = offsetMonthValue(counterparty.default_service_period_offset_months);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -1920,6 +1933,18 @@ function ServicePeriodDialog({
               {formatPeriod(row.servicePeriodStart, row.servicePeriodEnd)}
               {months > 1 && amount > 0 ? ` · по ${formatRub(amount / months)} в месяц` : ""}
             </div>
+          ) : suggestedMonth ? (
+            // Настройка карточки («обычно платим за прошлый месяц») больше не подставляется
+            // молча — она здесь кнопкой. Один клик вместо ввода, но клик человека.
+            <Button
+              className="h-8"
+              onClick={() => onChange(monthsToPeriod(suggestedMonth, row.servicePeriodMonths))}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Обычно у этого контрагента: {monthLabel(suggestedMonth)}
+            </Button>
           ) : null}
 
           <label className="flex items-start gap-2 text-sm">

@@ -51,7 +51,8 @@ const MIKROEL = {
   has_requisites: true,
   requisites_verified: true,
   service_period_required: true,
-  default_service_period_offset_months: null,
+  // «Обычно платим за прошлый месяц» — подсказка в окне периода, но НЕ автоподстановка.
+  default_service_period_offset_months: -1,
   default_dds_article_id: FD_ARTICLE_ID,
   confirm_no_dds_article: false,
 };
@@ -185,6 +186,32 @@ test("свободно выбранный получатель ведёт пла
 
   // Период доступен и здесь — он свойство платежа, а не карточки.
   await expect(dialog.getByRole("button", { name: /Период услуги/ })).toBeVisible();
+});
+
+test("период не подставляется сам — платёж без него не отправить", async ({ page }) => {
+  const dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Контрагенту", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: /МИКРОЭЛ/ })
+    .first()
+    .click();
+  await dialog.getByLabel("Сумма").fill("9000");
+
+  // У контрагента в карточке есть «обычный» месяц (offset −1) — и он всё равно НЕ проставлен:
+  // предзаполненный период не перечитывают, а ошибка месяцем разложит расход не туда.
+  await expect(dialog.getByRole("button", { name: /нужен период оказания услуги/ })).toBeVisible();
+  await expect(dialog.getByText(/Укажите период оказания услуги/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Отправить в банк" })).toBeDisabled();
+
+  // Настройка карточки живёт кнопкой-подсказкой: один клик, но клик человека.
+  await dialog.getByRole("button", { name: /нужен период оказания услуги/ }).click();
+  const period = page.getByRole("dialog").filter({ hasText: "Период оказания услуги" });
+  await expect(period.getByLabel("Месяц начала периода")).toHaveValue("");
+  await period.getByRole("button", { name: /Обычно у этого контрагента/ }).click();
+  await expect(period.getByLabel("Месяц начала периода")).not.toHaveValue("");
+  await period.getByRole("button", { name: "Готово" }).click();
+
+  await expect(dialog.getByRole("button", { name: "Отправить в банк" })).toBeEnabled();
 });
 
 test("период задаётся отдельным окном и возвращается подписью в строку", async ({ page }) => {
