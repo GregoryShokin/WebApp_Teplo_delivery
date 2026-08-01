@@ -74,6 +74,44 @@ def agreement_covers_month(agreement: CounterpartyServiceAgreement, month: date)
     return agreement.ended_on is None or agreement.ended_on >= first
 
 
+async def covered_by_agreement(
+    session: AsyncSession,
+    counterparty_id: uuid.UUID,
+    *,
+    on: date,
+    article_id: uuid.UUID | None = None,
+) -> bool:
+    """Закрыт ли этот период договором услуги, по которому долг считаем сами.
+
+    Отвечает на вопрос «нужен ли нам вообще документ контрагента за этот период». Если
+    договор действует — источник истины он, а пришедшая бумага только информация: провести
+    её как настоящую значило бы отменить собственное начисление и переписать расход месяца
+    суммой, которую мы не заказывали.
+
+    Статью сверяем, когда она известна у обеих сторон: у контрагента бывает несколько услуг,
+    и договор на одну не должен обесценивать документ по другой.
+    """
+    conditions = [
+        CounterpartyServiceAgreement.counterparty_id == counterparty_id,
+        CounterpartyServiceAgreement.accrual_enabled.is_(True),
+        CounterpartyServiceAgreement.documents_mode == "informal",
+        CounterpartyServiceAgreement.started_on <= on,
+        or_(
+            CounterpartyServiceAgreement.ended_on.is_(None),
+            CounterpartyServiceAgreement.ended_on >= on,
+        ),
+    ]
+    if article_id is not None:
+        conditions.append(
+            or_(
+                CounterpartyServiceAgreement.dds_article_id.is_(None),
+                CounterpartyServiceAgreement.dds_article_id == article_id,
+            )
+        )
+    found = await session.scalar(select(CounterpartyServiceAgreement.id).where(*conditions))
+    return found is not None
+
+
 async def _real_closing_exists(
     session: AsyncSession, agreement: CounterpartyServiceAgreement, month: date
 ) -> bool:

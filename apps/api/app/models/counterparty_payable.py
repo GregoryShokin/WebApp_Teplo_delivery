@@ -441,6 +441,14 @@ class SupplierInvoice(Base):
         default="active",
         server_default="active",
     )
+    # Документ пришёл, зарегистрирован и НИ НА ЧТО НЕ ВЛИЯЕТ: расхода не создаёт, дебиторку
+    # не гасит, начисление по договору не замещает. Так принимается закрывающий от
+    # контрагента, у которого источник истины — договор услуги, а не бумага (решение
+    # владельца 01.08.2026). Виден в реестре и сверке: расхождение с договором надо замечать,
+    # а не прятать.
+    informational: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True)

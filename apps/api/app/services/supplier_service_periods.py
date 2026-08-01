@@ -63,6 +63,9 @@ async def sync_invoice_accrual(
         invoice.service_period_status != "ready"
         or invoice.service_period_start is None
         or invoice.service_period_end is None
+        # Информационный документ расхода не создаёт: месяц уже признан начислением по
+        # договору, и вторая строка P&L удвоила бы расход.
+        or invoice.informational
     ):
         return existing
 

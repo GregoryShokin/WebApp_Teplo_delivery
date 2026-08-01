@@ -1421,12 +1421,27 @@ async def apply_closing_document(
         invoice.activation_status = "pending"
         return Decimal("0.00")
     invoice.activation_status = "active"
+    # Импорт локальный: оба модуля зовут этот, на верхнем уровне вышел бы цикл.
+    from app.services import service_agreement_accruals, subscription_accruals
+
+    # У контрагента с договором услуги источник истины — договор, а не бумага (решение
+    # владельца 01.08.2026). Пришедший акт регистрируем, но учёт им не двигаем: иначе он
+    # отменил бы наше начисление и переписал расход месяца суммой, которую мы не заказывали.
+    # ИП Наумченко 28.07.2026 прислала акт впервые за всё время — по договору он информация.
+    if invoice.source != subscription_accruals.SELF_BILLED_SOURCE:
+        period_anchor = invoice.service_period_end or invoice.invoice_date or today
+        if await service_agreement_accruals.covered_by_agreement(
+            session,
+            invoice.counterparty_id,
+            on=period_anchor,
+            article_id=invoice.dds_article_id,
+        ):
+            invoice.informational = True
+            return Decimal("0.00")
+
     # Настоящий документ сильнее самоакта: если месяц уже был признан внутренним
     # ``self_billed`` (контрагент документов не присылал), тот аннулируется и возвращает
-    # дебиторку — иначе период закрылся бы дважды и расход в P&L удвоился. Импорт локальный:
-    # subscription_accruals сам зовёт этот модуль, на верхнем уровне вышел бы цикл.
-    from app.services import subscription_accruals
-
+    # дебиторку — иначе период закрылся бы дважды и расход в P&L удвоился.
     await subscription_accruals.supersede_self_billed(session, invoice)
     return await auto_settle_invoice_from_open_prepayments(
         session, invoice, actor_user_id=actor_user_id

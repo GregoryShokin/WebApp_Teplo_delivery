@@ -30,6 +30,7 @@ from app.models import (
     SupplierPrepayment,
 )
 from app.services import supplier_prepayments
+from app.services import supplier_service_periods as periods
 from app.services.service_agreement_accruals import accrue_month, ensure_agreement_invoice
 from app.services.subscription_accruals import SELF_BILLED_SOURCE, supersede_self_billed
 
@@ -414,3 +415,89 @@ async def test_supersede_returns_overpayment_to_receivable(
         )
         assert sum(item.amount for item in receivable.all()) == Decimal("1000.00")
         assert accrued is not None
+
+
+async def test_document_from_contract_counterparty_is_informational(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """У договорного контрагента пришедший акт НИ НА ЧТО не влияет (правило владельца 01.08).
+
+    ИП Наумченко впервые за всё время прислала акт 28.07.2026 — вместе со счётом, на том же
+    листе. Обычная обработка отменила бы наше начисление, завела расход по документу и
+    перегасила дебиторку: учёт скакал бы от бумаги, которую мы не запрашивали. Источник истины
+    у договорного контрагента — договор.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Договорной с актом", inn="614302067201")
+        agreement = await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        await session.commit()
+
+        accrued = await ensure_agreement_invoice(
+            session, agreement, date(2026, 6, 1), as_of=date(2026, 7, 1)
+        )
+        await session.commit()
+        assert accrued is not None
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="АКТ-100",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+            operational_scope="finance",
+        )
+        act.dds_article_id = agreement.dds_article_id
+        act.service_period_start = date(2026, 6, 1)
+        act.service_period_end = date(2026, 6, 30)
+        act.service_period_status = "ready"
+        await session.flush()
+
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 7, 5))
+        await periods.sync_invoice_accrual(session, act)
+        await session.commit()
+
+        # Документ зарегистрирован, но помечен информационным и учёт не двигает.
+        await session.refresh(act)
+        assert act.informational is True
+        # Наше начисление живо: договор сильнее бумаги.
+        await session.refresh(accrued)
+        assert accrued.payment_status != "void"
+        # Второй строки расхода не появилось — иначе июнь стоил бы 6 000 вместо 3 000.
+        rows = await session.scalars(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.counterparty_id == cp.id)
+        )
+        assert [row.invoice_id for row in rows.all()] == [accrued.id]
+
+
+async def test_bill_from_contract_counterparty_still_goes_to_payment_queue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """СЧЁТ от договорного контрагента по-прежнему разбирается и ждёт оплаты.
+
+    Договор говорит, сколько мы должны, но платить всё равно по счёту: Наумченко присылает
+    его раз в квартал. Информационным помечается только ЗАКРЫВАЮЩИЙ документ — счёт в контур
+    ДЗ/КЗ не входит и обязан дойти до очереди оплат.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Договорной со счётом", inn="614302067202")
+        await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        await session.commit()
+
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="9000.00",
+            number="СЧ 100",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 28),
+            operational_scope="finance",
+        )
+        await session.flush()
+
+        await supplier_prepayments.apply_closing_document(session, bill, as_of=date(2026, 7, 28))
+        await session.commit()
+
+        await session.refresh(bill)
+        assert bill.informational is False
+        assert bill.activation_status == "active"
