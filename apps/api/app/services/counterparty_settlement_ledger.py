@@ -45,6 +45,7 @@ from app.models import (
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
+    CounterpartyServiceAgreement,
     DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
@@ -59,6 +60,10 @@ OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 # автоматически; service — гашение ручное, и именно там копится ложная дебиторка.
 CONTOUR_GOODS = "goods"
 CONTOUR_SERVICE = "service"
+
+# Подтип услуги, от которого ежемесячных закрывающих не ждут вовсе: разовые работы (ремонт,
+# юрист, типография). Тишина по ним — норма, а не разрыв.
+BILLING_MODE_ONE_OFF = "one_off"
 
 
 def money(value: Decimal | int | float | None) -> Decimal:
@@ -157,6 +162,43 @@ class Ledger:
     rows: list[LedgerRow]
     months: list[LedgerMonth]
     has_barter: bool
+
+
+async def documents_not_expected(
+    session: AsyncSession, counterparty_id: uuid.UUID, *, today: date
+) -> bool:
+    """От контрагента ежемесячных закрывающих документов не ждут — значит и разрыва нет.
+
+    Сводка разрывов держится на ожидании: «заплатили — где документ?». Там, где документа не
+    будет по договорённости, вечно красная строка не информация, а шум, из-за которого
+    перестают смотреть на всю сводку.
+
+    Два случая, и оба — решение человека, а не догадка:
+
+    * ``service_billing_mode='one_off'`` — разовые работы (ремонт, юрист, типография). Тишина
+      между заказами — норма;
+    * действующий договор услуги с ``documents_mode='informal'`` — документов не будет вовсе,
+      вместо них долг считает ночное начисление, и оно же закрывает платёж.
+    """
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    if profile is not None and profile.service_billing_mode == BILLING_MODE_ONE_OFF:
+        return True
+    informal = await session.scalar(
+        select(CounterpartyServiceAgreement.id).where(
+            CounterpartyServiceAgreement.counterparty_id == counterparty_id,
+            CounterpartyServiceAgreement.documents_mode == "informal",
+            CounterpartyServiceAgreement.started_on <= today,
+            or_(
+                CounterpartyServiceAgreement.ended_on.is_(None),
+                CounterpartyServiceAgreement.ended_on >= today,
+            ),
+        )
+    )
+    return informal is not None
 
 
 async def resolve_contour(session: AsyncSession, counterparty_id: uuid.UUID) -> tuple[str, bool]:
@@ -574,6 +616,8 @@ async def list_gaps(
     for cp_id in cp_ids:
         contour, _manual = await resolve_contour(session, cp_id)
         if contour == CONTOUR_GOODS and not include_goods:
+            continue
+        if await documents_not_expected(session, cp_id, today=today):
             continue
         ledger = await build_ledger(session, cp_id, today=today)
         buckets: dict[tuple[date, date], GapRow] = {}

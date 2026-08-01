@@ -132,6 +132,13 @@ class CounterpartyPayableProfile(Base):
     # → товарный); явное значение перебивает факт, потому что один контрагент может и возить
     # товар, и оказывать услуги.
     settlement_contour: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Подтип услугового контрагента — он про ОЖИДАНИЯ, а не про род занятий. 'fixed_tariff' —
+    # ставка известна заранее (Синапсис 13 000, ДоксИнБокс 15 580), долг можно считать самим;
+    # 'per_invoice' — сумма плавает от месяца к месяцу (реклама, вывоз мусора по объёму), тариф
+    # поставить нельзя, ждём счёт; 'one_off' — разовые работы (ремонт, юрист), ежемесячных
+    # документов не ждём вовсе и в сводку разрывов такой контрагент не идёт: тишина — норма.
+    # NULL = не размечен.
+    service_billing_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)

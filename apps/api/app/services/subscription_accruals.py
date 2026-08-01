@@ -35,7 +35,7 @@ from datetime import date
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import InvoicePaymentAllocation, SupplierInvoice, SupplierPrepayment
@@ -274,6 +274,16 @@ async def accrue_due_months(
     return created
 
 
+async def _allocated_total(session: AsyncSession, invoice_id: uuid.UUID) -> Decimal:
+    """Сколько уже разнесено на документ — чтобы переклейка оплаты не превысила его сумму."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+            InvoicePaymentAllocation.invoice_id == invoice_id
+        )
+    )
+    return periods.money(total or Decimal("0.00"))
+
+
 async def supersede_self_billed(
     session: AsyncSession, invoice: SupplierInvoice
 ) -> list[SupplierInvoice]:
@@ -340,7 +350,35 @@ async def supersede_self_billed(
                         if periods.money(prepayment.amount_settled) <= 0
                         else "partially_settled"
                     )
-            await session.delete(allocation)
+                await session.delete(allocation)
+                continue
+            # Денежная аллокация: наше начисление УЖЕ ОПЛАЧЕНО живыми деньгами (постоплата по
+            # договору услуги). Удалить её нельзя — платёж останется ничьим: предоплаты у него
+            # нет, аллокации нет, и настоящий документ повиснет неоплаченным долгом при том, что
+            # деньги контрагент получил. Переклеиваем оплату на победивший документ — деньги те
+            # же, документ другой.
+            paid = periods.money(allocation.amount)
+            room = periods.money(invoice.amount) - await _allocated_total(session, invoice.id)
+            keep = min(paid, max(room, Decimal("0.00")))
+            if keep > 0:
+                allocation.invoice_id = invoice.id
+                allocation.amount = keep
+                await session.flush()
+            else:
+                await session.delete(allocation)
+            # Излишек (настоящий документ оказался дешевле нашей оценки) возвращаем дебиторкой:
+            # эти деньги контрагенту переплачены и должны быть видны как его долг перед нами.
+            excess = paid - keep
+            if excess > 0:
+                session.add(
+                    SupplierPrepayment(
+                        counterparty_id=victim.counterparty_id,
+                        kind="subscription",
+                        amount=excess,
+                        amount_settled=Decimal("0.00"),
+                        status="open",
+                    )
+                )
         victim.payment_status = "void"
         # Освобождаем ключ идемпотентности: он уникален (uq_supplier_invoice_source_external),
         # и пока его держит аннулированный документ, месяц не признать заново НИКОГДА. Это не

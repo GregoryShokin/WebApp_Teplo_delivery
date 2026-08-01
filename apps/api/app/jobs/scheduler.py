@@ -11,6 +11,7 @@ from app.jobs.depreciation_job import run_depreciation_job
 from app.jobs.employee_sync_job import run_employee_sync_job
 from app.jobs.lease_accrual_job import run_lease_accrual_job
 from app.jobs.sbis_sync_job import run_sbis_sync_job
+from app.jobs.service_agreement_accrual_job import run_service_agreement_accrual_job
 from app.jobs.subscription_accrual_job import run_subscription_accrual_job
 from app.jobs.supplier_closing_activation_job import run_supplier_closing_activation_job
 from app.jobs.supplier_service_period_job import run_supplier_service_period_job
@@ -74,6 +75,19 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
         hour=0,
         minute=4,
         id="subscription_monthly_accrual",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # Договоры услуг без закрывающих документов — там же, до признания расходов. В отличие от
+    # аренды начисляем ПОСТФАКТУМ, за закончившийся месяц: ставку могут сменить, услугу —
+    # приостановить, и начисленный вперёд долг пришлось бы отменять задним числом.
+    scheduler.add_job(
+        run_service_agreement_accrual_job,
+        "cron",
+        hour=0,
+        minute=4,
+        id="service_agreement_monthly_accrual",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

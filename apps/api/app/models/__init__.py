@@ -37,6 +37,7 @@ from app.models.counterparty_payable import (
     SupplierPrepayment,
     SupplierServicePeriodChange,
 )
+from app.models.counterparty_service_agreement import CounterpartyServiceAgreement
 from app.models.courier import (
     CourierIikoShift,
     CourierShiftMatch,
@@ -256,6 +257,7 @@ __all__ = [
     "KassaPayinPreset",
     "KassaShiftPenalty",
     "Location",
+    "CounterpartyServiceAgreement",
     "LocationLease",
     "Organization",
     "OwnAccountsRegistry",
