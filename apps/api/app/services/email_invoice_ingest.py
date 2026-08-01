@@ -39,13 +39,13 @@ from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.counterparty_matching import _recompute_status
-from app.services.invoice_recognition import RecognizedInvoice, recognize
+from app.services.invoice_recognition import RecognizedInvoice, extract_pdf_text, recognize
 from app.services.mail.imap_client import (
     FetchedAttachment,
     configured_accounts,
     fetch_pdf_attachments,
 )
-from app.services.taxes.document_ingest import resolve_tax_senders
+from app.services.taxes.document_ingest import classify_tax_document, resolve_tax_senders
 
 logger = logging.getLogger(__name__)
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -57,16 +57,58 @@ SKIP_SENDER_SUBSTRINGS: tuple[str, ...] = ()
 
 
 def _is_tax_agent(from_addr: str | None, tax_senders: tuple[str, ...]) -> bool:
-    """Письмо налогового агента? Его документы — не счета на оплату.
+    """Письмо от налогового агента (бухгалтера)? Сам по себе это НЕ повод пропустить вложение.
 
-    Бухгалтер шлёт ведомости, платёжки и оборотки; их разбирает модуль «Налоги»
-    (``tax_document_intake``). 27.07.2026 ведомость Т-53 в PDF приехала сюда и встала в очередь
-    оплат как счёт на 22 696 ₽ с датой 05.01.2004 (дата утверждения бланка Госкомстатом).
-    Отсекаем по тому же списку адресов, что и приём налоговых документов, — одна настройка
-    ``tax_document_senders`` на оба контура, чтобы они не разъезжались.
+    Список — тот же (``tax_document_senders``), что и у приёма налоговых документов, одна
+    настройка на оба контура, чтобы они не разъезжались. Решение о маршруте принимает
+    ``_is_tax_paperwork`` по самому документу.
     """
     sender = (from_addr or "").lower()
     return any(s in sender for s in tax_senders)
+
+
+# Унифицированные формы Госкомстата (Т-49, Т-53, платёжное поручение) объявляют себя в шапке
+# дословно. Это железный признак «бумага бухгалтера», не зависящий от того, как назван файл.
+_GOSKOMSTAT_MARKERS: tuple[str, ...] = (
+    "унифицированная форма",
+    "постановлением госкомстата",
+    "платежное поручение",
+    "платёжное поручение",
+)
+
+
+def _is_tax_paperwork(att: FetchedAttachment) -> str | None:
+    """Вложение бухгалтера — его собственная бумага (ведомость/оборотка/приказ), а не счёт нам?
+
+    Развилку решает ДОКУМЕНТ, а не адрес отправителя. Бухгалтер шлёт и то, и другое: 27.07.2026
+    её ведомость Т-53 встала в очередь оплат счётом на 22 696 ₽ с датой 05.01.2004 (дата
+    утверждения бланка Госкомстатом), а 28.07.2026 её собственный счёт №100 на 9 000 ₽ вместе с
+    актом улетел в «Налоги» и умер там как «неопознанный тип» — отсечка по адресу рубила оба
+    потока сразу.
+
+    Два признака, оба дешёвые и детерминированные:
+
+    1. Имя файла опознаётся классификатором налогового контура (``вед``, ``оборот``, ``приказ``,
+       ``свод``…) — тем же самым, чтобы контуры не разъезжались в понимании «что есть бумага
+       бухгалтера».
+    2. В тексте PDF — шапка унифицированной формы. Ловит ведомость, названную нейтрально
+       («Документ1.pdf»), где имя не говорит ни о чём.
+
+    Распознаванию (LLM) эту развилку доверять нельзя: на той самой Т-53 оно и ошиблось, приняв
+    ведомость за счёт. Возвращает причину для лога либо None, если это не бумага бухгалтера.
+    """
+    kind = classify_tax_document(att.filename or "")
+    if kind != "unknown":
+        return f"имя файла — {kind}"
+    try:
+        text = extract_pdf_text(att.content)
+    except Exception:  # noqa: BLE001 - нечитаемый PDF решает распознаватель, не эта развилка
+        return None
+    low = " ".join(text.split()).casefold()[:4000]
+    for marker in _GOSKOMSTAT_MARKERS:
+        if marker in low:
+            return f"унифицированная форма в тексте ({marker})"
+    return None
 
 
 def _guess_type(inn: str | None) -> str:
@@ -1019,13 +1061,25 @@ async def poll_and_ingest(
                 result["skipped"] += 1
                 continue
             if _is_tax_agent(att.from_addr, tax_senders):
+                reason = _is_tax_paperwork(att)
+                if reason is not None:
+                    logger.info(
+                        "poll_mail_invoices: %s от бухгалтера (%s) — бумага «Налогов»: %s",
+                        att.filename or att.sha256[:12],
+                        sender,
+                        reason,
+                    )
+                    result["skipped_tax_agent"] += 1
+                    continue
+                # Бухгалтер прислал не свою отчётность, а счёт нам — разбираем как обычный
+                # счёт на оплату. Раньше здесь отсекался любой её файл, и собственный счёт
+                # контрагента терялся вместе с ведомостями.
                 logger.info(
-                    "poll_mail_invoices: %s от налогового агента (%s) — это документ «Налогов»",
+                    "poll_mail_invoices: %s от бухгалтера (%s) — не её отчётность, разбираем "
+                    "как счёт на оплату",
                     att.filename or att.sha256[:12],
                     sender,
                 )
-                result["skipped_tax_agent"] += 1
-                continue
             exists = await session.scalar(
                 select(EmailInvoiceIntake.id).where(
                     EmailInvoiceIntake.attachment_sha256 == att.sha256

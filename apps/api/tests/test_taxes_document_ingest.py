@@ -90,12 +90,12 @@ def test_injury_document_classified_as_payment_order() -> None:
     Раньше .xls без «оборот/вед» уходил в Т-53-парсер, где «не находил сотрудников» и виснул
     в «нужна проверка». Теперь ключевые слова травматизма распознаются до .xls-фолбэка.
     """
-    from app.services.taxes.document_ingest import _classify_document
+    from app.services.taxes.document_ingest import classify_tax_document
 
-    assert _classify_document("0,2 %.xls") == "payment_order"
-    assert _classify_document("Травматизм июль.xls") == "payment_order"
+    assert classify_tax_document("0,2 %.xls") == "payment_order"
+    assert classify_tax_document("Травматизм июль.xls") == "payment_order"
     # обычная ведомость по-прежнему Т-53
-    assert _classify_document("ВЕД-13 АВАНС 20.07.xls") == "payroll_statement"
+    assert classify_tax_document("ВЕД-13 АВАНС 20.07.xls") == "payroll_statement"
 
 
 def test_injury_amount_extracted_after_label() -> None:
@@ -141,12 +141,12 @@ def test_parse_attachment_marks_kadr_unsupported() -> None:
 def test_kadr_doc_wins_over_extension() -> None:
     """«Приказ … .doc» — кадровый документ, а не платёжка: раньше .doc уводил его в разбор
     docx, где он падал английским «File is not a zip file»."""
-    from app.services.taxes.document_ingest import _classify_document
+    from app.services.taxes.document_ingest import classify_tax_document
 
-    assert _classify_document("Приказ № 1 12.01.2026 повыш.ЗП.doc") == "unsupported_kadr"
+    assert classify_tax_document("Приказ № 1 12.01.2026 повыш.ЗП.doc") == "unsupported_kadr"
     # Слово «тд» — по границам слова: «отдых» кадровым не считается.
-    assert _classify_document("ТД.xls") == "unsupported_kadr"
-    assert _classify_document("отдых команды.xls") != "unsupported_kadr"
+    assert classify_tax_document("ТД.xls") == "unsupported_kadr"
+    assert classify_tax_document("отдых команды.xls") != "unsupported_kadr"
 
 
 def _pdf_att(filename: str, *, content: bytes = b"%PDF-1.5\n...") -> FetchedAttachment:
@@ -579,10 +579,10 @@ def test_svod_classified_as_turnover() -> None:
     До правки свод уходил в разбор ведомостей и вис в «нужна проверка»: взносы февраля
     в канон не попадали.
     """
-    from app.services.taxes.document_ingest import _classify_document
+    from app.services.taxes.document_ingest import classify_tax_document
 
-    assert _classify_document("СВОД 02.xls") == "turnover_statement"
-    assert _classify_document("ОБОРОТКА 01.xls") == "turnover_statement"
+    assert classify_tax_document("СВОД 02.xls") == "turnover_statement"
+    assert classify_tax_document("ОБОРОТКА 01.xls") == "turnover_statement"
     # «Сводная ведомость» тоже свод; а «ВЕД-3 АВАНС» остаётся ведомостью Т-53.
-    assert _classify_document("Сводная 03.xls") == "turnover_statement"
-    assert _classify_document("ВЕД-3 АВАНС 20.02.xls") == "payroll_statement"
+    assert classify_tax_document("Сводная 03.xls") == "turnover_statement"
+    assert classify_tax_document("ВЕД-3 АВАНС 20.02.xls") == "payroll_statement"
