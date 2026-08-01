@@ -11,11 +11,10 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from cp_helpers import make_counterparty, make_invoice
-from decimal import Decimal
-
 from sqlalchemy import func, select
 
 from app.models import (
@@ -23,6 +22,7 @@ from app.models import (
     SupplierExpenseAccrual,
     SupplierServicePeriodChange,
 )
+from app.services import counterparty_registry as registry
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
     create_payment_draft_for_invoices,
@@ -235,3 +235,34 @@ async def test_bill_with_period_does_not_book_expense(async_session_factory):
             )
         )
         assert total == Decimal("13000.00")
+
+
+async def test_billing_mode_drives_period_requirement(async_session_factory):
+    """Тип контрагента сам решает, требовать ли период, — отдельного тумблера больше нет.
+
+    «Счёт + УПД» с включённым требованием был тупиком: гард не пускал платёж в банк без
+    периода, а период там знает только контрагент. «Счёт за период» без периода не работает
+    по определению — требование включается само.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО «Режим-Период»", inn="7700000043")
+        await _require_period(session, cp.id)  # легаси-флаг включён руками
+        await session.commit()
+
+        profile = await registry.update_profile(
+            session, cp.id, service_billing_mode="per_invoice"
+        )
+        assert profile.service_period_required is False
+
+        profile = await registry.update_profile(
+            session, cp.id, service_billing_mode="fixed_tariff"
+        )
+        assert profile.service_period_required is True
+
+        # И гард реально работает от типа: счёт без периода в банк не уходит.
+        invoice = await make_invoice(session, counterparty_id=cp.id, amount="2000.00")
+        await session.commit()
+        with pytest.raises(CounterpartyPaymentError, match="период"):
+            await create_payment_draft_for_invoices(
+                session, invoice_ids=[invoice.id], actor_user_id=None
+            )

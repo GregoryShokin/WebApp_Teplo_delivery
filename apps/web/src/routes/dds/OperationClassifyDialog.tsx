@@ -760,14 +760,21 @@ export function OperationClassifyDialog({
                 Добавить статью
               </Button>
               {isOperation && rows.length === 1 && !bindsInvoiceOnCard ? (
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-start gap-2 text-sm">
                   <input
                     checked={rememberAsRule}
-                    className="h-4 w-4"
+                    className="mt-0.5 h-4 w-4"
                     onChange={(event) => setRememberAsRule(event.target.checked)}
                     type="checkbox"
                   />
-                  Запомнить как правило
+                  <span>
+                    <span className="block">Запомнить</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {row?.counterparty_inn_raw
+                        ? `Будущие платежи с ИНН ${row.counterparty_inn_raw} разберутся сами — даже с другим текстом назначения`
+                        : "Будущие списания с таким же текстом разберутся сами"}
+                    </span>
+                  </span>
                 </label>
               ) : null}
             </div>

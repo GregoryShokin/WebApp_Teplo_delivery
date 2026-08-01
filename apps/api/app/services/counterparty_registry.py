@@ -926,6 +926,15 @@ async def update_profile(
         ):
             raise CounterpartyRegistryError("Неизвестный режим признания услуг")
         profile.service_billing_mode = service_billing_mode
+        # Флаг «требовать период» выводится из типа, отдельного тумблера в карточке больше
+        # нет. «Счёт за период» без периода не работает по определению — требуем. «Счёт +
+        # УПД» period при оплате не знает никто, кроме контрагента, — требовать запрещено
+        # (гард оплаты становился тупиком). Договор и разовые — период не нужен. Снятие
+        # разметки (None) флаг не трогает: поведение неразмеченных не меняем.
+        if service_billing_mode == "fixed_tariff":
+            profile.service_period_required = True
+        elif service_billing_mode is not None:
+            profile.service_period_required = False
     if status is not _UNSET and status:
         profile.status = status
     await activate_configured_placeholder(session, counterparty, profile)

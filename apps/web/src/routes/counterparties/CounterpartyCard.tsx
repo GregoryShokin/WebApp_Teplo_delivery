@@ -47,9 +47,7 @@ import {
   archiveCounterparty,
   deleteCollectionSource,
   deleteRoutingRule,
-  createMerchantRule,
   getCounterpartyCard,
-  getMerchantRules,
   getRegistry,
   setKassaEnabled,
   setRequisites,
@@ -284,8 +282,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [type, setType] = useState("legal_entity");
   const [ddsArticleId, setDdsArticleId] = useState("");
   const [confirmNoDdsArticle, setConfirmNoDdsArticle] = useState(false);
-  const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
-  const [bankPrepayment, setBankPrepayment] = useState(false);
+
   const [periodOffset, setPeriodOffset] = useState("0");
   // "auto" — определить по факту складских накладных (на бэке это NULL).
   const [contour, setContour] = useState("auto");
@@ -299,12 +296,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     setType(card.type);
     setDdsArticleId(profile?.default_dds_article_id ?? "");
     setConfirmNoDdsArticle(profile?.confirm_no_dds_article ?? false);
-    setServicePeriodRequired(profile?.service_period_required ?? false);
-    setBankPrepayment(profile?.bank_payments_create_prepayment ?? false);
     setPeriodOffset(
       profile?.default_service_period_offset_months != null
         ? String(profile.default_service_period_offset_months)
-        : "0",
+        : "none",
     );
     setContour(
       (profile?.settlement_contour as string | null) ??
@@ -332,9 +327,8 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         relationship,
         default_dds_article_id: ddsArticleId || null,
         confirm_no_dds_article: confirmNoDdsArticle,
-        service_period_required: servicePeriodRequired,
-        bank_payments_create_prepayment: bankPrepayment,
-        default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
+        default_service_period_offset_months:
+          contour === "goods" || periodOffset === "none" ? null : Number(periodOffset),
         settlement_contour: contour,
         // У товарного контрагента признавать нечего: его накладные гасит склад, а расход по
         // сырью идёт фудкостом. Настройки услуг чистим, чтобы они не всплыли при возврате.
@@ -369,7 +363,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const periodOffsetSaved =
     profile?.default_service_period_offset_months != null
       ? String(profile.default_service_period_offset_months)
-      : "0";
+      : "none";
   // Сравниваем ТО, что уйдёт при сохранении (trim) — иначе хвостовой пробел оставляет
   // форму «вечно несохранённой» после успешного сохранения и даёт ложный гард закрытия.
   const dirty =
@@ -378,9 +372,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     type !== card.type ||
     ddsArticleId !== (profile?.default_dds_article_id ?? "") ||
     confirmNoDdsArticle !== (profile?.confirm_no_dds_article ?? false) ||
-    servicePeriodRequired !== (profile?.service_period_required ?? false) ||
-    bankPrepayment !== (profile?.bank_payments_create_prepayment ?? false) ||
-    (servicePeriodRequired && periodOffset !== periodOffsetSaved) ||
+    periodOffset !== periodOffsetSaved ||
     contour !==
       ((profile?.settlement_contour as string | null) ??
         (profile?.settlement_contour_effective as string | null) ??
@@ -469,54 +461,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
           </label>
         </Field>
         <div className="grid gap-3 rounded-md border p-3 sm:col-span-2">
-          <label className="flex items-start gap-3 text-sm">
-            <Switch
-              checked={bankPrepayment}
-              disabled={disabled}
-              onCheckedChange={setBankPrepayment}
-            />
-            <span>
-              <span className="block font-medium">Списания из банка пополняют баланс у поставщика</span>
-              <span className="block text-xs text-muted-foreground">
-                Предоплатная модель (рекламный кабинет, авто-списания с карты): каждое списание
-                в пользу контрагента из выписки становится предоплатой, закрывающий УПД из СБИС
-                гасит её.
-              </span>
-            </span>
-          </label>
-          {bankPrepayment ? (
-            <MerchantRulesBlock counterpartyId={card.counterparty_id} disabled={disabled} />
-          ) : null}
-          <label className="flex items-start gap-3 text-sm">
-            <Switch
-              checked={servicePeriodRequired}
-              disabled={disabled}
-              onCheckedChange={setServicePeriodRequired}
-            />
-            <span>
-              <span className="block font-medium">Требовать период оказания услуг</span>
-              <span className="block text-xs text-muted-foreground">
-                Платёж без периода нельзя отправить в банк.
-              </span>
-            </span>
-          </label>
-          {servicePeriodRequired ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Подставлять в ручной платёж">
-                <Select disabled={disabled} value={periodOffset} onValueChange={setPeriodOffset}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="-1">Предыдущий месяц</SelectItem>
-                    <SelectItem value="0">Месяц платежа</SelectItem>
-                    <SelectItem value="1">Следующий месяц</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-xs text-muted-foreground">
-                  Только для платежа без счёта. Из счёта период распознаётся сам.
-                </span>
-              </Field>
-            </div>
-          ) : null}
+          {/* Тумблеров «требовать период» и «списания пополняют баланс» здесь больше нет:
+              оба выводятся из типа контрагента. Требование периода несёт «счёт за период»,
+              предоплатную модель — «счёт + УПД», а привязка «платёж → контрагент» создаётся
+              галкой «Запомнить» прямо в разборе операции. */}
           {/* Контроль закрывающих документов — то, из чего собираются вкладка «Сверка» и
               состояние «ждём документ» на «Признании расходов». Живёт рядом с периодом услуг:
               обе настройки про один и тот же вопрос «когда расход считается подтверждённым». */}
@@ -570,6 +518,23 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               <span className="text-xs text-muted-foreground">
                 До этой даты отсутствие УПД — норма, после неё строка «ждём документ»
                 краснеет и показывает, сколько дней прошло.
+              </span>
+            </Field>
+            )}
+            {contour === "goods" ? null : (
+            <Field label="Подставлять период в ручной платёж">
+              <Select disabled={disabled} value={periodOffset} onValueChange={setPeriodOffset}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Не подставлять</SelectItem>
+                  <SelectItem value="-1">Предыдущий месяц</SelectItem>
+                  <SelectItem value="0">Месяц платежа</SelectItem>
+                  <SelectItem value="1">Следующий месяц</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                Подсказка в окне «Новый платёж» — для платежа без счёта. Из счёта период
+                распознаётся сам.
               </span>
             </Field>
             )}
@@ -1090,77 +1055,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 
-/** Merchant-правила «назначение содержит X → этот контрагент»: без них карт-списания
- *  (реквизитов не несут) не привязываются, и предоплатная модель не срабатывает.
- *  Создание сразу переклассифицирует висящие списания с этим паттерном. */
-function MerchantRulesBlock({
-  counterpartyId,
-  disabled,
-}: {
-  counterpartyId: string;
-  disabled: boolean;
-}) {
-  const queryClient = useQueryClient();
-  const [pattern, setPattern] = useState("");
-  const rulesQuery = useQuery({
-    queryKey: ["cp", "merchant-rules", counterpartyId],
-    queryFn: () => getMerchantRules(counterpartyId),
-  });
-  const rules = rulesQuery.data ?? [];
-
-  const createMutation = useMutation({
-    mutationFn: () => createMerchantRule(counterpartyId, { purpose_pattern: pattern }),
-    onSuccess: async (r) => {
-      setPattern("");
-      await queryClient.invalidateQueries({ queryKey: ["cp"] });
-      await queryClient.invalidateQueries({ queryKey: ["dds"] });
-      const tail = r.backfilled
-        ? ` — привязано существующих списаний: ${r.backfilled}`
-        : "";
-      toast.success(
-        (r.updated_existing ? "Правило дополнено контрагентом" : "Правило создано") + tail,
-      );
-    },
-    onError: (e) => toast.error(apiErrorMessage(e, "Не удалось создать правило")),
-  });
-
-  return (
-    <div className="ml-12 grid gap-2">
-      {rules.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {rules.map((rule) => (
-            <Badge key={rule.id} variant="outline" className="font-normal">
-              назначение содержит «{rule.purpose_pattern}»
-              {rule.is_active ? "" : " · выключено"}
-            </Badge>
-          ))}
-        </div>
-      ) : (
-        <span className="text-xs text-muted-foreground">
-          Правила распознавания нет — списания не будут привязываться к контрагенту.
-        </span>
-      )}
-      {!disabled ? (
-        <div className="flex items-center gap-2">
-          <Input
-            className="max-w-64"
-            placeholder="Текст в назначении (напр. mango)"
-            value={pattern}
-            onChange={(event) => setPattern(event.target.value)}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={createMutation.isPending || pattern.trim().length < 3}
-            onClick={() => createMutation.mutate()}
-          >
-            {createMutation.isPending ? (
-              <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
-            ) : null}
-            Создать правило
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
-}

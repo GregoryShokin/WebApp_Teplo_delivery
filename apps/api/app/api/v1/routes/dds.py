@@ -102,6 +102,7 @@ from app.services.asset_analytics import (
     resolve_asset_context,
 )
 from app.services.banking import BankCredentialsError, BankFetchError
+from app.services.banking.base import clean_digits
 from app.services.banking.cashflow_classify import (
     EXCLUDED_QUALITY,
     CashflowClassificationConflictError,
@@ -1662,8 +1663,17 @@ async def classify_owner_review_case(
 
     rule_id = None
     if payload.remember_as_rule:
-        rule = _rule_from_owner_review(operation, payload)
-        session.add(rule)
+        if payload.action == "set_article":
+            rule = await _remember_binding_rule(
+                session,
+                operation,
+                article_id=payload.article_id,
+                counterparty_id=payload.counterparty_id,
+                comment=f"Created from owner-review case for {operation.provider_operation_id}",
+            )
+        else:
+            rule = _rule_from_owner_review(operation, payload)
+            session.add(rule)
         await session.flush()
         rule_id = rule.id
 
@@ -2102,18 +2112,19 @@ async def classify_operation(
         and len(payload.splits) == 1
         and not payload.allow_card
     ):
-        rule = _rule_from_operation_split(
+        rule = await _remember_binding_rule(
+            session,
             operation,
-            payload.splits[0].article_id,
+            article_id=payload.splits[0].article_id,
             # Контрагент живёт на строке; у правила из одной строки он оттуда и берётся.
-            (
+            counterparty_id=(
                 created_counterparty_id
                 if payload.splits[0].create_counterparty
                 else payload.splits[0].counterparty_id
             )
             or counterparty_id,
+            comment=f"Created from operation review for {operation.provider_operation_id}",
         )
-        session.add(rule)
         await session.flush()
         rule_id = rule.id
 
@@ -2985,6 +2996,12 @@ async def _classification_rule_or_404(session: AsyncSession, rule_id: UUID) -> C
 def _rule_from_owner_review(
     operation: BankOperation, payload: OwnerReviewClassifyRequest
 ) -> ClassificationRule:
+    """Правило для НЕ-привязочных действий (exclude, перевод) — узкое намеренно.
+
+    Исключение всех операций контрагента по одному ИНН было бы слишком широким решением из
+    одного клика, поэтому здесь остаётся старый матч по полному тексту. Привязка «платёж →
+    контрагент» идёт через ``_remember_binding_rule``.
+    """
     purpose_pattern = _short_pattern(operation.payment_purpose)
     counterparty_pattern = (
         None if operation.counterparty_inn_raw else _short_pattern(operation.counterparty_name_raw)
@@ -3005,27 +3022,74 @@ def _rule_from_owner_review(
     )
 
 
-def _rule_from_operation_split(
-    operation: BankOperation, article_id: UUID, counterparty_id: UUID | None
+async def _remember_binding_rule(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    article_id: UUID | None,
+    counterparty_id: UUID | None,
+    comment: str,
 ) -> ClassificationRule:
-    purpose_pattern = _short_pattern(operation.payment_purpose)
-    counterparty_pattern = (
-        None if operation.counterparty_inn_raw else _short_pattern(operation.counterparty_name_raw)
-    )
-    return ClassificationRule(
+    """«Запомнить при разборе»: будущие платежи этого отправителя — этому контрагенту.
+
+    Есть ИНН в выписке — он и есть личность отправителя: матчим ТОЛЬКО по нему и направлению.
+    Раньше правило прибивало ещё и полный текст назначения, а у подписочных списаний в нём
+    номер счёта и даты, меняющиеся от платежа к платежу, — правило срабатывало ровно один раз
+    и дальше молчало. Провайдера не прибиваем по той же причине: смена банка не должна молча
+    выключать привязку. ИНН нет (карт-списание: в выписке только текст мерчанта) — матчим по
+    стабильным подстрокам, как раньше.
+
+    По одному ИНН держим ОДНО правило: повторное «запомнить» обновляет существующее, а не
+    копит дубли. Человек, запоминающий заново, пере-решает — его выбор побеждает старый.
+    """
+    inn = clean_digits(operation.counterparty_inn_raw)
+    if inn:
+        existing = await session.scalar(
+            select(ClassificationRule).where(
+                ClassificationRule.action == "set_article",
+                ClassificationRule.counterparty_inn_match.in_(
+                    tuple({inn, operation.counterparty_inn_raw or inn})
+                ),
+            )
+        )
+        if existing is not None:
+            existing.is_active = True
+            existing.article_id = article_id
+            existing.counterparty_id = counterparty_id
+            existing.purpose_pattern = None
+            existing.counterparty_name_pattern = None
+            existing.provider = None
+            existing.comment = comment
+            return existing
+        rule = ClassificationRule(
+            name=f"Привязка по ИНН {inn}",
+            priority=50,
+            is_active=True,
+            direction=operation.direction,
+            counterparty_inn_match=inn,
+            action="set_article",
+            article_id=article_id,
+            counterparty_id=counterparty_id,
+            comment=comment,
+        )
+        session.add(rule)
+        return rule
+
+    rule = ClassificationRule(
         name=f"Owner review {operation.provider} {operation.provider_operation_id}",
         priority=50,
         is_active=True,
         provider=operation.provider,
         direction=operation.direction,
-        counterparty_inn_match=operation.counterparty_inn_raw,
-        counterparty_name_pattern=counterparty_pattern,
-        purpose_pattern=purpose_pattern,
+        counterparty_name_pattern=_short_pattern(operation.counterparty_name_raw),
+        purpose_pattern=_short_pattern(operation.payment_purpose),
         action="set_article",
         article_id=article_id,
         counterparty_id=counterparty_id,
-        comment=f"Created from operation review for {operation.provider_operation_id}",
+        comment=comment,
     )
+    session.add(rule)
+    return rule
 
 
 def _short_pattern(value: str | None) -> str | None:

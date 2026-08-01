@@ -98,10 +98,17 @@ async def _load_result(
         case = await session.scalar(
             select(ReconciliationCase).where(ReconciliationCase.bank_operation_id == operation_id)
         )
+        # У операции есть ИНН, поэтому «запомнить» создаёт привязку по ИНН — без текста
+        # назначения и провайдера (правка 01.08.2026: старое правило с полным текстом
+        # срабатывало один раз и дальше молчало — номер счёта в назначении меняется).
         rule_count = await session.scalar(
             select(func.count())
             .select_from(ClassificationRule)
-            .where(ClassificationRule.name == "Owner review tbank owner-review-op")
+            .where(
+                ClassificationRule.counterparty_inn_match == "6162000000",
+                ClassificationRule.purpose_pattern.is_(None),
+                ClassificationRule.provider.is_(None),
+            )
         )
         return {
             "operation_status": operation.classification_status,
