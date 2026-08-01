@@ -535,6 +535,7 @@ export function DzKzRoute() {
           staffQuery={staff}
           taxQuery={canSeeTaxes ? taxes : null}
           onOpenRegister={openRegister}
+          onOpenCard={openCounterpartyCard}
         />
       ) : null}
       {section === "gaps" ? <GapsSection query={gaps} onOpenCard={openCounterpartyCard} /> : null}
@@ -948,11 +949,13 @@ function BalancesSection({
   staffQuery,
   taxQuery,
   onOpenRegister,
+  onOpenCard,
 }: {
   query: ReturnType<typeof useQuery<BalanceList>>;
   staffQuery: ReturnType<typeof useQuery<StaffPayable>>;
   taxQuery: ReturnType<typeof useQuery<TaxDebt>> | null;
   onOpenRegister: (target: "payments" | "documents", cp: CounterpartyBalance | null) => void;
+  onOpenCard: (counterpartyId: string) => void;
 }) {
   const [search, setSearch] = useState("");
   const items = useMemo(() => {
@@ -1006,7 +1009,15 @@ function BalancesSection({
               items.map((item) => (
                 <TableRow key={item.counterparty_id}>
                   <TableCell>
-                    <div className="font-medium">{item.name}</div>
+                    {/* Имя ведёт в сверку: остаток в этой строке и есть итог сверки,
+                        и вопрос «откуда взялось это число» отвечается одним кликом. */}
+                    <button
+                      type="button"
+                      className="font-medium hover:underline"
+                      onClick={() => onOpenCard(item.counterparty_id)}
+                    >
+                      {item.name}
+                    </button>
                     <div className="text-xs text-muted-foreground">
                       {item.inn ? `ИНН ${item.inn}` : "без ИНН"}
                       {item.open_prepayments > 0 ? ` · предоплат: ${item.open_prepayments}` : ""}
@@ -1029,6 +1040,13 @@ function BalancesSection({
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onOpenCard(item.counterparty_id)}
+                      >
+                        Сверка <ArrowRight size={13} />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
