@@ -61,6 +61,7 @@ import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import {
+  type AcquisitionSource,
   type AssetStatus,
   type ConditionReportKind,
   type ConditionStatus,
@@ -81,6 +82,25 @@ import {
 } from "./api";
 
 const ALL = "all";
+
+/** Откуда объект взялся у бизнеса — человеческие подписи к правой стороне баланса.
+ *
+ * Порядок неслучаен: покупка первой, потому что она самый частый случай и единственная, у
+ * которой встречной записи в пассиве не возникает. */
+const ORIGIN_OPTIONS: Array<{ value: AcquisitionSource; label: string }> = [
+  { value: "purchase", label: "Куплено за деньги фирмы" },
+  { value: "owner_contribution", label: "Вклад собственника — отдал бизнесу" },
+  { value: "owner_loan", label: "Взято у собственника в долг — бизнес должен вернуть" },
+  { value: "donation", label: "Получено безвозмездно со стороны" },
+];
+
+/** Подписи для карточки: там нужен короткий вариант без пояснений. */
+const ORIGIN_TITLES: Record<AcquisitionSource, string> = {
+  purchase: "Куплено фирмой",
+  owner_contribution: "Вклад собственника",
+  owner_loan: "Долг перед собственником",
+  donation: "Безвозмездно со стороны",
+};
 const QUERY_ROOT = "fixed-assets";
 
 const rubFormatter = new Intl.NumberFormat("ru-RU", {
@@ -686,6 +706,9 @@ function CreateAssetDialog({ onClose }: { onClose: () => void }) {
   const [brandModel, setBrandModel] = useState("");
   const [commissionedOn, setCommissionedOn] = useState(todayIso);
   const [note, setNote] = useState("");
+  // Откуда объект взялся у бизнеса. Обязателен и без значения по умолчанию: это тот самый
+  // вопрос, ради которого поле заведено, и подставленный ответ обесценил бы его целиком.
+  const [origin, setOrigin] = useState<AcquisitionSource | "">("");
 
   const categoriesQuery = useQuery({
     queryKey: [QUERY_ROOT, "categories"],
@@ -702,6 +725,11 @@ function CreateAssetDialog({ onClose }: { onClose: () => void }) {
         commissioned_on: commissionedOn || null,
         valued_on: commissionedOn || null,
         note: note.trim() || null,
+        acquisition_source: origin || null,
+        // Происхождение задаёт и базу оценки: за покупку заплатила фирма, всё остальное
+        // пришло в бизнес со стороны и оценивается рыночно. Спрашивать «оценку» отдельно
+        // значило бы задать бухгалтерский вопрос там, где человек знает бытовой ответ.
+        valuation_basis: origin === "purchase" ? "payment" : "market",
       }),
     onSuccess: (asset) => {
       toast.success(`Карточка заведена, инвентарный номер ${asset.inventory_number ?? "—"}`);
@@ -713,7 +741,7 @@ function CreateAssetDialog({ onClose }: { onClose: () => void }) {
     },
   });
 
-  const ready = name.trim().length > 0 && Number(cost) > 0;
+  const ready = name.trim().length > 0 && Number(cost) > 0 && origin !== "";
 
   return (
     <Dialog onOpenChange={(open) => (open ? undefined : onClose())} open>
@@ -751,6 +779,28 @@ function CreateAssetDialog({ onClose }: { onClose: () => void }) {
                 value={commissionedOn}
               />
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>Откуда объект</Label>
+            <Select onValueChange={(value) => setOrigin(value as AcquisitionSource)} value={origin}>
+              {/* aria-label, а не htmlFor: у Radix триггер — не input, и подпись рядом с ним
+                  сама по себе не связывается ни для скринридера, ни для тестов. */}
+              <SelectTrigger aria-label="Откуда объект">
+                <SelectValue placeholder="Выберите" />
+              </SelectTrigger>
+              <SelectContent>
+                {ORIGIN_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {origin === "purchase" || origin === ""
+                ? "Если объект куплен за деньги фирмы, в балансе он просто заменит собой потраченные деньги."
+                : "Актив вырастет, а деньги не тратились — в балансе появится встречная запись на эту же сумму."}
+            </p>
           </div>
           <div className="grid gap-2">
             <Label>Категория</Label>
@@ -1163,6 +1213,17 @@ function AssetSheet({
                       asset.valuation_basis === "market"
                         ? `рыночная на ${formatDate(asset.valued_on)}`
                         : "по сумме платежа"
+                    }
+                  />
+                  {/* «Не указано» показываем словами, а не прочерком: у 149 карточек описи
+                      происхождения нет, и прочерк выглядел бы отсутствием поля, а не
+                      незакрытым вопросом к владельцу. */}
+                  <Row
+                    label="Откуда"
+                    value={
+                      asset.acquisition_source
+                        ? ORIGIN_TITLES[asset.acquisition_source]
+                        : "не указано"
                     }
                   />
                   <Row label="Помещение" value={asset.location_name ?? asset.location ?? "—"} />

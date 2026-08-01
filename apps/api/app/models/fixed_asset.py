@@ -64,6 +64,9 @@ SPEC_PROFILES = ("equipment", "furniture", "other")
 ASSET_CONDITIONS = ("new", "used")
 # О чём обращение: поломка у работающего объекта или покупка б/у. См. ``AssetConditionReport``.
 CONDITION_REPORT_KINDS = ("purchase", "incident")
+# Откуда у бизнеса взялся объект — правая сторона баланса для актива, за который фирма не
+# платила. Подробности и цена вопроса — в миграции ``0232_asset_acquisition_source``.
+ACQUISITION_SOURCES = ("purchase", "owner_contribution", "owner_loan", "donation")
 
 
 class AssetCategory(Base):
@@ -120,6 +123,11 @@ class FixedAsset(Base):
         CheckConstraint(
             "condition IS NULL OR condition IN ('new','used')", name="ck_fixed_asset_condition"
         ),
+        CheckConstraint(
+            "acquisition_source IS NULL OR acquisition_source IN "
+            "('purchase','owner_contribution','owner_loan','donation')",
+            name="ck_fixed_asset_acquisition_source",
+        ),
         Index("ix_fixed_asset_status", "status"),
         Index("ix_fixed_asset_review", "review_status"),
         Index("ix_fixed_asset_category", "category_id"),
@@ -143,6 +151,11 @@ class FixedAsset(Base):
     # обходом помещений, и чем объект был в момент покупки, не знает никто. Признак нужен
     # оценке: у б/у объекта износ уже есть, а ни сумма платежа, ни срок из категории его не видят.
     condition: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # Откуда объект взялся у бизнеса. 'purchase' — куплен за деньги фирмы (правую сторону
+    # баланса не двигает); остальные три означают, что актив вырос, а деньги не тратились, и
+    # значит в пассиве обязана появиться встречная запись. NULL — «не указано»: так стоят
+    # 149 карточек описи 2026, и разметить их может только владелец.
+    acquisition_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
     inventory_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("asset_category.id", ondelete="SET NULL"), nullable=True
