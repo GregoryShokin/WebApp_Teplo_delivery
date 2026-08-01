@@ -363,6 +363,10 @@ async def patch_service_period(
     )
     return SupplierAccountingItem(
         id=accrual.id,
+        # Начисление после правки периода либо уже в P&L, либо ждёт конца периода — третьего
+        # состояния у него нет: «нужен период» и «ждём документ» бывают только у предоплаты,
+        # а здесь период только что задан руками.
+        stage="in_expense" if accrual.status == "recognized" else "period_running",
         source_kind="service_period",
         counterparty_id=accrual.counterparty_id,
         counterparty_name=cp_name or "—",

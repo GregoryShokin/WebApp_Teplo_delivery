@@ -1,0 +1,190 @@
+"""Очередь признания расходов на языке владельца: четыре состояния и кто делает шаг.
+
+Бухгалтерские ``receivable/payable/scheduled`` человеку ничего не говорили: увидев «Дебиторка ·
+период не указан», он не понимал, ждут от него действия или нет. ``stage`` отвечает ровно на
+это, и главное различие — между ``needs_period`` (период знает человек, он же его укажет) и
+``waiting_document`` (сумму расхода принесёт УПД, спрашивать период бессмысленно).
+
+Второй тест — регресс на форму ответа PATCH: ``stage`` обязателен в схеме, и роут, собиравший
+ответ вручную, отдавал 500 на валидации. Ни один тест этот эндпоинт не дёргал, поэтому падение
+дожило бы до продакшена — а это единственное действие всего экрана.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import date
+from decimal import Decimal
+
+from cp_helpers import admin_headers, make_counterparty, make_invoice
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual, SupplierPrepayment
+from app.services.supplier_service_periods import set_invoice_service_period
+
+BASE = "/api/v1/accounting/suppliers"
+
+# Период заведомо не закончился ни в один день прогона тестов: stage считается от реального
+# «сегодня» сервера, и дата вроде «конец текущего месяца» переключила бы состояние сама собой.
+FAR_FUTURE_END = date(2030, 12, 31)
+
+
+def _admin(factory) -> dict[str, str]:
+    return asyncio.run(admin_headers(factory))
+
+
+async def _open_prepayment(
+    session: AsyncSession, *, counterparty_id: uuid.UUID, amount: str
+) -> SupplierPrepayment:
+    """Предоплата без периода — ровно то, чем становится платёж из банковской выписки."""
+    prepayment = SupplierPrepayment(
+        counterparty_id=counterparty_id,
+        kind="subscription",
+        amount=Decimal(amount),
+        amount_settled=Decimal("0.00"),
+        status="open",
+    )
+    session.add(prepayment)
+    await session.flush()
+    return prepayment
+
+
+async def _set_billing_mode(session: AsyncSession, counterparty_id: uuid.UUID, mode: str) -> None:
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    profile.service_billing_mode = mode
+    await session.flush()
+
+
+def test_stages_split_queue_by_who_makes_the_step(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Период идёт — ждать; режим «счёт + УПД» — ждать документ; остальное — спросить человека."""
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            running = await make_counterparty(session, name="Стадии Период", inn="6155000401")
+            invoice = await make_invoice(
+                session,
+                counterparty_id=running.id,
+                amount="12000.00",
+                invoice_date=date(2026, 7, 1),
+            )
+            await session.commit()
+            await set_invoice_service_period(
+                session,
+                invoice=invoice,
+                start=date(2026, 7, 1),
+                end=FAR_FUTURE_END,
+                actor_user_id=None,
+            )
+
+            asks_human = await make_counterparty(session, name="Стадии Человек", inn="6155000402")
+            await _open_prepayment(session, counterparty_id=asks_human.id, amount="9000.00")
+
+            waits_doc = await make_counterparty(session, name="Стадии Документ", inn="6155000403")
+            await _set_billing_mode(session, waits_doc.id, "per_invoice")
+            await _open_prepayment(session, counterparty_id=waits_doc.id, amount="5000.00")
+            await session.commit()
+            return running.id, asks_human.id, waits_doc.id
+
+    running_id, human_id, doc_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    payload = response.json()
+    by_cp = {item["counterparty_id"]: item for item in payload["items"]}
+
+    assert by_cp[str(running_id)]["stage"] == "period_running"
+    assert by_cp[str(human_id)]["stage"] == "needs_period"
+    assert by_cp[str(doc_id)]["stage"] == "waiting_document"
+
+    # Плитки: суммы состояний считаются по остатку строки.
+    assert payload["period_running_total"] >= 12000.0
+    assert payload["needs_period_total"] >= 9000.0
+    assert payload["waiting_document_total"] >= 5000.0
+
+
+def test_stage_totals_ignore_the_view_filter(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Отфильтровав очередь, человек всё равно видит, сколько висит в остальных состояниях.
+
+    Иначе фильтр «на ручной разбор» обнулял бы соседние плитки, и экран сообщал бы, что
+    признавать больше нечего.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Стадии Фильтр", inn="6155000404")
+            invoice = await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="7000.00",
+                invoice_date=date(2026, 7, 1),
+            )
+            await session.commit()
+            await set_invoice_service_period(
+                session,
+                invoice=invoice,
+                start=date(2026, 7, 1),
+                end=FAR_FUTURE_END,
+                actor_user_id=None,
+            )
+            return cp.id
+
+    cp_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=needs_review", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    payload = response.json()
+
+    # Строки идущего периода отфильтрованы, а его плитка — нет.
+    assert str(cp_id) not in {item["counterparty_id"] for item in payload["items"]}
+    assert payload["period_running_total"] >= 7000.0
+
+
+def test_patch_service_period_answers_with_full_item(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Перенос периода отвечает валидной строкой — регресс на 500 из-за неполного ответа."""
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Стадии Правка", inn="6155000405")
+            invoice = await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="3000.00",
+                invoice_date=date(2026, 7, 1),
+            )
+            await session.commit()
+            await set_invoice_service_period(
+                session,
+                invoice=invoice,
+                start=date(2026, 7, 1),
+                end=FAR_FUTURE_END,
+                actor_user_id=None,
+            )
+            accrual = await session.scalar(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.invoice_id == invoice.id
+                )
+            )
+            return accrual.id
+
+    accrual_id = asyncio.run(seed())
+    response = client.patch(
+        f"{BASE}/service-periods/{accrual_id}",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-08-01", "service_period_end": "2030-11-30"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["stage"] == "period_running"
+    assert payload["service_period_start"] == "2026-08-01"
+    assert payload["service_period_end"] == "2030-11-30"
