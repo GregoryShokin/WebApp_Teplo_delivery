@@ -19,7 +19,6 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,16 +43,17 @@ from app.models import (
     SalaryAdvanceRecoveryOverride,
     Wallet,
 )
+from app.services import clock
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.bank_payment_status import classify_payment_status
 from app.services.banking import BankClient, TbankClient
-from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.safe_allocations import cancel_allocation, pay_allocation
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.employee_effective_events import get_position_on_date
@@ -68,7 +68,6 @@ _CENTS = Decimal("0.01")
 PAYOUT_METHODS = ("business_card", "cash", "transfer", "other", "payroll")
 # Расчётный «сегодня» — по Москве (как весь payroll/касса-контур), чтобы отсечка
 # «день выплаты» и дата выдачи считались в тех же сутках, а не в UTC.
-_MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 # Проводка ДДС при выдаче аванса/займа: статья по типу, источник по выбранному кошельку.
 ADVANCE_PAYOUT_SOURCE_KIND = "salary_advance"
@@ -86,6 +85,17 @@ ADVANCE_BANK_TO_SAFE_SOURCE_KIND = "salary_advance_bank_to_safe"
 ADVANCE_BANK_DRAFT_STATUSES = frozenset(
     {"created", "updated", "paid", "disbursed", "failed", "cancelled"}
 )
+
+
+def advance_today() -> date:
+    """Сегодня по Москве для правил аванса — отдельная функция, чтобы её можно было закрепить.
+
+    День выплаты блокирует выдачу аванса, поэтому вся эта ветка зависит от календаря. Пока
+    дата читалась прямо в месте использования, тесты аванса и кассы падали в каждое первое
+    число: код исправен, сегодня не то. Подмена делается одной строкой на
+    ``clock.moscow_today`` — см. его докстринг.
+    """
+    return clock.moscow_today()
 
 
 def _article_code_for(advance: SalaryAdvance) -> str:
@@ -313,7 +323,7 @@ async def issue_advance(
     employee = await session.get(Employee, employee_id)
     if employee is None:
         raise PayrollNotFoundError("Сотрудник не найден")
-    requested_issued_on = issued_on or datetime.now(_MOSCOW_TZ).date()
+    requested_issued_on = issued_on or advance_today()
     amount = decimal(amount).quantize(_CENTS)
     if amount <= 0:
         raise PayrollConflictError("Сумма должна быть больше нуля")
@@ -352,7 +362,7 @@ async def issue_advance(
     #   бэкдейт — запись уже ушедших денег прошлой датой — не гейтим (как реконсиляция);
     # - «через ведомость»/без даты (target_period задан): earned считаем на конец периода
     #   без гейта, а блокируем, только если СЕГОДНЯ — день выплаты ИМЕННО этой ведомости.
-    today = datetime.now(_MOSCOW_TZ).date()
+    today = advance_today()
     if target_period is None:
         availability = await available_to_advance(
             session, employee, availability_as_of, apply_payout_gate=issued_on >= today
@@ -1396,7 +1406,6 @@ async def sync_advance_after_allocation_change(
 # ---------------------------------------------------------------------------
 
 # Дата кассовых операций — календарный день МСК (как в kassa.payouts.kassa_today).
-_KASSA_TZ = ZoneInfo("Europe/Moscow")
 
 
 async def _kassa_pending_advance_locked(
@@ -1467,7 +1476,7 @@ async def disburse_kassa_advance(
     """
     advance = await _kassa_pending_advance_locked(session, advance_id)
     wallet = await session.get(Wallet, advance.wallet_id)
-    advance.issued_on = datetime.now(_KASSA_TZ).date()
+    advance.issued_on = advance_today()
     advance.status = "issued"
     await book_advance_payout_cashflow(session, advance=advance, wallet=wallet)
     await session.commit()

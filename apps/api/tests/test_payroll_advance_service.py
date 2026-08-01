@@ -24,6 +24,7 @@ from app.models import (
     PayrollRate,
     Wallet,
 )
+from app.services import clock
 from app.services.payroll_admin import run_admin_payroll
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.payroll_advance_service import (
@@ -138,16 +139,10 @@ async def test_issue_advance_payout_gate_present_day_only(
     """Отсечка блокирует выдачу аванса СЕГОДНЯшней датой в день выплаты, но НЕ блокирует
     запись задним числом (деньги уже ушли) и пропускает явный заём. «Сегодня» пиним на
     15 мая (день выплаты [1..15])."""
-    import app.services.payroll_advance_service as svc
-
-    real_dt = svc.datetime
-
-    class _FixedToday(real_dt):
-        @classmethod
-        def now(cls, tz=None):
-            return real_dt(2026, 5, 15, 12, 0, tzinfo=tz)
-
-    monkeypatch.setattr(svc, "datetime", _FixedToday)
+    # Через ``clock.moscow_today``, а не подменой самого ``datetime`` в модуле: подмена
+    # класса заодно ломала все ``datetime.now(UTC)`` рядом — временные метки, к гейту
+    # отношения не имеющие. Шов адресует ровно «сегодня по Москве» и ничего больше.
+    monkeypatch.setattr(clock, "moscow_today", lambda: date(2026, 5, 15))
 
     async with async_session_factory() as session:
         emp = await _make_okladnik(session)

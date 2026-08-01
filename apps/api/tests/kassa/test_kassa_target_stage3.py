@@ -477,7 +477,9 @@ async def test_disburse_kassa_advance_books_and_activates_today(
         advance = await _kassa_pending_advance(session, amount="1000")
 
         disbursed = await disburse_kassa_advance(session, advance_id=advance.id)
-        today_msk = datetime.now(MOSCOW_TZ).date()
+        # Через тот же источник, что и продовый код: иначе тест сверяет закреплённое
+        # «сегодня» с настоящим и падает в любой день, кроме дня закрепления.
+        today_msk = kassa_today()
         assert disbursed.status == "issued"
         assert disbursed.issued_on == today_msk  # удержания пойдут от даты выдачи
 
