@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -22,6 +23,7 @@ from app.models import (
     Counterparty,
     CounterpartyPayableProfile,
     CounterpartyPaymentDraft,
+    CounterpartyServiceAgreement,
     CourierDepositAccount,
     CourierDepositTransaction,
     CourierDepositTransactionType,
@@ -101,6 +103,28 @@ class SupplierAccountingItem(BaseModel):
     period_status: str
     recognition_month: date | None = None
     recognized: bool
+    # Дальше — то, ради чего исчезла отдельная вкладка «Разрывы»: ожидание документа со
+    # сроком и просрочкой. Без этих полей «ждём документ» не отличает вчерашний платёж от
+    # зависшего с мая, и вкладку пришлось бы держать только ради даты.
+    payment_date: date | None = None
+    expected_by: date | None = None
+    days_overdue: int = 0
+    # true — период не указан, и срок посчитан по месяцу платежа. Фронт обязан это сказать
+    # вслух: иначе выдуманный период читается как подтверждённый.
+    period_assumed: bool = False
+
+
+class StageTile(BaseModel):
+    """Плитка состояния: сколько строк и на какую сумму. Смысл суммы у состояний разный.
+
+    У очередей (``needs_period``, ``waiting_document``) сумма — это ЗАВИСШИЕ ДЕНЬГИ: заплатили,
+    а расходом они пока не стали. У ``in_expense`` тот же остаток был бы нулём (признано и
+    оплачено), поэтому там сумма — величина признанного РАСХОДА, и только за текущий месяц:
+    за всю историю это число ничего не значит и растёт вечно.
+    """
+
+    count: int = 0
+    amount: float = 0
 
 
 class SupplierAccountingList(BaseModel):
@@ -109,13 +133,14 @@ class SupplierAccountingList(BaseModel):
     payable_total: float
     scheduled_total: float
     needs_review_total: float
-    # Итоги по состояниям — плитки экрана. Считаются по ВСЕМ строкам, независимо от фильтра:
-    # иначе, отфильтровав «нужен период», человек увидит нули в остальных и решит, что там
-    # пусто.
-    in_expense_total: float = 0
-    period_running_total: float = 0
-    waiting_document_total: float = 0
-    needs_period_total: float = 0
+    # Плитки экрана. Считаются по ВСЕМ строкам, независимо от фильтра: иначе, выбрав «нужен
+    # период», человек увидит нули в остальных плитках и решит, что там пусто.
+    in_expense: StageTile = StageTile()
+    period_running: StageTile = StageTile()
+    waiting_document: StageTile = StageTile()
+    needs_period: StageTile = StageTile()
+    # Месяц, за который посчитана плитка «уже в расходе» — фронт подписывает её словами.
+    in_expense_month: date | None = None
 
 
 class ServicePeriodUpdate(BaseModel):
@@ -130,24 +155,89 @@ def _float(value: Decimal | int | float | None) -> float:
     return float(periods.money(value))
 
 
+@dataclass
+class _QueueContext:
+    """Что известно о контрагентах очереди признания — одним набором запросов, а не по строке.
+
+    Те же правила, по которым жила сводка разрывов (``counterparty_settlement_ledger``), но
+    посчитанные пакетом: экран показывает десятки строк, и запрос на каждую превратил бы
+    открытие вкладки в минуту ожидания.
+    """
+
+    expected_days: dict[uuid.UUID, int | None] = field(default_factory=dict)
+    # Документов от контрагента не ждут: разовые работы либо договор, по которому долг
+    # считается сам. Вечно красная строка по ним — шум, из-за которого бросают смотреть весь экран.
+    documents_not_expected: set[uuid.UUID] = field(default_factory=set)
+    # Долг закрывает ночное начисление по договору — человеку делать нечего.
+    self_settling: set[uuid.UUID] = field(default_factory=set)
+    # Товарный контур: авансы поставщикам товара гасятся накладной, а расход по сырью идёт
+    # фудкостом. В очереди признания расходов им не место — владелец это же и сказал.
+    goods_contour: set[uuid.UUID] = field(default_factory=set)
+
+
+async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext:
+    ctx = _QueueContext()
+    profiles = (
+        await session.execute(
+            select(
+                CounterpartyPayableProfile.counterparty_id,
+                CounterpartyPayableProfile.service_billing_mode,
+                CounterpartyPayableProfile.closing_doc_expected_day,
+                CounterpartyPayableProfile.settlement_contour,
+            )
+        )
+    ).all()
+    explicit_service: set[uuid.UUID] = set()
+    for cp_id, billing_mode, expected_day, contour in profiles:
+        ctx.expected_days[cp_id] = expected_day
+        if billing_mode == settlement.BILLING_MODE_ONE_OFF:
+            ctx.documents_not_expected.add(cp_id)
+        if contour == settlement.CONTOUR_GOODS:
+            ctx.goods_contour.add(cp_id)
+        elif contour == settlement.CONTOUR_SERVICE:
+            # Явный выбор в карточке сильнее факта складских накладных.
+            explicit_service.add(cp_id)
+
+    informal = (
+        await session.scalars(
+            select(CounterpartyServiceAgreement.counterparty_id).where(
+                CounterpartyServiceAgreement.documents_mode == "informal",
+                CounterpartyServiceAgreement.started_on <= today,
+                or_(
+                    CounterpartyServiceAgreement.ended_on.is_(None),
+                    CounterpartyServiceAgreement.ended_on >= today,
+                ),
+            )
+        )
+    ).all()
+    ctx.self_settling.update(informal)
+    ctx.documents_not_expected.update(informal)
+
+    warehouse = (
+        await session.scalars(
+            select(SupplierInvoice.counterparty_id)
+            .where(
+                SupplierInvoice.operational_scope == "warehouse",
+                SupplierInvoice.payment_status != "void",
+            )
+            .distinct()
+        )
+    ).all()
+    ctx.goods_contour.update(cp_id for cp_id in warehouse if cp_id not in explicit_service)
+    return ctx
+
+
 @router.get("", response_model=SupplierAccountingList, dependencies=READ)
 async def list_supplier_accounting(
     session: Annotated[AsyncSession, Depends(get_session)],
     view: Literal["open", "all", "needs_review", "recognized"] = Query(default="open"),
+    stage: Literal["in_expense", "period_running", "waiting_document", "needs_period"] | None = (
+        Query(default=None)
+    ),
 ) -> SupplierAccountingList:
     today = datetime.now(MOSCOW_TZ).date()
-    # Режим контрагента решает, чего ждёт строка без периода: документа или человека.
-    billing_modes = {
-        cp_id: mode
-        for cp_id, mode in (
-            await session.execute(
-                select(
-                    CounterpartyPayableProfile.counterparty_id,
-                    CounterpartyPayableProfile.service_billing_mode,
-                ).where(CounterpartyPayableProfile.service_billing_mode.is_not(None))
-            )
-        ).all()
-    }
+    current_month = today.replace(day=1)
+    ctx = await _queue_context(session, today=today)
     allocated = (
         select(
             InvoicePaymentAllocation.invoice_id.label("invoice_id"),
@@ -207,17 +297,14 @@ async def list_supplier_accounting(
         else:
             balance = total
             balance_type = "scheduled"
-        if accrual.status == "recognized":
-            stage = "in_expense"
-        elif accrual.service_period_end is not None and accrual.service_period_end >= today:
-            stage = "period_running"
-        else:
-            # Период кончился, а расход не признан: признание идёт ночной джобой, к утру
-            # состояние станет in_expense. Показываем как «период идёт» — действий не требует.
-            stage = "period_running"
+        # Имя переменной не ``stage``: так называется параметр-фильтр этой же функции, и
+        # присваивание в цикле затирало бы его — выдача молча возвращала бы одно состояние.
+        # Непризнанное начисление всегда «период идёт»: даже когда период уже кончился, расход
+        # признаёт ночная джоба, и к утру состояние станет in_expense само.
+        accrual_stage = "in_expense" if accrual.status == "recognized" else "period_running"
         item = SupplierAccountingItem(
             id=accrual.id,
-            stage=stage,
+            stage=accrual_stage,
             source_kind="service_period",
             counterparty_id=accrual.counterparty_id,
             counterparty_name=cp_name,
@@ -237,40 +324,72 @@ async def list_supplier_accounting(
         )
         items.append(item)
 
-    # Ранее заведённые и ещё не закрытые авансы остаются видимыми. Без периода они не
-    # признаются автоматически и формируют очередь ручного распределения.
+    # Открытые предоплаты — это деньги, которые ушли, а расходом ещё не стали. Каждая строка
+    # отвечает на один вопрос: чего ждём. ``prepaid_bill`` (ДЗ по оплаченному счёту) тоже
+    # здесь: по канону её гасит закрывающий УПД, то есть это ровно «ждём документ», и именно
+    # такие платежи составляли половину сводки разрывов.
     prepayment_rows = (
         await session.execute(
-            select(SupplierPrepayment, Counterparty.name, DdsArticle.name)
+            select(
+                SupplierPrepayment,
+                Counterparty.name,
+                DdsArticle.name,
+                CashflowTransaction.operation_date,
+            )
             .join(Counterparty, Counterparty.id == SupplierPrepayment.counterparty_id)
             .outerjoin(DdsArticle, DdsArticle.id == SupplierPrepayment.article_id)
-            .where(SupplierPrepayment.status.in_(("open", "partially_settled")))
-            # ДЗ по оплаченному счёту (kind='prepaid_bill', единый чокпоинт канона) гасится
-            # закрывающим УПД (правило 2), а НЕ ручным распределением по периодам — из очереди
-            # «Признание расходов» её исключаем (в дебиторку /balances она входит отдельно).
-            .where(SupplierPrepayment.kind != "prepaid_bill")
+            .outerjoin(
+                CashflowTransaction,
+                CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
+            )
+            .where(SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES))
             .order_by(SupplierPrepayment.created_at.desc())
         )
     ).all()
-    for prepayment, cp_name, article_name in prepayment_rows:
+    for prepayment, cp_name, article_name, operation_date in prepayment_rows:
+        # Товарные авансы гасит накладная, а расход по сырью идёт фудкостом — в очереди
+        # признания расходов их быть не должно (требование владельца 01.08.2026).
+        if prepayment.counterparty_id in ctx.goods_contour:
+            continue
         balance = max(
             periods.money(prepayment.amount) - periods.money(prepayment.amount_settled),
             Decimal("0"),
         )
-        needs_review = (
-            prepayment.service_period_status != "ready"
-            or prepayment.service_period_start is None
-            or prepayment.service_period_end is None
+        period_known = (
+            prepayment.service_period_status == "ready"
+            and prepayment.service_period_start is not None
+            and prepayment.service_period_end is not None
         )
-        # «Ждём документ» отличается от «нужен период» тем, КТО должен сделать шаг: у режима
-        # «счёт + УПД» сумму расхода принесёт контрагент, и требовать период от человека
-        # бессмысленно — он его не знает (Манго: 5 000 ₽ пополнения, а расход по звонкам
-        # 372,08 / 6 108,69). У остальных период знает человек, и он же его укажет.
-        waits_document = billing_modes.get(prepayment.counterparty_id) == "per_invoice"
-        if not needs_review:
+        paid_on = operation_date or prepayment.created_at.date()
+        # Период для срока: явный, а при его отсутствии — месяц платежа. Фолбэк не выдумка,
+        # а рабочая гипотеза: услуга почти всегда оплачивается в своём же месяце, и ждать
+        # документ по ней всё равно надо. Строка честно помечена ``period_assumed``.
+        period_start, period_end = settlement.period_of(
+            prepayment.service_period_start if period_known else None,
+            prepayment.service_period_end if period_known else None,
+            paid_on,
+        )
+        cp_id = prepayment.counterparty_id
+        documents_expected = cp_id not in ctx.documents_not_expected
+        # Долг закроется сам: помесячное признание из этой же предоплаты либо ночное
+        # начисление по договору. Человеку делать нечего, срок не нужен.
+        settles_itself = prepayment.auto_recognize_monthly or cp_id in ctx.self_settling
+
+        deadline: date | None = None
+        overdue = 0
+        if period_known and settles_itself:
             prepayment_stage = "period_running"
-        elif waits_document:
+        elif documents_expected:
+            # По умолчанию документ ЖДЁТСЯ — так же, как считала сводка разрывов. Иначе, пока
+            # режимы контрагентам не проставлены, весь экран был бы одной очередью «нужен
+            # период», хотя по большинству платежей от человека ничего не требуется.
             prepayment_stage = "waiting_document"
+            deadline = settlement.expected_by(period_end, ctx.expected_days.get(cp_id))
+            overdue = max((today - deadline).days, 0)
+        elif period_known:
+            # Документа не будет, период известен, а само признание выключено: расход
+            # повиснет навсегда, пока человек не запустит признание за период.
+            prepayment_stage = "needs_period"
         else:
             prepayment_stage = "needs_period"
         items.append(
@@ -278,40 +397,73 @@ async def list_supplier_accounting(
                 id=prepayment.id,
                 stage=prepayment_stage,
                 source_kind="legacy_prepayment",
-                counterparty_id=prepayment.counterparty_id,
+                counterparty_id=cp_id,
                 counterparty_name=cp_name,
                 article_id=prepayment.article_id,
                 article_name=article_name,
                 amount=_float(prepayment.amount),
                 paid_amount=_float(prepayment.amount),
                 balance_amount=_float(balance),
-                balance_type="needs_review" if needs_review else "receivable",
+                balance_type="needs_review" if not period_known else "receivable",
                 service_period_start=prepayment.service_period_start,
                 service_period_end=prepayment.service_period_end,
                 period_status=prepayment.service_period_status,
                 recognized=False,
+                payment_date=paid_on,
+                expected_by=deadline,
+                days_overdue=overdue,
+                period_assumed=not period_known,
             )
         )
+
+    # Сверху то, что горит дольше всех, а внутри одной просрочки — что дороже. Ровно так
+    # сортировалась сводка разрывов: без этого «ждём документ» превращается в ленту по дате
+    # платежа, где зависшее с мая лежит между вчерашними.
+    items.sort(key=lambda item: (-item.days_overdue, -item.balance_amount))
 
     # Плитки состояний считаем ДО фильтра: иначе, выбрав «нужен период», человек увидит нули
     # в остальных плитках и решит, что там пусто.
     all_items = list(items)
-    if view == "open":
+    # Месяц плитки «уже в расходе» — текущий, но 1-го числа он ещё пуст, и экран сообщал бы,
+    # что расходов нет вовсе. В такой день показываем прошлый месяц, а какой именно — говорим
+    # вслух полем in_expense_month.
+    recognized_months = {
+        item.recognition_month
+        for item in items
+        if item.stage == "in_expense" and item.recognition_month is not None
+    }
+    expense_month = current_month
+    if current_month not in recognized_months:
+        previous = max((m for m in recognized_months if m < current_month), default=None)
+        expense_month = previous or current_month
+
+    if stage is not None:
+        items = [item for item in items if item.stage == stage]
+        # «Уже в расходе» за всю историю — бесконечная лента без единого действия. Показываем
+        # тот же месяц, что и в плитке: остальное живёт в отчёте о прибыли, а не в очереди.
+        if stage == "in_expense":
+            items = [item for item in items if item.recognition_month == expense_month]
+    elif view == "open":
         items = [item for item in items if item.balance_type != "closed"]
     elif view == "needs_review":
         items = [item for item in items if item.balance_type == "needs_review"]
     elif view == "recognized":
         items = [item for item in items if item.recognized]
 
-    def stage_total(stage: str) -> float:
-        return sum(item.balance_amount for item in all_items if item.stage == stage)
+    def tile(name: str) -> StageTile:
+        rows = [item for item in all_items if item.stage == name]
+        if name == "in_expense":
+            rows = [item for item in rows if item.recognition_month == expense_month]
+            return StageTile(count=len(rows), amount=sum(item.amount for item in rows))
+        return StageTile(count=len(rows), amount=sum(item.balance_amount for item in rows))
 
     return SupplierAccountingList(
         items=items,
-        in_expense_total=stage_total("in_expense"),
-        period_running_total=stage_total("period_running"),
-        waiting_document_total=stage_total("waiting_document"),
-        needs_period_total=stage_total("needs_period"),
+        in_expense=tile("in_expense"),
+        period_running=tile("period_running"),
+        waiting_document=tile("waiting_document"),
+        needs_period=tile("needs_period"),
+        in_expense_month=expense_month,
         receivable_total=sum(
             item.balance_amount for item in items if item.balance_type == "receivable"
         ),

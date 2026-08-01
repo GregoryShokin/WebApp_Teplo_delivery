@@ -17,12 +17,17 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from cp_helpers import admin_headers, make_counterparty, make_invoice
+from cp_helpers import admin_headers, make_counterparty, make_invoice, make_wallet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual, SupplierPrepayment
+from app.models import (
+    CashflowTransaction,
+    CounterpartyPayableProfile,
+    SupplierExpenseAccrual,
+    SupplierPrepayment,
+)
 from app.services.supplier_service_periods import set_invoice_service_period
 
 BASE = "/api/v1/accounting/suppliers"
@@ -37,7 +42,11 @@ def _admin(factory) -> dict[str, str]:
 
 
 async def _open_prepayment(
-    session: AsyncSession, *, counterparty_id: uuid.UUID, amount: str
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    amount: str,
+    paid_on: date | None = None,
 ) -> SupplierPrepayment:
     """Предоплата без периода — ровно то, чем становится платёж из банковской выписки."""
     prepayment = SupplierPrepayment(
@@ -49,6 +58,21 @@ async def _open_prepayment(
     )
     session.add(prepayment)
     await session.flush()
+    if paid_on is not None:
+        # Дата платежа живёт на ДДС-проводке: от неё считается месяц-фолбэк и срок документа.
+        wallet = await make_wallet(session, name=f"Стадии Кошелёк {paid_on:%m-%d} {amount}")
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal(amount),
+            operation_date=paid_on,
+            counterparty_id=counterparty_id,
+            source_kind="bank_feed",
+        )
+        session.add(tx)
+        await session.flush()
+        prepayment.cashflow_transaction_id = tx.id
+        await session.flush()
     return prepayment
 
 
@@ -65,7 +89,12 @@ async def _set_billing_mode(session: AsyncSession, counterparty_id: uuid.UUID, m
 def test_stages_split_queue_by_who_makes_the_step(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Период идёт — ждать; режим «счёт + УПД» — ждать документ; остальное — спросить человека."""
+    """Период идёт — ждать; документ ожидается — ждать его; документа не будет — решать человеку.
+
+    По умолчанию документ ЖДЁТСЯ: так считала сводка разрывов, и это единственное честное
+    предположение, пока режимы контрагентам не проставлены. Человека дёргаем только там, где
+    известно, что бумаги не будет, — иначе весь экран стал бы одной очередью «нужен период».
+    """
 
     async def seed() -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
         async with async_session_factory() as session:
@@ -85,12 +114,18 @@ def test_stages_split_queue_by_who_makes_the_step(
                 actor_user_id=None,
             )
 
+            # Разовые работы: документа не ждут, значит расход не признается сам никогда.
             asks_human = await make_counterparty(session, name="Стадии Человек", inn="6155000402")
+            await _set_billing_mode(session, asks_human.id, "one_off")
             await _open_prepayment(session, counterparty_id=asks_human.id, amount="9000.00")
 
             waits_doc = await make_counterparty(session, name="Стадии Документ", inn="6155000403")
-            await _set_billing_mode(session, waits_doc.id, "per_invoice")
-            await _open_prepayment(session, counterparty_id=waits_doc.id, amount="5000.00")
+            await _open_prepayment(
+                session,
+                counterparty_id=waits_doc.id,
+                amount="5000.00",
+                paid_on=date(2026, 5, 20),
+            )
             await session.commit()
             return running.id, asks_human.id, waits_doc.id
 
@@ -102,12 +137,61 @@ def test_stages_split_queue_by_who_makes_the_step(
 
     assert by_cp[str(running_id)]["stage"] == "period_running"
     assert by_cp[str(human_id)]["stage"] == "needs_period"
-    assert by_cp[str(doc_id)]["stage"] == "waiting_document"
 
-    # Плитки: суммы состояний считаются по остатку строки.
-    assert payload["period_running_total"] >= 12000.0
-    assert payload["needs_period_total"] >= 9000.0
-    assert payload["waiting_document_total"] >= 5000.0
+    # Разрывы переехали сюда: срок документа и просрочка считаются от периода, а период без
+    # разметки берётся по месяцу платежа — и строка честно об этом говорит.
+    waiting = by_cp[str(doc_id)]
+    assert waiting["stage"] == "waiting_document"
+    assert waiting["period_assumed"] is True
+    assert waiting["payment_date"] == "2026-05-20"
+    assert waiting["expected_by"] == "2026-05-31"
+    assert waiting["days_overdue"] > 0
+    # Дольше всех просроченное — первым в списке.
+    assert payload["items"][0]["counterparty_id"] == str(doc_id)
+
+    # Плитки очередей считают зависшие деньги — то, что уплачено, но расходом ещё не стало.
+    assert payload["period_running"]["amount"] >= 12000.0
+    assert payload["needs_period"]["amount"] >= 9000.0
+    assert payload["waiting_document"]["amount"] >= 5000.0
+    assert payload["needs_period"]["count"] >= 1
+
+
+    # Фильтр по состоянию оставляет только свою очередь.
+    filtered = client.get(
+        f"{BASE}?view=all&stage=needs_period", headers=_admin(async_session_factory)
+    )
+    assert filtered.status_code == 200
+    stages = {item["stage"] for item in filtered.json()["items"]}
+    assert stages == {"needs_period"}
+
+
+def test_goods_supplier_stays_out_of_the_recognition_queue(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Товарный аванс в очередь признания не попадает: его гасит накладная, а не УПД.
+
+    Расход по сырью идёт фудкостом, и держать поставщика продуктов в очереди «чего ждём»
+    значило бы звать человека решать то, что решится приходом товара.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Стадии Товар", inn="6155000406")
+            await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="40000.00",
+                operational_scope="warehouse",
+                invoice_date=date(2026, 7, 5),
+            )
+            await _open_prepayment(session, counterparty_id=cp.id, amount="15000.00")
+            await session.commit()
+            return cp.id
+
+    cp_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    assert str(cp_id) not in {item["counterparty_id"] for item in response.json()["items"]}
 
 
 def test_stage_totals_ignore_the_view_filter(
@@ -145,7 +229,7 @@ def test_stage_totals_ignore_the_view_filter(
 
     # Строки идущего периода отфильтрованы, а его плитка — нет.
     assert str(cp_id) not in {item["counterparty_id"] for item in payload["items"]}
-    assert payload["period_running_total"] >= 7000.0
+    assert payload["period_running"]["amount"] >= 7000.0
 
 
 def test_patch_service_period_answers_with_full_item(
