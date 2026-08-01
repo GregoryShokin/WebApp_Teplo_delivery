@@ -112,15 +112,21 @@ async def covered_by_agreement(
     return found is not None
 
 
-async def _real_closing_exists(
+async def _month_already_closed(
     session: AsyncSession, agreement: CounterpartyServiceAgreement, month: date
 ) -> bool:
-    """Пришёл ли за этот месяц НАСТОЯЩИЙ закрывающий документ по этой же услуге.
+    """Признан ли расход за этот месяц кем-то ещё — документом контрагента или самоактом.
 
     Проверять обязательно, и одного ключа идемпотентности мало: замещение
     (``supersede_self_billed``) освобождает ключ месяца — иначе месяц нельзя было бы признать
     заново. Без этой проверки ночная джоба на следующий же день завела бы начисление поверх
     пришедшего акта, и расход задвоился бы.
+
+    Самоакты из предоплаты (``self:``) учитываются наравне с первичкой, и это не педантизм:
+    у ИП Наумченко платёж 9 000 ₽ за апрель-июнь уже разложен помесячно через
+    ``subscription_accruals``. Заведи ей после этого договор на 3 000 ₽/мес — и договор
+    начислил бы те же три месяца ещё раз, удвоив расход. Свои же документы (``svc:``)
+    исключены: их держит ключ идемпотентности, а под этот фильтр они попали бы всегда.
 
     Сравниваем ещё и статью ДДС: у контрагента бывает несколько услуг (у АО «АЙКО» две
     лицензии), и документ по одной из них не должен глушить начисление по другой. Документ
@@ -132,7 +138,10 @@ async def _real_closing_exists(
             SupplierInvoice.direction == "payable",
             SupplierInvoice.doc_kind == "closing",
             SupplierInvoice.payment_status != "void",
-            SupplierInvoice.source != SELF_BILLED_SOURCE,
+            or_(
+                SupplierInvoice.source != SELF_BILLED_SOURCE,
+                SupplierInvoice.external_id.like("self:%"),
+            ),
             or_(
                 SupplierInvoice.dds_article_id.is_(None),
                 SupplierInvoice.dds_article_id == agreement.dds_article_id,
@@ -191,7 +200,7 @@ async def ensure_agreement_invoice(
     )
     if existing is not None:
         return None
-    if await _real_closing_exists(session, agreement, month):
+    if await _month_already_closed(session, agreement, month):
         return None
 
     period_start, period_end = month_bounds(month)

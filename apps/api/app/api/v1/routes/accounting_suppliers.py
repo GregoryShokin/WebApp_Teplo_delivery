@@ -378,7 +378,15 @@ async def list_supplier_accounting(
 
         deadline: date | None = None
         overdue = 0
-        if period_known and settles_itself:
+        # ДЗ по оплаченному счёту гасит закрывающий УПД (правило 2 канона), и признать её
+        # вручную нельзя — recognize_prepayment_period такие платежи отклоняет. Поэтому она
+        # всегда «ждём документ»: попади она в очередь решений, человек получил бы строку с
+        # требованием действия, которое система ему не даст выполнить.
+        if prepayment.kind == "prepaid_bill":
+            prepayment_stage = "waiting_document"
+            deadline = settlement.expected_by(period_end, ctx.expected_days.get(cp_id))
+            overdue = max((today - deadline).days, 0)
+        elif period_known and settles_itself:
             prepayment_stage = "period_running"
         elif documents_expected:
             # По умолчанию документ ЖДЁТСЯ — так же, как считала сводка разрывов. Иначе, пока

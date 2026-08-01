@@ -829,3 +829,54 @@ export async function restoreSbisDocument(id: string): Promise<SbisDocument> {
   const response = await api.post<SbisDocument>(`${SBIS_BASE}/documents/${id}/restore`);
   return response.data;
 }
+
+export type ServiceAgreement = {
+  id: string;
+  title: string;
+  monthly_amount: number;
+  dds_article_id: string | null;
+  dds_article_name: string | null;
+  documents_mode: string;
+  accrual_enabled: boolean;
+  started_on: string;
+  ended_on: string | null;
+  note: string | null;
+  is_active: boolean;
+};
+
+export async function getServiceAgreements(counterpartyId: string): Promise<ServiceAgreement[]> {
+  const response = await api.get<ServiceAgreement[]>(
+    `${BASE}/${counterpartyId}/service-agreements`,
+  );
+  return response.data;
+}
+
+export async function createServiceAgreement(
+  counterpartyId: string,
+  payload: {
+    title: string;
+    monthly_amount: number;
+    dds_article_id: string;
+    documents_mode: string;
+    started_on: string;
+  },
+): Promise<ServiceAgreement> {
+  const response = await api.post<ServiceAgreement>(
+    `${BASE}/${counterpartyId}/service-agreements`,
+    payload,
+  );
+  return response.data;
+}
+
+/** Закрытие датой, а не удаление: на договор ссылаются уже начисленные месяцы. */
+export async function closeServiceAgreement(
+  counterpartyId: string,
+  agreementId: string,
+  endedOn: string,
+): Promise<ServiceAgreement> {
+  const response = await api.post<ServiceAgreement>(
+    `${BASE}/${counterpartyId}/service-agreements/${agreementId}/close`,
+    { ended_on: endedOn },
+  );
+  return response.data;
+}

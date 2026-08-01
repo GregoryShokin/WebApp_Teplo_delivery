@@ -27,7 +27,7 @@ from cp_helpers import (
     make_wallet,
 )
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
@@ -257,6 +257,66 @@ def test_refuses_when_draft_line_already_recognized_the_whole_sum(
     )
     assert response.status_code == 409
     assert "уже признан" in response.json()["detail"]
+
+
+def test_agreement_does_not_accrue_month_already_recognized_from_prepayment(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Договор, заведённый поверх уже признанного платежа, не начисляет те же месяцы заново.
+
+    Реальный порядок событий: платёж 9 000 ₽ за апрель-июнь разложен помесячно, и ПОСЛЕ этого
+    контрагенту заводят договор на 3 000 ₽/мес с той же даты. Обе машины считают долг сами, друг
+    друга по source не видят (обе пишут self_billed) — и без сверки по месяцу расход удвоился бы.
+    """
+    from app.services.service_agreement_accruals import accrue_month
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Признание Оба", inn="6155000510")
+            article = await make_expense_article(session, name="Признание Услуги Оба")
+            prepayment = await _stuck_prepayment(
+                session, counterparty_id=cp.id, amount="9000.00", article_id=article.id
+            )
+            await session.commit()
+            return prepayment.id, article.id
+
+    prepayment_id, article_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-04-01", "service_period_end": "2026-06-30"},
+    )
+    assert response.status_code == 200, response.text
+
+    async def add_agreement_and_run() -> Decimal:
+        async with async_session_factory() as session:
+            prepayment = await session.get(SupplierPrepayment, prepayment_id)
+            session.add(
+                CounterpartyServiceAgreement(
+                    counterparty_id=prepayment.counterparty_id,
+                    title="Обслуживание",
+                    monthly_amount=Decimal("3000.00"),
+                    dds_article_id=article_id,
+                    documents_mode="informal",
+                    started_on=date(2026, 4, 1),
+                    accrual_enabled=True,
+                )
+            )
+            await session.commit()
+            created = await accrue_month(session, date(2026, 7, 15), months_back=4)
+            await session.commit()
+            assert created == [], [inv.number for inv in created]
+
+            total = await session.scalar(
+                select(func.coalesce(func.sum(SupplierExpenseAccrual.amount), 0)).where(
+                    SupplierExpenseAccrual.counterparty_id == prepayment.counterparty_id,
+                    SupplierExpenseAccrual.status != "cancelled",
+                )
+            )
+            return total
+
+    total = asyncio.run(add_agreement_and_run())
+    assert total == Decimal("9000.00")
 
 
 def test_refuses_prepaid_bill_and_missing_article(

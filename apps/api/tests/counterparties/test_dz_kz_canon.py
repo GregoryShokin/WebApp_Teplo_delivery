@@ -1018,8 +1018,14 @@ def test_prepaid_bill_visible_in_dz_tile_not_recognition_queue(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Видимость ДЗ по счёту (канон «оплата счёта → дебиторка»): предоплата prepaid_bill входит в
-    плитку «Дебиторская» дашборда /balances, но НЕ засоряет очередь «Признание расходов»
-    (period-распределение) — её гасит УПД, а не ручная разметка периода."""
+    плитку «Дебиторская» дашборда /balances и в «Признании расходов» видна ТОЛЬКО как «ждём
+    документ» — её гасит УПД, а не ручная разметка периода.
+
+    Правка 01.08.2026: раньше такие строки из признания исключались вовсе. После того как
+    вкладка «Разрывы» растворилась в состоянии «ждём документ», прятать их стало нельзя —
+    именно оплаченные счета без УПД составляли половину той сводки. Суть исходного требования
+    сохранена и проверяется ниже: в очередь решений (needs_period) строка не попадает никогда,
+    иначе человек получил бы требование действия, которое система ему выполнить не даст."""
     from app.services.counterparty_matching import allocate_cash_to_invoice
 
     async def seed() -> uuid.UUID:
@@ -1045,10 +1051,14 @@ def test_prepaid_bill_visible_in_dz_tile_not_recognition_queue(
     by_id = {item["counterparty_id"]: item for item in balances["items"]}
     assert by_id[str(cp_id)]["receivable"] == 1000.0
 
-    # Очередь распределения (list_supplier_accounting) её НЕ показывает — prepaid_bill исключён.
-    accounting = client.get(BASE, headers=headers).json()
+    # В признании расходов строка есть, но только как ожидание документа.
+    accounting = client.get(f"{BASE}?view=all", headers=headers).json()
     cp_items = [i for i in accounting["items"] if i["counterparty_id"] == str(cp_id)]
-    assert cp_items == []
+    assert [i["stage"] for i in cp_items] == ["waiting_document"]
+
+    # Очередь решений её не содержит — признавать такую ДЗ вручную нельзя.
+    queue = client.get(f"{BASE}?view=all&stage=needs_period", headers=headers).json()
+    assert str(cp_id) not in {i["counterparty_id"] for i in queue["items"]}
 
 
 async def test_bill_payment_reduction_unwinds_closing_settlement(

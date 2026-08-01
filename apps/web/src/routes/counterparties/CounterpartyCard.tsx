@@ -39,6 +39,7 @@ import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 import { BarterSection } from "./BarterSection";
 import { LeasedLocationsSection } from "./LeasedLocationsSection";
 import { RequisitesHistoryButton } from "./RequisitesHistoryButton";
+import { ServiceAgreementsSection } from "./ServiceAgreementsSection";
 import { SettlementLedgerSection } from "./SettlementLedgerSection";
 import {
   addCollectionSource,
@@ -219,6 +220,7 @@ function CardBody({
           {card.relationship === "barter" ? (
             <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
           ) : null}
+          <ServiceAgreementsSection counterpartyId={card.counterparty_id} canAdmin={canAdmin} />
           <LeasedLocationsSection counterpartyId={card.counterparty_id} />
         </TabsContent>
         {/* Сверка монтируется ТОЛЬКО при открытии: реестр тянет всю историю расчётов

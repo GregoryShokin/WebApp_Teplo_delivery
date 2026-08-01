@@ -29,7 +29,15 @@ from app.api.deps import (
 )
 from app.core.config import get_settings
 from app.db.session import get_session
-from app.models import CounterpartyPaymentDraft, SupplierInvoice, SupplierPrepayment, Wallet
+from app.models import (
+    Counterparty,
+    CounterpartyPaymentDraft,
+    CounterpartyServiceAgreement,
+    DdsArticle,
+    SupplierInvoice,
+    SupplierPrepayment,
+    Wallet,
+)
 from app.services import counterparty_bank_match as bank_match
 from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
@@ -1176,6 +1184,181 @@ async def post_unarchive(
         raise _conflict(exc) from exc
     card = await registry.get_counterparty_card(session, counterparty_id)
     return CardRead.model_validate(card)
+
+
+class ServiceAgreementRead(BaseModel):
+    id: uuid.UUID
+    title: str
+    monthly_amount: float
+    dds_article_id: uuid.UUID | None
+    dds_article_name: str | None
+    documents_mode: str
+    accrual_enabled: bool
+    started_on: date
+    ended_on: date | None
+    note: str | None
+    is_active: bool
+
+
+class ServiceAgreementCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    monthly_amount: Decimal = Field(gt=0)
+    dds_article_id: uuid.UUID
+    # informal — документов не будет, долг считаем сами (ради этого договор и заводится);
+    # official — ждём первичку, начисление не делаем, иначе расход задвоится.
+    documents_mode: Literal["informal", "official"] = "informal"
+    accrual_enabled: bool = True
+    started_on: date
+    ended_on: date | None = None
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ServiceAgreementClose(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ended_on: date
+
+
+@router.get(
+    "/{counterparty_id}/service-agreements",
+    response_model=list[ServiceAgreementRead],
+    dependencies=READ,
+)
+async def list_service_agreements(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[ServiceAgreementRead]:
+    today = date.today()
+    rows = (
+        await session.execute(
+            select(CounterpartyServiceAgreement, DdsArticle.name)
+            .outerjoin(DdsArticle, DdsArticle.id == CounterpartyServiceAgreement.dds_article_id)
+            .where(CounterpartyServiceAgreement.counterparty_id == counterparty_id)
+            .order_by(CounterpartyServiceAgreement.started_on.desc())
+        )
+    ).all()
+    return [
+        ServiceAgreementRead(
+            id=agreement.id,
+            title=agreement.title,
+            monthly_amount=float(agreement.monthly_amount),
+            dds_article_id=agreement.dds_article_id,
+            dds_article_name=article_name,
+            documents_mode=agreement.documents_mode,
+            accrual_enabled=agreement.accrual_enabled,
+            started_on=agreement.started_on,
+            ended_on=agreement.ended_on,
+            note=agreement.note,
+            is_active=agreement.ended_on is None or agreement.ended_on >= today,
+        )
+        for agreement, article_name in rows
+    ]
+
+
+@router.post(
+    "/{counterparty_id}/service-agreements",
+    response_model=ServiceAgreementRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=ADMIN,
+)
+async def post_service_agreement(
+    counterparty_id: uuid.UUID,
+    payload: ServiceAgreementCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ServiceAgreementRead:
+    """Завести договор услуги: ставка в месяц, с какого числа и ждём ли документы.
+
+    Статья обязательна, хотя в модели она nullable: без неё ночное начисление молча ничего
+    не сделает (``ensure_agreement_invoice`` вернёт None) — договор был бы заведён и не работал.
+    """
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
+    if payload.ended_on is not None and payload.ended_on < payload.started_on:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Окончание договора не может быть раньше начала",
+        )
+    article = await session.get(DdsArticle, payload.dds_article_id)
+    if article is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Статья ДДС не найдена")
+    agreement = CounterpartyServiceAgreement(
+        counterparty_id=counterparty_id,
+        title=payload.title.strip(),
+        monthly_amount=payload.monthly_amount,
+        dds_article_id=payload.dds_article_id,
+        documents_mode=payload.documents_mode,
+        accrual_enabled=payload.accrual_enabled,
+        started_on=payload.started_on,
+        ended_on=payload.ended_on,
+        note=(payload.note or "").strip() or None,
+    )
+    session.add(agreement)
+    await session.commit()
+    await session.refresh(agreement)
+    today = date.today()
+    return ServiceAgreementRead(
+        id=agreement.id,
+        title=agreement.title,
+        monthly_amount=float(agreement.monthly_amount),
+        dds_article_id=agreement.dds_article_id,
+        dds_article_name=article.name,
+        documents_mode=agreement.documents_mode,
+        accrual_enabled=agreement.accrual_enabled,
+        started_on=agreement.started_on,
+        ended_on=agreement.ended_on,
+        note=agreement.note,
+        is_active=agreement.ended_on is None or agreement.ended_on >= today,
+    )
+
+
+@router.post(
+    "/{counterparty_id}/service-agreements/{agreement_id}/close",
+    response_model=ServiceAgreementRead,
+    dependencies=ADMIN,
+)
+async def close_service_agreement(
+    counterparty_id: uuid.UUID,
+    agreement_id: uuid.UUID,
+    payload: ServiceAgreementClose,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ServiceAgreementRead:
+    """Закрыть договор датой. Удаления нет намеренно: начисленные месяцы на него ссылаются,
+    а смена ставки по канону — закрытие строки и заведение новой, как у аренды."""
+    agreement = await session.get(CounterpartyServiceAgreement, agreement_id)
+    if agreement is None or agreement.counterparty_id != counterparty_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Договор не найден")
+    if payload.ended_on < agreement.started_on:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Окончание договора не может быть раньше начала",
+        )
+    agreement.ended_on = payload.ended_on
+    await session.commit()
+    await session.refresh(agreement)
+    article_name = (
+        await session.scalar(
+            select(DdsArticle.name).where(DdsArticle.id == agreement.dds_article_id)
+        )
+        if agreement.dds_article_id
+        else None
+    )
+    today = date.today()
+    return ServiceAgreementRead(
+        id=agreement.id,
+        title=agreement.title,
+        monthly_amount=float(agreement.monthly_amount),
+        dds_article_id=agreement.dds_article_id,
+        dds_article_name=article_name,
+        documents_mode=agreement.documents_mode,
+        accrual_enabled=agreement.accrual_enabled,
+        started_on=agreement.started_on,
+        ended_on=agreement.ended_on,
+        note=agreement.note,
+        is_active=agreement.ended_on is None or agreement.ended_on >= today,
+    )
 
 
 @router.post(
