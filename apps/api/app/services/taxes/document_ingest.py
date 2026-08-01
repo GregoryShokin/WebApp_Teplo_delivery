@@ -75,8 +75,12 @@ def _received_date(att: FetchedAttachment):
     return att.received_at.date() if att.received_at else None
 
 
-def _classify_document(filename: str) -> str:
-    """Тип документа по имени файла, до разбора содержимого."""
+def classify_tax_document(filename: str) -> str:
+    """Тип документа бухгалтера по имени файла, до разбора содержимого.
+
+    Публичная: тем же классификатором пользуется приём счетов на оплату, решая, что
+    прилетевшее от бухгалтера — его бумага (ведомость/оборотка/приказ) или счёт нам.
+    Одна функция на оба контура, чтобы они не разъезжались в этом понимании."""
     low = (filename or "").lower()
     # Платёжка взноса на травматизм (ПД-налог, .xls «0,2 %» / «травматизм») — тоже платёжка,
     # но со своим разбором (.xls). Раньше уходила в Т-53-парсер и висла в «нужна проверка».
@@ -188,7 +192,7 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
 
     Чистая функция от вложения — тестируется на фикстурах без почты и БД.
     """
-    kind = _classify_document(att.filename or "")
+    kind = classify_tax_document(att.filename or "")
     if kind == "unsupported_kadr":
         return "unknown", "unsupported", {"reason": "кадровый документ, не платёжный"}, None
     # Старый Word (.doc, OLE2) автоматика читать не умеет — отсекаем ДО разбора с понятной
@@ -459,6 +463,7 @@ async def ingest_tax_documents(
 # Экспорт для тестов и потребителей
 __all__ = [
     "DEFAULT_TAX_SENDERS",
+    "classify_tax_document",
     "MailAccount",
     "ingest_tax_documents",
     "parse_attachment",
