@@ -86,8 +86,8 @@ export function CounterpartyCard({
   canOperate,
   canAdmin,
   onClose,
-  /** С какой вкладки открыть. Сводка разрывов ведёт сразу в «Сверку»: человек пришёл
-   *  разбираться с конкретным разрывом, а не читать реквизиты. */
+  /** С какой вкладки открыть. Из остатков и признания расходов ведём сразу в «Сверку»:
+   *  человек пришёл разбираться с конкретным долгом, а не читать реквизиты. */
   defaultTab = "general",
 }: {
   counterpartyId: string | null;
@@ -486,9 +486,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </Field>
             </div>
           ) : null}
-          {/* Контроль закрывающих документов — то, из чего собирается вкладка «Сверка»
-              и сводка разрывов на ДЗ/КЗ. Живёт рядом с периодом услуг: обе настройки про
-              один и тот же вопрос «когда расход считается подтверждённым». */}
+          {/* Контроль закрывающих документов — то, из чего собираются вкладка «Сверка» и
+              состояние «ждём документ» на «Признании расходов». Живёт рядом с периодом услуг:
+              обе настройки про один и тот же вопрос «когда расход считается подтверждённым». */}
           <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
             <Field label="Контур расчётов">
               <Select disabled={disabled} value={contour} onValueChange={setContour}>
@@ -500,7 +500,8 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground">
-                Товарные контрагенты не попадают в сводку разрывов: их накладные гасит склад.
+                Товарные контрагенты не попадают в признание расходов: их накладные гасит
+                склад, а расход по сырью идёт фудкостом.
               </span>
             </Field>
             <Field label="Как признаём расход по услугам">
@@ -532,7 +533,8 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground">
-                До этой даты отсутствие УПД — норма, после неё платёж подсвечивается разрывом.
+                До этой даты отсутствие УПД — норма, после неё строка «ждём документ»
+                краснеет и показывает, сколько дней прошло.
               </span>
             </Field>
           </div>
