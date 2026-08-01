@@ -64,6 +64,8 @@ CONTOUR_SERVICE = "service"
 # Подтип услуги, от которого ежемесячных закрывающих не ждут вовсе: разовые работы (ремонт,
 # юрист, типография). Тишина по ним — норма, а не разрыв.
 BILLING_MODE_ONE_OFF = "one_off"
+# Долг известен из договора и начисляется сам; закрывающих документов от контрагента не ждут.
+BILLING_MODE_AGREEMENT = "agreement"
 
 
 def money(value: Decimal | int | float | None) -> Decimal:
@@ -185,7 +187,10 @@ async def documents_not_expected(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
         )
     )
-    if profile is not None and profile.service_billing_mode == BILLING_MODE_ONE_OFF:
+    if profile is not None and profile.service_billing_mode in (
+        BILLING_MODE_ONE_OFF,
+        BILLING_MODE_AGREEMENT,
+    ):
         return True
     informal = await session.scalar(
         select(CounterpartyServiceAgreement.id).where(

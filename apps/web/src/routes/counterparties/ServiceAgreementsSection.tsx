@@ -55,9 +55,14 @@ function fmtDate(value: string | null): string {
 export function ServiceAgreementsSection({
   counterpartyId,
   canAdmin,
+  requiredByMode = false,
 }: {
   counterpartyId: string;
   canAdmin: boolean;
+  /** У контрагента выбран режим «Договор» — без строки договора система не знает ставку
+   *  и не начислит ни одного месяца. Молчать об этом нельзя: режим выбран, а работать он
+   *  не начнёт. */
+  requiredByMode?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
@@ -133,7 +138,14 @@ export function ServiceAgreementsSection({
       </div>
 
       {rows.length === 0 && !adding ? (
-        <p className="text-sm text-muted-foreground">Договоров нет.</p>
+        requiredByMode ? (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            Выбран режим «Договор», но ставка не задана — начисление не пойдёт. Добавьте договор
+            и укажите сумму в месяц.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">Договоров нет.</p>
+        )
       ) : null}
 
       <div className="space-y-2">

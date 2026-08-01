@@ -172,6 +172,21 @@ export function CounterpartyCard({
   );
 }
 
+/** Каждый режим объясняется тем, что он МЕНЯЕТ, — иначе «ждём документ» и «счёт + УПД»
+ *  читаются как одно и то же. Разница между ними ровно одна: у «счёт + УПД» период при оплате
+ *  не спрашивают, потому что сумму и период расхода знает только контрагент. */
+const BILLING_MODE_HINTS: Record<string, string> = {
+  auto: "Режим не выбран: ждём закрывающий документ и считаем срок. Выберите — от этого зависит, спрашивать ли период при оплате и когда расход попадёт в прибыль.",
+  per_invoice:
+    "Расход появится только с УПД, и сумму принесёт он же. Период при оплате не спрашиваем — его знает контрагент (Манго: платим 5 000, а расход по звонкам 372,08).",
+  fixed_tariff:
+    "Оплачен конкретный период — расход признаём по его окончании, не дожидаясь бумаг. Придёт УПД — заменит наше признание.",
+  agreement:
+    "Ставка известна заранее: система сама начисляет долг каждый месяц. Сумма задаётся в договоре ниже.",
+  one_off:
+    "Работы разовые, ежемесячных документов не ждём. Тишина между заказами — норма, а не просрочка.",
+};
+
 function CardBody({
   card,
   canOperate,
@@ -220,7 +235,11 @@ function CardBody({
           {card.relationship === "barter" ? (
             <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
           ) : null}
-          <ServiceAgreementsSection counterpartyId={card.counterparty_id} canAdmin={canAdmin} />
+          <ServiceAgreementsSection
+            counterpartyId={card.counterparty_id}
+            canAdmin={canAdmin}
+            requiredByMode={card.profile?.service_billing_mode === "agreement"}
+          />
           <LeasedLocationsSection counterpartyId={card.counterparty_id} />
         </TabsContent>
         {/* Сверка монтируется ТОЛЬКО при открытии: реестр тянет всю историю расчётов
@@ -517,20 +536,21 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </span>
             </Field>
             {contour === "goods" ? null : (
-            <Field label="Как признаём расход по услугам">
+            <Field label="Чем подтверждается расход">
               <Select disabled={disabled} value={billingMode} onValueChange={setBillingMode}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Не выбрано" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Ждём закрывающий документ</SelectItem>
-                  <SelectItem value="fixed_tariff">Счёт за период — признаём по окончании</SelectItem>
+                  {billingMode === "auto" ? (
+                    <SelectItem value="auto">Не выбрано — ждём документ</SelectItem>
+                  ) : null}
                   <SelectItem value="per_invoice">Счёт + УПД — сумму приносит документ</SelectItem>
+                  <SelectItem value="fixed_tariff">Счёт за период — УПД не ждём</SelectItem>
+                  <SelectItem value="agreement">Договор — фиксированная сумма в месяц</SelectItem>
                   <SelectItem value="one_off">Разовые работы — документов не ждём</SelectItem>
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground">
-                Решает, что скажет строка на «Признании расходов»: ждать документ, ничего не
-                делать или спросить период у вас. «Счёт + УПД» — единственный режим, где период
-                при оплате не спрашивают: его знает только контрагент.
+                {BILLING_MODE_HINTS[billingMode] ?? BILLING_MODE_HINTS.auto}
               </span>
             </Field>
             )}

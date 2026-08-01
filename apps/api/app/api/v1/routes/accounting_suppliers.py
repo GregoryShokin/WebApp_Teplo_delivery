@@ -200,7 +200,10 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
     explicit_service: set[uuid.UUID] = set()
     for cp_id, billing_mode, expected_day, contour in profiles:
         ctx.expected_days[cp_id] = expected_day
-        if billing_mode == settlement.BILLING_MODE_ONE_OFF:
+        if billing_mode in (
+            settlement.BILLING_MODE_ONE_OFF,
+            settlement.BILLING_MODE_AGREEMENT,
+        ):
             ctx.documents_not_expected.add(cp_id)
         if billing_mode == subscriptions.BILLING_MODE_FIXED_TARIFF:
             ctx.fixed_tariff.add(cp_id)

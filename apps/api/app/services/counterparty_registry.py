@@ -921,6 +921,7 @@ async def update_profile(
         if service_billing_mode is not None and service_billing_mode not in (
             "fixed_tariff",
             "per_invoice",
+            "agreement",
             "one_off",
         ):
             raise CounterpartyRegistryError("Неизвестный режим признания услуг")
