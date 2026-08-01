@@ -282,6 +282,140 @@ async def accrue_due_months(
     return created
 
 
+class RecognitionRefused(ValueError):
+    """Признать расход по этому платежу нельзя — с объяснением, почему именно."""
+
+
+# Платежи, которые помесячно не признают. ``prepaid_bill`` — ДЗ по оплаченному счёту, её по
+# канону гасит закрывающий УПД (правило 2). ``goods``/``deposit`` гасятся адресно — накладной
+# и возвратом депозита, а не долями по календарю.
+NON_RECOGNIZABLE_KINDS = ("prepaid_bill", "goods", "deposit")
+
+
+def months_between(start: date, end: date) -> int:
+    """Сколько календарных месяцев покрывает период, включая начальный и конечный."""
+    return (end.year - start.year) * 12 + (end.month - start.month) + 1
+
+
+async def _self_billed_exists(session: AsyncSession, prepayment: SupplierPrepayment) -> bool:
+    found = await session.scalar(
+        select(SupplierInvoice.id).where(
+            SupplierInvoice.source == SELF_BILLED_SOURCE,
+            SupplierInvoice.external_id.like(f"self:{prepayment.id}:%"),
+            SupplierInvoice.payment_status != "void",
+        )
+    )
+    return found is not None
+
+
+async def _draft_line_accrual(
+    session: AsyncSession, prepayment: SupplierPrepayment
+) -> Any | None:
+    """Разовое начисление по строке платежа, из которой родилась эта предоплата.
+
+    Оно есть, когда платёж оформили в «Новом платеже» с периодом, но без помесячного режима:
+    ``sync_expense_line_accrual`` завела расход на ВСЮ сумму последним месяцем периода. Включить
+    поверх помесячное признание — значит получить 9 000 (строка) + 3×3 000 (самоакты) = 18 000 ₽
+    расхода по одному платежу. Ровно этот дефект уже был на проде у Наумченко.
+    """
+    from app.models import CashflowTransaction, ExpenseDraftLine, SupplierExpenseAccrual
+
+    if prepayment.cashflow_transaction_id is None:
+        return None
+    transaction = await session.get(CashflowTransaction, prepayment.cashflow_transaction_id)
+    if (
+        transaction is None
+        or transaction.source_kind != "counterparty_payment"
+        or transaction.source_id is None
+    ):
+        return None
+    return await session.scalar(
+        select(SupplierExpenseAccrual)
+        .join(
+            ExpenseDraftLine,
+            ExpenseDraftLine.id == SupplierExpenseAccrual.expense_draft_line_id,
+        )
+        .where(
+            ExpenseDraftLine.draft_id == transaction.source_id,
+            SupplierExpenseAccrual.status != "cancelled",
+        )
+    )
+
+
+async def recognize_prepayment_period(
+    session: AsyncSession,
+    prepayment: SupplierPrepayment,
+    *,
+    start: date,
+    end: date,
+    as_of: date,
+) -> list[SupplierInvoice]:
+    """Признать расход по зависшему платежу за указанный период. Коммитит.
+
+    Это единственный способ вытащить деньги из состояния «заплатили, а расходом не стало»
+    руками: документа не будет, а месяцы всё равно надо закрыть. Дальше работает штатный
+    механизм абонентских платежей — самоакты по долям периода, гашение дебиторки и признание
+    в P&L; ночную джобу не ждём, иначе владелец, только что указавший период, увидит результат
+    лишь завтра.
+
+    Отказы — там, где расход задвоился бы или деньги закрылись бы не тем механизмом. Все три
+    пути к двойному счёту закрыты явно: договор услуги (начисляет ночная джоба), уже созданные
+    самоакты (повторный период добавил бы месяцы поверх) и разовое начисление по строке платежа.
+    """
+    # Локальный импорт: service_agreement_accruals импортирует этот модуль, и на уровне файла
+    # получился бы цикл.
+    from app.services.service_agreement_accruals import covered_by_agreement
+
+    start, end = periods.validate_period(start, end)
+    if prepayment.kind in NON_RECOGNIZABLE_KINDS:
+        raise RecognitionRefused(
+            "Такой платёж закрывается документом или возвратом, а не признанием по месяцам"
+        )
+    if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
+        raise RecognitionRefused("Платёж уже закрыт — признавать нечего")
+    if prepayment.article_id is None:
+        raise RecognitionRefused(
+            "У платежа не указана статья ДДС — расход некуда отнести. Укажите статью в проводке"
+        )
+    if await covered_by_agreement(
+        session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
+    ):
+        raise RecognitionRefused(
+            "По этому контрагенту действует договор услуги — расход начисляется автоматически"
+        )
+    if await _self_billed_exists(session, prepayment):
+        raise RecognitionRefused(
+            "Расход по этому платежу уже признаётся помесячно. Изменить период можно на строке "
+            "признания"
+        )
+    line_accrual = await _draft_line_accrual(session, prepayment)
+    if line_accrual is not None:
+        if line_accrual.status == "recognized":
+            raise RecognitionRefused(
+                "Расход по этому платежу уже признан целиком в "
+                f"{line_accrual.recognition_month:%m.%Y} — признавать его ещё раз нельзя"
+            )
+        # Разовое начисление заменяем помесячным: иначе расход сложится дважды.
+        line_accrual.status = "cancelled"
+
+    prepayment.service_period_start = start
+    prepayment.service_period_end = end
+    prepayment.service_period_months = months_between(start, end)
+    prepayment.service_period_status = "ready"
+    prepayment.auto_recognize_monthly = True
+    await session.flush()
+
+    created: list[SupplierInvoice] = []
+    for month in covered_months(prepayment):
+        invoice = await ensure_month_accrual(session, prepayment, month, as_of=as_of)
+        if invoice is not None:
+            created.append(invoice)
+    # Признаём сразу: закончившиеся месяцы должны попасть в P&L тем же действием, а не ночью.
+    await periods.recognize_due_expenses(session, as_of=as_of, commit=False)
+    await session.commit()
+    return created
+
+
 async def _allocated_total(session: AsyncSession, invoice_id: uuid.UUID) -> Decimal:
     """Сколько уже разнесено на документ — чтобы переклейка оплаты не превысила его сумму."""
     total = await session.scalar(

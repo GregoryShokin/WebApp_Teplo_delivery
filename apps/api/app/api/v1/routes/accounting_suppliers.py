@@ -44,6 +44,7 @@ from app.models import (
     Wallet,
 )
 from app.services import counterparty_settlement_ledger as settlement
+from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import (
     fund_account_visible_in_roster,
@@ -533,6 +534,63 @@ async def patch_service_period(
         period_status="ready",
         recognition_month=accrual.recognition_month,
         recognized=accrual.status == "recognized",
+    )
+
+
+class PrepaymentRecognizeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_period_start: date
+    service_period_end: date
+
+
+class PrepaymentRecognizeOut(BaseModel):
+    """Что реально произошло — а не «сохранено».
+
+    Месяцев может оказаться меньше запрошенного: текущий месяц ещё не кончился, и признавать
+    его рано. Владелец должен видеть это сразу, а не гадать, почему сумма не сошлась.
+    """
+
+    months_recognized: int
+    amount_recognized: float
+    period_months: int
+
+
+@router.post(
+    "/prepayments/{prepayment_id}/recognize",
+    response_model=PrepaymentRecognizeOut,
+    dependencies=EDIT,
+)
+async def recognize_prepayment(
+    prepayment_id: uuid.UUID,
+    payload: PrepaymentRecognizeIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PrepaymentRecognizeOut:
+    """Признать расход по зависшему платежу за указанный период.
+
+    Действие очереди «нужен период»: закрывающего документа не будет, и без ручного решения
+    деньги висели бы дебиторкой вечно, а расход не попал бы ни в один месяц.
+    """
+    prepayment = await session.get(SupplierPrepayment, prepayment_id)
+    if prepayment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Платёж не найден")
+    today = datetime.now(MOSCOW_TZ).date()
+    try:
+        created = await subscriptions.recognize_prepayment_period(
+            session,
+            prepayment,
+            start=payload.service_period_start,
+            end=payload.service_period_end,
+            as_of=today,
+        )
+    except (subscriptions.RecognitionRefused, periods.ServicePeriodError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PrepaymentRecognizeOut(
+        months_recognized=len(created),
+        amount_recognized=_float(sum((invoice.amount for invoice in created), Decimal("0"))),
+        period_months=subscriptions.months_between(
+            payload.service_period_start, payload.service_period_end
+        ),
     )
 
 
