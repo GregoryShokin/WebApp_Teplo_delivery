@@ -30,6 +30,8 @@ export type PaymentIntake = {
   service_period_status: string | null;
   service_period_confidence: number | null;
   service_period_required: boolean;
+  /** Режим признания услуг: 'per_invoice' — расход принесёт УПД, период спрашивать незачем. */
+  service_billing_mode: string | null;
   // Что распознано в самом PDF. Правки оператора сюда не пишутся — они в reviewed_requisites.
   requisites: Record<string, string>;
   // Правки оператора с прошлого разбора этого счёта: приоритетный источник для формы.

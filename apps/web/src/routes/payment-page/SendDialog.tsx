@@ -73,6 +73,10 @@ export function SendDialog({
     r.inn.trim() !== "" &&
     r.recipientCorrAccountNumber.trim() !== "";
   const periodReady = !intake.service_period_required || Boolean(periodStart && periodEnd);
+  // Спрашиваем у всех, кроме режима «счёт + УПД»: там расход и его период приносит документ,
+  // а плательщик их не знает. Уже заполненный период показываем в любом случае.
+  const askPeriod =
+    intake.service_billing_mode !== "per_invoice" || Boolean(periodStart || periodEnd);
   const isNow = date <= today;
 
   const send = useMutation({
@@ -158,11 +162,21 @@ export function SendDialog({
             ) : null}
           </div>
 
-          {intake.service_period_required || periodStart || periodEnd ? (
+          {/* Период спрашиваем ВСЕГДА, а не только у контрагентов с обязательным периодом:
+              оплата — единственный момент, когда человек держит счёт перед глазами и знает,
+              за что платит. Без этого вопроса период не появлялся вовсе — на проде 01.08.2026
+              он не был указан у ВСЕХ 19 открытых предоплат. Исключение одно: режим «счёт +
+              УПД», где сумму расхода и его период приносит документ. */}
+          {askPeriod ? (
             <div className="grid gap-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-medium uppercase text-muted-foreground">
                   Период оказания услуги
+                  {!intake.service_period_required ? (
+                    <span className="ml-1 normal-case text-muted-foreground/70">
+                      — если платите за период
+                    </span>
+                  ) : null}
                 </div>
                 {intake.service_period_source?.startsWith("document") ||
                 intake.service_period_source?.startsWith("subject") ? (
