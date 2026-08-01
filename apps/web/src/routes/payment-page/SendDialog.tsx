@@ -72,7 +72,12 @@ export function SendDialog({
     r.bankBik.trim() !== "" &&
     r.inn.trim() !== "" &&
     r.recipientCorrAccountNumber.trim() !== "";
-  const periodReady = !intake.service_period_required || Boolean(periodStart && periodEnd);
+  // Наполовину заполненный период — не «пусто», а незаконченный ввод: одна дата уходит в
+  // confirm, где период без второй границы просто отбрасывается. Платёж уходил, период
+  // терялся молча, и этот же счёт возвращался в очередь «период не указан».
+  const periodHalfFilled = Boolean(periodStart) !== Boolean(periodEnd);
+  const periodReady =
+    !periodHalfFilled && (!intake.service_period_required || Boolean(periodStart && periodEnd));
   // Спрашиваем у всех, кроме режима «счёт + УПД»: там расход и его период приносит документ,
   // а плательщик их не знает. Уже заполненный период показываем в любом случае.
   const askPeriod =
@@ -207,10 +212,14 @@ export function SendDialog({
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                По окончании этого периода расход автоматически попадёт в P&L, а предоплата
-                закроется в учёте ДЗ/КЗ.
+                Период говорит, за что заплачено: по нему считается срок закрывающего документа,
+                а если документа не будет — расход признаётся по окончании периода.
               </p>
-              {!periodReady ? (
+              {periodHalfFilled ? (
+                <p className="text-xs text-amber-600">
+                  Укажите обе даты — период с одной границей не сохранится.
+                </p>
+              ) : !periodReady ? (
                 <p className="text-xs text-amber-600">
                   Для этого контрагента период обязателен — без него отправка недоступна.
                 </p>

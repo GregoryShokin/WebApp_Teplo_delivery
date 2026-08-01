@@ -17,11 +17,18 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from cp_helpers import make_counterparty, make_draft, make_invoice, make_wallet
+from cp_helpers import (
+    make_counterparty,
+    make_draft,
+    make_expense_article,
+    make_invoice,
+    make_wallet,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    CounterpartyPayableProfile,
     DdsArticle,
     InvoicePaymentAllocation,
     SupplierExpenseAccrual,
@@ -630,3 +637,70 @@ async def test_other_service_document_does_not_block_recognition(
         await session.commit()
         assert len(created) == 1
         assert created[0].amount == Decimal("5000.00")
+
+
+def test_covered_months_falls_back_to_the_period_itself() -> None:
+    """Период на три месяца без явного «сколько месяцев» — это три месяца, а не один.
+
+    ``service_period_months`` заполняет только окно «Новый платёж», а период приходит ещё из
+    счёта, из ЭДО и из ручной разметки — там поле пустое всегда. Пока пустое означало «один
+    месяц», квартальная лицензия признавала всю сумму первым месяцем: 36 000 ₽ в июле вместо
+    12 000 в каждом из трёх.
+    """
+    prepayment = SupplierPrepayment(
+        counterparty_id=uuid.uuid4(),
+        kind="subscription",
+        amount=Decimal("36000.00"),
+        amount_settled=Decimal("0"),
+        status="open",
+        service_period_start=date(2026, 7, 1),
+        service_period_end=date(2026, 9, 30),
+        service_period_status="ready",
+    )
+    assert covered_months(prepayment) == [date(2026, 7, 1), date(2026, 8, 1), date(2026, 9, 1)]
+
+
+async def test_fixed_tariff_recognizes_without_the_monthly_flag(async_session_factory) -> None:
+    """Режим «счёт за период» признаёт расход сам — галочку «помесячно» никто не ставил.
+
+    Канон владельца, режим 2: лицензия с фиксированной платой и указанным в счёте периодом
+    (Синапсис, АЙКО, Лемма, ДоксИнБокс). УПД по таким не ждут — месяц оплачен, 31-го
+    обязательство исполнено. Без этой ветки платёж вечно висел в «ждём документ» и краснел
+    просрочкой за документ, которого никто не выставит.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Лицензия-Период", inn="6155020101")
+        wallet = await make_wallet(session, name="Лицензия-Кошелёк")
+        article = await make_expense_article(session, code="LIC-PER", name="Лицензии период")
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        profile.service_billing_mode = "fixed_tariff"
+        prepayment = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="subscription",
+            wallet_id=wallet.id,
+            amount=Decimal("13000.00"),
+            amount_settled=Decimal("0"),
+            status="open",
+            article_id=article.id,
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+            service_period_status="ready",
+            auto_recognize_monthly=False,
+        )
+        session.add(prepayment)
+        await session.commit()
+
+        created = await accrue_due_months(session, as_of=date(2026, 8, 1), commit=True)
+        assert [invoice.counterparty_id for invoice in created] == [cp.id]
+        assert created[0].amount == Decimal("13000.00")
+
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.invoice_id == created[0].id
+            )
+        )
+        assert accrual.service_period_end == date(2026, 7, 31)

@@ -38,10 +38,17 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import InvoicePaymentAllocation, SupplierInvoice, SupplierPrepayment
+from app.models import (
+    CounterpartyPayableProfile,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+    SupplierPrepayment,
+)
 from app.services import supplier_service_periods as periods
 
 SELF_BILLED_SOURCE = "self_billed"
+# Режим «счёт за период»: расход признаётся по окончании периода, УПД не ждём (канон владельца).
+BILLING_MODE_FIXED_TARIFF = "fixed_tariff"
 # Предоплаты, которые ещё держат дебиторку и потому подлежат помесячному признанию.
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 
@@ -91,12 +98,25 @@ def monthly_shares(amount: Decimal, months: int) -> list[Decimal]:
 
 
 def covered_months(prepayment: SupplierPrepayment) -> list[date]:
-    """Месяцы, которые покрывает платёж: от начала периода, по одному на каждый месяц."""
-    if prepayment.service_period_start is None:
+    """Месяцы, которые покрывает платёж: от начала периода, по одному на каждый месяц.
+
+    Число месяцев берём из ``service_period_months``, а если его нет — считаем по самому
+    периоду. Раньше пустое поле означало «один месяц», и квартальная лицензия с периодом
+    01.07–30.09 признавала всю сумму июлем: 36 000 ₽ падали в один месяц вместо 12 000 в три.
+    Поле заполняется только из окна «Новый платёж», а период приходит ещё и из счёта, из ЭДО
+    и из ручной разметки — там оно пустое всегда.
+    """
+    start = prepayment.service_period_start
+    if start is None:
         return []
-    count = prepayment.service_period_months or 1
-    first = prepayment.service_period_start.replace(day=1)
-    return [add_months(first, index) for index in range(count)]
+    count = prepayment.service_period_months
+    if not count:
+        end = prepayment.service_period_end
+        count = (
+            (end.year - start.year) * 12 + (end.month - start.month) + 1 if end is not None else 1
+        )
+    first = start.replace(day=1)
+    return [add_months(first, index) for index in range(max(count, 1))]
 
 
 def covers_month(
@@ -126,6 +146,27 @@ def covers_month(
         invoice_date <= last,
     )
     return or_(with_period, by_date)
+
+
+async def _recognized_by_billing_mode(
+    session: AsyncSession, prepayment: SupplierPrepayment
+) -> bool:
+    """Признаётся ли платёж помесячно по режиму контрагента, без явной галочки.
+
+    Режим «счёт за период» (канон владельца от 01.08.2026, режим 2): лицензия с фиксированной
+    платой и указанным в счёте периодом — Синапсис, АЙКО, Лемма, ДоксИнБокс. Расход признаётся
+    по окончании периода, УПД по ним не ждут: месяц оплачен, 31-го обязательство исполнено по
+    определению. Без этой ветки такие платежи вечно висели в «ждём документ» и краснели
+    просрочкой за документ, которого никто не выставит.
+    """
+    if prepayment.service_period_status != "ready" or prepayment.service_period_start is None:
+        return False
+    mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == prepayment.counterparty_id
+        )
+    )
+    return mode == BILLING_MODE_FIXED_TARIFF
 
 
 async def _real_closing_exists(
@@ -184,7 +225,9 @@ async def ensure_month_accrual(
     ``None`` возвращается, когда признавать нечего: помесячный режим выключен, месяц ещё не
     закончился, самоакт уже есть, настоящий документ пришёл или дебиторка исчерпана.
     """
-    if not prepayment.auto_recognize_monthly:
+    if not prepayment.auto_recognize_monthly and not await _recognized_by_billing_mode(
+        session, prepayment
+    ):
         return None
     if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
         return None
@@ -269,11 +312,28 @@ async def accrue_due_months(
 ) -> list[SupplierInvoice]:
     """Признать все истёкшие месяцы по абонентским платежам. Идемпотентно."""
     today = as_of or date.today()
+    # Кроме платежей с явной галочкой «признавать помесячно» берём режим «счёт за период»:
+    # у таких контрагентов (Синапсис, АЙКО, Лемма, ДоксИнБокс) лицензия оплачена за конкретный
+    # месяц, и 31-го обязательство исполнено по определению — УПД по ним не ждут вовсе.
     prepayments = list(
         (
             await session.scalars(
-                select(SupplierPrepayment).where(
-                    SupplierPrepayment.auto_recognize_monthly.is_(True),
+                select(SupplierPrepayment)
+                .outerjoin(
+                    CounterpartyPayableProfile,
+                    CounterpartyPayableProfile.counterparty_id
+                    == SupplierPrepayment.counterparty_id,
+                )
+                .where(
+                    or_(
+                        SupplierPrepayment.auto_recognize_monthly.is_(True),
+                        and_(
+                            CounterpartyPayableProfile.service_billing_mode
+                            == BILLING_MODE_FIXED_TARIFF,
+                            SupplierPrepayment.service_period_status == "ready",
+                            SupplierPrepayment.service_period_start.is_not(None),
+                        ),
+                    ),
                     SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
                 )
             )
@@ -296,10 +356,34 @@ class RecognitionRefused(ValueError):
     """Признать расход по этому платежу нельзя — с объяснением, почему именно."""
 
 
-# Платежи, которые помесячно не признают. ``prepaid_bill`` — ДЗ по оплаченному счёту, её по
-# канону гасит закрывающий УПД (правило 2). ``goods``/``deposit`` гасятся адресно — накладной
-# и возвратом депозита, а не долями по календарю.
-NON_RECOGNIZABLE_KINDS = ("prepaid_bill", "goods", "deposit")
+# Платежи, которые помесячно не признают никогда: ``goods`` гасится накладной, ``deposit`` —
+# возвратом. Календарные доли к ним не применимы в принципе.
+NON_RECOGNIZABLE_KINDS = ("goods", "deposit")
+
+
+def refusal_reason(
+    prepayment: SupplierPrepayment, *, documents_expected: bool, covered_by_agreement: bool
+) -> str | None:
+    """Почему признать расход по этому платежу нельзя — или ``None``, если можно.
+
+    Одно правило на два потребителя: сервис отказывает по нему, а витрина по нему же решает,
+    показывать ли кнопку. Пока правило жило только в сервисе, кнопка стояла на строках, где
+    ответ всегда был 409 — примерно на половине вкладки «ждём документ».
+
+    ``prepaid_bill`` — ДЗ по оплаченному счёту. По канону её гасит закрывающий УПД (правило 2),
+    поэтому признавать её руками нельзя, ПОКА документ ожидается. Там, где документов не будет
+    (разовые работы, договор informal), запрет превращался бы в тупик: оплаченный счёт от
+    такого контрагента не стал бы расходом никогда.
+    """
+    if prepayment.kind in NON_RECOGNIZABLE_KINDS:
+        return "Такой платёж закрывается накладной или возвратом, а не признанием по месяцам"
+    if prepayment.kind == "prepaid_bill" and documents_expected:
+        return "Это оплата счёта — её закроет закрывающий документ, а не признание по месяцам"
+    if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
+        return "Платёж уже закрыт — признавать нечего"
+    if covered_by_agreement:
+        return "По этому контрагенту действует договор услуги — расход начисляется автоматически"
+    return None
 
 
 def months_between(start: date, end: date) -> int:
@@ -319,35 +403,29 @@ async def _self_billed_exists(session: AsyncSession, prepayment: SupplierPrepaym
 
 
 async def _draft_line_accrual(
-    session: AsyncSession, prepayment: SupplierPrepayment
+    session: AsyncSession, prepayment: SupplierPrepayment, *, start: date, end: date
 ) -> Any | None:
-    """Разовое начисление по строке платежа, из которой родилась эта предоплата.
+    """Разовое начисление по строке платежа, покрывающее тот же период.
 
     Оно есть, когда платёж оформили в «Новом платеже» с периодом, но без помесячного режима:
     ``sync_expense_line_accrual`` завела расход на ВСЮ сумму последним месяцем периода. Включить
     поверх помесячное признание — значит получить 9 000 (строка) + 3×3 000 (самоакты) = 18 000 ₽
     расхода по одному платежу. Ровно этот дефект уже был на проде у Наумченко.
-    """
-    from app.models import CashflowTransaction, ExpenseDraftLine, SupplierExpenseAccrual
 
-    if prepayment.cashflow_transaction_id is None:
-        return None
-    transaction = await session.get(CashflowTransaction, prepayment.cashflow_transaction_id)
-    if (
-        transaction is None
-        or transaction.source_kind != "counterparty_payment"
-        or transaction.source_id is None
-    ):
-        return None
+    Ищем по КОНТРАГЕНТУ и пересечению периодов, а не по черновику платежа. Связь через
+    черновик рвётся штатно: если выписка приходит раньше отметки «оплачено», операцию разбирает
+    классификатор, и предоплата садится на проводку ``bank_operation`` — ссылки на черновик у
+    неё уже нет, гард молчал, а расход задваивался.
+    """
+    from app.models import SupplierExpenseAccrual
+
     return await session.scalar(
-        select(SupplierExpenseAccrual)
-        .join(
-            ExpenseDraftLine,
-            ExpenseDraftLine.id == SupplierExpenseAccrual.expense_draft_line_id,
-        )
-        .where(
-            ExpenseDraftLine.draft_id == transaction.source_id,
+        select(SupplierExpenseAccrual).where(
+            SupplierExpenseAccrual.counterparty_id == prepayment.counterparty_id,
+            SupplierExpenseAccrual.expense_draft_line_id.is_not(None),
             SupplierExpenseAccrual.status != "cancelled",
+            SupplierExpenseAccrual.service_period_start <= end,
+            SupplierExpenseAccrual.service_period_end >= start,
         )
     )
 
@@ -375,15 +453,27 @@ async def recognize_prepayment_period(
     """
     # Локальный импорт: service_agreement_accruals импортирует этот модуль, и на уровне файла
     # получился бы цикл.
+    from app.services.counterparty_settlement_ledger import documents_not_expected
     from app.services.service_agreement_accruals import covered_by_agreement
 
     start, end = periods.validate_period(start, end)
-    if prepayment.kind in NON_RECOGNIZABLE_KINDS:
-        raise RecognitionRefused(
-            "Такой платёж закрывается документом или возвратом, а не признанием по месяцам"
-        )
-    if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
-        raise RecognitionRefused("Платёж уже закрыт — признавать нечего")
+    # Договор проверяем по ПЕРЕСЕЧЕНИЮ с периодом, а не по его концу: договор, закрытый в мае,
+    # начислил апрель и май, и признание за апрель-сентябрь легло бы поверх них — в P&L
+    # апреля 3 000 по договору плюс 2 000 самоактом.
+    agreement_covers = await covered_by_agreement(
+        session, prepayment.counterparty_id, on=start, article_id=prepayment.article_id
+    ) or await covered_by_agreement(
+        session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
+    )
+    refusal = refusal_reason(
+        prepayment,
+        documents_expected=not await documents_not_expected(
+            session, prepayment.counterparty_id, today=as_of
+        ),
+        covered_by_agreement=agreement_covers,
+    )
+    if refusal is not None:
+        raise RecognitionRefused(refusal)
     if prepayment.article_id is None:
         # Статья нужна не для красоты: она уходит в самоакт как разрез расхода и участвует в
         # проверке «а не пришёл ли настоящий документ по этой же услуге». Платежи из выписки
@@ -394,18 +484,21 @@ async def recognize_prepayment_period(
                 "У платежа не указана статья ДДС — расход некуда отнести. Выберите статью"
             )
         prepayment.article_id = article_id
-    if await covered_by_agreement(
-        session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
-    ):
-        raise RecognitionRefused(
-            "По этому контрагенту действует договор услуги — расход начисляется автоматически"
-        )
+        # Статью дозаполнили — договор по ней мог и не проверяться выше (там статьи ещё не было).
+        if await covered_by_agreement(
+            session, prepayment.counterparty_id, on=start, article_id=prepayment.article_id
+        ) or await covered_by_agreement(
+            session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
+        ):
+            raise RecognitionRefused(
+                "По этому контрагенту действует договор услуги — расход начисляется автоматически"
+            )
     if await _self_billed_exists(session, prepayment):
         raise RecognitionRefused(
             "Расход по этому платежу уже признаётся помесячно. Изменить период можно на строке "
             "признания"
         )
-    line_accrual = await _draft_line_accrual(session, prepayment)
+    line_accrual = await _draft_line_accrual(session, prepayment, start=start, end=end)
     if line_accrual is not None:
         if line_accrual.status == "recognized":
             raise RecognitionRefused(

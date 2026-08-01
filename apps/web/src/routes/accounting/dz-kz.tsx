@@ -64,6 +64,8 @@ type AccountingItem = {
   expected_by: string | null;
   days_overdue: number;
   period_assumed: boolean;
+  can_recognize: boolean;
+  recognize_blocked_reason: string | null;
 };
 
 type StageTile = { count: number; amount: number };
@@ -1466,6 +1468,9 @@ function RecognitionSection({
   const query = useQuery({
     queryKey: ["accounting", "suppliers", stage],
     queryFn: () => getAccounting(stage),
+    // Плитки живут в том же ответе, что и список. Без этого клик по состоянию обнулял ВСЕ
+    // четыре плитки на время запроса — включая ту, цифру из которой человек только что читал.
+    placeholderData: (previous) => previous,
   });
   const tiles = query.data;
   const tileOf = (name: Stage): StageTile =>
@@ -1593,17 +1598,24 @@ function RecognitionSection({
                       )}
                     </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
-                      {money.format(item.balance_amount)}
+                      {/* У признанного и оплаченного остаток равен нулю, и строка показывала
+                          «0 ₽» под плиткой с суммой расхода. В этом состоянии величина строки —
+                          сам расход. */}
+                      {money.format(
+                        item.stage === "in_expense" ? item.amount : item.balance_amount,
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {!canEdit ? null : isPrepayment ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setRecognizing(item)}
-                        >
-                          Признать расход
-                        </Button>
+                        item.can_recognize ? (
+                          <Button size="sm" variant="outline" onClick={() => setRecognizing(item)}>
+                            Признать расход
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {item.recognize_blocked_reason}
+                          </span>
+                        )
                       ) : (
                         <Button
                           size="icon"

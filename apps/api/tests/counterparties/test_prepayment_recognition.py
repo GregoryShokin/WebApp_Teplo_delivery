@@ -31,6 +31,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    CounterpartyPayableProfile,
     CounterpartyServiceAgreement,
     ExpenseDraftLine,
     SupplierExpenseAccrual,
@@ -259,6 +260,87 @@ def test_refuses_when_draft_line_already_recognized_the_whole_sum(
     assert "уже признан" in response.json()["detail"]
 
 
+def test_paid_bill_can_be_recognized_when_no_document_is_coming(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Оплаченный счёт контрагента, который документов не присылает, признать МОЖНО.
+
+    Запрет на признание ДЗ по счёту защищает канон «её гасит УПД». Но там, где УПД не будет
+    (разовые работы, договор informal), тот же запрет превращался в тупик: платёж не стал бы
+    расходом никогда, а очередь показывала бы его вечно.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Признание Счёт", inn="6155000511")
+            article = await make_expense_article(session, name="Признание Услуги Счёт")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+            profile.service_billing_mode = "one_off"
+            prepayment = await _stuck_prepayment(
+                session,
+                counterparty_id=cp.id,
+                amount="5000.00",
+                article_id=article.id,
+                kind="prepaid_bill",
+            )
+            await session.commit()
+            return prepayment.id
+
+    prepayment_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-06-01", "service_period_end": "2026-06-30"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["months_recognized"] == 1
+
+
+def test_closed_agreement_still_blocks_the_months_it_accrued(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Договор, закрытый в мае, защищает апрель и май — проверка идёт по пересечению периодов.
+
+    Раньше сверялась только дата окончания периода признания: запрос «признать апрель-сентябрь»
+    смотрел на 30.09, договора там уже нет — и самоакты ложились поверх начислений апреля и мая.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Признание Закрытый", inn="6155000512")
+            article = await make_expense_article(session, name="Признание Услуги Закрытый")
+            session.add(
+                CounterpartyServiceAgreement(
+                    counterparty_id=cp.id,
+                    title="Обслуживание",
+                    monthly_amount=Decimal("3000.00"),
+                    dds_article_id=article.id,
+                    documents_mode="informal",
+                    started_on=date(2026, 1, 1),
+                    ended_on=date(2026, 5, 31),
+                    accrual_enabled=True,
+                )
+            )
+            prepayment = await _stuck_prepayment(
+                session, counterparty_id=cp.id, amount="18000.00", article_id=article.id
+            )
+            await session.commit()
+            return prepayment.id
+
+    prepayment_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-04-01", "service_period_end": "2026-09-30"},
+    )
+    assert response.status_code == 409
+    assert "договор" in response.json()["detail"].lower()
+
+
 def test_agreement_does_not_accrue_month_already_recognized_from_prepayment(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -353,7 +435,7 @@ def test_refuses_prepaid_bill_and_missing_article(
         f"{BASE}/prepayments/{paid_bill_id}/recognize", headers=headers, json=body
     )
     assert bill_response.status_code == 409
-    assert "документом" in bill_response.json()["detail"]
+    assert "закрывающий документ" in bill_response.json()["detail"]
 
     article_response = client.post(
         f"{BASE}/prepayments/{no_article_id}/recognize", headers=headers, json=body

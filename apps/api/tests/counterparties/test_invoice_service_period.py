@@ -14,7 +14,9 @@ from datetime import date
 
 import pytest
 from cp_helpers import make_counterparty, make_invoice
-from sqlalchemy import select
+from decimal import Decimal
+
+from sqlalchemy import func, select
 
 from app.models import (
     CounterpartyPayableProfile,
@@ -174,3 +176,62 @@ async def test_get_invoice_item_keeps_not_required_when_optional(async_session_f
         assert item is not None
         assert item.service_period_required is False
         assert item.service_period_status == "not_required"
+
+
+async def test_bill_with_period_does_not_book_expense(async_session_factory):
+    """Счёт с периодом расхода НЕ признаёт — иначе пришедший следом УПД признает его второй раз.
+
+    Период при оплате спрашивают почти у каждого счёта (правка 01.08.2026), и пока начисление
+    заводилось и на счёте, схема «счёт оплатили → акт пришёл отдельным письмом» давала двойной
+    расход: 13 000 ₽ услуги превращались в 26 000 ₽ в P&L. Деньги при этом сходились — ДЗ по
+    счёту гасил тот же акт, — поэтому увидеть расхождение можно было только в прибыли.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО «Счёт-Период»", inn="7700000042")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="13000.00",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        await set_invoice_service_period(
+            session,
+            invoice=bill,
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 31),
+            actor_user_id=None,
+        )
+
+        booked = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == bill.id)
+        )
+        assert booked is None
+        # Период при этом сохранён: он нужен для срока документа и для признания самоактом.
+        assert bill.service_period_start == date(2026, 7, 1)
+        assert bill.service_period_status == "ready"
+
+        # Закрывающий документ за тот же период расход признаёт — ровно один раз.
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="13000.00",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+        )
+        await session.commit()
+        await set_invoice_service_period(
+            session,
+            invoice=act,
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 31),
+            actor_user_id=None,
+        )
+        total = await session.scalar(
+            select(func.coalesce(func.sum(SupplierExpenseAccrual.amount), 0)).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        assert total == Decimal("13000.00")

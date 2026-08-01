@@ -110,6 +110,11 @@ class SupplierAccountingItem(BaseModel):
     payment_date: date | None = None
     expected_by: date | None = None
     days_overdue: int = 0
+    # Можно ли признать расход по этой строке руками. Считается тем же правилом, по которому
+    # отказывает сервис: иначе кнопка стоит там, где ответ всегда 409 — так было примерно на
+    # половине строк «ждём документ».
+    can_recognize: bool = False
+    recognize_blocked_reason: str | None = None
     # true — период не указан, и срок посчитан по месяцу платежа. Фронт обязан это сказать
     # вслух: иначе выдуманный период читается как подтверждённый.
     period_assumed: bool = False
@@ -166,6 +171,9 @@ class _QueueContext:
     """
 
     expected_days: dict[uuid.UUID, int | None] = field(default_factory=dict)
+    # Режим «счёт за период»: лицензия оплачена за конкретный месяц, УПД не ждут — расход
+    # признаётся сам по окончании периода (Синапсис, АЙКО, Лемма, ДоксИнБокс).
+    fixed_tariff: set[uuid.UUID] = field(default_factory=set)
     # Документов от контрагента не ждут: разовые работы либо договор, по которому долг
     # считается сам. Вечно красная строка по ним — шум, из-за которого бросают смотреть весь экран.
     documents_not_expected: set[uuid.UUID] = field(default_factory=set)
@@ -192,6 +200,9 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
     for cp_id, billing_mode, expected_day, contour in profiles:
         ctx.expected_days[cp_id] = expected_day
         if billing_mode == settlement.BILLING_MODE_ONE_OFF:
+            ctx.documents_not_expected.add(cp_id)
+        if billing_mode == subscriptions.BILLING_MODE_FIXED_TARIFF:
+            ctx.fixed_tariff.add(cp_id)
             ctx.documents_not_expected.add(cp_id)
         if contour == settlement.CONTOUR_GOODS:
             ctx.goods_contour.add(cp_id)
@@ -374,7 +385,13 @@ async def list_supplier_accounting(
         documents_expected = cp_id not in ctx.documents_not_expected
         # Долг закроется сам: помесячное признание из этой же предоплаты либо ночное
         # начисление по договору. Человеку делать нечего, срок не нужен.
-        settles_itself = prepayment.auto_recognize_monthly or cp_id in ctx.self_settling
+        settles_itself = (
+            prepayment.auto_recognize_monthly
+            or cp_id in ctx.self_settling
+            # «Счёт за период»: период известен из счёта, и по его окончании расход признаётся
+            # сам. Ждать документ здесь не от кого — контрагент его не выставляет.
+            or cp_id in ctx.fixed_tariff
+        )
 
         deadline: date | None = None
         overdue = 0
@@ -401,11 +418,18 @@ async def list_supplier_accounting(
             prepayment_stage = "needs_period"
         else:
             prepayment_stage = "needs_period"
+        refusal = subscriptions.refusal_reason(
+            prepayment,
+            documents_expected=documents_expected,
+            covered_by_agreement=cp_id in ctx.self_settling,
+        )
         items.append(
             SupplierAccountingItem(
                 id=prepayment.id,
                 stage=prepayment_stage,
                 source_kind="legacy_prepayment",
+                can_recognize=refusal is None,
+                recognize_blocked_reason=refusal,
                 counterparty_id=cp_id,
                 counterparty_name=cp_name,
                 article_id=prepayment.article_id,
