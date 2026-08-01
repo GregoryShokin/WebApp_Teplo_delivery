@@ -104,6 +104,8 @@ export type CounterpartyProfile = {
   settlement_contour: string | null;
   // 'fixed_tariff' | 'per_invoice' | 'one_off' | null — чего экран признания ждёт от платежа.
   service_billing_mode: string | null;
+  // Контур, по которому контрагент живёт сейчас: явный выбор либо факт складских накладных.
+  settlement_contour_effective: string | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;

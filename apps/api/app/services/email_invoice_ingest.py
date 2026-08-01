@@ -30,7 +30,6 @@ from app.models import (
     CounterpartyPayableProfile,
     CounterpartyRole,
     EmailInvoiceIntake,
-    SupplierExpenseAccrual,
     SupplierInvoice,
 )
 from app.services import counterparty_payments as payments
@@ -389,18 +388,11 @@ async def _materialize_companion(
     )
     session.add(closing)
     await session.flush()
-    # Признание расхода (P&L) — ОДНО на пакет. Счёт и его закрывающий описывают одну и ту же
-    # услугу за один период: начисление на обоих задвоило бы расход в отчёте. Начисление ведёт
-    # счёт; спутник заводит своё, только если у счёта его нет (период распознан лишь в УПД).
-    bill_accrual = None
-    if intake.invoice_id is not None:
-        bill_accrual = await session.scalar(
-            select(SupplierExpenseAccrual.id).where(
-                SupplierExpenseAccrual.invoice_id == intake.invoice_id
-            )
-        )
-    if bill_accrual is None:
-        await service_periods.sync_invoice_accrual(session, closing)
+    # Признание расхода (P&L) — ОДНО на пакет, и ведёт его ЗАКРЫВАЮЩИЙ. Счёт расходом не
+    # является по канону, и с 01.08.2026 начисление на нём не заводится вовсе
+    # (``sync_invoice_accrual`` отсекает doc_kind='bill'): период при оплате спрашивают почти
+    # у каждого счёта, и признание на счёте плюс пришедший акт давали двойной расход.
+    await service_periods.sync_invoice_accrual(session, closing)
     intake.companion_invoice_id = closing.id
     # Закрывающий из пакета проводится так же, как пришедший отдельным письмом: правило 2
     # (гасит открытую дебиторку) + правило 4 (будущей датой ждёт своей даты).

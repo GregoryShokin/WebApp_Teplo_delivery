@@ -348,7 +348,11 @@ async def test_duplicate_bill_still_creates_companion(
 async def test_package_books_single_expense_accrual(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Одна услуга — одно признание расхода: счёт и его закрывающий не задваивают P&L."""
+    """Одна услуга — одно признание расхода, и ведёт его закрывающий, а не счёт.
+
+    Счёт расходом не является по канону: он основание для платежа. С 01.08.2026 начисление на
+    нём не заводится вовсе — иначе период, указанный при оплате счёта, признавал бы расход, а
+    пришедший акт признавал его второй раз."""
     from app.models import SupplierExpenseAccrual
 
     async with async_session_factory() as session:
@@ -377,7 +381,7 @@ async def test_package_books_single_expense_accrual(
             )
         ).all()
         assert len(accruals) == 1
-        assert accruals[0].invoice_id == intake.invoice_id
+        assert accruals[0].invoice_id == intake.companion_invoice_id
 
 
 async def test_reparse_moves_companion_to_new_counterparty(

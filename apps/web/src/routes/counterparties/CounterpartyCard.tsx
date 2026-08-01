@@ -287,7 +287,11 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         ? String(profile.default_service_period_offset_months)
         : "0",
     );
-    setContour((profile?.settlement_contour as string | null) ?? "auto");
+    setContour(
+      (profile?.settlement_contour as string | null) ??
+        (profile?.settlement_contour_effective as string | null) ??
+        "service",
+    );
     setBillingMode((profile?.service_billing_mode as string | null) ?? "auto");
     setExpectedDay(
       profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0",
@@ -312,9 +316,12 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         service_period_required: servicePeriodRequired,
         bank_payments_create_prepayment: bankPrepayment,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
-        settlement_contour: contour === "auto" ? null : contour,
-        service_billing_mode: billingMode === "auto" ? null : billingMode,
-        closing_doc_expected_day: expectedDay === "0" ? null : Number(expectedDay),
+        settlement_contour: contour,
+        // У товарного контрагента признавать нечего: его накладные гасит склад, а расход по
+        // сырью идёт фудкостом. Настройки услуг чистим, чтобы они не всплыли при возврате.
+        service_billing_mode: contour === "goods" ? null : billingMode === "auto" ? null : billingMode,
+        closing_doc_expected_day:
+          contour === "goods" ? null : expectedDay === "0" ? null : Number(expectedDay),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
@@ -355,7 +362,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     servicePeriodRequired !== (profile?.service_period_required ?? false) ||
     bankPrepayment !== (profile?.bank_payments_create_prepayment ?? false) ||
     (servicePeriodRequired && periodOffset !== periodOffsetSaved) ||
-    contour !== ((profile?.settlement_contour as string | null) ?? "auto") ||
+    contour !==
+      ((profile?.settlement_contour as string | null) ??
+        (profile?.settlement_contour_effective as string | null) ??
+        "service") ||
     billingMode !== ((profile?.service_billing_mode as string | null) ?? "auto") ||
     expectedDay !==
       (profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0");
@@ -492,20 +502,21 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               состояние «ждём документ» на «Признании расходов». Живёт рядом с периодом услуг:
               обе настройки про один и тот же вопрос «когда расход считается подтверждённым». */}
           <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
-            <Field label="Контур расчётов">
+            <Field label="Что мы у него покупаем">
               <Select disabled={disabled} value={contour} onValueChange={setContour}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Определять по накладным</SelectItem>
-                  <SelectItem value="service">Услуги — контроль вручную</SelectItem>
-                  <SelectItem value="goods">Товар — гасится складом</SelectItem>
+                  <SelectItem value="goods">Товар</SelectItem>
+                  <SelectItem value="service">Услуги</SelectItem>
                 </SelectContent>
               </Select>
               <span className="text-xs text-muted-foreground">
-                Товарные контрагенты не попадают в признание расходов: их накладные гасит
-                склад, а расход по сырью идёт фудкостом.
+                {contour === "goods"
+                  ? "Больше ничего не нужно: накладные гасит склад, а расход по сырью идёт фудкостом."
+                  : "Дальше — чем подтверждается расход и когда его ждать."}
               </span>
             </Field>
+            {contour === "goods" ? null : (
             <Field label="Как признаём расход по услугам">
               <Select disabled={disabled} value={billingMode} onValueChange={setBillingMode}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -522,6 +533,8 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
                 при оплате не спрашивают: его знает только контрагент.
               </span>
             </Field>
+            )}
+            {contour === "goods" ? null : (
             <Field label="Закрывающий документ приходит до">
               <Select disabled={disabled} value={expectedDay} onValueChange={setExpectedDay}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -539,6 +552,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
                 краснеет и показывает, сколько дней прошло.
               </span>
             </Field>
+            )}
           </div>
         </div>
       </div>

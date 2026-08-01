@@ -351,6 +351,11 @@ VISIBLE_PERMISSION_CATALOG: tuple[PermissionCatalogItem, ...] = (
         "Учёт",
         "Переносить период уже признанного расхода поставщика",
     ),
+    (
+        "accounting.expenses.reverse",
+        "Учёт",
+        "Откатывать признанный расход поставщика (целиком или частью)",
+    ),
     ("accounting.periods.close", "Учёт", "Закрывать учётный период"),
     ("accounting.taxes.read", "Учёт", "Смотреть налоги (расчёт, сверка, календарь сроков)"),
     (
@@ -821,6 +826,9 @@ OFFICE_MANAGER_DEFAULT_PERMISSIONS = frozenset(
         "staff.official.manage",
         # Цель депозита ниже дефолта категории — точечное право (только owner/admin).
         "payroll.production_deposits.target_below_category",
+        # Откат признанного расхода меняет прибыль уже закрытого месяца — точечное право
+        # (только owner/admin), как и перенос периода признанного расхода рядом.
+        "accounting.expenses.reverse",
     }
 )
 

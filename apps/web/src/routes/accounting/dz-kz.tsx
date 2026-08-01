@@ -306,6 +306,14 @@ async function getAccounting(stage: Stage | null): Promise<AccountingList> {
   return response.data;
 }
 
+async function reverseExpense(
+  accrualId: string,
+  payload: { amount: number; reason: string },
+): Promise<{ reversed_amount: number; amount_left: number; fully_cancelled: boolean }> {
+  const response = await api.post(`/accounting/suppliers/accruals/${accrualId}/reverse`, payload);
+  return response.data;
+}
+
 async function recognizePrepayment(
   id: string,
   payload: {
@@ -625,6 +633,7 @@ export function DzKzRoute() {
           canCorrectRecognized={permissions.hasPermission(
             "accounting.service_periods.correct_recognized",
           )}
+          canReverse={permissions.hasPermission("accounting.expenses.reverse")}
         />
       ) : null}
     </div>
@@ -1456,15 +1465,18 @@ function DocumentsSection({ filters }: { filters: RegisterFilters }) {
 function RecognitionSection({
   canEdit,
   canCorrectRecognized,
+  canReverse,
 }: {
   canEdit: boolean;
   canCorrectRecognized: boolean;
+  canReverse: boolean;
 }) {
   // Стартуем с очереди, которая ждёт человека. Если она пуста — экран сам покажет ожидание
   // документов: смотреть на пустой список «нужно ваше решение» бессмысленно.
   const [stage, setStage] = useState<Stage>("needs_period");
   const [editing, setEditing] = useState<AccountingItem | null>(null);
   const [recognizing, setRecognizing] = useState<AccountingItem | null>(null);
+  const [reversing, setReversing] = useState<AccountingItem | null>(null);
   const query = useQuery({
     queryKey: ["accounting", "suppliers", stage],
     queryFn: () => getAccounting(stage),
@@ -1617,19 +1629,32 @@ function RecognitionSection({
                           </span>
                         )
                       ) : (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title={
-                            correctionAllowed
-                              ? "Изменить период"
-                              : "Нужно отдельное право на корректировку признанного расхода"
-                          }
-                          disabled={!correctionAllowed}
-                          onClick={() => setEditing(item)}
-                        >
-                          <Pencil size={15} />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {canReverse && item.stage === "in_expense" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs"
+                              title="Снять расход целиком или частью — сумма вернётся в дебиторку"
+                              onClick={() => setReversing(item)}
+                            >
+                              Откатить
+                            </Button>
+                          ) : null}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title={
+                              correctionAllowed
+                                ? "Изменить период"
+                                : "Нужно отдельное право на корректировку признанного расхода"
+                            }
+                            disabled={!correctionAllowed}
+                            onClick={() => setEditing(item)}
+                          >
+                            <Pencil size={15} />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -1643,6 +1668,9 @@ function RecognitionSection({
       {editing ? <PeriodDialog item={editing} onClose={() => setEditing(null)} /> : null}
       {recognizing ? (
         <RecognizeDialog item={recognizing} onClose={() => setRecognizing(null)} />
+      ) : null}
+      {reversing ? (
+        <ReverseDialog item={reversing} onClose={() => setReversing(null)} />
       ) : null}
     </div>
   );
@@ -1740,6 +1768,80 @@ function RecognizeDialog({ item, onClose }: { item: AccountingItem; onClose: () 
           </Button>
           <Button disabled={!ready || mutation.isPending} onClick={() => mutation.mutate()}>
             Признать расход
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReverseDialog({ item, onClose }: { item: AccountingItem; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  // Сумму не подставляем целиком: откат чаще частичный, а предзаполненная полная сумма
+  // подталкивает снять весь расход одним нажатием.
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const value = Number(amount.replace(",", "."));
+  const mutation = useMutation({
+    mutationFn: () => reverseExpense(item.id, { amount: value, reason: reason.trim() }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["accounting"] });
+      toast.success(
+        result.fully_cancelled
+          ? "Расход снят целиком, деньги вернулись в дебиторку"
+          : `Снято ${money.format(result.reversed_amount)}, в расходе осталось ${money.format(result.amount_left)}`,
+      );
+      onClose();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось откатить расход")),
+  });
+  const ready = value > 0 && value <= item.amount && Boolean(reason.trim());
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Откатить расход</DialogTitle>
+          <DialogDescription>
+            {item.counterparty_name} · в расходе {moneyExact.format(item.amount)}
+            {item.recognition_month ? ` · ${monthTitle(item.recognition_month.slice(0, 7))}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 shrink-0" size={17} />
+          Сумма уйдёт из прибыли этого месяца и вернётся в дебиторку — контрагент снова будет
+          должен закрыть её документами или вернуть деньги.
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Сколько снять, ₽</Label>
+          <Input
+            inputMode="decimal"
+            value={amount}
+            placeholder={String(item.amount)}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+          <button
+            type="button"
+            className="justify-self-start text-xs text-muted-foreground underline"
+            onClick={() => setAmount(String(item.amount))}
+          >
+            снять весь расход
+          </button>
+        </div>
+        <div className="grid gap-1.5">
+          <Label>Причина *</Label>
+          <Textarea
+            value={reason}
+            placeholder="Например: услуга оказана половину месяца"
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button disabled={!ready || mutation.isPending} onClick={() => mutation.mutate()}>
+            Откатить
           </Button>
         </DialogFooter>
       </DialogContent>

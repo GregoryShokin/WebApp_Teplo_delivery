@@ -44,6 +44,7 @@ from app.models import (
     Wallet,
 )
 from app.services import counterparty_settlement_ledger as settlement
+from app.services import expense_reversal as reversal_service
 from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import (
@@ -566,6 +567,58 @@ async def patch_service_period(
         period_status="ready",
         recognition_month=accrual.recognition_month,
         recognized=accrual.status == "recognized",
+    )
+
+
+class ExpenseReverseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Сумма отката: можно снять часть. Признали 3 000 ₽, откатили 1 000 — 1 000 вернулась
+    # в дебиторку, 2 000 остались расходом месяца.
+    amount: Decimal = Field(gt=0)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class ExpenseReverseOut(BaseModel):
+    reversed_amount: float
+    amount_left: float
+    fully_cancelled: bool
+
+
+@router.post(
+    "/accruals/{accrual_id}/reverse",
+    response_model=ExpenseReverseOut,
+    dependencies=(Depends(require_permission("accounting.expenses.reverse")),),
+)
+async def reverse_expense(
+    accrual_id: uuid.UUID,
+    payload: ExpenseReverseIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> ExpenseReverseOut:
+    """Снять признанный расход целиком или частью — сумма вернётся в дебиторку.
+
+    Право отдельное (``accounting.expenses.reverse``), а не общее ``suppliers.edit``: действие
+    меняет прибыль уже закрытого месяца.
+    """
+    accrual = await session.get(SupplierExpenseAccrual, accrual_id)
+    if accrual is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Начисление не найдено")
+    try:
+        await reversal_service.reverse_expense(
+            session,
+            accrual,
+            amount=payload.amount,
+            reason=payload.reason,
+            actor_user_id=actor.user_id,
+        )
+    except reversal_service.ReversalRefused as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.refresh(accrual)
+    return ExpenseReverseOut(
+        reversed_amount=_float(payload.amount),
+        amount_left=_float(accrual.amount),
+        fully_cancelled=accrual.status == "cancelled",
     )
 
 

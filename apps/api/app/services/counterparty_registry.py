@@ -604,6 +604,24 @@ async def get_counterparty_card(
         .scalars()
         .all()
     )
+    # Контур «товар/услуга»: явный выбор в карточке сильнее факта складских накладных.
+    # Считаем здесь, а не на фронте: список накладных в карточке ограничен, и по нему товарный
+    # контрагент с давними поставками выглядел бы услуговым.
+    contour_effective = (
+        profile.settlement_contour
+        if profile is not None and profile.settlement_contour in ("goods", "service")
+        else (
+            "goods"
+            if await session.scalar(
+                select(func.count(SupplierInvoice.id)).where(
+                    SupplierInvoice.counterparty_id == counterparty_id,
+                    SupplierInvoice.operational_scope == "warehouse",
+                    SupplierInvoice.payment_status != "void",
+                )
+            )
+            else "service"
+        )
+    )
     return CounterpartyCard(
         counterparty_id=counterparty.id,
         name=counterparty.name,
@@ -612,7 +630,7 @@ async def get_counterparty_card(
         status=ARCHIVED_STATUS if counterparty.status in ARCHIVED_STATUSES else counterparty.status,
         relationship=profile.relationship if profile else "official",
         barter_balance=barter_balance,
-        profile=_profile_dict(profile),
+        profile=_profile_dict(profile, contour_effective=contour_effective),
         aliases=[{"alias": a.alias, "source": a.source} for a in aliases],
         collection_sources=[
             {
@@ -639,10 +657,16 @@ async def get_counterparty_card(
     )
 
 
-def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] | None:
+def _profile_dict(
+    profile: CounterpartyPayableProfile | None, *, contour_effective: str | None = None
+) -> dict[str, Any] | None:
     if profile is None:
         return None
     return {
+        # Контур, по которому контрагент живёт СЕЙЧАС: явный выбор в карточке или, если его не
+        # делали, факт складских накладных. Форме нужен именно он — переключатель «товар/услуга»
+        # не может стоять в третьем положении «не выбрано».
+        "settlement_contour_effective": contour_effective,
         "ledger_category_id": profile.ledger_category_id,
         "relationship": profile.relationship,
         "relationship_manual": profile.relationship_manual,

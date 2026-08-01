@@ -667,6 +667,36 @@ class SupplierServicePeriodChange(Base):
     )
 
 
+class SupplierExpenseReversal(Base):
+    """Аудит отката признанного расхода: сколько сняли, из какого месяца и почему.
+
+    Откат — не редактирование суммы, а событие: их может быть несколько по одному начислению
+    (сняли 1 000, потом ещё 500). Поэтому журнал, а не поле «сколько откатили»: иначе история
+    «из чего сложился нынешний расход» теряется, а объяснить владельцу, почему в мае стало
+    1 500 вместо 3 000, нечем.
+    """
+
+    __tablename__ = "supplier_expense_reversal"
+    __table_args__ = (Index("ix_supplier_expense_reversal_accrual", "accrual_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    accrual_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("supplier_expense_accrual.id", ondelete="CASCADE"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    amount_before: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    recognition_month: Mapped[date | None] = mapped_column(Date, nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    # Причина обязательна: откат меняет прибыль закрытого месяца, и через полгода вопрос
+    # «почему здесь 1 500» должен иметь ответ в самой системе.
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class InvoiceLineItem(Base):
     """A normalized line of a warehouse invoice — quantity, unit, sum, «персонал» flag.
 
