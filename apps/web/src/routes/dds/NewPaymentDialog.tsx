@@ -272,6 +272,10 @@ export function NewPaymentDialog({
   const canReserveCash = permissions.hasPermission("finance.safe.allocate");
 
   const [mode, setMode] = useState<OperationKind | null>(null);
+  // Чем выбираем платёж: статьёй («расход по SEO») или получателем («платёж Наумченко»).
+  // Это два разных вопроса в голове человека, а не два фильтра одного списка: во втором
+  // случае статью не выбирают вовсе — она приходит из карточки контрагента.
+  const [pickBy, setPickBy] = useState<"article" | "counterparty">("article");
   const [search, setSearch] = useState("");
   const [ledger, setLedger] = useState<LedgerKey>("operating");
   // Ключ сессии окна: на каждое открытие формы пересоздаются с чистым состоянием.
@@ -466,6 +470,7 @@ export function NewPaymentDialog({
     if (open) {
       setMode(null);
       setSearch("");
+      setPickBy("article");
       setLedger("operating");
       setIncomeArticleId("");
       rowSeq.current = 0;
@@ -574,26 +579,19 @@ export function NewPaymentDialog({
   const showPayout = payoutArticles.length > 0 && matches(payoutLabel);
   const showTransfer = transferArticle !== null && matches(transferLabel);
 
-  // Контрагенты — только по поиску: их сотни, вываливать список рядом с десятком статей
-  // нельзя. Ищем и по ИНН — у контрагентов бывают тёзки.
-  const COUNTERPARTY_HITS = 6;
-  const matchedCounterparties = q
-    ? counterparties.filter(
-        (item) => item.name.toLowerCase().includes(q) || (item.inn ?? "").includes(q),
-      )
-    : [];
-  const visibleCounterparties = matchedCounterparties.slice(0, COUNTERPARTY_HITS);
-  const hiddenCounterpartyCount = matchedCounterparties.length - visibleCounterparties.length;
+  // Список контрагентов в режиме «Контрагенты»: весь справочник, фильтр — по имени и ИНН
+  // (у контрагентов бывают тёзки, «ИП Иванов» без ИНН не различить).
+  const matchedCounterparties = counterparties.filter(
+    (item) => !q || item.name.toLowerCase().includes(q) || (item.inn ?? "").includes(q),
+  );
 
   const expenseGroupVisible = visibleExpense.length > 0 || showPrepayment;
   const incomeGroupVisible = matchedIncome.length > 0;
   const employeeGroupVisible = showAdvance || showLoan || showPayout;
   const nothingFound =
-    !expenseGroupVisible &&
-    !incomeGroupVisible &&
-    !employeeGroupVisible &&
-    !showTransfer &&
-    visibleCounterparties.length === 0;
+    pickBy === "counterparty"
+      ? matchedCounterparties.length === 0
+      : !expenseGroupVisible && !incomeGroupVisible && !employeeGroupVisible && !showTransfer;
 
   const context = contextQuery.data ?? null;
 
@@ -613,7 +611,35 @@ export function NewPaymentDialog({
           {/* Палитра операций */}
           <aside className="flex w-52 shrink-0 flex-col border-r sm:w-60">
             <div className="shrink-0 p-2.5 pb-1">
-              <div className="relative">
+              {/* Чем выбираем платёж. Переключатель, а не общий поиск: «заплатить по статье»
+                  и «заплатить контрагенту» — разные вопросы, и во втором статью не выбирают. */}
+              <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+                {(
+                  [
+                    { key: "article", label: "По статье" },
+                    { key: "counterparty", label: "Контрагенту" },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-pressed={pickBy === option.key}
+                    onClick={() => {
+                      setPickBy(option.key);
+                      setSearch("");
+                    }}
+                    className={cn(
+                      "flex-1 rounded px-2 py-1 text-xs transition-colors",
+                      pickBy === option.key
+                        ? "border bg-background font-medium shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="relative mt-1.5">
                 <Search
                   className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
                   size={14}
@@ -621,29 +647,33 @@ export function NewPaymentDialog({
                 <Input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Статья, контрагент или операция…"
+                  placeholder={
+                    pickBy === "counterparty" ? "Название или ИНН…" : "Статья или операция…"
+                  }
                   className="h-8 pl-8 text-sm"
                 />
               </div>
-              <div className="mt-1.5 flex gap-1">
-                {LEDGERS.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    title={item.title}
-                    onClick={() => setLedger(item.key)}
-                    className={cn(
-                      "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                      ledger === item.key && !q
-                        ? "border-primary/40 bg-primary/10 font-medium text-primary"
-                        : "border-input text-muted-foreground hover:bg-muted",
-                      q && "opacity-50",
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+              {pickBy === "article" ? (
+                <div className="mt-1.5 flex gap-1">
+                  {LEDGERS.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      title={item.title}
+                      onClick={() => setLedger(item.key)}
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                        ledger === item.key && !q
+                          ? "border-primary/40 bg-primary/10 font-medium text-primary"
+                          : "border-input text-muted-foreground hover:bg-muted",
+                        q && "opacity-50",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
               {contextQuery.isLoading ? (
@@ -662,36 +692,30 @@ export function NewPaymentDialog({
                 </div>
               ) : nothingFound ? (
                 <div className="px-2 py-4 text-sm text-muted-foreground">Ничего не найдено</div>
+              ) : pickBy === "counterparty" ? (
+                <PaletteGroup title="Кому платим">
+                  {matchedCounterparties.map((counterparty) => (
+                    <PaletteItem
+                      key={counterparty.counterparty_id}
+                      icon={Building2}
+                      label={counterparty.name}
+                      title={
+                        counterparty.default_dds_article_id
+                          ? `${counterparty.name} — статья подставится из карточки`
+                          : `${counterparty.name} — статью нужно будет выбрать`
+                      }
+                      active={
+                        mode === "expense" &&
+                        expenseRows.some(
+                          (row) => row.counterpartyId === counterparty.counterparty_id,
+                        )
+                      }
+                      onClick={() => selectCounterparty(counterparty)}
+                    />
+                  ))}
+                </PaletteGroup>
               ) : (
                 <>
-                  {visibleCounterparties.length > 0 ? (
-                    <PaletteGroup title="Контрагенты">
-                      {visibleCounterparties.map((counterparty) => (
-                        <PaletteItem
-                          key={counterparty.counterparty_id}
-                          icon={Building2}
-                          label={counterparty.name}
-                          title={
-                            counterparty.default_dds_article_id
-                              ? `${counterparty.name} — статья подставится из карточки`
-                              : `${counterparty.name} — статью нужно будет выбрать`
-                          }
-                          active={
-                            mode === "expense" &&
-                            expenseRows.some(
-                              (row) => row.counterpartyId === counterparty.counterparty_id,
-                            )
-                          }
-                          onClick={() => selectCounterparty(counterparty)}
-                        />
-                      ))}
-                      {hiddenCounterpartyCount > 0 ? (
-                        <div className="px-2.5 py-1 text-xs text-muted-foreground">
-                          ещё {hiddenCounterpartyCount} — уточните поиск
-                        </div>
-                      ) : null}
-                    </PaletteGroup>
-                  ) : null}
                   {expenseGroupVisible ? (
                     <PaletteGroup title="Расходы">
                       {visibleExpense.map((article) => (
@@ -792,9 +816,9 @@ export function NewPaymentDialog({
                   <MousePointerClick className="text-muted-foreground" size={22} />
                 </div>
                 <div className="max-w-64 text-sm text-muted-foreground">
-                  Выберите операцию слева: расходную статью, выплату сотруднику или перевод. Либо
-                  начните с получателя — найдите контрагента по названию или ИНН, статья подставится
-                  из его карточки.
+                  {pickBy === "counterparty"
+                    ? "Выберите получателя слева — статья подставится из его карточки."
+                    : "Выберите операцию слева: расходную статью, выплату сотруднику или перевод. Либо переключитесь на «Контрагенту» и платите получателю напрямую."}
                 </div>
               </div>
             ) : null}
@@ -1216,9 +1240,8 @@ function ExpenseForm({
   const queryClient = useQueryClient();
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
-  // Строки, где период раскрыт вручную: у контрагентов без галки «период обязателен» блок
-  // прячется за ссылкой — иначе форма разрастается там, где период не нужен.
-  const [periodRowKeys, setPeriodRowKeys] = useState<ReadonlySet<string>>(new Set());
+  // Какая строка сейчас правит период услуги (ключ строки, а не индекс — строки удаляют).
+  const [periodRowKey, setPeriodRowKey] = useState<string | null>(null);
   const [officialViaSafeConsent, setOfficialViaSafeConsent] = useState<string | null>(null);
   const recipientSignature = rows
     .map((row) => `${row.key}:${row.articleId}:${row.counterpartyId}`)
@@ -1290,6 +1313,25 @@ function ExpenseForm({
   const [assetRowKey, setAssetRowKey] = useState<string | null>(null);
   const assetRow = assetRowKey ? (rows.find((item) => item.key === assetRowKey) ?? null) : null;
   const assetRowArticle = assetRow ? articleById.get(assetRow.articleId) : undefined;
+  const periodRow = periodRowKey ? (rows.find((item) => item.key === periodRowKey) ?? null) : null;
+  const periodCounterparty = periodRow ? counterpartyById.get(periodRow.counterpartyId) : undefined;
+
+  /** Подпись строки-ссылки периода: что уже задано либо чего не хватает. */
+  const periodSummary = (row: ExpenseRow, counterparty: NewPaymentCounterparty): string => {
+    if (!row.servicePeriodStart || !row.servicePeriodEnd) {
+      return counterparty.service_period_required
+        ? "нужен период оказания услуги"
+        : "Период услуги — если платим за месяц вперёд или за несколько";
+    }
+    const months = Number(row.servicePeriodMonths || "1");
+    const perMonth =
+      months > 1 && amountOf(row.amount) > 0
+        ? ` · по ${formatRub(amountOf(row.amount) / months)} в месяц`
+        : "";
+    // Признание без первички называем прямо: расход попадёт в P&L, но не в налоговую базу.
+    const selfBilled = row.autoRecognizeMonthly ? " · признаём сами" : "";
+    return `Период: ${formatPeriod(row.servicePeriodStart, row.servicePeriodEnd)}${perMonth}${selfBilled}`;
+  };
 
   /** Подпись строки-ссылки: что уже выбрано либо чего не хватает. */
   const assetSummary = (row: ExpenseRow): string => {
@@ -1590,11 +1632,9 @@ function ExpenseForm({
             // Период — переменная платежа, а не свойство карточки: обязателен там, где карточка
             // этого требует, но указать его можно для любого получателя (оплата за квартал
             // вперёд бывает и у тех, у кого галки нет).
-            const periodOpen =
-              Boolean(selectedCounterparty) &&
-              (selectedCounterparty?.service_period_required ||
-                Boolean(row.servicePeriodStart) ||
-                periodRowKeys.has(row.key));
+            const periodMissing = Boolean(
+              selectedCounterparty?.service_period_required && !row.servicePeriodStart,
+            );
             return (
               <div className="space-y-1.5 rounded-md border p-2.5" key={row.key}>
                 <div className="grid grid-cols-[minmax(0,1fr)_130px_auto] items-center gap-2">
@@ -1690,91 +1730,20 @@ function ExpenseForm({
                     onChange={(patch) => onUpdateRow(row.key, patch)}
                   />
                 ) : null}
-                {selectedCounterparty && !periodOpen ? (
+                {selectedCounterparty ? (
+                  // Строкой-ссылкой в отдельную модалку — тем же приёмом, что и объект ОС
+                  // (правило владельца: окно платежа и без того длинное, развёрнутые блоки
+                  // внутри строки в него не помещаются).
                   <button
-                    className="text-left text-xs text-muted-foreground underline-offset-2 hover:underline"
-                    onClick={() => setPeriodRowKeys((prev) => new Set(prev).add(row.key))}
+                    className={cn(
+                      "text-left text-xs underline-offset-2 hover:underline",
+                      periodMissing ? "font-medium text-amber-700" : "text-muted-foreground",
+                    )}
+                    onClick={() => setPeriodRowKey(row.key)}
                     type="button"
                   >
-                    Указать период услуги — если платим за месяц вперёд или за несколько
+                    {periodSummary(row, selectedCounterparty)}
                   </button>
-                ) : null}
-                {periodOpen ? (
-                  <div className="rounded-md bg-muted/40 p-2">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <Label className="text-xs font-medium">Период оказания услуги</Label>
-                      <span className="text-[11px] text-muted-foreground">
-                        {selectedCounterparty?.service_period_required
-                          ? "обязательное поле"
-                          : "необязательно"}
-                      </span>
-                    </div>
-                    {/* Месяцами, а не двумя датами: почти все такие контрагенты работают по
-                        абонентской плате помесячно, а «оплата за 3 месяца» руками — это две
-                        даты, в которых легко ошибиться на день. Даты по-прежнему уходят на
-                        бэкенд, их считает выбор «месяц + сколько месяцев». */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        aria-label="Месяц начала периода"
-                        className="h-8 text-sm"
-                        type="month"
-                        value={row.servicePeriodStart.slice(0, 7)}
-                        onChange={(event) =>
-                          onUpdateRow(
-                            row.key,
-                            monthsToPeriod(event.target.value, row.servicePeriodMonths),
-                          )
-                        }
-                      />
-                      <Select
-                        value={row.servicePeriodMonths}
-                        onValueChange={(value) =>
-                          onUpdateRow(
-                            row.key,
-                            monthsToPeriod(row.servicePeriodStart.slice(0, 7), value),
-                          )
-                        }
-                      >
-                        <SelectTrigger aria-label="Сколько месяцев" className="h-8 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {["1", "2", "3", "6", "12"].map((count) => (
-                            <SelectItem key={count} value={count}>
-                              {count === "1" ? "1 месяц" : `${count} мес.`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {row.servicePeriodStart && row.servicePeriodEnd ? (
-                      <div className="mt-1 text-[11px] text-muted-foreground">
-                        {formatPeriod(row.servicePeriodStart, row.servicePeriodEnd)}
-                        {Number(row.servicePeriodMonths) > 1 && row.amount
-                          ? ` · по ${formatRub(
-                              Number(row.amount) / Number(row.servicePeriodMonths),
-                            )} в месяц`
-                          : ""}
-                      </div>
-                    ) : null}
-                    <label className="mt-2 flex items-start gap-2 text-xs">
-                      <input
-                        checked={row.autoRecognizeMonthly}
-                        className="mt-0.5 h-3.5 w-3.5"
-                        type="checkbox"
-                        onChange={(event) =>
-                          onUpdateRow(row.key, { autoRecognizeMonthly: event.target.checked })
-                        }
-                      />
-                      <span>
-                        <span className="block font-medium">Закрывающих документов не будет</span>
-                        <span className="block text-muted-foreground">
-                          Расход признаём сами, помесячно. Если УПД всё-таки придёт — он заменит
-                          наше признание, расход не задвоится.
-                        </span>
-                      </span>
-                    </label>
-                  </div>
                 ) : null}
               </div>
             );
@@ -1863,7 +1832,141 @@ function ExpenseForm({
           </DialogContent>
         </Dialog>
       ) : null}
+
+      {periodRow && periodCounterparty ? (
+        <ServicePeriodDialog
+          amount={amountOf(periodRow.amount)}
+          counterparty={periodCounterparty}
+          onChange={(patch) => onUpdateRow(periodRow.key, patch)}
+          onClose={() => setPeriodRowKey(null)}
+          row={periodRow}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** Период оказания услуги — отдельным окном, а не блоком внутри строки платежа.
+ *
+ *  Спрашиваем месяцами, а не двумя датами: почти вся абонентка помесячная, а «оплата за
+ *  3 месяца» руками — это две даты, в которых легко ошибиться на день. Даты на бэкенд уходят
+ *  по-прежнему, их считает выбор «месяц + сколько месяцев».
+ */
+function ServicePeriodDialog({
+  amount,
+  counterparty,
+  onChange,
+  onClose,
+  row,
+}: {
+  amount: number;
+  counterparty: NewPaymentCounterparty;
+  onChange: (patch: Partial<ExpenseRow>) => void;
+  onClose: () => void;
+  row: ExpenseRow;
+}) {
+  const months = Number(row.servicePeriodMonths || "1");
+  const filled = Boolean(row.servicePeriodStart && row.servicePeriodEnd);
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Период оказания услуги</DialogTitle>
+          <DialogDescription>
+            {shortName(counterparty.name, 40)}
+            {amount > 0 ? ` · ${formatDdsMoney(amount)}` : ""}
+            {counterparty.service_period_required ? " · период обязателен" : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Начало</Label>
+              <Input
+                aria-label="Месяц начала периода"
+                className="h-9"
+                type="month"
+                value={row.servicePeriodStart.slice(0, 7)}
+                onChange={(event) =>
+                  onChange(monthsToPeriod(event.target.value, row.servicePeriodMonths))
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Сколько месяцев</Label>
+              <Select
+                value={row.servicePeriodMonths}
+                onValueChange={(value) =>
+                  onChange(monthsToPeriod(row.servicePeriodStart.slice(0, 7), value))
+                }
+              >
+                <SelectTrigger aria-label="Сколько месяцев" className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["1", "2", "3", "6", "12"].map((count) => (
+                    <SelectItem key={count} value={count}>
+                      {count === "1" ? "1 месяц" : `${count} мес.`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {filled ? (
+            <div className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+              {formatPeriod(row.servicePeriodStart, row.servicePeriodEnd)}
+              {months > 1 && amount > 0 ? ` · по ${formatRub(amount / months)} в месяц` : ""}
+            </div>
+          ) : null}
+
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              checked={row.autoRecognizeMonthly}
+              className="mt-1 h-4 w-4"
+              type="checkbox"
+              onChange={(event) => onChange({ autoRecognizeMonthly: event.target.checked })}
+            />
+            <span>
+              <span className="block font-medium">Закрывающих документов не будет</span>
+              <span className="block text-xs text-muted-foreground">
+                Расход признаём сами, помесячно. Если УПД всё-таки придёт — он заменит наше
+                признание, расход не задвоится.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          {/* Очистка нужна там, где период необязателен: иначе случайно выбранный месяц
+              уехал бы в платёж, и признание разложило бы расход не туда. */}
+          {filled && !counterparty.service_period_required ? (
+            <Button
+              onClick={() => {
+                onChange({
+                  servicePeriodStart: "",
+                  servicePeriodEnd: "",
+                  servicePeriodMonths: "1",
+                  autoRecognizeMonthly: false,
+                });
+                onClose();
+              }}
+              type="button"
+              variant="ghost"
+            >
+              Убрать период
+            </Button>
+          ) : (
+            <span />
+          )}
+          <Button onClick={onClose} type="button">
+            Готово
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

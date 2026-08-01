@@ -7,12 +7,14 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // у остальных поле «Кому платим» не показывалось вовсе, и платёж уходил без атрибуции — а значит
 // мимо сверки расчётов и мимо контроля закрывающих документов.
 //
-// Проверяем три вещи, которых не видит ни один тест сервиса:
-//   1. контрагент находится поиском в палитре и открывает форму расхода;
+// Проверяем четыре вещи, которых не видит ни один тест сервиса:
+//   1. переключатель «По статье / Контрагенту» — два способа завести один и тот же платёж;
 //   2. статья подставляется из карточки, а если её там нет — окно прямо просит выбрать и не
 //      даёт отправить;
 //   3. свойства получателя (реквизиты) считаются по СПРАВОЧНИКУ, а не по списку статьи —
-//      иначе свободно выбранный официальный контрагент уехал бы мимо реквизитного маршрута.
+//      иначе свободно выбранный официальный контрагент уехал бы мимо реквизитного маршрута;
+//   4. период услуги задаётся отдельным окном (правило владельца: развёрнутым блокам внутри
+//      строки в окне платежа не место) и возвращается в строку подписью.
 
 const SEO_ARTICLE_ID = "11111111-1111-1111-1111-111111111111";
 const FD_ARTICLE_ID = "22222222-2222-2222-2222-222222222222";
@@ -117,13 +119,20 @@ async function openDialog(page: Page) {
   return dialog;
 }
 
-test("контрагент из поиска открывает расход и приносит статью из карточки", async ({ page }) => {
+test("режим «Контрагенту» платит получателю, статья приходит из карточки", async ({ page }) => {
   const dialog = await openDialog(page);
 
-  // Контрагенты в палитре — только по запросу: их сотни, списком рядом со статьями не встанут.
-  await expect(dialog.getByText("КОНТРАГЕНТЫ")).toBeHidden();
-  await dialog.getByPlaceholder("Статья, контрагент или операция…").fill("МИКРОЭЛ");
-  await expect(dialog.getByText("КОНТРАГЕНТЫ")).toBeVisible();
+  // По умолчанию окно спрашивает статью — контрагентов в палитре нет.
+  await expect(dialog.getByText("Кому платим", { exact: true })).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "SEO-оптимизация" })).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Контрагенту", exact: true }).click();
+
+  // Переключились на получателей: статьи ушли, леджер-чипы (они про статьи) тоже.
+  await expect(dialog.getByRole("button", { name: "SEO-оптимизация" })).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Опер.", exact: true })).toBeHidden();
+  await expect(dialog.getByRole("button", { name: /МИКРОЭЛ/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Наумченко/ })).toBeVisible();
 
   await dialog
     .getByRole("button", { name: /МИКРОЭЛ/ })
@@ -133,15 +142,12 @@ test("контрагент из поиска открывает расход и 
   // Строка расхода собралась целиком: статья из карточки + получатель.
   await expect(dialog.getByRole("button", { name: "Услуги ФД и НК" })).toBeVisible();
   await expect(dialog.getByLabel("Кому платим")).toContainText("МИКРОЭЛ");
-
-  // service_period_required — период сразу раскрыт и обязателен.
-  await expect(dialog.getByText("обязательное поле")).toBeVisible();
-  await expect(dialog.getByText("Закрывающих документов не будет")).toBeVisible();
 });
 
 test("получатель без статьи в карточке блокирует отправку до выбора статьи", async ({ page }) => {
   const dialog = await openDialog(page);
-  await dialog.getByPlaceholder("Статья, контрагент или операция…").fill("Наумченко");
+  await dialog.getByRole("button", { name: "Контрагенту", exact: true }).click();
+  await dialog.getByPlaceholder("Название или ИНН…").fill("Наумченко");
   await dialog
     .getByRole("button", { name: /Наумченко/ })
     .first()
@@ -178,5 +184,36 @@ test("свободно выбранный получатель ведёт пла
   await expect(dialog.getByRole("button", { name: "Отправить в банк" })).toBeDisabled();
 
   // Период доступен и здесь — он свойство платежа, а не карточки.
-  await expect(dialog.getByRole("button", { name: /Указать период услуги/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Период услуги/ })).toBeVisible();
+});
+
+test("период задаётся отдельным окном и возвращается подписью в строку", async ({ page }) => {
+  const dialog = await openDialog(page);
+  await dialog.getByRole("button", { name: "Контрагенту", exact: true }).click();
+  await dialog
+    .getByRole("button", { name: /МИКРОЭЛ/ })
+    .first()
+    .click();
+  await dialog.getByLabel("Сумма").fill("9000");
+
+  // Внутри строки период не разворачивается — только ссылка, как у выбора объекта ОС.
+  await expect(dialog.getByLabel("Сколько месяцев")).toBeHidden();
+  await dialog.getByRole("button", { name: /нужен период оказания услуги/ }).click();
+
+  const period = page.getByRole("dialog").filter({ hasText: "Период оказания услуги" });
+  await expect(period).toBeVisible();
+  await expect(period.getByText(/период обязателен/)).toBeVisible();
+
+  await period.getByLabel("Месяц начала периода").fill("2026-04");
+  await period.getByLabel("Сколько месяцев").click();
+  await page.getByRole("option", { name: "3 мес." }).click();
+  // Разбивка считается сразу — по ней видно, что признание разложит расход помесячно.
+  await expect(period.getByText(/по 3\s?000,00\s?₽ в месяц/)).toBeVisible();
+  await period.getByRole("checkbox").check();
+  await period.getByRole("button", { name: "Готово" }).click();
+
+  await expect(period).toBeHidden();
+  await expect(
+    dialog.getByRole("button", { name: /Период: .* · по 3\s?000,00\s?₽ в месяц · признаём сами/ }),
+  ).toBeVisible();
 });
