@@ -70,6 +70,8 @@ export type RegistryItem = {
   unpaid_remaining: number;
   receivable_remaining: number;
   prepayment_balance: number;
+  // 'goods' | 'service' — контур «товар/услуга» (явный выбор или факт складских накладных).
+  contour: string;
 };
 
 export type CollectionSource = {

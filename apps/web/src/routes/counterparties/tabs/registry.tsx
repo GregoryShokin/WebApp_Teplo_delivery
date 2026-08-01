@@ -19,7 +19,6 @@ import { DataTable, type DataTableColumn } from "@/components/ui-app/DataTable";
 import { apiErrorMessage } from "@/lib/api";
 
 import {
-  getLedgerCategories,
   getNeedsSetup,
   getRegistry,
   setKassaEnabled,
@@ -39,23 +38,18 @@ export function RegistryTab({
   canAdmin: boolean;
   onOpenCounterparty: (id: string) => void;
 }) {
-  const [categoryId, setCategoryId] = useState<string>(ALL);
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
   const needsSetupQuery = useQuery({ queryKey: ["cp", "needs-setup"], queryFn: getNeedsSetup });
   const registryQuery = useQuery({
     // «full» в ключе: RoutingSection карточки грузит этот же реестр БЕЗ не-поставщиков —
     // без различия в ключе они бы делили кэш с разными данными.
-    queryKey: ["cp", "registry", "full", categoryId],
+    queryKey: ["cp", "registry", "full"],
     // Страница реестра — единственный UI управления ВСЕМИ карточками, включая
     // банк/налоговую (пикеры накладных и платежей получают только поставщиков).
-    queryFn: () =>
-      getRegistry({
-        category_id: categoryId === ALL ? undefined : categoryId,
-        include_non_suppliers: true,
-      }),
+    queryFn: () => getRegistry({ include_non_suppliers: true }),
   });
 
   const queryClient = useQueryClient();
@@ -73,8 +67,15 @@ export function RegistryTab({
   // Одно поле на два поиска: цифры — ИНН, буквы — название (правило владельца). Фильтруем на
   // клиенте: реестр уже загружен целиком, и буква за буквой сужать список быстрее, чем гонять
   // запросы. У неофициалов ищем и по внутреннему имени — в таблице видно именно его.
+  // Тип — три корзины по смыслу денег: бартер (долг в товаре), товарные (гасятся складом),
+  // услуги (все остальные). Складывается с поиском.
   const filteredRows = useMemo(() => {
-    const rows = registryQuery.data ?? [];
+    let rows = registryQuery.data ?? [];
+    if (typeFilter === "barter") rows = rows.filter((item) => item.relationship === "barter");
+    else if (typeFilter !== ALL)
+      rows = rows.filter(
+        (item) => item.relationship !== "barter" && item.contour === typeFilter,
+      );
     const query = search.trim().toLowerCase();
     if (!query) return rows;
     const digits = query.replace(/\s/g, "");
@@ -86,7 +87,7 @@ export function RegistryTab({
         item.name.toLowerCase().includes(query) ||
         (item.internal_name ?? "").toLowerCase().includes(query),
     );
-  }, [registryQuery.data, search]);
+  }, [registryQuery.data, search, typeFilter]);
 
   const columns: Array<DataTableColumn<RegistryItem>> = [
     {
@@ -222,18 +223,16 @@ export function RegistryTab({
           />
         </div>
         <div className="grid w-full max-w-xs gap-2">
-          <Label>Категория (леджер)</Label>
-          <Select value={categoryId} onValueChange={setCategoryId}>
+          <Label>Тип</Label>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>Все категории</SelectItem>
-              {(categoriesQuery.data ?? []).map((category) => (
-                <SelectItem key={category.id} value={category.id}>
-                  {category.name}
-                </SelectItem>
-              ))}
+              <SelectItem value={ALL}>Все</SelectItem>
+              <SelectItem value="goods">Товарные</SelectItem>
+              <SelectItem value="service">Услуги</SelectItem>
+              <SelectItem value="barter">Бартер</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -188,6 +188,9 @@ class RegistryItem:
     # Дебиторка предоплат: мы заплатили вперёд, поставщик должен. Σ открытых supplier_prepayment
     # (amount − amount_settled). Держим ОТДЕЛЬНО от барт-receivable_remaining.
     prepayment_balance: Decimal = Decimal("0.00")
+    # Контур «товар/услуга», по которому контрагент живёт СЕЙЧАС: явный выбор в карточке или
+    # факт складских накладных. Кормит фильтр по типу в реестре.
+    contour: str = "service"
 
 
 @dataclass
@@ -465,6 +468,21 @@ async def list_registry(
         query = query.where(CounterpartyPayableProfile.kassa_enabled.is_(True))
     rows = list(await session.execute(query))
 
+    # Товарный контур по факту складских накладных — для строк без явного выбора в карточке.
+    # Одним запросом на весь список: реестр открывается часто, по-контрагентный подсчёт
+    # превратил бы его в N+1.
+    warehouse_ids = {
+        cp_id
+        for (cp_id,) in await session.execute(
+            select(SupplierInvoice.counterparty_id)
+            .where(
+                SupplierInvoice.operational_scope == "warehouse",
+                SupplierInvoice.payment_status != "void",
+            )
+            .distinct()
+        )
+    }
+
     # Контрагенты, сматченные с iiko (есть alias source='iiko') — нужно для оплаты накладной.
     have_guid = {
         cp_id
@@ -548,6 +566,11 @@ async def list_registry(
                 unpaid_remaining=payable_remaining,
                 receivable_remaining=receivable_remaining,
                 prepayment_balance=prepay_by_cp.get(counterparty.id, Decimal("0.00")),
+                contour=(
+                    profile.settlement_contour
+                    if profile and profile.settlement_contour in ("goods", "service")
+                    else ("goods" if counterparty.id in warehouse_ids else "service")
+                ),
             )
         )
     items.sort(key=lambda item: item.name.lower())

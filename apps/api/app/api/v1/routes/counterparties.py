@@ -198,6 +198,8 @@ class RegistryRead(BaseModel):
     unpaid_remaining: float
     receivable_remaining: float
     prepayment_balance: float
+    # 'goods' | 'service' — фильтр по типу в реестре.
+    contour: str
 
 
 class CardRead(BaseModel):
