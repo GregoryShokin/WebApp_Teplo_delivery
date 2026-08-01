@@ -143,6 +143,14 @@ async def _real_closing_exists(
             SupplierInvoice.doc_kind == "closing",
             SupplierInvoice.payment_status != "void",
             SupplierInvoice.source != SELF_BILLED_SOURCE,
+            # Сверяем статью: у контрагента бывает несколько услуг (у Манго за 30.06 сразу два
+            # акта — 6 108,69 и 5 250,00), и документ по одной не должен глушить признание по
+            # другой. Документ без статьи считаем относящимся к любой — иначе он не закроет
+            # ничего. Тот же фильтр стоит в начислении по договору.
+            or_(
+                SupplierInvoice.dds_article_id.is_(None),
+                SupplierInvoice.dds_article_id == prepayment.article_id,
+            ),
             covers_month(
                 SupplierInvoice.service_period_start,
                 SupplierInvoice.service_period_end,

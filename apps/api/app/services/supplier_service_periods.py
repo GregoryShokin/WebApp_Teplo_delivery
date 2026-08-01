@@ -98,11 +98,20 @@ async def sync_expense_line_accrual(
     session: AsyncSession,
     line: ExpenseDraftLine,
 ) -> SupplierExpenseAccrual | None:
-    """Создать начисление по строке ручного платежа, если у неё указан получатель и период."""
+    """Создать начисление по строке ручного платежа, если у неё указан получатель и период.
+
+    ``auto_recognize_monthly`` — исключение, и оно закрывает двойной счёт. Расход по такому
+    платежу признаётся помесячно самоактами из его дебиторки (``subscription_accruals``), а
+    строка признала бы его ещё раз, целиком и последним месяцем периода: платёж 9 000 ₽ за
+    апрель-июнь давал 9 000 со строки ПЛЮС три самоакта по 3 000 — 18 000 ₽ расхода в реестре
+    признания, где дедупликации нет. Деньги при этом сходились, врала только прибыль, поэтому
+    заметить это можно было лишь глазами.
+    """
     if (
         line.counterparty_id is None
         or line.service_period_start is None
         or line.service_period_end is None
+        or line.auto_recognize_monthly
     ):
         return None
     start, end = validate_period(line.service_period_start, line.service_period_end)

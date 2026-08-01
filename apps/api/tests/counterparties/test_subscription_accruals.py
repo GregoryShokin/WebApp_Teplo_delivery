@@ -17,11 +17,16 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from cp_helpers import make_counterparty, make_invoice, make_wallet
+from cp_helpers import make_counterparty, make_draft, make_invoice, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import InvoicePaymentAllocation, SupplierExpenseAccrual, SupplierPrepayment
+from app.models import (
+    DdsArticle,
+    InvoicePaymentAllocation,
+    SupplierExpenseAccrual,
+    SupplierPrepayment,
+)
 from app.services import supplier_prepayments
 from app.services.subscription_accruals import (
     accrue_due_months,
@@ -536,3 +541,92 @@ async def test_settlement_prefers_prepayment_of_the_same_period(
         await session.refresh(second_quarter)
         assert july.amount_settled == Decimal("3000.00")
         assert second_quarter.amount_settled == Decimal("0.00")
+
+
+async def test_monthly_recognition_does_not_double_the_expense_line(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Строка платежа и помесячное признание не складываются в двойной расход.
+
+    Платёж 9 000 ₽ за апрель-июнь, заведённый через окно «Новый платёж» с галкой
+    «Закрывающих документов не будет», давал 9 000 признания СО СТРОКИ (одним куском, месяцем
+    окончания периода) плюс три самоакта по 3 000 — в реестре признания 18 000 ₽ вместо 9 000.
+    Деньги и дебиторка при этом сходились, врала только прибыль.
+    """
+    from app.models import ExpenseDraftLine
+    from app.services import supplier_service_periods as periods_service
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Двойной расход", inn="614307902099")
+        article = await session.scalar(
+            select(DdsArticle).where(DdsArticle.movement_type == "outflow").limit(1)
+        )
+        draft = await make_draft(session, counterparty_id=cp.id, amount="9000.00")
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount=Decimal("9000.00"),
+            purpose="Услуги ФД и НК за 2 квартал",
+            service_period_start=date(2026, 4, 1),
+            service_period_end=date(2026, 6, 30),
+            service_period_months=3,
+            auto_recognize_monthly=True,
+        )
+        session.add(line)
+        await session.flush()
+
+        accrual = await periods_service.sync_expense_line_accrual(session, line)
+        await session.commit()
+
+        # Строка помесячного платежа своего признания не заводит — расход признают самоакты.
+        assert accrual is None
+        rows = await session.scalars(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.counterparty_id == cp.id)
+        )
+        assert rows.all() == []
+
+
+async def test_other_service_document_does_not_block_recognition(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ по ДРУГОЙ услуге не глушит признание за месяц.
+
+    У Манго за 30.06 два акта — 6 108,69 и 5 250,00: контрагент с несколькими услугами.
+    Без сверки статьи первый же чужой документ отменял признание по всем остальным.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Две услуги", inn="614307902100")
+        wallet = await make_wallet(session, code="tbank-sub-11", name="Т-Банк")
+        articles = (
+            await session.scalars(
+                select(DdsArticle).where(DdsArticle.movement_type == "outflow").limit(2)
+            )
+        ).all()
+        assert len(articles) == 2, "в сидах нужно минимум две расходные статьи"
+
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="5000.00",
+            start=date(2026, 6, 1),
+            months=1,
+        )
+        prepayment.article_id = articles[0].id
+        # Настоящий документ за тот же месяц, но по ДРУГОЙ услуге.
+        alien = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="6108.69",
+            number="МРД#606000577",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+        )
+        alien.dds_article_id = articles[1].id
+        await session.commit()
+
+        created = await accrue_due_months(session, as_of=date(2026, 7, 1))
+        await session.commit()
+        assert len(created) == 1
+        assert created[0].amount == Decimal("5000.00")
