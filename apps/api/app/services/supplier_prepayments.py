@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -401,9 +402,7 @@ async def release_closing_prepayment_excess(
     return released
 
 
-async def _bill_paid_already_receivable(
-    session: AsyncSession, invoice: SupplierInvoice
-) -> Decimal:
+async def _bill_paid_already_receivable(session: AsyncSession, invoice: SupplierInvoice) -> Decimal:
     """Часть оплаты счёта, деньги которой УЖЕ числятся дебиторкой от правила 1.
 
     Штатный порядок банк-фида — classify-then-match: сначала классификатор безусловно проводит
@@ -941,9 +940,7 @@ async def ensure_prepayment_from_bank_transaction(
     # счёта оператором пересборка правила 1 сносить не вправе). Дальше распределение считается
     # от «бюджета платежа»: сколько денег проводки ещё НЕ занято выжившими аллокациями
     # (оплаты счетов + bank-аллокации закрывающих через мост операции).
-    if not await _unwind_transaction_kz_settlements(
-        session, transaction.id, include_bills=False
-    ):
+    if not await _unwind_transaction_kz_settlements(session, transaction.id, include_bills=False):
         # Замороженный зачёт (накладная в банк-черновике): историю не трогаем, синхронизируем
         # только поля нетронутой предоплаты той же арифметикой бюджета (занятое — вычитается,
         # счета без своей prepaid_bill-записи — остаются на правиле 1).
@@ -967,9 +964,7 @@ async def ensure_prepayment_from_bank_transaction(
     # bank-аллокации закрывающих, если операцию сверили напрямую). Иначе один платёж гасил бы
     # документов больше, чем он есть (перерасход).
     consumed = await payment_allocated_amount(session, transaction_id=transaction.id)
-    settled = await _settle_open_kz_from_transaction(
-        session, transaction, limit=amount - consumed
-    )
+    settled = await _settle_open_kz_from_transaction(session, transaction, limit=amount - consumed)
     # Дебиторка правила 1 = незанятый остаток ПЛЮС оплаты счетов, чью ДЗ несёт правило 1
     # (счета без своей prepaid_bill-записи): оплата счёта — тоже предоплата по канону.
     carried = await _transaction_carried_bill_allocations(session, transaction)
@@ -1314,6 +1309,35 @@ async def settle_invoice_from_prepayment(
     return invoice
 
 
+def _prefer_matching_period(
+    prepayments: Sequence[SupplierPrepayment], invoice: SupplierInvoice
+) -> list[SupplierPrepayment]:
+    """Порядок зачёта: сначала предоплаты ЗА ТОТ ЖЕ период, что и документ, потом остальные.
+
+    Суммы это не меняет — меняет, ЧЬЮ дебиторку закроет документ. Без этого акт за июль гасит
+    самый старый открытый платёж, даже если тот был за 2 квартал: деньги за апрель-июнь
+    оказываются закрыты июльской бумагой, а помесячное признание за апрель потом не находит,
+    что гасить, и заводит расход повторно.
+
+    Порядок, а не жёсткий фильтр: если совпадающих по периоду не хватило, документ по-прежнему
+    гасится любой открытой предоплатой — иначе зачёт просто перестал бы работать там, где
+    периодов нет (на проде это почти все платежи).
+    """
+    if invoice.service_period_start is None or invoice.service_period_end is None:
+        return list(prepayments)
+
+    def overlaps(prepayment: SupplierPrepayment) -> bool:
+        start = prepayment.service_period_start
+        end = prepayment.service_period_end
+        if start is None or end is None:
+            return False
+        return start <= invoice.service_period_end and end >= invoice.service_period_start
+
+    matching = [item for item in prepayments if overlaps(item)]
+    rest = [item for item in prepayments if not overlaps(item)]
+    return matching + rest
+
+
 async def auto_settle_invoice_from_open_prepayments(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -1348,7 +1372,7 @@ async def auto_settle_invoice_from_open_prepayments(
             .order_by(SupplierPrepayment.created_at)
         )
     ).all()
-    for prepayment in prepayments:
+    for prepayment in _prefer_matching_period(prepayments, invoice):
         inv_remaining = await _invoice_remaining(session, invoice)
         if inv_remaining <= 0:
             break

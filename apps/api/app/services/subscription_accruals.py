@@ -33,8 +33,9 @@ import calendar
 import uuid
 from datetime import date
 from decimal import ROUND_DOWN, Decimal
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import InvoicePaymentAllocation, SupplierInvoice, SupplierPrepayment
@@ -63,6 +64,16 @@ def self_billed_external_id(prepayment_id: uuid.UUID, month: date) -> str:
     return f"self:{prepayment_id}:{month:%Y-%m}"
 
 
+def superseded_external_id(external_id: str | None, winner_id: uuid.UUID) -> str:
+    """Ключ аннулированного самоакта: освобождает исходный под новое признание.
+
+    Уникум ``source + external_id`` один на все самоакты, поэтому пока ключ занят void-строкой,
+    месяц нельзя признать заново — а он снова становится непризнанным, если настоящий документ
+    убрали. Хвост с id победившего документа заодно показывает в базе, чем именно замещали.
+    """
+    return f"{external_id or 'self'}:superseded:{winner_id}"
+
+
 def monthly_shares(amount: Decimal, months: int) -> list[Decimal]:
     """Разбить сумму на ``months`` долей; остаток от округления забирает последняя.
 
@@ -88,6 +99,35 @@ def covered_months(prepayment: SupplierPrepayment) -> list[date]:
     return [add_months(first, index) for index in range(count)]
 
 
+def covers_month(
+    period_start: date | None, period_end: date | None, invoice_date: date | None, month: date
+) -> Any:
+    """Условие «документ относится к этому месяцу» — с откатом на дату документа.
+
+    Период услуги проставлен далеко не у всех: на проде 01.08.2026 он был у 4 закрывающих
+    документов из 221. Сравнивать только периоды — значит для остальных 217 не увидеть
+    первичку вовсе: самоакт встал бы поверх настоящего УПД, и расход задвоился бы молча.
+
+    Поэтому у документа без периода за период считаем месяц его даты: закрывающие выставляют
+    концом месяца, за который они выданы. Это слабее явного периода, но неизмеримо лучше,
+    чем ничего.
+    """
+    first, last = month_bounds(month)
+    with_period = and_(
+        period_start.isnot(None),
+        period_end.isnot(None),
+        period_start <= last,
+        period_end >= first,
+    )
+    by_date = and_(
+        or_(period_start.is_(None), period_end.is_(None)),
+        invoice_date.isnot(None),
+        invoice_date >= first,
+        invoice_date <= last,
+    )
+    return or_(with_period, by_date)
+
+
 async def _real_closing_exists(
     session: AsyncSession, prepayment: SupplierPrepayment, month: date
 ) -> bool:
@@ -96,7 +136,6 @@ async def _real_closing_exists(
     Если есть — самоакт не нужен: расход подтверждён первичкой, и второй документ на тот же
     период удвоил бы и расход, и гашение дебиторки.
     """
-    first, last = month_bounds(month)
     found = await session.scalar(
         select(SupplierInvoice.id).where(
             SupplierInvoice.counterparty_id == prepayment.counterparty_id,
@@ -104,8 +143,12 @@ async def _real_closing_exists(
             SupplierInvoice.doc_kind == "closing",
             SupplierInvoice.payment_status != "void",
             SupplierInvoice.source != SELF_BILLED_SOURCE,
-            SupplierInvoice.service_period_start <= last,
-            SupplierInvoice.service_period_end >= first,
+            covers_month(
+                SupplierInvoice.service_period_start,
+                SupplierInvoice.service_period_end,
+                SupplierInvoice.invoice_date,
+                month,
+            ),
         )
     )
     return found is not None
@@ -245,7 +288,21 @@ async def supersede_self_billed(
     """
     if invoice.source == SELF_BILLED_SOURCE or invoice.doc_kind != "closing":
         return []
-    if invoice.service_period_start is None or invoice.service_period_end is None:
+    # Период у пришедшего документа есть далеко не всегда (на проде — у 4 из 221). Без отката
+    # на дату документа настоящий УПД не снимал бы наше признание, и месяц оказался бы закрыт
+    # дважды — ровно то, ради чего эта функция и написана.
+    if invoice.service_period_start is not None and invoice.service_period_end is not None:
+        overlap = and_(
+            SupplierInvoice.service_period_start <= invoice.service_period_end,
+            SupplierInvoice.service_period_end >= invoice.service_period_start,
+        )
+    elif invoice.invoice_date is not None:
+        first, last = month_bounds(invoice.invoice_date)
+        overlap = and_(
+            SupplierInvoice.service_period_start <= last,
+            SupplierInvoice.service_period_end >= first,
+        )
+    else:
         return []
 
     victims = list(
@@ -255,8 +312,7 @@ async def supersede_self_billed(
                     SupplierInvoice.counterparty_id == invoice.counterparty_id,
                     SupplierInvoice.source == SELF_BILLED_SOURCE,
                     SupplierInvoice.payment_status != "void",
-                    SupplierInvoice.service_period_start <= invoice.service_period_end,
-                    SupplierInvoice.service_period_end >= invoice.service_period_start,
+                    overlap,
                 )
             )
         ).all()
@@ -286,6 +342,10 @@ async def supersede_self_billed(
                     )
             await session.delete(allocation)
         victim.payment_status = "void"
+        # Освобождаем ключ идемпотентности: он уникален (uq_supplier_invoice_source_external),
+        # и пока его держит аннулированный документ, месяц не признать заново НИКОГДА. Это не
+        # теория: убрали ошибочный УПД — и месяц молча остался бы без расхода вовсе.
+        victim.external_id = superseded_external_id(victim.external_id, invoice.id)
         await periods.cancel_invoice_accrual(session, victim.id)
     await session.flush()
     return victims

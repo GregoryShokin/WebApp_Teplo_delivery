@@ -353,3 +353,186 @@ def test_covered_months_spans_the_whole_period() -> None:
         auto_recognize_monthly=True,
     )
     assert covered_months(prepayment) == [date(2026, 11, 1), date(2026, 12, 1), date(2027, 1, 1)]
+
+
+async def test_real_document_without_period_still_blocks_self_billing(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Настоящий документ БЕЗ периода услуги всё равно закрывает свой месяц.
+
+    Гард сравнивал только периоды услуги, а на проде 01.08.2026 период стоял у 4 закрывающих
+    документов из 221. Значит для остальных 217 самоакт встал бы поверх настоящего УПД, и
+    расход попал бы в P&L дважды. Период документа без периода берём по его дате.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонент-без-периода", inn="614307902090")
+        wallet = await make_wallet(session, code="tbank-sub-7", name="Т-Банк")
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="3000.00",
+            start=date(2026, 6, 1),
+            months=1,
+        )
+        real = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="УПД-606",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+        )
+        assert real.service_period_start is None
+        await session.commit()
+
+        assert await accrue_due_months(session, as_of=date(2026, 7, 1)) == []
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("0.00")
+
+
+async def test_document_without_period_supersedes_self_billed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Опоздавший УПД без периода снимает наше признание за месяц своей даты.
+
+    Обратная сторона того же: пока замещение требовало период у пришедшего документа, оно не
+    срабатывало почти никогда — самоакт оставался жить рядом с настоящим УПД.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонент-поздний", inn="614307902091")
+        wallet = await make_wallet(session, code="tbank-sub-8", name="Т-Банк")
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="4200.00",
+            start=date(2026, 6, 1),
+            months=1,
+        )
+        await session.commit()
+
+        await accrue_due_months(session, as_of=date(2026, 7, 1))
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("4200.00")
+
+        late = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4200.00",
+            number="УПД-610",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+        )
+        await session.flush()
+
+        superseded = await supersede_self_billed(session, late)
+        await session.commit()
+
+        assert len(superseded) == 1
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("0.00")
+
+
+async def test_superseded_month_can_be_recognised_again(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аннулированный самоакт освобождает ключ месяца — иначе месяц пропал бы навсегда.
+
+    Ключ ``source + external_id`` уникален. Пока его держала void-строка, повторное признание
+    было невозможно: убрали ошибочный УПД — и месяц молча остался без расхода вовсе.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонент-повтор", inn="614307902092")
+        wallet = await make_wallet(session, code="tbank-sub-9", name="Т-Банк")
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="2500.00",
+            start=date(2026, 6, 1),
+            months=1,
+        )
+        await session.commit()
+
+        await accrue_due_months(session, as_of=date(2026, 7, 1))
+        real = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="2500.00",
+            number="УПД-620",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+        )
+        real.service_period_start = date(2026, 6, 1)
+        real.service_period_end = date(2026, 6, 30)
+        await session.flush()
+        superseded = await supersede_self_billed(session, real)
+        await session.commit()
+        assert superseded[0].external_id.endswith(str(real.id))
+
+        # УПД оказался ошибочным и снят с учёта — месяц должен признаться заново.
+        real.payment_status = "void"
+        real.service_period_start = None
+        real.service_period_end = None
+        real.invoice_date = date(2030, 1, 1)
+        await session.commit()
+
+        again = await accrue_due_months(session, as_of=date(2026, 7, 1))
+        assert len(again) == 1
+        await session.refresh(prepayment)
+        assert prepayment.amount_settled == Decimal("2500.00")
+
+
+async def test_settlement_prefers_prepayment_of_the_same_period(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ гасит дебиторку СВОЕГО периода, а не самую старую.
+
+    FIFO брал предоплаты по дате создания, не глядя на период: акт за июль закрывал платёж за
+    2 квартал, и признание за апрель потом не находило, что гасить, — расход заводился ещё раз.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонент-два-периода", inn="614307902093")
+        wallet = await make_wallet(session, code="tbank-sub-10", name="Т-Банк")
+        second_quarter = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="9000.00",
+            start=date(2026, 4, 1),
+            months=3,
+            auto=False,
+        )
+        july = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="3000.00",
+            start=date(2026, 7, 1),
+            months=1,
+            auto=False,
+        )
+        await session.commit()
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="АКТ-707",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
+        )
+        act.service_period_start = date(2026, 7, 1)
+        act.service_period_end = date(2026, 7, 31)
+        await session.flush()
+
+        settled = await supplier_prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        assert settled == Decimal("3000.00")
+        await session.refresh(july)
+        await session.refresh(second_quarter)
+        assert july.amount_settled == Decimal("3000.00")
+        assert second_quarter.amount_settled == Decimal("0.00")
