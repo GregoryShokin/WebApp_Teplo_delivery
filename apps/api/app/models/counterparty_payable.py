@@ -122,6 +122,16 @@ class CounterpartyPayableProfile(Base):
     bank_payments_create_prepayment: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # До какого числа месяца, следующего за периодом услуги, контрагент присылает закрывающий
+    # документ. Микроэль присылает 1-го, другие 5-го или 10-го — до этой даты отсутствие УПД
+    # не разрыв, а норма. NULL = ждём с 1-го числа (см. counterparty_settlement_ledger).
+    closing_doc_expected_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 'goods' | 'service' | None. У товарных закрывающие приходят накладными и гасятся складским
+    # контуром автоматически — в сводку разрывов они не идут. У сервисных гашение ручное, и
+    # именно там копится ложная дебиторка. None = определяем по факту (есть складские накладные
+    # → товарный); явное значение перебивает факт, потому что один контрагент может и возить
+    # товар, и оказывать услуги.
+    settlement_contour: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Supplier-side contact (manager) for questions about invoices/payments.
     manager_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     manager_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)

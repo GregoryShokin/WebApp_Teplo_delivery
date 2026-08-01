@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Loader2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,9 +35,11 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import { navigateTo } from "@/router";
+import { CounterpartyCard } from "@/routes/counterparties/CounterpartyCard";
+import { getSettlementGaps, type SettlementGap } from "@/routes/counterparties/api";
 
 type View = "open" | "all" | "needs_review" | "recognized";
-type Section = "balances" | "payments" | "documents" | "recognition";
+type Section = "balances" | "gaps" | "payments" | "documents" | "recognition";
 
 type AccountingItem = {
   id: string;
@@ -361,6 +368,9 @@ export function DzKzRoute() {
     queryFn: () => getAccounting("open"),
   });
   const balances = useQuery({ queryKey: ["accounting", "balances"], queryFn: getBalances });
+  // Разрывы: платежи, у которых срок закрывающего документа уже прошёл.
+  const gaps = useQuery({ queryKey: ["accounting", "gaps"], queryFn: () => getSettlementGaps() });
+  const [gapCardId, setGapCardId] = useState<string | null>(null);
   // Долг сотрудникам — провизорный прогон калькулятора ЗП, тяжёлый: грузим отдельно и кэшируем.
   const staff = useQuery({
     queryKey: ["accounting", "staff-payable"],
@@ -395,7 +405,11 @@ export function DzKzRoute() {
       ? undefined
       : (staffPayable ?? 0) + (courierPayable ?? 0);
   // Налоги — третий источник кредиторской: неоплаченные обязательства налогового контура.
-  const taxPayable = canSeeTaxes ? taxes.data?.payable_total : null;
+  // Number() здесь не для красоты: /taxes/debt отдаёт Decimal, то есть в JSON это СТРОКА
+  // ("57390.00"), а тип number во фронте — только обещание. Без приведения `+` склеивал
+  // строки, и главная плитка «Кредиторская задолженность» показывала «не число ₽» всякий
+  // раз, когда налоговый долг ненулевой.
+  const taxPayable = canSeeTaxes ? Number(taxes.data?.payable_total ?? 0) : null;
   const payableTotal =
     supplierPayable == null && peoplePayable == null && taxPayable == null
       ? undefined
@@ -416,11 +430,15 @@ export function DzKzRoute() {
       ? undefined
       : (staffReceivable ?? 0) + (courierReceivable ?? 0);
   // ДЗ бюджета — расчётная переплата на ЕНС (кошелёк налогового контура).
-  const taxReceivable = canSeeTaxes ? taxes.data?.wallet.balance : null;
+  // Тот же Decimal-в-строке, что и в payable_total: без Number() дебиторка склеивалась бы
+  // с остатком ЕНС-кошелька в текст.
+  const taxReceivable = canSeeTaxes ? Number(taxes.data?.wallet.balance ?? 0) : null;
   const receivableTotal =
     supplierReceivable == null && peopleReceivable == null && taxReceivable == null
       ? undefined
       : (supplierReceivable ?? 0) + (peopleReceivable ?? 0) + (taxReceivable ?? 0);
+
+  const openCounterpartyCard = (counterpartyId: string) => setGapCardId(counterpartyId);
 
   const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
@@ -490,6 +508,14 @@ export function DzKzRoute() {
       <Tabs value={section} onValueChange={(value) => setSection(value as Section)}>
         <TabsList>
           <TabsTrigger value="balances">Остатки</TabsTrigger>
+          <TabsTrigger value="gaps">
+            Разрывы
+            {(gaps.data?.total_amount ?? 0) > 0 ? (
+              <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 text-xs text-rose-800">
+                {money.format(gaps.data?.total_amount ?? 0)}
+              </span>
+            ) : null}
+          </TabsTrigger>
           <TabsTrigger value="payments">Платежи</TabsTrigger>
           <TabsTrigger value="documents">УПД и накладные</TabsTrigger>
           <TabsTrigger value="recognition">
@@ -511,11 +537,19 @@ export function DzKzRoute() {
           onOpenRegister={openRegister}
         />
       ) : null}
+      {section === "gaps" ? <GapsSection query={gaps} onOpenCard={openCounterpartyCard} /> : null}
       {section === "payments" || section === "documents" ? (
         <RegisterFiltersBar filters={filters} onChange={setFilters} />
       ) : null}
       {section === "payments" ? <PaymentsSection filters={filters} /> : null}
       {section === "documents" ? <DocumentsSection filters={filters} /> : null}
+      <CounterpartyCard
+        counterpartyId={gapCardId}
+        canOperate={permissions.hasPermission("counterparties.operate")}
+        canAdmin={permissions.hasPermission("counterparties.admin")}
+        onClose={() => setGapCardId(null)}
+        defaultTab="settlement"
+      />
       {section === "recognition" ? (
         <RecognitionSection
           canEdit={permissions.hasPermission("accounting.suppliers.edit")}
@@ -1081,6 +1115,101 @@ function SettledInvoicesChips({ refs }: { refs: SettledInvoiceRef[] }) {
           {ref.number ? `№ ${ref.number}` : "УПД"} · {moneyExact.format(ref.amount)}
         </Badge>
       ))}
+    </div>
+  );
+}
+
+/** Сводка разрывов: за что заплатили, но закрывающий документ так и не пришёл.
+ *
+ *  Экран, ради которого всё и делалось: 1-го числа он за десять секунд отвечает, у кого за
+ *  прошлый месяц нет УПД. Раньше это выяснялось случайно — по Микроэлю разрыв за май нашли
+ *  через два месяца, а всего таких денег набралось 311 969 ₽ на десяти контрагентах.
+ */
+function GapsSection({
+  query,
+  onOpenCard,
+}: {
+  query: UseQueryResult<{ items: SettlementGap[]; total_amount: number; as_of: string }>;
+  onOpenCard: (counterpartyId: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-muted-foreground">
+        Платежи, по которым срок закрывающего документа прошёл: строка — контрагент за период
+        услуги. Срок задаётся в карточке контрагента («закрывающий документ приходит до N-го
+        числа»); по умолчанию разрыв виден с 1-го числа следующего месяца. Товарные контрагенты
+        сюда не попадают — их накладные гасит склад.
+      </p>
+      <div className="overflow-hidden rounded-lg border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Контрагент</TableHead>
+              <TableHead>Период услуги</TableHead>
+              <TableHead className="text-right">Без документа</TableHead>
+              <TableHead>Ждали до</TableHead>
+              <TableHead className="text-right">Просрочка</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {query.isLoading ? (
+              <TableStatus colSpan={5} state="loading" />
+            ) : query.isError ? (
+              <TableStatus
+                colSpan={5}
+                state={apiErrorMessage(query.error, "Не удалось загрузить разрывы")}
+              />
+            ) : (query.data?.items.length ?? 0) === 0 ? (
+              <TableStatus colSpan={5} state="Разрывов нет: все платежи закрыты документами" />
+            ) : (
+              query.data?.items.map((row) => (
+                <TableRow
+                  key={`${row.counterparty_id}:${row.period_start}`}
+                  className="cursor-pointer"
+                  onClick={() => onOpenCard(row.counterparty_id)}
+                >
+                  <TableCell className="font-medium">
+                    {row.counterparty_name}
+                    {row.payments > 1 ? (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        платежей: {row.payments}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {fmtDate(row.period_start)} — {fmtDate(row.period_end)}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums text-rose-700">
+                    {moneyExact.format(row.amount)}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {fmtDate(row.expected_by)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge
+                      variant="outline"
+                      className={
+                        row.days_overdue > 30
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                      }
+                    >
+                      {row.days_overdue} дн
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      {query.data && query.data.items.length > 0 ? (
+        <p className="text-right text-xs text-muted-foreground">
+          Всего без документов: {moneyExact.format(query.data.total_amount)} ·{" "}
+          {query.data.items.length} строк · на {fmtDate(query.data.as_of)}. Клик по строке
+          открывает сверку с контрагентом.
+        </p>
+      ) : null}
     </div>
   );
 }

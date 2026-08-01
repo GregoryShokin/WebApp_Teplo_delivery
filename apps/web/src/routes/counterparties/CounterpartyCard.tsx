@@ -39,6 +39,7 @@ import { apiErrorMessage, getDdsArticles } from "@/lib/api";
 import { BarterSection } from "./BarterSection";
 import { LeasedLocationsSection } from "./LeasedLocationsSection";
 import { RequisitesHistoryButton } from "./RequisitesHistoryButton";
+import { SettlementLedgerSection } from "./SettlementLedgerSection";
 import {
   addCollectionSource,
   addRoutingRule,
@@ -85,11 +86,15 @@ export function CounterpartyCard({
   canOperate,
   canAdmin,
   onClose,
+  /** С какой вкладки открыть. Сводка разрывов ведёт сразу в «Сверку»: человек пришёл
+   *  разбираться с конкретным разрывом, а не читать реквизиты. */
+  defaultTab = "general",
 }: {
   counterpartyId: string | null;
   canOperate: boolean;
   canAdmin: boolean;
   onClose: () => void;
+  defaultTab?: string;
 }) {
   const cardQuery = useQuery({
     queryKey: ["cp", "card", counterpartyId],
@@ -122,7 +127,9 @@ export function CounterpartyCard({
         close();
       }}
     >
-      <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+      {/* Шире, чем было (2xl): во вкладке «Сверка» шесть колонок, и на 2xl колонка остатка
+          уезжала за край — то самое число, ради которого хронологию и читают. */}
+      <SheetContent className="w-full overflow-y-auto sm:max-w-4xl">
         <SheetHeader>
           <SheetTitle>{cardQuery.data?.name ?? "Контрагент"}</SheetTitle>
           <SheetDescription>
@@ -135,7 +142,12 @@ export function CounterpartyCard({
         </SheetHeader>
         {cardQuery.data ? (
           <DirtyFormsContext.Provider value={reportDirty}>
-            <CardBody card={cardQuery.data} canOperate={canOperate} canAdmin={canAdmin} />
+            <CardBody
+              card={cardQuery.data}
+              canOperate={canOperate}
+              canAdmin={canAdmin}
+              defaultTab={defaultTab}
+            />
           </DirtyFormsContext.Provider>
         ) : null}
       </SheetContent>
@@ -163,10 +175,12 @@ function CardBody({
   card,
   canOperate,
   canAdmin,
+  defaultTab = "general",
 }: {
   card: CardData;
   canOperate: boolean;
   canAdmin: boolean;
+  defaultTab?: string;
 }) {
   return (
     <div className="mt-5 space-y-8">
@@ -178,9 +192,10 @@ function CardBody({
         {canOperate ? <KassaToggle card={card} /> : null}
       </div>
       {card.relationship === "barter" ? <BarterBalanceBanner card={card} /> : null}
-      <Tabs defaultValue="general">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue={defaultTab}>
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="general">Общая информация</TabsTrigger>
+          <TabsTrigger value="settlement">Сверка</TabsTrigger>
           <TabsTrigger value="requisites">Реквизиты</TabsTrigger>
           <TabsTrigger value="manager">Данные менеджера</TabsTrigger>
         </TabsList>
@@ -205,6 +220,12 @@ function CardBody({
             <BarterSection counterpartyId={card.counterparty_id} canOperate={canOperate} />
           ) : null}
           <LeasedLocationsSection counterpartyId={card.counterparty_id} />
+        </TabsContent>
+        {/* Сверка монтируется ТОЛЬКО при открытии: реестр тянет всю историю расчётов
+            контрагента, и грузить её при каждом открытии карточки незачем. Правок в ней
+            нет, поэтому forceMount (защита от потери набранного) здесь не нужен. */}
+        <TabsContent value="settlement" className="mt-5">
+          <SettlementLedgerSection counterpartyId={card.counterparty_id} />
         </TabsContent>
         <TabsContent
           value="requisites"
@@ -245,6 +266,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
   const [servicePeriodRequired, setServicePeriodRequired] = useState(false);
   const [bankPrepayment, setBankPrepayment] = useState(false);
   const [periodOffset, setPeriodOffset] = useState("0");
+  // "auto" — определить по факту складских накладных (на бэке это NULL).
+  const [contour, setContour] = useState("auto");
+  // "0" — ждём с 1-го числа (на бэке NULL): у большинства контрагентов так и есть.
+  const [expectedDay, setExpectedDay] = useState("0");
 
   useEffect(() => {
     setRelationship(profile?.relationship ?? "official");
@@ -258,6 +283,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
       profile?.default_service_period_offset_months != null
         ? String(profile.default_service_period_offset_months)
         : "0",
+    );
+    setContour((profile?.settlement_contour as string | null) ?? "auto");
+    setExpectedDay(
+      profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0",
     );
     // Заливаем серверные значения ТОЛЬКО при смене контрагента. Если зависеть от profile,
     // любой фоновый рефетч (например, от соседнего мгновенного тумблера «Активен в Кассе»,
@@ -279,6 +308,8 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
         service_period_required: servicePeriodRequired,
         bank_payments_create_prepayment: bankPrepayment,
         default_service_period_offset_months: servicePeriodRequired ? Number(periodOffset) : null,
+        settlement_contour: contour === "auto" ? null : contour,
+        closing_doc_expected_day: expectedDay === "0" ? null : Number(expectedDay),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
@@ -318,7 +349,10 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     confirmNoDdsArticle !== (profile?.confirm_no_dds_article ?? false) ||
     servicePeriodRequired !== (profile?.service_period_required ?? false) ||
     bankPrepayment !== (profile?.bank_payments_create_prepayment ?? false) ||
-    (servicePeriodRequired && periodOffset !== periodOffsetSaved);
+    (servicePeriodRequired && periodOffset !== periodOffsetSaved) ||
+    contour !== ((profile?.settlement_contour as string | null) ?? "auto") ||
+    expectedDay !==
+      (profile?.closing_doc_expected_day != null ? String(profile.closing_doc_expected_day) : "0");
   useReportDirty("profile", dirty);
 
   return (
@@ -448,6 +482,40 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
               </Field>
             </div>
           ) : null}
+          {/* Контроль закрывающих документов — то, из чего собирается вкладка «Сверка»
+              и сводка разрывов на ДЗ/КЗ. Живёт рядом с периодом услуг: обе настройки про
+              один и тот же вопрос «когда расход считается подтверждённым». */}
+          <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+            <Field label="Контур расчётов">
+              <Select disabled={disabled} value={contour} onValueChange={setContour}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Определять по накладным</SelectItem>
+                  <SelectItem value="service">Услуги — контроль вручную</SelectItem>
+                  <SelectItem value="goods">Товар — гасится складом</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                Товарные контрагенты не попадают в сводку разрывов: их накладные гасит склад.
+              </span>
+            </Field>
+            <Field label="Закрывающий документ приходит до">
+              <Select disabled={disabled} value={expectedDay} onValueChange={setExpectedDay}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">1-го числа (сразу за периодом)</SelectItem>
+                  {[3, 5, 7, 10, 15, 20, 25, 28].map((day) => (
+                    <SelectItem key={day} value={String(day)}>
+                      {day}-го числа следующего месяца
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">
+                До этой даты отсутствие УПД — норма, после неё платёж подсвечивается разрывом.
+              </span>
+            </Field>
+          </div>
         </div>
       </div>
       {canAdmin ? (

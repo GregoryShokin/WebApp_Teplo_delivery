@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +40,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services import counterparty_settlement_ledger as settlement
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import (
     fund_account_visible_in_roster,
@@ -54,6 +56,10 @@ from app.services.position_registry import (
 
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
+# Сроки ожидания закрывающих документов считаются по календарю владельца, а не UTC:
+# 1-е число в Москве наступает на три часа раньше, и «просрочено» не должно зависеть
+# от часового пояса сервера.
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 router = APIRouter()
 READ = (Depends(require_permission("accounting.suppliers.read")),)
@@ -959,6 +965,163 @@ async def list_document_register(
             for row in items
             if row.payment_status in UNPAID_INVOICE_STATUSES and row.activation_status == "active"
         ),
+    )
+
+
+class LedgerRowRead(BaseModel):
+    kind: Literal["payment", "document"]
+    id: uuid.UUID
+    row_date: date
+    amount: float
+    title: str
+    subtitle: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
+    # Для платежа — сколько денег ещё не подтверждено закрывающим документом;
+    # для документа — неоплаченный остаток.
+    uncovered: float
+    status: Literal["ok", "waiting", "overdue"]
+    expected_by: date | None = None
+    days_overdue: int
+    balance_after: float
+    prepayment_id: uuid.UUID | None = None
+
+
+class LedgerMonthRead(BaseModel):
+    month: str
+    paid: float
+    documented: float
+    gap: float
+    has_overdue: bool
+
+
+class LedgerRead(BaseModel):
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    contour: Literal["goods", "service"]
+    contour_manual: bool
+    closing_doc_expected_day: int | None = None
+    opening_balance: float
+    closing_balance: float
+    total_paid: float
+    total_documented: float
+    overdue_amount: float
+    has_barter: bool
+    rows: list[LedgerRowRead]
+    months: list[LedgerMonthRead]
+
+
+class GapRead(BaseModel):
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    period_start: date
+    period_end: date
+    amount: float
+    expected_by: date
+    days_overdue: int
+    payments: int
+    last_payment_date: date
+
+
+class GapList(BaseModel):
+    items: list[GapRead]
+    total_amount: float
+    as_of: date
+
+
+@router.get("/gaps", response_model=GapList, dependencies=READ)
+async def list_settlement_gaps(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    include_goods: Annotated[bool, Query()] = False,
+) -> GapList:
+    """Платежи без закрывающего документа, срок ожидания которых уже прошёл.
+
+    Это единственный экран, отвечающий 1-го числа на вопрос «у кого за прошлый месяц нет
+    УПД». Товарные контрагенты скрыты: их закрывающие приходят накладными и гасятся
+    складским контуром сами — ``include_goods=true`` показывает и их.
+    """
+    today = datetime.now(MOSCOW_TZ).date()
+    rows = await settlement.list_gaps(session, today=today, include_goods=include_goods)
+    return GapList(
+        items=[
+            GapRead(
+                counterparty_id=row.counterparty_id,
+                counterparty_name=row.counterparty_name,
+                period_start=row.period_start,
+                period_end=row.period_end,
+                amount=_float(row.amount),
+                expected_by=row.expected_by,
+                days_overdue=row.days_overdue,
+                payments=row.payments,
+                last_payment_date=row.last_payment_date,
+            )
+            for row in rows
+        ],
+        total_amount=_float(sum((row.amount for row in rows), Decimal("0"))),
+        as_of=today,
+    )
+
+
+@router.get("/{counterparty_id}/ledger", response_model=LedgerRead, dependencies=READ)
+async def get_settlement_ledger(
+    counterparty_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+) -> LedgerRead:
+    """Сверка с контрагентом: платежи и закрывающие документы одной хронологией.
+
+    Бегущий остаток — «деньги минус документы»; его итог сходится с плиткой «Остатки»
+    на той же странице, потому что связи берутся из тех же аллокаций.
+    """
+    today = datetime.now(MOSCOW_TZ).date()
+    try:
+        ledger = await settlement.build_ledger(
+            session, counterparty_id, today=today, date_from=date_from, date_to=date_to
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return LedgerRead(
+        counterparty_id=ledger.counterparty_id,
+        counterparty_name=ledger.counterparty_name,
+        contour=ledger.contour,
+        contour_manual=ledger.contour_manual,
+        closing_doc_expected_day=ledger.closing_doc_expected_day,
+        opening_balance=_float(ledger.opening_balance),
+        closing_balance=_float(ledger.closing_balance),
+        total_paid=_float(ledger.total_paid),
+        total_documented=_float(ledger.total_documented),
+        overdue_amount=_float(ledger.overdue_amount),
+        has_barter=ledger.has_barter,
+        rows=[
+            LedgerRowRead(
+                kind=row.kind,
+                id=row.id,
+                row_date=row.row_date,
+                amount=_float(row.amount),
+                title=row.title,
+                subtitle=row.subtitle,
+                period_start=row.period_start,
+                period_end=row.period_end,
+                uncovered=_float(row.uncovered),
+                status=row.status,
+                expected_by=row.expected_by,
+                days_overdue=row.days_overdue,
+                balance_after=_float(row.balance_after),
+                prepayment_id=row.prepayment_id,
+            )
+            for row in ledger.rows
+        ],
+        months=[
+            LedgerMonthRead(
+                month=month.month,
+                paid=_float(month.paid),
+                documented=_float(month.documented),
+                gap=_float(month.gap),
+                has_overdue=month.has_overdue,
+            )
+            for month in ledger.months
+        ],
     )
 
 

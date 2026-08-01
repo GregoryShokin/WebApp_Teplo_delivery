@@ -652,6 +652,8 @@ def _profile_dict(profile: CounterpartyPayableProfile | None) -> dict[str, Any] 
         "payment_due_day_of_month": profile.payment_due_day_of_month,
         "service_period_required": profile.service_period_required,
         "default_service_period_offset_months": profile.default_service_period_offset_months,
+        "closing_doc_expected_day": profile.closing_doc_expected_day,
+        "settlement_contour": profile.settlement_contour,
         "manager_name": profile.manager_name,
         "manager_phone": profile.manager_phone,
         "default_dds_article_id": profile.default_dds_article_id,
@@ -792,6 +794,8 @@ async def update_profile(
     service_period_required: bool | None | object = _UNSET,
     default_service_period_offset_months: int | None | object = _UNSET,
     bank_payments_create_prepayment: bool | None | object = _UNSET,
+    closing_doc_expected_day: int | None | object = _UNSET,
+    settlement_contour: str | None | object = _UNSET,
     status: str | None | object = _UNSET,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
@@ -874,6 +878,16 @@ async def update_profile(
         profile.bank_payments_create_prepayment = bank_payments_create_prepayment
     if default_service_period_offset_months is not _UNSET:
         profile.default_service_period_offset_months = default_service_period_offset_months
+    # До какого числа ждём закрывающий документ. None — законное значение («ждём с 1-го»),
+    # поэтому пропускаем только _UNSET: иначе поле нельзя было бы очистить.
+    if closing_doc_expected_day is not _UNSET:
+        if closing_doc_expected_day is not None and not 1 <= int(closing_doc_expected_day) <= 28:
+            raise CounterpartyRegistryError("День ожидания документа — число от 1 до 28")
+        profile.closing_doc_expected_day = closing_doc_expected_day
+    if settlement_contour is not _UNSET:
+        if settlement_contour is not None and settlement_contour not in ("goods", "service"):
+            raise CounterpartyRegistryError("Неизвестный контур расчётов")
+        profile.settlement_contour = settlement_contour
     if status is not _UNSET and status:
         profile.status = status
     await activate_configured_placeholder(session, counterparty, profile)

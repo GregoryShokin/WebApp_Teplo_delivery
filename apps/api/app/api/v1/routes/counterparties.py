@@ -267,6 +267,11 @@ class ProfileUpdate(BaseModel):
     service_period_required: bool | None = None
     bank_payments_create_prepayment: bool | None = None
     default_service_period_offset_months: int | None = Field(default=None, ge=-12, le=12)
+    # До какого числа месяца после периода услуги ждём закрывающий документ (сверка расчётов).
+    # 28 — верхняя граница специально: в феврале 29-31 не наступают никогда.
+    closing_doc_expected_day: int | None = Field(default=None, ge=1, le=28)
+    # 'goods' | 'service' | None (определить по факту складских накладных).
+    settlement_contour: str | None = None
     status: str | None = None
 
 

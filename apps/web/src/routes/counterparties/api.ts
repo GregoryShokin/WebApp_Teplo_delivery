@@ -98,6 +98,10 @@ export type CounterpartyProfile = {
   default_service_period_offset_months: number | null;
   // Предоплатная модель по банк-фиду (Манго): списания с карты пополняют дебиторку.
   bank_payments_create_prepayment: boolean;
+  // До какого числа месяца после периода услуги ждём закрывающий документ (null — с 1-го).
+  closing_doc_expected_day: number | null;
+  // 'goods' | 'service' | null (определять по факту складских накладных).
+  settlement_contour: string | null;
   requisites: Record<string, unknown>;
   requisites_verified: boolean;
   kassa_enabled: boolean;
@@ -367,6 +371,86 @@ export async function getCounterpartyCard(id: string): Promise<CounterpartyCard>
   return response.data;
 }
 
+// Сверка расчётов: платежи и закрывающие документы одной хронологией (вкладка «Сверка»).
+export type LedgerRow = {
+  kind: "payment" | "document";
+  id: string;
+  row_date: string;
+  amount: number;
+  title: string;
+  subtitle: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  /** Для платежа — сколько не подтверждено документом; для документа — неоплаченный остаток. */
+  uncovered: number;
+  status: "ok" | "waiting" | "overdue";
+  expected_by: string | null;
+  days_overdue: number;
+  /** Остаток расчётов ПОСЛЕ строки: >0 — мы заплатили вперёд, <0 — должны мы. */
+  balance_after: number;
+  prepayment_id: string | null;
+};
+
+export type LedgerMonth = {
+  month: string;
+  paid: number;
+  documented: number;
+  gap: number;
+  has_overdue: boolean;
+};
+
+export type SettlementLedger = {
+  counterparty_id: string;
+  counterparty_name: string;
+  contour: "goods" | "service";
+  contour_manual: boolean;
+  closing_doc_expected_day: number | null;
+  opening_balance: number;
+  closing_balance: number;
+  total_paid: number;
+  total_documented: number;
+  overdue_amount: number;
+  has_barter: boolean;
+  rows: LedgerRow[];
+  months: LedgerMonth[];
+};
+
+export async function getSettlementLedger(
+  counterpartyId: string,
+  params?: { date_from?: string; date_to?: string },
+): Promise<SettlementLedger> {
+  const response = await api.get<SettlementLedger>(
+    `/accounting/suppliers/${counterpartyId}/ledger`,
+    { params },
+  );
+  return response.data;
+}
+
+export type SettlementGap = {
+  counterparty_id: string;
+  counterparty_name: string;
+  period_start: string;
+  period_end: string;
+  amount: number;
+  expected_by: string;
+  days_overdue: number;
+  payments: number;
+  last_payment_date: string;
+};
+
+export async function getSettlementGaps(includeGoods = false): Promise<{
+  items: SettlementGap[];
+  total_amount: number;
+  as_of: string;
+}> {
+  const response = await api.get<{
+    items: SettlementGap[];
+    total_amount: number;
+    as_of: string;
+  }>("/accounting/suppliers/gaps", { params: { include_goods: includeGoods } });
+  return response.data;
+}
+
 export type CounterpartyCreatePayload = {
   name: string;
   inn?: string | null;
@@ -411,6 +495,8 @@ export type ProfileUpdatePayload = {
   service_period_required?: boolean | null;
   default_service_period_offset_months?: number | null;
   bank_payments_create_prepayment?: boolean | null;
+  closing_doc_expected_day?: number | null;
+  settlement_contour?: string | null;
   status?: string | null;
 };
 
