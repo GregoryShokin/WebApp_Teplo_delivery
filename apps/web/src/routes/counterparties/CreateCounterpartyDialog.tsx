@@ -289,7 +289,7 @@ export function CreateCounterpartyDialog({
                 articles={articlesQuery.data ?? []}
                 value={ddsArticleId}
                 onChange={setDdsArticleId}
-                placeholder={confirmNoDdsArticle ? "Статья не применяется" : "Выберите статью"}
+                placeholder={confirmNoDdsArticle ? "Спросим при оплате" : "Выберите статью"}
                 disabled={confirmNoDdsArticle}
               />
               <label className="flex items-center gap-2 text-sm">
@@ -300,11 +300,11 @@ export function CreateCounterpartyDialog({
                     if (checked) setDdsArticleId("");
                   }}
                 />
-                У контрагента нет статьи ДДС
+                Единой статьи нет — выбирать при каждой оплате
               </label>
               <p className="text-xs text-muted-foreground">
-                Если статьи действительно нет, подтвердите это переключателем — оставить поле пустым
-                случайно нельзя.
+                Статья у платежа будет всегда — просто не по умолчанию (арендодатели, товарные и
+                бартерные партнёры). Оставить поле пустым случайно нельзя.
               </p>
             </Field>
 

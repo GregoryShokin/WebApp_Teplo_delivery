@@ -350,7 +350,7 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     relationship !== "official" && !name.trim()
       ? "Укажите название контрагента"
       : !ddsArticleId && !confirmNoDdsArticle
-        ? "Выберите статью ДДС или отметьте, что её нет"
+        ? "Выберите статью ДДС или отметьте, что единой статьи нет"
         : null;
   const canSave = !saveBlockedReason;
   // Уход из «официального» стирает банковские реквизиты (правило реестра: они относятся
@@ -457,7 +457,13 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
                 if (checked) setDdsArticleId("");
               }}
             />
-            У контрагента нет статьи ДДС
+            <span>
+              <span className="block">Единой статьи нет — выбирать при каждой оплате</span>
+              <span className="block text-xs text-muted-foreground">
+                Статья у платежа будет всегда — просто не по умолчанию. Так живут арендодатели
+                (статью даёт договор аренды), товарные и бартерные партнёры.
+              </span>
+            </span>
           </label>
         </Field>
         <div className="grid gap-3 rounded-md border p-3 sm:col-span-2">
