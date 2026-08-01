@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -39,6 +40,7 @@ export function RegistryTab({
   onOpenCounterparty: (id: string) => void;
 }) {
   const [categoryId, setCategoryId] = useState<string>(ALL);
+  const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const categoriesQuery = useQuery({ queryKey: ["cp", "categories"], queryFn: getLedgerCategories });
@@ -67,6 +69,24 @@ export function RegistryTab({
   });
 
   const needsSetup = needsSetupQuery.data?.count ?? 0;
+
+  // Одно поле на два поиска: цифры — ИНН, буквы — название (правило владельца). Фильтруем на
+  // клиенте: реестр уже загружен целиком, и буква за буквой сужать список быстрее, чем гонять
+  // запросы. У неофициалов ищем и по внутреннему имени — в таблице видно именно его.
+  const filteredRows = useMemo(() => {
+    const rows = registryQuery.data ?? [];
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+    const digits = query.replace(/\s/g, "");
+    if (/^\d+$/.test(digits)) {
+      return rows.filter((item) => (item.inn ?? "").includes(digits));
+    }
+    return rows.filter(
+      (item) =>
+        item.name.toLowerCase().includes(query) ||
+        (item.internal_name ?? "").toLowerCase().includes(query),
+    );
+  }, [registryQuery.data, search]);
 
   const columns: Array<DataTableColumn<RegistryItem>> = [
     {
@@ -192,6 +212,15 @@ export function RegistryTab({
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="grid w-full max-w-sm gap-2">
+          <Label>Поиск</Label>
+          <Input
+            value={search}
+            placeholder="Название или ИНН"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
         <div className="grid w-full max-w-xs gap-2">
           <Label>Категория (леджер)</Label>
           <Select value={categoryId} onValueChange={setCategoryId}>
@@ -208,6 +237,7 @@ export function RegistryTab({
             </SelectContent>
           </Select>
         </div>
+        </div>
         {canAdmin ? (
           <Button onClick={() => setIsCreateOpen(true)}>
             <Plus size={16} aria-hidden="true" />
@@ -218,7 +248,7 @@ export function RegistryTab({
 
       <DataTable
         columns={columns}
-        rows={registryQuery.data ?? []}
+        rows={filteredRows}
         isLoading={registryQuery.isLoading}
         getRowKey={(item) => item.counterparty_id}
         emptyMessage="Контрагенты не найдены"
