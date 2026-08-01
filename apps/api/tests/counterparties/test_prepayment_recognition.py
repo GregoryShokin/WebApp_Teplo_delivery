@@ -302,6 +302,112 @@ def test_refuses_prepaid_bill_and_missing_article(
     assert "стать" in article_response.json()["detail"].lower()
 
 
+def test_recognition_does_not_touch_other_counterparties(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Кнопка по одному платежу не утаскивает в P&L созревшие расходы чужих контрагентов.
+
+    Признать их всё равно придётся, и ночная джоба это сделает. Но человек нажимал кнопку по
+    конкретному платежу, и месяц закрытия чужого расхода не должен зависеть от того, в какой
+    день кто-то разобрал соседнюю строку.
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            mine = await make_counterparty(session, name="Признание Своё", inn="6155000508")
+            article = await make_expense_article(session, name="Признание Услуги Своё")
+            prepayment = await _stuck_prepayment(
+                session, counterparty_id=mine.id, amount="3000.00", article_id=article.id
+            )
+
+            # Чужое начисление, у которого период давно закончился: джоба признает его ночью.
+            other = await make_counterparty(session, name="Признание Чужое", inn="6155000509")
+            invoice = await make_invoice(
+                session,
+                counterparty_id=other.id,
+                amount="5000.00",
+                invoice_date=date(2026, 5, 31),
+            )
+            await session.commit()
+            await periods.set_invoice_service_period(
+                session,
+                invoice=invoice,
+                start=date(2026, 5, 1),
+                end=date(2026, 5, 31),
+                actor_user_id=None,
+            )
+            foreign = await session.scalar(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.invoice_id == invoice.id
+                )
+            )
+            assert foreign.status == "scheduled"
+            return prepayment.id, foreign.id
+
+    prepayment_id, foreign_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-06-01", "service_period_end": "2026-06-30"},
+    )
+    assert response.status_code == 200, response.text
+
+    async def check() -> None:
+        async with async_session_factory() as session:
+            foreign = await session.get(SupplierExpenseAccrual, foreign_id)
+            assert foreign.status == "scheduled"
+
+    asyncio.run(check())
+
+
+def test_article_can_be_chosen_at_recognition(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Платежу из выписки статью выбирают прямо здесь — иначе действие недоступно вовсе.
+
+    В банковской выписке статья ДДС не проставлена почти никогда, а без неё расход некуда
+    отнести. Отправлять человека размечать проводку в другом разделе и возвращаться — способ
+    сделать так, чтобы кнопкой не пользовались.
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Признание Статья", inn="6155000507")
+            article = await make_expense_article(session, name="Признание Услуги Статья")
+            prepayment = await _stuck_prepayment(
+                session, counterparty_id=cp.id, amount="4000.00", article_id=None
+            )
+            await session.commit()
+            return prepayment.id, article.id
+
+    prepayment_id, article_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={
+            "service_period_start": "2026-06-01",
+            "service_period_end": "2026-06-30",
+            "dds_article_id": str(article_id),
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["months_recognized"] == 1
+
+    async def check() -> None:
+        async with async_session_factory() as session:
+            prepayment = await session.get(SupplierPrepayment, prepayment_id)
+            assert prepayment.article_id == article_id
+            # Статья доехала до самоакта: без неё расход лёг бы в P&L без разреза.
+            invoice = await session.scalar(
+                select(SupplierInvoice).where(
+                    SupplierInvoice.external_id.like(f"self:{prepayment_id}:%")
+                )
+            )
+            assert invoice.dds_article_id == article_id
+
+    asyncio.run(check())
+
+
 def test_second_recognition_is_refused_not_doubled(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

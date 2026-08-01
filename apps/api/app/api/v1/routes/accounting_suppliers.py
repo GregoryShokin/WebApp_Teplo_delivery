@@ -542,6 +542,9 @@ class PrepaymentRecognizeIn(BaseModel):
 
     service_period_start: date
     service_period_end: date
+    # Только для платежей из выписки, у которых статья не проставлена: у размеченных она уже
+    # своя, и подменять её этим полем нельзя.
+    dds_article_id: uuid.UUID | None = None
 
 
 class PrepaymentRecognizeOut(BaseModel):
@@ -582,6 +585,7 @@ async def recognize_prepayment(
             start=payload.service_period_start,
             end=payload.service_period_end,
             as_of=today,
+            article_id=payload.dds_article_id,
         )
     except (subscriptions.RecognitionRefused, periods.ServicePeriodError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

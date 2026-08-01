@@ -349,6 +349,7 @@ async def recognize_prepayment_period(
     start: date,
     end: date,
     as_of: date,
+    article_id: uuid.UUID | None = None,
 ) -> list[SupplierInvoice]:
     """Признать расход по зависшему платежу за указанный период. Коммитит.
 
@@ -374,9 +375,15 @@ async def recognize_prepayment_period(
     if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
         raise RecognitionRefused("Платёж уже закрыт — признавать нечего")
     if prepayment.article_id is None:
-        raise RecognitionRefused(
-            "У платежа не указана статья ДДС — расход некуда отнести. Укажите статью в проводке"
-        )
+        # Статья нужна не для красоты: она уходит в самоакт как разрез расхода и участвует в
+        # проверке «а не пришёл ли настоящий документ по этой же услуге». Платежи из выписки
+        # часто не размечены, поэтому статью принимаем прямо здесь, а не отправляем человека
+        # размечать проводку в другом разделе.
+        if article_id is None:
+            raise RecognitionRefused(
+                "У платежа не указана статья ДДС — расход некуда отнести. Выберите статью"
+            )
+        prepayment.article_id = article_id
     if await covered_by_agreement(
         session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
     ):
@@ -411,7 +418,11 @@ async def recognize_prepayment_period(
         if invoice is not None:
             created.append(invoice)
     # Признаём сразу: закончившиеся месяцы должны попасть в P&L тем же действием, а не ночью.
-    await periods.recognize_due_expenses(session, as_of=as_of, commit=False)
+    # Только свои документы — чужие созревшие начисления признает ночная джоба, это не дело
+    # кнопки, нажатой по конкретному платежу.
+    await periods.recognize_due_expenses(
+        session, as_of=as_of, commit=False, invoice_ids=[invoice.id for invoice in created]
+    )
     await session.commit()
     return created
 

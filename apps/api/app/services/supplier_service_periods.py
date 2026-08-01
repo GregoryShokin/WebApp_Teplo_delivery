@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
@@ -149,23 +150,35 @@ async def sync_expense_line_accrual(
 
 
 async def recognize_due_expenses(
-    session: AsyncSession, *, as_of: date | None = None, commit: bool = True
+    session: AsyncSession,
+    *,
+    as_of: date | None = None,
+    commit: bool = True,
+    invoice_ids: Sequence[uuid.UUID] | None = None,
 ) -> int:
     """Признать расходы после завершения дня окончания услуги.
 
     ``service_period_end < as_of`` намеренно строго: весь последний день услуга ещё
     оказывается, признание выполняется первым запуском следующего дня.
+
+    ``invoice_ids`` ограничивает признание своими документами. Нужен ручному признанию
+    платежа: без ограничения нажатие кнопки по одному контрагенту утаскивало бы в P&L все
+    созревшие начисления системы — корректно по сути, но для человека это неожиданный
+    побочный эффект действия, которое он адресовал одному платежу.
     """
     cutoff = as_of or datetime.now(MOSCOW_TZ).date()
+    conditions = [
+        SupplierExpenseAccrual.status == "scheduled",
+        SupplierExpenseAccrual.service_period_end < cutoff,
+    ]
+    if invoice_ids is not None:
+        if not invoice_ids:
+            return 0
+        conditions.append(SupplierExpenseAccrual.invoice_id.in_(invoice_ids))
     rows = list(
         (
             await session.scalars(
-                select(SupplierExpenseAccrual)
-                .where(
-                    SupplierExpenseAccrual.status == "scheduled",
-                    SupplierExpenseAccrual.service_period_end < cutoff,
-                )
-                .with_for_update(skip_locked=True)
+                select(SupplierExpenseAccrual).where(*conditions).with_for_update(skip_locked=True)
             )
         ).all()
     )

@@ -1,10 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Loader2, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,15 +30,21 @@ import { api, apiErrorMessage } from "@/lib/api";
 import { todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import { navigateTo } from "@/router";
+import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { CounterpartyCard } from "@/routes/counterparties/CounterpartyCard";
-import { getSettlementGaps, type SettlementGap } from "@/routes/counterparties/api";
+import { getExpenseArticles } from "@/routes/counterparties/api";
 
-type View = "open" | "all" | "needs_review" | "recognized";
-type Section = "balances" | "gaps" | "payments" | "documents" | "recognition";
+/** Состояние строки на языке владельца: «этот платёж уже стал расходом, а если нет — чего ждём». */
+type Stage = "needs_period" | "waiting_document" | "period_running" | "in_expense";
+// «Разрывы» отдельной вкладкой не живут: та же информация — срок и просрочка — теперь внутри
+// состояния «ждём документ». Платежи и УПД схлопнуты в один реестр с переключателем.
+type Section = "balances" | "recognition" | "register";
+type RegisterView = "payments" | "documents";
 
 type AccountingItem = {
   id: string;
   source_kind: "service_period" | "legacy_prepayment";
+  stage: Stage;
   counterparty_id: string;
   counterparty_name: string;
   article_id: string | null;
@@ -59,7 +60,13 @@ type AccountingItem = {
   period_status: string;
   recognition_month: string | null;
   recognized: boolean;
+  payment_date: string | null;
+  expected_by: string | null;
+  days_overdue: number;
+  period_assumed: boolean;
 };
+
+type StageTile = { count: number; amount: number };
 
 type AccountingList = {
   items: AccountingItem[];
@@ -67,6 +74,11 @@ type AccountingList = {
   payable_total: number;
   scheduled_total: number;
   needs_review_total: number;
+  in_expense: StageTile;
+  period_running: StageTile;
+  waiting_document: StageTile;
+  needs_period: StageTile;
+  in_expense_month: string | null;
 };
 
 type CounterpartyBalance = {
@@ -285,8 +297,22 @@ const TAX_DRAFT_STATUS_LABEL: Record<string, string> = {
   in_bank: "отправлен в банк",
 };
 
-async function getAccounting(view: View): Promise<AccountingList> {
-  const response = await api.get<AccountingList>("/accounting/suppliers", { params: { view } });
+async function getAccounting(stage: Stage | null): Promise<AccountingList> {
+  const response = await api.get<AccountingList>("/accounting/suppliers", {
+    params: { view: "all", stage: stage ?? undefined },
+  });
+  return response.data;
+}
+
+async function recognizePrepayment(
+  id: string,
+  payload: {
+    service_period_start: string;
+    service_period_end: string;
+    dds_article_id?: string | null;
+  },
+): Promise<{ months_recognized: number; amount_recognized: number; period_months: number }> {
+  const response = await api.post(`/accounting/suppliers/prepayments/${id}/recognize`, payload);
   return response.data;
 }
 
@@ -338,13 +364,49 @@ async function updatePeriod(
   return response.data;
 }
 
-const STATUS: Record<AccountingItem["balance_type"], { label: string; className: string }> = {
-  receivable: { label: "Дебиторка", className: "border-sky-200 bg-sky-50 text-sky-700" },
-  payable: { label: "Кредиторка", className: "border-rose-200 bg-rose-50 text-rose-700" },
-  scheduled: { label: "Будущий расход", className: "border-violet-200 bg-violet-50 text-violet-700" },
-  closed: { label: "Закрыто", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  needs_review: { label: "Нужно распределить", className: "border-amber-200 bg-amber-50 text-amber-800" },
+/** Бухгалтерские «дебиторка / будущий расход» владельцу ничего не говорили: по ним нельзя было
+ *  понять, ждут ли от него действия. Каждое состояние отвечает на это одной фразой. */
+const STAGE: Record<
+  Stage,
+  { label: string; hint: string; className: string; tile: string }
+> = {
+  needs_period: {
+    label: "Нужно ваше решение",
+    hint: "Документа не будет — укажите, за какой период услуга, и расход разложится по месяцам",
+    className: "border-amber-300 bg-amber-50 text-amber-900",
+    tile: "border-amber-300 bg-amber-50",
+  },
+  waiting_document: {
+    label: "Ждём документ",
+    hint: "Сумму расхода принесёт УПД от контрагента. Красное — срок прошёл",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+    tile: "border-sky-200 bg-sky-50",
+  },
+  period_running: {
+    label: "Период идёт",
+    hint: "Расход признаётся сам, по окончании каждого месяца. Делать ничего не нужно",
+    className: "border-violet-200 bg-violet-50 text-violet-700",
+    tile: "border-violet-200 bg-violet-50",
+  },
+  in_expense: {
+    label: "Уже в расходе",
+    hint: "Попало в прибыль своего месяца",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    tile: "border-emerald-200 bg-emerald-50",
+  },
 };
+
+const STAGE_ORDER: Stage[] = ["needs_period", "waiting_document", "period_running", "in_expense"];
+
+function monthTitle(value: string | null): string {
+  if (!value) return "";
+  const [year, month] = value.split("-");
+  const names = [
+    "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+  ];
+  return `${names[Number(month) - 1] ?? ""} ${year}`;
+}
 
 function formatPeriod(start: string | null, end: string | null) {
   if (!start || !end) return "Период не указан";
@@ -356,6 +418,7 @@ const DEFAULT_DATE_FROM = "2026-06-01";
 export function DzKzRoute() {
   const permissions = usePermissions();
   const [section, setSection] = useState<Section>("balances");
+  const [register, setRegister] = useState<RegisterView>("payments");
   const [filters, setFilters] = useState<RegisterFilters>({
     date_from: DEFAULT_DATE_FROM,
     date_to: "",
@@ -363,13 +426,12 @@ export function DzKzRoute() {
     counterparty_name: null,
   });
 
+  // Счётчик на вкладке: сколько строк ждут решения человека.
   const accounting = useQuery({
-    queryKey: ["accounting", "suppliers", "open"],
-    queryFn: () => getAccounting("open"),
+    queryKey: ["accounting", "suppliers", null],
+    queryFn: () => getAccounting(null),
   });
   const balances = useQuery({ queryKey: ["accounting", "balances"], queryFn: getBalances });
-  // Разрывы: платежи, у которых срок закрывающего документа уже прошёл.
-  const gaps = useQuery({ queryKey: ["accounting", "gaps"], queryFn: () => getSettlementGaps() });
   const [gapCardId, setGapCardId] = useState<string | null>(null);
   // Долг сотрудникам — провизорный прогон калькулятора ЗП, тяжёлый: грузим отдельно и кэшируем.
   const staff = useQuery({
@@ -440,13 +502,14 @@ export function DzKzRoute() {
 
   const openCounterpartyCard = (counterpartyId: string) => setGapCardId(counterpartyId);
 
-  const openRegister = (target: "payments" | "documents", cp: CounterpartyBalance | null) => {
+  const openRegister = (target: RegisterView, cp: CounterpartyBalance | null) => {
     setFilters((prev) => ({
       ...prev,
       counterparty_id: cp?.counterparty_id ?? null,
       counterparty_name: cp?.name ?? null,
     }));
-    setSection(target);
+    setRegister(target);
+    setSection("register");
   };
 
   return (
@@ -508,24 +571,15 @@ export function DzKzRoute() {
       <Tabs value={section} onValueChange={(value) => setSection(value as Section)}>
         <TabsList>
           <TabsTrigger value="balances">Остатки</TabsTrigger>
-          <TabsTrigger value="gaps">
-            Разрывы
-            {(gaps.data?.total_amount ?? 0) > 0 ? (
-              <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 text-xs text-rose-800">
-                {money.format(gaps.data?.total_amount ?? 0)}
-              </span>
-            ) : null}
-          </TabsTrigger>
-          <TabsTrigger value="payments">Платежи</TabsTrigger>
-          <TabsTrigger value="documents">УПД и накладные</TabsTrigger>
           <TabsTrigger value="recognition">
             Признание расходов
-            {(accounting.data?.needs_review_total ?? 0) > 0 ? (
+            {(accounting.data?.needs_period.count ?? 0) > 0 ? (
               <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-xs text-amber-800">
-                {money.format(accounting.data?.needs_review_total ?? 0)}
+                {accounting.data?.needs_period.count}
               </span>
             ) : null}
           </TabsTrigger>
+          <TabsTrigger value="register">Реестр</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -538,12 +592,24 @@ export function DzKzRoute() {
           onOpenCard={openCounterpartyCard}
         />
       ) : null}
-      {section === "gaps" ? <GapsSection query={gaps} onOpenCard={openCounterpartyCard} /> : null}
-      {section === "payments" || section === "documents" ? (
-        <RegisterFiltersBar filters={filters} onChange={setFilters} />
+      {section === "register" ? (
+        <div className="flex flex-col gap-3">
+          {/* Платежи и документы — две стороны одного вопроса «что было с этим контрагентом»,
+              и держать их разными вкладками значило заставлять переключаться туда-обратно. */}
+          <Tabs value={register} onValueChange={(value) => setRegister(value as RegisterView)}>
+            <TabsList>
+              <TabsTrigger value="payments">Платежи</TabsTrigger>
+              <TabsTrigger value="documents">УПД и накладные</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <RegisterFiltersBar filters={filters} onChange={setFilters} />
+          {register === "payments" ? (
+            <PaymentsSection filters={filters} />
+          ) : (
+            <DocumentsSection filters={filters} />
+          )}
+        </div>
       ) : null}
-      {section === "payments" ? <PaymentsSection filters={filters} /> : null}
-      {section === "documents" ? <DocumentsSection filters={filters} /> : null}
       <CounterpartyCard
         counterpartyId={gapCardId}
         canOperate={permissions.hasPermission("counterparties.operate")}
@@ -595,12 +661,23 @@ function Summary({
   );
 }
 
-function TableStatus({ colSpan, state }: { colSpan: number; state: "loading" | "empty" | string }) {
+/** ``tone`` нужен потому, что произвольный текст здесь означал только ошибку и красился
+ *  красным. «Все документы получены» — хорошая новость, а выглядела как сбой. */
+function TableStatus({
+  colSpan,
+  state,
+  tone = "error",
+}: {
+  colSpan: number;
+  state: "loading" | "empty" | string;
+  tone?: "error" | "calm";
+}) {
+  const neutral = state === "loading" || state === "empty" || tone === "calm";
   return (
     <TableRow>
       <TableCell
         colSpan={colSpan}
-        className={`py-12 text-center ${state === "loading" || state === "empty" ? "text-muted-foreground" : "text-red-600"}`}
+        className={`py-12 text-center ${neutral ? "text-muted-foreground" : "text-red-600"}`}
       >
         {state === "loading" ? (
           <>
@@ -1143,95 +1220,6 @@ function SettledInvoicesChips({ refs }: { refs: SettledInvoiceRef[] }) {
  *  прошлый месяц нет УПД. Раньше это выяснялось случайно — по Микроэлю разрыв за май нашли
  *  через два месяца, а всего таких денег набралось 311 969 ₽ на десяти контрагентах.
  */
-function GapsSection({
-  query,
-  onOpenCard,
-}: {
-  query: UseQueryResult<{ items: SettlementGap[]; total_amount: number; as_of: string }>;
-  onOpenCard: (counterpartyId: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
-        Платежи, по которым срок закрывающего документа прошёл: строка — контрагент за период
-        услуги. Срок задаётся в карточке контрагента («закрывающий документ приходит до N-го
-        числа»); по умолчанию разрыв виден с 1-го числа следующего месяца. Товарные контрагенты
-        сюда не попадают — их накладные гасит склад.
-      </p>
-      <div className="overflow-hidden rounded-lg border bg-background">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Контрагент</TableHead>
-              <TableHead>Период услуги</TableHead>
-              <TableHead className="text-right">Без документа</TableHead>
-              <TableHead>Ждали до</TableHead>
-              <TableHead className="text-right">Просрочка</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {query.isLoading ? (
-              <TableStatus colSpan={5} state="loading" />
-            ) : query.isError ? (
-              <TableStatus
-                colSpan={5}
-                state={apiErrorMessage(query.error, "Не удалось загрузить разрывы")}
-              />
-            ) : (query.data?.items.length ?? 0) === 0 ? (
-              <TableStatus colSpan={5} state="Разрывов нет: все платежи закрыты документами" />
-            ) : (
-              query.data?.items.map((row) => (
-                <TableRow
-                  key={`${row.counterparty_id}:${row.period_start}`}
-                  className="cursor-pointer"
-                  onClick={() => onOpenCard(row.counterparty_id)}
-                >
-                  <TableCell className="font-medium">
-                    {row.counterparty_name}
-                    {row.payments > 1 ? (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        платежей: {row.payments}
-                      </span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {fmtDate(row.period_start)} — {fmtDate(row.period_end)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums text-rose-700">
-                    {moneyExact.format(row.amount)}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {fmtDate(row.expected_by)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge
-                      variant="outline"
-                      className={
-                        row.days_overdue > 30
-                          ? "border-rose-200 bg-rose-50 text-rose-700"
-                          : "border-amber-200 bg-amber-50 text-amber-800"
-                      }
-                    >
-                      {row.days_overdue} дн
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      {query.data && query.data.items.length > 0 ? (
-        <p className="text-right text-xs text-muted-foreground">
-          Всего без документов: {moneyExact.format(query.data.total_amount)} ·{" "}
-          {query.data.items.length} строк · на {fmtDate(query.data.as_of)}. Клик по строке
-          открывает сверку с контрагентом.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function PaymentsSection({ filters }: { filters: RegisterFilters }) {
   const query = useQuery({
     queryKey: ["accounting", "payments", filters.date_from, filters.date_to, filters.counterparty_id],
@@ -1470,88 +1458,153 @@ function RecognitionSection({
   canEdit: boolean;
   canCorrectRecognized: boolean;
 }) {
-  const [view, setView] = useState<View>("open");
+  // Стартуем с очереди, которая ждёт человека. Если она пуста — экран сам покажет ожидание
+  // документов: смотреть на пустой список «нужно ваше решение» бессмысленно.
+  const [stage, setStage] = useState<Stage>("needs_period");
   const [editing, setEditing] = useState<AccountingItem | null>(null);
+  const [recognizing, setRecognizing] = useState<AccountingItem | null>(null);
   const query = useQuery({
-    queryKey: ["accounting", "suppliers", view],
-    queryFn: () => getAccounting(view),
+    queryKey: ["accounting", "suppliers", stage],
+    queryFn: () => getAccounting(stage),
   });
+  const tiles = query.data;
+  const tileOf = (name: Stage): StageTile =>
+    (tiles?.[name] as StageTile | undefined) ?? { count: 0, amount: 0 };
+
+  // Один раз, после первой загрузки: если делать нечего, открываем «ждём документ».
+  const [autoSwitched, setAutoSwitched] = useState(false);
+  if (tiles && !autoSwitched) {
+    setAutoSwitched(true);
+    if (stage === "needs_period" && tileOf("needs_period").count === 0) {
+      setStage("waiting_document");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={view} onValueChange={(value) => setView(value as View)}>
-          <TabsList>
-            <TabsTrigger value="open">Актуальные</TabsTrigger>
-            <TabsTrigger value="needs_review">На ручной разбор</TabsTrigger>
-            <TabsTrigger value="recognized">Признанные</TabsTrigger>
-            <TabsTrigger value="all">Все</TabsTrigger>
-          </TabsList>
-        </Tabs>
-        <p className="text-xs text-muted-foreground">
-          Расход признаётся после окончания последнего дня периода.
-        </p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {STAGE_ORDER.map((name) => {
+          const tile = tileOf(name);
+          const active = stage === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setStage(name)}
+              className={`rounded-lg border p-3 text-left transition ${
+                active ? `${STAGE[name].tile} ring-2 ring-offset-1` : "bg-background hover:bg-muted/50"
+              }`}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">{STAGE[name].label}</span>
+                <span className="text-xs text-muted-foreground">{tile.count}</span>
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">
+                {money.format(tile.amount)}
+              </div>
+              <div className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+                {name === "in_expense" && tiles?.in_expense_month
+                  ? `за ${monthTitle(tiles.in_expense_month)}`
+                  : STAGE[name].hint}
+              </div>
+            </button>
+          );
+        })}
       </div>
+
+      <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
 
       <div className="overflow-hidden rounded-lg border bg-background">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Статус</TableHead>
               <TableHead>Контрагент / документ</TableHead>
               <TableHead>Период услуги</TableHead>
               <TableHead>Статья</TableHead>
-              <TableHead className="text-right">Оплачено</TableHead>
-              <TableHead className="text-right">Остаток</TableHead>
-              <TableHead className="w-14" />
+              <TableHead>{stage === "waiting_document" ? "Ждём документ" : "Признание"}</TableHead>
+              <TableHead className="text-right">Сумма</TableHead>
+              <TableHead className="w-40" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {query.isLoading ? (
-              <TableStatus colSpan={7} state="loading" />
+              <TableStatus colSpan={6} state="loading" />
             ) : query.isError ? (
               <TableStatus
-                colSpan={7}
-                state={apiErrorMessage(query.error, "Не удалось загрузить учёт ДЗ/КЗ")}
+                colSpan={6}
+                state={apiErrorMessage(query.error, "Не удалось загрузить признание расходов")}
               />
             ) : (query.data?.items.length ?? 0) === 0 ? (
-              <TableStatus colSpan={7} state="empty" />
+              <TableStatus colSpan={6} state={EMPTY_STAGE[stage]} tone="calm" />
             ) : (
               query.data?.items.map((item) => {
-                const status = STATUS[item.balance_type];
+                const isPrepayment = item.source_kind === "legacy_prepayment";
                 const correctionAllowed = !item.recognized || canCorrectRecognized;
                 return (
                   <TableRow key={`${item.source_kind}:${item.id}`}>
                     <TableCell>
-                      <Badge variant="outline" className={status.className}>
-                        {status.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
                       <div className="font-medium">{item.counterparty_name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {item.invoice_number ? `Счёт № ${item.invoice_number}` : "Предоплата"}
+                        {item.invoice_number
+                          ? `Счёт № ${item.invoice_number}`
+                          : item.payment_date
+                            ? `Платёж от ${fmtDate(item.payment_date)}`
+                            : "Платёж"}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className={item.balance_type === "needs_review" ? "text-amber-700" : ""}>
-                        {formatPeriod(item.service_period_start, item.service_period_end)}
-                      </div>
-                      {item.recognition_month ? (
-                        <div className="text-xs text-muted-foreground">
-                          P&L: {item.recognition_month.slice(0, 7)}
-                        </div>
-                      ) : null}
+                    <TableCell className="text-sm">
+                      {item.period_assumed ? (
+                        <span className="text-muted-foreground">Период не указан</span>
+                      ) : (
+                        formatPeriod(item.service_period_start, item.service_period_end)
+                      )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{item.article_name ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {money.format(item.paid_amount)}
+                    <TableCell className="text-sm text-muted-foreground">
+                      {item.article_name ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {item.stage === "waiting_document" ? (
+                        item.days_overdue > 0 ? (
+                          <Badge
+                            variant="outline"
+                            className={
+                              item.days_overdue > 30
+                                ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : "border-amber-200 bg-amber-50 text-amber-800"
+                            }
+                          >
+                            нет {item.days_overdue} дн
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            ждём до {fmtDate(item.expected_by)}
+                          </span>
+                        )
+                      ) : item.recognition_month ? (
+                        <span className="text-muted-foreground">
+                          {monthTitle(item.recognition_month.slice(0, 7))}
+                        </span>
+                      ) : item.service_period_end ? (
+                        <span className="text-muted-foreground">
+                          после {fmtDate(item.service_period_end)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
                       {money.format(item.balance_amount)}
                     </TableCell>
-                    <TableCell>
-                      {canEdit && item.source_kind === "service_period" ? (
+                    <TableCell className="text-right">
+                      {!canEdit ? null : isPrepayment ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setRecognizing(item)}
+                        >
+                          Признать расход
+                        </Button>
+                      ) : (
                         <Button
                           size="icon"
                           variant="ghost"
@@ -1565,7 +1618,7 @@ function RecognitionSection({
                         >
                           <Pencil size={15} />
                         </Button>
-                      ) : null}
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -1576,7 +1629,109 @@ function RecognitionSection({
       </div>
 
       {editing ? <PeriodDialog item={editing} onClose={() => setEditing(null)} /> : null}
+      {recognizing ? (
+        <RecognizeDialog item={recognizing} onClose={() => setRecognizing(null)} />
+      ) : null}
     </div>
+  );
+}
+
+/** Пустая очередь — это хорошая новость, и сказать её надо словами, а не прочерком. */
+const EMPTY_STAGE: Record<Stage, string> = {
+  needs_period: "Решать нечего: по всем платежам понятно, за что они",
+  waiting_document: "Все документы получены",
+  period_running: "Нет услуг с идущим периодом",
+  in_expense: "В этом месяце расходов по услугам ещё не признано",
+};
+
+function RecognizeDialog({ item, onClose }: { item: AccountingItem; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  // Период не подставляем: угаданный по месяцу платежа, он выглядит как подтверждённый, и
+  // человек подтвердит его не глядя. Пусть скажет сам — это единственное, что он тут решает.
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [articleId, setArticleId] = useState("");
+  // Платежи из банковской выписки часто приходят без статьи ДДС, а без неё расход некуда
+  // отнести. Спрашиваем здесь же, чтобы не отправлять человека размечать проводку в ДДС и
+  // возвращаться обратно.
+  const needsArticle = !item.article_id;
+  const articlesQuery = useQuery({
+    queryKey: ["cp", "expense-articles"],
+    queryFn: getExpenseArticles,
+    enabled: needsArticle,
+  });
+  const mutation = useMutation({
+    mutationFn: () =>
+      recognizePrepayment(item.id, {
+        service_period_start: start,
+        service_period_end: end,
+        dds_article_id: needsArticle ? articleId : null,
+      }),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: ["accounting"] });
+      toast.success(
+        result.months_recognized === result.period_months
+          ? `Расход признан за ${result.period_months} мес.`
+          : `Признано ${result.months_recognized} из ${result.period_months} мес.: последний ещё не закончился`,
+      );
+      onClose();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось признать расход")),
+  });
+  const ready = Boolean(start && end && end >= start && (!needsArticle || articleId));
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>За какой период эта услуга?</DialogTitle>
+          <DialogDescription>
+            {item.counterparty_name} · {moneyExact.format(item.balance_amount)}
+            {item.payment_date ? ` · платёж от ${fmtDate(item.payment_date)}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+        <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+          Сумма разложится по месяцам периода и попадёт в прибыль каждого из них. Месяц, который
+          ещё не закончился, признаётся сам в первую ночь следующего.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5">
+            <Label>С</Label>
+            <Input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>По</Label>
+            <Input
+              type="date"
+              min={start || undefined}
+              value={end}
+              onChange={(event) => setEnd(event.target.value)}
+            />
+          </div>
+        </div>
+        {needsArticle ? (
+          <div className="grid gap-1.5">
+            <Label>Статья расхода *</Label>
+            <ArticleCombobox
+              articles={articlesQuery.data ?? []}
+              value={articleId}
+              onChange={setArticleId}
+            />
+            <p className="text-xs text-muted-foreground">
+              У этого платежа статья не указана — без неё расход не разнести по отчёту.
+            </p>
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button disabled={!ready || mutation.isPending} onClick={() => mutation.mutate()}>
+            Признать расход
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
