@@ -985,6 +985,8 @@ class LedgerRowRead(BaseModel):
     days_overdue: int
     balance_after: float
     prepayment_id: uuid.UUID | None = None
+    # Документ создан нами (абонентский платёж без закрывающих), а не прислан контрагентом.
+    self_billed: bool = False
 
 
 class LedgerMonthRead(BaseModel):
@@ -1006,6 +1008,8 @@ class LedgerRead(BaseModel):
     total_paid: float
     total_documented: float
     overdue_amount: float
+    # Признано нами без первички: в P&L есть, в налоговых расходах УСН — нет.
+    self_billed_amount: float
     has_barter: bool
     rows: list[LedgerRowRead]
     months: list[LedgerMonthRead]
@@ -1092,6 +1096,7 @@ async def get_settlement_ledger(
         total_paid=_float(ledger.total_paid),
         total_documented=_float(ledger.total_documented),
         overdue_amount=_float(ledger.overdue_amount),
+        self_billed_amount=_float(ledger.self_billed_amount),
         has_barter=ledger.has_barter,
         rows=[
             LedgerRowRead(
@@ -1109,6 +1114,7 @@ async def get_settlement_ledger(
                 days_overdue=row.days_overdue,
                 balance_after=_float(row.balance_after),
                 prepayment_id=row.prepayment_id,
+                self_billed=row.self_billed,
             )
             for row in ledger.rows
         ],

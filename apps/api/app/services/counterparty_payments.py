@@ -33,6 +33,7 @@ from app.models import (
     Wallet,
 )
 from app.services import supplier_service_periods as service_periods
+from app.services.asset_analytics import AssetLinkError, resolve_asset_context
 from app.services.banking import BankClient, TbankClient
 from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
@@ -45,7 +46,6 @@ from app.services.banking.payout import (
 )
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
-from app.services.asset_analytics import AssetLinkError, resolve_asset_context
 from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
@@ -492,6 +492,10 @@ class ExpenseLineInput:
     counterparty_id: uuid.UUID | None = None
     service_period_start: date | None = None
     service_period_end: date | None = None
+    # Абонентская оплата вперёд: число месяцев и признак помесячного признания расхода.
+    # Переезжают на дебиторку при оплате — по ним она делится на месячные доли.
+    service_period_months: int | None = None
+    auto_recognize_monthly: bool = False
     location_id: uuid.UUID | None = None
     lease_id: uuid.UUID | None = None
     # Основное средство строки: окно «Новый платёж» — главный вход покупки оборудования.
@@ -506,6 +510,8 @@ class PreparedExpenseLine:
     counterparty_id: uuid.UUID | None
     service_period_start: date | None
     service_period_end: date | None
+    service_period_months: int | None
+    auto_recognize_monthly: bool
     location_id: uuid.UUID | None
     lease_id: uuid.UUID | None
     asset_id: uuid.UUID | None
@@ -634,6 +640,8 @@ async def create_expense_payment_draft(
                 counterparty_id=line.counterparty_id,
                 service_period_start=line.service_period_start,
                 service_period_end=line.service_period_end,
+                service_period_months=line.service_period_months,
+                auto_recognize_monthly=line.auto_recognize_monthly,
                 location_id=location_context.location_id,
                 lease_id=location_context.lease_id,
                 asset_id=asset_context.asset_id,
@@ -745,6 +753,8 @@ async def create_expense_payment_draft(
             position=position,
             service_period_start=prepared_line.service_period_start,
             service_period_end=prepared_line.service_period_end,
+            service_period_months=prepared_line.service_period_months,
+            auto_recognize_monthly=prepared_line.auto_recognize_monthly,
             service_period_source=(
                 "manual" if prepared_line.service_period_start is not None else None
             ),

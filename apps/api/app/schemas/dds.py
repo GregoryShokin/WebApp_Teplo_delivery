@@ -694,6 +694,11 @@ class NewPaymentExpenseLineIn(BaseModel):
     counterparty_id: uuid.UUID | None = None
     service_period_start: date | None = None
     service_period_end: date | None = None
+    # Абонентская оплата вперёд: сколько месяцев покрывает платёж (окно спрашивает месяцами,
+    # а не датами — 99% контрагентов работают помесячно) и признавать ли расход помесячно
+    # самим, когда закрывающих документов от контрагента не будет.
+    service_period_months: int | None = Field(default=None, ge=1, le=36)
+    auto_recognize_monthly: bool = False
     # Аналитика «где»: помещение обязательно для статей с location_required, аренда — когда
     # платёж закрывает конкретный договор (арендодатель подставится в получателя).
     location_id: uuid.UUID | None = None
@@ -712,6 +717,9 @@ class NewPaymentExpenseLineIn(BaseModel):
             and self.service_period_end < self.service_period_start
         ):
             raise ValueError("Окончание периода не может быть раньше начала")
+        # Помесячное признание без периода не с чем связать: делить нечего и гасить нечего.
+        if self.auto_recognize_monthly and self.service_period_start is None:
+            raise ValueError("Помесячное признание требует периода оказания услуги")
         return self
 
 

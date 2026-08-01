@@ -79,6 +79,10 @@ counterparty_invoice_source_enum = Enum(
     # lease = ежемесячное обязательство по договору аренды (генератор lease_accruals):
     # документов арендодатель не выставляет, долг считаем сами по договору.
     "lease",
+    # self_billed = внутренний закрывающий документ по абонентскому платежу
+    # (subscription_accruals): контрагент его не выставлял, поэтому расход признаётся в P&L,
+    # но в налоговую базу УСН не идёт — первички под ним нет. Замещается настоящим УПД.
+    "self_billed",
     name="counterparty_invoice_source",
 )
 counterparty_invoice_status_enum = Enum(

@@ -155,6 +155,10 @@ type ExpenseRow = {
   purpose: string;
   counterpartyId: string; // «кому платим» — статьи с закреплёнными контрагентами
   servicePeriodStart: string;
+  /** Сколько месяцев покрывает платёж: «1» — обычный, «3» — оплата за квартал вперёд. */
+  servicePeriodMonths: string;
+  /** Признавать расход помесячно самим — для контрагентов, которые закрывающих не присылают. */
+  autoRecognizeMonthly: boolean;
   servicePeriodEnd: string;
   locationId: string; // помещение — для статей с location_required (аренда, коммуналка)
   leaseId: string; // договор аренды — подставляет арендодателя в counterpartyId
@@ -167,6 +171,36 @@ type ExpenseRow = {
 
 function dateInput(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/** Собрать даты периода из «месяц + сколько месяцев»: 2026-04 × 3 → 01.04.2026–30.06.2026.
+ *
+ *  Окно спрашивает месяцами (99 % таких контрагентов работают по абонентской плате), а на
+ *  бэкенд период уходит датами — считаем их здесь, чтобы человек не собирал их руками и не
+ *  ошибался на день в конце месяца.
+ */
+function monthsToPeriod(monthValue: string, months: string) {
+  if (!monthValue) {
+    return { servicePeriodStart: "", servicePeriodEnd: "", servicePeriodMonths: months };
+  }
+  const [year, month] = monthValue.split("-").map(Number);
+  const count = Math.max(1, Number(months) || 1);
+  const start = new Date(year, month - 1, 1);
+  // Нулевой день следующего месяца = последний день предыдущего, без таблицы длин месяцев.
+  const end = new Date(year, month - 1 + count, 0);
+  return {
+    servicePeriodStart: dateInput(start.getFullYear(), start.getMonth(), 1),
+    servicePeriodEnd: dateInput(end.getFullYear(), end.getMonth(), end.getDate()),
+    servicePeriodMonths: String(count),
+  };
+}
+
+function formatPeriod(start: string, end: string) {
+  const fmt = (value: string) => {
+    const [year, month, day] = value.split("-");
+    return `${day}.${month}.${year}`;
+  };
+  return `${fmt(start)} — ${fmt(end)}`;
 }
 
 function defaultServicePeriod(offsetMonths: number | null | undefined) {
@@ -295,6 +329,8 @@ export function NewPaymentDialog({
       purpose: "",
       counterpartyId,
       servicePeriodStart: "",
+      servicePeriodMonths: "1",
+      autoRecognizeMonthly: false,
       servicePeriodEnd: "",
       locationId: "",
       leaseId: "",
@@ -1269,6 +1305,8 @@ function ExpenseForm({
       purpose: row.purpose.trim(),
       counterparty_id: row.counterpartyId || null,
       service_period_start: row.servicePeriodStart || null,
+      service_period_months: row.servicePeriodStart ? Number(row.servicePeriodMonths || "1") : null,
+      auto_recognize_monthly: row.autoRecognizeMonthly,
       service_period_end: row.servicePeriodEnd || null,
       location_id: row.locationId || null,
       lease_id: row.leaseId || null,
@@ -1545,27 +1583,73 @@ function ExpenseForm({
                       <Label className="text-xs font-medium">Период оказания услуги</Label>
                       <span className="text-[11px] text-muted-foreground">обязательное поле</span>
                     </div>
+                    {/* Месяцами, а не двумя датами: почти все такие контрагенты работают по
+                        абонентской плате помесячно, а «оплата за 3 месяца» руками — это две
+                        даты, в которых легко ошибиться на день. Даты по-прежнему уходят на
+                        бэкенд, их считает выбор «месяц + сколько месяцев». */}
                     <div className="grid grid-cols-2 gap-2">
                       <Input
-                        aria-label="Начало периода оказания услуги"
+                        aria-label="Месяц начала периода"
                         className="h-8 text-sm"
-                        type="date"
-                        value={row.servicePeriodStart}
+                        type="month"
+                        value={row.servicePeriodStart.slice(0, 7)}
                         onChange={(event) =>
-                          onUpdateRow(row.key, { servicePeriodStart: event.target.value })
+                          onUpdateRow(
+                            row.key,
+                            monthsToPeriod(event.target.value, row.servicePeriodMonths),
+                          )
                         }
                       />
-                      <Input
-                        aria-label="Окончание периода оказания услуги"
-                        className="h-8 text-sm"
-                        min={row.servicePeriodStart || undefined}
-                        type="date"
-                        value={row.servicePeriodEnd}
-                        onChange={(event) =>
-                          onUpdateRow(row.key, { servicePeriodEnd: event.target.value })
+                      <Select
+                        value={row.servicePeriodMonths}
+                        onValueChange={(value) =>
+                          onUpdateRow(
+                            row.key,
+                            monthsToPeriod(row.servicePeriodStart.slice(0, 7), value),
+                          )
                         }
-                      />
+                      >
+                        <SelectTrigger aria-label="Сколько месяцев" className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {["1", "2", "3", "6", "12"].map((count) => (
+                            <SelectItem key={count} value={count}>
+                              {count === "1" ? "1 месяц" : `${count} мес.`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+                    {row.servicePeriodStart && row.servicePeriodEnd ? (
+                      <div className="mt-1 text-[11px] text-muted-foreground">
+                        {formatPeriod(row.servicePeriodStart, row.servicePeriodEnd)}
+                        {Number(row.servicePeriodMonths) > 1 && row.amount
+                          ? ` · по ${formatRub(
+                              Number(row.amount) / Number(row.servicePeriodMonths),
+                            )} в месяц`
+                          : ""}
+                      </div>
+                    ) : null}
+                    <label className="mt-2 flex items-start gap-2 text-xs">
+                      <input
+                        checked={row.autoRecognizeMonthly}
+                        className="mt-0.5 h-3.5 w-3.5"
+                        type="checkbox"
+                        onChange={(event) =>
+                          onUpdateRow(row.key, { autoRecognizeMonthly: event.target.checked })
+                        }
+                      />
+                      <span>
+                        <span className="block font-medium">
+                          Закрывающих документов не будет
+                        </span>
+                        <span className="block text-muted-foreground">
+                          Расход признаём сами, помесячно. Если УПД всё-таки придёт — он заменит
+                          наше признание, расход не задвоится.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                 ) : null}
               </div>

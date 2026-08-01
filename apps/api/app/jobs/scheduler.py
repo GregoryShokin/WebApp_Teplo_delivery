@@ -11,6 +11,7 @@ from app.jobs.depreciation_job import run_depreciation_job
 from app.jobs.employee_sync_job import run_employee_sync_job
 from app.jobs.lease_accrual_job import run_lease_accrual_job
 from app.jobs.sbis_sync_job import run_sbis_sync_job
+from app.jobs.subscription_accrual_job import run_subscription_accrual_job
 from app.jobs.supplier_closing_activation_job import run_supplier_closing_activation_job
 from app.jobs.supplier_service_period_job import run_supplier_service_period_job
 
@@ -60,6 +61,19 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
         hour=1,
         minute=0,
         id="fixed_assets_month_close",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # Абонентские платежи без закрывающих документов — сразу после аренды и ДО признания
+    # расходов: самоакт за истёкший месяц обязан попасть в тот же ночной проход, иначе
+    # расход появится в P&L на сутки позже своего месяца.
+    scheduler.add_job(
+        run_subscription_accrual_job,
+        "cron",
+        hour=0,
+        minute=4,
+        id="subscription_monthly_accrual",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

@@ -124,6 +124,8 @@ class LedgerRow:
     # Бегущий остаток ПОСЛЕ этой строки: >0 дебиторка, <0 кредиторка.
     balance_after: Decimal = Decimal("0")
     prepayment_id: uuid.UUID | None = None
+    # Документ создан нами (source='self_billed'), а не прислан контрагентом.
+    self_billed: bool = False
 
 
 @dataclass
@@ -149,6 +151,9 @@ class Ledger:
     total_paid: Decimal
     total_documented: Decimal
     overdue_amount: Decimal
+    # Сколько признано нами, без первички от контрагента: эти расходы есть в P&L,
+    # но в налоговую базу УСН не идут.
+    self_billed_amount: Decimal
     rows: list[LedgerRow]
     months: list[LedgerMonth]
     has_barter: bool
@@ -432,15 +437,25 @@ async def build_ledger(
         remainder = _clamp(money(doc.amount) - paid)
         doc_date = doc.invoice_date or doc.created_at.date()
         start, end = period_of(doc.service_period_start, doc.service_period_end, doc_date)
+        # Самоакт — наш внутренний документ по абонентскому платежу: контрагент его не
+        # выставлял. Называть его «УПД №…» нельзя ни в коем случае: человек решит, что
+        # первичка есть, и учтёт расход в налоговой базе, которой он не принадлежит.
+        self_billed = doc.source == "self_billed"
         rows.append(
             LedgerRow(
                 kind="document",
                 id=doc.id,
                 row_date=doc_date,
                 amount=money(doc.amount),
-                title=f"УПД № {doc.number}" if doc.number else "Закрывающий документ",
+                title=(
+                    "Признано без документа"
+                    if self_billed
+                    else (f"УПД № {doc.number}" if doc.number else "Закрывающий документ")
+                ),
                 subtitle=(
-                    "не оплачен"
+                    "первички нет — в налоговые расходы не идёт"
+                    if self_billed
+                    else "не оплачен"
                     if remainder > 0 and doc.activation_status == "active"
                     else ("вступает в силу позже" if doc.activation_status != "active" else None)
                 ),
@@ -449,6 +464,7 @@ async def build_ledger(
                 uncovered=remainder if doc.activation_status == "active" else Decimal("0"),
                 status="ok",
                 links=[f"оплачено {paid}"] if paid > 0 else [],
+                self_billed=self_billed,
             )
         )
 
@@ -470,7 +486,10 @@ async def build_ledger(
 
     months: dict[str, LedgerMonth] = {}
     for row in visible:
-        key = (row.period_start or row.row_date).strftime("%Y-%m")
+        # Группируем по дате СОБЫТИЯ, а не по периоду услуги: строки идут хронологией, и
+        # ключ по периоду заставлял один месяц появляться дважды — квартальный платёж
+        # относится к апрелю, а признание за апрель стоит на три месяца ниже.
+        key = row.row_date.strftime("%Y-%m")
         bucket = months.setdefault(
             key,
             LedgerMonth(
@@ -501,6 +520,10 @@ async def build_ledger(
         total_documented=sum((r.amount for r in visible if r.kind == "document"), Decimal("0")),
         overdue_amount=sum(
             (r.uncovered for r in visible if r.kind == "payment" and r.status == "overdue"),
+            Decimal("0"),
+        ),
+        self_billed_amount=sum(
+            (r.amount for r in visible if r.kind == "document" and r.self_billed),
             Decimal("0"),
         ),
         rows=visible,

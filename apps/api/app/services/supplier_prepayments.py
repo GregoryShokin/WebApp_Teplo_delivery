@@ -23,6 +23,7 @@ from app.models import (
     Counterparty,
     CounterpartyPayableProfile,
     DdsArticle,
+    ExpenseDraftLine,
     InvoicePaymentAllocation,
     SupplierInvoice,
     SupplierPrepayment,
@@ -825,6 +826,38 @@ async def _transaction_carried_bill_allocations(
     return _money(total)
 
 
+async def _expense_line_period(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> tuple[date, date, int | None, bool] | None:
+    """Период услуги со строки расхода, породившей платёж, если он там указан.
+
+    Окно «Новый платёж» спрашивает период на строке и гарантирует, что у всех строк одного
+    черновика он общий (гард «платежи с разными периодами оформите отдельными черновиками»),
+    поэтому берём первую строку с заполненным периодом. Возвращает ещё число месяцев и
+    признак помесячного признания: без них дебиторка за квартал не знала бы, что её надо
+    гасить по третям.
+    """
+    if transaction.source_kind != "counterparty_payment" or transaction.source_id is None:
+        return None
+    line = await session.scalar(
+        select(ExpenseDraftLine)
+        .where(
+            ExpenseDraftLine.draft_id == transaction.source_id,
+            ExpenseDraftLine.service_period_start.is_not(None),
+            ExpenseDraftLine.service_period_end.is_not(None),
+        )
+        .order_by(ExpenseDraftLine.position)
+    )
+    if line is None or line.service_period_start is None or line.service_period_end is None:
+        return None
+    return (
+        line.service_period_start,
+        line.service_period_end,
+        line.service_period_months,
+        bool(line.auto_recognize_monthly),
+    )
+
+
 async def ensure_prepayment_from_bank_transaction(
     session: AsyncSession, transaction: CashflowTransaction
 ) -> SupplierPrepayment | None:
@@ -949,6 +982,11 @@ async def ensure_prepayment_from_bank_transaction(
             await session.flush()
         return None
 
+    # Период платежа знает СТРОКА расхода (окно «Новый платёж» его и спрашивает), а
+    # дебиторка до сих пор рождалась без него — отсюда и приходилось угадывать месяц по дате
+    # операции. Переносим: без периода помесячное признание не знает, за что платили, а
+    # сверка не может сказать, когда ждать закрывающий документ.
+    period = await _expense_line_period(session, transaction)
     if existing is None:
         prepayment = SupplierPrepayment(
             counterparty_id=transaction.counterparty_id,
@@ -959,6 +997,11 @@ async def ensure_prepayment_from_bank_transaction(
             status="open",
             cashflow_transaction_id=transaction.id,
             article_id=transaction.article_id,
+            service_period_start=period[0] if period else None,
+            service_period_end=period[1] if period else None,
+            service_period_status="ready" if period else "missing",
+            service_period_months=period[2] if period else None,
+            auto_recognize_monthly=period[3] if period else False,
             note=(
                 "Автопредоплата из банковского списания (предоплатная модель)"
                 if transaction.source_kind == "bank_operation"
@@ -1354,6 +1397,13 @@ async def apply_closing_document(
         invoice.activation_status = "pending"
         return Decimal("0.00")
     invoice.activation_status = "active"
+    # Настоящий документ сильнее самоакта: если месяц уже был признан внутренним
+    # ``self_billed`` (контрагент документов не присылал), тот аннулируется и возвращает
+    # дебиторку — иначе период закрылся бы дважды и расход в P&L удвоился. Импорт локальный:
+    # subscription_accruals сам зовёт этот модуль, на верхнем уровне вышел бы цикл.
+    from app.services import subscription_accruals
+
+    await subscription_accruals.supersede_self_billed(session, invoice)
     return await auto_settle_invoice_from_open_prepayments(
         session, invoice, actor_user_id=actor_user_id
     )

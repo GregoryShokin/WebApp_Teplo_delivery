@@ -389,6 +389,8 @@ export type LedgerRow = {
   /** Остаток расчётов ПОСЛЕ строки: >0 — мы заплатили вперёд, <0 — должны мы. */
   balance_after: number;
   prepayment_id: string | null;
+  /** Документ создан нами (абонентский платёж без закрывающих), а не прислан контрагентом. */
+  self_billed: boolean;
 };
 
 export type LedgerMonth = {
@@ -410,6 +412,8 @@ export type SettlementLedger = {
   total_paid: number;
   total_documented: number;
   overdue_amount: number;
+  /** Признано нами без первички: в P&L есть, в налоговые расходы УСН не идёт. */
+  self_billed_amount: number;
   has_barter: boolean;
   rows: LedgerRow[];
   months: LedgerMonth[];

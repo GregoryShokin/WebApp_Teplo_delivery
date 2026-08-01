@@ -707,6 +707,8 @@ async def post_new_payment_expense_draft(
             counterparty_id=line.counterparty_id,
             service_period_start=line.service_period_start,
             service_period_end=line.service_period_end,
+            service_period_months=line.service_period_months,
+            auto_recognize_monthly=line.auto_recognize_monthly,
             location_id=line.location_id,
             lease_id=line.lease_id,
             asset_id=line.asset_id,

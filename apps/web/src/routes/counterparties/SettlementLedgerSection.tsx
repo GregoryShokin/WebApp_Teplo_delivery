@@ -51,6 +51,15 @@ function periodLabel(row: LedgerRow): string {
 
 function StatusCell({ row }: { row: LedgerRow }) {
   if (row.kind === "document") {
+    // Самоакт называем своим именем: это НАШЕ признание расхода, а не документ поставщика.
+    // Спутать их нельзя — от этого зависит, попадёт ли расход в налоговую базу.
+    if (row.self_billed) {
+      return (
+        <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
+          признано нами · без первички
+        </Badge>
+      );
+    }
     return row.uncovered > 0 ? (
       <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
         не оплачен: {formatRub(row.uncovered)}
@@ -126,7 +135,7 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <SummaryTile
           title="Остаток расчётов"
           value={formatRub(Math.abs(ledger.closing_balance))}
@@ -149,6 +158,14 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
           }
           tone={ledger.overdue_amount > 0 ? "rose" : "muted"}
         />
+        {ledger.self_billed_amount > 0 ? (
+          <SummaryTile
+            title="Признано без первички"
+            value={formatRub(ledger.self_billed_amount)}
+            hint="есть в P&L, в налоговых расходах — нет"
+            tone="violet"
+          />
+        ) : null}
         <SummaryTile
           title="Всего за период"
           value={`${formatRub(ledger.total_paid)} / ${formatRub(ledger.total_documented)}`}
@@ -180,7 +197,8 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
           </TableHeader>
           <TableBody>
             {ledger.rows.map((row) => {
-              const monthKey = (row.period_start ?? row.row_date).slice(0, 7);
+              // По дате события — тот же ключ, что и в месячных подытогах на бэкенде.
+              const monthKey = row.row_date.slice(0, 7);
               const showMonth = monthKey !== lastMonth;
               lastMonth = monthKey;
               const month = monthByKey.get(monthKey);
@@ -274,10 +292,16 @@ function SummaryTile({
   title: string;
   value: string;
   hint: string;
-  tone: "sky" | "rose" | "muted";
+  tone: "sky" | "rose" | "violet" | "muted";
 }) {
   const toneClass =
-    tone === "sky" ? "text-sky-700" : tone === "rose" ? "text-rose-700" : "text-foreground";
+    tone === "sky"
+      ? "text-sky-700"
+      : tone === "rose"
+        ? "text-rose-700"
+        : tone === "violet"
+          ? "text-violet-700"
+          : "text-foreground";
   return (
     <div className="rounded-lg border bg-background p-3">
       <div className="text-xs uppercase text-muted-foreground">{title}</div>

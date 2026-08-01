@@ -345,6 +345,13 @@ class ExpenseDraftLine(Base):
     service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Абонентская оплата вперёд: сколько месяцев покрывает платёж (9 000 ₽ за апрель-июнь → 3)
+    # и надо ли признавать расход помесячно самим, не дожидаясь закрывающего документа.
+    # Оба поля переезжают на дебиторку при оплате (см. _expense_line_period).
+    service_period_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    auto_recognize_monthly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Аналитика «где»: строка знает помещение (и договор аренды, если платёж закрывает его),
     # а paid-переход переносит пару в целёвку Сейфа и в проводку.
     location_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -922,6 +929,16 @@ class SupplierPrepayment(Base):
     service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_status: Mapped[str] = mapped_column(
         String(24), nullable=False, default="missing", server_default="missing"
+    )
+    # Сколько месяцев покрывает платёж: 9 000 ₽ за апрель-июнь → 3. NULL/1 — обычный платёж
+    # за свой месяц. Живёт на платеже, а не в карточке: один поставщик выставляет и
+    # абонентский счёт, и разовую работу.
+    service_period_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Признавать расход помесячно самим (subscription_accruals), не дожидаясь закрывающего
+    # документа: контрагент их не присылает или присылает не всегда. Каждый месяц заводится
+    # внутренний документ source='self_billed' на долю суммы; пришедший УПД его замещает.
+    auto_recognize_monthly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
