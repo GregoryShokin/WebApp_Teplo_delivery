@@ -30,6 +30,17 @@ const money = new Intl.NumberFormat("ru-RU", {
   maximumFractionDigits: 0,
 });
 
+const dateFormat = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+function fmtDate(value: string | null): string {
+  if (!value) return "—";
+  return dateFormat.format(new Date(`${value}T00:00:00`));
+}
+
 /**
  * Договоры услуг: сколько контрагент берёт в месяц и ждём ли от него документы.
  *
@@ -140,8 +151,8 @@ export function ServiceAgreementsSection({
             </Badge>
             {!row.accrual_enabled ? <Badge variant="outline">начисление выключено</Badge> : null}
             <span className="text-xs text-muted-foreground">
-              {row.dds_article_name ?? "без статьи"} · с {row.started_on}
-              {row.ended_on ? ` по ${row.ended_on}` : ""}
+              {row.dds_article_name ?? "без статьи"} · с {fmtDate(row.started_on)}
+              {row.ended_on ? ` по ${fmtDate(row.ended_on)}` : ""}
             </span>
             {canAdmin && row.is_active ? (
               <Button
