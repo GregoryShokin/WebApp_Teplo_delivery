@@ -744,6 +744,42 @@ async def poll_mail_invoices() -> None:
 
 @scheduler.scheduled_job(
     "interval",
+    seconds=get_settings().telegram_intake_poll_interval_seconds,
+    id="poll_telegram_intake",
+    max_instances=1,
+    coalesce=True,
+)
+async def poll_telegram_intake() -> None:
+    """Документы, присланные боту в Телеграм → «Страница на оплату».
+
+    Арендодатели шлют квитанции в мессенджер, владелец их пересылает — это всё, что от него
+    требуется. Интервал секундный, а не минутный, потому что внутри долгий опрос: соединение
+    висит до появления сообщения, и документ доезжает за секунды. Своей логики учёта здесь нет
+    ни строки — файл уходит в ту же дверь, что и кнопка «Загрузить документ».
+
+    ПОТРЕБИТЕЛЬ ОБЯЗАН БЫТЬ ОДИН. ``getUpdates`` отдаёт сообщение ровно одному читателю, и
+    второй начнёт перехватывать документы через раз. На проде это обеспечено устройством:
+    фоновые задачи живут только в контейнере ``scheduler`` (``API_RUNS_BACKGROUND_JOBS=false``
+    у api, который запущен с ``--workers 2``). Включишь джобы в веб-процессе с несколькими
+    воркерами — получишь ровно столько же конкурирующих ботов, а Телеграм ответит 409.
+    """
+    settings = get_settings()
+    if not settings.telegram_intake_enabled:
+        return
+    from app.services import telegram_intake
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await telegram_intake.poll_and_ingest(session, settings=settings)
+        except Exception:  # noqa: BLE001 - недоступный Телеграм не должен ронять планировщик
+            logger.warning("poll_telegram_intake: проход завершился ошибкой", exc_info=True)
+            return
+    if result.get("status") != "not_configured" and result.get("updates"):
+        logger.info("poll_telegram_intake: %s", result)
+
+
+@scheduler.scheduled_job(
+    "interval",
     minutes=get_settings().fixed_asset_revaluation_interval_minutes,
     id="assess_asset_condition_reports",
     max_instances=1,

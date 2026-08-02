@@ -48,11 +48,16 @@ def list_integration_definitions() -> list[IntegrationDefinition]:
             script_path="integrations/mango/scripts",
             status="existing_python_scripts",
         ),
+        # Приёмка документов из Телеграма живёт в приложении с 02.08.2026: владелец пересылает
+        # боту фотографию от арендодателя, файл уходит в ту же дверь, что и кнопка «Загрузить
+        # документ». Прежний локальный скрипт (integrations/tbank/scripts/payment_order_bot.py)
+        # выведен из работы — он готовил платёжные поручения T-Bank, а это владельцу не нужно.
+        # Запускать его с тем же токеном нельзя: getUpdates читает только один потребитель.
         IntegrationDefinition(
-            code="telegram_payment_ocr",
-            name="Telegram payment OCR bot",
-            pattern="telegram_ocr_bot",
-            script_path="integrations/tbank/scripts/payment_order_bot.py",
-            status="existing_python_script",
+            code="telegram_intake",
+            name="Telegram document intake bot",
+            pattern="telegram_long_polling",
+            script_path="apps/api/app/services/telegram_intake.py",
+            status="in_app_service",
         ),
     ]
