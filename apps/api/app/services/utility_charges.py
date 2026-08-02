@@ -24,7 +24,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -33,7 +33,12 @@ from app.models import (
     UtilityAccount,
     UtilityIntake,
 )
-from app.services import clock, supplier_prepayments, supplier_service_periods
+from app.services import (
+    clock,
+    counterparty_matching,
+    supplier_prepayments,
+    supplier_service_periods,
+)
 
 UTILITY_INVOICE_SOURCE = "utility"
 
@@ -43,7 +48,9 @@ __all__ = [
     "expected_periods",
     "intake_external_id",
     "promote_intake",
+    "recognize_intake",
     "revoke_intake",
+    "settle_utility_invoices_from_cash",
 ]
 
 
@@ -182,6 +189,10 @@ async def promote_intake(
     await supplier_prepayments.apply_closing_document(
         session, invoice, actor_user_id=actor_user_id, as_of=as_of
     )
+    # Замещение самоакта переклеивает его денежные аллокации на наш документ, а статуса не
+    # трогает: документ остался бы «неоплаченным» с живыми деньгами на нём — и отзыв, который
+    # смотрит именно на статус, аннулировал бы оплаченный долг. Пересчёт закрывает окно.
+    await counterparty_matching._recompute_status(session, invoice)
     # Помещение известно точно — оно и есть смысл потока. Без него расход осел бы в графе
     # «без помещения», и прибыль по точке считалась бы без коммуналки.
     await supplier_service_periods.sync_invoice_accrual(
@@ -226,16 +237,215 @@ async def revoke_intake(
             "контрагента"
         )
 
+    # Начисление снимаем ПЕРВЫМ и проверяем результат. В закрытом месяце отмена признанного
+    # расхода запрещена (``_cancel_accrual`` возвращает строку нетронутой), и без этой проверки
+    # отзыв рапортовал бы об успехе: документ ушёл бы в void, месяц освободился, а признанный
+    # расход остался бы висеть — с ошибочной суммой, и повторное проведение добавило бы к нему
+    # вторую. Отказываем внятно: сначала откройте период.
+    accrual = await supplier_service_periods.cancel_invoice_accrual(session, invoice.id)
+    if accrual is not None and accrual.status != "cancelled":
+        raise UtilityChargeError(
+            f"Расход за {accrual.service_period_end:%m.%Y} уже признан, а месяц закрыт — отозвать "
+            "нельзя. Откройте период в «Учёте», затем повторите"
+        )
+
     invoice.payment_status = "void"
     if invoice.external_id:
         invoice.external_id = superseded_external_id(invoice.external_id, invoice.id)
-    # Начисление снимаем явно: is_expense_bearing уже вернёт False для void-документа, но
-    # полагаться на это молча нельзя — расход должен исчезнуть из месяца здесь и сейчас.
-    await supplier_service_periods.cancel_invoice_accrual(session, invoice.id)
     intake.status = "ready"
     intake.invoice_id = None
     await session.flush()
     return invoice
+
+
+async def recognize_intake(
+    session: AsyncSession, intake: UtilityIntake, *, settings: object
+) -> dict[str, object]:
+    """Разобрать загруженный документ и подставить поля, которых человек ещё не касался.
+
+    ПОРЯДОК ВАЖЕН: сначала текст (``utility_ocr`` — pypdf для PDF, vision для снимка), потом
+    детерминированные парсеры (``utility_recognition``). Модель нигде не называет сумму: она
+    отдаёт строки, а сумму по ним считают регексы с golden-тестами на реальных фото. Иначе
+    цифру в учёте было бы не с чем сверить.
+
+    ЧУЖОЕ НЕ ЗАТИРАЕМ. Заполняются только пустые поля. Человек, поправивший сумму вручную и
+    нажавший «Распознать» ещё раз, не должен получить обратно машинную версию — его правка
+    старше и весомее.
+
+    Возвращает то, что кладётся в ``intake.recognition``: результат виден в интерфейсе и
+    объясняет, откуда взялись цифры.
+    """
+    from app.services import utility_ocr
+    from app.services.utility_recognition import recognize_utility_document
+
+    if intake.content is None:
+        return {"status": "no_document"}
+
+    text, how = await utility_ocr.extract_text(
+        bytes(intake.content), mime=intake.mime, settings=settings
+    )
+    report: dict[str, object] = {"source": how}
+    if not text:
+        # Причина отказа — не мусор, а подсказка человеку: «снимок смазан» и «модель не
+        # настроена» требуют разных действий.
+        report["status"] = "no_text"
+        intake.recognition = report
+        intake.status = "needs_review"
+        await session.flush()
+        return report
+
+    parsed = recognize_utility_document(text)
+    if parsed is None:
+        report["status"] = "not_utility"
+        intake.recognition = report
+        intake.status = "needs_review"
+        await session.flush()
+        return report
+
+    report.update(
+        {
+            "status": "recognized",
+            "kind": parsed.kind,
+            "confidence": parsed.confidence,
+            "reasons": parsed.reasons,
+            "amount": str(parsed.amount) if parsed.amount is not None else None,
+            "period_start": parsed.period_start.isoformat() if parsed.period_start else None,
+            "period_end": parsed.period_end.isoformat() if parsed.period_end else None,
+            "document_number": parsed.document_number,
+            "document_date": parsed.document_date.isoformat() if parsed.document_date else None,
+        }
+    )
+
+    if intake.amount is None and parsed.amount is not None:
+        intake.amount = parsed.amount
+    if intake.period_start is None and parsed.period_start is not None:
+        intake.period_start = parsed.period_start
+    if intake.period_end is None and parsed.period_end is not None:
+        intake.period_end = parsed.period_end
+    if intake.document_number is None and parsed.document_number:
+        intake.document_number = parsed.document_number
+    if intake.document_date is None and parsed.document_date is not None:
+        intake.document_date = parsed.document_date
+
+    # Поток по виду услуги предлагаем, но только когда он однозначен: у помещения ровно один
+    # активный поток этого вида. Угадывать помещение по фотографии нельзя — на квитанции его нет.
+    if intake.account_id is None:
+        candidates = (
+            await session.scalars(
+                select(UtilityAccount).where(
+                    UtilityAccount.kind == parsed.kind,
+                    UtilityAccount.is_active.is_(True),
+                )
+            )
+        ).all()
+        if len(candidates) == 1:
+            intake.account_id = candidates[0].id
+            report["account_matched"] = "single_active_stream"
+
+    # Статус всегда «нужна проверка»: распознавание — черновик, учёт двигает человек.
+    intake.recognition = report
+    intake.status = "needs_review"
+    await session.flush()
+    return report
+
+
+async def settle_utility_invoices_from_cash(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    article_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    transaction_id: uuid.UUID,
+    amount: Decimal,
+    wallet_id: uuid.UUID | None = None,
+    created_by_user_id: uuid.UUID | None = None,
+) -> bool:
+    """Наличная выплата арендодателю гасит коммунальный долг. Не коммитит.
+
+    Почему это нужно отдельной функцией. Канон не различает канал денег, но исполняют его два
+    разных механизма: банковский платёж проходит правило 1 сам, а наличная выдача из Сейфа в
+    правило 1 не заходит вовсе (``safe_payout`` в ``DEDICATED_MONEY_SOURCE_KINDS`` — слепой FIFO
+    снял бы адресную привязку выдачи). Аренда решает это своим
+    ``settle_lease_invoice_from_cash``; у коммуналки такого не было, и деньги, выданные
+    арендодателю из Сейфа — а это здесь ОСНОВНОЙ канал, — кредиторку не гасили ничем.
+
+    Возвращает ``True``, если выдача опознана как коммунальная и деньгами распорядились.
+    """
+    if amount <= 0 or article_id is None:
+        return False
+
+    conditions = [
+        UtilityAccount.counterparty_id == counterparty_id,
+        UtilityAccount.dds_article_id == article_id,
+    ]
+    if location_id is not None:
+        conditions.append(UtilityAccount.location_id == location_id)
+    accounts = (await session.scalars(select(UtilityAccount).where(*conditions))).all()
+    if not accounts:
+        return False
+
+    # Локальные импорты: модуль зовут из safe_allocations, а тот тянет пол-банка — на верхнем
+    # уровне вышло бы кольцо.
+    from app.models import InvoicePaymentAllocation, SupplierPrepayment, invoice_binds_settlement
+
+    prefixes = [f"utility:{account.id}:%" for account in accounts]
+    invoices = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .where(
+                SupplierInvoice.source == UTILITY_INVOICE_SOURCE,
+                or_(*[SupplierInvoice.external_id.like(prefix) for prefix in prefixes]),
+                SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")),
+                # Только вступившие в силу: документ будущего месяца обязательством ещё не
+                # является, и платить по нему нельзя — ровно тот дефект, на котором аренда
+                # once потеряла 50 000 ₽.
+                invoice_binds_settlement(),
+            )
+            .order_by(SupplierInvoice.invoice_date, SupplierInvoice.created_at)
+        )
+    ).all()
+
+    left = amount
+    for invoice in invoices:
+        if left <= 0:
+            break
+        allocated = await counterparty_matching._allocated_amount(session, invoice.id)
+        outstanding = Decimal(invoice.amount) - allocated
+        if outstanding <= 0:
+            continue
+        part = min(outstanding, left)
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=transaction_id,
+                amount=part,
+                created_by_user_id=created_by_user_id,
+            )
+        )
+        await session.flush()
+        await counterparty_matching._recompute_status(session, invoice)
+        left -= part
+
+    if left > 0:
+        # Заплатили больше, чем предъявлено, — деньги вперёд. Обычная дебиторка: пришедшая
+        # позже платёжка погасится ею штатным авто-зачётом.
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=counterparty_id,
+                kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+                wallet_id=wallet_id,
+                amount=left,
+                amount_settled=Decimal("0.00"),
+                status="open",
+                cashflow_transaction_id=transaction_id,
+                article_id=article_id,
+                note="Коммунальные услуги: оплачено вперёд",
+                created_by_user_id=created_by_user_id,
+            )
+        )
+        await session.flush()
+    return True
 
 
 async def expected_periods(

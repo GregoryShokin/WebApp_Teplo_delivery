@@ -531,16 +531,32 @@ async def _lease_or_404(session: AsyncSession, lease_id: uuid.UUID) -> LocationL
     return lease
 
 
-async def _assert_lease_article(session: AsyncSession, article_id: uuid.UUID | None) -> None:
-    """Статья договора аренды должна быть именно арендной (``lease_bound``).
+async def _assert_lease_article(
+    session: AsyncSession, article_id: uuid.UUID | None, *, accrual_expected: bool = True
+) -> None:
+    """Статья договора аренды должна быть именно арендной (``lease_bound``) и присутствовать.
 
     Помещению принадлежат ещё коммуналка и охрана — они тоже ``location_required``, и раньше
     список в диалоге предлагал их наравне с арендой. Выбор коммунальной статьи в договоре стоит
     дорого: арендное начисление встаёт под неё, а гард ``_month_closed_by_landlord`` считает
     месяц коммуналки закрытым чужим документом — коммунальный расход месяца молча пропадает.
     Проверка серверная, чтобы фильтр в интерфейсе не был единственной защитой.
+
+    Пустая статья отклоняется по другой причине, но не менее важной: ``ensure_lease_invoice``
+    без неё возвращает ``None`` (расход относить некуда), то есть договор existует, а
+    начисления по нему не будет НИКОГДА — и никакой ошибки при этом никто не увидит. Раньше
+    так можно было завести аренду через смену арендодателя и месяцами не замечать, что её нет
+    ни в кредиторке, ни в расходе.
     """
     if article_id is None:
+        if accrual_expected:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Не выбрана статья аренды. Без неё расход относить некуда, и ежемесячное "
+                    "начисление по договору не заведётся"
+                ),
+            )
         return
     article = await session.get(DdsArticle, article_id)
     if article is None:

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,10 +26,20 @@ import {
   apiErrorMessage,
   getUtilityIntakeFileUrl,
   promoteUtilityIntake,
+  recognizeUtilityIntake,
   updateUtilityIntake,
   type UtilityAccountRecord,
   type UtilityIntakeRecord,
 } from "@/lib/api";
+
+/**
+ * Сумма к отправке: запятую меняем на точку и убираем пробелы-разделители разрядов.
+ * На русской раскладке «9878,79» набирается само собой, а сервер ждёт Decimal — без нормализации
+ * человек получал 422 с простынёй валидатора вместо цифры.
+ */
+function normalizeAmount(raw: string): string {
+  return raw.replace(/\s|\u00a0/g, "").replace(",", ".");
+}
 
 /** Границы месяца по его номеру: период набивать руками не нужно, счёт всегда за месяц. */
 function monthBounds(month: string): { start: string; end: string } {
@@ -136,7 +147,7 @@ export function UtilityReviewDialog({
         account_id: accountId || null,
         period_start: bounds.start,
         period_end: bounds.end,
-        amount: amount.trim() || null,
+        amount: normalizeAmount(amount).trim() || null,
         document_number: documentNumber.trim() || null,
         document_date: documentDate || null,
         note: note.trim() || null,
@@ -154,8 +165,33 @@ export function UtilityReviewDialog({
     onError: (error) => toast.error(apiErrorMessage(error)),
   });
 
+  const recognize = useMutation({
+    mutationFn: async () => {
+      if (!intake) throw new Error("нет платёжки");
+      return recognizeUtilityIntake(intake.id);
+    },
+    onSuccess: async (updated) => {
+      // Подставляем только то, что человек ещё не заполнил: его правка старше машинной.
+      if (!accountId && updated.account_id) setAccountId(updated.account_id);
+      if (!amount.trim() && updated.amount) setAmount(updated.amount);
+      if (updated.period_end) setMonth(updated.period_end.slice(0, 7));
+      if (!documentNumber.trim() && updated.document_number)
+        setDocumentNumber(updated.document_number);
+      if (!documentDate && updated.document_date) setDocumentDate(updated.document_date);
+      const status = (updated.recognition as { status?: string } | null)?.status;
+      if (status === "recognized") toast.success("Документ распознан — сверьте сумму и месяц");
+      else if (status === "not_utility")
+        toast.warning("Это не похоже на коммунальный документ — заполните поля вручную");
+      else toast.warning("Распознать не удалось — введите сумму, глядя на документ");
+      await onSaved();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error)),
+  });
+
   const isImage = (intake?.mime ?? "").startsWith("image/");
-  const canPromote = accountId !== "" && amount.trim() !== "" && month !== "";
+  const parsedAmount = Number(normalizeAmount(amount));
+  const amountValid = amount.trim() !== "" && Number.isFinite(parsedAmount) && parsedAmount > 0;
+  const canPromote = accountId !== "" && amountValid && month !== "";
   const recognised = Boolean(intake?.recognition);
 
   return (
@@ -230,7 +266,17 @@ export function UtilityReviewDialog({
                   <Label className="text-muted-foreground text-xs">Месяц</Label>
                   <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
                 </div>
-                <Field label="Сумма к возмещению, ₽" value={amount} onChange={setAmount} />
+                <div className="grid gap-1">
+                  <Label className="text-muted-foreground text-xs">Сумма к возмещению, ₽</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                  />
+                  {amount.trim() !== "" && !amountValid ? (
+                    <p className="text-destructive text-xs">Введите сумму больше нуля</p>
+                  ) : null}
+                </div>
               </div>
               <p className="text-muted-foreground text-xs">
                 Расход встанет в этот месяц, даже если платёжку принесли позже. По окончании
@@ -259,6 +305,17 @@ export function UtilityReviewDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Отмена
           </Button>
+          {intake?.has_document ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={recognize.isPending}
+              onClick={() => recognize.mutate()}
+            >
+              {recognize.isPending ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+              Распознать
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"

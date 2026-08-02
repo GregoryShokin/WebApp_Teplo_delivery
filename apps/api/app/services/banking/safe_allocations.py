@@ -290,6 +290,23 @@ async def pay_allocation(
             created_by_user_id=created_by_user_id,
         )
 
+    # Коммуналка: наличная выдача арендодателю гасит долг его потока (вода/газ/свет) и, если
+    # заплатили вперёд, оставляет остаток дебиторкой. Без этой ветки основной канал расчётов с
+    # арендодателем — наличные из Сейфа — кредиторку не трогал вовсе.
+    if allocation.lease_id is None and allocation.counterparty_id is not None:
+        from app.services.utility_charges import settle_utility_invoices_from_cash
+
+        await settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=allocation.counterparty_id,
+            article_id=allocation.article_id,
+            location_id=allocation.location_id,
+            transaction_id=leg.id,
+            amount=amount,
+            wallet_id=allocation.wallet_id,
+            created_by_user_id=created_by_user_id,
+        )
+
     # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
     # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
     # Код статьи продублирован из supplier_prepayments (циклический импорт через kassa).

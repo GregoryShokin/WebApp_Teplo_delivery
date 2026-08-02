@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from pathlib import Path
 from decimal import Decimal
 
+import pytest
 from cp_helpers import make_counterparty, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -31,6 +33,7 @@ from app.models import (
     Organization,
     SupplierExpenseAccrual,
     SupplierInvoice,
+    SupplierPrepayment,
     UtilityAccount,
     UtilityIntake,
 )
@@ -381,4 +384,217 @@ async def test_calendar_shows_month_without_document(
         assert by_month[date(2026, 6, 1)] == "provided"
         # За июль документа нет, а срок (10 августа) прошёл — это просрочка, а не тишина.
         assert by_month[date(2026, 7, 1)] == "overdue"
+        await session.rollback()
+
+
+async def test_cash_payout_settles_utility_debt(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Наличные арендодателю гасят коммунальный долг — это ОСНОВНОЙ канал расчётов.
+
+    Банковский платёж проходит правило 1 сам, а выдача из Сейфа в него не заходит вовсе
+    (адресные деньги слепой FIFO разнёс бы не туда). До правки коммунальная кредиторка
+    наличными не гасилась ничем: деньги уходили, долг оставался висеть.
+    """
+    async with async_session_factory() as session:
+        account = await _account(session)
+        intake = await _intake(session, account, amount="9878.79")
+        invoice = await utility_charges.promote_intake(session, intake, as_of=date(2026, 8, 5))
+
+        wallet = await make_wallet(session)
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("9878.79"),
+            operation_date=date(2026, 8, 6),
+            counterparty_id=account.counterparty_id,
+            source_kind="safe_payout",
+            payment_purpose="возмещение коммуналки наличными",
+            quality_status="auto",
+        )
+        session.add(tx)
+        await session.flush()
+
+        handled = await utility_charges.settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            location_id=account.location_id,
+            transaction_id=tx.id,
+            amount=Decimal("9878.79"),
+            wallet_id=wallet.id,
+        )
+
+        assert handled is True
+        assert (await session.get(SupplierInvoice, invoice.id)).payment_status == "paid"
+        await session.rollback()
+
+
+async def test_cash_payout_overpay_becomes_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Заплатили больше предъявленного — остаток становится дебиторкой, а не исчезает."""
+    async with async_session_factory() as session:
+        account = await _account(session)
+        intake = await _intake(session, account, amount="9000.00")
+        await utility_charges.promote_intake(session, intake, as_of=date(2026, 8, 5))
+
+        wallet = await make_wallet(session)
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("10000.00"),
+            operation_date=date(2026, 8, 6),
+            counterparty_id=account.counterparty_id,
+            source_kind="safe_payout",
+            payment_purpose="возмещение коммуналки",
+            quality_status="auto",
+        )
+        session.add(tx)
+        await session.flush()
+
+        await utility_charges.settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            location_id=account.location_id,
+            transaction_id=tx.id,
+            amount=Decimal("10000.00"),
+            wallet_id=wallet.id,
+        )
+
+        prepayment = await session.scalar(
+            select(SupplierPrepayment).where(
+                SupplierPrepayment.cashflow_transaction_id == tx.id,
+            )
+        )
+        assert prepayment is not None
+        assert prepayment.amount == Decimal("1000.00")
+        await session.rollback()
+
+
+async def test_cash_payout_ignores_unrelated_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выдача не по коммунальному потоку не должна трогать коммунальные долги."""
+    async with async_session_factory() as session:
+        account = await _account(session)
+        other = await make_counterparty(session, name="ООО «Прочее»", inn="6143000000")
+        intake = await _intake(session, account, amount="9878.79")
+        invoice = await utility_charges.promote_intake(session, intake, as_of=date(2026, 8, 5))
+
+        handled = await utility_charges.settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=other.id,
+            article_id=account.dds_article_id,
+            location_id=account.location_id,
+            transaction_id=uuid.uuid4(),
+            amount=Decimal("5000.00"),
+        )
+        assert handled is False
+        assert (await session.get(SupplierInvoice, invoice.id)).payment_status == "unpaid"
+        await session.rollback()
+
+
+async def test_recognition_fills_empty_fields_from_real_receipt(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сквозь всю цепочку: текст документа → парсеры → заполненные поля приёмки.
+
+    Модель здесь подменена: проверяется не она, а наша связка. Текст взят из фикстуры реального
+    фото счёта Водоканала — того же, на котором стоят golden-тесты парсера.
+    """
+    from app.services import utility_ocr
+
+    fixture = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "utility"
+        / "water_real_20260523_192636_b198d13d.txt"
+    )
+    text = fixture.read_text(encoding="utf-8")
+
+    async def _fake_extract(content, *, mime, settings):
+        return text, "vision"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", _fake_extract)
+
+    async with async_session_factory() as session:
+        account = await _account(session)
+        intake = UtilityIntake(
+            account_id=account.id,
+            status="new",
+            filename="foto.jpg",
+            mime="image/jpeg",
+            attachment_sha256=uuid.uuid4().hex * 2,
+            content=b"\xff\xd8\xff",
+        )
+        session.add(intake)
+        await session.flush()
+
+        report = await utility_charges.recognize_intake(session, intake, settings=object())
+
+        assert report["status"] == "recognized"
+        assert report["kind"] == "water"
+        # Сумма — из строк 4-7 счёта, а не из «Всего к оплате»: остальные строки не наша доля.
+        assert intake.amount is not None and intake.amount > 0
+        assert intake.period_start is not None and intake.period_end is not None
+        # Учёт остаётся за человеком: распознавание только черновик.
+        assert intake.status == "needs_review"
+        await session.rollback()
+
+
+async def test_recognition_does_not_overwrite_human_input(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Правка человека старше машинной: повторное распознавание её не затирает."""
+    from app.services import utility_ocr
+
+    async def _fake_extract(content, *, mime, settings):
+        return "МУП Водоканал ИНН 6143049157 водоснабжение водоотведение", "vision"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", _fake_extract)
+
+    async with async_session_factory() as session:
+        account = await _account(session)
+        intake = await _intake(session, account, amount="1234.56")
+        intake.status = "new"
+        await session.flush()
+
+        await utility_charges.recognize_intake(session, intake, settings=object())
+
+        assert intake.amount == Decimal("1234.56")
+        await session.rollback()
+
+
+async def test_recognition_marks_foreign_document(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Чужая бумага не должна разбираться как коммунальная — иначе сумма приедет из чужой таблицы."""
+    from app.services import utility_ocr
+
+    async def _fake_extract(content, *, mime, settings):
+        return "ООО «Поставщик» Счёт на оплату № 5 Итого 1000,00 ИНН 7712345678", "vision"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", _fake_extract)
+
+    async with async_session_factory() as session:
+        account = await _account(session)
+        intake = UtilityIntake(
+            account_id=account.id,
+            status="new",
+            content=b"\xff\xd8\xff",
+            attachment_sha256=uuid.uuid4().hex * 2,
+            mime="image/jpeg",
+        )
+        session.add(intake)
+        await session.flush()
+
+        report = await utility_charges.recognize_intake(session, intake, settings=object())
+
+        assert report["status"] == "not_utility"
+        assert intake.amount is None
         await session.rollback()

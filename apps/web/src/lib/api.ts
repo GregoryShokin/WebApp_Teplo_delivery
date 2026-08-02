@@ -6292,6 +6292,13 @@ export async function updateUtilityIntake(
   return response.data;
 }
 
+export async function recognizeUtilityIntake(id: string): Promise<UtilityIntakeRecord> {
+  const response = await api.post<UtilityIntakeRecord>(
+    `/accounting/utilities/intakes/${id}/recognize`,
+  );
+  return response.data;
+}
+
 export async function promoteUtilityIntake(id: string): Promise<UtilityIntakeRecord> {
   const response = await api.post<UtilityIntakeRecord>(
     `/accounting/utilities/intakes/${id}/promote`,

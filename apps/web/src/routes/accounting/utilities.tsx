@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { todayIso } from "@/lib/date";
 import {
@@ -207,6 +208,10 @@ export function UtilitiesRoute() {
             <CardContent className="space-y-2">
               {intakesQuery.isLoading ? (
                 <LoaderCircle className="size-4 animate-spin" />
+              ) : intakesQuery.isError ? (
+                <p className="text-destructive text-sm">
+                  Список платёжек не загрузился: {apiErrorMessage(intakesQuery.error)}
+                </p>
               ) : pending.length === 0 ? (
                 <p className="text-muted-foreground text-sm">
                   Непроведённых платёжек нет. Как принесут — загрузите фото, укажите сумму и месяц.
@@ -292,6 +297,12 @@ export function UtilitiesRoute() {
                 Строка есть у каждого месяца — в том числе у того, за который документ не приносили.
                 Иначе пропущенный месяц не оставляет следа нигде.
               </p>
+              {calendarQuery.isError ? (
+                // Молчать здесь опаснее всего: пустой календарь читается как «всё принесли».
+                <p className="text-destructive text-sm">
+                  Календарь не загрузился: {apiErrorMessage(calendarQuery.error)}
+                </p>
+              ) : null}
               {(calendarQuery.data ?? []).map((row) => (
                 <div
                   key={`${row.account_id}-${row.month}`}
@@ -321,7 +332,11 @@ export function UtilitiesRoute() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-2">
-              {accounts.length === 0 ? (
+              {accountsQuery.isError ? (
+                <p className="text-destructive text-sm">
+                  Потоки не загрузились: {apiErrorMessage(accountsQuery.error)}
+                </p>
+              ) : accounts.length === 0 ? (
                 <p className="text-muted-foreground text-sm">
                   Заведите поток: помещение, вид услуги, кому платим и по какой статье.
                 </p>
@@ -448,6 +463,7 @@ function AccountDialog({
     articleId: "",
     expectedDay: "",
     startedOn: todayIso(),
+    endedOn: "",
     isActive: true,
     note: "",
   });
@@ -476,6 +492,11 @@ function AccountDialog({
   );
 
   const key = value === "new" ? "new" : (value?.id ?? null);
+  if (value === null && initialised !== null) {
+    // Диалог закрыт — забываем, что заполняли: следующее открытие того же потока обязано
+    // показать сохранённые данные, а не брошенные правки.
+    setInitialised(null);
+  }
   if (value !== null && initialised !== key) {
     setInitialised(key);
     setForm({
@@ -485,6 +506,7 @@ function AccountDialog({
       articleId: record?.dds_article_id ?? "",
       expectedDay: record?.expected_day ? String(record.expected_day) : "",
       startedOn: record?.started_on ?? todayIso(),
+      endedOn: record?.ended_on ?? "",
       isActive: record?.is_active ?? true,
       note: record?.note ?? "",
     });
@@ -499,6 +521,8 @@ function AccountDialog({
         dds_article_id: form.articleId,
         expected_day: form.expectedDay ? Number(form.expectedDay) : null,
         started_on: form.startedOn,
+        // PATCH — полная замена: не пошли мы ended_on, и дата закрытия потока молча обнулилась бы.
+        ended_on: form.endedOn || null,
         is_active: form.isActive,
         note: form.note || null,
       };
@@ -625,6 +649,33 @@ function AccountDialog({
                 }
                 required
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="utility-ended">Закрыт с</Label>
+              <Input
+                id="utility-ended"
+                type="date"
+                value={form.endedOn}
+                onChange={(event) => setForm((prev) => ({ ...prev, endedOn: event.target.value }))}
+              />
+              <p className="text-muted-foreground text-xs">
+                Пусто — поток действует. Дата закрывает его: календарь перестанет ждать документы.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="utility-active">Состояние</Label>
+              <div className="flex items-center gap-2 pt-2">
+                <Switch
+                  id="utility-active"
+                  checked={form.isActive}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, isActive: checked }))
+                  }
+                />
+                <span className="text-sm">{form.isActive ? "Действует" : "Выключен"}</span>
+              </div>
             </div>
           </div>
           <DialogFooter>

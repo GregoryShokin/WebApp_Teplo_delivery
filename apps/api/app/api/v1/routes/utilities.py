@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.core.config import get_settings
 from app.db.session import get_session
 from app.models import (
     UTILITY_KIND_LABELS,
@@ -37,6 +38,7 @@ from app.models import (
 )
 from app.services import utility_charges
 from app.services.utility_charges import UtilityChargeError
+from app.services.utility_images import to_displayable
 
 router = APIRouter()
 
@@ -46,7 +48,44 @@ EDIT_ACCESS = (Depends(require_permission("accounting.suppliers.edit")),)
 # Больше 25 МБ фотография квитанции не бывает даже с современного телефона, а лежит файл в
 # строке таблицы — раздувать её нечем.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-ALLOWED_MIME_PREFIXES = ("image/", "application/pdf")
+
+# Тип файла определяем ПО СОДЕРЖИМОМУ, а не по заголовку загрузки: Content-Type пишет клиент,
+# и ему верить нельзя. Иначе SVG со скриптом, представленный как image/png, отдавался бы
+# обратно inline — то есть исполнялся бы в origin приложения, с его куками и токеном.
+# Отсюда же и белый список: у SVG нет бинарной сигнатуры, и в него он не попадает вовсе.
+FILE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"%PDF-", "application/pdf"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _sniff_mime(content: bytes) -> str | None:
+    """Тип по сигнатуре. ``None`` — формат не поддержан, грузить нельзя."""
+    for signature, mime in FILE_SIGNATURES:
+        if content.startswith(signature):
+            return mime
+    # WEBP и HEIC — контейнерные форматы: сигнатура не в начале файла.
+    if len(content) >= 12:
+        if content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
+            return "image/webp"
+        # Бренды HEIF, которые реально ставит техника Apple. mif1/msf1 — «просто HEIF»,
+        # остальные — снимок и его последовательности; все они читаются одинаково.
+        if content[4:8] == b"ftyp" and content[8:12] in (
+            b"heic",
+            b"heix",
+            b"heim",
+            b"heis",
+            b"hevc",
+            b"hevm",
+            b"hevs",
+            b"mif1",
+            b"msf1",
+        ):
+            return "image/heic"
+    return None
 
 
 class AccountWrite(BaseModel):
@@ -279,6 +318,12 @@ async def update_account(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Дата окончания раньше начала",
         )
+    # Те же проверки ссылок, что при создании: PATCH — полная замена, и без них правка могла
+    # перевести поток на несуществующее помещение или контрагента.
+    if await session.get(Location, payload.location_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Помещение не найдено")
+    if await session.get(Counterparty, payload.counterparty_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
     await _assert_article_fits(session, payload.dds_article_id)
     if (payload.location_id, payload.kind) != (account.location_id, account.kind):
         duplicate = await session.scalar(
@@ -410,6 +455,7 @@ async def create_intake(
     """
     content: bytes | None = None
     sha: str | None = None
+    sniffed: str | None = None
     if file is not None:
         content = await file.read()
         if not content:
@@ -421,11 +467,11 @@ async def create_intake(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 detail=f"Файл больше {MAX_UPLOAD_BYTES // 1024 // 1024} МБ",
             )
-        mime = file.content_type or ""
-        if not mime.startswith(ALLOWED_MIME_PREFIXES):
+        sniffed = _sniff_mime(content)
+        if sniffed is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Принимаем фотографию или PDF",
+                detail="Принимаем фотографию (JPEG, PNG, HEIC, WEBP) или PDF",
             )
         sha = hashlib.sha256(content).hexdigest()
         existing = await session.scalar(
@@ -439,6 +485,13 @@ async def create_intake(
 
     if account_id is not None:
         await _account_or_404(session, account_id)
+    # Ту же проверку, что и в PATCH: иначе ноль или минус доезжали до CHECK-констрейнта и
+    # возвращались пятисоткой вместо внятного отказа.
+    if amount is not None and amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Сумма должна быть больше нуля",
+        )
 
     intake = UtilityIntake(
         account_id=account_id,
@@ -446,7 +499,8 @@ async def create_intake(
         # и вводит сам. Появится разбор — сюда встанет его вердикт.
         status="needs_review",
         filename=file.filename if file is not None else None,
-        mime=file.content_type if file is not None else None,
+        # Наш вердикт по содержимому, а не заявленный клиентом тип.
+        mime=sniffed,
         attachment_sha256=sha,
         attachment_size=len(content) if content is not None else None,
         content=content,
@@ -472,15 +526,22 @@ async def download_intake_file(
     intake = await _intake_or_404(session, intake_id)
     if intake.content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файла нет")
+    # HEIC браузеры не рисуют — отдаём конвертированный JPEG, а в базе остаётся оригинал.
+    payload, media_type = to_displayable(bytes(intake.content), intake.mime)
     raw = intake.filename or "document"
     # HTTP-заголовки только latin-1: русское имя файла обязано ехать вторым, RFC 5987-полем,
     # иначе Starlette роняет ответ и браузер показывает «Network Error».
     ascii_name = raw.encode("ascii", "ignore").decode() or "document"
     disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw)}"
     return Response(
-        content=bytes(intake.content),
-        media_type=intake.mime or "application/octet-stream",
-        headers={"Content-Disposition": disposition},
+        content=payload,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": disposition,
+            # Браузер не должен угадывать тип сам: при сохранённом octet-stream угадывание
+            # вернуло бы ровно ту дыру, которую закрывает проверка сигнатуры на приёме.
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -501,6 +562,29 @@ async def update_intake(
         await _account_or_404(session, data["account_id"])
     for field, value in data.items():
         setattr(intake, field, value)
+    await session.commit()
+    await session.refresh(intake)
+    return await _intake_payload(session, intake)
+
+
+@router.post("/intakes/{intake_id}/recognize", response_model=IntakeRead, dependencies=EDIT_ACCESS)
+async def recognize_intake(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeRead:
+    """Разобрать документ: снять текст и заполнить поля, которых человек ещё не касался.
+
+    Отдельным действием, а не внутри загрузки: распознавание ходит во внешний сервис и занимает
+    секунды, а приём документа обязан быть быстрым и надёжным. Не получилось распознать —
+    платёжка всё равно принята, сумму введут руками.
+    """
+    intake = await _intake_or_404(session, intake_id)
+    if intake.status == "promoted":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Платёжка проведена — распознавать нечего",
+        )
+    await utility_charges.recognize_intake(session, intake, settings=get_settings())
     await session.commit()
     await session.refresh(intake)
     return await _intake_payload(session, intake)
