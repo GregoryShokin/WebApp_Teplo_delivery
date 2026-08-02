@@ -44,6 +44,7 @@ from app.models import (
     Wallet,
     invoice_binds_settlement,
 )
+from app.services import counterparty_balance_as_of as balance_as_of
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
 from app.services import expense_reversal as reversal_service
@@ -2024,4 +2025,57 @@ async def list_expenses_by_month(
         total=_float(report.total),
         unattributed=_float(report.unattributed),
         without_primary=_float(report.without_primary),
+    )
+
+
+class BalanceAsOfRow(BaseModel):
+    counterparty_id: uuid.UUID
+    counterparty_name: str
+    receivable: float
+    payable: float
+
+
+class BalanceAsOfList(BaseModel):
+    """Остатки расчётов с контрагентами на дату — источник строк баланса.
+
+    ``approximate_settlements`` — гашения, чью дату хозяйственного события установить не
+    удалось (бартерные зачёты: денежного ключа у них нет), они учтены по дате записи. Пока
+    цифра не ноль, остаток на прошедшую дату может отличаться от истинного на неё — и это
+    надо знать до того, как расхождение начнут искать в другом месте.
+    """
+
+    as_of: date
+    items: list[BalanceAsOfRow]
+    receivable_total: float
+    payable_total: float
+    approximate_settlements: float
+
+
+@router.get("/balances/as-of", response_model=BalanceAsOfList, dependencies=READ)
+async def list_balances_as_of(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    as_of: Annotated[date, Query()],
+) -> BalanceAsOfList:
+    """Кто сколько был должен на указанную дату.
+
+    Плитка «Остатки» отвечает на вопрос «сколько должны СЕЙЧАС» и для баланса не годится:
+    документ, оплаченный 5 августа, сегодня закрыт, а на 31 июля был живой кредиторкой.
+    Здесь обязательство существует, если документ к дате вступил в силу, и гасится только
+    теми платежами, которые к ней уже произошли.
+    """
+    report = await balance_as_of.build_balance_as_of(session, as_of=as_of)
+    return BalanceAsOfList(
+        as_of=report.as_of,
+        items=[
+            BalanceAsOfRow(
+                counterparty_id=row.counterparty_id,
+                counterparty_name=row.counterparty_name,
+                receivable=_float(row.receivable),
+                payable=_float(row.payable),
+            )
+            for row in report.rows
+        ],
+        receivable_total=_float(report.receivable_total),
+        payable_total=_float(report.payable_total),
+        approximate_settlements=_float(report.approximate_settlements),
     )
