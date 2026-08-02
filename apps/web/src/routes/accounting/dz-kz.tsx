@@ -33,6 +33,7 @@ import { navigateTo } from "@/router";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import { CounterpartyCard } from "@/routes/counterparties/CounterpartyCard";
 import { getExpenseArticles } from "@/routes/counterparties/api";
+import { UtilityExpectations } from "./UtilityExpectations";
 
 /** Состояние строки на языке владельца: «этот платёж уже стал расходом, а если нет — чего ждём». */
 type Stage = "needs_period" | "waiting_document" | "period_running" | "in_expense";
@@ -1607,6 +1608,10 @@ function RecognitionSection({
           );
         })}
       </div>
+
+      {/* Пропущенные коммунальные месяцы. Их не видно нигде больше: непринесённая квитанция
+          следа в системе не оставляет, а расход и долг за тот месяц остаются несчитанными. */}
+      <UtilityExpectations />
 
       <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
 

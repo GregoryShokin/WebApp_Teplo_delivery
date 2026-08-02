@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { LocationLeases } from "@/routes/settings-location-leases";
+import { LocationUtilities } from "@/routes/settings-location-utilities";
 import {
   apiErrorMessage,
   createLocation,
@@ -244,6 +245,8 @@ export function LocationsPanel({ canEdit }: { canEdit: boolean }) {
                 locationName={location.name}
                 canEdit={canEdit}
               />
+              {/* Коммуналка идёт следом за арендой: та же ось «где», и заводят их за один заход. */}
+              <LocationUtilities locationId={location.id} canEdit={canEdit} />
             </div>
           </div>
         ))}

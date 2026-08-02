@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, FileText, RefreshCw, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { Ban, FileText, RefreshCw, RotateCcw, Send, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -26,15 +27,18 @@ import { formatDate, formatRub, MetricCard } from "@/routes/counterparties/share
 import {
   deleteIntake,
   excludeIntake,
-  fetchIntakePdfUrl,
+  fetchIntakeFileUrl,
   ignoreIntake,
   listCounterpartyOptions,
   listIntakes,
   restoreIntake,
+  sendManyToBank,
+  uploadIntake,
   type PaymentIntake,
 } from "./api";
 import { ReviewDialog } from "./ReviewDialog";
 import { SendDialog } from "./SendDialog";
+import { UtilityDialog } from "./UtilityDialog";
 
 const STATUS_LABELS: Record<string, string> = {
   new: "Новый",
@@ -109,7 +113,10 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
   const [filter, setFilter] = useState("active");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reviewItem, setReviewItem] = useState<PaymentIntake | null>(null);
+  const [utilityItem, setUtilityItem] = useState<PaymentIntake | null>(null);
   const [sendItem, setSendItem] = useState<PaymentIntake | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const intakesQuery = useQuery({
     queryKey: ["payment-page", "intakes"],
@@ -176,6 +183,64 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
     onSettled: () => setPendingId(null),
   });
 
+  // Один платёж = один получатель, поэтому выбор ограничен одним контрагентом. Сбрасываем
+  // прежний выбор молча: объяснять «нельзя» там, где человек явно передумал, — лишний диалог.
+  function toggleSelected(item: PaymentIntake) {
+    setSelected((current) => {
+      if (current.includes(item.id)) return current.filter((id) => id !== item.id);
+      const others = all.filter((row) => current.includes(row.id));
+      const sameCounterparty = others.every(
+        (row) => row.counterparty_id === item.counterparty_id,
+      );
+      return sameCounterparty ? [...current, item.id] : [item.id];
+    });
+  }
+
+  const selectedTotal = useMemo(
+    () =>
+      all
+        .filter((item) => selected.includes(item.id))
+        .reduce((sum, item) => sum + Number(item.amount ?? 0), 0),
+    [all, selected],
+  );
+
+  const sendManyMutation = useMutation({
+    mutationFn: (ids: string[]) => sendManyToBank(ids),
+    onSuccess: (items) => {
+      void invalidate();
+      setSelected([]);
+      toast.success(`Один платёж на ${items.length} счёта отправлен в банк`);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отправить")),
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: (file: File) => uploadIntake(file),
+    onSuccess: (items) => {
+      void invalidate();
+      // Один файл может дать несколько строк: энергетик за визит выдаёт два акта. Говорим,
+      // сколько именно вышло, — иначе человек ищет вторую строку и не понимает, откуда она.
+      const needsHands = items.filter((item) => item.status === "needs_review").length;
+      const duplicates = items.filter((item) => item.status === "duplicate").length;
+      if (duplicates === items.length) {
+        toast.info("За этот месяц документ уже заведён — новый долг не создан");
+      } else if (needsHands > 0) {
+        toast.warning(
+          items.length > 1
+            ? `Загружено документов: ${items.length}, из них требуют проверки: ${needsHands}`
+            : "Разобрать до конца не вышло — откройте «Разобрать»",
+        );
+      } else {
+        toast.success(
+          items.length > 1
+            ? `Готово: ${items.length} документа в очереди оплат`
+            : "Готово: документ в очереди оплат",
+        );
+      }
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось загрузить файл")),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteIntake(id),
     onMutate: (id: string) => setPendingId(id),
@@ -191,7 +256,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
     // Окно открываем СИНХРОННО (внутри жеста клика) — иначе после await браузер блокирует попап.
     const win = window.open("", "_blank");
     try {
-      const url = await fetchIntakePdfUrl(item.id);
+      const url = await fetchIntakeFileUrl(item.id);
       if (win && !win.closed) {
         win.location.href = url;
       } else {
@@ -221,14 +286,38 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
             готов к оплате в банк прямо отсюда.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => void intakesQuery.refetch()}
-          disabled={intakesQuery.isFetching}
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          Обновить
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Третий источник рядом с почтой и ЭДО: коммунальную квитанцию приносят снимком. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Сбрасываем значение сразу: без этого повторный выбор ТОГО ЖЕ файла не вызовет
+              // onChange, и человек решит, что кнопка сломалась.
+              event.target.value = "";
+              if (file) uploadMutation.mutate(file);
+            }}
+          />
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+          >
+            <Upload className="h-4 w-4" aria-hidden="true" />
+            {uploadMutation.isPending ? "Распознаём…" : "Загрузить документ"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void intakesQuery.refetch()}
+            disabled={intakesQuery.isFetching}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Обновить
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -238,7 +327,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
         <MetricCard label="Дубли / не счета" value={String(metrics.noise)} />
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-muted-foreground">Фильтр</span>
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[220px]">
@@ -252,12 +341,31 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
             ))}
           </SelectContent>
         </Select>
+
+        {/* Один перевод на несколько счетов: энергетик привозит два акта — доплату за прошлый
+            месяц и аванс за текущий, — а платятся они одной суммой одному получателю. */}
+        {selected.length > 1 ? (
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              Выбрано {selected.length} на {formatRub(selectedTotal)}
+            </span>
+            <Button
+              size="sm"
+              disabled={sendManyMutation.isPending}
+              onClick={() => sendManyMutation.mutate(selected)}
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+              Оплатить вместе
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8" />
               <TableHead>Статус</TableHead>
               <TableHead>Дата</TableHead>
               <TableHead>Контрагент</TableHead>
@@ -270,13 +378,13 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
           <TableBody>
             {intakesQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   Пусто. Новые счета появятся после опроса почты.
                 </TableCell>
               </TableRow>
@@ -291,6 +399,16 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                 const isReadyRow = item.status === "linked" && !item.invoice_in_draft;
                 return (
                   <TableRow key={item.id}>
+                    <TableCell>
+                      {/* Отмечать можно только готовые к оплате: остальные платить нечем. */}
+                      {isReadyRow ? (
+                        <Checkbox
+                          checked={selected.includes(item.id)}
+                          onChange={() => toggleSelected(item)}
+                          aria-label="Выбрать для общего платежа"
+                        />
+                      ) : null}
+                    </TableCell>
                     <TableCell>
                       {(() => {
                         const b = statusBadge(item);
@@ -314,6 +432,25 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                           + закрывающий документ
                           {item.companion_amount ? ` на ${formatRub(item.companion_amount)}` : ""}
                         </div>
+                      ) : null}
+                      {item.utility_kind_label ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <Badge className="border-cyan-200 bg-cyan-50 text-cyan-700">
+                            {item.utility_kind_label}
+                            {item.utility_act_kind === "advance" ? " · аванс" : ""}
+                          </Badge>
+                          {/* Расход месяца показываем ТОЛЬКО когда он расходится с платежом:
+                              иначе строка врала бы, что чисел два, там где оно одно. */}
+                          {item.utility_expense_amount &&
+                          item.utility_expense_amount !== item.utility_payable_amount ? (
+                            <span className="text-xs text-muted-foreground">
+                              расход {formatRub(item.utility_expense_amount)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {item.utility_hints.length > 0 ? (
+                        <div className="text-xs text-amber-700">{item.utility_hints.join(". ")}</div>
                       ) : null}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -370,7 +507,13 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => setReviewItem(item)}
+                                onClick={() =>
+                                  // У коммунальной платёжки свой разбор: там поток, период и две
+                                  // суммы, а контрагента менять нельзя — он задан потоком.
+                                  item.utility_kind
+                                    ? setUtilityItem(item)
+                                    : setReviewItem(item)
+                                }
                               >
                                 Разобрать
                               </Button>
@@ -437,6 +580,10 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
           counterpartyOptions={counterpartiesQuery.data ?? []}
           onClose={() => setReviewItem(null)}
         />
+      ) : null}
+
+      {utilityItem ? (
+        <UtilityDialog intake={utilityItem} onClose={() => setUtilityItem(null)} />
       ) : null}
 
       {sendItem ? (

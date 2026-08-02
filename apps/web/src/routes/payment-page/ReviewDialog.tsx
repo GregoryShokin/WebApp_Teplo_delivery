@@ -19,10 +19,11 @@ import { apiErrorMessage } from "@/lib/api";
 
 import {
   confirmIntake,
-  fetchIntakePdfUrl,
+  fetchIntakeFileUrl,
   type CounterpartyOption,
   type PaymentIntake,
 } from "./api";
+import { DocumentPreview } from "./DocumentPreview";
 import { RequisitesFields } from "./RequisitesFields";
 import { useRequisitesForm } from "./requisites";
 
@@ -93,7 +94,7 @@ export function ReviewDialog({
     let url: string | null = null;
     let cancelled = false;
     if (intake.has_pdf) {
-      fetchIntakePdfUrl(intake.id)
+      fetchIntakeFileUrl(intake.id)
         .then((u) => {
           if (cancelled) {
             URL.revokeObjectURL(u);
@@ -162,15 +163,7 @@ export function ReviewDialog({
         </DialogHeader>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="min-h-[60vh] rounded-md border bg-muted/30">
-            {pdfUrl ? (
-              <iframe title="PDF счёта" src={pdfUrl} className="h-[60vh] w-full rounded-md" />
-            ) : (
-              <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
-                {intake.has_pdf ? "Загрузка PDF…" : "PDF недоступен"}
-              </div>
-            )}
-          </div>
+          <DocumentPreview url={pdfUrl} mime={intake.attachment_mime} hasFile={intake.has_pdf} />
 
           <div className="grid max-h-[60vh] gap-3 overflow-auto pr-1">
             <div className="grid gap-1">
