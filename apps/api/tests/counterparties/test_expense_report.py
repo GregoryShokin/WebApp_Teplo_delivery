@@ -316,3 +316,42 @@ async def test_location_slices_expense_and_missing_location_is_visible(
             location_id=location.id,
         )
         assert by_point.total == Decimal("50000.00"), "в срез точки попал расход без помещения"
+
+
+async def test_expense_without_article_takes_the_one_from_the_card(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Статья по умолчанию из карточки — там, где документ её не принёс.
+
+    Отчёт складывал в «Без статьи» расходы, которым место назначено давно: на проде 02.08.2026
+    так собралось 14 823 ₽ по СДЭК, Леме и МИКРОЭЛу — при заполненной статье в карточке у всех
+    троих. «Отнести некуда» должно значить, что её действительно негде взять.
+    """
+    from sqlalchemy import select
+
+    from app.models import CounterpartyPayableProfile
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Отчёт Статья Карточки", inn="6155000706")
+        article = await make_expense_article(session, code="courier_delivery", name="Доставка")
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        profile.default_dds_article_id = article.id
+        await _recognized(
+            session,
+            counterparty_id=cp.id,
+            article_id=None,
+            amount="7893.40",
+            start=date(2026, 7, 13),
+            end=date(2026, 7, 19),
+        )
+        await session.commit()
+
+        report = await build_expense_report(
+            session, date_from=date(2026, 7, 1), date_to=date(2026, 7, 31)
+        )
+        assert report.unattributed == Decimal("0.00")
+        assert [cell.article_name for cell in report.cells] == ["Доставка"]

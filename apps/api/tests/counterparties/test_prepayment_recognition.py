@@ -444,6 +444,43 @@ def test_refuses_prepaid_bill_and_missing_article(
     assert "стать" in article_response.json()["detail"].lower()
 
 
+def test_per_invoice_counterparty_refuses_even_a_payment_without_a_bill(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Режим «счёт + УПД» запрещает признание, даже когда счёта в системе нет.
+
+    Отказ смотрел только на ``prepaid_bill``, а Манго платится вообще без счетов: его платежи —
+    ``subscription``, и признание по месяцам проходило. Расход по такому контрагенту приносит
+    УПД на фактический объём (5 250 ₽ при платеже 5 000 ₽), и признанные календарные доли
+    легли бы в P&L поверх него.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Признание Режим", inn="6155000512")
+            article = await make_expense_article(session, name="Признание Связь")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+            profile.service_billing_mode = "per_invoice"
+            prepayment = await _stuck_prepayment(
+                session, counterparty_id=cp.id, amount="5000.00", article_id=article.id
+            )
+            await session.commit()
+            return prepayment.id
+
+    prepayment_id = asyncio.run(seed())
+    response = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=_admin(async_session_factory),
+        json={"service_period_start": "2026-07-01", "service_period_end": "2026-07-31"},
+    )
+    assert response.status_code == 409
+    assert "УПД" in response.json()["detail"]
+
+
 def test_recognition_does_not_touch_other_counterparties(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

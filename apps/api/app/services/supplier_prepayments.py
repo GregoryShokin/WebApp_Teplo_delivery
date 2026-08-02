@@ -1414,6 +1414,55 @@ async def settle_invoice_from_prepayment(
     return invoice
 
 
+async def _settlement_order(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> list[SupplierPrepayment]:
+    """Открытые авансы контрагента в том порядке, в каком их съедает закрывающий документ.
+
+    ДВА ПРАВИЛА, И ОБА — ХРОНОЛОГИЯ ДЕНЕГ, А НЕ ПОРЯДОК ЗАПИСЕЙ В БАЗЕ.
+
+    1. Сначала авансы, которые на дату документа УЖЕ СУЩЕСТВОВАЛИ. Документ описывает
+       оказанную услугу и может закрыть только те деньги, что к тому дню уже ушли. Это
+       порядок, а не фильтр: если ранних авансов не хватило, документ по-прежнему гасится
+       поздними — это законный обратный неттинг (УПД пришёл 30.06, оплатили 07.07).
+    2. Внутри — по дате ДЕНЕГ, а не по ``created_at``. У Манго все четыре аванса пришли в
+       систему одним импортом 20.07 с точностью до микросекунды: сортировка по времени записи
+       не различала их вовсе, и порядок оказывался случайным. УПД за июнь съели платёж от
+       07.07, пропустив майский, — при том что июньских авансов хватало с запасом (14 627,92 ₽
+       против 11 358,69 ₽ документов). Общий баланс сходился, а по строкам дебиторка висела
+       не на тех платежах, и очередь признания показывала не то.
+    """
+    rows = (
+        await session.execute(
+            select(
+                SupplierPrepayment,
+                CashflowTransaction.operation_date,
+                SupplierInvoice.invoice_date,
+            )
+            .outerjoin(
+                CashflowTransaction,
+                CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
+            )
+            .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierPrepayment.bill_invoice_id)
+            .where(
+                SupplierPrepayment.counterparty_id == invoice.counterparty_id,
+                SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+                SupplierPrepayment.kind.notin_(EARMARKED_PREPAYMENT_KINDS),
+            )
+        )
+    ).all()
+    doc_date = invoice.invoice_date
+
+    def sort_key(row: tuple[SupplierPrepayment, date | None, date | None]) -> tuple:
+        prepayment, operation_date, bill_date = row
+        # День, когда деньги реально ушли: своя проводка → оплата счёта → дата записи.
+        money_on = operation_date or bill_date or prepayment.created_at.date()
+        later_than_doc = doc_date is not None and money_on > doc_date
+        return (later_than_doc, money_on, prepayment.created_at, str(prepayment.id))
+
+    return [row[0] for row in sorted(rows, key=sort_key)]
+
+
 def _prefer_matching_period(
     prepayments: Sequence[SupplierPrepayment], invoice: SupplierInvoice
 ) -> list[SupplierPrepayment]:
@@ -1466,17 +1515,7 @@ async def auto_settle_invoice_from_open_prepayments(
         # уйдут лишние деньги). Зачёт возможен только для документов вне банковских черновиков.
         return Decimal("0.00")
     total = Decimal("0.00")
-    prepayments = (
-        await session.scalars(
-            select(SupplierPrepayment)
-            .where(
-                SupplierPrepayment.counterparty_id == invoice.counterparty_id,
-                SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
-                SupplierPrepayment.kind.notin_(EARMARKED_PREPAYMENT_KINDS),
-            )
-            .order_by(SupplierPrepayment.created_at)
-        )
-    ).all()
+    prepayments = await _settlement_order(session, invoice)
     for prepayment in _prefer_matching_period(prepayments, invoice):
         inv_remaining = await _invoice_remaining(session, invoice)
         if inv_remaining <= 0:

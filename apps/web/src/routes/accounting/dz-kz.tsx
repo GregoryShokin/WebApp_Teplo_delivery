@@ -52,6 +52,7 @@ type AccountingItem = {
   article_name: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
+  document_kind: string | null;
   amount: number;
   paid_amount: number;
   balance_amount: number;
@@ -65,6 +66,9 @@ type AccountingItem = {
   expected_by: string | null;
   days_overdue: number;
   period_assumed: boolean;
+  opening: boolean;
+  note: string | null;
+  settled: boolean;
   auto_recognition_on: string | null;
   document_amount: number | null;
   amount_mismatch: number;
@@ -305,9 +309,16 @@ const TAX_DRAFT_STATUS_LABEL: Record<string, string> = {
   in_bank: "отправлен в банк",
 };
 
-async function getAccounting(stage: Stage | null): Promise<AccountingList> {
+async function getAccounting(
+  stage: Stage | null,
+  includeSettled = false,
+): Promise<AccountingList> {
   const response = await api.get<AccountingList>("/accounting/suppliers", {
-    params: { view: "all", stage: stage ?? undefined },
+    params: {
+      view: "all",
+      stage: stage ?? undefined,
+      include_settled: includeSettled ? true : undefined,
+    },
   });
   return response.data;
 }
@@ -403,6 +414,39 @@ type BalanceAsOf = {
   payable_total: number;
   approximate_settlements: number;
 };
+
+type OriginDocument = {
+  kind: string;
+  invoice_id: string | null;
+  number: string | null;
+  invoice_date: string | null;
+  amount: number | null;
+  intake_id: string | null;
+  has_pdf: boolean;
+};
+
+type RecognitionOrigin = {
+  counterparty_name: string;
+  amount: number;
+  basis: OriginDocument | null;
+  basis_note: string;
+  closing: OriginDocument | null;
+  closing_note: string;
+};
+
+async function getRecognitionOrigin(prepaymentId: string): Promise<RecognitionOrigin> {
+  const response = await api.get<RecognitionOrigin>(
+    `/accounting/suppliers/prepayments/${prepaymentId}/origin`,
+  );
+  return response.data;
+}
+
+async function fetchOriginPdfUrl(intakeId: string): Promise<string> {
+  const response = await api.get(`/accounting/suppliers/intakes/${intakeId}/pdf`, {
+    responseType: "blob",
+  });
+  return URL.createObjectURL(response.data as Blob);
+}
 
 async function getBalancesAsOf(asOf: string): Promise<BalanceAsOf> {
   const response = await api.get<BalanceAsOf>("/accounting/suppliers/balances/as-of", {
@@ -1556,10 +1600,15 @@ function RecognitionSection({
   const [stage, setStage] = useState<Stage>("needs_period");
   const [editing, setEditing] = useState<AccountingItem | null>(null);
   const [recognizing, setRecognizing] = useState<AccountingItem | null>(null);
+  const [origin, setOrigin] = useState<AccountingItem | null>(null);
   const [reversing, setReversing] = useState<AccountingItem | null>(null);
+  // Закрытые платежи очередь по умолчанию не показывает — она про то, что требует шага. Но
+  // вопрос «а где мой платёж от 7 июля» возникает именно здесь: человек ищет деньги там, где
+  // смотрит на долги, а не в реестре.
+  const [showSettled, setShowSettled] = useState(false);
   const query = useQuery({
-    queryKey: ["accounting", "suppliers", stage],
-    queryFn: () => getAccounting(stage),
+    queryKey: ["accounting", "suppliers", stage, showSettled],
+    queryFn: () => getAccounting(stage, showSettled),
     // Плитки живут в том же ответе, что и список. Без этого клик по состоянию обнулял ВСЕ
     // четыре плитки на время запроса — включая ту, цифру из которой человек только что читал.
     placeholderData: (previous) => previous,
@@ -1613,7 +1662,17 @@ function RecognitionSection({
           следа в системе не оставляет, а расход и долг за тот месяц остаются несчитанными. */}
       <UtilityExpectations />
 
-      <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
+        <Button
+          className="h-7 px-2 text-xs"
+          onClick={() => setShowSettled((value) => !value)}
+          size="sm"
+          variant="ghost"
+        >
+          {showSettled ? "Скрыть закрытые" : "Показать закрытые"}
+        </Button>
+      </div>
 
       <div className="overflow-hidden rounded-lg border bg-background">
         <Table>
@@ -1642,15 +1701,28 @@ function RecognitionSection({
                 const isPrepayment = item.source_kind === "legacy_prepayment";
                 const correctionAllowed = !item.recognized || canCorrectRecognized;
                 return (
-                  <TableRow key={`${item.source_kind}:${item.id}`}>
+                  <TableRow
+                    key={`${item.source_kind}:${item.id}`}
+                    /* Закрытая строка показана справочно — она не должна спорить за внимание
+                       с живыми долгами в той же таблице. */
+                    className={item.settled ? "opacity-60" : undefined}
+                  >
                     <TableCell>
                       <div className="font-medium">{item.counterparty_name}</div>
                       <div className="text-xs text-muted-foreground">
                         {item.invoice_number
-                          ? `Счёт № ${item.invoice_number}`
-                          : item.payment_date
-                            ? `Платёж от ${fmtDate(item.payment_date)}`
-                            : "Платёж"}
+                          ? /* Счёт — основание платежа, УПД — то, что признало расход.
+                               Одна подпись на оба вводила в заблуждение. */
+                            `${item.document_kind === "closing" ? "УПД / акт" : "Счёт"} № ${item.invoice_number}`
+                          : item.opening
+                            ? /* Входящее сальдо, а не оплата: искать эти деньги в выписке
+                                 бесполезно — их там нет по определению. Дату берём из
+                                 примечания, а не из payment_date: там день, когда остаток
+                                 занесли в систему (20.07), а сальдо — на 01.06. */
+                              (item.note ?? "Входящий остаток")
+                            : item.payment_date
+                              ? `Платёж от ${fmtDate(item.payment_date)}`
+                              : "Платёж"}
                       </div>
                       {/* Документ изменился уже после того, как расход признан. Сумму в
                           закрытом месяце система не переписывает молча — но и промолчать
@@ -1674,7 +1746,9 @@ function RecognitionSection({
                       {item.article_name ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {item.stage === "waiting_document" ? (
+                      {item.settled ? (
+                        <span className="text-muted-foreground">закрыт документом</span>
+                      ) : item.stage === "waiting_document" ? (
                         item.days_overdue > 0 ? (
                           <Badge
                             variant="outline"
@@ -1716,8 +1790,33 @@ function RecognitionSection({
                       {money.format(
                         item.stage === "in_expense" ? item.amount : item.balance_amount,
                       )}
+                      {/* Частично закрытый платёж: в строке остаток, а подписана она платежом.
+                          Манго платится по 5 000 ₽, УПД приходят на фактический объём — и
+                          строка «Платёж от 26.06 — 3 891 ₽» читалась как платёж, которого в
+                          выписке нет. Разницу называем вслух. */}
+                      {item.stage !== "in_expense" &&
+                      item.balance_amount > 0 &&
+                      item.amount - item.balance_amount > 0.005 ? (
+                        <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                          из {money.format(item.amount)} закрыто{" "}
+                          {money.format(item.amount - item.balance_amount)}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right">
+                      {/* «За что заплатили» — тот же вопрос, что решает окно разбора на
+                          «Странице на оплату». Здесь он даже острее: строка признания живёт
+                          отдельно от документа, и проверить основание было негде. */}
+                      {isPrepayment ? (
+                        <Button
+                          className="mr-1 h-8 px-2 text-xs"
+                          onClick={() => setOrigin(item)}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          Основание
+                        </Button>
+                      ) : null}
                       {!canEdit ? null : isPrepayment ? (
                         item.can_recognize ? (
                           <Button size="sm" variant="outline" onClick={() => setRecognizing(item)}>
@@ -1769,6 +1868,7 @@ function RecognitionSection({
       {recognizing ? (
         <RecognizeDialog item={recognizing} onClose={() => setRecognizing(null)} />
       ) : null}
+      {origin ? <OriginDialog item={origin} onClose={() => setOrigin(null)} /> : null}
       {reversing ? (
         <ReverseDialog item={reversing} onClose={() => setReversing(null)} />
       ) : null}
@@ -2244,5 +2344,84 @@ function BalanceAsOfCard() {
         </div>
       )}
     </div>
+  );
+}
+
+function OriginDialog({ item, onClose }: { item: AccountingItem; onClose: () => void }) {
+  const query = useQuery({
+    queryKey: ["accounting", "origin", item.id],
+    queryFn: () => getRecognitionOrigin(item.id),
+  });
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfFor, setPdfFor] = useState<string | null>(null);
+
+  // PDF грузим по требованию: у одной строки бывает два документа (счёт и УПД), и тянуть оба
+  // сразу — лишний трафик ради того, на что человек, возможно, и не посмотрит.
+  const openPdf = (intakeId: string) => {
+    if (pdfFor === intakeId) return;
+    setPdfFor(intakeId);
+    setPdfUrl(null);
+    fetchOriginPdfUrl(intakeId)
+      .then(setPdfUrl)
+      .catch(() => setPdfUrl(null));
+  };
+
+  const card = (doc: OriginDocument | null, note: string, title: string) => (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
+      <div className="mt-1 text-sm">{note}</div>
+      {doc ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {doc.invoice_date ? <span>от {fmtDate(doc.invoice_date)}</span> : null}
+          {doc.amount != null ? <span>{money.format(doc.amount)}</span> : null}
+          {doc.has_pdf && doc.intake_id ? (
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => openPdf(doc.intake_id as string)}
+            >
+              {pdfFor === doc.intake_id ? "показан ниже" : "открыть PDF"}
+            </button>
+          ) : (
+            <span>файла нет — документ заведён вручную</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Основание платежа</DialogTitle>
+          <DialogDescription>
+            {query.data
+              ? `${query.data.counterparty_name} · ${money.format(query.data.amount)}`
+              : item.counterparty_name}
+          </DialogDescription>
+        </DialogHeader>
+
+        {query.isLoading ? (
+          <p className="text-sm text-muted-foreground">Загружаем…</p>
+        ) : query.isError ? (
+          <p className="text-sm text-rose-700">
+            {apiErrorMessage(query.error, "Не удалось загрузить основание")}
+          </p>
+        ) : query.data ? (
+          <div className="flex flex-col gap-3">
+            {card(query.data.basis, query.data.basis_note, "За что заплатили")}
+            {card(query.data.closing, query.data.closing_note, "Чем закрыто")}
+            {pdfFor ? (
+              pdfUrl ? (
+                <iframe title="Документ" src={pdfUrl} className="h-[55vh] w-full rounded-md border" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Загружаем PDF…</p>
+              )
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }

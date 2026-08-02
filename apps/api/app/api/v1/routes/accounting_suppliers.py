@@ -7,18 +7,21 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
     AccountingPeriodClose,
     AccumulationFundAccount,
+    BankOperation,
     BarterReturnLine,
     CashflowTransaction,
     Counterparty,
@@ -30,6 +33,7 @@ from app.models import (
     CourierDepositTransactionType,
     DdsArticle,
     DepositAccount,
+    EmailInvoiceIntake,
     Employee,
     EmployeePayout,
     InvoiceLineItem,
@@ -102,6 +106,9 @@ class SupplierAccountingItem(BaseModel):
     article_name: str | None = None
     invoice_id: uuid.UUID | None = None
     invoice_number: str | None = None
+    # 'bill' — счёт на оплату, 'closing' — УПД/акт. Строка признания рождается и от того, и от
+    # другого, а подписывались обе «Счёт №»: закрывающий выдавал себя за основание платежа.
+    document_kind: str | None = None
     amount: float
     paid_amount: float
     balance_amount: float
@@ -125,6 +132,16 @@ class SupplierAccountingItem(BaseModel):
     # true — период не указан, и срок посчитан по месяцу платежа. Фронт обязан это сказать
     # вслух: иначе выдуманный период читается как подтверждённый.
     period_assumed: bool = False
+    # true — это не платёж, а входящее сальдо на дату начала учёта. Подписывать его «Платёж
+    # от 20.07» значит отправлять человека искать в выписке деньги, которых в тот день не было.
+    opening: bool = False
+    # Примечание строки. Показываем у входящего остатка: даты сальдо в модели нет, она живёт
+    # ровно здесь — «Остаток кабинета Яндекс Директ на 01.06.2026». Без неё остаток выглядит
+    # взявшимся ниоткуда, и владелец не находит на экране то, что сам же заводил.
+    note: str | None = None
+    # true — платёж уже закрыт документом. В очереди такие строки появляются только по просьбе
+    # («Показать закрытые») и в плитки не входят: очередь считает то, что требует шага.
+    settled: bool = False
     # Когда расход придёт сам, без участия человека: договор услуги и аренда начисляют его
     # по окончании месяца. Дата нужна вслух — «период идёт» не отвечает на вопрос «и когда
     # же», а человек хочет знать, ждать ему до завтра или до сентября.
@@ -192,6 +209,13 @@ class _QueueContext:
     # Режим «счёт за период»: лицензия оплачена за конкретный месяц, УПД не ждут — расход
     # признаётся сам по окончании периода (Синапсис, АЙКО, Лемма, ДоксИнБокс).
     fixed_tariff: set[uuid.UUID] = field(default_factory=set)
+    # Режим «счёт + закрывающий»: расход признаёт УПД, и признание по месяцам к таким
+    # платежам не применяется вовсе — независимо от того, дошёл ли счёт до системы.
+    per_invoice: set[uuid.UUID] = field(default_factory=set)
+    # Статья ДДС из карточки контрагента. Строке, рождённой из оплаченного счёта, статью
+    # брать неоткуда: своей проводки ДДС у неё нет, и экран показывал «—» там, где статья
+    # в карточке давно заполнена.
+    default_articles: dict[uuid.UUID, tuple[uuid.UUID, str]] = field(default_factory=dict)
     # Документов от контрагента не ждут: разовые работы либо договор, по которому долг
     # считается сам. Вечно красная строка по ним — шум, из-за которого бросают смотреть весь экран.
     documents_not_expected: set[uuid.UUID] = field(default_factory=set)
@@ -211,17 +235,25 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
                 CounterpartyPayableProfile.service_billing_mode,
                 CounterpartyPayableProfile.closing_doc_expected_day,
                 CounterpartyPayableProfile.settlement_contour,
+                CounterpartyPayableProfile.default_dds_article_id,
+                DdsArticle.name,
+            ).outerjoin(
+                DdsArticle, DdsArticle.id == CounterpartyPayableProfile.default_dds_article_id
             )
         )
     ).all()
     explicit_service: set[uuid.UUID] = set()
-    for cp_id, billing_mode, expected_day, contour in profiles:
+    for cp_id, billing_mode, expected_day, contour, article_id, article_title in profiles:
         ctx.expected_days[cp_id] = expected_day
+        if article_id is not None and article_title is not None:
+            ctx.default_articles[cp_id] = (article_id, article_title)
         if billing_mode in (
             settlement.BILLING_MODE_ONE_OFF,
             settlement.BILLING_MODE_AGREEMENT,
         ):
             ctx.documents_not_expected.add(cp_id)
+        if billing_mode == subscriptions.BILLING_MODE_PER_INVOICE:
+            ctx.per_invoice.add(cp_id)
         if billing_mode == subscriptions.BILLING_MODE_FIXED_TARIFF:
             ctx.fixed_tariff.add(cp_id)
             ctx.documents_not_expected.add(cp_id)
@@ -283,6 +315,10 @@ async def list_supplier_accounting(
     stage: Literal["in_expense", "period_running", "waiting_document", "needs_period"] | None = (
         Query(default=None)
     ),
+    # Закрытые платежи очередь не показывает — она про то, что требует шага. Но вопрос «а где
+    # мой платёж от 7 июля» возникает именно здесь, а не в реестре: владелец ищет деньги там,
+    # где смотрит на долги. Переключатель добавляет их отдельными строками, уже погашенными.
+    include_settled: bool = Query(default=False),
 ) -> SupplierAccountingList:
     today = datetime.now(MOSCOW_TZ).date()
     current_month = today.replace(day=1)
@@ -306,6 +342,7 @@ async def list_supplier_accounting(
                 func.coalesce(allocated.c.paid, 0),
                 CounterpartyPaymentDraft.status,
                 DdsArticle.name,
+                SupplierInvoice.doc_kind,
             )
             .join(Counterparty, Counterparty.id == SupplierExpenseAccrual.counterparty_id)
             .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
@@ -333,6 +370,7 @@ async def list_supplier_accounting(
         allocated_amount,
         draft_status,
         article_name,
+        doc_kind,
     ) in rows:
         if accrual.invoice_id is not None:
             paid = min(periods.money(allocated_amount), periods.money(accrual.amount))
@@ -359,10 +397,18 @@ async def list_supplier_accounting(
             source_kind="service_period",
             counterparty_id=accrual.counterparty_id,
             counterparty_name=cp_name,
-            article_id=accrual.article_id,
-            article_name=article_name,
+            article_id=accrual.article_id
+            or (ctx.default_articles.get(accrual.counterparty_id) or (None, None))[0],
+            # Статья та же, что и у платежей: своя, а если её нет — из карточки контрагента.
+            # Прочерк рядом с признанным расходом читается как «отнести некуда», хотя статья
+            # в карточке заполнена.
+            article_name=article_name
+            or (ctx.default_articles.get(accrual.counterparty_id) or (None, None))[1],
             invoice_id=accrual.invoice_id,
             invoice_number=number,
+            # Счёт и УПД — разные документы, и подписывать закрывающий «Счёт №» значит путать
+            # основание платежа с тем, что признало расход.
+            document_kind=doc_kind,
             amount=_float(total),
             paid_amount=_float(paid),
             balance_amount=_float(balance),
@@ -389,6 +435,28 @@ async def list_supplier_accounting(
     # отвечает на один вопрос: чего ждём. ``prepaid_bill`` (ДЗ по оплаченному счёту) тоже
     # здесь: по канону её гасит закрывающий УПД, то есть это ровно «ждём документ», и именно
     # такие платежи составляли половину сводки разрывов.
+    # Когда по оплаченному счёту реально ушли деньги. У ``prepaid_bill`` своей проводки ДДС нет,
+    # и строка подписывалась датой СОЗДАНИЯ записи: счёт АЙКО от 04.07 оплачен 08.07, а экран
+    # говорил «Платёж от 20.07» — день, когда система завела дебиторку.
+    bill_money_date = (
+        select(
+            InvoicePaymentAllocation.invoice_id.label("invoice_id"),
+            func.min(
+                func.coalesce(
+                    CashflowTransaction.operation_date,
+                    BankOperation.operation_date,
+                )
+            ).label("paid_on"),
+        )
+        .outerjoin(
+            CashflowTransaction,
+            CashflowTransaction.id == InvoicePaymentAllocation.cashflow_transaction_id,
+        )
+        .outerjoin(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
+        .group_by(InvoicePaymentAllocation.invoice_id)
+        .subquery()
+    )
+    bill_invoice = aliased(SupplierInvoice)
     prepayment_rows = (
         await session.execute(
             select(
@@ -396,6 +464,8 @@ async def list_supplier_accounting(
                 Counterparty.name,
                 DdsArticle.name,
                 CashflowTransaction.operation_date,
+                bill_money_date.c.paid_on,
+                bill_invoice.invoice_date,
             )
             .join(Counterparty, Counterparty.id == SupplierPrepayment.counterparty_id)
             .outerjoin(DdsArticle, DdsArticle.id == SupplierPrepayment.article_id)
@@ -403,11 +473,27 @@ async def list_supplier_accounting(
                 CashflowTransaction,
                 CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
             )
-            .where(SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES))
+            .outerjoin(bill_invoice, bill_invoice.id == SupplierPrepayment.bill_invoice_id)
+            .outerjoin(
+                bill_money_date,
+                bill_money_date.c.invoice_id == SupplierPrepayment.bill_invoice_id,
+            )
+            .where(
+                SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES)
+                if not include_settled
+                else SupplierPrepayment.status != "cancelled"
+            )
             .order_by(SupplierPrepayment.created_at.desc())
         )
     ).all()
-    for prepayment, cp_name, article_name, operation_date in prepayment_rows:
+    for (
+        prepayment,
+        cp_name,
+        article_name,
+        operation_date,
+        bill_paid_on,
+        bill_date,
+    ) in prepayment_rows:
         # Товарные авансы гасит накладная, а расход по сырью идёт фудкостом — в очереди
         # признания расходов их быть не должно (требование владельца 01.08.2026).
         if prepayment.counterparty_id in ctx.goods_contour:
@@ -421,7 +507,14 @@ async def list_supplier_accounting(
             and prepayment.service_period_start is not None
             and prepayment.service_period_end is not None
         )
-        paid_on = operation_date or prepayment.created_at.date()
+        # Услуга целиком до начала учёта: её расход уже сидит во входящих остатках на 01.07.2026,
+        # и признавать его второй раз нельзя. В очереди такой строке делать нечего — она не ждёт
+        # ни документа, ни решения.
+        if period_known and periods_service.before_accounting_start(prepayment.service_period_end):
+            continue
+        # Дата денег, а не дата записи: своя проводка → оплата счёта → дата счёта. ``created_at``
+        # остаётся последним фолбэком, когда денежного следа нет вовсе (входящие остатки).
+        paid_on = operation_date or bill_paid_on or bill_date or prepayment.created_at.date()
         # Период для срока: явный, а при его отсутствии — месяц платежа. Фолбэк не выдумка,
         # а рабочая гипотеза: услуга почти всегда оплачивается в своём же месяце, и ждать
         # документ по ней всё равно надо. Строка честно помечена ``period_assumed``.
@@ -477,11 +570,27 @@ async def list_supplier_accounting(
             prepayment_stage = "needs_period"
         else:
             prepayment_stage = "needs_period"
+        # Закрытый платёж ничего не ждёт: документ по нему уже пришёл. Срок и просрочку с него
+        # снимаем, иначе он краснел бы наравне с живыми долгами — при том что дело сделано.
+        is_settled = prepayment.status not in OPEN_PREPAYMENT_STATUSES
+        if is_settled:
+            deadline = None
+            overdue = 0
         refusal = subscriptions.refusal_reason(
             prepayment,
             documents_expected=documents_expected,
             covered_by_agreement=cp_id in ctx.self_settling,
+            closed_by_document=cp_id in ctx.per_invoice,
         )
+        # Статья: своя, а если её нет — из карточки контрагента. Своей нет у всякой строки,
+        # рождённой из счёта: проводки ДДС у неё не бывает по конструкции. Показывать «—»,
+        # когда статья в карточке заполнена, — врать о том, что расход некуда отнести.
+        article_id = prepayment.article_id
+        article_title = article_name
+        if article_id is None:
+            default_article = ctx.default_articles.get(cp_id)
+            if default_article is not None:
+                article_id, article_title = default_article
         items.append(
             SupplierAccountingItem(
                 id=prepayment.id,
@@ -491,12 +600,18 @@ async def list_supplier_accounting(
                 recognize_blocked_reason=refusal,
                 counterparty_id=cp_id,
                 counterparty_name=cp_name,
-                article_id=prepayment.article_id,
-                article_name=article_name,
+                article_id=article_id,
+                article_name=article_title,
                 amount=_float(prepayment.amount),
                 paid_amount=_float(prepayment.amount),
                 balance_amount=_float(balance),
-                balance_type="needs_review" if not period_known else "receivable",
+                balance_type=(
+                    "closed"
+                    if is_settled
+                    else "needs_review"
+                    if not period_known
+                    else "receivable"
+                ),
                 service_period_start=prepayment.service_period_start,
                 service_period_end=prepayment.service_period_end,
                 period_status=prepayment.service_period_status,
@@ -505,6 +620,9 @@ async def list_supplier_accounting(
                 expected_by=deadline,
                 days_overdue=overdue,
                 period_assumed=not period_known,
+                opening=prepayment.opening,
+                note=prepayment.note,
+                settled=is_settled,
                 auto_recognition_on=auto_recognition_on,
             )
         )
@@ -537,14 +655,18 @@ async def list_supplier_accounting(
         if stage == "in_expense":
             items = [item for item in items if item.recognition_month == expense_month]
     elif view == "open":
-        items = [item for item in items if item.balance_type != "closed"]
+        # Закрытые платежи здесь только когда их попросили показать — иначе «открытое»
+        # перестало бы значить открытое.
+        items = [item for item in items if item.balance_type != "closed" or item.settled]
     elif view == "needs_review":
         items = [item for item in items if item.balance_type == "needs_review"]
     elif view == "recognized":
         items = [item for item in items if item.recognized]
 
     def tile(name: str) -> StageTile:
-        rows = [item for item in all_items if item.stage == name]
+        # Закрытые платежи в счётчики очереди не входят: плитка отвечает на вопрос «сколько
+        # ещё висит», а по ним висеть нечему.
+        rows = [item for item in all_items if item.stage == name and not item.settled]
         if name == "in_expense":
             rows = [item for item in rows if item.recognition_month == expense_month]
             return StageTile(count=len(rows), amount=sum(item.amount for item in rows))
@@ -2235,3 +2357,197 @@ async def reopen_accounting_period(
     row = await periods_service.reopen_month(session, period_month=period_month)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Месяц не был закрыт")
+
+
+class OriginDocument(BaseModel):
+    """Документ в цепочке признания: чем платёж обоснован и чем закрыт.
+
+    ``kind`` отвечает на вопрос «что это»: 'bill' — счёт на оплату, 'closing' — закрывающий
+    документ контрагента (УПД/акт), 'self_billed' — наше признание без первички, 'lease' —
+    начисление по договору аренды. ``intake_id`` заполнен, когда документ пришёл почтой и
+    его PDF можно показать.
+    """
+
+    kind: str
+    invoice_id: uuid.UUID | None = None
+    number: str | None = None
+    invoice_date: date | None = None
+    amount: float | None = None
+    intake_id: uuid.UUID | None = None
+    has_pdf: bool = False
+
+
+class RecognitionOrigin(BaseModel):
+    """Откуда взялся платёж и чем закрыт — для окна «Основание» в признании расходов.
+
+    Так же, как окно разбора на «Странице на оплату» показывает счёт, из-за которого платёж
+    появился. Разница в том, что здесь цепочка длиннее: у платежа есть НАЧАЛО (счёт или
+    договор) и КОНЕЦ (закрывающий документ, наше признание по периоду или по договору).
+    Без этого окна человек видит строку «АЙКО 16 430 ₽» и не может проверить, за что платили,
+    не уходя в другой раздел.
+    """
+
+    counterparty_name: str
+    amount: float
+    # Чем платёж обоснован. None — основания нет вовсе (свободный платёж).
+    basis: OriginDocument | None = None
+    basis_note: str
+    # Чем расход признан/закрыт. None — ещё не закрыт.
+    closing: OriginDocument | None = None
+    closing_note: str
+
+
+async def _origin_document(
+    session: AsyncSession, invoice: SupplierInvoice | None
+) -> OriginDocument | None:
+    """Собрать карточку документа и найти его PDF, если он приходил почтой."""
+    if invoice is None:
+        return None
+    intake_id = await session.scalar(
+        select(EmailInvoiceIntake.id).where(
+            or_(
+                EmailInvoiceIntake.invoice_id == invoice.id,
+                EmailInvoiceIntake.companion_invoice_id == invoice.id,
+            ),
+            EmailInvoiceIntake.pdf_bytes.is_not(None),
+        )
+    )
+    return OriginDocument(
+        kind=(
+            "self_billed"
+            if invoice.source == "self_billed"
+            else "lease"
+            if invoice.source == "lease"
+            else invoice.doc_kind
+        ),
+        invoice_id=invoice.id,
+        number=invoice.number,
+        invoice_date=invoice.invoice_date,
+        amount=_float(invoice.amount),
+        intake_id=intake_id,
+        has_pdf=intake_id is not None,
+    )
+
+
+@router.get(
+    "/prepayments/{prepayment_id}/origin",
+    response_model=RecognitionOrigin,
+    dependencies=READ,
+)
+async def prepayment_origin(
+    prepayment_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RecognitionOrigin:
+    """Основание платежа и то, чем он закрыт.
+
+    Отвечает на два вопроса, которые человек задаёт, глядя на строку признания: «за что
+    заплатили» и «чем это закрылось». У платежа по счёту оба ответа — документы, и их можно
+    открыть прямо здесь. У договорного контрагента счёта нет вовсе, и вместо документа
+    честно сказано, что основание — договор: подсунуть вместо него чужую бумагу было бы
+    хуже, чем признаться, что бумаги нет.
+    """
+    prepayment = await session.get(SupplierPrepayment, prepayment_id)
+    if prepayment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Платёж не найден")
+    cp_name = await session.scalar(
+        select(Counterparty.name).where(Counterparty.id == prepayment.counterparty_id)
+    )
+
+    bill = (
+        await session.get(SupplierInvoice, prepayment.bill_invoice_id)
+        if prepayment.bill_invoice_id
+        else None
+    )
+    basis = await _origin_document(session, bill)
+    if basis is not None:
+        basis_note = f"Счёт № {bill.number}" if bill and bill.number else "Счёт на оплату"
+    else:
+        # Счёта нет. Причина бывает разной, и человеку важно понимать, какая именно.
+        agreement_title = await session.scalar(
+            select(CounterpartyServiceAgreement.title).where(
+                CounterpartyServiceAgreement.counterparty_id == prepayment.counterparty_id,
+                CounterpartyServiceAgreement.accrual_enabled.is_(True),
+            )
+        )
+        lease_exists = await session.scalar(
+            select(LocationLease.id).where(
+                LocationLease.counterparty_id == prepayment.counterparty_id,
+                LocationLease.accrual_enabled.is_(True),
+            )
+        )
+        if agreement_title:
+            basis_note = f"Счёта нет — платёж по договору «{agreement_title}»"
+        elif lease_exists:
+            basis_note = "Счёта нет — платёж по договору аренды"
+        else:
+            basis_note = "Счёта нет — свободный платёж"
+
+    # Чем закрыт: документы, погасившие эту дебиторку.
+    closing_ids = (
+        await session.scalars(
+            select(InvoicePaymentAllocation.invoice_id).where(
+                InvoicePaymentAllocation.prepayment_id == prepayment.id
+            )
+        )
+    ).all()
+    closing_invoice = (
+        await session.get(SupplierInvoice, closing_ids[0]) if closing_ids else None
+    )
+    closing = await _origin_document(session, closing_invoice)
+    if closing_invoice is None:
+        mode = await session.scalar(
+            select(CounterpartyPayableProfile.service_billing_mode).where(
+                CounterpartyPayableProfile.counterparty_id == prepayment.counterparty_id
+            )
+        )
+        if mode == subscriptions.BILLING_MODE_FIXED_TARIFF:
+            closing_note = "Закрывается по периоду — УПД по этому контрагенту не ждём"
+        elif mode == settlement.BILLING_MODE_ONE_OFF:
+            closing_note = "Разовый платёж — расход признан сразу, закрывать нечем"
+        elif mode == settlement.BILLING_MODE_AGREEMENT:
+            closing_note = "Закроется начислением по договору по окончании месяца"
+        else:
+            closing_note = "Ещё не закрыт — ждём закрывающий документ"
+    elif closing_invoice.source == "self_billed":
+        closing_note = "Признано нами без первички — документа от контрагента не будет"
+    elif closing_invoice.source == "lease":
+        closing_note = "Закрыто начислением по договору аренды"
+    else:
+        number = closing_invoice.number
+        closing_note = f"Закрыто документом № {number}" if number else "Закрыто документом"
+
+    return RecognitionOrigin(
+        counterparty_name=cp_name or "—",
+        amount=_float(prepayment.amount),
+        basis=basis,
+        basis_note=basis_note,
+        closing=closing,
+        closing_note=closing_note,
+    )
+
+
+@router.get("/intakes/{intake_id}/pdf", dependencies=READ)
+async def recognition_origin_pdf(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """PDF документа-основания для окна признания расходов.
+
+    Тот же файл, что показывает «Страница на оплату», но под правом этого раздела
+    (``accounting.suppliers.read``): смотреть взаиморасчёты и смотреть очередь оплат — разные
+    роли, и заставлять бухгалтера получать второе право ради просмотра собственного основания
+    было бы странно.
+    """
+    intake = await session.get(EmailInvoiceIntake, intake_id)
+    if intake is None or not intake.pdf_bytes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF недоступен")
+    # Имя файла кириллическое, а HTTP-заголовки только latin-1 → ASCII-фолбэк + RFC 5987,
+    # иначе Starlette роняет ответ (см. тот же приём в payment_page).
+    raw_name = intake.attachment_filename or "document.pdf"
+    ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "document.pdf"
+    disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw_name)}"
+    return Response(
+        content=bytes(intake.pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -34,6 +34,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services.counterparty_payments import _money
 from app.services.invoice_recognition import RecognizedInvoice
 from app.services.mail.imap_client import FetchedAttachment
 from app.services.supplier_prepayments import (
@@ -1258,3 +1259,132 @@ async def test_closing_via_draft_still_settles_as_debt_no_prepayment(
             .where(SupplierPrepayment.counterparty_id == cp.id)
         )
         assert count == 0
+
+
+# --- Порядок зачёта: хронология ДЕНЕГ, а не порядок записей в базе --------------------------
+
+
+async def test_closing_eats_the_oldest_money_not_a_later_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """УПД за июнь съедает майский и июньский авансы, а июльский платёж не трогает.
+
+    Кейс Манго Телеком с прода (найден владельцем 02.08.2026). Все четыре аванса приехали
+    одним импортом 20.07 с одинаковым ``created_at`` — до микросекунды. Зачёт сортировал их
+    по времени ЗАПИСИ, поэтому при равных значениях порядок определяла база: УПД от 30.06
+    съели платёж от 07.07, пропустив майский. Общая дебиторка сходилась (13 269,23 ₽), но
+    висела не на тех платежах: очередь признания показывала закрытым июльский платёж и
+    открытым — майский, а отсечка «до начала учёта» списала на 5 000 ₽ больше, чем следовало.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Хронология Зачёта", inn="6155010701")
+        wallet = await make_wallet(session, name="Хронология Кошелёк")
+        # Одна секунда на все три записи — ровно то, что делает импорт.
+        imported_at = datetime(2026, 7, 20, 17, 29, 38, 268829, tzinfo=UTC)
+        prepayments: dict[date, SupplierPrepayment] = {}
+        for paid_on in (
+            date(2026, 5, 30),
+            date(2026, 6, 11),
+            date(2026, 6, 26),
+            date(2026, 7, 7),
+        ):
+            tx = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("5000.00"),
+                operation_date=paid_on,
+                counterparty_id=cp.id,
+                source_kind="bank_operation",
+                quality_status="auto",
+            )
+            session.add(tx)
+            await session.flush()
+            prepayment = SupplierPrepayment(
+                counterparty_id=cp.id,
+                kind="subscription",
+                amount=Decimal("5000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                cashflow_transaction_id=tx.id,
+                created_at=imported_at,
+            )
+            session.add(prepayment)
+            await session.flush()
+            prepayments[paid_on] = prepayment
+
+        closing = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="11358.69",
+            doc_kind="closing",
+            number="МРД#606000577",
+            invoice_date=date(2026, 6, 30),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, closing, as_of=date(2026, 7, 20))
+        await session.flush()
+
+        may = prepayments[date(2026, 5, 30)]
+        june_early = prepayments[date(2026, 6, 11)]
+        june_late = prepayments[date(2026, 6, 26)]
+        july = prepayments[date(2026, 7, 7)]
+        for prepayment in (may, june_early, june_late, july):
+            await session.refresh(prepayment)
+
+        # Съедено по хронологии: май и первый июньский целиком, второй июньский частично.
+        assert _money(may.amount - may.amount_settled) == Decimal("0.00")
+        assert _money(june_early.amount - june_early.amount_settled) == Decimal("0.00")
+        assert _money(june_late.amount - june_late.amount_settled) == Decimal("3641.31")
+        # А июльский платёж документ от 30.06 не трогает вовсе — денег до его даты хватило.
+        assert _money(july.amount - july.amount_settled) == Decimal("5000.00")
+        assert july.status == "open"
+
+
+async def test_closing_still_nets_against_a_later_payment_when_earlier_money_is_short(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ранних денег не хватило — документ гасится и поздним платежом (обратный неттинг).
+
+    Хронология здесь ПОРЯДОК, а не запрет: УПД пришёл 30.06, оплатили 07.07 — по канону этот
+    платёж гасит открытую кредиторку. Запрети мы поздние авансы вовсе, штатный постоплатный
+    контур перестал бы закрываться и КЗ висела бы вечно.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Хронология Неттинг", inn="6155010702")
+        wallet = await make_wallet(session, name="Хронология Неттинг Кошелёк")
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("5000.00"),
+            operation_date=date(2026, 7, 7),
+            counterparty_id=cp.id,
+            source_kind="bank_operation",
+            quality_status="auto",
+        )
+        session.add(tx)
+        await session.flush()
+        late = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="subscription",
+            amount=Decimal("5000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=tx.id,
+        )
+        session.add(late)
+        await session.flush()
+
+        closing = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            doc_kind="closing",
+            number="МЛРД#606000596",
+            invoice_date=date(2026, 6, 30),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, closing, as_of=date(2026, 7, 20))
+        await session.flush()
+        await session.refresh(late)
+
+        assert _money(late.amount_settled) == Decimal("3000.00")
