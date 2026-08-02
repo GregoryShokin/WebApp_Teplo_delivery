@@ -66,6 +66,7 @@ type AccountingItem = {
   days_overdue: number;
   period_assumed: boolean;
   opening: boolean;
+  note: string | null;
   settled: boolean;
   auto_recognition_on: string | null;
   document_amount: number | null;
@@ -1710,10 +1711,10 @@ function RecognitionSection({
                             `${item.document_kind === "closing" ? "УПД / акт" : "Счёт"} № ${item.invoice_number}`
                           : item.opening
                             ? /* Входящее сальдо, а не оплата: искать эти деньги в выписке
-                                 бесполезно — их там нет по определению. Без даты намеренно:
-                                 у сальдо её нет, а ``payment_date`` здесь — день, когда
-                                 остаток занесли в систему, и он выдал бы себя за дату денег. */
-                              "Входящий остаток"
+                                 бесполезно — их там нет по определению. Дату берём из
+                                 примечания, а не из payment_date: там день, когда остаток
+                                 занесли в систему (20.07), а сальдо — на 01.06. */
+                              (item.note ?? "Входящий остаток")
                             : item.payment_date
                               ? `Платёж от ${fmtDate(item.payment_date)}`
                               : "Платёж"}

@@ -135,6 +135,10 @@ class SupplierAccountingItem(BaseModel):
     # true — это не платёж, а входящее сальдо на дату начала учёта. Подписывать его «Платёж
     # от 20.07» значит отправлять человека искать в выписке деньги, которых в тот день не было.
     opening: bool = False
+    # Примечание строки. Показываем у входящего остатка: даты сальдо в модели нет, она живёт
+    # ровно здесь — «Остаток кабинета Яндекс Директ на 01.06.2026». Без неё остаток выглядит
+    # взявшимся ниоткуда, и владелец не находит на экране то, что сам же заводил.
+    note: str | None = None
     # true — платёж уже закрыт документом. В очереди такие строки появляются только по просьбе
     # («Показать закрытые») и в плитки не входят: очередь считает то, что требует шага.
     settled: bool = False
@@ -623,6 +627,7 @@ async def list_supplier_accounting(
                 days_overdue=overdue,
                 period_assumed=not period_known,
                 opening=prepayment.opening,
+                note=prepayment.note,
                 settled=is_settled,
                 auto_recognition_on=auto_recognition_on,
             )
