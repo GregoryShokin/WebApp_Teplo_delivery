@@ -236,6 +236,26 @@ function monthLabel(value: string): string {
   return `${MONTH_NAMES[Number(month) - 1] ?? value} ${year}`;
 }
 
+/** Месяцы для выбора: год назад — год вперёд, новые сверху.
+ *
+ *  Раньше здесь стоял ``<input type="month">``. В Chrome это выпадающий календарь, а Safari
+ *  на macOS такой тип НЕ ПОДДЕРЖИВАЕТ и рисует обычное текстовое поле — человек печатает
+ *  «08.2026», как привык, а парсер ждёт «2026-08» и молча выдаёт NaN. Так на проде не
+ *  оказалось периода НИ У ОДНОЙ строки платежа: люди его вводили, а он не сохранялся.
+ *  Список вместо ввода снимает вопрос формата вовсе — ошибиться нечем.
+ *
+ *  Диапазон ±12 месяцев: платят и за прошлый месяц (услуга оказана), и вперёд за год
+ *  (годовая лицензия). Дальше этого не встречалось. */
+function monthChoices(): string[] {
+    const now = new Date();
+    const out: string[] = [];
+    for (let offset = 12; offset >= -12; offset -= 1) {
+        const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+        out.push(dateInput(d.getFullYear(), d.getMonth(), 1).slice(0, 7));
+    }
+    return out;
+}
+
 /** Месяц из настройки карточки (``default_service_period_offset_months``): 0 — текущий,
  *  −1 — прошлый. Не подставляется сам, а предлагается кнопкой в окне периода. */
 function offsetMonthValue(offsetMonths: number | null | undefined): string | null {
@@ -1895,16 +1915,22 @@ function ServicePeriodDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">Начало</Label>
-              <Input
-                aria-label="Месяц начала периода"
-                className="h-9"
-                type="month"
-                value={row.servicePeriodStart.slice(0, 7)}
-                onChange={(event) =>
-                  onChange(monthsToPeriod(event.target.value, row.servicePeriodMonths))
-                }
-              />
+              <Label className="text-xs">Первый месяц услуги</Label>
+              <Select
+                value={row.servicePeriodStart.slice(0, 7) || undefined}
+                onValueChange={(value) => onChange(monthsToPeriod(value, row.servicePeriodMonths))}
+              >
+                <SelectTrigger aria-label="Первый месяц услуги" className="h-9">
+                  <SelectValue placeholder="Выберите месяц" />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthChoices().map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {monthLabel(value)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Сколько месяцев</Label>

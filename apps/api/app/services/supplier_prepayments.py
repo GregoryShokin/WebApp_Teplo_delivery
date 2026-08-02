@@ -541,6 +541,14 @@ async def reconcile_bill_prepayment(
             status="open",
             cashflow_transaction_id=None,
             bill_invoice_id=invoice.id,
+            article_id=invoice.dds_article_id,
+            # Период услуги СЧЁТ уже знает: он распознан из его текста («за июль» → 01.07–31.07)
+            # либо проставлен руками при разборе. Дебиторка ссылалась на этот счёт полем
+            # bill_invoice_id и period с него не читала — период лежал рядом, а очередь
+            # признания показывала «Период не указан» и ждала, пока человек введёт его заново.
+            # Хуже того: у контрагента, который УПД не присылает («счёт за период»), ждать было
+            # нечего вовсе — расход не признавался никогда, пока строку не трогали руками.
+            **_invoice_period_fields(invoice),
             note=f"Предоплата по счёту {number}" if number else "Предоплата по счёту",
             created_by_user_id=actor_user_id,
         )
@@ -830,6 +838,71 @@ async def _transaction_carried_bill_allocations(
     return _money(total)
 
 
+def _invoice_period_fields(invoice: SupplierInvoice) -> dict[str, object]:
+    """Поля периода услуги, унаследованные дебиторкой от оплаченного счёта.
+
+    Счёт — первичный источник периода для абонентских услуг: «Услуги связи за июль»
+    распознаётся при приёме из почты и лежит в ``service_period_start/end`` со статусом
+    ``ready``. Дебиторке этот период нужен ровно для того, ради чего он и распознавался, —
+    чтобы по окончании месяца расход признался сам.
+
+    ``service_period_months`` не наследуем: у счёта его нет, а вычислять из дат бессмысленно —
+    помесячное разложение включается либо галкой в «Новом платеже», либо режимом карточки
+    «счёт за период», и оба пути считают месяцы сами.
+    """
+    if (
+        invoice.service_period_status != "ready"
+        or invoice.service_period_start is None
+        or invoice.service_period_end is None
+    ):
+        return {}
+    return {
+        "service_period_start": invoice.service_period_start,
+        "service_period_end": invoice.service_period_end,
+        "service_period_status": "ready",
+    }
+
+
+async def _paid_bill_period(
+    session: AsyncSession, transaction: CashflowTransaction, amount: Decimal
+) -> tuple[date, date] | None:
+    """Период услуги со СЧЁТА, который этот платёж оплатил.
+
+    Второй мост после ``_expense_line_period``, и нужен он потому, что первый работает только
+    для платежей из черновика (``source_kind='counterparty_payment'``). Реальные платежи
+    приходят иначе — банковской выпиской: черновик ушёл в банк, банк исполнил, выписка
+    вернулась, и дебиторка родилась из проводки, ничего не знающей о счёте. На проде так
+    возникли ВСЕ строки очереди «Ждём документ»: АЙКО, ДоксИнБокс, Манго, Лемма.
+
+    Ищем строго: тот же контрагент, точная сумма, счёт (``doc_kind='bill'``) с ГОТОВЫМ
+    периодом. Точное совпадение суммы — сильный признак: абонентские счета выставляются на
+    фиксированную сумму, и промахнуться ею мимо своего счёта трудно. Если подходящих счетов
+    несколько с РАЗНЫМИ периодами — не берём ни один: угадать хуже, чем спросить человека.
+    """
+    if transaction.counterparty_id is None:
+        return None
+    rows = list(
+        (
+            await session.scalars(
+                select(SupplierInvoice).where(
+                    SupplierInvoice.counterparty_id == transaction.counterparty_id,
+                    SupplierInvoice.doc_kind == "bill",
+                    SupplierInvoice.direction == "payable",
+                    SupplierInvoice.payment_status != "void",
+                    SupplierInvoice.service_period_status == "ready",
+                    SupplierInvoice.service_period_start.is_not(None),
+                    SupplierInvoice.service_period_end.is_not(None),
+                    SupplierInvoice.amount == _money(amount),
+                )
+            )
+        ).all()
+    )
+    periods = {(row.service_period_start, row.service_period_end) for row in rows}
+    if len(periods) != 1:
+        return None
+    return periods.pop()
+
+
 async def _expense_line_period(
     session: AsyncSession, transaction: CashflowTransaction
 ) -> tuple[date, date, int | None, bool] | None:
@@ -987,6 +1060,10 @@ async def ensure_prepayment_from_bank_transaction(
     # операции. Переносим: без периода помесячное признание не знает, за что платили, а
     # сверка не может сказать, когда ждать закрывающий документ.
     period = await _expense_line_period(session, transaction)
+    # Платёж пришёл выпиской, а не черновиком — период знает оплаченный счёт.
+    bill_period = None if period else await _paid_bill_period(session, transaction, remainder)
+    if bill_period is not None:
+        period = (bill_period[0], bill_period[1], None, False)
     if existing is None:
         prepayment = SupplierPrepayment(
             counterparty_id=transaction.counterparty_id,
