@@ -375,6 +375,28 @@ type ExpenseByMonth = {
   without_location: number;
 };
 
+type BalanceAsOfRow = {
+  counterparty_id: string;
+  counterparty_name: string;
+  receivable: number;
+  payable: number;
+};
+
+type BalanceAsOf = {
+  as_of: string;
+  items: BalanceAsOfRow[];
+  receivable_total: number;
+  payable_total: number;
+  approximate_settlements: number;
+};
+
+async function getBalancesAsOf(asOf: string): Promise<BalanceAsOf> {
+  const response = await api.get<BalanceAsOf>("/accounting/suppliers/balances/as-of", {
+    params: { as_of: asOf },
+  });
+  return response.data;
+}
+
 async function getExpensesByMonth(dateFrom: string, dateTo: string): Promise<ExpenseByMonth> {
   const response = await api.get<ExpenseByMonth>("/accounting/suppliers/expenses/by-month", {
     params: { date_from: dateFrom, date_to: dateTo },
@@ -1099,6 +1121,7 @@ function BalancesSection({
           Дебиторка — открытые предоплаты; кредиторка — неоплаченные накладные и акты.
         </p>
       </div>
+      <BalanceAsOfCard />
       <div className="overflow-hidden rounded-lg border bg-background">
         <Table>
           <TableHeader>
@@ -2078,6 +2101,117 @@ function ExpensesByMonthSection() {
           </TableBody>
         </Table>
       </div>
+    </div>
+  );
+}
+
+function BalanceAsOfCard() {
+  // Свёрнута по умолчанию: обычный вопрос — «сколько должны сейчас», и таблица выше на него
+  // уже отвечает. «На дату» нужна в конце месяца, когда собирают баланс, — тогда её и открывают.
+  const [open, setOpen] = useState(false);
+  const [asOf, setAsOf] = useState(() => {
+    const today = new Date();
+    const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+    return `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(
+      lastMonthEnd.getDate(),
+    ).padStart(2, "0")}`;
+  });
+
+  const query = useQuery({
+    queryKey: ["accounting", "balances-as-of", asOf],
+    queryFn: () => getBalancesAsOf(asOf),
+    enabled: open,
+  });
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        Показать остатки на дату (для баланса на конец месяца)
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-background p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium">Остатки на дату</span>
+        <Input
+          type="date"
+          value={asOf}
+          onChange={(event) => setAsOf(event.target.value)}
+          className="max-w-[11rem]"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-muted-foreground underline underline-offset-2"
+        >
+          свернуть
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Кто сколько был должен на конец выбранного дня. Отличается от таблицы выше: документ,
+        оплаченный позже, здесь ещё остаётся долгом — именно так собирается баланс на конец
+        месяца.
+      </p>
+      {query.data && query.data.approximate_settlements > 0 ? (
+        <p className="text-xs text-amber-700">
+          {money.format(query.data.approximate_settlements)} гашений учтены по дате записи, а не
+          по дате события: у бартерных зачётов денежного факта нет. На эту величину остаток
+          прошедшей даты может отличаться от истинного.
+        </p>
+      ) : null}
+      {query.isLoading ? (
+        <p className="text-xs text-muted-foreground">Считаем…</p>
+      ) : query.isError ? (
+        <p className="text-xs text-rose-700">
+          {apiErrorMessage(query.error, "Не удалось посчитать остатки на дату")}
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Контрагент</TableHead>
+                <TableHead className="text-right">Дебиторка</TableHead>
+                <TableHead className="text-right">Кредиторка</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(query.data?.items.length ?? 0) === 0 ? (
+                <TableStatus colSpan={3} state="empty" tone="calm" />
+              ) : (
+                <>
+                  {query.data?.items.map((row) => (
+                    <TableRow key={row.counterparty_id}>
+                      <TableCell>{row.counterparty_name}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.receivable ? money.format(row.receivable) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.payable ? money.format(row.payable) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow>
+                    <TableCell className="font-semibold">Итого</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {money.format(query.data?.receivable_total ?? 0)}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {money.format(query.data?.payable_total ?? 0)}
+                    </TableCell>
+                  </TableRow>
+                </>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }
