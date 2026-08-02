@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import calendar
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
@@ -732,3 +732,87 @@ async def supersede_self_billed(
         await periods.cancel_invoice_accrual(session, victim.id)
     await session.flush()
     return victims
+
+
+BILLING_MODE_ONE_OFF = "one_off"
+
+
+def one_off_external_id(prepayment_id: uuid.UUID) -> str:
+    """Ключ идемпотентности разового признания под тем же уникумом ``source + external_id``."""
+    return f"once:{prepayment_id}"
+
+
+async def recognize_one_off_payment(
+    session: AsyncSession, prepayment: SupplierPrepayment, *, as_of: date | None = None
+) -> SupplierInvoice | None:
+    """Разовый платёж — сразу расход, без дебиторки и кредиторки (правило владельца 02.08.2026).
+
+    ЗАЧЕМ ОТДЕЛЬНОЕ ПРАВИЛО. Ремонт, юрист, типография, разовая доставка — здесь нет ни
+    периода услуги, ни ожидания закрывающего: заплатили и получили. Проводить такой платёж
+    через дебиторку значит создать долг, которого нет, и держать его в очереди признания,
+    пока человек не закроет его руками. На проде так висели Вишневецкий и Авито: денег ждать
+    не от кого, документа тоже, а строка требовала решения.
+
+    РАСХОД ДАТОЙ ПЛАТЕЖА, а не концом месяца. У абонентской услуги расход относится к периоду
+    её оказания, у разовой работы периода нет вовсе — есть день, когда её купили. Ставим
+    период в один день, чтобы отчёт по месяцам отнёс расход к месяцу платежа и не делил его.
+
+    Механика та же, что у самоакта: внутренний закрывающий документ ``self_billed`` гасит
+    дебиторку и несёт признание. Своей сущности не заводим — иначе витрины, сверка и P&L
+    пришлось бы учить новому типу строки ради одного случая.
+    """
+    if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
+        return None
+    remaining = periods.money(prepayment.amount) - periods.money(prepayment.amount_settled)
+    if remaining <= 0:
+        return None
+
+    external_id = one_off_external_id(prepayment.id)
+    existing = await session.scalar(
+        select(SupplierInvoice).where(
+            SupplierInvoice.source == SELF_BILLED_SOURCE,
+            SupplierInvoice.external_id == external_id,
+        )
+    )
+    if existing is not None:
+        return None
+
+    paid_on = as_of or clock.moscow_today()
+    invoice = SupplierInvoice(
+        counterparty_id=prepayment.counterparty_id,
+        source=SELF_BILLED_SOURCE,
+        external_id=external_id,
+        direction="payable",
+        doc_kind="closing",
+        operational_scope="finance",
+        number=f"Разовый расход {paid_on:%d.%m.%Y}",
+        invoice_date=paid_on,
+        amount=remaining,
+        dds_article_id=prepayment.article_id,
+        service_period_start=paid_on,
+        service_period_end=paid_on,
+        service_period_source="self_billed",
+        service_period_status="ready",
+    )
+    session.add(invoice)
+    await session.flush()
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=invoice.id,
+            prepayment_id=prepayment.id,
+            amount=remaining,
+            source_kind="prepayment",
+        )
+    )
+    prepayment.amount_settled = periods.money(prepayment.amount)
+    prepayment.status = "settled"
+    invoice.payment_status = "paid"
+    accrual = await periods.sync_invoice_accrual(session, invoice)
+    # Признаём НЕМЕДЛЕННО, не дожидаясь ночной джобы: период — один день, он уже прошёл,
+    # и ждать до завтра нечего. Иначе разовый платёж сутки висел бы «периодом в работе».
+    if accrual is not None:
+        await periods.recognize_due_expenses(
+            session, as_of=paid_on + timedelta(days=1), commit=False, invoice_ids=[invoice.id]
+        )
+    await session.flush()
+    return invoice

@@ -220,3 +220,97 @@ async def test_bill_receivable_carries_the_period_of_its_own_bill(
         assert prepayment.service_period_start == date(2026, 9, 1)
         assert prepayment.service_period_end == date(2026, 9, 30)
         assert prepayment.service_period_status == "ready"
+
+
+async def test_one_off_payment_becomes_expense_at_once(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разовому контрагенту платёж сразу становится расходом — без ДЗ и КЗ.
+
+    Правило владельца 02.08.2026: ремонт, юрист, типография, разовая доставка — заплатили и
+    получили. Ни периода услуги, ни ожидания закрывающего здесь нет, и дебиторка была бы
+    долгом, которого не существует. На проде так висели Вишневецкий и Авито: денег ждать не
+    от кого, документа тоже, а строка требовала решения человека.
+
+    Расход датой ПЛАТЕЖА, а не концом месяца: у разовой работы периода нет, есть день покупки.
+    """
+    from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual
+    from sqlalchemy import select as _select
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Разовый подрядчик", inn="7723456705")
+        profile = await session.scalar(
+            _select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        assert profile is not None
+        profile.service_billing_mode = "one_off"
+        wallet = await make_wallet(session, code="tbank-oneoff-1", name="Т-Банк")
+        tx = await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="6000.00",
+            on=date(2026, 7, 13),
+        )
+        await session.commit()
+
+        prepayment = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+
+        # Дебиторки не осталось: она закрыта тем же действием, что признало расход.
+        assert prepayment is not None
+        assert prepayment.status == "settled"
+        assert prepayment.amount_settled == Decimal("6000.00")
+
+        accrual = await session.scalar(
+            _select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status == "recognized",
+            )
+        )
+        assert accrual is not None, "разовый платёж не стал расходом"
+        assert accrual.amount == Decimal("6000.00")
+        assert accrual.recognition_month == date(2026, 7, 1), "расход отнесён не к месяцу платежа"
+
+
+async def test_one_off_recognition_is_idempotent(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повторный проход по той же проводке второй расход не заводит."""
+    from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Разовый дважды", inn="7723456706")
+        profile = await session.scalar(
+            _select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        assert profile is not None
+        profile.service_billing_mode = "one_off"
+        wallet = await make_wallet(session, code="tbank-oneoff-2", name="Т-Банк")
+        tx = await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="4000.00",
+            on=date(2026, 7, 20),
+        )
+        await session.commit()
+
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+
+        total = await session.scalar(
+            _select(_func.count()).select_from(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        assert total == 1, "повторный проход завёл второй расход"

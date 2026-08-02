@@ -863,6 +863,18 @@ def _invoice_period_fields(invoice: SupplierInvoice) -> dict[str, object]:
     }
 
 
+async def _one_off_counterparty(session: AsyncSession, counterparty_id: uuid.UUID | None) -> bool:
+    """Режим карточки «разовые работы»: закрывающих не ждём и расход признаём сразу."""
+    if counterparty_id is None:
+        return False
+    mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    return mode == "one_off"
+
+
 async def _paid_bill_period(
     session: AsyncSession, transaction: CashflowTransaction, amount: Decimal
 ) -> tuple[date, date] | None:
@@ -1087,6 +1099,16 @@ async def ensure_prepayment_from_bank_transaction(
         )
         session.add(prepayment)
         await session.flush()
+        # Разовый контрагент (ремонт, юрист, типография): заплатили и получили — ни периода,
+        # ни ожидания документа. Дебиторка здесь фикция, и держать её в очереди признания
+        # значит требовать от человека решения по долгу, которого нет. Признаём расход сразу
+        # датой платежа; запись предоплаты остаётся закрытой — она несёт связь с деньгами.
+        from app.services import subscription_accruals as _subs
+
+        if await _one_off_counterparty(session, transaction.counterparty_id):
+            await _subs.recognize_one_off_payment(
+                session, prepayment, as_of=transaction.operation_date
+            )
         return prepayment
 
     # Адаптируем существующую нетронутую предоплату НА МЕСТЕ (id сохраняется): при отсутствии

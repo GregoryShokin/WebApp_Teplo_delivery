@@ -64,6 +64,7 @@ type AccountingItem = {
   expected_by: string | null;
   days_overdue: number;
   period_assumed: boolean;
+  auto_recognition_on: string | null;
   document_amount: number | null;
   amount_mismatch: number;
   can_recognize: boolean;
@@ -1685,6 +1686,12 @@ function RecognitionSection({
                             ждём до {fmtDate(item.expected_by)}
                           </span>
                         )
+                      ) : item.auto_recognition_on ? (
+                        // Договор или аренда: расход придёт сам, и человеку важно знать —
+                        // ждать до завтра или до сентября. «Период идёт» на это не отвечает.
+                        <span className="text-muted-foreground">
+                          начислится {fmtDate(item.auto_recognition_on)}
+                        </span>
                       ) : item.recognition_month ? (
                         <span className="text-muted-foreground">
                           {monthTitle(item.recognition_month.slice(0, 7))}

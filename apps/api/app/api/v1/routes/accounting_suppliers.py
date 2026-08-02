@@ -34,6 +34,7 @@ from app.models import (
     EmployeePayout,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    LocationLease,
     PayrollLine,
     PayrollPayment,
     PayrollPeriod,
@@ -124,6 +125,10 @@ class SupplierAccountingItem(BaseModel):
     # true — период не указан, и срок посчитан по месяцу платежа. Фронт обязан это сказать
     # вслух: иначе выдуманный период читается как подтверждённый.
     period_assumed: bool = False
+    # Когда расход придёт сам, без участия человека: договор услуги и аренда начисляют его
+    # по окончании месяца. Дата нужна вслух — «период идёт» не отвечает на вопрос «и когда
+    # же», а человек хочет знать, ждать ему до завтра или до сентября.
+    auto_recognition_on: date | None = None
     # Насколько признанный расход разошёлся с суммой документа. Признанное начисление не
     # переписывается молча — оно уже в прибыли закрытого месяца, и менять его без ведома
     # человека нельзя. Но и промолчать нельзя: у СДЭК документ СКБ-0008640 вырос с 7 893,40
@@ -240,6 +245,22 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
     ).all()
     ctx.self_settling.update(informal)
     ctx.documents_not_expected.update(informal)
+
+    # Аренда закрывается так же сама, как договор услуги: ночная джоба заводит документ
+    # «Аренда MM.YYYY» на сумму договора, и он гасит платёж. Список самозакрывающихся собирался
+    # только из договоров услуг, поэтому платёж арендодателю показывался как «нужен период» —
+    # при том что период известен из договора, а документ на него уже создан и ждёт своей даты.
+    leases = (
+        await session.scalars(
+            select(LocationLease.counterparty_id).where(
+                LocationLease.accrual_enabled.is_(True),
+                LocationLease.started_on <= today,
+                or_(LocationLease.ended_on.is_(None), LocationLease.ended_on >= today),
+            )
+        )
+    ).all()
+    ctx.self_settling.update(lease_cp for lease_cp in leases if lease_cp is not None)
+    ctx.documents_not_expected.update(lease_cp for lease_cp in leases if lease_cp is not None)
 
     warehouse = (
         await session.scalars(
@@ -410,6 +431,7 @@ async def list_supplier_accounting(
             paid_on,
         )
         cp_id = prepayment.counterparty_id
+        auto_recognition_on: date | None = None
         documents_expected = cp_id not in ctx.documents_not_expected
         # Долг закроется сам: помесячное признание из этой же предоплаты либо ночное
         # начисление по договору. Человеку делать нечего, срок не нужен.
@@ -436,16 +458,19 @@ async def list_supplier_accounting(
         if prepayment.kind == "prepaid_bill" and (not settles_itself or not period_known):
             prepayment_stage = "waiting_document"
             deadline = settlement.expected_by(period_end, ctx.expected_days.get(cp_id))
-            overdue = max((today - deadline).days, 0)
-        elif period_known and settles_itself:
+            overdue = _overdue_days(today, deadline, period_known=period_known)
+        elif settles_itself:
+            # Договор или аренда: сумму и месяц знает договор, а не платёж. Требовать период
+            # у человека здесь незачем — расход начислится сам по окончании месяца.
             prepayment_stage = "period_running"
+            auto_recognition_on = _first_day_after(period_end)
         elif documents_expected:
             # По умолчанию документ ЖДЁТСЯ — так же, как считала сводка разрывов. Иначе, пока
             # режимы контрагентам не проставлены, весь экран был бы одной очередью «нужен
             # период», хотя по большинству платежей от человека ничего не требуется.
             prepayment_stage = "waiting_document"
             deadline = settlement.expected_by(period_end, ctx.expected_days.get(cp_id))
-            overdue = max((today - deadline).days, 0)
+            overdue = _overdue_days(today, deadline, period_known=period_known)
         elif period_known:
             # Документа не будет, период известен, а само признание выключено: расход
             # повиснет навсегда, пока человек не запустит признание за период.
@@ -480,6 +505,7 @@ async def list_supplier_accounting(
                 expected_by=deadline,
                 days_overdue=overdue,
                 period_assumed=not period_known,
+                auto_recognition_on=auto_recognition_on,
             )
         )
 
@@ -808,6 +834,35 @@ class DocumentRegisterList(BaseModel):
     items: list[DocumentRegisterRow]
     total_amount: float
     unpaid_total: float
+
+
+def _first_day_after(period_end: date) -> date:
+    """Первое число следующего месяца — день, когда признание забирает закончившийся период.
+
+    Джоба признаёт расход строго ПОСЛЕ окончания периода (``service_period_end < today``):
+    весь последний день услуга ещё оказывается. Значит расход за август встанет 1 сентября,
+    и именно эту дату человеку и надо показать.
+    """
+    year = period_end.year + (1 if period_end.month == 12 else 0)
+    month = 1 if period_end.month == 12 else period_end.month + 1
+    return date(year, month, 1)
+
+
+def _overdue_days(today: date, deadline: date, *, period_known: bool) -> int:
+    """Сколько дней документ просрочен. Без ПОДТВЕРЖДЁННОГО периода — нисколько.
+
+    Срок отсчитывается от конца периода услуги, а когда периода нет, за него принимается
+    месяц платежа. Гипотеза рабочая, но для предоплаты она неверна ровно наоборот: платёж
+    29.06 — это платёж ЗА ИЮЛЬ, документ по нему ждут в августе. Считая срок от июня,
+    экран показывал «нет 33 дн» там, где ждать ещё рано.
+
+    Красное на выдуманном сроке хуже, чем отсутствие красного: на него перестают смотреть,
+    и настоящая просрочка тонет среди мнимых. Пока период не подтверждён, строка просит
+    период — этого и достаточно, чтобы человек ею занялся.
+    """
+    if not period_known:
+        return 0
+    return max((today - deadline).days, 0)
 
 
 def _clamp_money(value: Decimal) -> Decimal:
