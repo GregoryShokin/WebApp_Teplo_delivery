@@ -169,7 +169,11 @@ async def ensure_lease_invoice(
     # Порядок важен: сначала проводим документ (активация или pending для будущей даты и
     # FIFO-гашение открытой дебиторки), затем строка признания расхода в P&L.
     await supplier_prepayments.apply_closing_document(session, invoice, as_of=as_of)
-    await supplier_service_periods.sync_invoice_accrual(session, invoice)
+    # Аренда — единственный источник, который ТОЧНО знает помещение: договор к нему и привязан.
+    # Для отчёта о прибыли по точкам это главная строка расхода.
+    await supplier_service_periods.sync_invoice_accrual(
+        session, invoice, location_id=lease.location_id
+    )
     return invoice
 
 

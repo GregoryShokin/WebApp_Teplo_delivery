@@ -372,6 +372,7 @@ type ExpenseByMonth = {
   total: number;
   unattributed: number;
   without_primary: number;
+  without_location: number;
 };
 
 async function getExpensesByMonth(dateFrom: string, dateTo: string): Promise<ExpenseByMonth> {
@@ -2012,6 +2013,13 @@ function ExpensesByMonthSection() {
         <p className="text-xs text-rose-700">
           {money.format(query.data.unattributed)} без статьи ДДС — отнести в отчёт о прибыли
           некуда, пока статья не проставлена.
+        </p>
+      ) : null}
+      {query.data && query.data.without_location > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {money.format(query.data.without_location)} без помещения — в разрез по точкам такой
+          расход не попадёт. У документа поставщика помещения нет, и подставлять его наугад
+          нельзя: выдуманная цифра выглядит достоверно и расходится с реальностью молча.
         </p>
       ) : null}
       <div className="overflow-x-auto rounded-lg border bg-background">

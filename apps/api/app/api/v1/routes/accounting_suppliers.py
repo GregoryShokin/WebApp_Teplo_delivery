@@ -1987,6 +1987,7 @@ class ExpenseByMonthList(BaseModel):
     total: float
     unattributed: float
     without_primary: float
+    without_location: float
 
 
 @router.get("/expenses/by-month", response_model=ExpenseByMonthList, dependencies=READ)
@@ -1996,6 +1997,7 @@ async def list_expenses_by_month(
     date_to: Annotated[date, Query()],
     counterparty_id: Annotated[uuid.UUID | None, Query()] = None,
     article_id: Annotated[uuid.UUID | None, Query()] = None,
+    location_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> ExpenseByMonthList:
     """Признанный расход по месяцам × статьям.
 
@@ -2012,6 +2014,7 @@ async def list_expenses_by_month(
         date_to=date_to,
         counterparty_id=counterparty_id,
         article_id=article_id,
+        location_id=location_id,
     )
     return ExpenseByMonthList(
         months=report.months,
@@ -2027,6 +2030,7 @@ async def list_expenses_by_month(
         total=_float(report.total),
         unattributed=_float(report.unattributed),
         without_primary=_float(report.without_primary),
+        without_location=_float(report.without_location),
     )
 
 

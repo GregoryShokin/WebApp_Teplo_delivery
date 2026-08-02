@@ -626,6 +626,15 @@ class SupplierExpenseAccrual(Base):
     article_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("dds_articles.id", ondelete="SET NULL"), nullable=True
     )
+    # Ось «где»: к какому помещению относится расход. Нужна отчёту о прибыли по точкам —
+    # без неё видно только «сколько потратили», но не «сколько стоит эта точка».
+    # Заполняется там, где помещение действительно известно: строка платежа несёт его явно,
+    # аренда знает по договору. У документа поставщика помещения нет вовсе, и выдумывать его
+    # нельзя — пустая локация честнее подставленной наугад. ``SET NULL``: аналитика не должна
+    # утаскивать за собой строку расхода.
+    location_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("location.id", ondelete="SET NULL"), nullable=True
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     service_period_start: Mapped[date] = mapped_column(Date, nullable=False)
     service_period_end: Mapped[date] = mapped_column(Date, nullable=False)

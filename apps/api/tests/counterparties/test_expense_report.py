@@ -258,3 +258,61 @@ async def test_self_billed_expense_is_flagged_as_without_primary(
         )
         assert report.total == Decimal("8000.00")
         assert report.without_primary == Decimal("3000.00")
+
+
+async def test_location_slices_expense_and_missing_location_is_visible(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разрез по помещению работает, а расход без помещения виден отдельной цифрой.
+
+    Отчёт отвечал на вопрос «сколько потратили», но не на «сколько стоит эта точка» — а он и
+    есть первый вопрос к P&L, когда точек больше одной. У документа поставщика помещения нет
+    вовсе, и подставлять его наугад нельзя: выдуманная цифра выглядит достоверно и расходится
+    с реальностью молча.
+    """
+    from sqlalchemy import select
+
+    from app.models import Location, Organization
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Отчёт Точки", inn="6155000705")
+        article = await make_expense_article(session, code="REP-LOC", name="Аренда")
+        organization_id = await session.scalar(select(Organization.id).limit(1))
+        assert organization_id is not None, "в сидах должна быть организация"
+        location = Location(organization_id=organization_id, name="Черникова (отчёт)")
+        session.add(location)
+        await session.flush()
+
+        with_location = await _recognized(
+            session,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount="50000.00",
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 31),
+        )
+        with_location.location_id = location.id
+        # Второй расход — без помещения (документ поставщика его не несёт).
+        await _recognized(
+            session,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount="8000.00",
+            start=date(2026, 7, 1),
+            end=date(2026, 7, 31),
+        )
+        await session.commit()
+
+        full = await build_expense_report(
+            session, date_from=date(2026, 7, 1), date_to=date(2026, 7, 31)
+        )
+        assert full.total == Decimal("58000.00")
+        assert full.without_location == Decimal("8000.00")
+
+        by_point = await build_expense_report(
+            session,
+            date_from=date(2026, 7, 1),
+            date_to=date(2026, 7, 31),
+            location_id=location.id,
+        )
+        assert by_point.total == Decimal("50000.00"), "в срез точки попал расход без помещения"

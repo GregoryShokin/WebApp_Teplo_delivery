@@ -52,6 +52,9 @@ class ExpenseReport:
     total: Decimal = Decimal("0.00")
     # Расход, у которого нет статьи ДДС: в P&L его отнести некуда, и молчать об этом нельзя.
     unattributed: Decimal = Decimal("0.00")
+    # Расход без помещения: в разрез по точкам он не попадёт. Пока цифра не ноль, P&L по
+    # точкам неполон ровно на неё — и лучше это видеть, чем размазать наугад.
+    without_location: Decimal = Decimal("0.00")
     # Расход БЕЗ ПЕРВИЧКИ: признан самоактом (контрагент документа не присылал) либо строкой
     # ручного платежа, где документа нет вовсе. В управленческом P&L он полноправен — деньги
     # потрачены, услуга оказана. В налоговую базу УСН он идти НЕ МОЖЕТ: без первичного
@@ -85,6 +88,7 @@ async def build_expense_report(
     date_to: date,
     counterparty_id: uuid.UUID | None = None,
     article_id: uuid.UUID | None = None,
+    location_id: uuid.UUID | None = None,
 ) -> ExpenseReport:
     """Признанный расход по месяцам × статьям за интервал. Границы включительно, по месяцам.
 
@@ -102,6 +106,11 @@ async def build_expense_report(
         conditions.append(SupplierExpenseAccrual.counterparty_id == counterparty_id)
     if article_id is not None:
         conditions.append(SupplierExpenseAccrual.article_id == article_id)
+    if location_id is not None:
+        # Фильтр по помещению — ось «где» для P&L по точкам. Расход, у которого помещение
+        # неизвестно (документ поставщика его не несёт), в такой срез не попадает, и это
+        # правильно: приписать его точке значило бы выдумать цифру.
+        conditions.append(SupplierExpenseAccrual.location_id == location_id)
     rows = (
         await session.execute(
             select(SupplierExpenseAccrual, DdsArticle.name, SupplierInvoice.source)
@@ -115,6 +124,7 @@ async def build_expense_report(
     names: dict[uuid.UUID | None, str] = {None: "Без статьи"}
     unattributed = Decimal("0.00")
     without_primary = Decimal("0.00")
+    without_location = Decimal("0.00")
     for accrual, article_name, invoice_source in rows:
         # Первичка есть только у документа, присланного контрагентом. Самоакт (self_billed) мы
         # выписали себе сами, а у начисления по строке платежа документа нет вовсе.
@@ -138,6 +148,8 @@ async def build_expense_report(
                 unattributed += share
             if no_primary:
                 without_primary += share
+            if accrual.location_id is None:
+                without_location += share
 
     months: list[date] = []
     cursor = first
@@ -162,6 +174,7 @@ async def build_expense_report(
         total=money(sum((cell.amount for cell in cells), Decimal("0.00"))),
         unattributed=money(unattributed),
         without_primary=money(without_primary),
+        without_location=money(without_location),
     )
 
 

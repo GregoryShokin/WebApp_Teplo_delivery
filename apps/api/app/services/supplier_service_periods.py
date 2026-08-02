@@ -71,7 +71,10 @@ def is_expense_bearing(invoice: SupplierInvoice) -> bool:
 
 
 async def sync_invoice_accrual(
-    session: AsyncSession, invoice: SupplierInvoice
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    *,
+    location_id: uuid.UUID | None = None,
 ) -> SupplierExpenseAccrual | None:
     """Создать/обновить/отменить запись P&L для документа с подтверждённым периодом.
 
@@ -104,6 +107,7 @@ async def sync_invoice_accrual(
             invoice_id=invoice.id,
             payment_draft_id=invoice.draft_id,
             article_id=invoice.dds_article_id,
+            location_id=location_id,
             amount=invoice.amount,
             service_period_start=start,
             service_period_end=end,
@@ -114,6 +118,10 @@ async def sync_invoice_accrual(
         existing.counterparty_id = invoice.counterparty_id
         existing.payment_draft_id = invoice.draft_id
         existing.article_id = invoice.dds_article_id
+        # Локацию перезаписываем только когда её ЗНАЕТ вызывающий: обычный синк документа
+        # её не передаёт, и обнулять уже проставленную было бы потерей аналитики.
+        if location_id is not None:
+            existing.location_id = location_id
         # Сумму и период признанного расхода не двигаем молча: он уже в P&L закрытого
         # месяца. Привязки (контрагент/черновик/статья) обновлять безопасно — они не
         # меняют величину расхода. Корректировка признанной суммы — только осознанно.
@@ -238,6 +246,7 @@ async def sync_expense_line_accrual(
             expense_draft_line_id=line.id,
             payment_draft_id=line.draft_id,
             article_id=line.article_id,
+            location_id=line.location_id,
             amount=line.amount,
             service_period_start=start,
             service_period_end=end,
@@ -248,6 +257,7 @@ async def sync_expense_line_accrual(
         existing.counterparty_id = line.counterparty_id
         existing.payment_draft_id = line.draft_id
         existing.article_id = line.article_id
+        existing.location_id = line.location_id
         # Признанный расход не двигаем молча (см. sync_invoice_accrual).
         if existing.status != "recognized":
             existing.amount = line.amount
