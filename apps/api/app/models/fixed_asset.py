@@ -194,7 +194,19 @@ class FixedAsset(Base):
 
 
 class AssetMovement(Base):
-    """Событие жизненного цикла объекта: ввод, перемещение, модернизация, списание, продажа."""
+    """Событие жизненного цикла объекта: ввод, перемещение, модернизация, списание, продажа.
+
+    ВЫБЫТИЕ (``movement_type='writeoff'``) — первый и пока единственный вид движения, у
+    которого есть код. Таблица заведена вместе с модулем, но до 2026-08-02 в неё никто не
+    писал; заводить рядом вторую «таблицу списаний» значило бы держать два журнала одной
+    жизни объекта. Поэтому списание пишется сюда, а две колонки ниже заполняются ТОЛЬКО у
+    него — у перемещения и ввода их смысла нет.
+
+    Строка выбытия — исторический документ и основание строки ОПиУ «УчОС Убыток от выбытия».
+    Сумму убытка она хранит СВОЮ, а не пересчитывает от карточки: карточку правят (коррекция
+    начисления, переоценка), и пересчитанный задним числом убыток тихо разошёлся бы с тем,
+    что уже перенесли в отчётность.
+    """
 
     __tablename__ = "asset_movement"
     __table_args__ = (
@@ -204,6 +216,15 @@ class AssetMovement(Base):
         ),
         CheckConstraint("amount IS NULL OR amount >= 0", name="ck_asset_movement_amount"),
         Index("ix_asset_movement_asset", "asset_id", "occurred_on"),
+        # Выбытие у объекта одно: списать дважды значит дважды показать убыток. Повторное
+        # списание должно упереться в базу, а не в проверку, которую забудут при следующей
+        # точке входа.
+        Index(
+            "uq_asset_movement_writeoff",
+            "asset_id",
+            unique=True,
+            postgresql_where=text("movement_type = 'writeoff'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -212,9 +233,20 @@ class AssetMovement(Base):
     )
     movement_type: Mapped[str] = mapped_column(String(24), nullable=False)
     occurred_on: Mapped[date] = mapped_column(Date, nullable=False)
-    # Сумма модернизации (капитализируется) или продажи; для перемещения/ввода не нужна.
+    # Сумма модернизации (капитализируется), продажи или УБЫТКА ОТ ВЫБЫТИЯ — остаточной
+    # стоимости, которая ушла с баланса в расход; для перемещения/ввода не нужна.
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ТОЛЬКО У ВЫБЫТИЯ: статус, в котором объект жил до списания. Нужен, чтобы отмена
+    # ошибочного списания вернула карточку туда, где она была: «не работает» и «в работе» —
+    # разные строки баланса, и восстанавливать всех подряд «в работу» значило бы чинить одну
+    # ошибку другой.
+    previous_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # ТОЛЬКО У ВЫБЫТИЯ: сообщение о состоянии, из которого выросло решение. Списание по
+    # кнопке в карточке ссылки не имеет — там основание только в ``note``.
+    condition_report_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("asset_condition_report.id", ondelete="SET NULL"), nullable=True
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
@@ -363,6 +395,14 @@ class AssetConditionReport(Base):
     # Сколько объекту осталось работать. Заполняется только у покупок б/у: у поломки предметом
     # разговора остаётся стоимость.
     proposed_useful_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Предложение не переоценить, а СПИСАТЬ: объекта физически нет (украли, утратили,
+    # уничтожен). Отдельный флаг, а не «предложенная стоимость = 0», потому что это разные
+    # действия. Переоценка в ноль оставляет объект на балансе и переписывает первоначальную
+    # стоимость — то есть врёт о том, за сколько его купили. Выбытие убирает объект из
+    # внеоборотных активов целиком и показывает остаток убытком.
+    proposed_disposal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     proposed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -30,7 +30,14 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AssetBalanceSnapshot, AssetCategory, DepreciationEntry, FixedAsset
+from app.models import (
+    AssetBalanceSnapshot,
+    AssetCategory,
+    AssetMovement,
+    DepreciationEntry,
+    FixedAsset,
+)
+from app.services.asset_disposal import WRITEOFF
 
 # Строка для объектов, которые не работают. Собирается по СТАТУСУ и категории не имеет —
 # отсюда текстовый ключ строки вместо ссылки на справочник.
@@ -59,18 +66,43 @@ def month_start(value: date) -> date:
     return value.replace(day=1)
 
 
+def _has_left(asset: FixedAsset, period: date, disposed_on: dict[object, date]) -> bool:
+    """Ушёл ли объект из внеоборотных активов к концу указанного месяца."""
+    if asset.status not in DISPOSED_STATUSES:
+        return False
+    left = disposed_on.get(asset.id)
+    # Строки выбытия нет — про дату не известно ничего; исключаем всегда, как делали раньше.
+    return True if left is None else left <= period
+
+
 async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLine]:
     """Строки баланса по ОС на конец указанного месяца.
 
     ``as_of`` — любая дата внутри месяца; берётся месяц целиком. Накопленная амортизация
     считается по начислениям ВКЛЮЧИТЕЛЬНО по этот месяц, поэтому отчёт за июль не поедет
     от того, что август уже закрыт.
+
+    ВЫБЫТИЕ УЧИТЫВАЕТСЯ ПО ЕГО МЕСЯЦУ, А НЕ ПО ТЕКУЩЕМУ СТАТУСУ. Фильтр по статусу здесь
+    смотрел бы на сегодня: объект, списанный в августе, задним числом исчезал бы и из июля —
+    то есть из месяца, который уже заморожен и перенесён в отчётность. Поэтому объект со
+    строкой выбытия покидает баланс начиная С МЕСЯЦА ВЫБЫТИЯ и стоит в предыдущих как живой.
+    Карточки, выбывшие без строки (продажа и всё, что списали до появления этого контура),
+    исключаются как раньше — про них не известно когда, и гадать хуже, чем оставить как было.
     """
     period = month_start(as_of)
 
-    assets = (
-        await session.scalars(select(FixedAsset).where(FixedAsset.status.not_in(DISPOSED_STATUSES)))
-    ).all()
+    assets = (await session.scalars(select(FixedAsset))).all()
+    disposed_on = {
+        asset_id: month_start(occurred_on)
+        for asset_id, occurred_on in (
+            await session.execute(
+                select(AssetMovement.asset_id, AssetMovement.occurred_on).where(
+                    AssetMovement.movement_type == WRITEOFF
+                )
+            )
+        ).all()
+    }
+    assets = [asset for asset in assets if not _has_left(asset, period, disposed_on)]
     categories = {row.id: row for row in (await session.scalars(select(AssetCategory))).all()}
 
     accrued_rows = (

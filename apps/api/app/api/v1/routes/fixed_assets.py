@@ -40,7 +40,13 @@ from app.models import (
     FixedAsset,
     Location,
 )
-from app.services import asset_analytics, asset_balance, asset_intake, asset_revaluation
+from app.services import (
+    asset_analytics,
+    asset_balance,
+    asset_disposal,
+    asset_intake,
+    asset_revaluation,
+)
 from app.services import fixed_assets as service
 from app.services.anthropic_client import LlmCallError
 
@@ -189,6 +195,9 @@ class ConditionReportRead(BaseModel):
     proposed_cost: Decimal | None
     # Сколько объекту осталось работать по мнению модели. Только у покупок б/у.
     proposed_useful_life_months: int | None
+    # Предложение не переоценить, а СПИСАТЬ: объекта физически нет. Убыток при этом равен
+    # ``cost_before`` — остаточной стоимости на момент обращения.
+    proposed_disposal: bool
     proposed_reason: str | None
     # Уверенность модели показывается, но НЕ управляет применением: стоимость актива меняет
     # человек, какой бы уверенной модель ни была.
@@ -210,10 +219,35 @@ class ConditionDecisionRequest(BaseModel):
     accept: bool
 
 
+class DisposalRead(BaseModel):
+    """Оформленное выбытие: когда объект ушёл, почему и с каким убытком."""
+
+    occurred_on: date
+    # Убыток от выбытия — остаточная стоимость, ушедшая с баланса в расход.
+    loss_amount: Decimal
+    reason: str | None
+    # Статус, в котором объект был до списания: отмена вернёт его туда же.
+    previous_status: AssetStatus | None
+    # Месяц выбытия заморожен снимком баланса — отменить списание уже нельзя.
+    period_frozen: bool
+
+
+class DisposalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Причина обязательна: списание убирает объект из баланса, и «почему» — единственное,
+    # что останется в акте. Пустая строка превратила бы акт в «объект исчез сам».
+    reason: str = Field(min_length=3, max_length=2000)
+    # Дата выбытия. По умолчанию сегодня; будущим числом списать нельзя.
+    disposed_on: date | None = None
+
+
 class FixedAssetDetailRead(FixedAssetRead):
     entries: list[DepreciationEntryRead]
     # История сообщений о состоянии с предложениями модели — свежие первыми.
     condition_reports: list[ConditionReportRead] = Field(default_factory=list)
+    # Заполнено, если объект списан.
+    disposal: DisposalRead | None = None
 
 
 class FixedAssetCreateRequest(BaseModel):
@@ -855,6 +889,13 @@ class MonthlyDepreciationRead(BaseModel):
     amount: Decimal
 
 
+class MonthlyDisposalRead(BaseModel):
+    period_month: date
+    # Убыток от выбытия за месяц — остаточная стоимость списанных объектов.
+    amount: Decimal
+    asset_count: int
+
+
 class ReportingRead(BaseModel):
     period_month: date
     # Одиннадцать строк внеоборотных активов: десять категорий плюс «Не работающее
@@ -862,6 +903,11 @@ class ReportingRead(BaseModel):
     lines: list[BalanceLineRead]
     residual_total: Decimal
     depreciation_total: Decimal
+    # Убыток от выбытия за ЭТОТ месяц и помесячный ряд для строки ОПиУ. Считать его на глаз по
+    # разнице реестров нельзя: списанный объект из реестра исчезает вместе со своей стоимостью,
+    # и без этой строки расход просто пропал бы из отчётности.
+    disposal_loss: Decimal = Decimal("0.00")
+    disposal_series: list[MonthlyDisposalRead] = Field(default_factory=list)
     # Месяц заморожен снимком — цифру можно переносить, она не поедет.
     is_frozen: bool
     # Прошлое сдвинули после заморозки: переоценка, коррекция или правка карточки.
@@ -883,6 +929,15 @@ async def get_reporting(
 
     Без ``period_month`` берётся последний закрытый месяц: именно его цифры окончательны.
     """
+    # Убыток от выбытия считаем ДО ветки «ни один месяц не закрыт»: он не зависит от закрытия
+    # месяца. Списанный объект — уже расход, и молчать о нём, пока не прошло первое начисление
+    # амортизации, значило бы прятать единственную строку, которую больше неоткуда взять.
+    disposals = await asset_disposal.disposal_series(session)
+    disposal_rows = [
+        MonthlyDisposalRead(period_month=month, amount=amount, asset_count=count)
+        for month, amount, count in disposals
+    ]
+
     period = period_month
     if period is None:
         period = await session.scalar(select(func.max(DepreciationEntry.period_month)))
@@ -897,6 +952,7 @@ async def get_reporting(
             is_frozen=False,
             drift=[],
             series=[],
+            disposal_series=disposal_rows,
         )
 
     period = service.month_start(period)
@@ -937,6 +993,10 @@ async def get_reporting(
         series=[
             MonthlyDepreciationRead(period_month=month, amount=amount) for month, amount in series
         ],
+        disposal_loss=next(
+            (row.amount for row in disposal_rows if row.period_month == period), Decimal("0.00")
+        ),
+        disposal_series=disposal_rows,
     )
 
 
@@ -1036,6 +1096,7 @@ async def get_asset(
             for entry in entries
         ],
         condition_reports=[_report_payload(report) for report in reports],
+        disposal=await _disposal_payload(session, asset.id),
     )
 
 
@@ -1093,6 +1154,22 @@ async def update_asset(
     """Правка карточки. Инвентарный номер не меняется: он наклеен на объекте."""
     asset = await _asset_or_404(session, asset_id)
     fields = payload.model_dump(exclude_unset=True)
+
+    # Статус нельзя увести из-под оформленного выбытия. Иначе объект вернулся бы в баланс, а
+    # строка убытка осталась бы в ОПиУ: одна и та же стоимость учлась бы дважды. Возврат — это
+    # отмена выбытия, у неё свой маршрут и свои проверки (закрытый месяц).
+    new_status = fields.get("status")
+    if new_status is not None and new_status not in asset_disposal.GONE_STATUSES:
+        disposal = await asset_disposal.disposal_for_asset(session, asset.id)
+        if disposal is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Объект списан {disposal.occurred_on:%d.%m.%Y} — чтобы вернуть его в учёт, "
+                    f"отмените выбытие"
+                ),
+            )
+
     for field, value in fields.items():
         setattr(asset, field, value)
 
@@ -1165,6 +1242,21 @@ async def correct_depreciation_endpoint(
     )
 
 
+async def _disposal_payload(session: AsyncSession, asset_id: uuid.UUID) -> DisposalRead | None:
+    """Карточка выбытия для детали объекта. ``None`` — объект на балансе."""
+    movement = await asset_disposal.disposal_for_asset(session, asset_id)
+    if movement is None:
+        return None
+    period = service.month_start(movement.occurred_on)
+    return DisposalRead(
+        occurred_on=movement.occurred_on,
+        loss_amount=Decimal(str(movement.amount or 0)),
+        reason=movement.note,
+        previous_status=movement.previous_status,  # type: ignore[arg-type]
+        period_frozen=await asset_disposal.month_is_frozen(session, period),
+    )
+
+
 def _report_payload(report: AssetConditionReport) -> ConditionReportRead:
     return ConditionReportRead(
         id=report.id,
@@ -1176,6 +1268,7 @@ def _report_payload(report: AssetConditionReport) -> ConditionReportRead:
             Decimal(str(report.proposed_cost)) if report.proposed_cost is not None else None
         ),
         proposed_useful_life_months=report.proposed_useful_life_months,
+        proposed_disposal=report.proposed_disposal,
         proposed_reason=report.proposed_reason,
         confidence=Decimal(str(report.confidence)) if report.confidence is not None else None,
         model=report.model,
@@ -1239,6 +1332,8 @@ async def decide_condition(
     """Решение владельца по предложению модели: применить или отклонить.
 
     Автоприменения нет ни при какой уверенности модели — стоимость актива меняет человек.
+    У предложения «списать» применение оформляет ВЫБЫТИЕ: объект уходит с баланса, остаточная
+    стоимость становится убытком, карточка не переписывается.
     """
     report = await session.get(AssetConditionReport, report_id)
     if report is None or report.asset_id != asset_id:
@@ -1247,13 +1342,92 @@ async def decide_condition(
         await asset_revaluation.decide_report(
             session, report=report, accept=payload.accept, user_id=actor.user_id
         )
-    except LlmCallError as exc:
+    except (LlmCallError, service.FixedAssetError) as exc:
+        # Выбытие отказывает по своим причинам — закрытый месяц, объект уже списан. Это
+        # разговор с человеком, а не сбой: 422 с текстом, а не 500.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
     await session.commit()
     await session.refresh(report)
     return _report_payload(report)
+
+
+@router.post("/{asset_id}/disposal", response_model=DisposalRead, dependencies=ASSETS_EDIT_ACCESS)
+async def dispose_asset_endpoint(
+    asset_id: uuid.UUID,
+    payload: DisposalRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> DisposalRead:
+    """Списать объект: его больше нет, остаточная стоимость уходит в убыток.
+
+    Не то же самое, что переоценка в ноль. Переоценка оставляет объект на балансе и
+    переписывает его первоначальную стоимость — то есть цену покупки. Выбытие убирает объект
+    из внеоборотных активов целиком, а карточку оставляет исторической: за сколько купили,
+    сколько износа успели начислить, сколько осталось на день пропажи.
+
+    Продажу этот маршрут не оформляет: по методологии владельца продажа ОС финрезультата не
+    даёт, это перевод актива в деньги.
+    """
+    asset = await _asset_or_404(session, asset_id)
+    try:
+        movement = await asset_disposal.dispose_asset(
+            session,
+            asset=asset,
+            reason=payload.reason,
+            disposed_on=payload.disposed_on,
+            user_id=actor.user_id,
+        )
+    except service.FixedAssetError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(movement)
+    return DisposalRead(
+        occurred_on=movement.occurred_on,
+        loss_amount=Decimal(str(movement.amount or 0)),
+        reason=movement.note,
+        previous_status=movement.previous_status,  # type: ignore[arg-type]
+        # Замороженным месяц выбытия быть не может: списать в закрытый месяц контур не даёт.
+        period_frozen=False,
+    )
+
+
+@router.delete(
+    "/{asset_id}/disposal",
+    response_model=FixedAssetRead,
+    dependencies=ASSETS_EDIT_ACCESS,
+)
+async def cancel_disposal_endpoint(
+    asset_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> FixedAssetRead:
+    """Отменить ошибочное списание: объект возвращается в тот статус, где был.
+
+    Кнопка существует потому, что списание необратимо на глаз: объект разом исчезает из
+    реестра, свода и строк баланса. Единственной альтернативой была бы правка базы руками.
+    """
+    asset = await _asset_or_404(session, asset_id)
+    try:
+        await asset_disposal.cancel_disposal(session, asset=asset)
+    except service.FixedAssetError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(asset)
+
+    category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
+    location = await session.get(Location, asset.location_id) if asset.location_id else None
+    accrued = await service.accumulated_depreciation(session, asset.id)
+    return _payload(
+        asset,
+        category=category,
+        location_name=location.name if location else None,
+        accrued=accrued,
+    )
 
 
 @router.post(

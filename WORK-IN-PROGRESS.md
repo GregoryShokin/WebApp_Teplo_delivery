@@ -49,6 +49,20 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: пункт меню «Платежи», секция прав платежей, compose `agent-payments` и порт 7153
 - статус: в работе (разведка завершена, уточняю ТЗ)
 
+### agent-os — ветка `agent/os-disposal`
+- worktree: `../Teplo-agent-os`
+- compose: своего стека нет. Тестовая БД `teplo_test_osdisp` в уже поднятом `teplo-pg-os`
+  (порт 5462) — отдельная база, чужие `teplo_test_*` не трогаются. E2E гонял на web 5243
+  (слот 7, preview-ic): порт был свободен, сервер playwright уже остановлен.
+- трогает: выбытие ОС (списание с убытком) и вид `loss` в оценке состояния:
+  - back: `services/asset_disposal.py` (новый), `services/asset_revaluation.py`,
+    `services/asset_balance.py`, `api/v1/routes/fixed_assets.py`, `models/fixed_asset.py`,
+    `alembic/versions/0244_asset_disposal.py`
+  - front: `routes/fixed-assets/{index.tsx,api.ts}`, `tests/asset-disposal.spec.ts`
+- НЕ трогать другим: миграция `0244` (head), таблица `asset_movement` (была спящей, теперь
+  у неё есть первый потребитель — списание)
+- статус: реализовано, тесты зелёные (API 39 + e2e 7), ждёт решения владельца о выкатке
+
 ### agent-finance-workbench — ветка `agent/finance-workbench-proddata-preview`
 - worktree: `../Teplo-agent-finance-workbench`
 - compose: `teplo-finance-workbench` (web 5203 / api 8050 / pg 5482)

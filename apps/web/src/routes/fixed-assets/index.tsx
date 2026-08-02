@@ -68,10 +68,12 @@ import {
   type FixedAsset,
   type FixedAssetDetail,
   type Money,
+  cancelAssetDisposal,
   closeDepreciationMonth,
   correctDepreciation,
   createFixedAsset,
   decideCondition,
+  disposeAsset,
   getAssetCategories,
   getFixedAsset,
   getFixedAssets,
@@ -412,6 +414,31 @@ function ReportingSection() {
           </tbody>
         </table>
       </div>
+
+      {/* Вторая строка ОПиУ. Показываем только когда списания были: пустая таблица «убыток
+          0,00» на экране, где переносят цифры руками, читается как «эту строку тоже перенеси». */}
+      {data.disposal_series.length > 0 ? (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          <div className="border-b bg-muted px-4 py-2 text-xs font-semibold uppercase">
+            Строка ОПиУ «УчОС Убыток от выбытия» по месяцам
+          </div>
+          <table className="w-full text-sm">
+            <tbody>
+              {data.disposal_series.map((row) => (
+                <tr className="border-t" key={row.period_month}>
+                  <td className="px-4 py-2">{formatMonth(row.period_month)}</td>
+                  {/* «ед.», а не «объектов»: соседняя таблица баланса считает в тех же
+                      единицах, а склонение числительного здесь ничего не добавляет. */}
+                  <td className="px-4 py-2 text-muted-foreground">{row.asset_count} ед.</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-rose-700">
+                    {moneyExact(row.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -932,6 +959,143 @@ function CorrectionDialog({
   );
 }
 
+/** Блок выбытия в карточке: списать живой объект или отменить ошибочное списание. */
+function DisposalBlock({
+  asset,
+  canEdit,
+  onDispose,
+}: {
+  asset: FixedAssetDetail;
+  canEdit: boolean;
+  onDispose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const cancel = useMutation({
+    mutationFn: () => cancelAssetDisposal(asset.id),
+    onSuccess: () => {
+      toast.success("Выбытие отменено — объект вернулся в учёт");
+      void queryClient.invalidateQueries({ queryKey: [QUERY_ROOT] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось отменить выбытие"));
+    },
+  });
+
+  if (asset.disposal) {
+    const { disposal } = asset;
+    return (
+      <div className="space-y-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
+        <div>
+          Объект списан {formatDate(disposal.occurred_on)} · убыток от выбытия{" "}
+          <b>{moneyExact(disposal.loss_amount)}</b>
+        </div>
+        {disposal.reason ? <div className="text-rose-800">{disposal.reason}</div> : null}
+        {canEdit ? (
+          <Button
+            disabled={disposal.period_frozen || cancel.isPending}
+            onClick={() => cancel.mutate()}
+            size="sm"
+            variant="outline"
+          >
+            {cancel.isPending ? "Отменяем…" : "Отменить списание"}
+          </Button>
+        ) : null}
+        {disposal.period_frozen ? (
+          // Месяц уже перенесён в отчётность: вернуть объект значило бы сдвинуть цифру,
+          // которая у владельца уже в таблице. Объясняем прямо на кнопке, а не в тосте.
+          <div className="text-xs text-rose-800">
+            Месяц выбытия закрыт и перенесён в отчётность — отменить списание уже нельзя.
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (!canEdit) return null;
+  return (
+    <Button onClick={onDispose} size="sm" variant="outline">
+      Списать объект
+    </Button>
+  );
+}
+
+function DisposalDialog({
+  asset,
+  onClose,
+}: {
+  asset: FixedAssetDetail;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState("");
+  const [disposedOn, setDisposedOn] = useState(todayIso());
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      disposeAsset(asset.id, { reason: reason.trim(), disposed_on: disposedOn || null }),
+    onSuccess: (disposal) => {
+      toast.success(`Объект списан · убыток ${moneyExact(disposal.loss_amount)}`);
+      void queryClient.invalidateQueries({ queryKey: [QUERY_ROOT] });
+      onClose();
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Не удалось списать объект"));
+    },
+  });
+
+  return (
+    <Dialog onOpenChange={(open) => (open ? undefined : onClose())} open>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Списать «{asset.name}»</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {/* Списание — не переоценка: объект уходит из баланса целиком, и остаток становится
+              расходом. Владелец должен видеть цену решения ДО нажатия, а не в тосте после. */}
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Объект перестанет амортизироваться и уйдёт из свода и строк баланса. Остаточная
+            стоимость <b>{moneyExact(asset.residual)}</b> станет убытком от выбытия — он попадёт в
+            строку ОПиУ за месяц списания. В реестре карточка останется со статусом «Списан»:
+            первоначальная стоимость и история начислений — это история объекта.
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="disposal-date">Дата выбытия</Label>
+            <Input
+              id="disposal-date"
+              max={todayIso()}
+              onChange={(event) => setDisposedOn(event.target.value)}
+              type="date"
+              value={disposedOn}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="disposal-reason">Причина</Label>
+            <Textarea
+              id="disposal-reason"
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Скамью украли — объекта на месте нет"
+              rows={2}
+              value={reason}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button disabled={mutation.isPending} onClick={onClose} variant="outline">
+            Отмена
+          </Button>
+          <Button
+            disabled={reason.trim().length < 3 || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            variant="destructive"
+          >
+            {mutation.isPending ? "Списываем…" : "Списать"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const CONDITION_STATUS: Record<ConditionStatus, { label: string; className: string }> = {
   pending: { label: "Модель смотрит", className: "border-sky-200 bg-sky-50 text-sky-700" },
   proposed: { label: "Ждёт решения", className: "border-amber-200 bg-amber-50 text-amber-700" },
@@ -963,14 +1127,21 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
   });
 
   const decide = useMutation({
-    mutationFn: (input: { reportId: string; accept: boolean; kind: ConditionReportKind }) =>
-      decideCondition(asset.id, input.reportId, input.accept),
+    mutationFn: (input: {
+      reportId: string;
+      accept: boolean;
+      kind: ConditionReportKind;
+      disposal: boolean;
+    }) => decideCondition(asset.id, input.reportId, input.accept),
     onSuccess: (_data, input) => {
-      // У покупки б/у применяется срок, у поломки — стоимость. Сказать «стоимость обновлена»
-      // там, где не изменилось ни рубля, значит соврать в единственном месте, где владелец
-      // узнаёт результат своего решения.
-      const applied =
-        input.kind === "purchase" ? "Срок службы обновлён" : "Стоимость объекта обновлена";
+      // У покупки б/у применяется срок, у поломки — стоимость, у утраты — выбытие. Сказать
+      // «стоимость обновлена» там, где не изменилось ни рубля, значит соврать в единственном
+      // месте, где владелец узнаёт результат своего решения.
+      const applied = input.disposal
+        ? "Объект списан"
+        : input.kind === "purchase"
+          ? "Срок службы обновлён"
+          : "Стоимость объекта обновлена";
       toast.success(input.accept ? applied : "Предложение отклонено");
       void invalidate();
     },
@@ -1031,7 +1202,10 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
             // учётом износа, а срок пришёл из категории и считает его новым.
             const purchase = item.kind === "purchase";
             const months = item.proposed_useful_life_months;
-            const proposal = purchase ? months : item.proposed_cost;
+            // У утраты предмет разговора — ДЕЙСТВИЕ: объекта нет, сумма тут не обсуждается,
+            // убытком станет вся остаточная стоимость на момент обращения.
+            const disposal = item.proposed_disposal;
+            const proposal = disposal || (purchase ? months : item.proposed_cost);
             return (
               <Card className="shadow-none" key={item.id}>
                 <CardContent className="space-y-3 p-4">
@@ -1076,7 +1250,13 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
                           </span>
                         </div>
                       ) : null}
-                      {!purchase && item.proposed_cost ? (
+                      {disposal ? (
+                        <div className="mt-2 tabular-nums">
+                          Под списание · убыток от выбытия{" "}
+                          <b className="text-rose-700">{moneyExact(item.cost_before)}</b>
+                        </div>
+                      ) : null}
+                      {!purchase && !disposal && item.proposed_cost ? (
                         <div className="mt-2 tabular-nums">
                           {moneyExact(item.cost_before)} → <b>{moneyExact(item.proposed_cost)}</b>
                           <span className="ml-2 text-rose-700">−{moneyExact(drop)}</span>
@@ -1098,19 +1278,32 @@ function ConditionTab({ asset, canEdit }: { asset: FixedAssetDetail; canEdit: bo
                         <Button
                           disabled={busy}
                           onClick={() =>
-                            decide.mutate({ reportId: item.id, accept: true, kind: item.kind })
+                            decide.mutate({
+                              reportId: item.id,
+                              accept: true,
+                              kind: item.kind,
+                              disposal,
+                            })
                           }
                           size="sm"
+                          variant={disposal ? "destructive" : "default"}
                         >
-                          {purchase
-                            ? `Поставить срок ${months} мес`
-                            : `Применить ${moneyExact(item.proposed_cost as Money)}`}
+                          {disposal
+                            ? `Списать — убыток ${moneyExact(item.cost_before)}`
+                            : purchase
+                              ? `Поставить срок ${months} мес`
+                              : `Применить ${moneyExact(item.proposed_cost as Money)}`}
                         </Button>
                       ) : null}
                       <Button
                         disabled={busy}
                         onClick={() =>
-                          decide.mutate({ reportId: item.id, accept: false, kind: item.kind })
+                          decide.mutate({
+                            reportId: item.id,
+                            accept: false,
+                            kind: item.kind,
+                            disposal,
+                          })
                         }
                         size="sm"
                         variant="outline"
@@ -1139,6 +1332,7 @@ function AssetSheet({
   onClose: () => void;
 }) {
   const [correcting, setCorrecting] = useState<{ period: string; amount: Money } | null>(null);
+  const [disposing, setDisposing] = useState(false);
   const cardQuery = useQuery({
     queryKey: [QUERY_ROOT, "card", assetId],
     queryFn: () => getFixedAsset(assetId as string),
@@ -1238,6 +1432,11 @@ function AssetSheet({
                     {asset.review_reason ? `: ${asset.review_reason}` : ""}
                   </div>
                 ) : null}
+                <DisposalBlock
+                  asset={asset}
+                  canEdit={canEdit}
+                  onDispose={() => setDisposing(true)}
+                />
               </TabsContent>
 
               <TabsContent value="condition">
@@ -1322,6 +1521,10 @@ function AssetSheet({
           onClose={() => setCorrecting(null)}
           periodMonth={correcting.period}
         />
+      ) : null}
+
+      {disposing && asset ? (
+        <DisposalDialog asset={asset} onClose={() => setDisposing(false)} />
       ) : null}
     </>
   );
