@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -64,6 +65,34 @@ def allowed_chat_ids(raw: str) -> frozenset[int]:
         except ValueError:
             logger.warning("telegram_intake: в белом списке чатов не число: %r", piece)
     return frozenset(ids)
+
+
+# Токен бота стоит в ПУТИ запроса (`/bot<токен>/getUpdates`), а httpx на уровне INFO пишет URL
+# целиком. В проде логи идут именно на INFO, и опрос тикает каждые полминуты — без этого фильтра
+# секрет попадал бы в журнал сотни раз в сутки, откуда его читает любой, у кого есть доступ к
+# логам контейнера. Один раз этого уже хватило, чтобы токен пришлось отзывать.
+_TOKEN_IN_URL = re.compile(r"(/bot)(\d+):[A-Za-z0-9_-]+")
+
+
+class _RedactBotToken(logging.Filter):
+    """Заменить токен в тексте записи на звёздочки. Номер бота оставляем — он не секрет."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            text = record.getMessage()
+        except Exception:  # noqa: BLE001 — сломанный формат записи не наше дело
+            return True
+        cleaned = _TOKEN_IN_URL.sub(r"\1\2:***", text)
+        if cleaned != text:
+            # Подстановка уже выполнена, поэтому args обнуляем: иначе logging попытается
+            # форматировать готовую строку второй раз и упадёт на первом же проценте.
+            record.msg = cleaned
+            record.args = ()
+        return True
+
+
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).addFilter(_RedactBotToken())
 
 
 def _make_client() -> httpx.AsyncClient:

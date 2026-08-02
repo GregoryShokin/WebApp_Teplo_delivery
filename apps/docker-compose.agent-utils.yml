@@ -48,6 +48,17 @@ services:
       # пробивает обработчики FastAPI и убивает uvicorn — один заход на «График» кладёт стенд,
       # а контейнер остаётся в статусе Up. С заглушкой запрос честно отдаёт 500.
       IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      # Телеграм-приёмка — единственная внешняя система, к которой стенд подключён намеренно
+      # (проверка контура на живом боте). Читает сообщения и отвечает в чат; писать ей больше
+      # некуда. Значения подставляются из окружения запускающего:
+      #   docker compose --env-file ../.env -p teplo-utils -f docker-compose.agent-utils.yml up -d
+      TELEGRAM_INTAKE_BOT_TOKEN: ${TELEGRAM_INTAKE_BOT_TOKEN:-}
+      TELEGRAM_INTAKE_ALLOWED_CHAT_IDS: ${TELEGRAM_INTAKE_ALLOWED_CHAT_IDS:-}
+      # Фоновых джоб на стенде нет (SCHEDULER_ENABLED=false, контейнера scheduler тоже нет),
+      # поэтому опрос бота здесь запускают руками — иначе стенд и прод дрались бы за getUpdates.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      ANTHROPIC_RELAY_SECRET: ${ANTHROPIC_RELAY_SECRET:-}
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me

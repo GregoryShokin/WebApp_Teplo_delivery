@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import date
 from pathlib import Path
@@ -301,11 +302,51 @@ async def test_cursor_moves_past_broken_message(
         assert telegram_intake._next_offset == 22
 
 
+def test_bot_token_never_reaches_the_log() -> None:
+    """Токен из URL в журнал не попадает.
+
+    httpx пишет URL целиком на уровне INFO, а токен у Телеграма стоит в пути запроса. В проде
+    логи идут на INFO, опрос тикает каждые полминуты — секрет оказался бы в журнале сотни раз в
+    сутки. Один раз на этом уже пришлось отзывать бота, поэтому проверка не про аккуратность,
+    а про повторение известной ошибки.
+    """
+    # Проверяем две вещи по отдельности: что фильтр ПОВЕШЕН на нужные логгеры и что он ЧИСТИТ.
+    # Гонять настоящую запись через logging здесь нельзя: под pytest вывод логов приглушён, и
+    # обработчик не увидит ничего — тест был бы зелёным ровно потому, что молчит всё.
+    for name in ("httpx", "httpcore"):
+        assert any(
+            isinstance(item, telegram_intake._RedactBotToken)
+            for item in logging.getLogger(name).filters
+        ), f"фильтр не повешен на логгер {name}"
+
+    record = logging.LogRecord(
+        name="httpx",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=0,
+        msg='HTTP Request: POST https://api.telegram.org/bot%s/getUpdates "HTTP/1.1 200 OK"',
+        args=("8606922023:AAGsLhU4LRwip2WRmY1dh9d_KuMxo7HSdN8",),
+        exc_info=None,
+    )
+    telegram_intake._RedactBotToken().filter(record)
+
+    text = record.getMessage()
+    assert "AAGsLhU4LRwip2WRmY1dh9d_KuMxo7HSdN8" not in text
+    # Номер бота оставляем: он не секрет, а по нему видно, о каком боте речь.
+    assert "/bot8606922023:***" in text
+
+
 async def test_without_token_nothing_happens(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Бот не настроен — проход молча ничего не делает, а не падает каждые полминуты."""
+    """Бот не настроен — проход молча ничего не делает, а не падает каждые полминуты.
+
+    Токен гасим явно: на стенде он приходит из окружения контейнера, и без этого тест ходил бы
+    в живой Телеграм — то есть проверял бы сеть вместо выключателя.
+    """
     settings = get_settings()
+    monkeypatch.setattr(settings, "telegram_intake_bot_token", None, raising=False)
     async with async_session_factory() as session:
         result = await telegram_intake.poll_and_ingest(session, settings=settings)
     assert result == {"status": "not_configured"}
