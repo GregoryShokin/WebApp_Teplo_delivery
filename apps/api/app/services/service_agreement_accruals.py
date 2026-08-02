@@ -202,6 +202,18 @@ async def ensure_agreement_invoice(
         return None
     if await _month_already_closed(session, agreement, month):
         return None
+    # Строка ручного платежа документом не является и в проверку выше не попадает, а расход
+    # признаёт целиком: платёж ИП Наумченко на 9 000 ₽ за апрель-июнь плюс три начисления по
+    # договору давали 18 000 ₽. Гард стоял только в ручном признании, ночная джоба его не знала.
+    _first, _last = month_bounds(month)
+    if await supplier_service_periods.expense_line_accrual_covering(
+        session,
+        counterparty_id=agreement.counterparty_id,
+        start=_first,
+        end=_last,
+        article_id=agreement.dds_article_id,
+    ):
+        return None
 
     period_start, period_end = month_bounds(month)
     invoice = SupplierInvoice(

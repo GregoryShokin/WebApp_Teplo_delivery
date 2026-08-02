@@ -13,10 +13,11 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    CounterpartyPayableProfile,
     ExpenseDraftLine,
     SupplierExpenseAccrual,
     SupplierInvoice,
@@ -124,6 +125,78 @@ async def sync_invoice_accrual(
     return existing
 
 
+async def _recognized_by_other_mechanism(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    start: date,
+    end: date,
+    article_id: uuid.UUID | None,
+) -> bool:
+    """Считает ли расход этого периода кто-то помимо строки платежа.
+
+    Два режима разметки карточки: договор услуги (сумма месяца из договора) и «счёт за период»
+    (помесячные самоакты из дебиторки платежа). Оба начисляют сами и по своему расписанию, а
+    строка платежа начислила бы ту же услугу ещё раз — целиком и последним месяцем периода.
+    """
+    # Локальные импорты: оба модуля зависят от этого, на верхнем уровне вышел бы цикл.
+    from app.services.service_agreement_accruals import covered_by_agreement
+    from app.services.subscription_accruals import BILLING_MODE_FIXED_TARIFF
+
+    if await covered_by_agreement(
+        session, counterparty_id, on=start, article_id=article_id
+    ) or await covered_by_agreement(session, counterparty_id, on=end, article_id=article_id):
+        return True
+    mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    return mode == BILLING_MODE_FIXED_TARIFF
+
+
+async def expense_line_accrual_covering(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    start: date,
+    end: date,
+    article_id: uuid.UUID | None = None,
+) -> SupplierExpenseAccrual | None:
+    """Живое начисление по СТРОКЕ ПЛАТЕЖА, пересекающее этот период.
+
+    Начисление по строке — четвёртый механизм признания расхода, и до 02.08.2026 остальные три
+    его не видели: договор услуги и самоакты из предоплаты проверяли только ``SupplierInvoice``,
+    а строка платежа документом не является. Итог — двойной расход по любому платежу, который
+    оформили в «Новом платеже» с периодом:
+
+    * Синапсис, режим «счёт за период»: строка начислила 13 000 ₽ за июль, а ночная джоба
+      завела самоакт на те же деньги — 26 000 ₽ в июле;
+    * ИП Наумченко, договор 3 000 ₽/мес: строка на 9 000 ₽ за квартал плюс три начисления по
+      договору — 18 000 ₽.
+
+    Ищем по КОНТРАГЕНТУ и пересечению периодов, а не по черновику платежа: связь через черновик
+    рвётся штатно (если выписка пришла раньше отметки «оплачено», предоплата садится на проводку
+    банка и ссылки на черновик у неё уже нет). Статью сверяем как везде в контуре — документ или
+    начисление без статьи считаем относящимся к любой.
+    """
+    conditions = [
+        SupplierExpenseAccrual.counterparty_id == counterparty_id,
+        SupplierExpenseAccrual.expense_draft_line_id.is_not(None),
+        SupplierExpenseAccrual.status != "cancelled",
+        SupplierExpenseAccrual.service_period_start <= end,
+        SupplierExpenseAccrual.service_period_end >= start,
+    ]
+    if article_id is not None:
+        conditions.append(
+            or_(
+                SupplierExpenseAccrual.article_id.is_(None),
+                SupplierExpenseAccrual.article_id == article_id,
+            )
+        )
+    return await session.scalar(select(SupplierExpenseAccrual).where(*conditions))
+
+
 async def sync_expense_line_accrual(
     session: AsyncSession,
     line: ExpenseDraftLine,
@@ -136,6 +209,11 @@ async def sync_expense_line_accrual(
     апрель-июнь давал 9 000 со строки ПЛЮС три самоакта по 3 000 — 18 000 ₽ расхода в реестре
     признания, где дедупликации нет. Деньги при этом сходились, врала только прибыль, поэтому
     заметить это можно было лишь глазами.
+
+    Договор услуги и режим «счёт за период» — то же самое исключение по той же причине: там
+    расход месяца считает не платёж, а договор или помесячный самоакт. Разница лишь в том, что
+    галочку ``auto_recognize_monthly`` человек ставит руками, а эти два режима включаются
+    разметкой карточки, и строка платежа о них не знала вовсе.
     """
     if (
         line.counterparty_id is None
@@ -145,6 +223,10 @@ async def sync_expense_line_accrual(
     ):
         return None
     start, end = validate_period(line.service_period_start, line.service_period_end)
+    if await _recognized_by_other_mechanism(
+        session, counterparty_id=line.counterparty_id, start=start, end=end, article_id=line.article_id
+    ):
+        return None
     existing = await session.scalar(
         select(SupplierExpenseAccrual).where(
             SupplierExpenseAccrual.expense_draft_line_id == line.id

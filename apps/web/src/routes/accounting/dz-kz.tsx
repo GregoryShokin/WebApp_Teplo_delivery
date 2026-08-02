@@ -38,7 +38,7 @@ import { getExpenseArticles } from "@/routes/counterparties/api";
 type Stage = "needs_period" | "waiting_document" | "period_running" | "in_expense";
 // «Разрывы» отдельной вкладкой не живут: та же информация — срок и просрочка — теперь внутри
 // состояния «ждём документ». Платежи и УПД схлопнуты в один реестр с переключателем.
-type Section = "balances" | "recognition" | "register";
+type Section = "balances" | "recognition" | "expenses" | "register";
 type RegisterView = "payments" | "documents";
 
 type AccountingItem = {
@@ -359,6 +359,28 @@ async function getPayments(filters: RegisterFilters): Promise<PaymentList> {
   return response.data;
 }
 
+type ExpenseMonthCell = {
+  month: string;
+  article_id: string | null;
+  article_name: string;
+  amount: number;
+};
+
+type ExpenseByMonth = {
+  months: string[];
+  items: ExpenseMonthCell[];
+  total: number;
+  unattributed: number;
+  without_primary: number;
+};
+
+async function getExpensesByMonth(dateFrom: string, dateTo: string): Promise<ExpenseByMonth> {
+  const response = await api.get<ExpenseByMonth>("/accounting/suppliers/expenses/by-month", {
+    params: { date_from: dateFrom, date_to: dateTo },
+  });
+  return response.data;
+}
+
 async function getDocuments(filters: RegisterFilters): Promise<DocumentList> {
   const response = await api.get<DocumentList>("/accounting/suppliers/documents", {
     params: registerParams(filters),
@@ -592,6 +614,7 @@ export function DzKzRoute() {
               </span>
             ) : null}
           </TabsTrigger>
+          <TabsTrigger value="expenses">Расход по месяцам</TabsTrigger>
           <TabsTrigger value="register">Реестр</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -605,6 +628,7 @@ export function DzKzRoute() {
           onOpenCard={openCounterpartyCard}
         />
       ) : null}
+      {section === "expenses" ? <ExpensesByMonthSection /> : null}
       {section === "register" ? (
         <div className="flex flex-col gap-3">
           {/* Платежи и документы — две стороны одного вопроса «что было с этим контрагентом»,
@@ -1937,5 +1961,115 @@ function PeriodDialog({ item, onClose }: { item: AccountingItem; onClose: () => 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ExpensesByMonthSection() {
+  // Полугодовое окно по умолчанию: меньше — не видно сезонности, больше — таблица перестаёт
+  // помещаться на экран, а листать её горизонтально ради цифры за прошлый год незачем.
+  const today = new Date();
+  const to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const from = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+  const iso = (value: Date) =>
+    `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(
+      value.getDate(),
+    ).padStart(2, "0")}`;
+  const dateFrom = iso(from);
+  const dateTo = iso(to);
+
+  const query = useQuery({
+    queryKey: ["accounting", "expenses-by-month", dateFrom, dateTo],
+    queryFn: () => getExpensesByMonth(dateFrom, dateTo),
+  });
+
+  const months = query.data?.months ?? [];
+  // Строка = статья, колонка = месяц. Именно так расход и читают: «сколько мы тратим на
+  // лицензии» — вопрос про строку, «что было в июле» — вопрос про колонку.
+  const byArticle = new Map<string, { name: string; cells: Map<string, number>; total: number }>();
+  for (const cell of query.data?.items ?? []) {
+    const key = cell.article_id ?? "none";
+    const row = byArticle.get(key) ?? { name: cell.article_name, cells: new Map(), total: 0 };
+    row.cells.set(cell.month, (row.cells.get(cell.month) ?? 0) + cell.amount);
+    row.total += cell.amount;
+    byArticle.set(key, row);
+  }
+  const rows = [...byArticle.values()].sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-muted-foreground">
+        Признанный расход по месяцам оказания услуги, а не по дате документа: акт за квартал
+        раскладывается на три месяца. В расход идёт только признанное — запланированное и
+        отменённое сюда не попадают.
+      </p>
+      {query.data && query.data.without_primary > 0 ? (
+        <p className="text-xs text-amber-700">
+          Из них {money.format(query.data.without_primary)} признано без первичного документа
+          (самоакты и платежи без УПД) — в налоговую базу УСН такой расход не идёт.
+        </p>
+      ) : null}
+      {query.data && query.data.unattributed > 0 ? (
+        <p className="text-xs text-rose-700">
+          {money.format(query.data.unattributed)} без статьи ДДС — отнести в отчёт о прибыли
+          некуда, пока статья не проставлена.
+        </p>
+      ) : null}
+      <div className="overflow-x-auto rounded-lg border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Статья</TableHead>
+              {months.map((month) => (
+                <TableHead key={month} className="text-right whitespace-nowrap">
+                  {monthTitle(month.slice(0, 7))}
+                </TableHead>
+              ))}
+              <TableHead className="text-right">Итого</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {query.isLoading ? (
+              <TableStatus colSpan={months.length + 2} state="loading" />
+            ) : query.isError ? (
+              <TableStatus
+                colSpan={months.length + 2}
+                state={apiErrorMessage(query.error, "Не удалось загрузить расход по месяцам")}
+              />
+            ) : rows.length === 0 ? (
+              <TableStatus colSpan={months.length + 2} state="empty" tone="calm" />
+            ) : (
+              <>
+                {rows.map((row) => (
+                  <TableRow key={row.name}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    {months.map((month) => (
+                      <TableCell key={month} className="text-right tabular-nums">
+                        {row.cells.has(month) ? money.format(row.cells.get(month) ?? 0) : "—"}
+                      </TableCell>
+                    ))}
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {money.format(row.total)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-semibold">Всего</TableCell>
+                  {months.map((month) => (
+                    <TableCell key={month} className="text-right font-semibold tabular-nums">
+                      {money.format(
+                        rows.reduce((sum, row) => sum + (row.cells.get(month) ?? 0), 0),
+                      )}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {money.format(query.data?.total ?? 0)}
+                  </TableCell>
+                </TableRow>
+              </>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }

@@ -45,6 +45,7 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.services import counterparty_settlement_ledger as settlement
+from app.services import expense_recognition_report as expense_report
 from app.services import expense_reversal as reversal_service
 from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
@@ -1957,4 +1958,70 @@ async def list_staff_payable(
         courier_deposit_total=_float(courier_deposit_total),
         deposit_total=_float(production_deposit_total + courier_deposit_total),
         items=items,
+    )
+
+
+class ExpenseMonthCell(BaseModel):
+    month: date
+    article_id: uuid.UUID | None = None
+    article_name: str
+    amount: float
+
+
+class ExpenseByMonthList(BaseModel):
+    """Признанный расход по месяцам и статьям — то, из чего строится P&L.
+
+    ``unattributed`` — расход без статьи ДДС. В отчёт о прибыли его отнести некуда, и прятать
+    это нельзя: пока цифра не ноль, любой P&L будет неполным ровно на неё.
+
+    ``without_primary`` — расход, признанный без первичного документа (самоакт или строка
+    ручного платежа). В управленческом P&L он полноправен, в налоговую базу УСН идти не может:
+    инспекция снимет расход, у которого нет документа поставщика.
+    """
+
+    months: list[date]
+    items: list[ExpenseMonthCell]
+    total: float
+    unattributed: float
+    without_primary: float
+
+
+@router.get("/expenses/by-month", response_model=ExpenseByMonthList, dependencies=READ)
+async def list_expenses_by_month(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    date_from: Annotated[date, Query()],
+    date_to: Annotated[date, Query()],
+    counterparty_id: Annotated[uuid.UUID | None, Query()] = None,
+    article_id: Annotated[uuid.UUID | None, Query()] = None,
+) -> ExpenseByMonthList:
+    """Признанный расход по месяцам × статьям.
+
+    Первый потребитель начислений, кроме витрины, которая их же и заводит: до него признание
+    было замкнуто само на себя, и ошибка признания (двойной расход, пропавший месяц) не
+    проявлялась нигде — деньги сходились всегда.
+
+    Многомесячный документ раскладывается по календарным месяцам периода, а не падает целиком
+    в месяц признания: акт на 36 000 ₽ за июль-сентябрь даёт по 12 000 ₽ в каждый месяц.
+    """
+    report = await expense_report.build_expense_report(
+        session,
+        date_from=date_from,
+        date_to=date_to,
+        counterparty_id=counterparty_id,
+        article_id=article_id,
+    )
+    return ExpenseByMonthList(
+        months=report.months,
+        items=[
+            ExpenseMonthCell(
+                month=cell.month,
+                article_id=cell.article_id,
+                article_name=cell.article_name,
+                amount=_float(cell.amount),
+            )
+            for cell in report.cells
+        ],
+        total=_float(report.total),
+        unattributed=_float(report.unattributed),
+        without_primary=_float(report.without_primary),
     )

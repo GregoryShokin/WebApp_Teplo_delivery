@@ -624,3 +624,71 @@ async def test_future_act_from_contract_counterparty_is_informational_after_acti
             )
         )
         assert [row.invoice_id for row in live.all()] == [accrued.id]
+
+
+async def test_agreement_does_not_stack_on_payment_line_accrual(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Договор не начисляет месяц, который уже признан строкой ручного платежа.
+
+    Гард против этого стоял ТОЛЬКО в ручном признании: `_month_already_closed` смотрит на
+    ``SupplierInvoice``, а начисление по строке платежа документом не является, и ночная джоба
+    договора его не видела. Платёж ИП Наумченко на 9 000 ₽ за апрель-июнь плюс три начисления
+    по договору 3 000 ₽/мес давали 18 000 ₽ расхода вместо 9 000.
+    """
+    from app.models import CounterpartyPaymentDraft, ExpenseDraftLine
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наумченко строкой", inn="614302067220")
+        agreement = await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        draft = CounterpartyPaymentDraft(
+            counterparty_id=cp.id,
+            document_id="teplo-cp-line-agreement",
+            amount=Decimal("9000.00"),
+            status="paid",
+        )
+        session.add(draft)
+        await session.flush()
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            counterparty_id=cp.id,
+            article_id=agreement.dds_article_id,
+            amount=Decimal("9000.00"),
+            purpose="Услуги ФД и НК за 2 квартал",
+            service_period_start=date(2026, 4, 1),
+            service_period_end=date(2026, 6, 30),
+            auto_recognize_monthly=False,
+        )
+        session.add(line)
+        await session.flush()
+        # Начисление по строке заведено до того, как контрагенту оформили договор.
+        session.add(
+            SupplierExpenseAccrual(
+                counterparty_id=cp.id,
+                expense_draft_line_id=line.id,
+                payment_draft_id=draft.id,
+                article_id=agreement.dds_article_id,
+                amount=Decimal("9000.00"),
+                service_period_start=date(2026, 4, 1),
+                service_period_end=date(2026, 6, 30),
+                status="scheduled",
+            )
+        )
+        await session.commit()
+
+        for month in (date(2026, 4, 1), date(2026, 5, 1), date(2026, 6, 1)):
+            assert (
+                await ensure_agreement_invoice(session, agreement, month, as_of=date(2026, 7, 1))
+                is None
+            ), f"договор начислил {month:%m.%Y} поверх строки платежа"
+        await session.commit()
+
+        live = await session.scalars(
+            select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        rows = live.all()
+        assert len(rows) == 1
+        assert sum(row.amount for row in rows) == Decimal("9000.00")

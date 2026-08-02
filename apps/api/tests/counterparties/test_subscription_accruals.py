@@ -32,10 +32,12 @@ from app.models import (
     DdsArticle,
     InvoicePaymentAllocation,
     SupplierExpenseAccrual,
+    SupplierInvoice,
     SupplierPrepayment,
 )
 from app.services import supplier_prepayments
 from app.services.subscription_accruals import (
+    SELF_BILLED_SOURCE,
     accrue_due_months,
     covered_months,
     monthly_shares,
@@ -775,3 +777,91 @@ async def test_document_supersedes_only_its_own_article(
         await session.refresh(second)
         assert second.amount_settled == Decimal("4260.00")
         assert second.status == "settled"
+
+
+async def test_fixed_tariff_line_and_nightly_job_do_not_double_count(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Режим «счёт за период»: строка платежа и ночная джоба не признают одни деньги дважды.
+
+    Гард против двойного счёта стоял ТОЛЬКО в ручном признании — ночная джоба про начисление
+    по строке платежа не знала вовсе, потому что оно не документ. У Синапсиса это давало
+    13 000 ₽ строкой плюс 13 000 ₽ самоактом за тот же июль: деньги сходились, врала прибыль.
+
+    Проверяем обе стороны: строка при таком режиме своего начисления не заводит, а если оно
+    всё же есть (заведено до разметки карточки) — джоба поверх него самоакт не создаёт.
+    """
+    from app.models import ExpenseDraftLine
+    from app.services import supplier_service_periods as periods_service
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис тариф", inn="614307902101")
+        wallet = await make_wallet(session, code="tbank-fixed-1", name="Т-Банк")
+        article = await make_expense_article(session, code="SYN-LIC", name="Лицензия Синапсис")
+        session.add(
+            CounterpartyPayableProfile(
+                counterparty_id=cp.id, service_billing_mode="fixed_tariff"
+            )
+        )
+        draft = await make_draft(session, counterparty_id=cp.id, amount="13000.00")
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount=Decimal("13000.00"),
+            purpose="Лицензия за июль",
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+            auto_recognize_monthly=False,
+        )
+        session.add(line)
+        await session.flush()
+
+        # Сторона 1: расход месяца считает помесячный самоакт, а не строка.
+        assert await periods_service.sync_expense_line_accrual(session, line) is None
+
+        # Сторона 2: начисление по строке всё-таки существует (карточку разметили позже) —
+        # ночная джоба обязана его увидеть и самоакт не заводить.
+        session.add(
+            SupplierExpenseAccrual(
+                counterparty_id=cp.id,
+                expense_draft_line_id=line.id,
+                payment_draft_id=draft.id,
+                article_id=article.id,
+                amount=Decimal("13000.00"),
+                service_period_start=date(2026, 7, 1),
+                service_period_end=date(2026, 7, 31),
+                status="scheduled",
+            )
+        )
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="13000.00",
+            start=date(2026, 7, 1),
+            months=1,
+            auto=False,
+        )
+        prepayment.article_id = article.id
+        await session.commit()
+
+        await accrue_due_months(session, as_of=date(2026, 8, 1))
+        await session.commit()
+
+        self_billed = await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.counterparty_id == cp.id,
+                SupplierInvoice.source == SELF_BILLED_SOURCE,
+            )
+        )
+        assert self_billed.all() == [], "джоба завела самоакт поверх начисления по строке"
+        live = await session.scalars(
+            select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        rows = live.all()
+        assert len(rows) == 1
+        assert rows[0].amount == Decimal("13000.00")

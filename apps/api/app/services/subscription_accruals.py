@@ -253,6 +253,18 @@ async def ensure_month_accrual(
         return None
     if await _real_closing_exists(session, prepayment, month):
         return None
+    # Расход месяца мог быть начислен строкой ручного платежа: она признаёт ВСЮ сумму периода
+    # разом, документом не является и потому в проверке выше не видна. У Синапсиса (режим
+    # «счёт за период») это давало 13 000 ₽ строкой плюс 13 000 ₽ самоактом за тот же июль.
+    _first, _last = month_bounds(month)
+    if await periods.expense_line_accrual_covering(
+        session,
+        counterparty_id=prepayment.counterparty_id,
+        start=_first,
+        end=_last,
+        article_id=prepayment.article_id,
+    ):
+        return None
 
     index = months.index(month.replace(day=1))
     share = monthly_shares(periods.money(prepayment.amount), len(months))[index]
@@ -443,21 +455,16 @@ async def _draft_line_accrual(
     поверх помесячное признание — значит получить 9 000 (строка) + 3×3 000 (самоакты) = 18 000 ₽
     расхода по одному платежу. Ровно этот дефект уже был на проде у Наумченко.
 
-    Ищем по КОНТРАГЕНТУ и пересечению периодов, а не по черновику платежа. Связь через
-    черновик рвётся штатно: если выписка приходит раньше отметки «оплачено», операцию разбирает
-    классификатор, и предоплата садится на проводку ``bank_operation`` — ссылки на черновик у
-    неё уже нет, гард молчал, а расход задваивался.
+    Само правило живёт в ``periods.expense_line_accrual_covering`` — там же, где начисление по
+    строке создаётся, и оттуда же его читают ночная джоба и договор услуги. Здесь остаётся
+    только ручной путь: он умеет не просто отказать, а ЗАМЕНИТЬ разовое начисление помесячным.
     """
-    from app.models import SupplierExpenseAccrual
-
-    return await session.scalar(
-        select(SupplierExpenseAccrual).where(
-            SupplierExpenseAccrual.counterparty_id == prepayment.counterparty_id,
-            SupplierExpenseAccrual.expense_draft_line_id.is_not(None),
-            SupplierExpenseAccrual.status != "cancelled",
-            SupplierExpenseAccrual.service_period_start <= end,
-            SupplierExpenseAccrual.service_period_end >= start,
-        )
+    return await periods.expense_line_accrual_covering(
+        session,
+        counterparty_id=prepayment.counterparty_id,
+        start=start,
+        end=end,
+        article_id=prepayment.article_id,
     )
 
 

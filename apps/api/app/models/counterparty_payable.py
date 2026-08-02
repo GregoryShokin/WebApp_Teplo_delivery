@@ -960,6 +960,15 @@ class SupplierPrepayment(Base):
     )
     # Тип аванса для строки баланса «Выданные авансы»: goods/rent/ad/subscription/tax/other.
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="goods")
+    # Дебиторка ВНЕСЕНА РУКАМИ как входящий остаток (деньги ушли до внедрения системы), а не
+    # выведена из другого факта. Признак нужен сверке: там строка предоплаты без проводки
+    # означает «ещё один денежный факт», и производная дебиторка задваивала остаток. У ООО
+    # «АЛЬЯНС ЮГ» излишек оплаты накладной на 23 730 ₽ (kind='goods', проводки нет — деньги
+    # уже учтены оплатой самой накладной) уводил сверку от плитки «Остатки» ровно на эту сумму.
+    # Отличать по ``note`` было нельзя: текст задаёт человек.
+    opening: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Договор аренды, за который внесён залог: залог возвращают или зачитывают именно по нему.
     lease_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("location_lease.id", ondelete="SET NULL"), nullable=True

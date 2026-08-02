@@ -546,6 +546,7 @@ async def test_opening_prepayment_shows_as_money_row(
                 amount=Decimal("2500.00"),
                 amount_settled=Decimal("0"),
                 status="open",
+                opening=True,
                 created_at=datetime(2026, 7, 20, tzinfo=UTC),
                 note="Входящий остаток на старте",
             )
@@ -557,6 +558,39 @@ async def test_opening_prepayment_shows_as_money_row(
         assert len(ledger.rows) == 1
         assert ledger.rows[0].title == "Входящий остаток"
         assert ledger.closing_balance == Decimal("2500.00")
+
+
+async def test_derived_prepayment_is_not_a_second_money_row(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Производная дебиторка вторым денежным фактом в сверку не идёт.
+
+    Излишек оплаты накладной, оплата счёта, возврат при откате расхода — у всех этих
+    предоплат нет ДДС-проводки, но деньги посчитаны ДРУГОЙ строкой. Сверка отсекала только
+    ``prepaid_bill``, и излишек оплаты ООО «АЛЬЯНС ЮГ» на 23 730 ₽ (``kind='goods'``) уводил
+    бегущий остаток от плитки «Остатки» ровно на эту сумму.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Излишек оплаты", inn="6143049385")
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=cp.id,
+                kind="goods",
+                amount=Decimal("23730.00"),
+                amount_settled=Decimal("0"),
+                status="open",
+                # opening не выставлен: дебиторка выведена из оплаты накладной, а не внесена
+                # как входящий остаток.
+                created_at=datetime(2026, 7, 20, tzinfo=UTC),
+                note="Излишек оплаты по накладной №DX001323A — перенесён в дебиторку",
+            )
+        )
+        await session.commit()
+
+        ledger = await build_ledger(session, cp.id, today=date(2026, 9, 1))
+
+        assert ledger.rows == []
+        assert ledger.closing_balance == Decimal("0")
 
 
 async def test_future_and_informational_documents_do_not_move_the_balance(

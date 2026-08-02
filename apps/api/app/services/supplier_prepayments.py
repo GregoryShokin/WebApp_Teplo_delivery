@@ -244,6 +244,10 @@ async def create_opening_prepayment(
         amount_settled=Decimal("0.00"),
         status="open",
         cashflow_transaction_id=None,
+        # Единственное место, где дебиторка объявляется САМОСТОЯТЕЛЬНЫМ денежным фактом:
+        # деньги ушли до внедрения системы, проводки под них нет и не будет. Все остальные
+        # предоплаты выводятся из уже учтённого факта, и в сверке вторыми строками не идут.
+        opening=True,
         note=note or "Начальный остаток (до внедрения системы)",
         created_by_user_id=actor_user_id,
     )
