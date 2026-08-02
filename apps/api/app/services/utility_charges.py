@@ -1,20 +1,33 @@
-"""Проведение коммунальной платёжки: из принесённой бумажки — в долг перед арендодателем.
+"""Коммунальная платёжка в учёте: из принесённой бумажки — счёт к оплате и расход месяца.
 
-ГДЕ ЗДЕСЬ УЧЁТ. Своей механики долга у коммуналки нет, и это сознательно: проведённая платёжка
-становится обычным закрывающим ``SupplierInvoice``, а дальше работает канон ДЗ/КЗ. Кредиторка
-возникает документом, гасится платежом (правило 1), расход признаётся в месяце потребления
+ГДЕ ЗДЕСЬ УЧЁТ. Своей механики долга у коммуналки нет, и это сознательно: разобранная платёжка
+становится обычными ``SupplierInvoice``, а дальше работает канон ДЗ/КЗ. Кредиторка возникает
+закрывающим документом, гасится платежом (правило 1), расход признаётся в месяце потребления
 через ``sync_invoice_accrual``. Заводить параллельный реестр обязательств значило бы получить
 второй источник правды о долге — ровно то, от чего контур ДЗ/КЗ уходил весь июль.
 
-ЧЕМ КОММУНАЛКА ОТЛИЧАЕТСЯ ОТ АРЕНДЫ, КОТОРАЯ УСТРОЕНА ТАК ЖЕ. Аренда начисляется по расписанию:
-ставка известна из договора. Здесь сумма приходит из документа и до него неизвестна, поэтому
-обязательство рождается не джобой, а действием человека — и только после того, как он увидел
-сумму. Пропущенный месяц при таком порядке не выдумывается системой, а показывается календарём
-ожиданий (``expected_periods``): «за июль документа нет» — это факт, а не повод для оценки.
+ПОЧЕМУ ДОКУМЕНТА ДВА, А БУМАЖКА ОДНА. Роли в каноне разделены жёстко: счёт — основание платежа
+и в очередь оплат попадает именно он, а расход несёт закрывающий документ. Счёт расхода не
+несёт никогда (``is_expense_bearing``), и это не формальность: пока начисление заводилось и на
+счёте, услуга на 13 000 ₽ давала 26 000 ₽ в P&L, причём деньги сходились и увидеть удвоение
+можно было только в отчёте о прибыли. Поэтому квитанция за воду порождает ПАРУ: счёт (его
+платят) и закрывающий (он признаёт расход и создаёт кредиторку) — ровно как пакет «счёт + УПД»
+одним файлом у поставщиков с ЭДО.
+
+ЭЛЕКТРИЧЕСТВО: СУММЫ У ПАРЫ РАЗНЫЕ. В фактическом акте расход периода и сумма к оплате — разные
+числа: из потребления с потерями вычтен ранее внесённый аванс. Поэтому закрывающий встаёт на
+полный расход месяца, а счёт — на остаток к доплате. Авансовый акт наоборот: он основание
+платежа, но расхода не несёт вовсе — расход придёт следующим фактическим актом, а уплаченный
+аванс к тому времени будет дебиторкой, которую тот акт и зачтёт.
 
 ДАТА ДОЛГА — КОНЕЦ ПЕРИОДА, А НЕ ДАТА БУМАЖКИ. Расчёт за июль, принесённый в сентябре, обязан
-показывать долг с 31.07: услуга оказана в июле, и на 31.07 бизнес уже был должен. Дата самого
-документа хранится в приёмке как справка — на учёт она не влияет.
+показывать долг с 31.07: услуга оказана в июле, и на 31.07 бизнес уже был должен. Дата самой
+бумажки хранится в приёмке как справка — на учёт она не влияет.
+
+ПРОПУЩЕННЫЙ МЕСЯЦ НЕ ВЫДУМЫВАЕТСЯ. Аренда начисляется по расписанию, потому что ставка известна
+из договора. Здесь сумма приходит из документа и до него неизвестна, поэтому обязательство
+рождается не джобой, а разбором принесённой бумажки. Отсутствие июля показывает календарь
+ожиданий (``expected_periods``) — это факт, а не повод для оценки.
 """
 
 from __future__ import annotations
@@ -31,7 +44,6 @@ from app.models import (
     UTILITY_KIND_LABELS,
     SupplierInvoice,
     UtilityAccount,
-    UtilityIntake,
 )
 from app.services import (
     clock,
@@ -45,11 +57,9 @@ UTILITY_INVOICE_SOURCE = "utility"
 __all__ = [
     "UTILITY_INVOICE_SOURCE",
     "UtilityChargeError",
+    "build_utility_documents",
     "expected_periods",
     "intake_external_id",
-    "promote_intake",
-    "recognize_intake",
-    "revoke_intake",
     "settle_utility_invoices_from_cash",
 ]
 
@@ -106,247 +116,145 @@ async def _existing_invoice(
     )
 
 
-def _validate_ready(intake: UtilityIntake, account: UtilityAccount | None) -> tuple[date, date]:
-    if intake.status == "promoted":
-        raise UtilityChargeError("Эта платёжка уже проведена")
-    if intake.status == "rejected":
-        raise UtilityChargeError("Платёжка отклонена — сначала верните её в работу")
-    if account is None:
-        raise UtilityChargeError("Не выбран коммунальный поток: помещение и вид услуги")
+def _validate_period(
+    account: UtilityAccount,
+    period_start: date,
+    period_end: date,
+    expense_amount: Decimal,
+) -> None:
+    """Отказать до создания документов, если период или сумма не годятся.
+
+    Проверки здесь, а не в роуте: документов рождается два, и отказ на середине оставил бы
+    счёт без закрывающего — то есть платёж без расхода.
+    """
     if not account.is_active:
         raise UtilityChargeError("Поток отключён — включите его или выберите другой")
-    if intake.amount is None or Decimal(intake.amount) <= 0:
+    if expense_amount <= 0:
         raise UtilityChargeError("Не указана сумма к возмещению")
-    if intake.period_start is None or intake.period_end is None:
-        raise UtilityChargeError("Не указан период потребления — без него расход некуда отнести")
-    start, end = intake.period_start, intake.period_end
-    if end < start:
+    if period_end < period_start:
         raise UtilityChargeError("Конец периода раньше начала")
-    if start < account.started_on:
+    if period_start < account.started_on:
         raise UtilityChargeError(
             f"Период начинается раньше, чем ведётся учёт по этому потоку "
             f"(с {account.started_on:%d.%m.%Y})"
         )
-    if account.ended_on is not None and end > account.ended_on:
+    if account.ended_on is not None and period_end > account.ended_on:
         raise UtilityChargeError(
             f"Период заканчивается позже, чем закрыт поток ({account.ended_on:%d.%m.%Y})"
         )
-    return start, end
 
 
-async def promote_intake(
+async def build_utility_documents(
     session: AsyncSession,
-    intake: UtilityIntake,
+    account: UtilityAccount,
     *,
+    period_start: date,
+    period_end: date,
+    expense_amount: Decimal | None,
+    payable_amount: Decimal,
     actor_user_id: uuid.UUID | None = None,
     as_of: date | None = None,
-) -> SupplierInvoice:
-    """Провести проверенную платёжку: создать долг перед арендодателем. Не коммитит.
+) -> tuple[SupplierInvoice, SupplierInvoice | None]:
+    """Создать по разобранной платёжке счёт и, если она несёт расход, закрывающий документ.
 
-    Порядок вызовов важен и повторяет аренду: сначала проводим документ (правило 4 решает,
-    вступает он в силу сегодня или ждёт своей даты, и гасит открытую дебиторку, если платили
-    вперёд), затем заводим строку признания расхода — уже зная, справочный документ или нет.
+    Возвращает пару ``(счёт, закрывающий)``. Второй элемент — ``None`` у авансового акта:
+    аванс это основание платежа и ничего больше, расход по нему признает будущий фактический
+    акт. Не коммитит.
+
+    ``expense_amount`` — расход периода целиком (у воды и газа совпадает с суммой к оплате, у
+    фактического акта электроэнергии больше неё на зачтённый аванс). ``payable_amount`` — то,
+    что реально уходит деньгами.
+
+    Порядок вызовов повторяет аренду и важен: сначала проводим закрывающий документ (правило 4
+    решает, вступает он в силу сегодня или ждёт своей даты, и гасит открытую дебиторку, если
+    платили вперёд), затем заводим строку признания расхода — уже зная, справочный он или нет.
     """
-    account = (
-        await session.get(UtilityAccount, intake.account_id)
-        if intake.account_id is not None
-        else None
+    _validate_period(
+        account,
+        period_start,
+        period_end,
+        expense_amount if expense_amount is not None else payable_amount,
     )
-    start, end = _validate_ready(intake, account)
-    assert account is not None  # _validate_ready уже отказал бы
 
-    month = end.replace(day=1)
+    month = period_end.replace(day=1)
     external_id = intake_external_id(account.id, month)
-    if (existing := await _existing_invoice(session, external_id)) is not None:
-        raise UtilityChargeError(
-            f"За {month:%m.%Y} по этому потоку долг уже проведён (документ «{existing.number}»). "
-            "Отзовите его, если сумма изменилась"
-        )
+    title = invoice_title(account.kind, month)
 
-    invoice = SupplierInvoice(
+    if expense_amount is not None:
+        # Занят месяц проверяем по ЗАКРЫВАЮЩЕМУ: именно он — обязательство. Второй снимок той же
+        # квитанции упрётся сюда, а не заведёт второй долг: sha ловит лишь повтор того же файла,
+        # а пересняли квитанцию — байты другие, документ тот же.
+        closing_external_id = f"{external_id}:closing"
+        if (existing := await _existing_invoice(session, closing_external_id)) is not None:
+            raise UtilityChargeError(
+                f"За {month:%m.%Y} по этому потоку долг уже проведён "
+                f"(документ «{existing.number}»). Отзовите его, если сумма изменилась"
+            )
+    else:
+        closing_external_id = None
+        if (existing := await _existing_invoice(session, external_id)) is not None:
+            raise UtilityChargeError(
+                f"За {month:%m.%Y} по этому потоку счёт уже заведён (документ «{existing.number}»)"
+            )
+
+    bill = SupplierInvoice(
         counterparty_id=account.counterparty_id,
         source=UTILITY_INVOICE_SOURCE,
         external_id=external_id,
         direction="payable",
-        doc_kind="closing",
+        doc_kind="bill",
         # finance — иначе документ не увидят ни правило 1 канона, ни авто-зачёт предоплат:
         # автоматика намеренно не трогает товарный документооборот.
         operational_scope="finance",
-        number=invoice_title(account.kind, month),
-        # Конец периода, а не дата бумажки: долг существует с момента, когда услуга оказана.
-        invoice_date=end,
-        amount=Decimal(intake.amount),
+        number=title,
+        invoice_date=period_end,
+        amount=payable_amount,
         dds_article_id=account.dds_article_id,
-        service_period_start=start,
-        service_period_end=end,
+        service_period_start=period_start,
+        service_period_end=period_end,
+        service_period_source=UTILITY_INVOICE_SOURCE,
+        service_period_status="ready",
+    )
+    session.add(bill)
+    await session.flush()
+
+    if expense_amount is None:
+        return bill, None
+
+    closing = SupplierInvoice(
+        counterparty_id=account.counterparty_id,
+        source=UTILITY_INVOICE_SOURCE,
+        external_id=closing_external_id,
+        direction="payable",
+        doc_kind="closing",
+        operational_scope="finance",
+        number=title,
+        # Конец периода, а не дата бумажки: долг существует с момента, когда услуга оказана.
+        invoice_date=period_end,
+        amount=expense_amount,
+        dds_article_id=account.dds_article_id,
+        service_period_start=period_start,
+        service_period_end=period_end,
         service_period_source=UTILITY_INVOICE_SOURCE,
         # ready — без этого sync_invoice_accrual молча не создаст строку признания расхода.
         service_period_status="ready",
     )
-    session.add(invoice)
+    session.add(closing)
     await session.flush()
 
     await supplier_prepayments.apply_closing_document(
-        session, invoice, actor_user_id=actor_user_id, as_of=as_of
+        session, closing, actor_user_id=actor_user_id, as_of=as_of
     )
     # Замещение самоакта переклеивает его денежные аллокации на наш документ, а статуса не
     # трогает: документ остался бы «неоплаченным» с живыми деньгами на нём — и отзыв, который
     # смотрит именно на статус, аннулировал бы оплаченный долг. Пересчёт закрывает окно.
-    await counterparty_matching._recompute_status(session, invoice)
+    await counterparty_matching._recompute_status(session, closing)
     # Помещение известно точно — оно и есть смысл потока. Без него расход осел бы в графе
     # «без помещения», и прибыль по точке считалась бы без коммуналки.
     await supplier_service_periods.sync_invoice_accrual(
-        session, invoice, location_id=account.location_id
+        session, closing, location_id=account.location_id
     )
-
-    intake.invoice_id = invoice.id
-    intake.status = "promoted"
-    await session.flush()
-    return invoice
-
-
-async def revoke_intake(
-    session: AsyncSession,
-    intake: UtilityIntake,
-    *,
-    actor_user_id: uuid.UUID | None = None,
-) -> SupplierInvoice | None:
-    """Отозвать проведённую платёжку: снять долг и освободить месяц. Не коммитит.
-
-    Нужен ровно для одного, зато частого случая: в сумме ошиблись. Пока месяц занят ключом
-    идемпотентности, правильную сумму провести нельзя, а править сумму на месте — значит
-    молча переписать уже признанный расход.
-
-    Отзываем только НЕОПЛАЧЕННЫЙ документ. Если деньги по нему уже разнесены, отзыв оставил бы
-    платёж висеть на аннулированном долге; такой случай правится через обычную карточку
-    документа, где видно и оплату.
-    """
-    if intake.status != "promoted" or intake.invoice_id is None:
-        raise UtilityChargeError("Эта платёжка не проведена — отзывать нечего")
-    invoice = await session.get(SupplierInvoice, intake.invoice_id)
-    if invoice is None:
-        # Документ удалили мимо нас: приёмку всё равно возвращаем в работу, иначе месяц
-        # окажется заперт навсегда.
-        intake.status = "ready"
-        intake.invoice_id = None
-        await session.flush()
-        return None
-    if invoice.payment_status not in ("unpaid", "void"):
-        raise UtilityChargeError(
-            "По этому долгу уже прошла оплата — отозвать нельзя. Исправьте документ в карточке "
-            "контрагента"
-        )
-
-    # Начисление снимаем ПЕРВЫМ и проверяем результат. В закрытом месяце отмена признанного
-    # расхода запрещена (``_cancel_accrual`` возвращает строку нетронутой), и без этой проверки
-    # отзыв рапортовал бы об успехе: документ ушёл бы в void, месяц освободился, а признанный
-    # расход остался бы висеть — с ошибочной суммой, и повторное проведение добавило бы к нему
-    # вторую. Отказываем внятно: сначала откройте период.
-    accrual = await supplier_service_periods.cancel_invoice_accrual(session, invoice.id)
-    if accrual is not None and accrual.status != "cancelled":
-        raise UtilityChargeError(
-            f"Расход за {accrual.service_period_end:%m.%Y} уже признан, а месяц закрыт — отозвать "
-            "нельзя. Откройте период в «Учёте», затем повторите"
-        )
-
-    invoice.payment_status = "void"
-    if invoice.external_id:
-        invoice.external_id = superseded_external_id(invoice.external_id, invoice.id)
-    intake.status = "ready"
-    intake.invoice_id = None
-    await session.flush()
-    return invoice
-
-
-async def recognize_intake(
-    session: AsyncSession, intake: UtilityIntake, *, settings: object
-) -> dict[str, object]:
-    """Разобрать загруженный документ и подставить поля, которых человек ещё не касался.
-
-    ПОРЯДОК ВАЖЕН: сначала текст (``utility_ocr`` — pypdf для PDF, vision для снимка), потом
-    детерминированные парсеры (``utility_recognition``). Модель нигде не называет сумму: она
-    отдаёт строки, а сумму по ним считают регексы с golden-тестами на реальных фото. Иначе
-    цифру в учёте было бы не с чем сверить.
-
-    ЧУЖОЕ НЕ ЗАТИРАЕМ. Заполняются только пустые поля. Человек, поправивший сумму вручную и
-    нажавший «Распознать» ещё раз, не должен получить обратно машинную версию — его правка
-    старше и весомее.
-
-    Возвращает то, что кладётся в ``intake.recognition``: результат виден в интерфейсе и
-    объясняет, откуда взялись цифры.
-    """
-    from app.services import utility_ocr
-    from app.services.utility_recognition import recognize_utility_document
-
-    if intake.content is None:
-        return {"status": "no_document"}
-
-    text, how = await utility_ocr.extract_text(
-        bytes(intake.content), mime=intake.mime, settings=settings
-    )
-    report: dict[str, object] = {"source": how}
-    if not text:
-        # Причина отказа — не мусор, а подсказка человеку: «снимок смазан» и «модель не
-        # настроена» требуют разных действий.
-        report["status"] = "no_text"
-        intake.recognition = report
-        intake.status = "needs_review"
-        await session.flush()
-        return report
-
-    parsed = recognize_utility_document(text)
-    if parsed is None:
-        report["status"] = "not_utility"
-        intake.recognition = report
-        intake.status = "needs_review"
-        await session.flush()
-        return report
-
-    report.update(
-        {
-            "status": "recognized",
-            "kind": parsed.kind,
-            "confidence": parsed.confidence,
-            "reasons": parsed.reasons,
-            "amount": str(parsed.amount) if parsed.amount is not None else None,
-            "period_start": parsed.period_start.isoformat() if parsed.period_start else None,
-            "period_end": parsed.period_end.isoformat() if parsed.period_end else None,
-            "document_number": parsed.document_number,
-            "document_date": parsed.document_date.isoformat() if parsed.document_date else None,
-        }
-    )
-
-    if intake.amount is None and parsed.amount is not None:
-        intake.amount = parsed.amount
-    if intake.period_start is None and parsed.period_start is not None:
-        intake.period_start = parsed.period_start
-    if intake.period_end is None and parsed.period_end is not None:
-        intake.period_end = parsed.period_end
-    if intake.document_number is None and parsed.document_number:
-        intake.document_number = parsed.document_number
-    if intake.document_date is None and parsed.document_date is not None:
-        intake.document_date = parsed.document_date
-
-    # Поток по виду услуги предлагаем, но только когда он однозначен: у помещения ровно один
-    # активный поток этого вида. Угадывать помещение по фотографии нельзя — на квитанции его нет.
-    if intake.account_id is None:
-        candidates = (
-            await session.scalars(
-                select(UtilityAccount).where(
-                    UtilityAccount.kind == parsed.kind,
-                    UtilityAccount.is_active.is_(True),
-                )
-            )
-        ).all()
-        if len(candidates) == 1:
-            intake.account_id = candidates[0].id
-            report["account_matched"] = "single_active_stream"
-
-    # Статус всегда «нужна проверка»: распознавание — черновик, учёт двигает человек.
-    intake.recognition = report
-    intake.status = "needs_review"
-    await session.flush()
-    return report
+    return bill, closing
 
 
 async def settle_utility_invoices_from_cash(

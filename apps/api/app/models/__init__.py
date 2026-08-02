@@ -168,14 +168,12 @@ from app.models.tax import (
     TaxPayment,
     TaxPeriodClose,
 )
-from app.models.vacation import VacationPeriod
 from app.models.utility import (
-    UTILITY_INTAKE_STATUSES,
     UTILITY_KIND_LABELS,
     UTILITY_KINDS,
     UtilityAccount,
-    UtilityIntake,
 )
+from app.models.vacation import VacationPeriod
 from app.models.wallet import Wallet
 
 __all__ = [
@@ -325,11 +323,9 @@ __all__ = [
     "TaxManualObligation",
     "TaxPayment",
     "TaxPeriodClose",
-    "UTILITY_INTAKE_STATUSES",
     "UTILITY_KIND_LABELS",
     "UTILITY_KINDS",
     "UtilityAccount",
-    "UtilityIntake",
     "VacationPeriod",
     "Wallet",
     "AccountingPeriodClose",

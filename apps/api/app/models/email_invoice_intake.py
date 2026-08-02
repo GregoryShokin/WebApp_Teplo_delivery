@@ -61,6 +61,7 @@ class EmailInvoiceIntake(Base):
         Index("ix_email_invoice_intake_status", "status"),
         Index("ix_email_invoice_intake_invoice", "invoice_id"),
         Index("ix_email_invoice_intake_scheduled", "scheduled_send_date"),
+        Index("ix_email_invoice_intake_utility_account", "utility_account_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -100,6 +101,12 @@ class EmailInvoiceIntake(Base):
     # документ — чтобы исключение/возврат/удаление intake вели оба, а не бросали УПД сиротой.
     companion_invoice_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
+    )
+    # Коммунальный поток («помещение × ресурс»), если строка пришла фотографией квитанции.
+    # Он несёт то, чего в самой квитанции нет: помещение для расхода (без него прибыль точки
+    # посчитается без коммуналки), получателя денег и статью. У почтовых строк всегда NULL.
+    utility_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("utility_account.id", ondelete="RESTRICT"), nullable=True
     )
     # Дата плановой авто-отправки в банк (джоба send_scheduled_payments). None = отправка вручную.
     scheduled_send_date: Mapped[date | None] = mapped_column(Date, nullable=True)

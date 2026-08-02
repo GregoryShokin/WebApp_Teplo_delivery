@@ -13,19 +13,24 @@
 * расход по такому документу идёт в управленческий P&L, но не в налоговую базу — первички на
   ИП под ним нет. Признак ``source='utility'`` на закрывающем документе и есть эта отметка.
 
-ЗАЧЕМ ДВЕ ТАБЛИЦЫ. ``UtilityAccount`` — постоянная настройка «за что и кому мы платим»:
-помещение × ресурс → арендодатель + статья ДДС. ``UtilityIntake`` — разовое событие «принесли
-бумажку за июль»: файл, распознанные поля и то, что из них получилось. Само обязательство
-своей таблицы не заводит: как аренда и договор услуги, оно живёт обычным ``SupplierInvoice`` —
-иначе долг не попал бы в готовые витрины ДЗ/КЗ и в признание расхода.
+ЗАЧЕМ ЭТА ТАБЛИЦА. ``UtilityAccount`` — постоянная настройка «за что и кому мы платим»:
+помещение × ресурс → арендодатель + статья ДДС. Оба ответа из квитанции не следуют и
+различаются в пределах одной точки: по решению владельца от 02.08.2026 вода и газ возмещаются
+одному арендодателю, электричество — другому. Оттуда же берётся помещение: без него расход
+осядет «без помещения», и прибыль точки посчитается без коммуналки.
+
+ПРИНЕСЁННАЯ БУМАЖКА СВОЕЙ ТАБЛИЦЫ НЕ ИМЕЕТ. Она приходит на «Страницу на оплату» третьим
+источником рядом с почтой и ЭДО и живёт в общем журнале приёмки — там же, где счета из писем.
+Отдельная таблица под неё была ошибкой: документ становился виден только на специальном экране,
+а заплатить по нему из очереди оплат было нечем. Само обязательство тоже своей таблицы не
+заводит: как аренда и договор услуги, оно живёт обычным ``SupplierInvoice`` — иначе долг не
+попал бы в готовые витрины ДЗ/КЗ и в признание расхода.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -33,17 +38,13 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
-    LargeBinary,
-    Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
-    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -65,7 +66,6 @@ UTILITY_KIND_LABELS = {
 #   ready        — поля заполнены и проверены, можно проводить
 #   promoted     — проведено: создан закрывающий документ (``invoice_id``)
 #   rejected     — не наш документ / дубль / брак съёмки; в учёт не идёт
-UTILITY_INTAKE_STATUSES = ("new", "needs_review", "ready", "promoted", "rejected")
 
 
 class UtilityAccount(Base):
@@ -121,89 +121,3 @@ class UtilityAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
-
-
-class UtilityIntake(Base):
-    """Принесённая платёжка: файл, распознанные поля и то, чем она стала в учёте.
-
-    Обязательство создаётся не здесь, а при явном «Провести»: до этого строка — черновик,
-    который ничего не двигает. Так документ, снятый криво или не за тот месяц, не попадает в
-    кредиторку молча.
-
-    Файл храним в самой строке (``content``), как это уже сделано у почтового и налогового
-    интейков: пишущих томов у контейнера на проде нет, и файл, положенный на диск, не пережил
-    бы ближайшую пересборку образа.
-
-    Ручной ввод — та же строка без файла: по газу документа не приносят вовсе, сумму называет
-    арендодатель. Такая запись честно отличима от подтверждённой бумагой (``has_document``).
-    """
-
-    __tablename__ = "utility_intake"
-    __table_args__ = (
-        CheckConstraint(
-            "status in ('new', 'needs_review', 'ready', 'promoted', 'rejected')",
-            name="ck_utility_intake_status",
-        ),
-        CheckConstraint(
-            "period_end IS NULL OR period_start IS NULL OR period_end >= period_start",
-            name="ck_utility_intake_period",
-        ),
-        CheckConstraint("amount IS NULL OR amount > 0", name="ck_utility_intake_amount"),
-        # Дедуп по содержимому — только для файлов. Двух одинаковых фото одной квитанции быть
-        # не должно, а вот ручных строк без файла у месяца может быть несколько (доначисление).
-        Index(
-            "uq_utility_intake_sha",
-            "attachment_sha256",
-            unique=True,
-            postgresql_where=text("attachment_sha256 IS NOT NULL"),
-        ),
-        Index("ix_utility_intake_status", "status"),
-        Index("ix_utility_intake_account_period", "account_id", "period_start"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Пусто, пока человек не сказал, за какой поток эта бумажка. Распознавание предлагает, но
-    # не решает: по фото не всегда видно, чьё это помещение.
-    account_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("utility_account.id", ondelete="RESTRICT"), nullable=True, index=True
-    )
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="new", server_default="new"
-    )
-    # Оригинал. NULL — ручной ввод: газовой квитанции не существует, сумму называет арендодатель.
-    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    attachment_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    attachment_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    # Период потребления — то, ради чего всё затевалось: расход обязан лечь в месяц потребления,
-    # а не в месяц оплаты.
-    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
-    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
-    document_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    document_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Сырой результат разбора: что нашли, чем и с какой уверенностью. Нужен, чтобы человек видел
-    # не только цифру, но и откуда она взялась, — и чтобы можно было разбирать ошибки парсера
-    # задним числом, не имея под рукой исходного фото.
-    recognition: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    # Что получилось из этой бумажки. SET NULL: удаление документа не должно уносить историю
-    # приёмки, иначе непонятно, что вообще происходило с июлем.
-    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    uploaded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
-    )
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    @property
-    def has_document(self) -> bool:
-        """Подтверждена ли строка бумагой. Ручной ввод — не хуже, но и не то же самое."""
-        return self.content is not None

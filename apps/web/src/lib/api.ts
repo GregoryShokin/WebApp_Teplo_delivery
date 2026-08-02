@@ -6179,26 +6179,6 @@ export type UtilityAccountPayload = {
   note?: string | null;
 };
 
-export type UtilityIntakeRecord = {
-  id: string;
-  status: "new" | "needs_review" | "ready" | "promoted" | "rejected";
-  account_id: string | null;
-  account_title: string | null;
-  filename: string | null;
-  mime: string | null;
-  has_document: boolean;
-  period_start: string | null;
-  period_end: string | null;
-  amount: string | null;
-  document_number: string | null;
-  document_date: string | null;
-  recognition: Record<string, unknown> | null;
-  invoice_id: string | null;
-  note: string | null;
-  created_at: string;
-};
-
-export type UtilityCalendarRow = {
   account_id: string;
   account_title: string;
   location_name: string;
@@ -6240,82 +6220,4 @@ export async function getUtilityCalendar(monthsBack = 6): Promise<UtilityCalenda
     params: { months_back: monthsBack },
   });
   return response.data.items;
-}
-
-export async function getUtilityIntakes(status?: string): Promise<UtilityIntakeRecord[]> {
-  const response = await api.get<{ items: UtilityIntakeRecord[] }>("/accounting/utilities/intakes", {
-    params: status ? { status_filter: status } : undefined,
-  });
-  return response.data.items;
-}
-
-export async function createUtilityIntake(input: {
-  file?: File | null;
-  accountId?: string | null;
-  periodStart?: string | null;
-  periodEnd?: string | null;
-  amount?: string | null;
-  documentNumber?: string | null;
-  documentDate?: string | null;
-  note?: string | null;
-}): Promise<UtilityIntakeRecord> {
-  const form = new FormData();
-  if (input.file) form.append("file", input.file);
-  if (input.accountId) form.append("account_id", input.accountId);
-  if (input.periodStart) form.append("period_start", input.periodStart);
-  if (input.periodEnd) form.append("period_end", input.periodEnd);
-  if (input.amount) form.append("amount", input.amount);
-  if (input.documentNumber) form.append("document_number", input.documentNumber);
-  if (input.documentDate) form.append("document_date", input.documentDate);
-  if (input.note) form.append("note", input.note);
-  const response = await api.post<UtilityIntakeRecord>("/accounting/utilities/intakes", form);
-  return response.data;
-}
-
-export async function updateUtilityIntake(
-  id: string,
-  payload: Partial<{
-    account_id: string | null;
-    period_start: string | null;
-    period_end: string | null;
-    amount: string | null;
-    document_number: string | null;
-    document_date: string | null;
-    note: string | null;
-    status: "new" | "needs_review" | "ready" | "rejected";
-  }>,
-): Promise<UtilityIntakeRecord> {
-  const response = await api.patch<UtilityIntakeRecord>(
-    `/accounting/utilities/intakes/${id}`,
-    payload,
-  );
-  return response.data;
-}
-
-export async function recognizeUtilityIntake(id: string): Promise<UtilityIntakeRecord> {
-  const response = await api.post<UtilityIntakeRecord>(
-    `/accounting/utilities/intakes/${id}/recognize`,
-  );
-  return response.data;
-}
-
-export async function promoteUtilityIntake(id: string): Promise<UtilityIntakeRecord> {
-  const response = await api.post<UtilityIntakeRecord>(
-    `/accounting/utilities/intakes/${id}/promote`,
-  );
-  return response.data;
-}
-
-export async function revokeUtilityIntake(id: string): Promise<UtilityIntakeRecord> {
-  const response = await api.post<UtilityIntakeRecord>(
-    `/accounting/utilities/intakes/${id}/revoke`,
-  );
-  return response.data;
-}
-
-export async function getUtilityIntakeFileUrl(id: string): Promise<string> {
-  const response = await api.get<Blob>(`/accounting/utilities/intakes/${id}/file`, {
-    responseType: "blob",
-  });
-  return URL.createObjectURL(response.data);
 }

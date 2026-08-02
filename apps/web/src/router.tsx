@@ -26,7 +26,6 @@ import { ScheduleRoute } from "@/routes/schedule";
 import { SettingsRoute } from "@/routes/settings";
 import { StaffRoute } from "@/routes/staff";
 import { DzKzRoute } from "@/routes/accounting/dz-kz";
-import { UtilitiesRoute } from "@/routes/accounting/utilities";
 import { FixedAssetsRoute } from "@/routes/fixed-assets";
 import { TaxesRoute } from "@/routes/taxes";
 
@@ -488,10 +487,6 @@ const routes: AppRoute[] = [
   {
     path: "/dz-kz",
     render: () => <DzKzRoute />,
-  },
-  {
-    path: "/utilities",
-    render: () => <UtilitiesRoute />,
   },
   {
     path: "/taxes",

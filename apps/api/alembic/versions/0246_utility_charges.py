@@ -1,4 +1,4 @@
-"""Коммунальные услуги помещения: поток «помещение × ресурс» и приёмка платёжек.
+"""Коммунальные услуги помещения: поток «помещение × ресурс» и его связь с приёмкой.
 
 ЗАЧЕМ. Вода, газ и электричество по торговой точке шли мимо учёта обязательств: счета
 ресурсников выставлены на арендодателя-физлицо, бизнес возмещает ему затраты наличными и
@@ -6,18 +6,25 @@
 попадал в тот месяц, когда заплатили, — а не в тот, когда потребили; долг перед арендодателем
 не считался вовсе.
 
-ПОЧЕМУ НЕ ХВАТИЛО СУЩЕСТВУЮЩИХ МЕХАНИЗМОВ. Аренда и договор услуги начисляют долг сами, потому
-что месячная сумма известна заранее. У коммуналки она известна только из документа: счётчик.
-Поэтому обязательство здесь рождается не по расписанию, а из принесённой бумажки — и таблица
-приёмки нужна, чтобы бумажка сначала попала человеку на проверку, а не сразу в кредиторку.
+ЧТО ХРАНИТ ПОТОК. Ответы, которых в самой квитанции нет и которые различаются в пределах одной
+точки: помещение (иначе расход осядет «без помещения», и прибыль точки посчитается без
+коммуналки), получателя денег и статью расхода. По решению владельца от 02.08.2026 вода и газ
+возмещаются одному арендодателю, электричество — другому, поэтому получатель хранится на потоке,
+а не выводится из документа: в квитанции стоят реквизиты ресурсника, а платим мы не ему.
 
-СОБСТВЕННОГО ДОЛГА ТАБЛИЦЫ НЕТ. Проведённая платёжка становится обычным ``supplier_invoice``
-(``doc_kind='closing'``, ``source='utility'``) — так долг попадает в готовые витрины ДЗ/КЗ и в
-признание расхода, ровно как у аренды. Новый источник ``utility`` нужен, чтобы отличать эти
-документы от первички на ИП: расход по ним идёт в управленческий P&L, но не в налоговую базу.
+ПРИЁМКА СВОЕЙ ТАБЛИЦЫ НЕ ПОЛУЧАЕТ. Платёжка приходит на «Страницу на оплату» третьим источником
+рядом с почтой и ЭДО, в общий журнал ``email_invoice_intake`` — оттуда и колонка
+``utility_account_id``. Отдельный экран с собственным хранилищем был первой версией этой ветки и
+оказался ошибкой: документ становился виден только тому, кто знает про специальную страницу, а
+оплатить его из очереди оплат было нечем.
 
-Revision ID: 0244_utility_charges
-Revises: 0243_accrual_location
+СОБСТВЕННОГО ДОЛГА ТАБЛИЦЫ НЕТ. Разобранная платёжка становится обычными ``supplier_invoice`` —
+так долг попадает в готовые витрины ДЗ/КЗ и в признание расхода, ровно как у аренды. Новый
+источник ``utility`` нужен, чтобы отличать эти документы от первички на ИП: расход по ним идёт
+в управленческий P&L, но не в налоговую базу.
+
+Revision ID: 0246_utility_charges
+Revises: 0245_vacation_paid_by_run
 Create Date: 2026-08-02
 """
 
@@ -31,8 +38,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0244_utility_charges"
-down_revision = "0243_accrual_location"
+revision = "0246_utility_charges"
+down_revision = "0245_vacation_paid_by_run"
 branch_labels = None
 depends_on = None
 
@@ -118,72 +125,37 @@ def upgrade() -> None:
     op.create_index("ix_utility_account_location", "utility_account", ["location_id"])
     op.create_index("ix_utility_account_counterparty", "utility_account", ["counterparty_id"])
 
-    op.create_table(
-        "utility_intake",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("status", sa.String(length=16), nullable=False, server_default="new"),
-        sa.Column("filename", sa.String(length=255), nullable=True),
-        sa.Column("mime", sa.String(length=128), nullable=True),
-        sa.Column("attachment_sha256", sa.String(length=64), nullable=True),
-        sa.Column("attachment_size", sa.Integer(), nullable=True),
-        sa.Column("content", sa.LargeBinary(), nullable=True),
-        sa.Column("period_start", sa.Date(), nullable=True),
-        sa.Column("period_end", sa.Date(), nullable=True),
-        sa.Column("amount", sa.Numeric(14, 2), nullable=True),
-        sa.Column("document_number", sa.String(length=64), nullable=True),
-        sa.Column("document_date", sa.Date(), nullable=True),
-        sa.Column("recognition", postgresql.JSONB(), nullable=True),
-        sa.Column("invoice_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("uploaded_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("note", sa.Text(), nullable=True),
-        sa.Column(
-            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-        ),
-        sa.Column(
-            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
-        ),
-        sa.CheckConstraint(
-            "status in ('new', 'needs_review', 'ready', 'promoted', 'rejected')",
-            name="ck_utility_intake_status",
-        ),
-        sa.CheckConstraint(
-            "period_end IS NULL OR period_start IS NULL OR period_end >= period_start",
-            name="ck_utility_intake_period",
-        ),
-        sa.CheckConstraint("amount IS NULL OR amount > 0", name="ck_utility_intake_amount"),
-        # RESTRICT на профиль: пока по нему есть приёмки, настройку не удалить — иначе исчезнет
-        # ответ на вопрос «за что был этот долг».
-        sa.ForeignKeyConstraint(["account_id"], ["utility_account.id"], ondelete="RESTRICT"),
-        # SET NULL на документ: аннулирование документа не должно стирать историю приёмки.
-        sa.ForeignKeyConstraint(["invoice_id"], ["supplier_invoice.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["uploaded_by_user_id"], ["user.id"], ondelete="SET NULL"),
-        sa.PrimaryKeyConstraint("id"),
+    # Связь журнала «Страницы на оплату» с коммунальным потоком. Колонка живёт в общей таблице
+    # приёмки, потому что коммунальная платёжка приходит туда же, куда счета из почты и ЭДО, —
+    # и именно из потока берутся ответы, которых в самой квитанции нет: помещение (иначе расход
+    # осядет «без помещения»), получатель денег и статья расхода.
+    op.add_column(
+        "email_invoice_intake",
+        sa.Column("utility_account_id", postgresql.UUID(as_uuid=True), nullable=True),
     )
-    # Дедуп по содержимому — только там, где содержимое есть: одну и ту же квитанцию нельзя
-    # завести дважды, а ручных строк без файла у месяца может быть несколько.
+    op.create_foreign_key(
+        "fk_email_invoice_intake_utility_account",
+        "email_invoice_intake",
+        "utility_account",
+        ["utility_account_id"],
+        ["id"],
+        ondelete="RESTRICT",
+    )
     op.create_index(
-        "uq_utility_intake_sha",
-        "utility_intake",
-        ["attachment_sha256"],
-        unique=True,
-        postgresql_where=sa.text("attachment_sha256 IS NOT NULL"),
+        "ix_email_invoice_intake_utility_account",
+        "email_invoice_intake",
+        ["utility_account_id"],
     )
-    op.create_index("ix_utility_intake_status", "utility_intake", ["status"])
-    op.create_index(
-        "ix_utility_intake_account_period", "utility_intake", ["account_id", "period_start"]
-    )
-    op.create_index("ix_utility_intake_invoice", "utility_intake", ["invoice_id"])
 
     _ensure_utilities_article()
 
 
 def downgrade() -> None:
-    op.drop_index("ix_utility_intake_invoice", table_name="utility_intake")
-    op.drop_index("ix_utility_intake_account_period", table_name="utility_intake")
-    op.drop_index("ix_utility_intake_status", table_name="utility_intake")
-    op.drop_index("uq_utility_intake_sha", table_name="utility_intake")
-    op.drop_table("utility_intake")
+    op.drop_index("ix_email_invoice_intake_utility_account", table_name="email_invoice_intake")
+    op.drop_constraint(
+        "fk_email_invoice_intake_utility_account", "email_invoice_intake", type_="foreignkey"
+    )
+    op.drop_column("email_invoice_intake", "utility_account_id")
     op.drop_index("ix_utility_account_counterparty", table_name="utility_account")
     op.drop_index("ix_utility_account_location", table_name="utility_account")
     op.drop_table("utility_account")

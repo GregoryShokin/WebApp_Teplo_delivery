@@ -1,31 +1,35 @@
-"""Коммунальные услуги: приёмка платёжек и календарь ожиданий.
+"""Коммунальные потоки помещения и календарь ожиданий.
+
+ЧТО ТАКОЕ ПОТОК. Пара «помещение × ресурс» (вода / газ / электричество) с ответами на вопросы,
+которых в самой квитанции нет: КОМУ платим и на КАКУЮ статью относить расход. Оба ответа
+неочевидны и различаются в пределах одной точки — по решению владельца от 02.08.2026 вода и газ
+возмещаются одному арендодателю, электричество другому. Из потока же берётся помещение: без
+него расход осядет «без помещения» и прибыль точки посчитается без коммуналки.
+
+ПРИЁМКИ ЗДЕСЬ БОЛЬШЕ НЕТ. Платёжка приходит на «Страницу на оплату» третьим источником рядом с
+почтой и ЭДО — там же, где живут все остальные основания платежей. Отдельный экран для неё был
+ошибкой: документ становился видимым только тому, кто знает про специальную страницу, а
+заплатить по нему из очереди оплат было нечем. Поток остался настройкой, приёмка ушла в общий
+контур.
 
 ПРАВА берём существующие — ``accounting.suppliers.read/edit``. Коммуналка это взаиморасчёты с
 контрагентом (арендодателем), и заводить под неё отдельную пару прав значило бы получить право,
 которое никому не выдано: у контура доступов единица выдачи — должность, а не экран.
-
-ПОЧЕМУ ЗАГРУЗКА ФАЙЛА ЖИВЁТ ЗДЕСЬ, А НЕ В ОБЩЕМ «ПРИЁМЕ ДОКУМЕНТОВ». Приложение до этого файлов
-не принимало вовсе: единственным входом была почта. Общий канал загрузки — отдельная задача с
-своими вопросами (кто, куда, какие типы, как показывать). Коммунальной платёжке нужен вход
-сегодня, и он намеренно узкий: одна форма, один список, понятный набор полей.
 """
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
-from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
-from app.core.config import get_settings
+from app.api.deps import require_permission
 from app.db.session import get_session
 from app.models import (
     UTILITY_KIND_LABELS,
@@ -34,59 +38,13 @@ from app.models import (
     DdsArticle,
     Location,
     UtilityAccount,
-    UtilityIntake,
 )
 from app.services import utility_charges
-from app.services.utility_charges import UtilityChargeError
-from app.services.utility_images import to_displayable
 
 router = APIRouter()
 
 READ_ACCESS = (Depends(require_permission("accounting.suppliers.read")),)
 EDIT_ACCESS = (Depends(require_permission("accounting.suppliers.edit")),)
-
-# Больше 25 МБ фотография квитанции не бывает даже с современного телефона, а лежит файл в
-# строке таблицы — раздувать её нечем.
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-
-# Тип файла определяем ПО СОДЕРЖИМОМУ, а не по заголовку загрузки: Content-Type пишет клиент,
-# и ему верить нельзя. Иначе SVG со скриптом, представленный как image/png, отдавался бы
-# обратно inline — то есть исполнялся бы в origin приложения, с его куками и токеном.
-# Отсюда же и белый список: у SVG нет бинарной сигнатуры, и в него он не попадает вовсе.
-FILE_SIGNATURES: tuple[tuple[bytes, str], ...] = (
-    (b"\xff\xd8\xff", "image/jpeg"),
-    (b"\x89PNG\r\n\x1a\n", "image/png"),
-    (b"%PDF-", "application/pdf"),
-    (b"GIF87a", "image/gif"),
-    (b"GIF89a", "image/gif"),
-)
-
-
-def _sniff_mime(content: bytes) -> str | None:
-    """Тип по сигнатуре. ``None`` — формат не поддержан, грузить нельзя."""
-    for signature, mime in FILE_SIGNATURES:
-        if content.startswith(signature):
-            return mime
-    # WEBP и HEIC — контейнерные форматы: сигнатура не в начале файла.
-    if len(content) >= 12:
-        if content[0:4] == b"RIFF" and content[8:12] == b"WEBP":
-            return "image/webp"
-        # Бренды HEIF, которые реально ставит техника Apple. mif1/msf1 — «просто HEIF»,
-        # остальные — снимок и его последовательности; все они читаются одинаково.
-        if content[4:8] == b"ftyp" and content[8:12] in (
-            b"heic",
-            b"heix",
-            b"heim",
-            b"heis",
-            b"hevc",
-            b"hevm",
-            b"hevs",
-            b"mif1",
-            b"msf1",
-        ):
-            return "image/heic"
-    return None
-
 
 class AccountWrite(BaseModel):
     location_id: uuid.UUID
@@ -123,40 +81,6 @@ class AccountListRead(BaseModel):
     items: list[AccountRead]
 
 
-class IntakeRead(BaseModel):
-    id: uuid.UUID
-    status: str
-    account_id: uuid.UUID | None
-    account_title: str | None
-    filename: str | None
-    mime: str | None
-    has_document: bool
-    period_start: date | None
-    period_end: date | None
-    amount: Decimal | None
-    document_number: str | None
-    document_date: date | None
-    recognition: dict | None
-    invoice_id: uuid.UUID | None
-    note: str | None
-    created_at: date
-
-
-class IntakeListRead(BaseModel):
-    items: list[IntakeRead]
-
-
-class IntakePatch(BaseModel):
-    account_id: uuid.UUID | None = None
-    period_start: date | None = None
-    period_end: date | None = None
-    amount: Decimal | None = Field(default=None, gt=0)
-    document_number: str | None = None
-    document_date: date | None = None
-    note: str | None = None
-    status: Literal["new", "needs_review", "ready", "rejected"] | None = None
-
-
 class CalendarRow(BaseModel):
     account_id: uuid.UUID
     account_title: str
@@ -184,13 +108,6 @@ async def _account_or_404(session: AsyncSession, account_id: uuid.UUID) -> Utili
             status_code=status.HTTP_404_NOT_FOUND, detail="Коммунальный поток не найден"
         )
     return account
-
-
-async def _intake_or_404(session: AsyncSession, intake_id: uuid.UUID) -> UtilityIntake:
-    intake = await session.get(UtilityIntake, intake_id)
-    if intake is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Платёжка не найдена")
-    return intake
 
 
 async def _assert_article_fits(session: AsyncSession, article_id: uuid.UUID) -> DdsArticle:
@@ -389,245 +306,6 @@ async def utilities_calendar(
     items.sort(key=lambda r: (r.month, r.account_title), reverse=True)
     return CalendarRead(items=items)
 
-
-async def _intake_payload(session: AsyncSession, intake: UtilityIntake) -> IntakeRead:
-    title = None
-    if intake.account_id is not None:
-        account = await session.get(UtilityAccount, intake.account_id)
-        if account is not None:
-            location = await session.get(Location, account.location_id)
-            title = _account_title(account.kind, location.name if location else "")
-    return IntakeRead(
-        id=intake.id,
-        status=intake.status,
-        account_id=intake.account_id,
-        account_title=title,
-        filename=intake.filename,
-        mime=intake.mime,
-        has_document=intake.content is not None,
-        period_start=intake.period_start,
-        period_end=intake.period_end,
-        amount=intake.amount,
-        document_number=intake.document_number,
-        document_date=intake.document_date,
-        recognition=intake.recognition,
-        invoice_id=intake.invoice_id,
-        note=intake.note,
-        created_at=intake.created_at.date(),
-    )
-
-
-@router.get("/intakes", response_model=IntakeListRead, dependencies=READ_ACCESS)
-async def list_intakes(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    status_filter: str | None = None,
-) -> IntakeListRead:
-    query = select(UtilityIntake).order_by(UtilityIntake.created_at.desc()).limit(200)
-    if status_filter:
-        query = query.where(UtilityIntake.status == status_filter)
-    intakes = (await session.scalars(query)).all()
-    return IntakeListRead(items=[await _intake_payload(session, i) for i in intakes])
-
-
-@router.post(
-    "/intakes",
-    response_model=IntakeRead,
-    status_code=status.HTTP_201_CREATED,
-    dependencies=EDIT_ACCESS,
-)
-async def create_intake(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
-    file: Annotated[UploadFile | None, File()] = None,
-    account_id: Annotated[uuid.UUID | None, Form()] = None,
-    period_start: Annotated[date | None, Form()] = None,
-    period_end: Annotated[date | None, Form()] = None,
-    amount: Annotated[Decimal | None, Form()] = None,
-    document_number: Annotated[str | None, Form()] = None,
-    document_date: Annotated[date | None, Form()] = None,
-    note: Annotated[str | None, Form()] = None,
-) -> IntakeRead:
-    """Принять платёжку: файлом или руками.
-
-    Без файла — законный случай, а не обход: по газу документа не приносят вовсе, сумму
-    называет арендодатель. Такая строка отличима от подтверждённой бумагой (``has_document``),
-    и в этом вся разница — учёт она двигает одинаково.
-    """
-    content: bytes | None = None
-    sha: str | None = None
-    sniffed: str | None = None
-    if file is not None:
-        content = await file.read()
-        if not content:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Файл пустой"
-            )
-        if len(content) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Файл больше {MAX_UPLOAD_BYTES // 1024 // 1024} МБ",
-            )
-        sniffed = _sniff_mime(content)
-        if sniffed is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Принимаем фотографию (JPEG, PNG, HEIC, WEBP) или PDF",
-            )
-        sha = hashlib.sha256(content).hexdigest()
-        existing = await session.scalar(
-            select(UtilityIntake).where(UtilityIntake.attachment_sha256 == sha)
-        )
-        if existing is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Этот файл уже загружен — найдите его в списке платёжек",
-            )
-
-    if account_id is not None:
-        await _account_or_404(session, account_id)
-    # Ту же проверку, что и в PATCH: иначе ноль или минус доезжали до CHECK-констрейнта и
-    # возвращались пятисоткой вместо внятного отказа.
-    if amount is not None and amount <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Сумма должна быть больше нуля",
-        )
-
-    intake = UtilityIntake(
-        account_id=account_id,
-        # Пока распознавания нет, любая строка идёт человеку: сумму и период он видит на фото
-        # и вводит сам. Появится разбор — сюда встанет его вердикт.
-        status="needs_review",
-        filename=file.filename if file is not None else None,
-        # Наш вердикт по содержимому, а не заявленный клиентом тип.
-        mime=sniffed,
-        attachment_sha256=sha,
-        attachment_size=len(content) if content is not None else None,
-        content=content,
-        period_start=period_start,
-        period_end=period_end,
-        amount=amount,
-        document_number=(document_number or "").strip() or None,
-        document_date=document_date,
-        note=(note or "").strip() or None,
-        uploaded_by_user_id=actor.user_id,
-    )
-    session.add(intake)
-    await session.commit()
-    await session.refresh(intake)
-    return await _intake_payload(session, intake)
-
-
-@router.get("/intakes/{intake_id}/file", dependencies=READ_ACCESS)
-async def download_intake_file(
-    intake_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> Response:
-    intake = await _intake_or_404(session, intake_id)
-    if intake.content is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файла нет")
-    # HEIC браузеры не рисуют — отдаём конвертированный JPEG, а в базе остаётся оригинал.
-    payload, media_type = to_displayable(bytes(intake.content), intake.mime)
-    raw = intake.filename or "document"
-    # HTTP-заголовки только latin-1: русское имя файла обязано ехать вторым, RFC 5987-полем,
-    # иначе Starlette роняет ответ и браузер показывает «Network Error».
-    ascii_name = raw.encode("ascii", "ignore").decode() or "document"
-    disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw)}"
-    return Response(
-        content=payload,
-        media_type=media_type,
-        headers={
-            "Content-Disposition": disposition,
-            # Браузер не должен угадывать тип сам: при сохранённом octet-stream угадывание
-            # вернуло бы ровно ту дыру, которую закрывает проверка сигнатуры на приёме.
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
-
-
-@router.patch("/intakes/{intake_id}", response_model=IntakeRead, dependencies=EDIT_ACCESS)
-async def update_intake(
-    intake_id: uuid.UUID,
-    payload: IntakePatch,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> IntakeRead:
-    intake = await _intake_or_404(session, intake_id)
-    if intake.status == "promoted":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Платёжка проведена — сначала отзовите долг, потом правьте",
-        )
-    data = payload.model_dump(exclude_unset=True)
-    if "account_id" in data and data["account_id"] is not None:
-        await _account_or_404(session, data["account_id"])
-    for field, value in data.items():
-        setattr(intake, field, value)
-    await session.commit()
-    await session.refresh(intake)
-    return await _intake_payload(session, intake)
-
-
-@router.post("/intakes/{intake_id}/recognize", response_model=IntakeRead, dependencies=EDIT_ACCESS)
-async def recognize_intake(
-    intake_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> IntakeRead:
-    """Разобрать документ: снять текст и заполнить поля, которых человек ещё не касался.
-
-    Отдельным действием, а не внутри загрузки: распознавание ходит во внешний сервис и занимает
-    секунды, а приём документа обязан быть быстрым и надёжным. Не получилось распознать —
-    платёжка всё равно принята, сумму введут руками.
-    """
-    intake = await _intake_or_404(session, intake_id)
-    if intake.status == "promoted":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Платёжка проведена — распознавать нечего",
-        )
-    await utility_charges.recognize_intake(session, intake, settings=get_settings())
-    await session.commit()
-    await session.refresh(intake)
-    return await _intake_payload(session, intake)
-
-
-@router.post("/intakes/{intake_id}/promote", response_model=IntakeRead, dependencies=EDIT_ACCESS)
-async def promote_intake(
-    intake_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> IntakeRead:
-    """Провести: создать долг перед арендодателем и признать расход месяца потребления."""
-    intake = await _intake_or_404(session, intake_id)
-    try:
-        await utility_charges.promote_intake(session, intake, actor_user_id=actor.user_id)
-    except UtilityChargeError as exc:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
-        ) from exc
-    await session.commit()
-    await session.refresh(intake)
-    return await _intake_payload(session, intake)
-
-
-@router.post("/intakes/{intake_id}/revoke", response_model=IntakeRead, dependencies=EDIT_ACCESS)
-async def revoke_intake(
-    intake_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    actor: Annotated[CurrentActor, Depends(get_current_actor)],
-) -> IntakeRead:
-    """Отозвать проведённый долг — когда в сумме ошиблись, а месяц надо провести заново."""
-    intake = await _intake_or_404(session, intake_id)
-    try:
-        await utility_charges.revoke_intake(session, intake, actor_user_id=actor.user_id)
-    except UtilityChargeError as exc:
-        await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    await session.commit()
-    await session.refresh(intake)
-    return await _intake_payload(session, intake)
 
 
 @router.get("/kinds", dependencies=READ_ACCESS)
