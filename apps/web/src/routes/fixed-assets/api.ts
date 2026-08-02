@@ -87,6 +87,9 @@ export type ConditionReportKind = "purchase" | "incident";
  * Оба предложения бывают пустыми: модель не смогла связать сообщение со стоимостью или не
  * поняла из описания, сколько объект отработал. Запись всё равно доходит до владельца —
  * свидетельство ценно само по себе.
+ *
+ * Третий исход — `proposed_disposal`: объекта физически НЕТ (украли, утратили, уничтожен).
+ * Тогда предложение не про сумму, а про действие — списать; убыток равен `cost_before`.
  */
 export type ConditionReport = {
   id: string;
@@ -96,6 +99,7 @@ export type ConditionReport = {
   cost_before: Money;
   proposed_cost: Money | null;
   proposed_useful_life_months: number | null;
+  proposed_disposal: boolean;
   proposed_reason: string | null;
   confidence: Money | null;
   model: string | null;
@@ -103,9 +107,20 @@ export type ConditionReport = {
   created_at: string;
 };
 
+/** Оформленное выбытие: объекта больше нет, остаточная стоимость ушла в убыток. */
+export type Disposal = {
+  occurred_on: string;
+  loss_amount: Money;
+  reason: string | null;
+  previous_status: AssetStatus | null;
+  /** Месяц выбытия заморожен снимком баланса — отменить списание уже нельзя. */
+  period_frozen: boolean;
+};
+
 export type FixedAssetDetail = FixedAsset & {
   entries: DepreciationEntry[];
   condition_reports: ConditionReport[];
+  disposal: Disposal | null;
 };
 
 export type CategoryTotal = {
@@ -197,6 +212,10 @@ export type Reporting = {
   is_frozen: boolean;
   drift: LineDrift[];
   series: Array<{ period_month: string; amount: Money }>;
+  /** Убыток от выбытия за этот месяц: остаточная стоимость списанных объектов. */
+  disposal_loss: Money;
+  /** Помесячный ряд для строки ОПиУ «УчОС Убыток от выбытия». */
+  disposal_series: Array<{ period_month: string; amount: Money; asset_count: number }>;
 };
 
 export async function getReporting(periodMonth?: string): Promise<Reporting> {
@@ -312,6 +331,26 @@ export async function decideCondition(
     `${BASE}/${assetId}/condition/${reportId}/decision`,
     { accept },
   );
+  return response.data;
+}
+
+/** Списать объект: его больше нет, остаточная стоимость уходит в убыток.
+ *
+ * Не переоценка в ноль. Переоценка оставила бы объект на балансе и переписала его
+ * первоначальную стоимость — то есть цену покупки. Выбытие убирает объект из внеоборотных
+ * активов целиком, а карточка остаётся историей.
+ */
+export async function disposeAsset(
+  assetId: string,
+  payload: { reason: string; disposed_on?: string | null },
+): Promise<Disposal> {
+  const response = await api.post<Disposal>(`${BASE}/${assetId}/disposal`, payload);
+  return response.data;
+}
+
+/** Отменить ошибочное списание — объект вернётся в тот статус, где был. */
+export async function cancelAssetDisposal(assetId: string): Promise<FixedAsset> {
+  const response = await api.delete<FixedAsset>(`${BASE}/${assetId}/disposal`);
   return response.data;
 }
 

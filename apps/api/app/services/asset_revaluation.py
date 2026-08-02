@@ -9,6 +9,12 @@
 
 * ``incident`` — ПОЛОМКА у работающего объекта. Вопрос: сколько он теперь стоит. Модель отдаёт
   долю потери остаточной стоимости, код считает рубли.
+* ``incident`` с видом ``loss`` — объекта НЕТ: украли, утратили, уничтожен. Вопрос уже не
+  «сколько стоит», а «списывать ли»: предложением становится ВЫБЫТИЕ, остаточная стоимость
+  уходит убытком, карточка не переписывается. Появился 2026-08-02 по живому случаю: менеджер
+  написал про уличную скамью «украли», модель верно ответила «стоимость полностью утрачена» —
+  и владельцу не на что было нажать, потому что словаря для утраты не существовало, а без
+  него код выбрасывал ответ модели целиком.
 * ``purchase`` — купили Б/У. Вопрос: сколько ему осталось РАБОТАТЬ. Денег этот разговор не
   касается вовсе: за б/у уже заплатили меньше, продавец износ учёл, и списать цену второй раз
   значило бы посчитать его дважды. А вот СРОК приходит из категории и молча считает объект
@@ -56,6 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.models import AssetCategory, AssetConditionReport, FixedAsset
 from app.services.anthropic_client import LlmCallError, call_tool
+from app.services.asset_disposal import dispose_asset
 from app.services.fixed_assets import accumulated_depreciation, resolve_useful_life
 
 logger = logging.getLogger(__name__)
@@ -69,6 +76,7 @@ IMPACT_KINDS = (
     "wear",  # износ, естественное старение
     "damage",  # повреждение, не влияющее на работу (косметика)
     "improvement",  # объекту стало лучше: замена узла, доработка
+    "loss",  # объекта физически нет: украли, утратили, уничтожен
     "none",  # на стоимость не влияет
 )
 
@@ -85,6 +93,10 @@ _SYSTEM = """Ты оцениваешь состояние оборудовани
   оборудования: доля 0 или близко к нулю.
 * Отказ узла, без которого объект не выполняет функцию (компрессор у холодильника, ТЭН у
   печи), обрушивает стоимость до цены оставшегося железа: доля 0.7-0.9.
+* ОБЪЕКТА БОЛЬШЕ НЕТ — украли, потеряли, сгорел, разбит вдребезги, увезли на металлолом —
+  это impact_kind=loss и доля 1. Речь уже не о том, сколько объект стоит, а о том, что его
+  нет: приложение предложит владельцу списать его целиком. Не путай с поломкой: сломанный
+  объект стоит на месте и что-то стоит, утраченного объекта не существует.
 * Если из сообщения непонятно, что случилось, или его нельзя связать со стоимостью — ставь
   долю 0 и needs_human=true. Придумывать нельзя.
 * Если объекту стало ЛУЧШЕ (заменили узел на новый, доработали), доля отрицательной не
@@ -329,6 +341,18 @@ def apply_model_answer(
     if confidence is not None and Decimal("0") <= confidence <= Decimal("1"):
         report.confidence = confidence
 
+    # ОБЪЕКТА НЕТ — это выбытие, а не переоценка, и доля потери здесь ни при чём. Считать
+    # такое обращение переоценкой в ноль было бы прямым враньём в карточке: применение
+    # переоценки переписывает ПЕРВОНАЧАЛЬНУЮ стоимость в размер накопленного износа, то есть
+    # подменяет цену покупки. Предлагаем списание, а сумму убытка код возьмёт из остаточной.
+    if kind == "loss" and not needs_human:
+        report.proposed_disposal = True
+        report.proposed_cost = None
+        report.status = "proposed"
+        if not reasoning:
+            report.proposed_reason = "Из сообщения следует, что объекта больше нет"
+        return
+
     unusable = (
         kind not in IMPACT_KINDS
         or share is None
@@ -515,12 +539,36 @@ async def decide_report(
     заплатили ровно столько, сколько он стоил вместе со своим износом. Срок же в карточке пуст,
     и объект берёт его из категории — то есть считает себя новым. Проставленный срок
     перекрывает категорийный и с этого месяца ведёт нормальную амортизацию.
+
+    У УТРАТЫ применяется ВЫБЫТИЕ. Объекта нет — переоценивать нечего: он уходит из
+    внеоборотных активов целиком, а его остаточная стоимость становится убытком. Стоимость в
+    карточке при этом не трогается: она остаётся историей — за сколько купили и сколько успели
+    самортизировать.
     """
     if report.status != "proposed":
         raise LlmCallError("Это предложение уже обработано")
 
     report.decided_by_user_id = user_id
     report.decided_at = datetime.now(UTC)
+
+    if report.proposed_disposal:
+        if not accept:
+            report.status = "dismissed"
+            await session.flush()
+            return report
+        asset = await session.get(FixedAsset, report.asset_id)
+        if asset is None:
+            raise LlmCallError("Объект не найден")
+        await dispose_asset(
+            session,
+            asset=asset,
+            reason=report.message,
+            user_id=user_id,
+            condition_report_id=report.id,
+        )
+        report.status = "applied"
+        await session.flush()
+        return report
 
     proposal = (
         report.proposed_useful_life_months if report.kind == "purchase" else report.proposed_cost
