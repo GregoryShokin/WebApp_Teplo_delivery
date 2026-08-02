@@ -416,15 +416,21 @@ export function PayrollAdvancesRoute() {
                   {issueEmployeeId ? (
                     availabilityQuery.isLoading ? (
                       <span className="text-xs text-muted-foreground">Считаем заработанное…</span>
-                    ) : showAvailabilityNote ? (
-                      <span className="text-xs text-amber-600">{availability!.note}</span>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {isLoan ? "В пределах заработанного" : "Доступно к авансу"}:{" "}
-                        <b className="font-medium text-foreground">
-                          {formatMoney(isLoan ? loanReference : available)}
-                        </b>
-                      </span>
+                      // Сумма показывается ВСЕГДА, нота — пояснением под ней. Раньше нота
+                      // подменяла сумму, и любое пояснение (например «отпускные в аванс не
+                      // входят») прятало само доступное число.
+                      <div className="grid gap-1">
+                        <span className="text-xs text-muted-foreground">
+                          {isLoan ? "В пределах заработанного" : "Доступно к авансу"}:{" "}
+                          <b className="font-medium text-foreground">
+                            {formatMoney(isLoan ? loanReference : available)}
+                          </b>
+                        </span>
+                        {showAvailabilityNote ? (
+                          <span className="text-xs text-amber-600">{availability!.note}</span>
+                        ) : null}
+                      </div>
                     )
                   ) : null}
                   {availabilityReady && advanceOverEarned ? (

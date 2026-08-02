@@ -10,6 +10,14 @@
   калькулятора с `period.end = as_of` по УЖЕ загруженным явкам ≤ as_of (решение:
   «из загруженных явок», без live-iiko в момент выдачи). `total_payable` — netto.
 
+Отпускные одним траншем (`vacation_period.payout_date`) в earned-to-date НЕ входят
+(решение владельца 02.08.2026: «аванс только за отработанное»). Транш цепляется к
+ведомости по `payroll_date`, а не по окну дат, поэтому в провизорном прогоне он давал
+бы полную сумму ЕЩЁ НЕ ОТГУЛЯННОГО отпуска с первого дня недели — то есть кредит под
+будущее, а не раннюю выплату заработанного. Ведомость их платит по-прежнему, а диалог
+выдачи объясняет разницу нотой (`_vacation_lump_note`). Подённые отпускные (отпуск без
+`payout_date`) окном дат ограничены — там за as_of ничего не утекает, они остаются.
+
 Доступно к авансу = earned-to-date − уже выданные авансы за текущий период.
 
 Отсечка «день выплаты»: в САМ день выплаты ведомости заработанное уходит сотруднику
@@ -34,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AttendanceEntry, Employee, PayrollPeriod, SalaryAdvance
+from app.services import vacation_service
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import (
     HALF_MONTH_SPLIT_DAY,
@@ -210,6 +219,44 @@ async def _dishwasher_earned(
     return earned, start, end
 
 
+def _money(amount: Decimal) -> str:
+    """1234567.00 → «1 234 567», 1234.50 → «1 234,50».
+
+    Разряды разделяет НЕРАЗРЫВНЫЙ пробел (U+00A0) — так же форматирует деньги фронт
+    (`Intl.NumberFormat('ru-RU')` в `formatMoney`), поэтому сумма не переносится по
+    строке посередине числа.
+    """
+    quantized = amount.quantize(_CENTS)
+    text = f"{quantized:,.2f}".replace(",", " ").replace(".", ",")
+    return text[:-3] if text.endswith(",00") else text
+
+
+async def _vacation_lump_note(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    payroll_date: date,
+) -> str | None:
+    """Пояснение, если в ведомости периода лежат отпускные одним траншем.
+
+    Они выплачиваются ведомостью, но в аванс не входят: отпуск на дату аванса ещё не
+    отгулян, а аванс — только в пределах заработанного (см. докстринг модуля). Без
+    этой строки разница между «доступно к авансу» и суммой ведомости выглядит ошибкой.
+    """
+    payouts = await vacation_service.vacation_payouts_for_payroll_date(
+        session, payroll_date=payroll_date
+    )
+    total = sum(
+        (decimal(payout.amount) for payout in payouts if payout.employee_id == employee_id),
+        Decimal("0"),
+    )
+    if total <= 0:
+        return None
+    return (
+        f"Отпускные {_money(total)}\u00a0₽ выплатятся ведомостью "
+        f"{payroll_date.strftime('%d.%m.%Y')} и в аванс не входят"
+    )
+
+
 async def _production_earned(
     session: AsyncSession,
     employee: Employee,
@@ -245,7 +292,13 @@ async def _production_earned(
         payroll_date=period.payroll_date,
         status="open",
     )
-    result = await calculate_payroll_lines(session, provisional, uuid.uuid4(), entries)
+    result = await calculate_payroll_lines(
+        session,
+        provisional,
+        uuid.uuid4(),
+        entries,
+        include_vacation_payout_lump=False,
+    )
     if result.blocking_issues:
         return (
             Decimal("0.00"),
@@ -257,7 +310,8 @@ async def _production_earned(
         (decimal(line.total_payable) for line in result.lines if line.employee_id == employee.id),
         Decimal("0"),
     )
-    return earned.quantize(_CENTS), period.start_date, as_of, None
+    note = await _vacation_lump_note(session, employee.id, period.payroll_date)
+    return earned.quantize(_CENTS), period.start_date, as_of, note
 
 
 async def _already_advanced_in_period(

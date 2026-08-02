@@ -101,9 +101,10 @@ async def test_production_earned_sums_total_payable_and_truncates_entries(
 
         captured: dict = {}
 
-        async def fake_calc(_session, provisional, _run_id, entries):
+        async def fake_calc(_session, provisional, _run_id, entries, **kwargs):
             captured["period_end"] = provisional.end_date
             captured["entry_dates"] = sorted(entry.work_date for entry in entries)
+            captured["lump"] = kwargs.get("include_vacation_payout_lump")
             line = PayrollLine(employee_id=cook.id, role="Повар", total_payable=Decimal("3000"))
             return PayrollCalculationResult(lines=[line], blocking_issues=[], summary={})
 
@@ -119,6 +120,8 @@ async def test_production_earned_sums_total_payable_and_truncates_entries(
         # Провизорный период усечён до as_of; явка после as_of отброшена.
         assert captured["period_end"] == AS_OF
         assert captured["entry_dates"] == [date(2026, 6, 4)]
+        # Аванс — только за отработанное: лумп-отпускные в прогон не идут.
+        assert captured["lump"] is False
 
 
 async def test_production_earned_zero_on_payout_date(
@@ -137,7 +140,7 @@ async def test_production_earned_zero_on_payout_date(
 
         captured: dict = {}
 
-        async def fake_calc(_session, provisional, _run_id, entries):
+        async def fake_calc(_session, provisional, _run_id, entries, **_kwargs):
             captured["period_end"] = provisional.end_date
             captured["entry_dates"] = sorted(entry.work_date for entry in entries)
             line = PayrollLine(employee_id=cook.id, role="Повар", total_payable=Decimal("3000"))
@@ -189,7 +192,7 @@ async def test_production_payout_gate_survives_precreated_next_week(
         session.add(_entry(cook.id, week_a.id, WEEK_END))
         await session.commit()
 
-        async def fake_calc(_session, provisional, _run_id, entries):
+        async def fake_calc(_session, provisional, _run_id, entries, **_kwargs):
             line = PayrollLine(employee_id=cook.id, role="Повар", total_payable=Decimal("3000"))
             return PayrollCalculationResult(lines=[line], blocking_issues=[], summary={})
 

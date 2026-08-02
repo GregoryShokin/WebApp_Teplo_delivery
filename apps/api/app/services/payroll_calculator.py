@@ -177,16 +177,30 @@ async def calculate_payroll_lines(
     line_deposit_overrides: Mapping[tuple[uuid.UUID, str], Mapping[str, Any]] | None = None,
     rate_versions_override: Iterable[Mapping[str, Any]] | None = None,
     deposit_payout_schedules: Mapping[uuid.UUID, Mapping[str, Any]] | None = None,
+    *,
+    include_vacation_payout_lump: bool = True,
 ) -> PayrollCalculationResult:
+    """Строки ведомости за период.
+
+    ``include_vacation_payout_lump=False`` выкидывает лумп-транш отпускных из прогона.
+    Он цепляется к ведомости по ``period.payroll_date`` и потому НЕ ограничен окном дат:
+    в провизорном прогоне «сколько заработано на дату» (аванс) он давал бы полную сумму
+    ещё не отгулянного отпуска с первого же дня недели. Подённые отпускные (отпуска без
+    ``payout_date``) окном дат ограничены и остаются.
+    """
     entries = list(entries)
     vacation_days = await vacation_service.vacation_days_for_payroll_period(
         session,
         period_start=period.start_date,
         period_end=period.end_date,
     )
-    vacation_payouts = await vacation_service.vacation_payouts_for_payroll_date(
-        session,
-        payroll_date=period.payroll_date,
+    vacation_payouts = (
+        await vacation_service.vacation_payouts_for_payroll_date(
+            session,
+            payroll_date=period.payroll_date,
+        )
+        if include_vacation_payout_lump
+        else []
     )
     # Для лумп-выплат роль/категория резолвятся по первому дню отпуска — добавляем
     # эти (сотрудник, дата) в загрузку назначений/должностей наравне с днями отпуска.

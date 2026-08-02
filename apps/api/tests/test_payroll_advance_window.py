@@ -159,7 +159,7 @@ async def test_refresh_window_enables_midweek_advance(
         # Выручку кешируем по ЗАКРЫТЫМ дням: вт(07)…чт(09); пятницу (сегодня) не берём.
         assert revenue_calls == [(TUESDAY, date(2026, 7, 9))]
 
-        async def fake_calc(_session, provisional, _run_id, entries):
+        async def fake_calc(_session, provisional, _run_id, entries, **_kwargs):
             line = PayrollLine(
                 employee_id=cook.id, role="Повар", total_payable=Decimal("4500")
             )
