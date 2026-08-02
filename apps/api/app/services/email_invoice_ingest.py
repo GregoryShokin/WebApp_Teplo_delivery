@@ -761,14 +761,10 @@ async def delete_intake_forever(session: AsyncSession, intake: EmailInvoiceIntak
         await session.delete(invoice)
 
 
-async def send_intake_to_bank(
-    session: AsyncSession, intake: EmailInvoiceIntake, *, actor_user_id: uuid.UUID | None
-) -> None:
-    """Создать банк-черновик по подтверждённому счёту — ОБЩИЙ путь для ручной кнопки «Отправить
-    в банк» и плановой джобы ``send_scheduled_payments``. Деньги не списываются: уходит черновик
-    на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
-    решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
-    даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
+async def _prepare_intake_for_bank(
+    session: AsyncSession, intake: EmailInvoiceIntake
+) -> SupplierInvoice:
+    """Проверить, что по строке вообще есть что отправлять, и вернуть её счёт."""
     if intake.status != "linked" or intake.invoice_id is None:
         raise payments.CounterpartyPaymentError("Счёт ещё не подтверждён")
     invoice = await session.get(SupplierInvoice, intake.invoice_id)
@@ -786,12 +782,49 @@ async def send_intake_to_bank(
             "Для этого контрагента обязателен период оказания услуги — укажите даты"
         )
     await service_periods.sync_invoice_accrual(session, invoice)
+    return invoice
+
+
+async def send_intakes_to_bank(
+    session: AsyncSession,
+    intakes: list[EmailInvoiceIntake],
+    *,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    """Отправить в банк ОДНИМ черновиком все переданные счета.
+
+    Один платёж на несколько счетов — не оптимизация, а требование владельца (02.08.2026):
+    энергетик за визит привозит два акта, доплату за прошлый месяц и аванс за текущий, а платятся
+    они одним переводом одному получателю. Дробить платёж ради учёта значит заставлять человека
+    врать банку. Разные периоды у пачки счетов допустимы: период живёт на каждом счёте
+    отдельно, и признание расхода идёт по нему, а не по черновику.
+
+    Проверяем ВСЕ строки до создания черновика: отказ на середине оставил бы часть счетов
+    отправленными, а человек нажимал одну кнопку и ждёт одного исхода. ``payments.*`` ошибки
+    (один контрагент, неподтверждённые реквизиты) поднимаются наружу как есть.
+    """
+    if not intakes:
+        raise payments.CounterpartyPaymentError("Не выбрано ни одного счёта")
+    invoices = [await _prepare_intake_for_bank(session, intake) for intake in intakes]
     await payments.create_payment_draft_for_invoices(
-        session, invoice_ids=[intake.invoice_id], actor_user_id=actor_user_id
+        session, invoice_ids=[invoice.id for invoice in invoices], actor_user_id=actor_user_id
     )
-    if intake.scheduled_send_date is not None:
-        intake.scheduled_send_date = None
+    scheduled = [intake for intake in intakes if intake.scheduled_send_date is not None]
+    if scheduled:
+        for intake in scheduled:
+            intake.scheduled_send_date = None
         await session.commit()
+
+
+async def send_intake_to_bank(
+    session: AsyncSession, intake: EmailInvoiceIntake, *, actor_user_id: uuid.UUID | None
+) -> None:
+    """Создать банк-черновик по подтверждённому счёту — ОБЩИЙ путь для ручной кнопки «Отправить
+    в банк» и плановой джобы ``send_scheduled_payments``. Деньги не списываются: уходит черновик
+    на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
+    решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
+    даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
+    await send_intakes_to_bank(session, [intake], actor_user_id=actor_user_id)
 
 
 async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:

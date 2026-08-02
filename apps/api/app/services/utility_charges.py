@@ -57,6 +57,7 @@ UTILITY_INVOICE_SOURCE = "utility"
 __all__ = [
     "UTILITY_INVOICE_SOURCE",
     "UtilityChargeError",
+    "UtilityMonthTakenError",
     "build_utility_documents",
     "expected_periods",
     "intake_external_id",
@@ -66,6 +67,20 @@ __all__ = [
 
 class UtilityChargeError(RuntimeError):
     """Проведение невозможно: причина написана так, чтобы её можно было показать человеку."""
+
+
+class UtilityMonthTakenError(UtilityChargeError):
+    """Месяц по этому потоку уже проведён — принесли ту же бумагу второй раз.
+
+    Отдельный тип, а не текст в общей ошибке: для приёмки это не сбой, а ПОВТОР, и вести себя
+    она обязана как с дублем письма — привязать строку к уже существующему документу и увести
+    её из очереди оплат, а не показывать человеку красное «не удалось». Ссылка на найденный
+    документ едет в ``invoice`` ровно для этой привязки.
+    """
+
+    def __init__(self, message: str, *, invoice: SupplierInvoice) -> None:
+        super().__init__(message)
+        self.invoice = invoice
 
 
 def month_bounds(month: date) -> tuple[date, date]:
@@ -119,9 +134,7 @@ def invoice_title(kind: str, month: date) -> str:
     return f"Возмещение: {label.lower()}, {month:%m.%Y}"
 
 
-async def _existing_invoice(
-    session: AsyncSession, external_id: str
-) -> SupplierInvoice | None:
+async def _existing_invoice(session: AsyncSession, external_id: str) -> SupplierInvoice | None:
     return await session.scalar(
         select(SupplierInvoice).where(
             SupplierInvoice.source == UTILITY_INVOICE_SOURCE,
@@ -206,17 +219,19 @@ async def build_utility_documents(
     # упрётся сюда с понятным отказом, а не в IntegrityError. Это защита именно от ПЕРЕСНЯТОГО
     # документа — у него другие байты, и дедуп по содержимому файла его не ловит.
     if (existing := await _existing_invoice(session, bill_external_id)) is not None:
-        raise UtilityChargeError(
+        raise UtilityMonthTakenError(
             f"За {month:%m.%Y} по этому потоку счёт уже заведён (документ «{existing.number}»). "
-            "Отзовите его, если сумма изменилась"
+            "Отзовите его, если сумма изменилась",
+            invoice=existing,
         )
     if (
         closing_external_id is not None
         and (existing := await _existing_invoice(session, closing_external_id)) is not None
     ):
-        raise UtilityChargeError(
+        raise UtilityMonthTakenError(
             f"За {month:%m.%Y} по этому потоку долг уже проведён "
-            f"(документ «{existing.number}»). Отзовите его, если сумма изменилась"
+            f"(документ «{existing.number}»). Отзовите его, если сумма изменилась",
+            invoice=existing,
         )
 
     bill = SupplierInvoice(

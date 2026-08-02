@@ -10,15 +10,27 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models import (
     Counterparty,
@@ -28,6 +40,7 @@ from app.models import (
 )
 from app.models.email_invoice_intake import EMAIL_INTAKE_STATUSES
 from app.services import counterparty_payments as payments
+from app.services import document_uploads, utility_images, utility_intake
 from app.services import email_invoice_ingest as ingest
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
@@ -86,6 +99,23 @@ class IntakeRead(BaseModel):
     # Закреплённая за контрагентом статья ДДС — предзаполняет окно оплаты.
     default_dds_article_id: uuid.UUID | None
     has_pdf: bool
+    # Тип вложения: у почты это всегда PDF, у коммунальной платёжки — фотография. Фронту он
+    # нужен, чтобы показать снимок картинкой, а не пустым местом в PDF-просмотрщике.
+    attachment_mime: str | None
+    # Коммунальная платёжка: поток и разложенные суммы. У воды расход и платёж совпадают, у
+    # электричества нет — из потребления вычтен внесённый аванс, и показывать надо оба числа.
+    utility_account_id: uuid.UUID | None
+    utility_kind: str | None
+    utility_kind_label: str | None
+    # 'actual' — акт за факт (несёт расход), 'advance' — авансовый (только платится).
+    utility_act_kind: str | None
+    utility_expense_amount: str | None
+    utility_payable_amount: str | None
+    utility_period_label: str | None
+    # Подсказки («есть только акт за факт — ждём авансовый») не мешают платить: они объясняют,
+    # чего ждать дальше. Блокировки — то, из-за чего строка ждёт рук человека.
+    utility_hints: list[str]
+    utility_blocking: list[str]
     # Дата плановой авто-отправки в банк (ISO). None = отправка только вручную.
     scheduled_send_date: str | None
     created_at: datetime
@@ -127,11 +157,33 @@ class ConfirmIn(BaseModel):
     apply_requisites: bool = False
 
 
+class ConfirmUtilityIn(BaseModel):
+    """Ручное проведение коммунальной платёжки: поток, период и две суммы.
+
+    Сумм именно две, потому что в бумаге их две. У воды они совпадают, у фактического акта
+    электроэнергии — нет: расход месяца 95 402 ₽, а доплатить надо 30 402 ₽, потому что аванс
+    уже внесён. Пустой ``expense_amount`` — авансовый документ: платится, но расхода не несёт.
+    """
+
+    utility_account_id: uuid.UUID
+    period_start: date
+    period_end: date
+    expense_amount: Decimal | None = None
+    payable_amount: Decimal
+
+
 class SendToBankIn(BaseModel):
     # Статья ДДС для оплаты этого счёта (None → дефолтная «Оплата поставщикам» при гашении).
     dds_article_id: uuid.UUID | None = None
     # Закрепить выбранную статью за контрагентом (предзаполнит окно при следующей оплате).
     remember_for_counterparty: bool = False
+
+
+class SendManyToBankIn(BaseModel):
+    """Несколько счетов одним платежом. Статью здесь не спрашиваем: у пачки она уже проставлена
+    на каждом счёте (у коммуналки — из потока), а одна общая перетёрла бы разные."""
+
+    intake_ids: list[uuid.UUID]
 
 
 class ScheduleSendIn(BaseModel):
@@ -160,6 +212,7 @@ def _to_read(
     service_billing_mode: str | None = None,
 ) -> IntakeRead:
     rec: dict[str, Any] = intake.recognition or {}
+    utility: dict[str, Any] = rec.get("utility") or {}
     period_start_value = (
         invoice_service_period_start.isoformat()
         if invoice_service_period_start
@@ -223,6 +276,16 @@ def _to_read(
         invoice_dds_article_id=invoice_dds_article_id,
         default_dds_article_id=default_dds_article_id,
         has_pdf=intake.pdf_bytes is not None,
+        attachment_mime=intake.attachment_mime,
+        utility_account_id=intake.utility_account_id,
+        utility_kind=utility.get("kind"),
+        utility_kind_label=utility.get("kind_label"),
+        utility_act_kind=utility.get("act_kind"),
+        utility_expense_amount=utility.get("expense_amount"),
+        utility_payable_amount=utility.get("payable_amount"),
+        utility_period_label=utility.get("period_label"),
+        utility_hints=list(utility.get("hints") or []),
+        utility_blocking=list(utility.get("blocking") or []),
         scheduled_send_date=(
             intake.scheduled_send_date.isoformat() if intake.scheduled_send_date else None
         ),
@@ -443,19 +506,103 @@ async def get_intake_pdf(
     intake_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Response:
+    """Исходный документ строки: PDF из письма или фотография квитанции.
+
+    Тип отдаём тот, что определили на приёме ПО СОДЕРЖИМОМУ файла. Пока источник был один,
+    ``application/pdf`` был константой — на снимке она превращала окно разбора в пустой
+    прямоугольник, и проверять разбор человеку было не по чему. HEIC с айфона конвертируем на
+    лету: в браузерах, кроме Safari, он не показывается вовсе.
+    """
     intake = await _get_intake(session, intake_id)
     if not intake.pdf_bytes:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF недоступен")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл недоступен")
+    content, media_type = utility_images.to_displayable(
+        bytes(intake.pdf_bytes), intake.attachment_mime or "application/pdf"
+    )
     # Имя файла кириллическое, а HTTP-заголовки только latin-1 → ASCII-фолбэк + RFC 5987
     # (filename*) с percent-encoding, иначе Starlette роняет ответ («Network Error» в браузере).
     raw_name = intake.attachment_filename or "invoice.pdf"
     ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "invoice.pdf"
     disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw_name)}"
     return Response(
-        content=bytes(intake.pdf_bytes),
-        media_type="application/pdf",
+        content=content,
+        media_type=media_type,
         headers={"Content-Disposition": disposition},
     )
+
+
+@router.post(
+    "/intakes/upload",
+    response_model=list[IntakeRead],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=OPERATE,
+)
+async def upload_intake(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    file: Annotated[UploadFile, File(description="Фотография квитанции или PDF")],
+    utility_account_id: Annotated[uuid.UUID | None, Form()] = None,
+) -> list[IntakeRead]:
+    """Принести документ руками — третий источник «Страницы на оплату» рядом с почтой и ЭДО.
+
+    Отвечает СПИСКОМ: один файл несёт столько документов, сколько в нём есть. Энергетик за
+    визит выдаёт два акта — за факт и авансовый, — и это две строки очереди оплат с разными
+    периодами, а не одна на общую сумму.
+
+    Читаем с ограничением по объёму, а не целиком: 25 МБ — потолок для фотографии, и класть в
+    память заведомо больший файл, чтобы потом его отвергнуть, незачем.
+    """
+    content = await file.read(document_uploads.MAX_UPLOAD_BYTES + 1)
+    try:
+        intakes = await utility_intake.ingest_document(
+            session,
+            content=content,
+            filename=file.filename,
+            settings=settings,
+            account_id=utility_account_id,
+            actor_user_id=actor.user_id,
+        )
+    except utility_intake.UtilityIntakeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    ids = [intake.id for intake in intakes]
+    await session.commit()
+    return [await _load_read(session, intake_id) for intake_id in ids]
+
+
+@router.post(
+    "/intakes/{intake_id}/confirm-utility", response_model=IntakeRead, dependencies=OPERATE
+)
+async def confirm_utility(
+    intake_id: uuid.UUID,
+    body: ConfirmUtilityIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> IntakeRead:
+    """Провести коммунальную платёжку руками, когда разбор не справился.
+
+    Своя дверь рядом с ``/confirm``, потому что вопросы другие: там оператор правит контрагента
+    и реквизиты, здесь — поток, период и ДВЕ суммы. Пустой ``expense_amount`` означает авансовый
+    документ: он платится, но расхода не несёт — его признает будущий акт за факт.
+    """
+    intake = await _get_intake(session, intake_id)
+    try:
+        await utility_intake.confirm_utility_intake(
+            session,
+            intake,
+            account_id=body.utility_account_id,
+            period_start=body.period_start,
+            period_end=body.period_end,
+            expense_amount=body.expense_amount,
+            payable_amount=body.payable_amount,
+            actor_user_id=actor.user_id,
+        )
+    except utility_intake.UtilityIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return await _load_read(session, intake_id)
 
 
 @router.get("/intakes/{intake_id}", response_model=IntakeRead, dependencies=READ)
@@ -477,6 +624,16 @@ async def confirm_intake(
     if intake.status == "ignored":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Запись помечена как не счёт"
+        )
+    # Признак коммунальной строки — опознанный РЕСУРС, а не сам факт загрузки файлом: снимок
+    # обычного счёта поставщика тоже приходит сюда, и его как раз проводят этим путём.
+    if ((intake.recognition or {}).get("utility") or {}).get("kind"):
+        # Коммунальную платёжку этот путь провёл бы как обычный счёт из письма: контрагентом
+        # стал бы ресурсник из бумаги (платим-то мы арендодателю), расход осел бы без помещения,
+        # а закрывающий документ не появился бы вовсе — то есть платёж без признания расхода.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Коммунальную платёжку проводят через окно коммунальных услуг",
         )
     try:
         await ingest.confirm_intake_with_review(
@@ -547,6 +704,36 @@ async def send_to_bank(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="Банк недоступен, попробуйте позже"
         ) from exc
     return await _load_read(session, intake_id)
+
+
+@router.post("/intakes/send-to-bank", response_model=list[IntakeRead], dependencies=OPERATE)
+async def send_many_to_bank(
+    body: SendManyToBankIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> list[IntakeRead]:
+    """Отправить несколько счетов ОДНИМ платежом.
+
+    Владелец платит энергетику один перевод на два акта — доплату за прошлый месяц и аванс за
+    текущий. Раньше пришлось бы делать два перевода: очередь оплат умела отправлять только по
+    одному счёту. Периоды у счетов при этом разные, и это нормально — период живёт на счёте, а
+    не на платеже.
+    """
+    intakes = [await _get_intake(session, intake_id) for intake_id in body.intake_ids]
+    try:
+        await ingest.send_intakes_to_bank(session, intakes, actor_user_id=actor.user_id)
+    except payments.RequisitesNotVerifiedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Реквизиты контрагента не подтверждены — откройте «Разобрать» и подтвердите их",
+        ) from exc
+    except payments.CounterpartyPaymentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except (BankFetchError, BankCredentialsError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="Банк недоступен, попробуйте позже"
+        ) from exc
+    return [await _load_read(session, intake.id) for intake in intakes]
 
 
 @router.post("/intakes/{intake_id}/schedule-send", response_model=IntakeRead, dependencies=OPERATE)
