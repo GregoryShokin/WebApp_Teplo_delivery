@@ -37,6 +37,7 @@ from app.models import (
     CounterpartyPayableProfile,
     EmailInvoiceIntake,
     SupplierInvoice,
+    User,
 )
 from app.models.email_invoice_intake import EMAIL_INTAKE_STATUSES
 from app.services import counterparty_payments as payments
@@ -291,6 +292,20 @@ def _to_read(
         ),
         created_at=intake.created_at,
     )
+
+
+async def _uploader_label(session: AsyncSession, actor: CurrentActor) -> str:
+    """«Кто принёс» для строки, загруженной кнопкой.
+
+    У почтовой строки в этом столбце стоит адрес отправителя, у телеграмной — имя приславшего.
+    Пустое место у загруженной руками читалось бы как потерянный источник, а вопрос «чей это
+    документ» задают именно к строкам с чужими суммами.
+    """
+    if actor.user_id is None:
+        return "Загружено вручную"
+    user = await session.get(User, actor.user_id)
+    who = (user.full_name or user.email) if user is not None else str(actor.user_id)
+    return f"Загрузил: {who}"
 
 
 async def _get_intake(session: AsyncSession, intake_id: uuid.UUID) -> EmailInvoiceIntake:
@@ -562,6 +577,10 @@ async def upload_intake(
             settings=settings,
             account_id=utility_account_id,
             actor_user_id=actor.user_id,
+            # «От кого» заполняем и здесь: у строки из почты в этом столбце стоит адрес
+            # отправителя, и пустое место у принесённой руками выглядело бы как потерянный
+            # источник. Кто загрузил — такой же ответ на вопрос «чей это документ».
+            source_label=await _uploader_label(session, actor),
         )
     except utility_intake.UtilityIntakeError as exc:
         raise HTTPException(

@@ -15,9 +15,11 @@
 таблицы под курсор не нужно, а после перезапуска приложение получит ровно неподтверждённое.
 Повтор того же файла безвреден и без курсора — приёмка узнаёт его по SHA-256.
 
-ЧУЖИХ НЕ СЛУШАЕМ. Имя бота публично, и написать ему может кто угодно. Без белого списка чатов
-любой прохожий заводил бы в учёте обязательства, поэтому пустой список означает «никого»: бот
-отвечает собеседнику его же chat id, чтобы владелец мог внести его в настройку, и на этом всё.
+БЕЗ БЕЛОГО СПИСКА (решение владельца 02.08.2026). Документ принимается от любого, кто написал
+боту: список чатов пришлось бы вести руками при каждом новом отправителе, а имя бота нигде не
+объявлено. Взамен приёмка запоминает ОТПРАВИТЕЛЯ — имя и chat id уходят в поле «от кого» той же
+строки, что видна на «Странице на оплату». Запрета нет, но вопрос «чей это документ и с кого
+спрашивать» отвечается всегда, а сомнительную строку человек исключает одной кнопкой.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ from app.services import utility_intake
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TelegramIntakeError", "allowed_chat_ids", "poll_and_ingest"]
+__all__ = ["TelegramIntakeError", "poll_and_ingest", "sender_label"]
 
 API_BASE = "https://api.telegram.org"
 
@@ -53,18 +55,24 @@ class TelegramIntakeError(RuntimeError):
     """Разговор с Телеграмом не состоялся. Проход прекращается, курсор не двигается."""
 
 
-def allowed_chat_ids(raw: str) -> frozenset[int]:
-    """Разобрать список из настройки. Мусор молча пропускаем — падать из-за опечатки нельзя."""
-    ids: set[int] = set()
-    for part in (raw or "").replace(";", ",").split(","):
-        piece = part.strip()
-        if not piece:
-            continue
-        try:
-            ids.add(int(piece))
-        except ValueError:
-            logger.warning("telegram_intake: в белом списке чатов не число: %r", piece)
-    return frozenset(ids)
+def sender_label(message: dict[str, Any]) -> str:
+    """«Кто прислал» одной строкой — она ложится в поле «от кого» и видна в списке.
+
+    Белого списка нет, поэтому отправитель — единственное, что отвечает на вопрос «чей это
+    документ». Имя берём как в мессенджере, chat id оставляем рядом: имена меняются и
+    повторяются, id — нет, и по нему человека находят однозначно.
+    """
+    sender = message.get("from") or {}
+    chat_id = (message.get("chat") or {}).get("id")
+    name = " ".join(
+        part
+        for part in (sender.get("first_name"), sender.get("last_name"))
+        if isinstance(part, str) and part
+    )
+    username = sender.get("username")
+    if username:
+        name = f"{name} @{username}".strip() if name else f"@{username}"
+    return f"Telegram · {name or 'без имени'} ({chat_id})"
 
 
 # Токен бота стоит в ПУТИ запроса (`/bot<токен>/getUpdates`), а httpx на уровне INFO пишет URL
@@ -191,21 +199,6 @@ async def _handle_message(
     if chat_id is None:
         return "skipped"
 
-    allowed = allowed_chat_ids(settings.telegram_intake_allowed_chat_ids)
-    if chat_id not in allowed:
-        # Не молчим: без ответа человек не поймёт, почему бот его игнорирует, а chat id взять
-        # ему больше неоткуда. Документ при этом не заводим.
-        await _notify(
-            client,
-            token,
-            chat_id,
-            "Этот чат не разрешён для приёмки документов.\n"
-            f"Ваш chat id: {chat_id} — добавьте его в настройку "
-            "TELEGRAM_INTAKE_ALLOWED_CHAT_IDS.",
-        )
-        logger.warning("telegram_intake: сообщение из чужого чата %s отклонено", chat_id)
-        return "rejected"
-
     picked = _pick_file(message)
     if picked is None:
         await _notify(
@@ -230,6 +223,7 @@ async def _handle_message(
             content=content,
             filename=filename or str(file_path).rsplit("/", 1)[-1],
             settings=settings,
+            source_label=sender_label(message),
         )
     except utility_intake.UtilityIntakeError as exc:
         await session.rollback()

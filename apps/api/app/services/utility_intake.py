@@ -270,9 +270,15 @@ def _new_intake(
     content: bytes,
     ocr_method: str,
     confidence: float | None,
+    source_label: str | None = None,
 ) -> EmailInvoiceIntake:
     return EmailInvoiceIntake(
         mailbox=PHOTO_MAILBOX,
+        # «От кого» — та же колонка, в которой у почтовых строк стоит адрес отправителя, и тот
+        # же столбец на экране. У бота белого списка нет (решение владельца 02.08.2026), и
+        # отправитель — единственное, что отвечает на вопрос «чей это документ»: у документа с
+        # чужой суммой должно быть имя, иначе разбираться будет не с кем.
+        from_addr=source_label,
         attachment_filename=filename,
         attachment_mime=mime,
         attachment_sha256=sha,
@@ -342,6 +348,7 @@ async def ingest_document(
     settings: Settings,
     account_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
+    source_label: str | None = None,
 ) -> list[EmailInvoiceIntake]:
     """Принять файл и завести по нему строки «Страницы на оплату». Не коммитит.
 
@@ -383,6 +390,7 @@ async def ingest_document(
             content=content,
             ocr_method=ocr_method,
             confidence=None,
+            source_label=source_label,
         )
         intake.status = "needs_review"
         intake.recognition = {
@@ -413,6 +421,7 @@ async def ingest_document(
             content=content,
             ocr_method=ocr_method,
             confidence=document.confidence,
+            source_label=source_label,
         )
         session.add(intake)
         await session.flush()

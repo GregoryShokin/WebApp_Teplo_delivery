@@ -3,8 +3,8 @@
 Бот — курьер, а не бухгалтер: всю работу делает ``utility_intake``, и проверять её здесь
 незачем (у неё свои тесты). Здесь закреплено другое — то, что ломается именно в курьере:
 
-* чужому не отвечают документом. Имя бота публично, написать ему может кто угодно, и без
-  белого списка чатов посторонний заводил бы в учёте обязательства;
+* у каждой строки есть ОТПРАВИТЕЛЬ. Белого списка нет (решение владельца 02.08.2026), поэтому
+  имя приславшего — единственное, что отвечает на вопрос «чей это документ»;
 * человек получает ОТВЕТ с суммами. Переслать документ в тишину — то же самое, что потерять
   его: владелец не узнает ни что документ принят, ни какие числа система из него достала;
 * очередь не встаёт колом. Ссылка на файл в Телеграме живёт около часа, и сбойное сообщение,
@@ -83,6 +83,7 @@ def _photo_update(update_id: int, *, chat_id: int = OWNER_CHAT, file_id: str = "
         "message": {
             "message_id": update_id,
             "chat": {"id": chat_id, "type": "private"},
+            "from": {"id": chat_id, "first_name": "Григорий", "username": "gshokin"},
             "photo": [
                 {"file_id": f"{file_id}-small", "file_size": 1000},
                 {"file_id": file_id, "file_size": 90000},
@@ -114,9 +115,6 @@ def _reset_cursor():
 def settings_with_bot(monkeypatch: pytest.MonkeyPatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "telegram_intake_bot_token", TOKEN, raising=False)
-    monkeypatch.setattr(
-        settings, "telegram_intake_allowed_chat_ids", str(OWNER_CHAT), raising=False
-    )
     return settings
 
 
@@ -203,13 +201,18 @@ async def test_forwarded_photo_becomes_payable_row(
         assert "95402.00" in reply["text"], "расход периода обязан быть назван отдельно"
 
 
-async def test_stranger_gets_only_his_chat_id(
+async def test_any_sender_is_accepted_and_remembered(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     settings_with_bot,
     ocr_act,
 ) -> None:
-    """Чужой чат документа не заводит. Имя бота публично — иначе учёт наполнял бы прохожий."""
+    """Белого списка нет — принимаем от любого, но помним, кто прислал.
+
+    Владелец отказался от списка 02.08.2026: вести его руками при каждом новом отправителе
+    дороже, чем разобрать спорную строку. Взамен отправитель обязан быть записан — иначе у
+    документа с чужой суммой не окажется имени, и спрашивать будет не с кого.
+    """
     telegram = FakeTelegram([[_photo_update(11, chat_id=999)]], {"act": JPEG})
     monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
 
@@ -218,11 +221,13 @@ async def test_stranger_gets_only_his_chat_id(
 
         result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
 
-        assert result.get("rejected") == 1
-        assert await _intake_count(session) == 0
-        (reply,) = telegram.sent
-        # Свой chat id человеку взять больше неоткуда — без него он не сможет попросить доступ.
-        assert "999" in reply["text"]
+        assert result.get("linked") == 1
+        row = await session.scalar(select(EmailInvoiceIntake))
+        assert row is not None
+        assert row.from_addr is not None
+        # Имя и chat id рядом: имена повторяются и меняются, id — нет.
+        assert "Григорий" in row.from_addr
+        assert "999" in row.from_addr
 
 
 async def test_text_without_file_is_answered_not_ignored(

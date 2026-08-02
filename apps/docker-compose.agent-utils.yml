@@ -53,7 +53,6 @@ services:
       # некуда. Значения подставляются из окружения запускающего:
       #   docker compose --env-file ../.env -p teplo-utils -f docker-compose.agent-utils.yml up -d
       TELEGRAM_INTAKE_BOT_TOKEN: ${TELEGRAM_INTAKE_BOT_TOKEN:-}
-      TELEGRAM_INTAKE_ALLOWED_CHAT_IDS: ${TELEGRAM_INTAKE_ALLOWED_CHAT_IDS:-}
       # Фоновых джоб на стенде нет (SCHEDULER_ENABLED=false, контейнера scheduler тоже нет),
       # поэтому опрос бота здесь запускают руками — иначе стенд и прод дрались бы за getUpdates.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
