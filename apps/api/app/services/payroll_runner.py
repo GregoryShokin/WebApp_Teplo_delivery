@@ -567,6 +567,7 @@ async def run_payroll(
             period_start=period.start_date,
             period_end=period.end_date,
             payroll_date=period.payroll_date,
+            payroll_period_id=period.id,
         )
         run.status = "completed"
         run.finished_at = datetime.now(UTC)
@@ -1185,6 +1186,70 @@ def apply_fund_payouts_if_due(
     return apply_fund_payouts_to_accounts(accounts)
 
 
+async def run_has_stale_vacation_payouts(
+    session: AsyncSession, run: PayrollRun, period: PayrollPeriod
+) -> bool:
+    """Разошлись ли отпускные, запечённые в расчёте, с текущим состоянием отпусков.
+
+    True → финализировать нельзя, нужен пересчёт. Закрывает последний путь к двойной
+    выплате: ``finalize_payroll_run`` НЕ пересчитывает ведомость, поэтому после
+    дефинализации можно было перенести отпуск на другую дату, финализировать старый
+    (устаревший) расчёт с его траншем — и получить второй транш из новой ведомости.
+
+    Считаем обе ветки отпускных: лумп-транш (``kind='vacation_payout'``, привязан к
+    ``payroll_date``) и подённые дни (``kind='vacation'``, привязаны к окну периода).
+    Сравниваем поимённо: транш, переехавший с одного сотрудника на другого при равной
+    сумме, — это тоже устаревший расчёт.
+
+    ТОЛЬКО недельный контур. Отпускные выплачиваются недельной ведомостью по построению
+    (``_validate_payout_date`` требует вторник, а вторник — это ``payroll_date`` недели).
+    Полумесячная админская ведомость строк отпуска не содержит вовсе, и без этого условия
+    любое совпадение её даты выплаты со вторником делало бы её нефинализируемой навсегда.
+    """
+    if period.period_type != "week":
+        return False
+    lines = (
+        await session.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id))
+    ).all()
+    baked_lump: dict[uuid.UUID, Decimal] = {}
+    baked_days: set[tuple[str, str]] = set()
+    for line in lines:
+        components = line.components if isinstance(line.components, dict) else {}
+        for day in components.get("days", []) or []:
+            if not isinstance(day, dict):
+                continue
+            if day.get("kind") == "vacation_payout":
+                baked_lump[line.employee_id] = baked_lump.get(
+                    line.employee_id, Decimal("0")
+                ) + decimal(day.get("vacation_pay"))
+            elif day.get("kind") == "vacation" and day.get("date"):
+                baked_days.add((str(line.employee_id), str(day.get("date"))))
+
+    payouts = await vacation_service.vacation_payouts_for_payroll_date(
+        session, payroll_date=period.payroll_date
+    )
+    current_lump: dict[uuid.UUID, Decimal] = {}
+    for payout in payouts:
+        current_lump[payout.employee_id] = current_lump.get(
+            payout.employee_id, Decimal("0")
+        ) + decimal(payout.amount)
+    current_days = {
+        (str(employee_id), work_date.isoformat())
+        for employee_id, work_date in await vacation_service.vacation_days_for_payroll_period(
+            session, period_start=period.start_date, period_end=period.end_date
+        )
+    }
+
+    def _lump_key(values: dict[uuid.UUID, Decimal]) -> dict[str, str]:
+        return {
+            str(emp): str(amount.quantize(Decimal("0.01")))
+            for emp, amount in values.items()
+            if amount != 0
+        }
+
+    return _lump_key(baked_lump) != _lump_key(current_lump) or baked_days != current_days
+
+
 async def finalize_payroll_run(
     session: AsyncSession,
     run_id: uuid.UUID,
@@ -1214,6 +1279,11 @@ async def finalize_payroll_run(
     if await run_has_stale_freelancer_settlements(session, run, period):
         raise PayrollConflictError(
             "Ведомость устарела: посменные выплаты внештатников изменились после расчёта. "
+            "Пересчитайте ведомость перед финализацией."
+        )
+    if await run_has_stale_vacation_payouts(session, run, period):
+        raise PayrollConflictError(
+            "Ведомость устарела: отпускные изменились после расчёта. "
             "Пересчитайте ведомость перед финализацией."
         )
 
@@ -1311,6 +1381,12 @@ async def unfinalize_payroll_run(
     from app.services.payroll_reserves import cancel_run_reserves
 
     await cancel_run_reserves(session, run.id)
+    # Отпуск: возвращаем статус paid → planned. Ссылку на ведомость НЕ трогаем — заморозка
+    # считается по её статусу, поэтому откат и так размораживает отпуск, а стёртая ссылка
+    # не восстановилась бы при повторной финализации без пересчёта.
+    released_vacations = await vacation_service.revert_vacation_paid_status_for_period(
+        session, period.id
+    )
 
     run.status = "completed"
     period.status = "open"
@@ -1333,6 +1409,7 @@ async def unfinalize_payroll_run(
                 finalized_by_user_id_before=previous_finalized_by_user_id,
                 finalized_by_user_id_after=period.finalized_by_user_id,
                 deposit_payload=deposit_payload,
+                released_vacations=released_vacations,
             ),
         )
     )
@@ -1408,6 +1485,7 @@ def payroll_run_event_payload(
     finalized_by_user_id_before: uuid.UUID | None,
     finalized_by_user_id_after: uuid.UUID | None,
     deposit_payload: dict[str, Any],
+    released_vacations: int | None = None,
 ) -> dict[str, Any]:
     return {
         "run_status": {"before": run_status_before, "after": run_status_after},
@@ -1421,6 +1499,11 @@ def payroll_run_event_payload(
             "after": str(finalized_by_user_id_after) if finalized_by_user_id_after else None,
         },
         **deposit_payload,
+        **(
+            {"released_vacations": released_vacations}
+            if released_vacations is not None
+            else {}
+        ),
     }
 
 

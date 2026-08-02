@@ -1055,9 +1055,9 @@
     "semantic_hash": "a11e2ef304ffc2aa6252be0628abb0c3"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/vacations.py": {
-    "mtime": 1783589719.8839355,
-    "ast_hash": "5fb605ff5c5f722d566531f274a2813b",
-    "semantic_hash": "5fb605ff5c5f722d566531f274a2813b"
+    "mtime": 1785680736.2376437,
+    "ast_hash": "9627a0a9a76c9694e37bc440fa468411",
+    "semantic_hash": "9627a0a9a76c9694e37bc440fa468411"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/warehouse.py": {
     "mtime": 1785336772.629393,
@@ -1310,9 +1310,9 @@
     "semantic_hash": "2db38c29ac679dff760d61184cc23d6f"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/vacation.py": {
-    "mtime": 1781644369.1670015,
-    "ast_hash": "161805ccf1b36616d3c66aa11759b1a6",
-    "semantic_hash": "161805ccf1b36616d3c66aa11759b1a6"
+    "mtime": 1785680736.238276,
+    "ast_hash": "cc4a51a08df1c381b6405970b3dc4952",
+    "semantic_hash": "cc4a51a08df1c381b6405970b3dc4952"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/wallet.py": {
     "mtime": 1780501480.396102,
@@ -1415,9 +1415,9 @@
     "semantic_hash": "b49570817726cb437fda495afdefb8ec"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/schemas/vacations.py": {
-    "mtime": 1781644395.7972262,
-    "ast_hash": "e6f452175a2b2fed74596386b90a1d16",
-    "semantic_hash": "e6f452175a2b2fed74596386b90a1d16"
+    "mtime": 1785680736.2384982,
+    "ast_hash": "bb049e560eb4432f3410672b5710027f",
+    "semantic_hash": "bb049e560eb4432f3410672b5710027f"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/scripts/__init__.py": {
     "mtime": 1780516592.386394,
@@ -1755,9 +1755,9 @@
     "semantic_hash": "751e67cf3974dbce52c1f05ea15550d7"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/invoice_recognition.py": {
-    "mtime": 1785668249.2507262,
-    "ast_hash": "f668d502d72b5e21ac817fa78f56800a",
-    "semantic_hash": "f668d502d72b5e21ac817fa78f56800a"
+    "mtime": 1785679713.5897372,
+    "ast_hash": "de02249c89183f0a55d3440bfa3a7986",
+    "semantic_hash": "de02249c89183f0a55d3440bfa3a7986"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/kassa/__init__.py": {
     "mtime": 1781699366.624222,
@@ -1890,9 +1890,9 @@
     "semantic_hash": "2215883f34d953373344c6d6f7475db6"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/payroll_runner.py": {
-    "mtime": 1785498892.187097,
-    "ast_hash": "8cc397402c7f51fbbc24cb195846cbcc",
-    "semantic_hash": "8cc397402c7f51fbbc24cb195846cbcc"
+    "mtime": 1785680736.239137,
+    "ast_hash": "cdadd532ef1f00dab62ee9a344014a76",
+    "semantic_hash": "cdadd532ef1f00dab62ee9a344014a76"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/plan_fact_service.py": {
     "mtime": 1783589719.8914633,
@@ -1960,9 +1960,9 @@
     "semantic_hash": "a8c82357d0f0c131a7824d74506698e4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/vacation_service.py": {
-    "mtime": 1781646236.2938297,
-    "ast_hash": "86bcb495e66923f4c514696a1b5d8355",
-    "semantic_hash": "86bcb495e66923f4c514696a1b5d8355"
+    "mtime": 1785680736.2395546,
+    "ast_hash": "8371ab67cf97a8631a7ff1105281d99f",
+    "semantic_hash": "8371ab67cf97a8631a7ff1105281d99f"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/wallets.py": {
     "mtime": 1782080950.809952,
@@ -2065,9 +2065,9 @@
     "semantic_hash": "39247be860fdf13699dc062eacd7d802"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_invoice_recognition.py": {
-    "mtime": 1785668249.260109,
-    "ast_hash": "96a57f21b75e35d7e5bce49d4fad4ea0",
-    "semantic_hash": "96a57f21b75e35d7e5bce49d4fad4ea0"
+    "mtime": 1785679713.5903559,
+    "ast_hash": "7541d29be29e630bc2912ccc40be5e00",
+    "semantic_hash": "7541d29be29e630bc2912ccc40be5e00"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_invoice_sync.py": {
     "mtime": 1785668249.2606251,
@@ -2485,9 +2485,9 @@
     "semantic_hash": "5b9eab98e8b7239870530fe8f4d51beb"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_payroll.py": {
-    "mtime": 1785335638.5444782,
-    "ast_hash": "77b3355a087460a7432b44ba6fd232d6",
-    "semantic_hash": "77b3355a087460a7432b44ba6fd232d6"
+    "mtime": 1785680736.2400925,
+    "ast_hash": "ed9436d2c1632870001c6fd43bb96327",
+    "semantic_hash": "ed9436d2c1632870001c6fd43bb96327"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_payroll_admin.py": {
     "mtime": 1785498892.189772,
@@ -2930,9 +2930,9 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/lib/api.ts": {
-    "mtime": 1785668249.265173,
-    "ast_hash": "f0deb092422f1eb3dd00226770bf971f",
-    "semantic_hash": "f0deb092422f1eb3dd00226770bf971f"
+    "mtime": 1785680736.2407403,
+    "ast_hash": "e367ec06e74efd52e48209b99a0ef937",
+    "semantic_hash": "e367ec06e74efd52e48209b99a0ef937"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/lib/auth.ts": {
     "mtime": 1780747833.0947237,
@@ -3295,9 +3295,9 @@
     "semantic_hash": "55b7b94462c45e486bf6d76ff371a656"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payroll/run-detail.tsx": {
-    "mtime": 1785498892.1993535,
-    "ast_hash": "b354148b5127a34c0fe8f15c312449eb",
-    "semantic_hash": "b354148b5127a34c0fe8f15c312449eb"
+    "mtime": 1785680736.2415314,
+    "ast_hash": "2aec08a34fc596920c29351181ffdab0",
+    "semantic_hash": "2aec08a34fc596920c29351181ffdab0"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payroll/runs.tsx": {
     "mtime": 1785498892.2026138,
@@ -3330,9 +3330,9 @@
     "semantic_hash": "5167b43a8cd912938ce65163cd2b0fe1"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/shifts/vacations.tsx": {
-    "mtime": 1781646339.1315517,
-    "ast_hash": "fbaf2957a9945846d7677e14754884de",
-    "semantic_hash": "fbaf2957a9945846d7677e14754884de"
+    "mtime": 1785680736.2420268,
+    "ast_hash": "dd6ce68b688d2252bb7ec2037bf0c824",
+    "semantic_hash": "dd6ce68b688d2252bb7ec2037bf0c824"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/staff.tsx": {
     "mtime": 1785173434.9153216,
@@ -3625,9 +3625,9 @@
     "semantic_hash": "a2d02a18c043a86a88db76ff671a884e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/WORK-IN-PROGRESS.md": {
-    "mtime": 1785678451.1528924,
-    "ast_hash": "548e5e77ee6847c3ec8f90736056e0d4",
-    "semantic_hash": "548e5e77ee6847c3ec8f90736056e0d4"
+    "mtime": 1785679204.6664493,
+    "ast_hash": "4162e8e4819f643b1d2b97c1e7df73f3",
+    "semantic_hash": "4162e8e4819f643b1d2b97c1e7df73f3"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/app-spec/00-index.md": {
     "mtime": 1780088188.7599561,
@@ -7118,5 +7118,20 @@
     "mtime": 1785678451.156063,
     "ast_hash": "f907d1e177bb3df4841c5513346ffd97",
     "semantic_hash": "f907d1e177bb3df4841c5513346ffd97"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/alembic/versions/0245_vacation_paid_by_run.py": {
+    "mtime": 1785680736.237049,
+    "ast_hash": "385dd47593284b4ee508c8383f8a9185",
+    "semantic_hash": "385dd47593284b4ee508c8383f8a9185"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_vacation_double_payout.py": {
+    "mtime": 1785680736.2402208,
+    "ast_hash": "7b86bca1716c923e4743bf6b7eb10965",
+    "semantic_hash": "7b86bca1716c923e4743bf6b7eb10965"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/vacation-settled-frozen.spec.ts": {
+    "mtime": 1785680736.2421265,
+    "ast_hash": "220b954755163622fb8c59f9ae4a8bb0",
+    "semantic_hash": "220b954755163622fb8c59f9ae4a8bb0"
   }
 }

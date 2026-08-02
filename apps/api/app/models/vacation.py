@@ -36,6 +36,7 @@ class VacationPeriod(Base):
         Index("ix_vacation_period_employee_start", "employee_id", "date_start"),
         Index("ix_vacation_period_date_range", "date_start", "date_end"),
         Index("ix_vacation_period_payout_date", "payout_date"),
+        Index("ix_vacation_period_paid_period", "paid_period_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -49,6 +50,15 @@ class VacationPeriod(Base):
     # ведомости). NULL — легаси: отпускные размазываются по дням, как раньше.
     payout_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="planned")
+    # КАКАЯ ведомость несёт транш отпускных. Статуса ``paid`` для этого мало: он ставится
+    # на РАСЧЁТЕ (``run_payroll``), то есть означает «попало в расчёт», а не «деньги ушли».
+    # Ссылка отвечает на нужный вопрос и позволяет спросить у периода, финализирован ли он:
+    # пока да — отпуск заморожен (перенос и отмена запрещены), иначе те же деньги уходят
+    # вторым траншем. Дефинализация ссылку снимает — период снова открыт для правок.
+    paid_period_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("payroll_period.id", ondelete="SET NULL"), nullable=True
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True

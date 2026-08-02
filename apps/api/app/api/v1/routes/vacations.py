@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
-from app.models import Employee, User, VacationPeriod
+from app.models import Employee, PayrollPeriod, User, VacationPeriod
 from app.schemas.vacations import (
     VacationBalanceRead,
     VacationConflictResponse,
@@ -225,6 +225,22 @@ async def _periods_to_read(
             for user in (await session.scalars(select(User).where(User.id.in_(user_ids)))).all()
         }
     daily_amount = await vacation_service.vacation_daily_amount(session)
+    # Какие отпуска заморожены выплаченной ведомостью — одним запросом на список,
+    # а не по одному на строку.
+    paid_period_ids = {p.paid_period_id for p in periods if p.paid_period_id is not None}
+    finalized_payout_dates: dict[uuid.UUID, date] = {}
+    if paid_period_ids:
+        finalized_payout_dates = {
+            row.id: row.payroll_date
+            for row in (
+                await session.scalars(
+                    select(PayrollPeriod).where(
+                        PayrollPeriod.id.in_(paid_period_ids),
+                        PayrollPeriod.status == "finalized",
+                    )
+                )
+            ).all()
+        }
     return [
         VacationPeriodRead(
             id=period.id,
@@ -238,6 +254,7 @@ async def _periods_to_read(
             payout_date=period.payout_date,
             payout_amount=(daily_amount * period.days_count) if period.payout_date else None,
             status=period.status,
+            settled_payout_date=finalized_payout_dates.get(period.paid_period_id),
             comment=period.comment,
             created_by_label=_user_label(users.get(period.created_by_user_id)),
             created_at=period.created_at,
