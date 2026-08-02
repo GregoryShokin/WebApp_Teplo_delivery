@@ -65,6 +65,7 @@ type AccountingItem = {
   days_overdue: number;
   period_assumed: boolean;
   opening: boolean;
+  settled: boolean;
   auto_recognition_on: string | null;
   document_amount: number | null;
   amount_mismatch: number;
@@ -305,9 +306,16 @@ const TAX_DRAFT_STATUS_LABEL: Record<string, string> = {
   in_bank: "отправлен в банк",
 };
 
-async function getAccounting(stage: Stage | null): Promise<AccountingList> {
+async function getAccounting(
+  stage: Stage | null,
+  includeSettled = false,
+): Promise<AccountingList> {
   const response = await api.get<AccountingList>("/accounting/suppliers", {
-    params: { view: "all", stage: stage ?? undefined },
+    params: {
+      view: "all",
+      stage: stage ?? undefined,
+      include_settled: includeSettled ? true : undefined,
+    },
   });
   return response.data;
 }
@@ -1591,9 +1599,13 @@ function RecognitionSection({
   const [recognizing, setRecognizing] = useState<AccountingItem | null>(null);
   const [origin, setOrigin] = useState<AccountingItem | null>(null);
   const [reversing, setReversing] = useState<AccountingItem | null>(null);
+  // Закрытые платежи очередь по умолчанию не показывает — она про то, что требует шага. Но
+  // вопрос «а где мой платёж от 7 июля» возникает именно здесь: человек ищет деньги там, где
+  // смотрит на долги, а не в реестре.
+  const [showSettled, setShowSettled] = useState(false);
   const query = useQuery({
-    queryKey: ["accounting", "suppliers", stage],
-    queryFn: () => getAccounting(stage),
+    queryKey: ["accounting", "suppliers", stage, showSettled],
+    queryFn: () => getAccounting(stage, showSettled),
     // Плитки живут в том же ответе, что и список. Без этого клик по состоянию обнулял ВСЕ
     // четыре плитки на время запроса — включая ту, цифру из которой человек только что читал.
     placeholderData: (previous) => previous,
@@ -1643,7 +1655,17 @@ function RecognitionSection({
         })}
       </div>
 
-      <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">{STAGE[stage].hint}.</p>
+        <Button
+          className="h-7 px-2 text-xs"
+          onClick={() => setShowSettled((value) => !value)}
+          size="sm"
+          variant="ghost"
+        >
+          {showSettled ? "Скрыть закрытые" : "Показать закрытые"}
+        </Button>
+      </div>
 
       <div className="overflow-hidden rounded-lg border bg-background">
         <Table>
@@ -1672,7 +1694,12 @@ function RecognitionSection({
                 const isPrepayment = item.source_kind === "legacy_prepayment";
                 const correctionAllowed = !item.recognized || canCorrectRecognized;
                 return (
-                  <TableRow key={`${item.source_kind}:${item.id}`}>
+                  <TableRow
+                    key={`${item.source_kind}:${item.id}`}
+                    /* Закрытая строка показана справочно — она не должна спорить за внимание
+                       с живыми долгами в той же таблице. */
+                    className={item.settled ? "opacity-60" : undefined}
+                  >
                     <TableCell>
                       <div className="font-medium">{item.counterparty_name}</div>
                       <div className="text-xs text-muted-foreground">
@@ -1710,7 +1737,9 @@ function RecognitionSection({
                       {item.article_name ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {item.stage === "waiting_document" ? (
+                      {item.settled ? (
+                        <span className="text-muted-foreground">закрыт документом</span>
+                      ) : item.stage === "waiting_document" ? (
                         item.days_overdue > 0 ? (
                           <Badge
                             variant="outline"

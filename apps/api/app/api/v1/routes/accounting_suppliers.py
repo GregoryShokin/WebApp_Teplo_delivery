@@ -132,6 +132,9 @@ class SupplierAccountingItem(BaseModel):
     # true — это не платёж, а входящее сальдо на дату начала учёта. Подписывать его «Платёж
     # от 20.07» значит отправлять человека искать в выписке деньги, которых в тот день не было.
     opening: bool = False
+    # true — платёж уже закрыт документом. В очереди такие строки появляются только по просьбе
+    # («Показать закрытые») и в плитки не входят: очередь считает то, что требует шага.
+    settled: bool = False
     # Когда расход придёт сам, без участия человека: договор услуги и аренда начисляют его
     # по окончании месяца. Дата нужна вслух — «период идёт» не отвечает на вопрос «и когда
     # же», а человек хочет знать, ждать ему до завтра или до сентября.
@@ -305,6 +308,10 @@ async def list_supplier_accounting(
     stage: Literal["in_expense", "period_running", "waiting_document", "needs_period"] | None = (
         Query(default=None)
     ),
+    # Закрытые платежи очередь не показывает — она про то, что требует шага. Но вопрос «а где
+    # мой платёж от 7 июля» возникает именно здесь, а не в реестре: владелец ищет деньги там,
+    # где смотрит на долги. Переключатель добавляет их отдельными строками, уже погашенными.
+    include_settled: bool = Query(default=False),
 ) -> SupplierAccountingList:
     today = datetime.now(MOSCOW_TZ).date()
     current_month = today.replace(day=1)
@@ -454,7 +461,11 @@ async def list_supplier_accounting(
                 bill_money_date,
                 bill_money_date.c.invoice_id == SupplierPrepayment.bill_invoice_id,
             )
-            .where(SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES))
+            .where(
+                SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES)
+                if not include_settled
+                else SupplierPrepayment.status != "cancelled"
+            )
             .order_by(SupplierPrepayment.created_at.desc())
         )
     ).all()
@@ -548,6 +559,12 @@ async def list_supplier_accounting(
             prepayment_stage = "needs_period"
         else:
             prepayment_stage = "needs_period"
+        # Закрытый платёж ничего не ждёт: документ по нему уже пришёл. Срок и просрочку с него
+        # снимаем, иначе он краснел бы наравне с живыми долгами — при том что дело сделано.
+        is_settled = prepayment.status not in OPEN_PREPAYMENT_STATUSES
+        if is_settled:
+            deadline = None
+            overdue = 0
         refusal = subscriptions.refusal_reason(
             prepayment,
             documents_expected=documents_expected,
@@ -577,7 +594,13 @@ async def list_supplier_accounting(
                 amount=_float(prepayment.amount),
                 paid_amount=_float(prepayment.amount),
                 balance_amount=_float(balance),
-                balance_type="needs_review" if not period_known else "receivable",
+                balance_type=(
+                    "closed"
+                    if is_settled
+                    else "needs_review"
+                    if not period_known
+                    else "receivable"
+                ),
                 service_period_start=prepayment.service_period_start,
                 service_period_end=prepayment.service_period_end,
                 period_status=prepayment.service_period_status,
@@ -587,6 +610,7 @@ async def list_supplier_accounting(
                 days_overdue=overdue,
                 period_assumed=not period_known,
                 opening=prepayment.opening,
+                settled=is_settled,
                 auto_recognition_on=auto_recognition_on,
             )
         )
@@ -619,14 +643,18 @@ async def list_supplier_accounting(
         if stage == "in_expense":
             items = [item for item in items if item.recognition_month == expense_month]
     elif view == "open":
-        items = [item for item in items if item.balance_type != "closed"]
+        # Закрытые платежи здесь только когда их попросили показать — иначе «открытое»
+        # перестало бы значить открытое.
+        items = [item for item in items if item.balance_type != "closed" or item.settled]
     elif view == "needs_review":
         items = [item for item in items if item.balance_type == "needs_review"]
     elif view == "recognized":
         items = [item for item in items if item.recognized]
 
     def tile(name: str) -> StageTile:
-        rows = [item for item in all_items if item.stage == name]
+        # Закрытые платежи в счётчики очереди не входят: плитка отвечает на вопрос «сколько
+        # ещё висит», а по ним висеть нечему.
+        rows = [item for item in all_items if item.stage == name and not item.settled]
         if name == "in_expense":
             rows = [item for item in rows if item.recognition_month == expense_month]
             return StageTile(count=len(rows), amount=sum(item.amount for item in rows))

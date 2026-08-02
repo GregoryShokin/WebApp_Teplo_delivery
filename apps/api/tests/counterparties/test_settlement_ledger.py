@@ -147,11 +147,16 @@ async def test_payment_without_document_becomes_overdue_after_deadline(
         on_deadline = await build_ledger(session, cp.id, today=date(2026, 5, 31))
         assert on_deadline.rows[0].status == "waiting"
 
-        # …а 1-го числа следующего месяца это уже разрыв (требование владельца).
-        assert (await build_ledger(session, cp.id, today=date(2026, 6, 1))).rows[0].status == (
-            "overdue"
+        # …и первые числа следующего месяца тоже: УПД за май 31 мая не выставит никто, он
+        # приходит в начале июня. Срок по умолчанию — 10-е число (решение владельца 02.08.2026
+        # взамен прежнего «конец периода»: ложное красное обесценивает настоящую просрочку).
+        assert (await build_ledger(session, cp.id, today=date(2026, 6, 5))).rows[0].status == (
+            "waiting"
         )
-        after = await build_ledger(session, cp.id, today=date(2026, 6, 5))
+        assert (await build_ledger(session, cp.id, today=date(2026, 6, 10))).rows[0].status == (
+            "waiting"
+        )
+        after = await build_ledger(session, cp.id, today=date(2026, 6, 15))
         row = after.rows[0]
         assert row.status == "overdue"
         assert row.uncovered == Decimal("3230.00")
@@ -377,7 +382,8 @@ async def test_gaps_summary_groups_by_period_and_hides_goods(
         assert gap.amount == Decimal("3000.00")
         assert gap.payments == 2
         assert gap.period_start == date(2026, 6, 1)
-        assert gap.days_overdue == 20
+        # Срок по умолчанию — 10-е число следующего месяца, значит на 20.07 просрочка 10 дней.
+        assert gap.days_overdue == 10
 
         # Товарный контрагент виден только по явному запросу.
         with_goods = await list_gaps(session, today=date(2026, 7, 20), include_goods=True)
@@ -404,7 +410,7 @@ async def test_payment_without_period_falls_back_to_its_own_month(
         )
         await session.commit()
 
-        ledger = await build_ledger(session, cp.id, today=date(2026, 7, 10))
+        ledger = await build_ledger(session, cp.id, today=date(2026, 7, 20))
 
         row = ledger.rows[0]
         assert (row.period_start, row.period_end) == (date(2026, 6, 1), date(2026, 6, 30))
@@ -495,8 +501,11 @@ def test_expected_by_clamps_to_short_month() -> None:
     """28-е в карточке и февраль: дата ожидания не должна выпадать за край месяца."""
     assert expected_by(date(2026, 1, 31), 28) == date(2026, 2, 28)
     assert expected_by(date(2026, 12, 31), 5) == date(2027, 1, 5)
-    # NULL = конец периода: разрыв виден с 1-го числа следующего месяца.
-    assert expected_by(date(2026, 6, 30), None) == date(2026, 6, 30)
+    # NULL = 10-е число следующего месяца. Прежний дефолт «конец периода» назначал документ
+    # последним днём самого периода: УПД за август 31.08 не выставят никогда, и строка краснела
+    # 1 сентября заведомо зря (правка по замечанию владельца 02.08.2026).
+    assert expected_by(date(2026, 6, 30), None) == date(2026, 7, 10)
+    assert expected_by(date(2026, 12, 31), None) == date(2027, 1, 10)
 
 
 async def test_opening_balance_for_filtered_period(

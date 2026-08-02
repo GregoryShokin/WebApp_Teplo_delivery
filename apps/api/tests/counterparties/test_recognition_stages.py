@@ -151,7 +151,8 @@ def test_stages_split_queue_by_who_makes_the_step(
     assert waiting["stage"] == "waiting_document"
     assert waiting["period_assumed"] is True
     assert waiting["payment_date"] == "2026-05-20"
-    assert waiting["expected_by"] == "2026-05-31"
+    # Срок — 10-е число месяца, следующего за периодом: за май УПД выставляют в июне.
+    assert waiting["expected_by"] == "2026-06-10"
     # А вот ПРОСРОЧКИ на выдуманном периоде нет, и это решение владельца 02.08.2026. Срок
     # отсчитывался от месяца платежа, но для предоплаты гипотеза неверна ровно наоборот:
     # платёж 29.06 — это платёж ЗА ИЮЛЬ, документ по нему ждут в августе. Экран показывал
