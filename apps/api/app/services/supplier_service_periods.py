@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -141,26 +141,67 @@ async def _recognized_by_other_mechanism(
     end: date,
     article_id: uuid.UUID | None,
 ) -> bool:
-    """Считает ли расход этого периода кто-то помимо строки платежа.
+    """Признает ли расход ЭТОГО периода другой механизм — целиком, а не частично.
 
     Два режима разметки карточки: договор услуги (сумма месяца из договора) и «счёт за период»
     (помесячные самоакты из дебиторки платежа). Оба начисляют сами и по своему расписанию, а
     строка платежа начислила бы ту же услугу ещё раз — целиком и последним месяцем периода.
+
+    ГЛУШИМ ТОЛЬКО ПРИ ПОЛНОМ ПОКРЫТИИ, и это не педантизм. Отказ здесь означает, что расход
+    признает КТО-ТО ДРУГОЙ; если он признает лишь часть периода, остальное не признает никто,
+    и деньги молча исчезнут из P&L — потеря расхода хуже, чем его задвоение, потому что
+    задвоение видно в отчёте, а пропажа нет:
+
+    * договор проверяем на КАЖДЫЙ месяц периода, а не на его концы. Договор, действовавший
+      только в апреле, глушил платёж за апрель-июнь целиком, а начислял один апрель;
+    * режим «счёт за период» признаёт расход самоактами ИЗ ДЕБИТОРКИ платежа — значит нужна
+      сама дебиторка с готовым периодом. Без неё (платёж прошёл мимо предоплаты) самоактов не
+      будет вовсе, и глушить строку не за что.
     """
     # Локальные импорты: оба модуля зависят от этого, на верхнем уровне вышел бы цикл.
+    from app.models import SupplierPrepayment
     from app.services.service_agreement_accruals import covered_by_agreement
-    from app.services.subscription_accruals import BILLING_MODE_FIXED_TARIFF
+    from app.services.subscription_accruals import (
+        BILLING_MODE_FIXED_TARIFF,
+        OPEN_PREPAYMENT_STATUSES,
+        add_months,
+    )
 
-    if await covered_by_agreement(
-        session, counterparty_id, on=start, article_id=article_id
-    ) or await covered_by_agreement(session, counterparty_id, on=end, article_id=article_id):
+    month = start.replace(day=1)
+    last_month = end.replace(day=1)
+    while month <= last_month:
+        if not await covered_by_agreement(
+            session, counterparty_id, on=month, article_id=article_id
+        ):
+            break
+        month = add_months(month, 1)
+    else:
         return True
+
     mode = await session.scalar(
         select(CounterpartyPayableProfile.service_billing_mode).where(
             CounterpartyPayableProfile.counterparty_id == counterparty_id
         )
     )
-    return mode == BILLING_MODE_FIXED_TARIFF
+    if mode != BILLING_MODE_FIXED_TARIFF:
+        return False
+    # Есть ли дебиторка, из которой пойдут самоакты. Ищем по контрагенту и пересечению
+    # периодов: связь «платёж ↔ предоплата» рвётся штатно, когда выписку разбирают раньше
+    # отметки «оплачено».
+    covering_prepayment = await session.scalar(
+        select(SupplierPrepayment.id).where(
+            SupplierPrepayment.counterparty_id == counterparty_id,
+            SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+            SupplierPrepayment.service_period_status == "ready",
+            SupplierPrepayment.service_period_start.is_not(None),
+            SupplierPrepayment.service_period_start <= end,
+            func.coalesce(
+                SupplierPrepayment.service_period_end, SupplierPrepayment.service_period_start
+            )
+            >= start,
+        )
+    )
+    return covering_prepayment is not None
 
 
 async def expense_line_accrual_covering(
@@ -448,9 +489,24 @@ async def set_invoice_service_period(
 async def _cancel_accrual(
     session: AsyncSession, accrual: SupplierExpenseAccrual | None
 ) -> SupplierExpenseAccrual | None:
-    """Перевести начисление в ``cancelled``. Идемпотентно, без коммита."""
+    """Перевести начисление в ``cancelled``. Идемпотентно, без коммита.
+
+    ЗАКРЫТЫЙ МЕСЯЦ НЕ ТРОГАЕМ. Отмена — единственный путь, которым признанный расход
+    уменьшается АВТОМАТИЧЕСКИ, без участия человека: настоящий УПД, пришедший в августе за
+    июль, помечает документ информационным или замещает самоакт, и начисление снимается.
+    Если июль уже закрыт, его цифра ушла в отчётность — снять её молча нельзя, а спросить
+    некого: это фоновый путь. Оставляем начисление как есть; расхождение с пришедшим
+    документом видно в сверке, и человек решит его, открыв период.
+    """
     if accrual is None or accrual.status == "cancelled":
         return accrual
+    if accrual.status == "recognized":
+        from app.services import accounting_periods
+
+        if accrual.recognition_month is not None and await accounting_periods.is_month_closed(
+            session, accrual.recognition_month
+        ):
+            return accrual
     accrual.status = "cancelled"
     await session.flush()
     return accrual

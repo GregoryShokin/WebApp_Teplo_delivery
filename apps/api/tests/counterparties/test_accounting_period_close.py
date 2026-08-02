@@ -161,3 +161,50 @@ async def test_nightly_recognition_skips_closed_month_and_resumes_after_reopen(
         await session.refresh(accrual)
         assert accrual.status == "recognized"
         assert accrual.recognition_month == date(2026, 6, 1)
+
+
+async def test_incoming_document_does_not_erase_expense_of_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Настоящий УПД, пришедший позже, не снимает признанный расход закрытого месяца.
+
+    Это единственный путь, которым признанный расход уменьшается АВТОМАТИЧЕСКИ, без участия
+    человека: supersede_self_billed аннулирует самоакт, а sync_invoice_accrual снимает его
+    начисление. Признать взамен расход по настоящему документу уже нельзя — джоба в закрытый
+    месяц не пишет. Месяц остался бы вообще без расхода, молча и в фоновом пути.
+    """
+    from app.services.subscription_accruals import supersede_self_billed
+
+    async with async_session_factory() as session:
+        accrual = await _recognized_accrual(
+            session, name="Замок УПД", inn="6155000903", month=date(2026, 6, 1), amount="13000.00"
+        )
+        self_billed = await session.get(SupplierExpenseAccrual, accrual.id)
+        assert self_billed is not None
+        await accounting_periods.close_month(
+            session, period_month=date(2026, 6, 1), actor_user_id=None
+        )
+
+        real = await make_invoice(
+            session,
+            counterparty_id=accrual.counterparty_id,
+            amount="13000.00",
+            number="УПД-ПОЗЖЕ",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        real.dds_article_id = accrual.article_id
+        real.service_period_start = date(2026, 6, 1)
+        real.service_period_end = date(2026, 6, 30)
+        real.service_period_status = "ready"
+        await session.flush()
+
+        victims = await supersede_self_billed(session, real)
+        await periods.sync_invoice_accrual(session, real)
+        await session.commit()
+
+        assert victims == [], "самоакт закрытого месяца замещён — расход исчез бы"
+        await session.refresh(accrual)
+        assert accrual.status == "recognized"
+        assert accrual.amount == Decimal("13000.00")

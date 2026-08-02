@@ -41,10 +41,13 @@ from app.models import (
     BankOperation,
     CashflowTransaction,
     Counterparty,
+    DdsArticle,
     InvoicePaymentAllocation,
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
+from app.services.supplier_prepayments import SUPPLIER_REFUND_ARTICLE_CODE
 from app.services.supplier_service_periods import money
 
 # Документы, которые вообще участвуют в расчётах: закрывающие финансовые обязательства.
@@ -83,16 +86,34 @@ class BalanceSheetAsOf:
 
 
 def _allocation_event_date():
-    """Дата хозяйственного события аллокации — COALESCE по трём источникам.
+    """Дата хозяйственного события аллокации — по ВИДУ гашения, а не по «что первое не NULL».
 
-    Порядок важен: у денежного гашения дата есть и у проводки, и у банковской операции, и
-    брать надо ту, что ближе к факту. ``created_at`` — последний рубеж, а не первый выбор.
+    Разделение по ``source_kind`` здесь принципиально. Дата документа верна только для
+    гашения предоплатой: деньги ушли раньше, а обязательство и его закрытие авансом
+    возникают одним событием — приходом документа. Для бартерного зачёта она НЕВЕРНА:
+    зачёт оформляют месяцами позже прихода товара, и общий COALESCE, подхватывая
+    ``invoice_date`` погашаемой накладной, делал условие ``event_date <= as_of``
+    тождественно истинным — зачтённая товаром кредиторка не показывалась открытой НИ НА
+    ОДНУ историческую дату, хотя реально висела с июля по сентябрь.
     """
-    return func.coalesce(
-        CashflowTransaction.operation_date,
-        BankOperation.operation_date,
-        SupplierInvoice.invoice_date,
-        func.date(InvoicePaymentAllocation.created_at),
+    return case(
+        (
+            InvoicePaymentAllocation.source_kind == "prepayment",
+            func.coalesce(
+                SupplierInvoice.invoice_date, func.date(InvoicePaymentAllocation.created_at)
+            ),
+        ),
+        (
+            InvoicePaymentAllocation.source_kind == "barter",
+            # У зачёта денежного факта нет вовсе — остаётся дата записи, и это единственный
+            # приблизительный случай во всём расчёте (см. approximate_settlements).
+            func.date(InvoicePaymentAllocation.created_at),
+        ),
+        else_=func.coalesce(
+            CashflowTransaction.operation_date,
+            BankOperation.operation_date,
+            func.date(InvoicePaymentAllocation.created_at),
+        ),
     )
 
 
@@ -107,10 +128,19 @@ async def build_balance_as_of(
             func.sum(InvoicePaymentAllocation.amount).label("settled"),
             func.sum(
                 case(
+                    # Приблизительной считается ровно та аллокация, у которой даты события НЕТ
+                    # в данных: бартерный зачёт (денежного ключа нет по конструкции) и денежное
+                    # гашение, потерявшее ссылку на проводку. Прежнее условие требовало NULL у
+                    # ВСЕХ трёх источников сразу и потому давало ноль всегда — витрина
+                    # честности молчала именно тогда, когда должна была говорить.
                     (
-                        CashflowTransaction.operation_date.is_(None)
-                        & BankOperation.operation_date.is_(None)
-                        & SupplierInvoice.invoice_date.is_(None),
+                        InvoicePaymentAllocation.source_kind == "barter",
+                        InvoicePaymentAllocation.amount,
+                    ),
+                    (
+                        (InvoicePaymentAllocation.source_kind != "prepayment")
+                        & CashflowTransaction.operation_date.is_(None)
+                        & BankOperation.operation_date.is_(None),
                         InvoicePaymentAllocation.amount,
                     ),
                     else_=0,
@@ -197,14 +227,46 @@ async def build_balance_as_of(
                 settled_by_prepayment,
                 settled_by_prepayment.c.prepayment_id == SupplierPrepayment.id,
             )
-            .where(SupplierPrepayment.status != "refunded", prepayment_date <= as_of)
+            # Фильтра по СТАТУСУ здесь нет намеренно: ``refunded`` — состояние на сегодня, а
+            # предоплата, возвращённая 10 августа, на 31 июля была живой дебиторкой. Возврат
+            # вычитается ниже по дате своей проводки — это и есть «состояние на дату» вместо
+            # «текущего статуса», ради чего весь модуль и написан.
+            .where(prepayment_date <= as_of)
             .group_by(SupplierPrepayment.counterparty_id)
         )
     ).all()
 
+    # Возврат денег от поставщика гасит дебиторку РОСТОМ amount_settled, без строки
+    # InvoicePaymentAllocation (см. refund_counterparty_prepayments) — поэтому подзапросом
+    # гашений он не виден вовсе, и ДЗ была бы завышена на всю сумму возвратов, на любую дату.
+    # Считаем возвраты по контрагенту: связи «возврат ↔ конкретная предоплата» в данных нет,
+    # FIFO-гашение её не сохраняет. По сумме это верно, по разрезу предоплат — нет, но разрез
+    # предоплат в балансе и не нужен.
+    refund_rows = (
+        await session.execute(
+            select(
+                CashflowTransaction.counterparty_id,
+                func.sum(CashflowTransaction.amount),
+            )
+            .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
+            .where(
+                CashflowTransaction.direction == "in",
+                CashflowTransaction.counterparty_id.is_not(None),
+                CashflowTransaction.operation_date <= as_of,
+                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+            )
+            .group_by(CashflowTransaction.counterparty_id)
+        )
+    ).all()
+    refunds_by_cp = {row[0]: money(row[1]) for row in refund_rows}
+
     payable_by_cp = {row[0]: money(row[1]) for row in payable_rows}
     approximate = money(sum((row[2] or Decimal("0") for row in payable_rows), Decimal("0")))
-    receivable_by_cp = {row[0]: money(row[1]) for row in receivable_rows}
+    receivable_by_cp = {
+        row[0]: max(money(row[1]) - refunds_by_cp.get(row[0], Decimal("0.00")), Decimal("0.00"))
+        for row in receivable_rows
+    }
     ids = set(payable_by_cp) | set(receivable_by_cp)
     if not ids:
         return BalanceSheetAsOf(

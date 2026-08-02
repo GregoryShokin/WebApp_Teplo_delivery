@@ -646,6 +646,21 @@ async def supersede_self_billed(
             )
         ).all()
     )
+    # Самоакт ЗАКРЫТОГО месяца не замещаем. Замещение снимает признанный расход, а взамен
+    # признать расход по настоящему документу уже нельзя — джоба в закрытый месяц не пишет.
+    # Месяц остался бы вообще без расхода, причём молча и в фоновом пути, где спросить некого.
+    # Документ регистрируется как обычно и виден в сверке: расхождение решает человек, открыв
+    # период. Проверяем по месяцу периода самоакта — он и есть его месяц признания.
+    from app.services import accounting_periods
+
+    closed = await accounting_periods.closed_months(session)
+    if closed:
+        victims = [
+            victim
+            for victim in victims
+            if victim.service_period_end is None
+            or victim.service_period_end.replace(day=1) not in closed
+        ]
     for victim in victims:
         allocations = list(
             (

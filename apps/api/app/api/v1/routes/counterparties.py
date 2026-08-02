@@ -42,6 +42,7 @@ from app.services import counterparty_bank_match as bank_match
 from app.services import counterparty_barter_match as barter
 from app.services import counterparty_matching as matching
 from app.services import counterparty_payments as payments
+from app.services import accounting_periods
 from app.services import counterparty_registry as registry
 from app.services import counterparty_requisites_history as requisites_history
 from app.services import merchant_rules
@@ -669,7 +670,8 @@ async def patch_invoice_service_period(
             end=payload.service_period_end,
             actor_user_id=actor.user_id,
         )
-    except service_periods.ServicePeriodError as exc:
+    except (service_periods.ServicePeriodError, accounting_periods.PeriodClosed) as exc:
+        # Замок закрытого месяца бросает своё исключение — без него ответ был бы 500.
         raise _conflict(exc) from exc
     item = await registry.get_invoice_item(session, invoice_id)
     if item is None:

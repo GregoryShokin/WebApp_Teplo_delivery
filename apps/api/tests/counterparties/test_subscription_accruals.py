@@ -820,6 +820,19 @@ async def test_fixed_tariff_line_and_nightly_job_do_not_double_count(
         )
         session.add(line)
         await session.flush()
+        # Дебиторка, из которой пойдут самоакты. Без неё признавать расход некому, и глушить
+        # строку не за что — см. test_fixed_tariff_without_prepayment_keeps_the_payment_line.
+        prepayment = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="13000.00",
+            start=date(2026, 7, 1),
+            months=1,
+            auto=False,
+        )
+        prepayment.article_id = article.id
+        await session.flush()
 
         # Сторона 1: расход месяца считает помесячный самоакт, а не строка.
         assert await periods_service.sync_expense_line_accrual(session, line) is None
@@ -838,16 +851,6 @@ async def test_fixed_tariff_line_and_nightly_job_do_not_double_count(
                 status="scheduled",
             )
         )
-        prepayment = await _subscription_prepayment(
-            session,
-            counterparty_id=cp.id,
-            wallet_id=wallet.id,
-            amount="13000.00",
-            start=date(2026, 7, 1),
-            months=1,
-            auto=False,
-        )
-        prepayment.article_id = article.id
         await session.commit()
 
         await accrue_due_months(session, as_of=date(2026, 8, 1))
@@ -869,3 +872,95 @@ async def test_fixed_tariff_line_and_nightly_job_do_not_double_count(
         rows = live.all()
         assert len(rows) == 1
         assert rows[0].amount == Decimal("13000.00")
+
+
+async def test_partial_agreement_does_not_mute_the_whole_payment_line(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Договор, покрывающий ЧАСТЬ периода строки, не глушит её целиком.
+
+    Гард против двойного расхода проверял договор на КОНЦАХ периода: договор, действовавший
+    только в апреле, глушил платёж за апрель-июнь целиком, а сам начислял один апрель — май и
+    июнь не признавал никто. Потеря расхода хуже задвоения: задвоение видно в отчёте, пропажа
+    нет. Глушим только при ПОЛНОМ покрытии периода.
+    """
+    from app.models import CounterpartyServiceAgreement, ExpenseDraftLine
+    from app.services import supplier_service_periods as periods_service
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Частичный договор", inn="614307902103")
+        article = await make_expense_article(session, code="PART-AGR", name="Бухгалтерия")
+        session.add(
+            CounterpartyServiceAgreement(
+                counterparty_id=cp.id,
+                title="Договор на апрель",
+                monthly_amount=Decimal("3000.00"),
+                dds_article_id=article.id,
+                documents_mode="informal",
+                accrual_enabled=True,
+                started_on=date(2026, 4, 1),
+                ended_on=date(2026, 4, 30),
+            )
+        )
+        draft = await make_draft(session, counterparty_id=cp.id, amount="9000.00")
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount=Decimal("9000.00"),
+            purpose="Услуги за 2 квартал",
+            service_period_start=date(2026, 4, 1),
+            service_period_end=date(2026, 6, 30),
+            auto_recognize_monthly=False,
+        )
+        session.add(line)
+        await session.flush()
+
+        accrual = await periods_service.sync_expense_line_accrual(session, line)
+        await session.commit()
+
+        # Договор закрывает только апрель — май и июнь остались бы без расхода вовсе.
+        assert accrual is not None
+        assert accrual.amount == Decimal("9000.00")
+
+
+async def test_fixed_tariff_without_prepayment_keeps_the_payment_line_accrual(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Режим «счёт за период» без дебиторки строку не глушит: самоактов не будет.
+
+    Самоакты режима fixed_tariff рождаются ИЗ ПРЕДОПЛАТЫ. Если платёж прошёл мимо неё,
+    признавать расход некому, и отказ строки означал бы просто потерю расхода.
+    """
+    from app.models import ExpenseDraftLine
+    from app.services import supplier_service_periods as periods_service
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Тариф без аванса", inn="614307902104")
+        article = await make_expense_article(session, code="FT-NOPRE", name="Лицензия")
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        assert profile is not None
+        profile.service_billing_mode = "fixed_tariff"
+        draft = await make_draft(session, counterparty_id=cp.id, amount="5000.00")
+        line = ExpenseDraftLine(
+            draft_id=draft.id,
+            counterparty_id=cp.id,
+            article_id=article.id,
+            amount=Decimal("5000.00"),
+            purpose="Лицензия за июль",
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+            auto_recognize_monthly=False,
+        )
+        session.add(line)
+        await session.flush()
+
+        accrual = await periods_service.sync_expense_line_accrual(session, line)
+        await session.commit()
+
+        assert accrual is not None, "расход потерян: самоактов нет и строка заглушена"
+        assert accrual.amount == Decimal("5000.00")

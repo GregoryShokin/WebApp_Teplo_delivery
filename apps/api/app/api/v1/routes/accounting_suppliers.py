@@ -568,7 +568,9 @@ async def patch_service_period(
             actor_user_id=actor.user_id,
             reason=payload.reason,
         )
-    except periods.ServicePeriodError as exc:
+    except (periods.ServicePeriodError, periods_service.PeriodClosed) as exc:
+        # PeriodClosed — не подкласс ServicePeriodError, и без него замок закрытого месяца
+        # отдавал бы 500 вместо внятного объяснения, ради которого он и написан.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     cp_name = await session.scalar(
