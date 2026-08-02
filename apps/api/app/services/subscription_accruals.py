@@ -547,13 +547,24 @@ async def recognize_prepayment_period(
             f"Признание за {listed} было откачено вручную — повторно признать этот период "
             "нельзя. Если расход всё же был, заведите его документом"
         )
-    line_accrual = await _draft_line_accrual(session, prepayment, start=start, end=end)
-    if line_accrual is not None:
+    # ВСЕ начисления по строкам, пересекающие период, а не первое попавшееся. Гард в
+    # ensure_month_accrual блокирует месяц при ЛЮБОМ оставшемся начислении по строке, поэтому
+    # отмена одного из двух (основной платёж и доплата за тот же месяц) молча уменьшала
+    # расход: разовое начисление снято, помесячное не создано.
+    line_accruals = await periods.expense_line_accruals_covering(
+        session,
+        counterparty_id=prepayment.counterparty_id,
+        start=start,
+        end=end,
+        article_id=prepayment.article_id,
+    )
+    for line_accrual in line_accruals:
         if line_accrual.status == "recognized":
             raise RecognitionRefused(
                 "Расход по этому платежу уже признан целиком в "
                 f"{line_accrual.recognition_month:%m.%Y} — признавать его ещё раз нельзя"
             )
+    for line_accrual in line_accruals:
         # Разовое начисление заменяем помесячным: иначе расход сложится дважды.
         line_accrual.status = "cancelled"
 

@@ -85,6 +85,22 @@ class BalanceSheetAsOf:
     approximate_settlements: Decimal
 
 
+# Дата, когда деньги предоплаты реально ушли: у неё либо своя ДДС-проводка, либо это
+# входящий остаток (тогда ориентир — дата записи).
+_prepayment_money_date = (
+    select(
+        SupplierPrepayment.id.label("prepayment_id"),
+        func.coalesce(
+            CashflowTransaction.operation_date, func.date(SupplierPrepayment.created_at)
+        ).label("money_date"),
+    )
+    .outerjoin(
+        CashflowTransaction, CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id
+    )
+    .subquery()
+)
+
+
 def _allocation_event_date():
     """Дата хозяйственного события аллокации — по ВИДУ гашения, а не по «что первое не NULL».
 
@@ -99,8 +115,22 @@ def _allocation_event_date():
     return case(
         (
             InvoicePaymentAllocation.source_kind == "prepayment",
-            func.coalesce(
-                SupplierInvoice.invoice_date, func.date(InvoicePaymentAllocation.created_at)
+            # Гашение авансом не может произойти РАНЬШЕ, чем пришли деньги: берём позднюю из
+            # двух дат. ЭкоЦентр присылает УПД, датированный 31.07, а счёт по нему оплачивают
+            # 15.08 — по одной лишь дате документа выходило, что на 31.07 долг уже закрыт,
+            # хотя предоплаты в тот день ещё не существовало. Обе стороны показывали ноль там,
+            # где был живой долг.
+            func.greatest(
+                func.coalesce(
+                    SupplierInvoice.invoice_date, func.date(InvoicePaymentAllocation.created_at)
+                ),
+                func.coalesce(
+                    _prepayment_money_date.c.money_date,
+                    func.coalesce(
+                        SupplierInvoice.invoice_date,
+                        func.date(InvoicePaymentAllocation.created_at),
+                    ),
+                ),
             ),
         ),
         (
@@ -155,6 +185,10 @@ async def build_balance_as_of(
             BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+        .outerjoin(
+            _prepayment_money_date,
+            _prepayment_money_date.c.prepayment_id == InvoicePaymentAllocation.prepayment_id,
+        )
         .where(event_date <= as_of)
         .group_by(InvoicePaymentAllocation.invoice_id)
         .subquery()
@@ -193,11 +227,26 @@ async def build_balance_as_of(
             func.sum(InvoicePaymentAllocation.amount).label("settled"),
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+        .outerjoin(
+            _prepayment_money_date,
+            _prepayment_money_date.c.prepayment_id == InvoicePaymentAllocation.prepayment_id,
+        )
         .where(
             InvoicePaymentAllocation.prepayment_id.is_not(None),
-            func.coalesce(
-                SupplierInvoice.invoice_date,
-                func.date(InvoicePaymentAllocation.created_at),
+            # Та же поздняя из двух дат, что и на стороне кредиторки: иначе одно и то же
+            # гашение считалось бы на разные даты у ДЗ и у КЗ.
+            func.greatest(
+                func.coalesce(
+                    SupplierInvoice.invoice_date,
+                    func.date(InvoicePaymentAllocation.created_at),
+                ),
+                func.coalesce(
+                    _prepayment_money_date.c.money_date,
+                    func.coalesce(
+                        SupplierInvoice.invoice_date,
+                        func.date(InvoicePaymentAllocation.created_at),
+                    ),
+                ),
             )
             <= as_of,
         )

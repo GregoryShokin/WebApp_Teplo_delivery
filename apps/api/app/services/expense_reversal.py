@@ -85,8 +85,13 @@ async def reverse_expense(
     from app.services import accounting_periods
 
     try:
-        await accounting_periods.assert_month_open(
-            session, accrual.recognition_month, action="откат расхода"
+        # Весь период, а не месяц признания: откат уменьшает расход всех месяцев, по которым
+        # сумма разложена в отчёте.
+        await accounting_periods.assert_period_open(
+            session,
+            accrual.service_period_start,
+            accrual.service_period_end,
+            action="откат расхода",
         )
     except accounting_periods.PeriodClosed as exc:
         raise ReversalRefused(str(exc)) from exc

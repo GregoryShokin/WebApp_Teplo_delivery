@@ -692,3 +692,47 @@ async def test_agreement_does_not_stack_on_payment_line_accrual(
         rows = live.all()
         assert len(rows) == 1
         assert sum(row.amount for row in rows) == Decimal("9000.00")
+
+
+async def test_informational_act_does_not_mute_the_agreement_accrual(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Справочный акт не мешает договору начислить свой месяц.
+
+    Выходило абсурдно: акт ИП Наумченко за июль, присланный 28.07, помечался информационным
+    ПОТОМУ ЧТО есть договор — и тут же глушил начисление по этому договору, потому что
+    `_month_already_closed` считал месяц закрытым по любому закрывающему документу. Июль
+    оставался вообще без расхода: ни по акту (он справочный), ни по договору (заглушён актом).
+    Дефект не регрессия ветки — он жил в контуре и до неё.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наумченко справка", inn="614302067230")
+        agreement = await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        await session.commit()
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="АКТ-СПРАВКА",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 28),
+            operational_scope="finance",
+        )
+        act.dds_article_id = agreement.dds_article_id
+        await session.flush()
+        # Приём внутри своего же месяца: договор действует, документ становится справочным.
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 7, 28))
+        await periods.sync_invoice_accrual(session, act)
+        await session.commit()
+        await session.refresh(act)
+        assert act.informational is True
+
+        # Ночная джоба 1 августа обязана начислить июль по договору.
+        accrued = await ensure_agreement_invoice(
+            session, agreement, date(2026, 7, 1), as_of=date(2026, 8, 1)
+        )
+        await session.commit()
+
+        assert accrued is not None, "июль остался без расхода: справочный акт заглушил договор"
+        assert accrued.amount == Decimal("3000.00")

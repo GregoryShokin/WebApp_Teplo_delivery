@@ -138,6 +138,12 @@ async def _month_already_closed(
             SupplierInvoice.direction == "payable",
             SupplierInvoice.doc_kind == "closing",
             SupplierInvoice.payment_status != "void",
+            # Справочный документ месяц НЕ закрывает: расхода он не несёт (is_expense_bearing)
+            # и в ДЗ/КЗ не участвует. Пока он сюда попадал, выходило абсурдно: акт ИП
+            # Наумченко за июль, присланный 28.07, помечался информационным «потому что есть
+            # договор» — и тут же ГЛУШИЛ начисление по этому договору. Июль оставался вообще
+            # без расхода: ни по акту, ни по договору.
+            SupplierInvoice.informational.is_(False),
             or_(
                 SupplierInvoice.source != SELF_BILLED_SOURCE,
                 SupplierInvoice.external_id.like("self:%"),

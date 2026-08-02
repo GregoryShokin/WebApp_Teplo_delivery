@@ -67,7 +67,15 @@ def is_expense_bearing(invoice: SupplierInvoice) -> bool:
       • Информационный документ расхода не создаёт: месяц уже признан начислением по
         договору, и вторая строка P&L удвоила бы расход.
     """
-    return invoice.doc_kind != "bill" and not invoice.informational
+    # Аннулированный документ (payment_status='void') расхода не несёт тем более: он и как
+    # документ больше не существует. Без этой проверки период, проставленный аннулированной
+    # накладной уже ПОСЛЕ отмены (роут её не запрещает), заводил начисление заново — и
+    # cancel_invoice_accrual, отработавший при отмене, снять его уже не мог.
+    return (
+        invoice.doc_kind != "bill"
+        and not invoice.informational
+        and invoice.payment_status != "void"
+    )
 
 
 async def sync_invoice_accrual(
@@ -246,6 +254,38 @@ async def expense_line_accrual_covering(
     return await session.scalar(select(SupplierExpenseAccrual).where(*conditions))
 
 
+async def expense_line_accruals_covering(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    start: date,
+    end: date,
+    article_id: uuid.UUID | None = None,
+) -> list[SupplierExpenseAccrual]:
+    """ВСЕ живые начисления по строкам платежа, пересекающие период.
+
+    Ручное признание должно снять их все: гард в ``ensure_month_accrual`` блокирует месяц при
+    любом оставшемся, и отмена одного из двух (основной платёж и доплата за тот же месяц)
+    молча уменьшала расход — разовое снято, помесячное не создано.
+    """
+    conditions = [
+        SupplierExpenseAccrual.counterparty_id == counterparty_id,
+        SupplierExpenseAccrual.expense_draft_line_id.is_not(None),
+        SupplierExpenseAccrual.status != "cancelled",
+        SupplierExpenseAccrual.service_period_start <= end,
+        SupplierExpenseAccrual.service_period_end >= start,
+    ]
+    if article_id is not None:
+        conditions.append(
+            or_(
+                SupplierExpenseAccrual.article_id.is_(None),
+                SupplierExpenseAccrual.article_id == article_id,
+            )
+        )
+    rows = await session.scalars(select(SupplierExpenseAccrual).where(*conditions))
+    return list(rows.all())
+
+
 async def sync_expense_line_accrual(
     session: AsyncSession,
     line: ExpenseDraftLine,
@@ -352,7 +392,11 @@ async def recognize_due_expenses(
     recognized = 0
     for row in rows:
         month = recognition_month(row.service_period_end)
-        if month in closed:
+        # Закрытым считается не только месяц признания: расход раскладывается по ВСЕМ месяцам
+        # периода, и акт за июль-сентябрь, признанный в сентябре, дописал бы 12 000 ₽ в июль.
+        if closed.intersection(
+            accounting_periods.months_between(row.service_period_start, row.service_period_end)
+        ):
             continue
         row.status = "recognized"
         row.recognition_month = month
@@ -376,17 +420,19 @@ async def change_accrual_period(
 ) -> SupplierExpenseAccrual:
     """Перенести период и записать полный аудит. Проверку права делает API-слой."""
     start, end = validate_period(start, end)
-    # Закрытый месяц: и тот, ИЗ которого расход уносят, и тот, В который приносят. Проверять
-    # надо оба — иначе расход утёк бы в закрытый месяц или из него, и отчёт о прибыли,
-    # который уже сверили с банком, изменился бы задним числом.
+    # Закрытый месяц: и те, ИЗ которых расход уносят, и те, В которые приносят. Проверяем
+    # ВЕСЬ период, а не месяц признания: отчёт раскладывает сумму по всем месяцам периода,
+    # и правка 01.07–31.07 → 01.06–31.07 добавила бы расход в закрытый июнь, пройдя гард по
+    # recognition_month (июль) незамеченной.
     from app.services import accounting_periods
 
-    await accounting_periods.assert_month_open(
-        session, accrual.recognition_month, action="перенос периода"
+    await accounting_periods.assert_period_open(
+        session,
+        accrual.service_period_start,
+        accrual.service_period_end,
+        action="перенос периода",
     )
-    await accounting_periods.assert_month_open(
-        session, recognition_month(end), action="перенос периода"
-    )
+    await accounting_periods.assert_period_open(session, start, end, action="перенос периода")
     old_start = accrual.service_period_start
     old_end = accrual.service_period_end
     old_month = accrual.recognition_month
@@ -503,8 +549,11 @@ async def _cancel_accrual(
     if accrual.status == "recognized":
         from app.services import accounting_periods
 
-        if accrual.recognition_month is not None and await accounting_periods.is_month_closed(
-            session, accrual.recognition_month
+        closed = await accounting_periods.closed_months(session)
+        if closed.intersection(
+            accounting_periods.months_between(
+                accrual.service_period_start, accrual.service_period_end
+            )
         ):
             return accrual
     accrual.status = "cancelled"

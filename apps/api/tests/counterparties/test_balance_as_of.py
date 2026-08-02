@@ -187,3 +187,62 @@ async def test_informational_and_future_documents_stay_out(
         report = await build_balance_as_of(session, as_of=date(2026, 12, 31))
         assert report.payable_total == Decimal("0.00")
         assert report.rows == []
+
+
+async def test_prepayment_settlement_counts_from_the_money_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Гашение авансом не может произойти раньше, чем пришли деньги.
+
+    ЭкоЦентр присылает УПД, датированный 31.07, а счёт по нему оплачивают 15.08. По одной лишь
+    дате документа выходило, что на 31 июля долг уже закрыт, хотя предоплаты в тот день ещё не
+    существовало: обе стороны показывали ноль там, где был живой долг на 12 000 ₽.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Аванс позже документа", inn="6155000804")
+        wallet = await make_wallet(session, code="tbank-asof-3", name="Т-Банк")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="12000.00",
+            number="УПД-3107",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 31),
+            payment_status="paid",
+        )
+        tx = await _cash_payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="12000.00",
+            on=date(2026, 8, 15),
+        )
+        prepayment = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="prepaid_bill",
+            wallet_id=wallet.id,
+            amount=Decimal("12000.00"),
+            amount_settled=Decimal("12000.00"),
+            status="settled",
+            cashflow_transaction_id=tx.id,
+        )
+        session.add(prepayment)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                prepayment_id=prepayment.id,
+                amount=Decimal("12000.00"),
+                source_kind="prepayment",
+            )
+        )
+        await session.commit()
+
+        july = await build_balance_as_of(session, as_of=date(2026, 7, 31))
+        assert july.payable_total == Decimal("12000.00"), "долг закрыт деньгами из будущего"
+        assert july.receivable_total == Decimal("0.00"), "аванса 31 июля ещё не было"
+
+        august = await build_balance_as_of(session, as_of=date(2026, 8, 31))
+        assert august.payable_total == Decimal("0.00")
+        assert august.receivable_total == Decimal("0.00")

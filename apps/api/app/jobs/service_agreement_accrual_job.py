@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.services import clock
 from app.services.service_agreement_accruals import accrue_month
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ async def _run() -> None:
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with session_maker() as session:
-            created = await accrue_month(session, date.today())
+            created = await accrue_month(session, clock.moscow_today())
             if created:
                 await session.commit()
                 logger.info("service agreement accruals created: %s", len(created))

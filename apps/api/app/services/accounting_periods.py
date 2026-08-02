@@ -68,6 +68,43 @@ async def assert_month_open(session: AsyncSession, month: date | None, *, action
         )
 
 
+def months_between(start: date, end: date) -> list[date]:
+    """Все календарные месяцы периода — единица, которой мыслит и отчёт, и замок."""
+    month = month_start(start)
+    last = month_start(end)
+    out: list[date] = []
+    while month <= last:
+        out.append(month)
+        year, next_month = divmod(month.month, 12)
+        month = date(month.year + year, next_month + 1, 1)
+    return out
+
+
+async def assert_period_open(
+    session: AsyncSession, start: date | None, end: date | None, *, action: str
+) -> None:
+    """Бросить ``PeriodClosed``, если закрыт ХОТЬ ОДИН месяц периода.
+
+    Проверять надо весь период, а не месяц признания. ``recognition_month`` у начисления один —
+    месяц окончания услуги, — а отчёт о расходе раскладывает сумму по ВСЕМ месяцам периода
+    (``spread_over_months``). Пока замок сторожил только месяц признания, акт за июль-сентябрь,
+    признанный в сентябре, добавлял 12 000 ₽ в июль, который был закрыт и сверен с банком, —
+    и делал это в обход всех трёх гардов сразу. Единица у замка и у отчёта должна быть одна.
+    """
+    if start is None or end is None:
+        return
+    closed = await closed_months(session)
+    if not closed:
+        return
+    hit = [month for month in months_between(start, end) if month in closed]
+    if hit:
+        listed = ", ".join(f"{month:%m.%Y}" for month in hit)
+        raise PeriodClosed(
+            f"{listed} закрыт — {action} в закрытом месяце нельзя. "
+            "Откройте период в разделе «Учёт», если правка действительно нужна"
+        )
+
+
 async def close_month(
     session: AsyncSession,
     *,

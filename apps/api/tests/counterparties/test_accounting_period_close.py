@@ -208,3 +208,75 @@ async def test_incoming_document_does_not_erase_expense_of_a_closed_month(
         await session.refresh(accrual)
         assert accrual.status == "recognized"
         assert accrual.amount == Decimal("13000.00")
+
+
+async def test_multi_month_accrual_cannot_touch_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Квартальный акт не признаётся, пока хоть один месяц его периода закрыт.
+
+    Замок сторожил ``recognition_month`` — месяц ОКОНЧАНИЯ услуги, — а отчёт раскладывает
+    сумму по ВСЕМ месяцам периода. Акт на 36 000 ₽ за июль-сентябрь, признанный 1 октября,
+    дописывал 12 000 ₽ в июль, который был закрыт и сверен с банком, — и проходил мимо всех
+    трёх гардов, потому что сентябрь открыт. Единица у замка и у отчёта должна быть одна.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Замок Квартал", inn="6155000904")
+        article = await make_expense_article(session, code="CLS-Q", name="Услуги")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="36000.00",
+            doc_kind="closing",
+            invoice_date=date(2026, 9, 30),
+        )
+        accrual = SupplierExpenseAccrual(
+            counterparty_id=cp.id,
+            invoice_id=invoice.id,
+            article_id=article.id,
+            amount=Decimal("36000.00"),
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 9, 30),
+            status="scheduled",
+        )
+        session.add(accrual)
+        # Закрыт только ИЮЛЬ — первый месяц периода; месяц признания (сентябрь) открыт.
+        await accounting_periods.close_month(
+            session, period_month=date(2026, 7, 1), actor_user_id=None
+        )
+
+        assert await periods.recognize_due_expenses(session, as_of=date(2026, 10, 1)) == 0
+        await session.refresh(accrual)
+        assert accrual.status == "scheduled"
+
+        await accounting_periods.reopen_month(session, period_month=date(2026, 7, 1))
+        assert await periods.recognize_due_expenses(session, as_of=date(2026, 10, 1)) == 1
+
+
+async def test_period_change_cannot_pull_expense_into_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Расширение периода назад не заводит расход в закрытый месяц.
+
+    Гард проверял только месяц признания: правка 01.07–31.07 → 01.06–31.07 оставляла
+    recognition_month июлем (открыт) и проходила, а отчёт добавлял половину суммы в закрытый
+    июнь.
+    """
+    async with async_session_factory() as session:
+        accrual = await _recognized_accrual(
+            session, name="Замок Расширение", inn="6155000905", month=date(2026, 7, 1)
+        )
+        await accounting_periods.close_month(
+            session, period_month=date(2026, 6, 1), actor_user_id=None
+        )
+
+        with pytest.raises(accounting_periods.PeriodClosed) as exc:
+            await periods.change_accrual_period(
+                session,
+                accrual=accrual,
+                start=date(2026, 6, 1),
+                end=date(2026, 7, 31),
+                actor_user_id=None,
+                reason="расширяем период назад",
+            )
+        assert "06.2026 закрыт" in str(exc.value)
