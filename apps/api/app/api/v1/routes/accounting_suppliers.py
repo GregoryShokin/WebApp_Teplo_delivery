@@ -548,13 +548,7 @@ async def list_supplier_accounting(
         # период известен из него, по окончании месяца расход признаётся сам. Пока эта ветка
         # была безусловной, такая строка стояла в очереди вечно и краснела просрочкой за
         # документ, которого никто не выставит.
-        if prepayment.opening and not settles_itself:
-            # Входящий остаток — не оплата, а сальдо на дату начала учёта: остаток рекламного
-            # кабинета, аванс, доставшийся «в наследство». Закрывающего на него не выставит
-            # никто, и в очереди ожидания документа он стоял бы вечно — по режиму контрагента,
-            # который описывает его ОПЛАТЫ, а не входящее сальдо. Решение здесь за человеком.
-            prepayment_stage = "needs_period"
-        elif prepayment.kind == "prepaid_bill" and (not settles_itself or not period_known):
+        if prepayment.kind == "prepaid_bill" and (not settles_itself or not period_known):
             prepayment_stage = "waiting_document"
             deadline = settlement.expected_by(period_end, ctx.expected_days.get(cp_id))
             overdue = _overdue_days(today, deadline, period_known=period_known)
@@ -586,7 +580,7 @@ async def list_supplier_accounting(
             prepayment,
             documents_expected=documents_expected,
             covered_by_agreement=cp_id in ctx.self_settling,
-            closed_by_document=cp_id in ctx.per_invoice and not prepayment.opening,
+            closed_by_document=cp_id in ctx.per_invoice,
         )
         # Статья: своя, а если её нет — из карточки контрагента. Своей нет у всякой строки,
         # рождённой из счёта: проводки ДДС у неё не бывает по конструкции. Показывать «—»,

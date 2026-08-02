@@ -531,9 +531,7 @@ async def recognize_prepayment_period(
             session, prepayment.counterparty_id, today=as_of
         ),
         covered_by_agreement=agreement_covers,
-        # Входящий остаток — исключение: он не оплата, закрывающего на него не выставит никто,
-        # и запрет по режиму запер бы его в дебиторке навсегда.
-        closed_by_document=billing_mode == BILLING_MODE_PER_INVOICE and not prepayment.opening,
+        closed_by_document=billing_mode == BILLING_MODE_PER_INVOICE,
     )
     if refusal is not None:
         raise RecognitionRefused(refusal)

@@ -333,14 +333,17 @@ def test_paid_bill_row_is_dated_by_the_money_not_by_the_record(
     assert [row["payment_date"] for row in rows] == ["2026-07-08"]
 
 
-def test_opening_balance_is_not_waiting_for_any_document(
+def test_opening_balance_follows_the_billing_mode_like_any_other_money(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Входящий остаток — не платёж: закрывающего на него не выставит никто.
+    """Входящий остаток у «счёт + УПД» ждёт документ и признанию руками не подлежит.
 
-    Остаток рекламного кабинета Яндекс Директа на 01.06.2026 стоял в очереди «ждём документ»
-    наравне с оплатами — потому что режим контрагента описывает его ОПЛАТЫ, а не входящее
-    сальдо. Ждать по такой строке нечего и некого: решение за человеком, и кнопка ему нужна.
+    Сначала я сделал для сальдо исключение из правила «режим решает»: рассудил, что на остаток
+    закрывающего никто не выставит. Владелец поправил 02.08.2026: остаток рекламного кабинета —
+    та же дебиторка перед тем же контрагентом, и закроет её тот же УПД, что и оплаты. Кнопка на
+    такой строке вела в тупик — признание по месяцам к режиму ``per_invoice`` не применяется.
+
+    Строка при этом честно подписана остатком (``opening``), чтобы её не искали в выписке.
     """
 
     async def seed() -> uuid.UUID:
@@ -367,10 +370,10 @@ def test_opening_balance_is_not_waiting_for_any_document(
     row = {item["counterparty_id"]: item for item in response.json()["items"]}[str(cp_id)]
 
     assert row["opening"] is True
-    assert row["stage"] == "needs_period"
-    # Режим контрагента блокирует признание его ОПЛАТ — но не входящего сальдо: иначе оно
-    # осталось бы в дебиторке навсегда.
-    assert row["can_recognize"] is True
+    # Ждёт того же УПД, что и оплаты этого контрагента.
+    assert row["stage"] == "waiting_document"
+    assert row["can_recognize"] is False
+    assert "УПД" in row["recognize_blocked_reason"]
 
 
 def test_service_before_accounting_start_leaves_the_queue(
