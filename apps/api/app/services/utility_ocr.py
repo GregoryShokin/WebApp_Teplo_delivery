@@ -119,7 +119,7 @@ async def extract_text(
         payload = await call_tool(
             settings,
             tool=_OCR_TOOL,
-            model=settings.invoice_recognition_model,
+            model=settings.utility_ocr_model,
             max_tokens=4096,
             content=[
                 {
