@@ -23,7 +23,10 @@ Create Date: 2026-08-02
 
 from __future__ import annotations
 
+import uuid
+
 import sqlalchemy as sa
+from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -32,6 +35,45 @@ revision = "0244_utility_charges"
 down_revision = "0243_accrual_location"
 branch_labels = None
 depends_on = None
+
+UTILITIES_ARTICLE_NAME = "Коммунальные платежи"
+
+
+def _ensure_utilities_article() -> None:
+    """Завести статью «Коммунальные платежи», если её нет.
+
+    На проде она существует, но её завёл владелец руками через интерфейс — в каталоге
+    миграции 0114 её нет, и 0213 только проставляет ей признак помещения ПО ИМЕНИ. Из-за
+    этого на любой чистой базе (тесты, новый стенд, гринфилд) статьи не существует вовсе, и
+    модуль коммунальных услуг там не завести: поток без статьи создать нельзя.
+
+    Ищем по ИМЕНИ, а не по коду: прод-код сгенерён транслитом со случайным хвостом
+    (``kommunalnye_platezhi_0b0b4c``), совпасть с ним нельзя, а завести вторую статью с тем же
+    именем — значит расколоть расход надвое.
+    """
+    conn = op.get_bind()
+    existing = conn.execute(
+        text("SELECT id FROM dds_articles WHERE name = :name"),
+        {"name": UTILITIES_ARTICLE_NAME},
+    ).first()
+    if existing is not None:
+        return
+    conn.execute(
+        text(
+            "INSERT INTO dds_articles (id, code, name, movement_type, activity_type,"
+            " parent_id, is_active, description, location_required)"
+            " VALUES (:id, :code, :name, 'outflow', 'operating', NULL, true, :description, true)"
+        ),
+        {
+            "id": str(uuid.uuid4()),
+            "code": "kommunalnye_platezhi",
+            "name": UTILITIES_ARTICLE_NAME,
+            "description": (
+                "Вода, газ, электричество по торговым точкам — возмещение арендодателю по его "
+                "расчёту. Счёт ресурсника выставлен на него, первички на ИП нет."
+            ),
+        },
+    )
 
 
 def upgrade() -> None:
@@ -133,6 +175,8 @@ def upgrade() -> None:
     )
     op.create_index("ix_utility_intake_invoice", "utility_intake", ["invoice_id"])
 
+    _ensure_utilities_article()
+
 
 def downgrade() -> None:
     op.drop_index("ix_utility_intake_invoice", table_name="utility_intake")
@@ -143,5 +187,9 @@ def downgrade() -> None:
     op.drop_index("ix_utility_account_counterparty", table_name="utility_account")
     op.drop_index("ix_utility_account_location", table_name="utility_account")
     op.drop_table("utility_account")
-    # Значение enum не удаляем: PostgreSQL этого не умеет без пересоздания типа, а строки
+    # Статью «Коммунальные платежи» НЕ удаляем: на проде она существовала и до этой миграции,
+    # а на ней могли уже висеть проводки ДДС. Повторный upgrade её просто не задвоит — вставка
+    # идёт только когда статьи с таким именем нет.
+    #
+    # Значение enum не удаляем тоже: PostgreSQL этого не умеет без пересоздания типа, а строки
     # с source='utility' могли остаться.
