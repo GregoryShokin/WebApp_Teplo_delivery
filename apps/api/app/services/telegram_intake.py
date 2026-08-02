@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -37,7 +38,7 @@ from app.services import utility_intake
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TelegramIntakeError", "poll_and_ingest", "sender_label"]
+__all__ = ["TelegramIntakeError", "is_stale", "poll_and_ingest", "sender_label"]
 
 API_BASE = "https://api.telegram.org"
 
@@ -53,6 +54,25 @@ _next_offset: int | None = None
 
 class TelegramIntakeError(RuntimeError):
     """Разговор с Телеграмом не состоялся. Проход прекращается, курсор не двигается."""
+
+
+def is_stale(message: dict[str, Any], *, max_age_seconds: int, now_ts: float) -> bool:
+    """Сообщение старше отсечки? Такие не берём в работу, но подтверждаем.
+
+    Телеграм держит неподтверждённые обновления сутки и отдаёт их все разом при первом
+    обращении. Для приложения, которое только что задеплоили, это значит пачку вчерашних
+    документов — часть из них к тому времени уже проведена руками, и повтор пришлось бы
+    разбирать. Плюс ссылка на файл в Телеграме живёт около часа: у старого сообщения снимок
+    всё равно уже не скачается, и «обработка» кончилась бы ошибкой.
+
+    Сообщение без даты не отбрасываем: сомнение толкуем в пользу документа.
+    """
+    if max_age_seconds <= 0:
+        return False
+    sent_at = message.get("date")
+    if not isinstance(sent_at, int | float):
+        return False
+    return (now_ts - float(sent_at)) > max_age_seconds
 
 
 def sender_label(message: dict[str, Any]) -> str:
@@ -247,6 +267,12 @@ async def poll_and_ingest(session: AsyncSession, *, settings: Settings) -> dict[
     if not token:
         return {"status": "not_configured"}
 
+    max_age = max(0, settings.telegram_intake_max_message_age_minutes) * 60
+    now_ts = datetime.now(UTC).timestamp()
+    # Про отсечку говорим ОДИН раз на чат за проход: при завале в полсотни сообщений полсотни
+    # одинаковых уведомлений — это не забота, а спам.
+    warned_chats: set[Any] = set()
+
     result: dict[str, Any] = {"status": "ok", "updates": 0}
     async with _make_client() as client:
         updates = await _call(
@@ -261,7 +287,24 @@ async def poll_and_ingest(session: AsyncSession, *, settings: Settings) -> dict[
             update_id = int(update.get("update_id"))
             message = update.get("message")
             outcome = "skipped"
-            if isinstance(message, dict):
+            if isinstance(message, dict) and is_stale(
+                message, max_age_seconds=max_age, now_ts=now_ts
+            ):
+                # Подтверждаем, но не заводим: документ вчерашний, а его снимок Телеграм уже
+                # не отдаст. Молчать нельзя — человек считает, что документ у нас.
+                chat_id = (message.get("chat") or {}).get("id")
+                if chat_id is not None and chat_id not in warned_chats:
+                    warned_chats.add(chat_id)
+                    await _notify(
+                        client,
+                        token,
+                        chat_id,
+                        "⏳ Пропустил сообщения старше часа — они пришли, пока приёмка была "
+                        "выключена. Если документ ещё актуален, пришлите его заново.",
+                    )
+                logger.info("telegram_intake: сообщение %s старше отсечки — пропущено", update_id)
+                outcome = "stale"
+            elif isinstance(message, dict):
                 try:
                     outcome = await _handle_message(
                         session, client, token=token, settings=settings, message=message

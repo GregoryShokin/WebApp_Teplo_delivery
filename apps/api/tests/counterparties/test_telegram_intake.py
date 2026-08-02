@@ -8,7 +8,10 @@
 * человек получает ОТВЕТ с суммами. Переслать документ в тишину — то же самое, что потерять
   его: владелец не узнает ни что документ принят, ни какие числа система из него достала;
 * очередь не встаёт колом. Ссылка на файл в Телеграме живёт около часа, и сбойное сообщение,
-  которое не подтвердили, блокировало бы все следующие документы навсегда.
+  которое не подтвердили, блокировало бы все следующие документы навсегда;
+* вчерашний завал не вываливается в учёт. Телеграм держит неподтверждённое сутки и отдаёт
+  всё разом при первом обращении — после деплоя это была бы пачка документов, часть которых
+  уже проведена руками.
 
 Телеграм подменён транспортом ``httpx.MockTransport``, распознавание — текстом настоящего
 акта: проверяем курьера, а не сеть и не зрение модели.
@@ -19,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -77,11 +80,18 @@ class FakeTelegram:
         return httpx.AsyncClient(transport=httpx.MockTransport(self.handler))
 
 
-def _photo_update(update_id: int, *, chat_id: int = OWNER_CHAT, file_id: str = "act") -> dict:
+def _photo_update(
+    update_id: int,
+    *,
+    chat_id: int = OWNER_CHAT,
+    file_id: str = "act",
+    age_seconds: int = 0,
+) -> dict:
     return {
         "update_id": update_id,
         "message": {
             "message_id": update_id,
+            "date": int(datetime.now(UTC).timestamp()) - age_seconds,
             "chat": {"id": chat_id, "type": "private"},
             "from": {"id": chat_id, "first_name": "Григорий", "username": "gshokin"},
             "photo": [
@@ -97,6 +107,7 @@ def _text_update(update_id: int, text: str = "привет") -> dict:
         "update_id": update_id,
         "message": {
             "message_id": update_id,
+            "date": int(datetime.now(UTC).timestamp()),
             "chat": {"id": OWNER_CHAT, "type": "private"},
             "text": text,
         },
@@ -355,3 +366,59 @@ async def test_without_token_nothing_happens(
     async with async_session_factory() as session:
         result = await telegram_intake.poll_and_ingest(session, settings=settings)
     assert result == {"status": "not_configured"}
+
+
+async def test_yesterdays_backlog_is_skipped_with_one_notice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    settings_with_bot,
+    ocr_act,
+) -> None:
+    """Вчерашние сообщения не заводят документов — но человек об этом узнаёт один раз.
+
+    После деплоя Телеграм отдаёт всё неподтверждённое за сутки. Провести эту пачку значило бы
+    завести документы, часть которых уже внесена руками, а снимки к ним Телеграм и не отдаст:
+    ссылка на файл живёт около часа. Молчать тоже нельзя — человек считает, что документ у нас.
+    Уведомление ОДНО на чат: полсотни одинаковых сообщений — это не забота, а спам.
+    """
+    stale = [
+        _photo_update(30, age_seconds=8 * 3600),
+        _photo_update(31, age_seconds=7 * 3600, file_id="act2"),
+    ]
+    telegram = FakeTelegram([[*stale, _photo_update(32, file_id="act3")]], {"act": JPEG})
+    monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
+
+    async with async_session_factory() as session:
+        await _flow(session)
+
+        result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
+
+        assert result.get("stale") == 2
+        # Свежее сообщение того же прохода обработано — отсечка режет по возрасту, а не подряд.
+        assert result.get("linked") == 1
+        assert await _intake_count(session) == 1
+        notices = [msg for msg in telegram.sent if "старше часа" in msg["text"]]
+        assert len(notices) == 1, "уведомление об отсечке — одно на чат за проход"
+        # Курсор ушёл за все три: иначе вчерашний завал возвращался бы каждые полминуты.
+        assert telegram_intake._next_offset == 33
+
+
+async def test_cutoff_can_be_switched_off(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    settings_with_bot,
+    ocr_act,
+) -> None:
+    """Ноль в настройке — отсечки нет: старое сообщение берётся в работу как обычное."""
+    monkeypatch.setattr(
+        settings_with_bot, "telegram_intake_max_message_age_minutes", 0, raising=False
+    )
+    telegram = FakeTelegram([[_photo_update(40, age_seconds=10 * 3600)]], {"act": JPEG})
+    monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
+
+    async with async_session_factory() as session:
+        await _flow(session)
+
+        result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
+
+        assert result.get("linked") == 1
