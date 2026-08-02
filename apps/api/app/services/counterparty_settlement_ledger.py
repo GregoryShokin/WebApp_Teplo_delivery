@@ -52,6 +52,7 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.models.enums import UTILITY_INVOICE_SOURCE
 
 # Статусы предоплат, которые ещё держат дебиторку (те же, что в плитке «Остатки»).
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
@@ -496,27 +497,45 @@ async def build_ledger(
         # выставлял. Называть его «УПД №…» нельзя ни в коем случае: человек решит, что
         # первичка есть, и учтёт расход в налоговой базе, которой он не принадлежит.
         self_billed = doc.source == "self_billed"
+        # Возмещение коммуналки — тоже не первичка на нас: счёт выставлен арендодателю по его
+        # договору с ресурсником, мы лишь возвращаем ему деньги. Показать это «УПД № …» значит
+        # соврать дважды: и про наличие документа, и про налоговые расходы.
+        utility = doc.source == UTILITY_INVOICE_SOURCE
         binds = doc.activation_status == "active" and not doc.informational
+
+        if self_billed:
+            title = "Признано без документа"
+        elif utility:
+            title = doc.number or "Возмещение коммунальных расходов"
+        else:
+            title = f"УПД № {doc.number}" if doc.number else "Закрывающий документ"
+
+        unpaid_note = remainder > 0 and doc.activation_status == "active"
+        if self_billed:
+            subtitle = "первички нет — в налоговые расходы не идёт"
+        elif utility:
+            # Природу называем всегда, но не ценой главного: неоплаченный долг человек должен
+            # видеть строкой, а не выводить из суммы.
+            subtitle = (
+                "расчёт арендодателя, не оплачено"
+                if unpaid_note
+                else "расчёт арендодателя — в налоговые расходы не идёт"
+            )
+        elif doc.informational:
+            subtitle = "расход уже начислен по договору — документ справочный"
+        elif unpaid_note:
+            subtitle = "не оплачен"
+        else:
+            subtitle = "вступает в силу позже" if doc.activation_status != "active" else None
+
         rows.append(
             LedgerRow(
                 kind="document",
                 id=doc.id,
                 row_date=doc_date,
                 amount=money(doc.amount),
-                title=(
-                    "Признано без документа"
-                    if self_billed
-                    else (f"УПД № {doc.number}" if doc.number else "Закрывающий документ")
-                ),
-                subtitle=(
-                    "первички нет — в налоговые расходы не идёт"
-                    if self_billed
-                    else "расход уже начислен по договору — документ справочный"
-                    if doc.informational
-                    else "не оплачен"
-                    if remainder > 0 and doc.activation_status == "active"
-                    else ("вступает в силу позже" if doc.activation_status != "active" else None)
-                ),
+                title=title,
+                subtitle=subtitle,
                 period_start=start,
                 period_end=end,
                 uncovered=remainder if binds else Decimal("0"),

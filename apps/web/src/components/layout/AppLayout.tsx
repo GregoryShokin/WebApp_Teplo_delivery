@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CreditCard,
+  Droplets,
   Flame,
   Home,
   Inbox,
@@ -141,6 +142,12 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Учёт ОС", href: "/fixed-assets", icon: Boxes, section: "accounting.fixed-assets" },
       { label: "Учёт ДЗ/КЗ", href: "/dz-kz", icon: ArrowLeftRight, section: "accounting.dz-kz" },
+      {
+        label: "Коммунальные услуги",
+        href: "/utilities",
+        icon: Droplets,
+        section: "accounting.utilities",
+      },
       { label: "Налоги", href: "/taxes", icon: Landmark, section: "accounting.taxes" },
     ],
   },
