@@ -526,3 +526,99 @@ def test_patch_service_period_answers_with_full_item(
     assert payload["stage"] == "period_running"
     assert payload["service_period_start"] == "2026-08-01"
     assert payload["service_period_end"] == "2030-11-30"
+
+
+def test_agreement_counterparty_shows_one_eternal_accrual_row(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Договорный контрагент в очереди — одна вечная строка начисления, платежей нет.
+
+    Модель владельца 02.08.2026: у договора с фиксированной суммой платежи неважны — «просто
+    50 000 начисляется всегда», копится в кредиторку, платежи её гасят. Очередь показывает
+    сам факт: «1-го числа начислится 50 000». До этого экран показывал ПЛАТЕЖИ (аванс висел
+    строкой, а постоплатный Наумченко не был виден вовсе), а заранее заведённый документ
+    аренды добавлял вторую строку — плитка складывала одну аренду дважды.
+    """
+    from app.models import CounterpartyServiceAgreement, SupplierExpenseAccrual
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            # Арендная модель: договор + уплаченный аванс + заранее заведённый pending-док.
+            landlord = await make_counterparty(
+                session, name="Договор Арендодатель", inn="6155000418"
+            )
+            article = await make_expense_article(session, name="Договор Статья")
+            session.add(
+                CounterpartyServiceAgreement(
+                    counterparty_id=landlord.id,
+                    title="Аренда точки",
+                    monthly_amount=Decimal("50000.00"),
+                    dds_article_id=article.id,
+                    documents_mode="informal",
+                    started_on=date(2026, 1, 1),
+                    accrual_enabled=True,
+                )
+            )
+            await _open_prepayment(
+                session, counterparty_id=landlord.id, amount="50000.00", paid_on=date(2026, 7, 30)
+            )
+            pending = await make_invoice(
+                session,
+                counterparty_id=landlord.id,
+                amount="50000.00",
+                doc_kind="closing",
+                activation_status="pending",
+                invoice_date=date(2026, 8, 31),
+                number="Аренда 08.2026",
+            )
+            session.add(
+                SupplierExpenseAccrual(
+                    counterparty_id=landlord.id,
+                    invoice_id=pending.id,
+                    article_id=article.id,
+                    amount=Decimal("50000.00"),
+                    service_period_start=date(2026, 8, 1),
+                    service_period_end=date(2026, 8, 31),
+                    status="scheduled",
+                )
+            )
+
+            # Постоплатная модель (Наумченко): договор есть, платежей нет вовсе.
+            postpaid = await make_counterparty(
+                session, name="Договор Постоплата", inn="6155000419"
+            )
+            session.add(
+                CounterpartyServiceAgreement(
+                    counterparty_id=postpaid.id,
+                    title="Налоговое обслуживание",
+                    monthly_amount=Decimal("3000.00"),
+                    dds_article_id=article.id,
+                    documents_mode="informal",
+                    started_on=date(2026, 4, 1),
+                    accrual_enabled=True,
+                )
+            )
+            await session.commit()
+            return landlord.id, postpaid.id
+
+    landlord_id, postpaid_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    items = response.json()["items"]
+
+    # Арендодатель: ровно одна строка — договорная. Ни платежа, ни прогноза pending-дока.
+    landlord_rows = [i for i in items if i["counterparty_id"] == str(landlord_id)]
+    assert [i["source_kind"] for i in landlord_rows] == ["agreement_schedule"]
+    row = landlord_rows[0]
+    assert row["stage"] == "period_running"
+    assert row["amount"] == 50000.0
+    assert row["note"] == "Аренда точки"
+    # «Начислится 1-го числа следующего месяца» — и период, известный договору, не гипотеза.
+    assert row["auto_recognition_on"] is not None
+    assert row["period_assumed"] is False
+    assert row["can_recognize"] is False
+
+    # Постоплатный договор виден в очереди, хотя платежей по нему нет ни одного.
+    postpaid_rows = [i for i in items if i["counterparty_id"] == str(postpaid_id)]
+    assert [i["source_kind"] for i in postpaid_rows] == ["agreement_schedule"]
+    assert postpaid_rows[0]["amount"] == 3000.0
