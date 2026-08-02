@@ -282,8 +282,8 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
           <h1 className="text-2xl font-medium">Страница на оплату</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Счета на оплату от непроизводственных контрагентов (услуги, маркетинг, подписки):
-            распознанные контрагент и сумма. Склад не затрагивают. Подтвердите счёт — он будет
-            готов к оплате в банк прямо отсюда.
+            распознанные контрагент и сумма. Склад не затрагивают. Приходят почтой, по ЭДО и
+            фотографией из рук. Подтвердите счёт — он будет готов к оплате в банк прямо отсюда.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -321,7 +321,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Всего из почты" value={String(metrics.total)} />
+        <MetricCard label="Всего документов" value={String(metrics.total)} />
         <MetricCard label="Требуют проверки" value={String(metrics.review)} accent="info" />
         <MetricCard label="Готовы к оплате" value={String(metrics.linked)} />
         <MetricCard label="Дубли / не счета" value={String(metrics.noise)} />
@@ -385,7 +385,7 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  Пусто. Новые счета появятся после опроса почты.
+                  Пусто. Счета приходят почтой и по ЭДО, а квитанцию можно принести кнопкой «Загрузить документ».
                 </TableCell>
               </TableRow>
             ) : (

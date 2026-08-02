@@ -27,12 +27,14 @@ import { confirmUtilityIntake, fetchIntakeFileUrl, type PaymentIntake } from "./
 import { DocumentPreview } from "./DocumentPreview";
 
 function Field({
+  id,
   label,
   value,
   onChange,
   type = "text",
   hint,
 }: {
+  id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
@@ -41,8 +43,12 @@ function Field({
 }) {
   return (
     <div className="grid gap-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} />
+      {/* Подпись связана с полем явно: иначе она подпись только на вид — ни экранный диктор,
+          ни клик по тексту до поля не доберутся. */}
+      <Label htmlFor={id} className="text-xs text-muted-foreground">
+        {label}
+      </Label>
+      <Input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} />
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -198,12 +204,19 @@ export function UtilityDialog({
 
             <div className="grid gap-2 sm:grid-cols-2">
               <Field
+                id="utility-period-start"
                 label="Период с"
                 type="date"
                 value={periodStart}
                 onChange={setPeriodStart}
               />
-              <Field label="Период по" type="date" value={periodEnd} onChange={setPeriodEnd} />
+              <Field
+                id="utility-period-end"
+                label="Период по"
+                type="date"
+                value={periodEnd}
+                onChange={setPeriodEnd}
+              />
             </div>
             <p className="-mt-2 text-xs text-muted-foreground">
               Месяц ПОТРЕБЛЕНИЯ, а не дата бумажки: расчёт за июнь, принесённый в июле, обязан
@@ -230,6 +243,7 @@ export function UtilityDialog({
             </div>
 
             <Field
+              id="utility-payable"
               label="К оплате, ₽"
               value={payable}
               onChange={setPayable}
@@ -242,6 +256,7 @@ export function UtilityDialog({
               </p>
             ) : (
               <Field
+                id="utility-expense"
                 label="Расход за период, ₽"
                 value={expense}
                 onChange={setExpense}
