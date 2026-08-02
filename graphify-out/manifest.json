@@ -1955,9 +1955,9 @@
     "semantic_hash": "1b79e49f53fbd1da26bc4ae81b70919d"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/supplier_prepayments.py": {
-    "mtime": 1785668249.257847,
-    "ast_hash": "2430b8caca2920026c3cf29bdc5c04d8",
-    "semantic_hash": "2430b8caca2920026c3cf29bdc5c04d8"
+    "mtime": 1785675385.4629416,
+    "ast_hash": "a8c82357d0f0c131a7824d74506698e4",
+    "semantic_hash": "a8c82357d0f0c131a7824d74506698e4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/vacation_service.py": {
     "mtime": 1781646236.2938297,
@@ -3080,9 +3080,9 @@
     "semantic_hash": "9f801ee01b3f345ef9da265077633349"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/dds/NewPaymentDialog.tsx": {
-    "mtime": 1785668249.269897,
-    "ast_hash": "3f2ea9c6b0d47b2631f0bc4a88a95b2b",
-    "semantic_hash": "3f2ea9c6b0d47b2631f0bc4a88a95b2b"
+    "mtime": 1785675385.471047,
+    "ast_hash": "06d9581c6c2aab03ddb23a0bdc280041",
+    "semantic_hash": "06d9581c6c2aab03ddb23a0bdc280041"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/dds/SafeAccountDialog.tsx": {
     "mtime": 1784067914.8790126,
@@ -3625,9 +3625,9 @@
     "semantic_hash": "a2d02a18c043a86a88db76ff671a884e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/WORK-IN-PROGRESS.md": {
-    "mtime": 1785074266.5366066,
-    "ast_hash": "4162e8e4819f643b1d2b97c1e7df73f3",
-    "semantic_hash": "4162e8e4819f643b1d2b97c1e7df73f3"
+    "mtime": 1785678451.1528924,
+    "ast_hash": "548e5e77ee6847c3ec8f90736056e0d4",
+    "semantic_hash": "548e5e77ee6847c3ec8f90736056e0d4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/app-spec/00-index.md": {
     "mtime": 1780088188.7599561,
@@ -4370,9 +4370,9 @@
     "semantic_hash": "4ea56956ef8154fca987f71a8f8a1b99"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/accounting_suppliers.py": {
-    "mtime": 1785668249.2388813,
-    "ast_hash": "810a1e4e84567b37a11f3adadf8bc780",
-    "semantic_hash": "810a1e4e84567b37a11f3adadf8bc780"
+    "mtime": 1785675385.4594352,
+    "ast_hash": "33fc648a6630cbe370711bb54ed6e8fc",
+    "semantic_hash": "33fc648a6630cbe370711bb54ed6e8fc"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/finance_payments.py": {
     "mtime": 1784562714.802769,
@@ -4410,9 +4410,9 @@
     "semantic_hash": "49bea8fe60cc203f72e740329075db29"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/fixed_asset.py": {
-    "mtime": 1785570056.2848456,
-    "ast_hash": "1372963a9b66e440bc191df6e69d737c",
-    "semantic_hash": "1372963a9b66e440bc191df6e69d737c"
+    "mtime": 1785678451.1536756,
+    "ast_hash": "a8b9faed4a4c3c3b10b97efbf939c047",
+    "semantic_hash": "a8b9faed4a4c3c3b10b97efbf939c047"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/models/lease.py": {
     "mtime": 1785423381.4036338,
@@ -4895,9 +4895,9 @@
     "semantic_hash": "3716289291070fce09e5739bc38c5382"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/accounting/dz-kz.tsx": {
-    "mtime": 1785668249.2671413,
-    "ast_hash": "e320725684e1dbf4725f937ae1c44ce8",
-    "semantic_hash": "e320725684e1dbf4725f937ae1c44ce8"
+    "mtime": 1785675385.465769,
+    "ast_hash": "1c85c43e80e8ad38c6ff72ff61c6e660",
+    "semantic_hash": "1c85c43e80e8ad38c6ff72ff61c6e660"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/counterparties/BulkPayDialog.tsx": {
     "mtime": 1785426936.7038925,
@@ -6675,9 +6675,9 @@
     "semantic_hash": "93c04a2a83e5f505d2ecf766c2aafcce"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/fixed_assets.py": {
-    "mtime": 1785570056.284512,
-    "ast_hash": "df2b9fff954cd44fc8cb673a9e7efb60",
-    "semantic_hash": "df2b9fff954cd44fc8cb673a9e7efb60"
+    "mtime": 1785678451.1534967,
+    "ast_hash": "c69e8ed7cd8f428f76b4df041afb1959",
+    "semantic_hash": "c69e8ed7cd8f428f76b4df041afb1959"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/jobs/depreciation_job.py": {
     "mtime": 1785440858.4817154,
@@ -6700,14 +6700,14 @@
     "semantic_hash": "df228fb31a2dedaf45ca9def8f455474"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/asset_balance.py": {
-    "mtime": 1785440858.4859653,
-    "ast_hash": "5d49aaff4f1a08c19eaea62afed3d08a",
-    "semantic_hash": "5d49aaff4f1a08c19eaea62afed3d08a"
+    "mtime": 1785678451.1539042,
+    "ast_hash": "322c022b70ed48902336d05ce9986ba0",
+    "semantic_hash": "322c022b70ed48902336d05ce9986ba0"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/asset_revaluation.py": {
-    "mtime": 1785514700.252377,
-    "ast_hash": "e3b6ff64ab666f74ba8a77293fd5b572",
-    "semantic_hash": "e3b6ff64ab666f74ba8a77293fd5b572"
+    "mtime": 1785678451.1543107,
+    "ast_hash": "8e3af88a76410dc60e3d7077fb7a5091",
+    "semantic_hash": "8e3af88a76410dc60e3d7077fb7a5091"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_fixed_assets_api.py": {
     "mtime": 1785570056.285594,
@@ -6730,14 +6730,14 @@
     "semantic_hash": "6481042213433516e1650ff3d1487784"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/fixed-assets/api.ts": {
-    "mtime": 1785570056.2859724,
-    "ast_hash": "9fdc3c2c6266705b0604da46b6166c4f",
-    "semantic_hash": "9fdc3c2c6266705b0604da46b6166c4f"
+    "mtime": 1785678451.1546624,
+    "ast_hash": "c69a3c1007823ca274df94ee9117006a",
+    "semantic_hash": "c69a3c1007823ca274df94ee9117006a"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/fixed-assets/index.tsx": {
-    "mtime": 1785570056.2866209,
-    "ast_hash": "74697adb6b0485905f57daead2ab8687",
-    "semantic_hash": "74697adb6b0485905f57daead2ab8687"
+    "mtime": 1785678451.1559134,
+    "ast_hash": "30ae78ec6dc281a7e90b36b9eeeb93e0",
+    "semantic_hash": "30ae78ec6dc281a7e90b36b9eeeb93e0"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/tax-draft-cancel.spec.ts": {
     "mtime": 1785439300.067409,
@@ -6985,9 +6985,9 @@
     "semantic_hash": "387b157383aee30159bd1abc2a341b91"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/subscription_accruals.py": {
-    "mtime": 1785668249.2559323,
-    "ast_hash": "c76163e6f7f7f8833d57223e0278761a",
-    "semantic_hash": "c76163e6f7f7f8833d57223e0278761a"
+    "mtime": 1785675385.461913,
+    "ast_hash": "4749c0463ac7d537bad4f95b0d274fe9",
+    "semantic_hash": "4749c0463ac7d537bad4f95b0d274fe9"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_accounting_period_close.py": {
     "mtime": 1785668249.2583146,
@@ -7020,9 +7020,9 @@
     "semantic_hash": "d7399ad11215af0288a983a4d3dd658c"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_recognition_stages.py": {
-    "mtime": 1785668249.2620077,
-    "ast_hash": "b9668e40ce71b9bda930abd57506fc92",
-    "semantic_hash": "b9668e40ce71b9bda930abd57506fc92"
+    "mtime": 1785675385.4649937,
+    "ast_hash": "23db30a3bb03160bc76f6f72fa9bc07c",
+    "semantic_hash": "23db30a3bb03160bc76f6f72fa9bc07c"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_remember_counterparty_rule.py": {
     "mtime": 1785668249.2621834,
@@ -7093,5 +7093,30 @@
     "mtime": 1785668249.26376,
     "ast_hash": "93ed07e4977f67448e95c19036c30ab9",
     "semantic_hash": "93ed07e4977f67448e95c19036c30ab9"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/alembic/versions/0244_asset_disposal.py": {
+    "mtime": 1785678451.1530325,
+    "ast_hash": "ebf533a53c2194c208ad064eaf66571f",
+    "semantic_hash": "ebf533a53c2194c208ad064eaf66571f"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/asset_disposal.py": {
+    "mtime": 1785678451.1540027,
+    "ast_hash": "75b7ddf99f326c7aaf72dc2e53ad78fe",
+    "semantic_hash": "75b7ddf99f326c7aaf72dc2e53ad78fe"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/counterparties/test_period_travels_to_receivable.py": {
+    "mtime": 1785675385.4643564,
+    "ast_hash": "894e88eef4778548b06628671c12c920",
+    "semantic_hash": "894e88eef4778548b06628671c12c920"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_fixed_assets_disposal.py": {
+    "mtime": 1785678451.15449,
+    "ast_hash": "3e0e5a5e9542bccb7aeece8db2de2042",
+    "semantic_hash": "3e0e5a5e9542bccb7aeece8db2de2042"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/asset-disposal.spec.ts": {
+    "mtime": 1785678451.156063,
+    "ast_hash": "f907d1e177bb3df4841c5513346ffd97",
+    "semantic_hash": "f907d1e177bb3df4841c5513346ffd97"
   }
 }
