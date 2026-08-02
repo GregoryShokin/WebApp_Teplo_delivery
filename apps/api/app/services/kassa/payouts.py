@@ -29,7 +29,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -52,8 +52,8 @@ from app.models import (
     SupplierPrepayment,
     Wallet,
 )
+from app.services import clock
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
-from app.services.freelancer.shift_settlement import FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
     KASSA_TARGET_PAYOUT_SOURCE_KIND,
@@ -61,6 +61,7 @@ from app.services.banking.safe_allocations import (
     kassa_targets_total,
     pay_allocation,
 )
+from app.services.freelancer.shift_settlement import FREELANCER_SHIFT_PAYOUT_SOURCE_KIND
 from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
@@ -141,8 +142,12 @@ class KassaPayoutResult:
 
 
 def kassa_today() -> date:
-    """Календарная дата кассы (МСК): правило «править можно в день создания»."""
-    return datetime.now(MOSCOW_TZ).date()
+    """Календарная дата кассы (МСК): правило «править можно в день создания».
+
+    Через ``clock``, а не напрямую от системных часов: так дату можно закрепить в тестах
+    одной подменой — см. докстринг ``app.services.clock``.
+    """
+    return clock.moscow_today()
 
 
 def _money(value: object) -> Decimal:

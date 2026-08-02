@@ -65,6 +65,7 @@ ReviewStatus = Literal["ok", "requires_owner_review"]
 SpecProfile = Literal["equipment", "furniture", "other"]
 AssetCondition = Literal["new", "used"]
 ConditionReportKind = Literal["purchase", "incident"]
+AcquisitionSource = Literal["purchase", "owner_contribution", "owner_loan", "donation"]
 
 STATUS_TITLES: dict[str, str] = {
     "in_use": "В работе",
@@ -98,6 +99,8 @@ class FixedAssetRead(BaseModel):
     brand_model: str | None
     # Новым куплен объект или с рук; NULL у карточек описи 2026 — «неизвестно».
     condition: AssetCondition | None
+    # Откуда объект взялся у бизнеса — правая сторона баланса. NULL = «не указано».
+    acquisition_source: AcquisitionSource | None
     category_id: uuid.UUID | None
     category_name: str | None
     initial_cost: Decimal
@@ -229,6 +232,25 @@ class FixedAssetCreateRequest(BaseModel):
     location_id: uuid.UUID | None = None
     source_ref: str | None = Field(default=None, max_length=64)
     note: str | None = None
+    acquisition_source: AcquisitionSource | None = None
+
+    @model_validator(mode="after")
+    def _market_asset_needs_an_origin(self) -> FixedAssetCreateRequest:
+        """Оценка «рыночная» — значит фирма за объект не платила, и происхождение обязательно.
+
+        Актив вырос, деньги не тратились: в балансе обязана появиться встречная запись —
+        вклад собственника, долг перед ним или безвозмездное поступление. Спросить об этом
+        можно только сейчас, пока человек помнит; через год про мангал не вспомнит никто, и
+        правая сторона баланса будет восстанавливаться догадками.
+
+        У оценки «по платежу» вопроса нет: заплатила фирма, и происхождение подставляется само.
+        """
+        if self.valuation_basis == "market" and self.acquisition_source is None:
+            raise ValueError(
+                "Укажите, откуда объект взялся: вклад собственника, долг перед ним или "
+                "безвозмездное поступление — без этого в балансе не будет встречной записи"
+            )
+        return self
 
     @field_validator("name", "brand_model", "inventory_number", "source_ref", "note", mode="after")
     @classmethod
@@ -255,6 +277,9 @@ class FixedAssetUpdateRequest(BaseModel):
     review_status: ReviewStatus | None = None
     review_reason: str | None = None
     note: str | None = None
+    # Правится задним числом сознательно: 149 карточек описи 2026 стоят без происхождения, и
+    # разметить их может только владелец — поштучно, по мере того как вспоминает.
+    acquisition_source: AcquisitionSource | None = None
 
 
 class DepreciationCorrectionRequest(BaseModel):
@@ -331,6 +356,7 @@ def _payload(
         inventory_number=asset.inventory_number,
         brand_model=asset.brand_model,
         condition=asset.condition,  # type: ignore[arg-type]
+        acquisition_source=asset.acquisition_source,  # type: ignore[arg-type]
         category_id=asset.category_id,
         category_name=category.name if category else None,
         initial_cost=initial,
@@ -625,6 +651,9 @@ async def create_asset_from_payment(
             location_id=payload.location_id,
             brand_model=(payload.brand_model or "").strip() or None,
             condition=payload.condition,
+            # Заплатила фирма — правую сторону баланса эта карточка не двигает, и вопроса
+            # «откуда объект» здесь не существует.
+            acquisition_source="purchase",
             note=note,
         )
     except service.FixedAssetError as exc:
@@ -1034,6 +1063,7 @@ async def create_asset_endpoint(
             status=payload.status,
             location_id=payload.location_id,
             brand_model=payload.brand_model,
+            acquisition_source=payload.acquisition_source,
             source_ref=payload.source_ref,
             inventory_number=payload.inventory_number,
             note=payload.note,

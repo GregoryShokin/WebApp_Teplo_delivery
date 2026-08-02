@@ -20,6 +20,13 @@ export type AssetStatus = "in_use" | "in_storage" | "not_working" | "disposed" |
 export type ValuationBasis = "market" | "payment";
 export type ReviewStatus = "ok" | "requires_owner_review";
 
+/** Откуда объект взялся у бизнеса — правая сторона баланса.
+ *
+ * `purchase` встречной записи не создаёт: деньги ушли, объект пришёл, итог тот же. Остальные
+ * три означают, что актив вырос, а деньги не тратились, — и в пассиве обязана появиться
+ * запись на ту же сумму. `null` — «не указано»: так стоят карточки описи 2026. */
+export type AcquisitionSource = "purchase" | "owner_contribution" | "owner_loan" | "donation";
+
 export type AssetCategory = {
   id: string;
   name: string;
@@ -54,6 +61,7 @@ export type FixedAsset = {
   review_status: ReviewStatus;
   review_reason: string | null;
   note: string | null;
+  acquisition_source: AcquisitionSource | null;
   depreciating: boolean;
 };
 
@@ -156,6 +164,7 @@ export type CreateAssetPayload = {
   location_id?: string | null;
   source_ref?: string | null;
   note?: string | null;
+  acquisition_source?: AcquisitionSource | null;
 };
 
 export type UpdateAssetPayload = Partial<Omit<CreateAssetPayload, "inventory_number">> & {

@@ -40,6 +40,9 @@ def _create(client: TestClient, headers: dict[str, str], **overrides) -> dict:
         "commissioned_on": "2026-01-01",
         "valuation_basis": "market",
         "valued_on": "2026-01-01",
+        # Рыночная оценка означает, что фирма за объект не платила, и происхождение с
+        # 0232 обязательно: иначе в балансе не появится встречной записи.
+        "acquisition_source": "owner_contribution",
     }
     payload.update(overrides)
     response = client.post(BASE, headers=headers, json=payload)
@@ -486,3 +489,90 @@ def test_manager_message_about_a_breakdown_is_not_a_purchase(
     )
     assert reported.status_code == 202, reported.text
     assert reported.json()["kind"] == "incident"
+
+
+def test_market_asset_must_say_where_it_came_from(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Оценка «рыночная» — значит фирма не платила, и происхождение обязательно.
+
+    Баланс — две стороны одного имущества. Покупка правую сторону не двигает: деньги ушли,
+    объект пришёл. А объект, за который фирма не платила, увеличивает актив, ничего не
+    уменьшая, — и без встречной записи в пассиве баланс просто не сойдётся. Спросить об этом
+    можно только в момент заведения: через год никто не вспомнит, чей это был мангал.
+    """
+    headers = _admin(async_session_factory)
+    refused = client.post(
+        BASE,
+        headers=headers,
+        json={
+            "name": "Ноутбук собственника",
+            "initial_cost": "50000.00",
+            "valuation_basis": "market",
+            "valued_on": "2026-08-01",
+        },
+    )
+    assert refused.status_code == 422, refused.text
+
+    accepted = client.post(
+        BASE,
+        headers=headers,
+        json={
+            "name": "Ноутбук собственника",
+            "initial_cost": "50000.00",
+            "valuation_basis": "market",
+            "valued_on": "2026-08-01",
+            "acquisition_source": "owner_contribution",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["acquisition_source"] == "owner_contribution"
+
+
+def test_asset_bought_by_the_company_needs_no_question(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """У покупки происхождение подставляется само — спрашивать нечего.
+
+    Оценка «по платежу» и означает, что заплатила фирма. Лишний вопрос на самом частом пути
+    стоил бы дороже пользы: чем длиннее форма, тем выше шанс, что покупку проведут статьёй
+    попроще и она уйдёт мимо баланса.
+    """
+    headers = _admin(async_session_factory)
+    from_payment = client.post(
+        f"{BASE}/from-payment",
+        headers=headers,
+        json={"name": "Рисоварка", "initial_cost": "17422.00"},
+    )
+    assert from_payment.status_code == 201, from_payment.text
+    card = client.get(f"{BASE}/{from_payment.json()['asset_id']}", headers=headers).json()
+    assert card["acquisition_source"] == "purchase"
+
+    # И полная форма с оценкой «по платежу» проходит вообще без поля: заплатила фирма.
+    manual = client.post(
+        BASE,
+        headers=headers,
+        json={"name": "Ларь", "initial_cost": "31000.00", "valuation_basis": "payment"},
+    )
+    assert manual.status_code == 201, manual.text
+    assert manual.json()["acquisition_source"] is None, "по платежу происхождение не выдумываем"
+
+
+def test_origin_can_be_filled_in_later(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Происхождение правится задним числом: 149 карточек описи стоят без него.
+
+    Разметить их может только владелец и только поштучно, по мере того как вспоминает. Ставить
+    им «вклад собственника» скопом было бы удобно и неправильно — часть могла быть куплена
+    фирмой, и такая разметка создала бы в балансе обязательство, которого нет.
+    """
+    headers = _admin(async_session_factory)
+    asset = _create(client, headers)
+
+    # Владелец вспомнил, что это был не подарок, а заём — правка проходит.
+    patched = client.patch(
+        f"{BASE}/{asset['id']}", headers=headers, json={"acquisition_source": "owner_loan"}
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["acquisition_source"] == "owner_loan"
