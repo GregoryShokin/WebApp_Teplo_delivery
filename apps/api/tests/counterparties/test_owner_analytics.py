@@ -9,7 +9,7 @@
 Здесь закреплено ровно три вещи:
 
 * без собственника такую статью провести нельзя;
-* названный контрагент обязан БЫТЬ собственником, иначе взнос запишется на поставщика;
+* названный контрагент обязан числиться в РЕЕСТРЕ — роль в карточке решает не она;
 * обратного запрета нет: собственник может появляться и на обычных статьях — человек бывает
   бизнесу и арендодателем, и подрядчиком, и решать за владельца, кем ещё он может быть, мы не
   вправе.
@@ -18,18 +18,21 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from cp_helpers import make_counterparty
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import CounterpartyRole, DdsArticle
+from app.models import BusinessOwner, CounterpartyRole, DdsArticle
 from app.services.owner_analytics import (
     OWNER_ROLE,
     OwnerAnalyticsError,
     ensure_owner_context,
     list_owners,
+    shares_total,
 )
 
 
@@ -47,11 +50,26 @@ async def _article(session: AsyncSession, *, owner_required: bool) -> DdsArticle
     return article
 
 
-async def _owner(session: AsyncSession, name: str):
+async def _owner(
+    session: AsyncSession,
+    name: str,
+    *,
+    share: str = "50",
+    started_on: date = date(2026, 1, 1),
+    ended_on: date | None = None,
+):
     person = await make_counterparty(
         session, name=name, inn=None, cp_type="individual", relationship="informal"
     )
     session.add(CounterpartyRole(counterparty_id=person.id, role=OWNER_ROLE))
+    session.add(
+        BusinessOwner(
+            counterparty_id=person.id,
+            share_percent=Decimal(share),
+            started_on=started_on,
+            ended_on=ended_on,
+        )
+    )
     await session.flush()
     return person
 
@@ -71,7 +89,7 @@ async def test_owner_article_without_owner_is_refused(
 async def test_stranger_on_owner_article_is_refused(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Контрагент без роли «Собственник» на такой статье — отказ.
+    """Контрагент, которого нет в реестре собственников, на такой статье — отказ.
 
     Иначе взнос запишется на поставщика, и расчёты с ним поедут в противоположную сторону:
     у поставщика долг перед нами и долг перед ним считаются разными знаками.
@@ -80,7 +98,7 @@ async def test_stranger_on_owner_article_is_refused(
         article = await _article(session, owner_required=True)
         supplier = await make_counterparty(session, name="ООО «Поставщик»", inn="6143000001")
 
-        with pytest.raises(OwnerAnalyticsError, match="не заведён как собственник"):
+        with pytest.raises(OwnerAnalyticsError, match="не значится в реестре"):
             await ensure_owner_context(session, article=article, counterparty_id=supplier.id)
         await session.rollback()
 
@@ -114,7 +132,7 @@ async def test_owner_on_plain_article_is_allowed(
 async def test_registry_lists_only_owners(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Реестр — те же контрагенты, отобранные по роли, и посторонних в нём нет."""
+    """Реестр — записи с долями, а посторонних контрагентов в нём нет."""
     async with async_session_factory() as session:
         await _owner(session, "Павел")
         await _owner(session, "Григорий")
@@ -122,19 +140,64 @@ async def test_registry_lists_only_owners(
 
         owners = await list_owners(session)
 
-        assert [item.name for item in owners] == ["Григорий", "Павел"], "по алфавиту"
+        assert [row.counterparty.name for row in owners] == ["Григорий", "Павел"], "по алфавиту"
+        # Доли — то, ради чего реестр отдельной таблицей: по ним делятся дивиденды.
+        assert shares_total(owners) == Decimal("100")
         # Роль действительно проставлена, а не выведена из имени. Проверяем НАЛИЧИЕ роли, а не
         # единственность: тот же человек может быть бизнесу ещё и поставщиком, и запрещать это
         # мы не собирались — иначе пришлось бы заводить его вторым лицом и раскалывать расчёты.
-        for item in owners:
+        for row in owners:
             roles = set(
                 (
                     await session.scalars(
                         select(CounterpartyRole.role).where(
-                            CounterpartyRole.counterparty_id == item.id
+                            CounterpartyRole.counterparty_id == row.counterparty.id
                         )
                     )
                 ).all()
             )
-            assert OWNER_ROLE in roles, item.name
+            assert OWNER_ROLE in roles, row.counterparty.name
+        await session.rollback()
+
+
+async def test_role_without_registry_row_is_not_an_owner(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Роль в карточке собственником не делает — решает РЕЕСТР.
+
+    Роль ставится руками мимо реестра и не несёт ни доли, ни даты входа. Признай её достаточной —
+    и появится собственник без доли, которому нечего начислить, а ошибку заметят на дивидендах.
+    """
+    async with async_session_factory() as session:
+        article = await _article(session, owner_required=True)
+        person = await make_counterparty(
+            session, name="Кто-то", inn=None, cp_type="individual", relationship="informal"
+        )
+        session.add(CounterpartyRole(counterparty_id=person.id, role=OWNER_ROLE))
+        await session.flush()
+
+        with pytest.raises(OwnerAnalyticsError, match="не значится в реестре"):
+            await ensure_owner_context(session, article=article, counterparty_id=person.id)
+        await session.rollback()
+
+
+async def test_former_owner_cannot_receive_new_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вышедший из состава больше не собственник — но из реестра не исчезает.
+
+    После выхода человек остаётся в базе со всеми прошлыми расчётами. Без проверки даты новый
+    взнос записался бы на того, кто уже не владеет, и доля перестала бы отвечать за деньги.
+    """
+    async with async_session_factory() as session:
+        article = await _article(session, owner_required=True)
+        former = await _owner(session, "Бывший", ended_on=date(2026, 5, 31))
+
+        with pytest.raises(OwnerAnalyticsError, match="не значится в реестре"):
+            await ensure_owner_context(session, article=article, counterparty_id=former.id)
+
+        assert [row.counterparty.name for row in await list_owners(session)] == []
+        assert [
+            row.counterparty.name for row in await list_owners(session, include_former=True)
+        ] == ["Бывший"]
         await session.rollback()

@@ -18,34 +18,40 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiErrorMessage, createOwner, getOwners } from "@/lib/api";
 
+function formatShare(value: string): string {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number.toLocaleString("ru-RU")} %` : `${value} %`;
+}
+
 /**
- * Реестр собственников.
+ * Реестр собственников: кто владеет бизнесом и какой долей.
  *
- * Собственник — обычный контрагент с ролью «Собственник», своей таблицы у него нет: ему нужны
- * ровно те же расчёты, что и любому контрагенту, а второй реестр означал бы вторую, несовместимую
- * историю долга. Экран отдельный по другой причине: собственников двое, в списке поставщиков они
- * не ищутся, а три статьи ДДС — взнос, возврат и дивиденды — требуют назвать, чьё это движение.
+ * Собственник — контрагент с записью в реестре. Личность и расчёты живут в карточке (механика
+ * долга у него ровно та же, что у любого контрагента), доля — здесь: у поставщика её не бывает.
  *
- * Пока реестр пуст, эти статьи провести нельзя вовсе. Это правильный отказ, а не помеха: деньги
- * каждого собственника учитываются отдельно, и «поступление от собственников» без имени —
- * общий котёл, из которого не вынуть, кто сколько внёс.
+ * Сумма долей ПОКАЗЫВАЕТСЯ, а не навязывается. Пока реестр заполняется, промежуточные 50 % —
+ * нормальное состояние, и отказ в сохранении мешал бы вводу; а вот 130 % человек должен увидеть
+ * сразу, не дожидаясь первых дивидендов.
  */
 export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
   const [inn, setInn] = useState("");
+  const [share, setShare] = useState("50");
 
-  const ownersQuery = useQuery({ queryKey: ["owners"], queryFn: getOwners });
+  const ownersQuery = useQuery({ queryKey: ["owners"], queryFn: () => getOwners() });
 
   const saveMutation = useMutation({
-    mutationFn: () => createOwner({ name: name.trim(), inn: inn.trim() || null }),
+    mutationFn: () =>
+      createOwner({ name: name.trim(), inn: inn.trim() || null, share_percent: share.trim() }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["owners"] });
       toast.success("Собственник заведён");
       setDialogOpen(false);
       setName("");
       setInn("");
+      setShare("50");
     },
     onError: (error) => toast.error(apiErrorMessage(error)),
   });
@@ -56,10 +62,17 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
       toast.error("Укажите имя собственника");
       return;
     }
+    const value = Number(share.replace(",", "."));
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      toast.error("Доля — число от 0 до 100");
+      return;
+    }
     saveMutation.mutate();
   }
 
-  const owners = ownersQuery.data ?? [];
+  const owners = ownersQuery.data?.items ?? [];
+  const total = Number(ownersQuery.data?.shares_total ?? 0);
+  const totalIsWhole = Math.abs(total - 100) < 0.005;
 
   return (
     <Card>
@@ -67,8 +80,9 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
         <div>
           <CardTitle className="text-base">Собственники</CardTitle>
           <p className="mt-1 text-sm text-muted-foreground">
-            Кто вкладывает деньги в бизнес и кому он должен. Взнос, возврат и дивиденды
-            учитываются по каждому отдельно — поэтому в этих движениях система спрашивает имя.
+            Кто владеет бизнесом и какой долей. По доле делятся дивиденды; взнос, возврат и
+            дивиденды учитываются по каждому отдельно — поэтому в этих движениях система
+            спрашивает имя.
           </p>
         </div>
         {canEdit ? (
@@ -100,19 +114,34 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
           >
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{owner.name}</span>
+              <Badge variant="secondary">{formatShare(owner.share_percent)}</Badge>
               {owner.inn ? <Badge variant="outline">ИНН {owner.inn}</Badge> : null}
-              {owner.status !== "active" ? (
+              {owner.ended_on ? (
                 <Badge variant="outline" className="text-muted-foreground">
-                  {owner.status}
+                  вышел {owner.ended_on}
                 </Badge>
               ) : null}
             </div>
-            {/* Карточка собственника — обычная карточка контрагента: там его расчёты. */}
             <span className="text-xs text-muted-foreground">
               расчёты — в карточке контрагента
             </span>
           </div>
         ))}
+
+        {owners.length > 0 ? (
+          <div
+            className={
+              totalIsWhole
+                ? "text-sm text-muted-foreground"
+                : "rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-900"
+            }
+          >
+            Сумма долей: {formatShare(String(total))}
+            {totalIsWhole
+              ? ""
+              : " — бизнес поделён не целиком. Дивиденды по таким долям разойдутся с фактом."}
+          </div>
+        ) : null}
       </CardContent>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -120,8 +149,8 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
           <DialogHeader>
             <DialogTitle>Новый собственник</DialogTitle>
             <DialogDescription>
-              Заводится карточкой контрагента с ролью «Собственник» — так у каждого появляются
-              собственные расчёты с бизнесом: что внёс, что вернули, что начислено дивидендами.
+              Заводится карточкой контрагента — так у каждого появляются собственные расчёты с
+              бизнесом: что внёс, что вернули, что начислено дивидендами.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-3" onSubmit={handleSubmit}>
@@ -134,14 +163,24 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
                 onChange={(event) => setName(event.target.value)}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="owner-inn">ИНН</Label>
-              <Input
-                id="owner-inn"
-                value={inn}
-                placeholder="необязательно"
-                onChange={(event) => setInn(event.target.value)}
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="owner-share">Доля, %</Label>
+                <Input
+                  id="owner-share"
+                  value={share}
+                  onChange={(event) => setShare(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="owner-inn">ИНН</Label>
+                <Input
+                  id="owner-inn"
+                  value={inn}
+                  placeholder="необязательно"
+                  onChange={(event) => setInn(event.target.value)}
+                />
+              </div>
             </div>
             <DialogFooter>
               <Button

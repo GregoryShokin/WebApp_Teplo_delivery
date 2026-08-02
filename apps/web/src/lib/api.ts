@@ -6148,26 +6148,45 @@ export async function getKdsDashboard(params?: {
 
 // --- Собственники --------------------------------------------------------------
 
-// Собственник — обычный контрагент с ролью owner: ему нужны те же расчёты, что и любому
-// контрагенту, и второй реестр означал бы вторую, несовместимую историю долга.
+// Собственник — контрагент с записью в реестре. Личность и расчёты живут в карточке (механика
+// долга у него та же, что у любого контрагента), доля — в реестре: у поставщика её не бывает.
 export type OwnerRecord = {
   id: string;
+  counterparty_id: string;
   name: string;
   inn: string | null;
-  type: string;
-  status: string;
+  share_percent: string;
+  started_on: string;
+  ended_on: string | null;
 };
 
-export async function getOwners(): Promise<OwnerRecord[]> {
-  const response = await api.get<OwnerRecord[]>("/owners");
+export type OwnerListResponse = {
+  items: OwnerRecord[];
+  /** Сумма долей действующих собственников: 100 % означает, что реестр полон. */
+  shares_total: string;
+};
+
+export async function getOwners(includeFormer = false): Promise<OwnerListResponse> {
+  const response = await api.get<OwnerListResponse>("/owners", {
+    params: includeFormer ? { include_former: true } : undefined,
+  });
   return response.data;
 }
 
 export async function createOwner(payload: {
   name: string;
   inn?: string | null;
-}): Promise<OwnerRecord> {
-  const response = await api.post<OwnerRecord>("/owners", payload);
+  share_percent: string;
+}): Promise<OwnerListResponse> {
+  const response = await api.post<OwnerListResponse>("/owners", payload);
+  return response.data;
+}
+
+export async function updateOwner(
+  ownerId: string,
+  payload: { share_percent?: string; ended_on?: string },
+): Promise<OwnerListResponse> {
+  const response = await api.patch<OwnerListResponse>(`/owners/${ownerId}`, payload);
   return response.data;
 }
 

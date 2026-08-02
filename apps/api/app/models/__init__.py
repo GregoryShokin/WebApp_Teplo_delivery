@@ -116,6 +116,7 @@ from app.models.kassa import (
     KassaShiftPenalty,
 )
 from app.models.lease import LocationLease
+from app.models.owner import BusinessOwner
 from app.models.payroll import (
     AccumulationFundAccount,
     AccumulationFundTransaction,
@@ -325,6 +326,7 @@ __all__ = [
     "TaxPeriodClose",
     "UTILITY_KIND_LABELS",
     "UTILITY_KINDS",
+    "BusinessOwner",
     "UtilityAccount",
     "VacationPeriod",
     "Wallet",
