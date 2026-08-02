@@ -90,6 +90,7 @@ class IntakeRead(BaseModel):
     account_id: uuid.UUID | None
     account_title: str | None
     filename: str | None
+    mime: str | None
     has_document: bool
     period_start: date | None
     period_end: date | None
@@ -357,6 +358,7 @@ async def _intake_payload(session: AsyncSession, intake: UtilityIntake) -> Intak
         account_id=intake.account_id,
         account_title=title,
         filename=intake.filename,
+        mime=intake.mime,
         has_document=intake.content is not None,
         period_start=intake.period_start,
         period_end=intake.period_end,

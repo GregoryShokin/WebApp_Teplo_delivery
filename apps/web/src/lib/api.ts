@@ -6185,6 +6185,7 @@ export type UtilityIntakeRecord = {
   account_id: string | null;
   account_title: string | null;
   filename: string | null;
+  mime: string | null;
   has_document: boolean;
   period_start: string | null;
   period_end: string | null;
