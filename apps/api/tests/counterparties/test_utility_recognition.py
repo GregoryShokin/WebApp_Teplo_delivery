@@ -21,6 +21,7 @@ from app.services.utility_recognition import (
     UtilityRecognition,
     recognize_utility_document,
     recognize_utility_documents,
+    split_utility_documents,
 )
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "utility"
@@ -342,3 +343,103 @@ def test_single_document_file_is_not_split() -> None:
 
     assert len(documents) == 1
     assert documents[0].kind == "water"
+
+
+# --- реальные акты ИП Гордеева, присланные владельцем 02.08.2026 ----------------------------
+#
+# До них электричество проверялось только на синтетике, собранной по описанию парсера из бота, —
+# то есть логику доказать было можно, а разбор настоящей бумаги нет. Эти четыре фикстуры
+# закрывают два месяца подряд и обе роли акта, поэтому цикл «аванс → факт с зачётом → новый
+# аванс» проверяется на живых числах, а не на придуманных.
+
+
+def test_real_actual_act_june_splits_expense_from_payable() -> None:
+    """Акт от 19.06.2026 за май: расход 95 552, а платим 35 552 — и путать их нельзя.
+
+    Это главный числовой риск электричества. В P&L мая обязаны попасть все 95 552 (энергия
+    90 381 + потери 5 171), а в банк уйти только остаток после зачёта майского аванса 60 000.
+    Возьми парсер сумму «К оплате» за расход — май недосчитается 60 000 рублей, и недостача
+    будет выглядеть не ошибкой, а экономией.
+    """
+    text = (FIXTURE_ROOT / "electricity_real_20260619_actual.txt").read_text(encoding="utf-8")
+
+    recognized = recognize_utility_document(text)
+
+    assert recognized is not None
+    assert recognized.raw["electricity_act_kind"] == "actual"
+    assert recognized.raw["electricity_period_amount"] == "95552.00"
+    assert recognized.raw["electricity_energy_amount"] == "90381.00"
+    assert recognized.raw["electricity_losses_amount"] == "5171.00"
+    assert recognized.raw["electricity_paid_advance_amount"] == "60000.00"
+    assert recognized.amount == Decimal("35552.00")
+    # Период — май, хотя акт подписан в июне: расход принадлежит месяцу потребления.
+    assert (recognized.period_start, recognized.period_end) == (
+        date(2026, 5, 1),
+        date(2026, 5, 31),
+    )
+    assert recognized.document_date == date(2026, 6, 19)
+    assert recognized.raw["inn"] == "614314309921"
+
+
+def test_real_advance_act_june_carries_no_expense() -> None:
+    """Авансовый акт от 19.06.2026 — основание платежа и ничего больше.
+
+    Расхода в нём нет: 65 000 это предоплата за июнь, которую признает фактический акт
+    следующего месяца. Появись у аванса расход — июнь удвоился бы: сначала авансом, потом
+    фактом.
+    """
+    text = (FIXTURE_ROOT / "electricity_real_20260619_advance.txt").read_text(encoding="utf-8")
+
+    recognized = recognize_utility_document(text)
+
+    assert recognized is not None
+    assert recognized.raw["electricity_act_kind"] == "advance"
+    assert recognized.amount == Decimal("65000.00")
+    assert not recognized.raw.get("electricity_period_amount")
+    # Аванс — за месяц самого акта, а не за прошедший: 19.06 платят вперёд за июнь.
+    assert (recognized.period_start, recognized.period_end) == (
+        date(2026, 6, 1),
+        date(2026, 6, 30),
+    )
+
+
+def test_real_july_pair_continues_the_cycle() -> None:
+    """Следующий визит 17.07.2026: аванс июня зачтён фактом, выписан аванс на июль.
+
+    Проверка сцепки месяцев на живых числах: 65 000, уплаченные 20.06 по июньскому авансовому
+    акту, обязаны найтись в июльском фактическом как зачтённые — иначе дебиторка за июнь
+    зависнет навсегда, а июнь заплатится дважды.
+    """
+    actual = recognize_utility_document(
+        (FIXTURE_ROOT / "electricity_real_20260717_actual.txt").read_text(encoding="utf-8")
+    )
+    advance = recognize_utility_document(
+        (FIXTURE_ROOT / "electricity_real_20260717_advance.txt").read_text(encoding="utf-8")
+    )
+
+    assert actual is not None and advance is not None
+    assert actual.raw["electricity_period_amount"] == "95402.00"
+    assert actual.raw["electricity_paid_advance_amount"] == "65000.00"
+    assert actual.amount == Decimal("30402.00")
+    assert (actual.period_start, actual.period_end) == (date(2026, 6, 1), date(2026, 6, 30))
+
+    assert advance.amount == Decimal("65000.00")
+    assert (advance.period_start, advance.period_end) == (date(2026, 7, 1), date(2026, 7, 31))
+
+
+def test_real_acts_arrive_as_separate_files() -> None:
+    """Каждое фото — один акт, и резать его не на что.
+
+    Владелец уточнил 02.08.2026: факт и аванс приходят ДВУМЯ снимками, а не одним файлом.
+    Разбиение обязано это уважать — иначе один акт распался бы на обрывки. Сшивать пару
+    предстоит слою учёта: два документа, один платёж.
+    """
+    for name in (
+        "electricity_real_20260619_actual.txt",
+        "electricity_real_20260619_advance.txt",
+        "electricity_real_20260717_actual.txt",
+        "electricity_real_20260717_advance.txt",
+    ):
+        text = (FIXTURE_ROOT / name).read_text(encoding="utf-8")
+        assert len(split_utility_documents(text)) == 1, name
+        assert len(recognize_utility_documents(text)) == 1, name
