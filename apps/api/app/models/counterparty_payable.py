@@ -1081,3 +1081,32 @@ class IikoInvoicePaymentPush(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class AccountingPeriodClose(Base):
+    """Закрытый учётный месяц: его цифры менять уже нельзя.
+
+    В отличие от ``AssetBalanceSnapshot``, копии данных здесь нет и не нужно. У основных
+    средств остаточная стоимость пересчитывается задним числом при любой коррекции, поэтому
+    баланс приходится замораживать снимком. В расчётах с контрагентами признанное начисление
+    меняется только осознанным действием человека — правкой периода, откатом, повторным
+    признанием, — и достаточно эти действия запретить.
+
+    Открыть месяц обратно можно тем же правом: замок не про неприкосновенность, а про то,
+    чтобы закрытый отчёт нельзя было изменить НЕЗАМЕТНО.
+    """
+
+    __tablename__ = "accounting_period_close"
+    __table_args__ = (
+        UniqueConstraint("period_month", name="uq_accounting_period_close_month"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    closed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

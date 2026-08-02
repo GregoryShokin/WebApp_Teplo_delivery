@@ -290,16 +290,28 @@ async def recognize_due_expenses(
             )
         ).all()
     )
+    # Признание в ЗАКРЫТЫЙ месяц не идёт: цифра того месяца уже ушла в отчётность. Такой
+    # расход остаётся scheduled и ждёт, пока человек либо откроет период, либо перенесёт
+    # период услуги. Молча дописать его в закрытый месяц — худшее из возможного: отчёт
+    # изменится сам, и никто не узнает.
+    from app.services import accounting_periods
+
+    closed = await accounting_periods.closed_months(session)
     now = datetime.now(UTC)
+    recognized = 0
     for row in rows:
+        month = recognition_month(row.service_period_end)
+        if month in closed:
+            continue
         row.status = "recognized"
-        row.recognition_month = recognition_month(row.service_period_end)
+        row.recognition_month = month
         row.recognized_at = now
+        recognized += 1
     if commit:
         await session.commit()
     else:
         await session.flush()
-    return len(rows)
+    return recognized
 
 
 async def change_accrual_period(
@@ -313,6 +325,17 @@ async def change_accrual_period(
 ) -> SupplierExpenseAccrual:
     """Перенести период и записать полный аудит. Проверку права делает API-слой."""
     start, end = validate_period(start, end)
+    # Закрытый месяц: и тот, ИЗ которого расход уносят, и тот, В который приносят. Проверять
+    # надо оба — иначе расход утёк бы в закрытый месяц или из него, и отчёт о прибыли,
+    # который уже сверили с банком, изменился бы задним числом.
+    from app.services import accounting_periods
+
+    await accounting_periods.assert_month_open(
+        session, accrual.recognition_month, action="перенос периода"
+    )
+    await accounting_periods.assert_month_open(
+        session, recognition_month(end), action="перенос периода"
+    )
     old_start = accrual.service_period_start
     old_end = accrual.service_period_end
     old_month = accrual.recognition_month

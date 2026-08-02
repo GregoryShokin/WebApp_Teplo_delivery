@@ -798,11 +798,15 @@ async def test_fixed_tariff_line_and_nightly_job_do_not_double_count(
         cp = await make_counterparty(session, name="Синапсис тариф", inn="614307902101")
         wallet = await make_wallet(session, code="tbank-fixed-1", name="Т-Банк")
         article = await make_expense_article(session, code="SYN-LIC", name="Лицензия Синапсис")
-        session.add(
-            CounterpartyPayableProfile(
-                counterparty_id=cp.id, service_billing_mode="fixed_tariff"
+        # Профиль карточки заводит make_counterparty — здесь только выставляем режим.
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
             )
         )
+        assert profile is not None
+        profile.service_billing_mode = "fixed_tariff"
+        await session.flush()
         draft = await make_draft(session, counterparty_id=cp.id, amount="13000.00")
         line = ExpenseDraftLine(
             draft_id=draft.id,

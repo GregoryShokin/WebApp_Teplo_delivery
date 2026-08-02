@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentActor, ensure_permission, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import (
+    AccountingPeriodClose,
     AccumulationFundAccount,
     BarterReturnLine,
     CashflowTransaction,
@@ -44,6 +45,7 @@ from app.models import (
     Wallet,
     invoice_binds_settlement,
 )
+from app.services import accounting_periods as periods_service
 from app.services import counterparty_balance_as_of as balance_as_of
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
@@ -2079,3 +2081,77 @@ async def list_balances_as_of(
         payable_total=_float(report.payable_total),
         approximate_settlements=_float(report.approximate_settlements),
     )
+
+
+PERIOD_CLOSE = (Depends(require_permission("accounting.periods.close")),)
+
+
+class PeriodCloseRow(BaseModel):
+    period_month: date
+    note: str | None = None
+    closed_at: datetime
+
+
+class PeriodCloseList(BaseModel):
+    items: list[PeriodCloseRow]
+
+
+class PeriodCloseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    period_month: date
+    note: str | None = None
+
+
+@router.get("/periods", response_model=PeriodCloseList, dependencies=READ)
+async def list_closed_periods(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PeriodCloseList:
+    """Закрытые учётные месяцы — те, чьи цифры менять уже нельзя."""
+    rows = (
+        await session.scalars(
+            select(AccountingPeriodClose).order_by(AccountingPeriodClose.period_month.desc())
+        )
+    ).all()
+    return PeriodCloseList(
+        items=[
+            PeriodCloseRow(
+                period_month=row.period_month, note=row.note, closed_at=row.created_at
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.post("/periods", response_model=PeriodCloseRow, dependencies=PERIOD_CLOSE)
+async def close_accounting_period(
+    payload: PeriodCloseIn,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> PeriodCloseRow:
+    """Закрыть месяц: признанный расход в нём больше не меняется.
+
+    После этого перенос периода, откат расхода и признание в этот месяц отклоняются с
+    объяснением. Открыть обратно можно — этим же правом, и это останется в журнале.
+    """
+    try:
+        row = await periods_service.close_month(
+            session,
+            period_month=payload.period_month,
+            actor_user_id=actor.user_id,
+            note=payload.note,
+        )
+    except periods_service.PeriodClosed as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return PeriodCloseRow(period_month=row.period_month, note=row.note, closed_at=row.created_at)
+
+
+@router.delete("/periods/{period_month}", status_code=204, dependencies=PERIOD_CLOSE)
+async def reopen_accounting_period(
+    period_month: date,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Снять замок с месяца — правки снова разрешены."""
+    row = await periods_service.reopen_month(session, period_month=period_month)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Месяц не был закрыт")

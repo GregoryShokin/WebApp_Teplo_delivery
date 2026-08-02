@@ -81,6 +81,15 @@ async def reverse_expense(
         raise ReversalRefused("Укажите причину отката — она останется в журнале")
     if accrual.status == "cancelled":
         raise ReversalRefused("Этот расход уже отменён")
+    # Откат уменьшает расход своего месяца. Если месяц закрыт, цифра уже ушла в отчётность.
+    from app.services import accounting_periods
+
+    try:
+        await accounting_periods.assert_month_open(
+            session, accrual.recognition_month, action="откат расхода"
+        )
+    except accounting_periods.PeriodClosed as exc:
+        raise ReversalRefused(str(exc)) from exc
     current = periods.money(accrual.amount)
     if amount > current:
         raise ReversalRefused(

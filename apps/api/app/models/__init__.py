@@ -20,6 +20,7 @@ from app.models.core import (
 )
 from app.models.counterparty import Counterparty, CounterpartyRole
 from app.models.counterparty_payable import (
+    AccountingPeriodClose,
     BarterReturnLine,
     BarterSettlement,
     CounterpartyCollectionSource,
@@ -319,6 +320,7 @@ __all__ = [
     "TaxPeriodClose",
     "VacationPeriod",
     "Wallet",
+    "AccountingPeriodClose",
     "invoice_binds_settlement",
     "WalletBalanceSnapshot",
 ]
