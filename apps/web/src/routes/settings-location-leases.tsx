@@ -333,10 +333,14 @@ export function LocationLeases({
     queryFn: getDdsArticles,
     enabled: canEdit,
   });
+  // Только статьи-аренды (`lease_bound`), а не все «привязанные к помещению». Под
+  // `location_required` попадают ещё коммуналка и охрана: выбрав их в договоре аренды, человек
+  // получал бы арендное начисление под коммунальной статьёй — и месяц коммуналки считался бы
+  // закрытым арендой.
   const rentArticles = useMemo(
     () =>
       (articlesQuery.data ?? [])
-        .filter((article) => article.location_required && article.is_active)
+        .filter((article) => article.lease_bound && article.is_active)
         .map((article) => ({ id: article.id, name: article.name })),
     [articlesQuery.data],
   );

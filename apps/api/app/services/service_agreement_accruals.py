@@ -90,11 +90,18 @@ async def covered_by_agreement(
 
     Статью сверяем, когда она известна у обеих сторон: у контрагента бывает несколько услуг,
     и договор на одну не должен обесценивать документ по другой.
+
+    Договор БЕЗ статьи не покрывает ничего. Прежде он матчился на любую статью — и получалось
+    несимметрично: сам такой договор не начисляет ни рубля (``ensure_agreement_invoice`` без
+    статьи возвращает ``None``, расход относить некуда), а чужие документы по всем остальным
+    услугам того же контрагента глушил. Больнее всего это било по арендодателю, у которого
+    рядом с арендой живёт коммуналка: договор-пустышка обесценивал оба потока сразу.
     """
     conditions = [
         CounterpartyServiceAgreement.counterparty_id == counterparty_id,
         CounterpartyServiceAgreement.accrual_enabled.is_(True),
         CounterpartyServiceAgreement.documents_mode == "informal",
+        CounterpartyServiceAgreement.dds_article_id.is_not(None),
         CounterpartyServiceAgreement.started_on <= on,
         or_(
             CounterpartyServiceAgreement.ended_on.is_(None),
@@ -102,12 +109,7 @@ async def covered_by_agreement(
         ),
     ]
     if article_id is not None:
-        conditions.append(
-            or_(
-                CounterpartyServiceAgreement.dds_article_id.is_(None),
-                CounterpartyServiceAgreement.dds_article_id == article_id,
-            )
-        )
+        conditions.append(CounterpartyServiceAgreement.dds_article_id == article_id)
     found = await session.scalar(select(CounterpartyServiceAgreement.id).where(*conditions))
     return found is not None
 

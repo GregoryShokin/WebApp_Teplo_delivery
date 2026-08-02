@@ -31,6 +31,7 @@ from app.models import (
     Wallet,
     invoice_binds_settlement,
 )
+from app.models.enums import SELF_ACCRUED_INVOICE_SOURCES
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
@@ -1532,7 +1533,12 @@ async def apply_closing_document(
     # владельца 01.08.2026). Пришедший акт регистрируем, но учёт им не двигаем: иначе он
     # отменил бы наше начисление и переписал расход месяца суммой, которую мы не заказывали.
     # ИП Наумченко 28.07.2026 прислала акт впервые за всё время — по договору он информация.
-    if invoice.source != subscription_accruals.SELF_BILLED_SOURCE:
+    #
+    # Справочным становится только ВНЕШНИЙ документ. Прежнее условие «всё, что не self_billed»
+    # накрывало и наши собственные начисления: у арендодателя с informal-договором услуги
+    # арендное начисление помечалось информационным — и аренда пропадала разом из кредиторки
+    # и из расхода месяца. Собственное начисление бумагой не является, обесценивать его нечем.
+    if invoice.source not in SELF_ACCRUED_INVOICE_SOURCES:
         period_anchor = invoice.service_period_end or invoice.invoice_date or today
         if await service_agreement_accruals.covered_by_agreement(
             session,

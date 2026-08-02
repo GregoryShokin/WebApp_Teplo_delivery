@@ -28,6 +28,7 @@ from app.models import (
     Counterparty,
     CounterpartyPayableProfile,
     CounterpartyRole,
+    DdsArticle,
     Location,
     LocationLease,
     Organization,
@@ -530,6 +531,32 @@ async def _lease_or_404(session: AsyncSession, lease_id: uuid.UUID) -> LocationL
     return lease
 
 
+async def _assert_lease_article(session: AsyncSession, article_id: uuid.UUID | None) -> None:
+    """Статья договора аренды должна быть именно арендной (``lease_bound``).
+
+    Помещению принадлежат ещё коммуналка и охрана — они тоже ``location_required``, и раньше
+    список в диалоге предлагал их наравне с арендой. Выбор коммунальной статьи в договоре стоит
+    дорого: арендное начисление встаёт под неё, а гард ``_month_closed_by_landlord`` считает
+    месяц коммуналки закрытым чужим документом — коммунальный расход месяца молча пропадает.
+    Проверка серверная, чтобы фильтр в интерфейсе не был единственной защитой.
+    """
+    if article_id is None:
+        return
+    article = await session.get(DdsArticle, article_id)
+    if article is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Статья ДДС не найдена"
+        )
+    if not article.lease_bound:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Статья «{article.name}» не арендная. В договоре аренды можно выбрать только "
+                "статью аренды — коммунальные расходы учитываются отдельно от неё"
+            ),
+        )
+
+
 @router.get(
     "/{location_id}/leases",
     response_model=LeaseListRead,
@@ -560,6 +587,7 @@ async def create_location_lease(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Дата окончания раньше начала аренды",
         )
+    await _assert_lease_article(session, payload.dds_article_id)
     counterparty = await _resolve_landlord(session, payload.landlord, payload.documents_mode)
 
     lease = LocationLease(
@@ -609,6 +637,7 @@ async def update_location_lease(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Дата окончания раньше начала аренды",
         )
+    await _assert_lease_article(session, payload.dds_article_id)
     counterparty = await _counterparty_or_404(session, lease.counterparty_id)
 
     lease.monthly_amount = payload.monthly_amount
@@ -711,6 +740,7 @@ async def replace_lease_landlord(
             detail="Новая аренда должна начинаться после последнего дня прежней",
         )
 
+    await _assert_lease_article(session, payload.terms.dds_article_id)
     new_landlord = await _resolve_landlord(
         session, payload.landlord, payload.terms.documents_mode
     )

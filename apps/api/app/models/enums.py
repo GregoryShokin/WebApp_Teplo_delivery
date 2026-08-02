@@ -85,6 +85,13 @@ counterparty_invoice_source_enum = Enum(
     "self_billed",
     name="counterparty_invoice_source",
 )
+# Источники, которые завела САМА система, а не контрагент. Отличать их от внешних приходится
+# в решениях вида «а не пришла ли по этому периоду настоящая бумага»: собственное начисление
+# бумагой не является и обесценивать чужое начисление не должно. Ровно на этом ловилась аренда:
+# ветка informational в ``apply_closing_document`` применялась ко всему, что не ``self_billed``,
+# и арендное начисление при живом договоре услуги того же контрагента становилось справочным —
+# аренда исчезала и из кредиторки, и из расхода месяца.
+SELF_ACCRUED_INVOICE_SOURCES = frozenset({"lease", "self_billed"})
 counterparty_invoice_status_enum = Enum(
     "unpaid",
     "partially_paid",
