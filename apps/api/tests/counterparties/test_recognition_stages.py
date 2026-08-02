@@ -370,6 +370,49 @@ def test_opening_balance_is_not_waiting_for_any_document(
     assert row["can_recognize"] is True
 
 
+def test_service_before_accounting_start_leaves_the_queue(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Услуга до начала учёта в очередь не идёт, а оплаченная авансом июльская — идёт.
+
+    Учёт расчётов ведётся с 01.07.2026: на эту дату разобраны и внесены входящие остатки, и
+    расход более ранних месяцев уже сидит в них. Отсечка идёт по ПЕРИОДУ, а не по дате денег —
+    услугу оплачивают в конце предыдущего месяца, и по дате платежа под нож попали бы живые
+    июльские предоплаты от 29.06 (Директ, Синапсис, ДоксИнБокс — 76 580 ₽).
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            past = await make_counterparty(session, name="Отсечка Май", inn="6155000416")
+            await _set_billing_mode(session, past.id, "fixed_tariff")
+            may = await _open_prepayment(
+                session, counterparty_id=past.id, amount="4378.00", paid_on=date(2026, 5, 30)
+            )
+            may.service_period_start = date(2026, 5, 1)
+            may.service_period_end = date(2026, 5, 31)
+            may.service_period_status = "ready"
+
+            # Заплачено 29 июня — но ЗА ИЮЛЬ. Отсечка по дате денег выбросила бы эту строку.
+            future = await make_counterparty(session, name="Отсечка Июль", inn="6155000417")
+            await _set_billing_mode(session, future.id, "fixed_tariff")
+            july = await _open_prepayment(
+                session, counterparty_id=future.id, amount="13000.00", paid_on=date(2026, 6, 29)
+            )
+            july.service_period_start = date(2026, 7, 1)
+            july.service_period_end = FAR_FUTURE_END
+            july.service_period_status = "ready"
+            await session.commit()
+            return past.id, future.id
+
+    past_id, future_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    present = {item["counterparty_id"] for item in response.json()["items"]}
+
+    assert str(past_id) not in present
+    assert str(future_id) in present
+
+
 def test_goods_supplier_stays_out_of_the_recognition_queue(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

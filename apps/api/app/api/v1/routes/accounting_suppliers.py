@@ -479,6 +479,11 @@ async def list_supplier_accounting(
             and prepayment.service_period_start is not None
             and prepayment.service_period_end is not None
         )
+        # Услуга целиком до начала учёта: её расход уже сидит во входящих остатках на 01.07.2026,
+        # и признавать его второй раз нельзя. В очереди такой строке делать нечего — она не ждёт
+        # ни документа, ни решения.
+        if period_known and periods_service.before_accounting_start(prepayment.service_period_end):
+            continue
         # Дата денег, а не дата записи: своя проводка → оплата счёта → дата счёта. ``created_at``
         # остаётся последним фолбэком, когда денежного следа нет вовсе (входящие остатки).
         paid_on = operation_date or bill_paid_on or bill_date or prepayment.created_at.date()
