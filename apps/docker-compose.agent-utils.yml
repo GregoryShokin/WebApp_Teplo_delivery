@@ -1,0 +1,82 @@
+# Изолированный превью-стенд агента «коммуналка» (слот utils).
+# Свой Docker-проект, свои контейнеры, свои порты, своя БД — не пересекается с чужими стеками.
+#
+# Запуск (из папки apps/ в worktree ../Teplo-agent-utils):
+#   docker compose -p teplo-utils -f docker-compose.agent-utils.yml up -d
+#   docker exec -w /app/apps/api teplo-api-utils alembic upgrade head
+#   docker exec -w /app/apps/api -e PYTHONPATH=/app/apps/api teplo-api-utils \
+#     python -m app.scripts.seed_preview_admin
+#
+# Боевой ../.env НЕ подключаем: по регламенту превью стенд не должен уметь писать во внешние
+# системы. Все переменные заданы здесь явно и все внешние интеграции выключены или заглушены.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-utils
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5492:5432"
+    volumes:
+      - teplo_pgdata_utils:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-utils
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_utils
+      ENVIRONMENT: local
+      # Фон выключен целиком: стенд не должен ходить в чужие системы и дёргать почту.
+      SCHEDULER_ENABLED: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      COUNTERPARTY_INVOICE_SYNC_ENABLED: "false"
+      SBIS_SYNC_ENABLED: "false"
+      MAIL_POLL_ENABLED: "false"
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko обязательна: без переменной IikoClient.__init__ бросает SystemExit, он
+      # пробивает обработчики FastAPI и убивает uvicorn — один заход на «График» кладёт стенд,
+      # а контейнер остаётся в статусе Up. С заглушкой запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5233","http://127.0.0.1:5233"]'
+    ports:
+      - "8060:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-utils
+    environment:
+      VITE_API_BASE_URL: http://localhost:8060
+    ports:
+      - "5233:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_utils:
