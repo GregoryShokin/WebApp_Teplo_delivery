@@ -26,6 +26,7 @@ from datetime import date
 from decimal import Decimal
 
 from cp_helpers import make_counterparty
+from sqlalchemy import func as sa_func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -259,4 +260,50 @@ async def test_external_document_under_agreement_stays_informational(
         )
         assert settled == Decimal("0.00")
         assert invoice.informational is True
+        await session.rollback()
+
+
+async def test_lease_without_article_never_accrues(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Договор аренды без статьи не создаёт ни кредиторки, ни расхода — и не жалуется.
+
+    Это ЗАФИКСИРОВАННОЕ поведение, а не проверенное намерение. Завести такой договор API
+    позволяет (``dds_article_id`` в схеме необязателен), а ``ensure_lease_invoice`` на нём
+    возвращает ``None``: относить расход некуда. Снаружи это выглядит как исправно заведённая
+    аренда, которой месяцами нет ни в долгах, ни в отчёте.
+
+    Тест стоит здесь, чтобы дыру нельзя было потерять: если однажды статью сделают
+    обязательной, он сломается и потребует осознанного решения, а не молчаливого дрейфа.
+    """
+    async with async_session_factory() as session:
+        landlord = await make_counterparty(
+            session, name="ИП Безстатейный", inn="614300000005"
+        )
+        location = await _location(session)
+        lease = LocationLease(
+            id=uuid.uuid4(),
+            location_id=location.id,
+            counterparty_id=landlord.id,
+            monthly_amount=Decimal("100000.00"),
+            started_on=date(2026, 1, 1),
+            dds_article_id=None,
+            payment_mode="postpaid",
+            documents_mode="informal",
+            accrual_enabled=True,
+        )
+        session.add(lease)
+        await session.flush()
+
+        invoice = await ensure_lease_invoice(
+            session, lease, date(2026, 6, 1), as_of=date(2026, 7, 1)
+        )
+        assert invoice is None
+
+        accruals = await session.scalar(
+            select(sa_func.count())
+            .select_from(SupplierExpenseAccrual)
+            .where(SupplierExpenseAccrual.counterparty_id == landlord.id)
+        )
+        assert accruals == 0
         await session.rollback()
