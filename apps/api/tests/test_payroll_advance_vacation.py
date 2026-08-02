@@ -192,6 +192,9 @@ async def test_advance_excludes_lump_and_explains_the_difference(
         # Неразрывный пробел — как в formatMoney на фронте.
         assert "10\u00a0000\u00a0₽" in result.note
         assert "09.06.2026" in result.note
+        # Долг перед сотрудником считается из этого же ответа — «Учёт ДЗ/КЗ» берёт
+        # отпускные отсюда, поэтому поле обязано нести полную сумму транша.
+        assert result.vacation_payout_lump == LUMP
 
 
 async def test_advance_zero_when_only_lump_and_no_own_shifts(
@@ -216,6 +219,7 @@ async def test_advance_zero_when_only_lump_and_no_own_shifts(
         assert result.available == Decimal("0.00")
         assert result.note is not None
         assert "Отпускные" in result.note
+        assert result.vacation_payout_lump == LUMP
 
 
 async def test_no_note_without_vacation(
@@ -231,3 +235,4 @@ async def test_no_note_without_vacation(
         result = await available_to_advance(session, cook, AS_OF)
         assert result.note is None
         assert result.earned_to_date > 0
+        assert result.vacation_payout_lump == Decimal("0.00")
