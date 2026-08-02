@@ -248,6 +248,7 @@ type StaffPayable = {
     finalized_unpaid: number;
     loans_outstanding: number;
     salary_payouts_outstanding: number;
+    vacation_payable: number;
     salary_payable: number;
     fund_payable: number;
     fund_current_year_payable: number;
@@ -336,7 +337,18 @@ async function getStaffPayable(): Promise<StaffPayable> {
 
 async function getTaxDebt(): Promise<TaxDebt> {
   const response = await api.get<TaxDebt>("/taxes/debt");
-  return response.data;
+  // Налоговый контур объявляет суммы как Decimal, а Pydantic сериализует Decimal в
+  // СТРОКУ — тогда как остальные источники этой страницы отдают number. В сумме
+  // «поставщики + сотрудники + налоги» строка превращала сложение в конкатенацию и
+  // давала невалидное число с двумя точками → плитка КЗ печатала «не число ₽».
+  // Приводим к числу ровно здесь, на границе с API, чтобы дальше по странице
+  // арифметика работала с number, как заявляет тип.
+  const data = response.data;
+  return {
+    ...data,
+    payable_total: Number(data.payable_total),
+    wallet: { ...data.wallet, balance: Number(data.wallet.balance) },
+  };
 }
 
 async function getBalances(): Promise<BalanceList> {
@@ -769,6 +781,7 @@ function StaffPayableCard({
       payable: sum.payable + row.payable,
       receivable: sum.receivable + row.receivable,
       salary: sum.salary + row.salary_payable,
+      vacation: sum.vacation + row.vacation_payable,
       fund: sum.fund + row.fund_payable,
       fundCurrentYear: sum.fundCurrentYear + row.fund_current_year_payable,
       fundPriorYears: sum.fundPriorYears + row.fund_prior_years_payable,
@@ -779,6 +792,7 @@ function StaffPayableCard({
       payable: 0,
       receivable: 0,
       salary: 0,
+      vacation: 0,
       fund: 0,
       fundCurrentYear: 0,
       fundPriorYears: 0,
@@ -808,7 +822,9 @@ function StaffPayableCard({
                 <>депозиты курьеров {money.format(totals.courierDeposit)}</>
               ) : (
                 <>
-                  зарплата {money.format(totals.salary)} · фонд {money.format(totals.fund)} (
+                  зарплата {money.format(totals.salary)}
+                  {totals.vacation > 0 ? ` (в т.ч. отпускные ${money.format(totals.vacation)})` : null}
+                  {" · "}фонд {money.format(totals.fund)} (
                   {new Date(query.data.as_of).getFullYear()}: {money.format(totals.fundCurrentYear)} ·{" "}
                   прошлые годы: {money.format(totals.fundPriorYears)}) · депозиты производства{" "}
                   {money.format(totals.productionDeposit)}
@@ -879,6 +895,9 @@ function StaffPayableCard({
                           ? [
                               row.earned_to_date > 0
                                 ? `текущая ЗП ${money.format(row.earned_to_date)}`
+                                : null,
+                              row.vacation_payable > 0
+                                ? `отпускные ${money.format(row.vacation_payable)}`
                                 : null,
                               row.on_demand_debt > 0
                                 ? `по востребованию ${money.format(row.on_demand_debt)}`

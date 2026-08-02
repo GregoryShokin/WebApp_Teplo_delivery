@@ -1554,6 +1554,7 @@ class StaffPayableRow(BaseModel):
     finalized_unpaid: float
     loans_outstanding: float
     salary_payouts_outstanding: float
+    vacation_payable: float
     salary_payable: float
     fund_payable: float
     fund_current_year_payable: float
@@ -1570,6 +1571,7 @@ class StaffPayableList(BaseModel):
     total: float
     receivable_total: float
     salary_total: float
+    vacation_total: float
     fund_total: float
     fund_current_year_total: float
     fund_prior_years_total: float
@@ -1847,6 +1849,7 @@ async def list_staff_payable(
     payable_total = Decimal("0.00")
     receivable_total = Decimal("0.00")
     salary_total = Decimal("0.00")
+    vacation_total = Decimal("0.00")
     fund_total = Decimal("0.00")
     fund_current_year_total = Decimal("0.00")
     fund_prior_years_total = Decimal("0.00")
@@ -1867,6 +1870,10 @@ async def list_staff_payable(
             availability = await available_to_advance(session, employee, as_of)
             basis = availability.basis
             earned = periods.money(availability.earned_to_date)
+            # Отпускные одним траншем: в потолок аванса они не входят (отпуск ещё не
+            # отгулян), но ведомость периода их заплатит — значит это ДОЛГ перед
+            # сотрудником и в кредиторке он обязан быть.
+            vacation = periods.money(availability.vacation_payout_lump)
             period_start = availability.period_start
             # Период уже финализирован → его заработок ЦЕЛИКОМ несёт хвост ведомости (tail),
             # поэтому синтетический earned обнуляем.
@@ -1877,6 +1884,8 @@ async def list_staff_payable(
             )
             if period_settled:
                 earned = Decimal("0.00")
+                # Транш закрытой ведомости тоже сидит в tail — иначе задвоится.
+                vacation = Decimal("0.00")
 
             if employee.id in current_on_demand_ids:
                 # 52 500 ₽ у оклада 140 000 ₽ на 21 июля — это именно этот синтетический прорейт.
@@ -1886,6 +1895,7 @@ async def list_staff_payable(
         else:
             basis = "courier_deposit" if employee.id in courier_deposit_by_emp else "none"
             earned = Decimal("0.00")
+            vacation = Decimal("0.00")
             if employee.id not in salary_employee_ids:
                 tail = Decimal("0.00")
                 on_demand_accrued = Decimal("0.00")
@@ -1895,7 +1905,7 @@ async def list_staff_payable(
                 loans = Decimal("0.00")
                 salary_payouts = Decimal("0.00")
 
-        salary_payable = earned + tail + _clamp_money(on_demand_debt)
+        salary_payable = earned + vacation + tail + _clamp_money(on_demand_debt)
         fund_payable = fund_by_emp.get(employee.id, Decimal("0.00"))
         fund_current_year = fund_current_year_by_emp.get(employee.id, Decimal("0.00"))
         fund_prior_years = fund_prior_years_by_emp.get(employee.id, Decimal("0.00"))
@@ -1914,6 +1924,7 @@ async def list_staff_payable(
         payable_total += payable
         receivable_total += receivable
         salary_total += salary_payable
+        vacation_total += vacation
         fund_total += fund_payable
         fund_current_year_total += fund_current_year
         fund_prior_years_total += fund_prior_years
@@ -1939,6 +1950,7 @@ async def list_staff_payable(
                 finalized_unpaid=_float(tail),
                 loans_outstanding=_float(loans),
                 salary_payouts_outstanding=_float(salary_payouts),
+                vacation_payable=_float(vacation),
                 salary_payable=_float(salary_payable),
                 fund_payable=_float(fund_payable),
                 fund_current_year_payable=_float(fund_current_year),
@@ -1956,6 +1968,7 @@ async def list_staff_payable(
         total=_float(payable_total),
         receivable_total=_float(receivable_total),
         salary_total=_float(salary_total),
+        vacation_total=_float(vacation_total),
         fund_total=_float(fund_total),
         fund_current_year_total=_float(fund_current_year_total),
         fund_prior_years_total=_float(fund_prior_years_total),

@@ -10,6 +10,14 @@
   калькулятора с `period.end = as_of` по УЖЕ загруженным явкам ≤ as_of (решение:
   «из загруженных явок», без live-iiko в момент выдачи). `total_payable` — netto.
 
+Отпускные одним траншем (`vacation_period.payout_date`) в earned-to-date НЕ входят
+(решение владельца 02.08.2026: «аванс только за отработанное»). Транш цепляется к
+ведомости по `payroll_date`, а не по окну дат, поэтому в провизорном прогоне он давал
+бы полную сумму ЕЩЁ НЕ ОТГУЛЯННОГО отпуска с первого дня недели — то есть кредит под
+будущее, а не раннюю выплату заработанного. Ведомость их платит по-прежнему, а диалог
+выдачи объясняет разницу нотой (`_vacation_lump_note`). Подённые отпускные (отпуск без
+`payout_date`) окном дат ограничены — там за as_of ничего не утекает, они остаются.
+
 Доступно к авансу = earned-to-date − уже выданные авансы за текущий период.
 
 Отсечка «день выплаты»: в САМ день выплаты ведомости заработанное уходит сотруднику
@@ -34,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AttendanceEntry, Employee, PayrollPeriod, SalaryAdvance
+from app.services import vacation_service
 from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import (
     HALF_MONTH_SPLIT_DAY,
@@ -65,6 +74,10 @@ class AdvanceAvailability:
     earned_to_date: Decimal
     already_advanced: Decimal
     available: Decimal
+    # Отпускные одним траншем в ведомости периода. В `earned_to_date`/`available` НЕ
+    # входят (аванс — только за отработанное), но ведомость их платит, поэтому «Учёт
+    # ДЗ/КЗ» складывает их в долг перед сотрудником.
+    vacation_payout_lump: Decimal = Decimal("0.00")
     note: str | None = None
     # True в день выплаты периода: заработанное уходит с ведомостью, аванс за этот
     # период уже недоступен (available обнулён).
@@ -210,14 +223,63 @@ async def _dishwasher_earned(
     return earned, start, end
 
 
+def _money(amount: Decimal) -> str:
+    """1234567.00 → «1 234 567», 1234.50 → «1 234,50».
+
+    Разряды разделяет НЕРАЗРЫВНЫЙ пробел (U+00A0) — так же форматирует деньги фронт
+    (`Intl.NumberFormat('ru-RU')` в `formatMoney`), поэтому сумма не переносится по
+    строке посередине числа.
+    """
+    quantized = amount.quantize(_CENTS)
+    text = f"{quantized:,.2f}".replace(",", " ").replace(".", ",")
+    return text[:-3] if text.endswith(",00") else text
+
+
+async def vacation_lump_for_payroll_date(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+    payroll_date: date,
+) -> Decimal:
+    """Отпускные сотрудника, выплачиваемые ведомостью этой даты одним траншем.
+
+    В АВАНС не входят (отпуск на дату аванса ещё не отгулян), но в ДОЛГ перед
+    сотрудником входят: ведомость их заплатит. Поэтому величина отдаётся наружу
+    отдельным полем ``AdvanceAvailability.vacation_payout_lump`` — «Учёт ДЗ/КЗ»
+    складывает её в задолженность, а потолок аванса — нет.
+    """
+    payouts = await vacation_service.vacation_payouts_for_payroll_date(
+        session, payroll_date=payroll_date
+    )
+    total = sum(
+        (decimal(payout.amount) for payout in payouts if payout.employee_id == employee_id),
+        Decimal("0"),
+    )
+    return total.quantize(_CENTS)
+
+
+def _vacation_lump_note(lump: Decimal, payroll_date: date) -> str | None:
+    """Пояснение, если в ведомости периода лежат отпускные одним траншем.
+
+    Они выплачиваются ведомостью, но в аванс не входят: отпуск на дату аванса ещё не
+    отгулян, а аванс — только в пределах заработанного (см. докстринг модуля). Без
+    этой строки разница между «доступно к авансу» и суммой ведомости выглядит ошибкой.
+    """
+    if lump <= 0:
+        return None
+    return (
+        f"Отпускные {_money(lump)}\u00a0₽ выплатятся ведомостью "
+        f"{payroll_date.strftime('%d.%m.%Y')} и в аванс не входят"
+    )
+
+
 async def _production_earned(
     session: AsyncSession,
     employee: Employee,
     as_of: date,
-) -> tuple[Decimal, date | None, date | None, str | None]:
+) -> tuple[Decimal, date | None, date | None, str | None, Decimal]:
     period = await _open_weekly_period(session, as_of)
     if period is None:
-        return Decimal("0.00"), None, None, "Нет открытого недельного периода"
+        return Decimal("0.00"), None, None, "Нет открытого недельного периода", Decimal("0.00")
     earned_through = min(as_of, period.end_date)
     # Только уже загруженные явки внутри рабочего периода (без live-iiko). В день выплаты
     # as_of может быть позже end_date, но заработанное считаем только до конца недели.
@@ -236,8 +298,15 @@ async def _production_earned(
             )
         ).all()
     )
+    lump = await vacation_lump_for_payroll_date(session, employee.id, period.payroll_date)
     if not entries:
-        return Decimal("0.00"), period.start_date, as_of, "Явки за период ещё не загружены"
+        return (
+            Decimal("0.00"),
+            period.start_date,
+            as_of,
+            "Явки за период ещё не загружены",
+            lump,
+        )
     provisional = PayrollPeriod(
         period_type="week",
         start_date=period.start_date,
@@ -245,19 +314,27 @@ async def _production_earned(
         payroll_date=period.payroll_date,
         status="open",
     )
-    result = await calculate_payroll_lines(session, provisional, uuid.uuid4(), entries)
+    result = await calculate_payroll_lines(
+        session,
+        provisional,
+        uuid.uuid4(),
+        entries,
+        include_vacation_payout_lump=False,
+    )
     if result.blocking_issues:
         return (
             Decimal("0.00"),
             period.start_date,
             as_of,
             "Расчёт заблокирован — проверьте явки/ставки",
+            lump,
         )
     earned = sum(
         (decimal(line.total_payable) for line in result.lines if line.employee_id == employee.id),
         Decimal("0"),
     )
-    return earned.quantize(_CENTS), period.start_date, as_of, None
+    note = _vacation_lump_note(lump, period.payroll_date)
+    return earned.quantize(_CENTS), period.start_date, as_of, note, lump
 
 
 async def _already_advanced_in_period(
@@ -286,14 +363,18 @@ async def _basis_earned(
     position: str,
     basis: str,
     as_of: date,
-) -> tuple[Decimal, date | None, date | None, str | None]:
-    """Заработанное и границы периода для базиса на дату `as_of`."""
+) -> tuple[Decimal, date | None, date | None, str | None, Decimal]:
+    """Заработанное, границы периода и лумп отпускных для базиса на дату `as_of`.
+
+    Отпускные бывают только у Поваров и Кассиров (`vacation_positions()`), а это всегда
+    производственный базис, — у окладника и мойщицы лумп нулевой по построению.
+    """
     if basis == "okladnik":
         earned, start, end = await _okladnik_earned(session, employee, position, as_of)
-        return earned, start, end, None
+        return earned, start, end, None, Decimal("0.00")
     if basis == "dishwasher":
         earned, start, end = await _dishwasher_earned(session, employee, as_of)
-        return earned, start, end, None
+        return earned, start, end, None, Decimal("0.00")
     return await _production_earned(session, employee, as_of)
 
 
@@ -426,7 +507,9 @@ async def available_to_advance(
     # иначе — по периоду, содержащему as_of.
     earned_as_of = paid_end if paid_end is not None else as_of
 
-    earned, start, end, note = await _basis_earned(session, employee, position, basis, earned_as_of)
+    earned, start, end, note, lump = await _basis_earned(
+        session, employee, position, basis, earned_as_of
+    )
 
     if start is None or end is None:
         return AdvanceAvailability(
@@ -438,6 +521,7 @@ async def available_to_advance(
             earned_to_date=Decimal("0.00"),
             already_advanced=Decimal("0.00"),
             available=Decimal("0.00"),
+            vacation_payout_lump=Decimal("0.00"),
             note=note,
         )
 
@@ -452,6 +536,7 @@ async def available_to_advance(
             earned_to_date=earned.quantize(_CENTS),
             already_advanced=already,
             available=Decimal("0.00"),
+            vacation_payout_lump=lump,
             note=(
                 f"Наступил день выплаты ({as_of.strftime('%d.%m.%Y')}) — "
                 "заработанное уходит с ведомостью, аванс за этот период уже недоступен"
@@ -469,6 +554,7 @@ async def available_to_advance(
         earned_to_date=earned.quantize(_CENTS),
         already_advanced=already,
         available=available,
+        vacation_payout_lump=lump,
         note=note,
         payout_reached=False,
     )
