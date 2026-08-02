@@ -23,6 +23,10 @@ class VacationPeriodRead(BaseModel):
     payout_date: date | None
     payout_amount: Decimal | None
     status: str
+    # Дата выплаты ФИНАЛИЗИРОВАННОЙ ведомости, которая уже выплатила отпускные. Пока она
+    # заполнена, отпуск заморожен: перенос и отмена запрещены (иначе те же деньги ушли бы
+    # вторым траншем). None — отпуск ещё можно править.
+    settled_payout_date: date | None = None
     comment: str | None
     created_by_label: str | None
     created_at: datetime

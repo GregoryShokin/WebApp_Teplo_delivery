@@ -1593,6 +1593,9 @@ export type VacationPeriodRead = {
   payout_date: string | null;
   payout_amount: string | number | null;
   status: VacationStatus;
+  // Дата выплаты финализированной ведомости, которая уже выплатила отпускные. Пока она
+  // заполнена, отпуск заморожен: перенос и отмена запрещены (иначе второй транш).
+  settled_payout_date: string | null;
   comment: string | null;
   created_by_label: string | null;
   created_at: string;

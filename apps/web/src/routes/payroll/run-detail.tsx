@@ -270,7 +270,10 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
         queryClient.invalidateQueries({ queryKey: ["run-funding-sources", runId] }),
       ]);
     },
-    onError: (mutationError) => toast.error((mutationError as Error).message),
+    // Ошибки финализации несут ДЕЙСТВИЕ («пересчитайте ведомость»), а axios отдаёт лишь
+    // «Request failed with status code 409» — вытаскиваем detail, как везде в файле.
+    onError: (mutationError) =>
+      toast.error(apiErrorMessage(mutationError, 'Не удалось финализировать ведомость')),
   });
 
   const unfinalizeMutation = useMutation({

@@ -75,6 +75,72 @@ class VacationShiftConflictError(RuntimeError):
         self.conflicts = conflicts
 
 
+async def settling_finalized_period(
+    session: AsyncSession, period: VacationPeriod
+) -> PayrollPeriod | None:
+    """Финализированная ведомость, которая уже выплатила отпускные этого отпуска.
+
+    Пока такая есть, отпуск ЗАМОРОЖЕН: деньги ушли, и перенос ``payout_date`` начислил бы
+    их вторым разом (``vacation_payouts_for_payroll_date`` отбирает период по совпадению
+    даты и ничего не знает о прошлых выплатах). Чтобы что-то изменить, ведомость сначала
+    дефинализируют — она же и снимает отметку (``release_vacations_paid_by_period``).
+
+    Ориентир — именно ФИНАЛИЗАЦИЯ, а не статус ``paid``: последний ставится на расчёте
+    ведомости и означает лишь «попало в расчёт».
+    """
+    if period.paid_period_id is None:
+        return None
+    paid = await session.get(PayrollPeriod, period.paid_period_id)
+    if paid is None or paid.status != "finalized":
+        return None
+    return paid
+
+
+def _settled_error(paid: PayrollPeriod) -> HTTPException:
+    return HTTPException(
+        status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=(
+            "Отпускные уже выплачены ведомостью от "
+            f"{paid.payroll_date.strftime('%d.%m.%Y')}. Чтобы изменить отпуск, сначала "
+            "дефинализируйте эту ведомость."
+        ),
+    )
+
+
+async def revert_vacation_paid_status_for_period(
+    session: AsyncSession, payroll_period_id: uuid.UUID
+) -> int:
+    """Дефинализация: вернуть статус ``paid`` → ``planned``, но СОХРАНИТЬ якорь.
+
+    Зеркало ``mark_vacations_paid_for_payroll_period``: та возвращает депозиты, авансы и
+    резервы, а отпуск до сих пор оставался помеченным оплаченным навсегда.
+
+    ``paid_period_id`` при этом НЕ обнуляется — и это принципиально. Заморозка считается
+    динамически, по статусу самой ведомости (``settling_finalized_period``), поэтому откат
+    и так размораживает отпуск. А вот если стереть якорь, то повторная финализация ТОЙ ЖЕ
+    ведомости его не восстановит — ставит его только расчёт (``run_payroll``), — и цикл
+    «откатил → вернул обратно» снял бы защиту насовсем при деньгах, лежащих в закрытой
+    ведомости. Якорь снимает только правка самого отпуска: уехал на другую дату — уехал и он.
+    """
+    periods = (
+        await session.scalars(
+            select(VacationPeriod).where(
+                VacationPeriod.paid_period_id == payroll_period_id,
+                VacationPeriod.status == "paid",
+            )
+        )
+    ).all()
+    now = datetime.now(UTC)
+    count = 0
+    for period in periods:
+        period.status = "planned"
+        period.updated_at = now
+        count += 1
+    if count:
+        await session.flush()
+    return count
+
+
 async def create_vacation_period(
     session: AsyncSession,
     *,
@@ -158,6 +224,15 @@ async def update_vacation_period(
     employee = await _get_vacation_employee(session, period.employee_id)
     next_start = date_start or period.date_start
     next_end = date_end or period.date_end
+    next_payout = payout_date if isinstance(payout_date, date) else None
+    payout_change = payout_date is not UNSET and next_payout != period.payout_date
+    dates_change = (next_start, next_end) != (period.date_start, period.date_end) or payout_change
+    # Выплаченный отпуск заморожен: правка дат или даты выплаты начислила бы те же деньги
+    # вторым траншем. Комментарий менять можно — он денег не двигает.
+    if dates_change:
+        settled = await settling_finalized_period(session, period)
+        if settled is not None:
+            raise _settled_error(settled)
     next_days = await _validate_period_payload(
         session,
         employee=employee,
@@ -179,7 +254,6 @@ async def update_vacation_period(
     )
 
     if payout_date is not UNSET:
-        next_payout = payout_date if isinstance(payout_date, date) else None
         await _validate_payout_date(session, next_payout)
         period.payout_date = next_payout
     period.date_start = next_start
@@ -187,7 +261,16 @@ async def update_vacation_period(
     period.days_count = next_days
     if comment is not UNSET:
         period.comment = _clean_comment(comment if isinstance(comment, str) else None)
-    period.status = "planned" if period.status == "paid" else period.status
+    if dates_change and period.status == "paid":
+        # Даты сдвинулись — расчёт устарел, ведомость пересчитает заново.
+        period.status = "planned"
+    if payout_change:
+        # Якорь снимаем ТОЛЬКО при смене даты выплаты: платящую ведомость определяет
+        # именно она. Сдвиг date_start/date_end при прежней payout_date оставляет транш
+        # на той же ведомости — и стерев якорь, мы бы сняли заморозку с денег, которые
+        # эта ведомость всё ещё платит (восстановить его может только пересчёт).
+        period.paid_period_id = None
+        period.paid_at = None
     period.updated_at = datetime.now(UTC)
     await session.flush()
     await _add_audit_action(
@@ -214,8 +297,15 @@ async def cancel_vacation_period(
             status_code=http_status.HTTP_404_NOT_FOUND,
             detail="Отпуск не найден",
         )
+    settled = await settling_finalized_period(session, period)
+    if settled is not None:
+        raise _settled_error(settled)
     before = _period_snapshot(period)
     period.status = "cancelled"
+    # Отменённый отпуск не оплачивается — метка «выплачено такой-то ведомостью» на нём
+    # ложна. Дойти сюда можно только при НЕфинализированной ведомости (гард выше).
+    period.paid_period_id = None
+    period.paid_at = None
     period.updated_at = datetime.now(UTC)
     await session.flush()
     await _add_audit_action(
@@ -326,6 +416,11 @@ async def vacation_payouts_for_payroll_date(
     for period in result.all():
         if period.payout_date != payroll_date or period.status not in ACTIVE_VACATION_STATUSES:
             continue
+        # Ремень поверх гардов правки: транш, уже выплаченный ДРУГОЙ закрытой ведомостью,
+        # второй раз не выдаём, даже если запись каким-то путём оказалась на этой дате.
+        settled = await settling_finalized_period(session, period)
+        if settled is not None and settled.payroll_date != payroll_date:
+            continue
         payouts.append(
             VacationPayout(
                 employee_id=period.employee_id,
@@ -398,16 +493,31 @@ async def mark_vacations_paid_for_payroll_period(
     period_start: date,
     period_end: date,
     payroll_date: date | None = None,
+    payroll_period_id: uuid.UUID | None = None,
 ) -> int:
+    """Пометить оплаченными отпуска, которые несёт эта ведомость.
+
+    ``payroll_period_id`` записывается в ``paid_period_id`` — именно он, а не статус,
+    отвечает на вопрос «какая ведомость платит этот транш» и позволяет заморозить отпуск
+    после финализации (см. ``settling_finalized_period``). Дефинализация снимает отметку
+    через ``release_vacations_paid_by_period``.
+    """
     periods = await _active_vacations_overlapping(session, period_start, period_end)
     now = datetime.now(UTC)
     count = 0
     for period in periods:
-        if period.status != "planned":
-            continue
         # Отпуска с датой выплаты помечаются оплаченными по совпадению payout_date с
         # датой выплаты ведомости (ниже), а не по завершению дней в периоде.
         if period.payout_date is not None:
+            continue
+        # Подённый отпуск может пересекать НЕСКОЛЬКО ведомостей, и каждая платит свои дни.
+        # Якорь ставит ПЕРВАЯ из них: замораживать запись надо с первых ушедших денег,
+        # иначе отпуск, у которого оплачена половина, свободно переносится целиком.
+        if period.paid_period_id is None:
+            period.paid_period_id = payroll_period_id
+            period.paid_at = now
+            period.updated_at = now
+        if period.status != "planned":
             continue
         if period.date_end > period_end:
             continue
@@ -424,6 +534,8 @@ async def mark_vacations_paid_for_payroll_period(
         for period in payout_periods.all():
             if period.status == "planned" and period.payout_date == payroll_date:
                 period.status = "paid"
+                period.paid_period_id = payroll_period_id
+                period.paid_at = now
                 period.updated_at = now
                 count += 1
     if count:

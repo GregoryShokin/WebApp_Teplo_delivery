@@ -6748,6 +6748,13 @@ class FinalizeFakeSession:
             return self.period
         return None
 
+    async def scalar(self, query: Any) -> Any:
+        # Финализация сверяет отпускные с текущим состоянием (гард устаревшего расчёта),
+        # а тот читает настройку `vacation.daily_amount`. Настроек у фейка нет — сервис
+        # возьмёт значение по умолчанию, отпусков в этих тестах всё равно нет.
+        del query
+        return None
+
     async def scalars(self, query: Any) -> FinalizeScalarResult:
         entity = query_entity(query)
         if entity is DepositTransaction:

@@ -421,10 +421,23 @@ function VacationsView({
                     <div className="flex flex-wrap gap-2">
                       {row.periods.map((period) => (
                         <button
-                          className="rounded-md border bg-background px-2 py-1 text-left text-xs hover:bg-muted"
+                          className={cn(
+                            "rounded-md border bg-background px-2 py-1 text-left text-xs",
+                            period.settled_payout_date
+                              ? "cursor-not-allowed opacity-70"
+                              : "hover:bg-muted",
+                          )}
+                          // Замороженную запись открываем на просмотр: даты и отмена в
+                          // диалоге заблокированы, а комментарий править можно — бэкенд
+                          // намеренно его разрешает (денег он не двигает).
                           disabled={!canEdit}
                           key={period.id}
                           onClick={() => onEdit(row, period)}
+                          title={
+                            period.settled_payout_date
+                              ? `Отпускные выплачены ведомостью от ${formatDate(period.settled_payout_date)}. Чтобы изменить — дефинализируйте её.`
+                              : undefined
+                          }
                           type="button"
                         >
                           <span className="font-medium">
@@ -442,6 +455,11 @@ function VacationsView({
                             </span>
                           ) : null}
                           <VacationStatusBadge status={period.status} />
+                          {period.settled_payout_date ? (
+                            <span className="ml-1 text-muted-foreground" aria-hidden="true">
+                              🔒
+                            </span>
+                          ) : null}
                         </button>
                       ))}
                     </div>
@@ -499,6 +517,10 @@ function VacationDialog({
   state: VacationDialogState | null;
 }) {
   const selectedEmployee = employees.find((employee) => employee.employee_id === state?.employeeId);
+  // Отпускные уже выплачены закрытой ведомостью: даты и отмена заморожены, иначе те же
+  // деньги ушли бы вторым траншем. Комментарий остаётся доступным.
+  const settledPayoutDate = state?.period?.settled_payout_date ?? null;
+  const isSettled = Boolean(settledPayoutDate);
   const validationError = vacationDialogValidationError(state, employees);
   const dateEndMax = state?.dateStart
     ? toIsoDate(addDays(parseIsoDate(state.dateStart), VACATION_MAX_PERIOD_DAYS - 1))
@@ -531,6 +553,13 @@ function VacationDialog({
         </DialogHeader>
         {state ? (
           <div className="grid gap-4">
+            {isSettled ? (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800">
+                Отпускные выплачены ведомостью от {formatDate(settledPayoutDate!)}. Даты и отмена
+                заблокированы — иначе те же деньги ушли бы вторым траншем. Чтобы изменить,
+                дефинализируйте эту ведомость. Комментарий править можно.
+              </div>
+            ) : null}
             <div className="grid gap-2">
               <Label>Сотрудник</Label>
               <Select
@@ -554,6 +583,7 @@ function VacationDialog({
               <div className="grid gap-2">
                 <Label htmlFor="vacation-date-start">С</Label>
                 <Input
+                  disabled={isSettled}
                   id="vacation-date-start"
                   onChange={(event) => patchState({ dateStart: event.target.value })}
                   type="date"
@@ -563,6 +593,7 @@ function VacationDialog({
               <div className="grid gap-2">
                 <Label htmlFor="vacation-date-end">По</Label>
                 <Input
+                  disabled={isSettled}
                   id="vacation-date-end"
                   max={dateEndMax}
                   min={state.dateStart || undefined}
@@ -575,6 +606,7 @@ function VacationDialog({
             <div className="grid gap-2">
               <Label>Дата выплаты отпускных</Label>
               <Select
+                disabled={isSettled}
                 onValueChange={(value) => patchState({ payoutDate: value })}
                 value={state.payoutDate || undefined}
               >
@@ -628,7 +660,7 @@ function VacationDialog({
           <div>
             {canEdit && state?.period && state.period.status !== "cancelled" ? (
               <Button
-                disabled={isSaving || isCancelling}
+                disabled={isSaving || isCancelling || isSettled}
                 onClick={() => state.period && onCancelPeriod(state.period)}
                 type="button"
                 variant="outline"
