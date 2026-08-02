@@ -88,6 +88,7 @@ from app.services.payroll_calculator import (
     fund_accrual_for_day,
     load_employee_allowances_for_entries,
     merge_attendance_minutes,
+    shift_pay_ratio,
     tenure_months_on,
 )
 from app.services.payroll_percent import (
@@ -1184,6 +1185,48 @@ def test_merge_attendance_minutes_sums_non_overlapping_split_shifts() -> None:
     morning = (datetime(2026, 6, 22, 9, 0, tzinfo=UTC), datetime(2026, 6, 22, 13, 0, tzinfo=UTC), 240)
     evening = (datetime(2026, 6, 22, 17, 0, tzinfo=UTC), datetime(2026, 6, 22, 21, 0, tzinfo=UTC), 240)
     assert merge_attendance_minutes([morning, evening]) == 480
+
+
+def test_split_day_over_twelve_hours_is_paid_in_full() -> None:
+    """Сплит-день длиннее 12ч оплачивается ЦЕЛИКОМ — кап посменный, не дневной.
+
+    Решение владельца 25.05.2026, подтверждено 02.08.2026: 12 часов — предел одной смены,
+    а не суток. Реальный день с прода (повар, 24.07.2026): 06:28–08:34 (126 мин) и
+    09:35–20:09 (634 мин) с часовым перерывом = 760 мин.
+
+    Тест существует, чтобы правило нельзя было «починить» молча: аудит принимает 1,06
+    ставки за день за дефект, а это верная оплата 12,67 отработанных часов. Прежний тест
+    на сплит брал 4+4 часа и такой подмены не ловил — 480 мин одинаковы и с дневным капом,
+    и без него.
+    """
+    morning = (
+        datetime(2026, 7, 24, 6, 28, tzinfo=UTC),
+        datetime(2026, 7, 24, 8, 34, tzinfo=UTC),
+        126,
+    )
+    main = (
+        datetime(2026, 7, 24, 9, 35, tzinfo=UTC),
+        datetime(2026, 7, 24, 20, 9, tzinfo=UTC),
+        634,
+    )
+    assert merge_attendance_minutes([morning, main]) == 760
+    # Дневной кап дал бы 720. И оплата обязана следовать за минутами:
+    assert shift_pay_ratio(760) > Decimal("1")
+    assert shift_pay_ratio(760) == Decimal(760) / Decimal(720)
+
+
+def test_split_day_still_caps_each_shift_at_twelve_hours() -> None:
+    """Кап 12ч жив на уровне СМЕНЫ: 14-часовой выход оплачивается как 12-часовой.
+
+    Вместе с тестом выше это фиксирует границу правила с обеих сторон: смена режется,
+    сутки — нет.
+    """
+    long_shift = (
+        datetime(2026, 7, 24, 6, 0, tzinfo=UTC),
+        datetime(2026, 7, 24, 20, 0, tzinfo=UTC),
+        840,
+    )
+    assert merge_attendance_minutes([long_shift]) == 720
 
 
 def test_merge_attendance_minutes_uses_minutes_for_degenerate_intervals() -> None:
