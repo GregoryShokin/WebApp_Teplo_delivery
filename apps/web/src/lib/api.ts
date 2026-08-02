@@ -6179,6 +6179,7 @@ export type UtilityAccountPayload = {
   note?: string | null;
 };
 
+export type UtilityCalendarRow = {
   account_id: string;
   account_title: string;
   location_name: string;

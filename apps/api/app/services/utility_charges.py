@@ -37,7 +37,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -73,14 +73,28 @@ def month_bounds(month: date) -> tuple[date, date]:
     return first, first.replace(day=calendar.monthrange(first.year, first.month)[1])
 
 
-def intake_external_id(account_id: uuid.UUID, month: date) -> str:
+# Роль документа в ключе идемпотентности. За один месяц по одному потоку их РАЗНЫХ до трёх, и
+# различать их обязательно: у энергетика авансовый счёт за июнь выписывается 19 июня, а
+# фактический акт за тот же июнь приходит 17 июля. Без роли в ключе они столкнулись бы на
+# уникуме source+external_id — и второй документ упал бы сырой ошибкой базы вместо работы.
+UTILITY_DOC_ROLES = ("advance", "due", "closing")
+
+
+def intake_external_id(account_id: uuid.UUID, month: date, role: str = "due") -> str:
     """Ключ идемпотентности под уникумом ``source + external_id``.
 
-    Ключ на МЕСЯЦ, а не на приёмку: за один месяц по одному потоку долг ровно один, сколько бы
-    фотографий этой квитанции ни принесли. Повторная попытка провести второй снимок июля должна
-    упереться в существующий документ, а не создать второй долг.
+    Ключ на МЕСЯЦ и РОЛЬ, а не на приёмку: за один месяц по одному потоку каждый документ ровно
+    один, сколько бы фотографий этой квитанции ни принесли. Повторная попытка провести второй
+    снимок июля упирается в существующий документ, а не создаёт второй долг — это защита именно
+    от ПЕРЕСНЯТОЙ бумаги, у которой байты другие, а долг тот же, поэтому дедуп по содержимому
+    файла её не ловит.
+
+    Роли: ``advance`` — авансовый счёт (платится вперёд, расхода не несёт), ``due`` — счёт к
+    оплате по факту, ``closing`` — закрывающий документ месяца.
     """
-    return f"utility:{account_id}:{month:%Y-%m}"
+    if role not in UTILITY_DOC_ROLES:
+        raise ValueError(f"неизвестная роль коммунального документа: {role}")
+    return f"utility:{account_id}:{month:%Y-%m}:{role}"
 
 
 def superseded_external_id(external_id: str, invoice_id: uuid.UUID) -> str:
@@ -177,30 +191,38 @@ async def build_utility_documents(
     )
 
     month = period_end.replace(day=1)
-    external_id = intake_external_id(account.id, month)
     title = invoice_title(account.kind, month)
+    # Роль счёта: авансовый и фактический относятся к ОДНОМУ месяцу и одному потоку — у
+    # энергетика аванс за июнь выписан 19 июня, а факт за июнь приходит 17 июля. Общий ключ
+    # столкнул бы их на уникуме source+external_id, и второй документ упал бы сырой ошибкой базы.
+    bill_external_id = intake_external_id(
+        account.id, month, "due" if expense_amount is not None else "advance"
+    )
+    closing_external_id = (
+        intake_external_id(account.id, month, "closing") if expense_amount is not None else None
+    )
 
-    if expense_amount is not None:
-        # Занят месяц проверяем по ЗАКРЫВАЮЩЕМУ: именно он — обязательство. Второй снимок той же
-        # квитанции упрётся сюда, а не заведёт второй долг: sha ловит лишь повтор того же файла,
-        # а пересняли квитанцию — байты другие, документ тот же.
-        closing_external_id = f"{external_id}:closing"
-        if (existing := await _existing_invoice(session, closing_external_id)) is not None:
-            raise UtilityChargeError(
-                f"За {month:%m.%Y} по этому потоку долг уже проведён "
-                f"(документ «{existing.number}»). Отзовите его, если сумма изменилась"
-            )
-    else:
-        closing_external_id = None
-        if (existing := await _existing_invoice(session, external_id)) is not None:
-            raise UtilityChargeError(
-                f"За {month:%m.%Y} по этому потоку счёт уже заведён (документ «{existing.number}»)"
-            )
+    # Занятость проверяем по тому же ключу, каким будем писать: второй снимок той же бумаги
+    # упрётся сюда с понятным отказом, а не в IntegrityError. Это защита именно от ПЕРЕСНЯТОГО
+    # документа — у него другие байты, и дедуп по содержимому файла его не ловит.
+    if (existing := await _existing_invoice(session, bill_external_id)) is not None:
+        raise UtilityChargeError(
+            f"За {month:%m.%Y} по этому потоку счёт уже заведён (документ «{existing.number}»). "
+            "Отзовите его, если сумма изменилась"
+        )
+    if (
+        closing_external_id is not None
+        and (existing := await _existing_invoice(session, closing_external_id)) is not None
+    ):
+        raise UtilityChargeError(
+            f"За {month:%m.%Y} по этому потоку долг уже проведён "
+            f"(документ «{existing.number}»). Отзовите его, если сумма изменилась"
+        )
 
     bill = SupplierInvoice(
         counterparty_id=account.counterparty_id,
         source=UTILITY_INVOICE_SOURCE,
-        external_id=external_id,
+        external_id=bill_external_id,
         direction="payable",
         doc_kind="bill",
         # finance — иначе документ не увидят ни правило 1 канона, ни авто-зачёт предоплат:
@@ -309,7 +331,17 @@ async def settle_utility_invoices_from_cash(
                 # once потеряла 50 000 ₽.
                 invoice_binds_settlement(),
             )
-            .order_by(SupplierInvoice.invoice_date, SupplierInvoice.created_at)
+            # Счёт ПЕРВЫМ, и порядок задан явно. У пары «счёт + закрывающий» из одной
+            # бумаги совпадают и дата документа (конец периода), и created_at (обе строки
+            # рождаются в одной транзакции, а func.now() в PostgreSQL — время транзакции),
+            # поэтому сортировка по ним двоим оставляла порядок на усмотрение базы. Выпади
+            # закрывающий первым — наличные закрыли бы его напрямую, а счёт остался бы висеть
+            # в очереди оплат уже оплаченного месяца.
+            .order_by(
+                SupplierInvoice.invoice_date,
+                case((SupplierInvoice.doc_kind == "bill", 0), else_=1),
+                SupplierInvoice.created_at,
+            )
         )
     ).all()
 
