@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -38,6 +39,7 @@ from app.models import (
     EmployeePayout,
     InvoiceLineItem,
     InvoicePaymentAllocation,
+    Location,
     LocationLease,
     PayrollLine,
     PayrollPayment,
@@ -98,7 +100,7 @@ class SupplierAccountingItem(BaseModel):
     """
 
     id: uuid.UUID
-    source_kind: Literal["service_period", "legacy_prepayment"]
+    source_kind: Literal["service_period", "legacy_prepayment", "agreement_schedule"]
     stage: Literal["in_expense", "period_running", "waiting_document", "needs_period"]
     counterparty_id: uuid.UUID
     counterparty_name: str
@@ -343,6 +345,7 @@ async def list_supplier_accounting(
                 CounterpartyPaymentDraft.status,
                 DdsArticle.name,
                 SupplierInvoice.doc_kind,
+                SupplierInvoice.activation_status,
             )
             .join(Counterparty, Counterparty.id == SupplierExpenseAccrual.counterparty_id)
             .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
@@ -371,7 +374,16 @@ async def list_supplier_accounting(
         draft_status,
         article_name,
         doc_kind,
+        activation_status,
     ) in rows:
+        # Прогноз, а не факт: начисление ещё scheduled, а его документ ждёт своей даты
+        # (pending) — так живёт аренда, чей «Аренда 08.2026» заводится заранее. В очереди
+        # такая строка стояла РЯДОМ с авансом за тот же месяц, и плитка «Период идёт»
+        # складывала одну аренду дважды — 100 000 на арендодателя вместо 50 000 (владелец,
+        # 02.08.2026). Всё, что человек должен знать, уже несёт строка платежа: период и
+        # «начислится 01.09». Документ активируется в свою дату — тогда и появится, уже фактом.
+        if accrual.status == "scheduled" and activation_status == "pending":
+            continue
         if accrual.invoice_id is not None:
             paid = min(periods.money(allocated_amount), periods.money(accrual.amount))
         else:
@@ -498,6 +510,13 @@ async def list_supplier_accounting(
         # признания расходов их быть не должно (требование владельца 01.08.2026).
         if prepayment.counterparty_id in ctx.goods_contour:
             continue
+        # Договор и аренда: платежи — это просто деньги, гасящие кредиторку начислений
+        # (правило 1 канона), и в очереди признания им делать нечего — модель владельца
+        # 02.08.2026: «неважно, была оплата или нет — просто 50 000 начисляется всегда».
+        # Вместо платёжных строк очередь несёт по одной строке на сам договор (ниже).
+        # Деньги при этом никуда не пропали: остатки — в «Остатках», платежи — в «Реестре».
+        if prepayment.counterparty_id in ctx.self_settling:
+            continue
         balance = max(
             periods.money(prepayment.amount) - periods.money(prepayment.amount_settled),
             Decimal("0"),
@@ -612,8 +631,23 @@ async def list_supplier_accounting(
                     if not period_known
                     else "receivable"
                 ),
-                service_period_start=prepayment.service_period_start,
-                service_period_end=prepayment.service_period_end,
+                # У самозакрывающихся (аренда, договор) период известен механизму, даже когда
+                # на платеже он не проставлен: показываем выведенное окно вместо «Период не
+                # указан» — строка платежа теперь одна и несёт всё, что несла строка-прогноз.
+                service_period_start=(
+                    prepayment.service_period_start
+                    if period_known
+                    else period_start
+                    if settles_itself
+                    else None
+                ),
+                service_period_end=(
+                    prepayment.service_period_end
+                    if period_known
+                    else period_end
+                    if settles_itself
+                    else None
+                ),
                 period_status=prepayment.service_period_status,
                 recognized=False,
                 payment_date=paid_on,
@@ -624,6 +658,106 @@ async def list_supplier_accounting(
                 note=prepayment.note,
                 settled=is_settled,
                 auto_recognition_on=auto_recognition_on,
+            )
+        )
+
+    # Договорные контрагенты живут в очереди ОДНОЙ вечной строкой начисления: «1-го числа
+    # начислится 50 000». Модель владельца 02.08.2026: у договора с фиксированной суммой
+    # платежи неважны — расход начисляется всегда, копится в кредиторку, а платежи её гасят.
+    # Строка не зависит от того, была ли оплата: после 1-го числа она сама показывает
+    # следующий месяц. Отдельный плюс — постоплатные договоры (Наумченко) впервые видны в
+    # очереди вовсе: раньше их было видно, только пока висел открытый аванс.
+    month_start = current_month
+    month_end = month_start.replace(
+        day=calendar.monthrange(month_start.year, month_start.month)[1]
+    )
+    schedule_rows: list[
+        tuple[uuid.UUID, uuid.UUID, str, Decimal, uuid.UUID | None, str | None]
+    ] = []
+    agreements = (
+        await session.execute(
+            select(
+                CounterpartyServiceAgreement.id,
+                CounterpartyServiceAgreement.counterparty_id,
+                CounterpartyServiceAgreement.title,
+                CounterpartyServiceAgreement.monthly_amount,
+                CounterpartyServiceAgreement.dds_article_id,
+                DdsArticle.name,
+            )
+            .outerjoin(DdsArticle, DdsArticle.id == CounterpartyServiceAgreement.dds_article_id)
+            .where(
+                CounterpartyServiceAgreement.documents_mode == "informal",
+                CounterpartyServiceAgreement.accrual_enabled.is_(True),
+                CounterpartyServiceAgreement.started_on <= today,
+                or_(
+                    CounterpartyServiceAgreement.ended_on.is_(None),
+                    CounterpartyServiceAgreement.ended_on >= today,
+                ),
+            )
+        )
+    ).all()
+    schedule_rows.extend(
+        (row_id, cp_id, title, amount, article_id, article_title)
+        for row_id, cp_id, title, amount, article_id, article_title in agreements
+    )
+    lease_rows = (
+        await session.execute(
+            select(
+                LocationLease.id,
+                LocationLease.counterparty_id,
+                Location.name,
+                LocationLease.monthly_amount,
+                LocationLease.dds_article_id,
+                DdsArticle.name,
+            )
+            .outerjoin(Location, Location.id == LocationLease.location_id)
+            .outerjoin(DdsArticle, DdsArticle.id == LocationLease.dds_article_id)
+            .where(
+                LocationLease.accrual_enabled.is_(True),
+                LocationLease.started_on <= today,
+                or_(LocationLease.ended_on.is_(None), LocationLease.ended_on >= today),
+            )
+        )
+    ).all()
+    schedule_rows.extend(
+        (row_id, cp_id, f"Аренда — {location_name}" if location_name else "Аренда", amount,
+         article_id, article_title)
+        for row_id, cp_id, location_name, amount, article_id, article_title in lease_rows
+    )
+    counterparty_names = {
+        cp_id: name
+        for cp_id, name in (
+            await session.execute(
+                select(Counterparty.id, Counterparty.name).where(
+                    Counterparty.id.in_({row[1] for row in schedule_rows})
+                )
+            )
+        ).all()
+    } if schedule_rows else {}
+    for row_id, cp_id, title, amount, article_id, article_title in schedule_rows:
+        if article_id is None:
+            default_article = ctx.default_articles.get(cp_id)
+            if default_article is not None:
+                article_id, article_title = default_article
+        items.append(
+            SupplierAccountingItem(
+                id=row_id,
+                stage="period_running",
+                source_kind="agreement_schedule",
+                counterparty_id=cp_id,
+                counterparty_name=counterparty_names.get(cp_id, "—"),
+                article_id=article_id,
+                article_name=article_title,
+                amount=_float(amount),
+                paid_amount=0,
+                balance_amount=_float(amount),
+                balance_type="scheduled",
+                service_period_start=month_start,
+                service_period_end=month_end,
+                period_status="ready",
+                recognized=False,
+                note=title,
+                auto_recognition_on=_first_day_after(month_end),
             )
         )
 

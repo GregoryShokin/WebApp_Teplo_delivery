@@ -43,7 +43,7 @@ type RegisterView = "payments" | "documents";
 
 type AccountingItem = {
   id: string;
-  source_kind: "service_period" | "legacy_prepayment";
+  source_kind: "service_period" | "legacy_prepayment" | "agreement_schedule";
   stage: Stage;
   counterparty_id: string;
   counterparty_name: string;
@@ -1705,7 +1705,11 @@ function RecognitionSection({
                     <TableCell>
                       <div className="font-medium">{item.counterparty_name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {item.invoice_number
+                        {item.source_kind === "agreement_schedule"
+                          ? /* Вечная строка договора: показывает начисление, а не деньги.
+                               Платежи такого контрагента живут в «Остатках» и «Реестре». */
+                            (item.note ?? "По договору")
+                          : item.invoice_number
                           ? /* Счёт — основание платежа, УПД — то, что признало расход.
                                Одна подпись на оба вводила в заблуждение. */
                             `${item.document_kind === "closing" ? "УПД / акт" : "Счёт"} № ${item.invoice_number}`
@@ -1731,10 +1735,17 @@ function RecognitionSection({
                       ) : null}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {item.period_assumed ? (
-                        <span className="text-muted-foreground">Период не указан</span>
-                      ) : (
+                      {!item.period_assumed ? (
                         formatPeriod(item.service_period_start, item.service_period_end)
+                      ) : item.service_period_start ? (
+                        /* Период выведен механизмом (аренда, договор), а не указан человеком:
+                           «≈» отличает вывод от факта, но окно показываем — строка платежа
+                           теперь одна и несёт всё, что несла скрытая строка-прогноз. */
+                        <span className="text-muted-foreground">
+                          ≈ {formatPeriod(item.service_period_start, item.service_period_end)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Период не указан</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -1812,7 +1823,9 @@ function RecognitionSection({
                           Основание
                         </Button>
                       ) : null}
-                      {!canEdit ? null : isPrepayment ? (
+                      {!canEdit || item.source_kind === "agreement_schedule"
+                        ? null
+                        : isPrepayment ? (
                         item.can_recognize ? (
                           <Button size="sm" variant="outline" onClick={() => setRecognizing(item)}>
                             Признать расход
