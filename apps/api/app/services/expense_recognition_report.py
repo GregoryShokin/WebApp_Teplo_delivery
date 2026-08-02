@@ -70,9 +70,7 @@ class ExpenseReport:
     without_primary: Decimal = Decimal("0.00")
 
 
-def spread_over_months(
-    amount: Decimal, start: date, end: date
-) -> list[tuple[date, Decimal]]:
+def spread_over_months(amount: Decimal, start: date, end: date) -> list[tuple[date, Decimal]]:
     """Разложить сумму периода по календарным месяцам.
 
     Доли равные, а не пропорциональные дням: так считает и помесячное признание из предоплаты
