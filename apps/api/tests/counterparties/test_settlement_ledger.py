@@ -557,3 +557,58 @@ async def test_opening_prepayment_shows_as_money_row(
         assert len(ledger.rows) == 1
         assert ledger.rows[0].title == "Входящий остаток"
         assert ledger.closing_balance == Decimal("2500.00")
+
+
+async def test_future_and_informational_documents_do_not_move_the_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Будущий и справочный документы видны в хронологии, но остаток не двигают.
+
+    Бегущий остаток вычитал ЛЮБОЙ документ подряд, а плитка «Остатки» честно считала только
+    активные и не-информационные. Расхождение на проде составляло 100 000 ₽: два арендных УПД
+    от 31.08.2026 по 50 000 ждали своей даты (правило 4), а сверка уже записала их в долг.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Будущее и справка", inn="6143049380")
+        wallet = await make_wallet(session, code="tbank-ledger-9", name="Т-Банк")
+        # Платёж 1 000 — дебиторка, единственное, что должно остаться в остатке.
+        await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="1000.00",
+            on=date(2026, 7, 5),
+            period=(date(2026, 7, 1), date(2026, 7, 31)),
+        )
+        # Будущий закрывающий: дата ещё не наступила (правило 4 канона).
+        future = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="50000.00",
+            number="БУД-1",
+            doc_kind="closing",
+            invoice_date=date(2026, 8, 31),
+            payment_status="unpaid",
+        )
+        future.activation_status = "pending"
+        # Справочный: расход по нему уже начислен договором услуги.
+        informational = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="СПР-1",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 20),
+            payment_status="unpaid",
+        )
+        informational.informational = True
+        await session.commit()
+
+        ledger = await build_ledger(session, cp.id, today=date(2026, 8, 10))
+
+        # Остаток — только живой платёж; 53 000 ₽ чужих документов его не тронули.
+        assert ledger.closing_balance == Decimal("1000.00")
+        # Но сами строки в хронологии есть: расхождение с договором надо замечать, а не прятать.
+        numbers = {row.title for row in ledger.rows if row.kind == "document"}
+        assert any("БУД-1" in title for title in numbers)
+        assert any("СПР-1" in title for title in numbers)

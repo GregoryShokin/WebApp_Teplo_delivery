@@ -32,7 +32,7 @@ from app.models import (
     SupplierPrepayment,
 )
 from app.services import supplier_service_periods as periods
-from app.services.subscription_accruals import SELF_BILLED_SOURCE, superseded_external_id
+from app.services.subscription_accruals import SELF_BILLED_SOURCE
 
 __all__ = ["ReversalRefused", "reverse_expense"]
 
@@ -104,10 +104,14 @@ async def reverse_expense(
     accrual.amount = current - amount
     if accrual.amount <= 0:
         accrual.status = "cancelled"
-        # Документ пустой суммы — не документ. Гасим его и освобождаем ключ идемпотентности:
-        # он уникален, и пока его держит нулевой самоакт, месяц нельзя признать заново.
+        # Документ пустой суммы — не документ, гасим его. А вот ключ идемпотентности
+        # (``self:{платёж}:{месяц}`` / ``svc:{договор}:{месяц}``) НЕ освобождаем намеренно:
+        # занятый ключ и есть отметка «месяц откачен вручную». Пока ключ снимался, ночная
+        # джоба в 00:04 МСК не находила месяц закрытым и признавала его заново — решение
+        # владельца жило до ближайшей ночи, и расход возвращался сам собой, без следа в
+        # журнале. Признать месяц заново теперь можно только осознанно, через частичный
+        # откат или изменение периода.
         invoice.payment_status = "void"
-        invoice.external_id = superseded_external_id(invoice.external_id, accrual.id)
     await session.commit()
     await session.refresh(reversal)
     return reversal

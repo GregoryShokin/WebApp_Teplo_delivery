@@ -613,10 +613,16 @@ async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_nul
 ) -> None:
     """If the post-push id lookup failed (external_id still NULL), the reverse sync must still
     recognise our pushed manual invoice by documentNumber, skip it, and backfill external_id —
-    otherwise it would clone the document as a second unpaid obligation."""
+    otherwise it would clone the document as a second unpaid obligation.
+
+    ``iiko_push_status`` обязателен и здесь: накладная, которая в iiko НИКОГДА не уходила,
+    в кандидаты по номеру попадать не должна — серии номеров у складских, кассовых и
+    финансовых документов общие. Сорвавшийся на ответе пуш оставляет статус 'failed' с
+    пустым external_id, и именно ради него fallback существует.
+    """
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Наш поставщик", inn="7707777777")
-        await make_invoice(
+        ours = await make_invoice(
             session,
             counterparty_id=cp.id,
             amount="232.00",
@@ -625,6 +631,7 @@ async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_nul
             external_id=None,  # id lookup failed on push
             payment_status="paid",
         )
+        ours.iiko_push_status = "failed"  # документ в iiko создан, ответ не дошёл
         await session.commit()
 
         result = await ingest_iiko_payables(
@@ -639,6 +646,45 @@ async def test_reverse_sync_dedupes_pushed_manual_by_number_when_external_id_nul
         assert only.source == "manual"
         assert only.external_id == "doc-1"  # backfilled from the iiko document id
         assert only.payment_status == "paid"
+
+
+async def test_reverse_sync_ignores_same_number_invoice_that_never_went_to_iiko(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Накладная, которая в iiko НЕ уходила, чужой external_id по номеру не получает.
+
+    Fallback по номеру раньше искал среди всех наших накладных с пустым external_id, без
+    признака пуша, суммы и контрагента. Серии номеров у складских, кассовых и финансовых
+    документов общие (515243, 515244, 515111…), поэтому «ровно один кандидат» проблему лишь
+    маскировало: при единственном похожем номере ЧУЖОЙ документ получал чужой external_id и
+    переставал синхронизироваться навсегда — а iiko-накладная заводилась второй раз.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наш поставщик", inn="7707777778")
+        stranger = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="999.00",  # сумма другая — совпал только номер
+            number="СЧ-001",  # = documentNumber из _doc()
+            source="manual",
+            external_id=None,
+            payment_status="unpaid",
+        )
+        assert stranger.iiko_push_status == "not_pushed"
+        await session.commit()
+
+        result = await ingest_iiko_payables(
+            session, suppliers_xml=_one_supplier(), incoming_docs=cloud_invoice_docs([_doc()])
+        )
+        await session.commit()
+
+        # Чужую накладную не тронули: external_id остался пустым, сумма своя.
+        await session.refresh(stranger)
+        assert stranger.external_id is None
+        assert stranger.amount == Decimal("999.00")
+        # А iiko-документ завёлся своей строкой, как и должен.
+        assert result.skipped_own_pushed == 0
+        assert result.invoices_created == 1
 
 
 async def test_reverse_sync_pulls_amount_back_for_unpaid_own_pushed(

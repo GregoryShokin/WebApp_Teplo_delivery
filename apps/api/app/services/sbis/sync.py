@@ -44,6 +44,7 @@ from app.models import (
     SbisDocument,
     SupplierInvoice,
 )
+from app.services import clock
 from app.services import supplier_prepayments as prepayments
 from app.services import supplier_service_periods as service_periods
 from app.services.counterparty_registry import (
@@ -711,7 +712,7 @@ async def sync_sbis_documents(
         return result
 
     lookback = days or settings.sbis_sync_lookback_days
-    date_from = date.today() - timedelta(days=lookback)
+    date_from = clock.moscow_today() - timedelta(days=lookback)
     try:
         items = await client.list_incoming_documents(date_from)
         if settings.sbis_fetch_invoice_registry:

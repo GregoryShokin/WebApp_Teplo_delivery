@@ -28,11 +28,12 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import LocationLease, SupplierInvoice, invoice_binds_settlement
 from app.services import supplier_prepayments, supplier_service_periods
+from app.services.subscription_accruals import covers_month
 
 LEASE_INVOICE_SOURCE = "lease"
 
@@ -65,6 +66,43 @@ def lease_covers_month(lease: LocationLease, month: date) -> bool:
     if lease.started_on > last:
         return False
     return lease.ended_on is None or lease.ended_on >= first
+
+
+async def _month_closed_by_landlord(
+    session: AsyncSession, lease: LocationLease, month: date
+) -> bool:
+    """Пришёл ли за этот месяц НАСТОЯЩИЙ документ арендодателя.
+
+    Аренда была единственным самоначисляющим источником вообще без входной проверки: она
+    смотрела только на свой ключ идемпотентности (``lease:{договор}:{месяц}``) и потому не
+    видела ничего чужого. Арендодатель, приславший акт за тот же месяц, получал вторую
+    кредиторку и второй расход — при том что оба остальных механизма (самоакты из предоплаты
+    и договор услуги) такую проверку делают давно.
+
+    Свои же документы (``lease:``) из проверки исключены: их держит ключ идемпотентности,
+    а под этот фильтр они попадали бы всегда. Статью сверяем так же, как договор услуги:
+    у арендодателя, кроме аренды, бывает и коммуналка отдельной статьёй.
+    """
+    found = await session.scalar(
+        select(SupplierInvoice.id).where(
+            SupplierInvoice.counterparty_id == lease.counterparty_id,
+            SupplierInvoice.direction == "payable",
+            SupplierInvoice.doc_kind == "closing",
+            SupplierInvoice.payment_status != "void",
+            SupplierInvoice.source != LEASE_INVOICE_SOURCE,
+            or_(
+                SupplierInvoice.dds_article_id.is_(None),
+                SupplierInvoice.dds_article_id == lease.dds_article_id,
+            ),
+            covers_month(
+                SupplierInvoice.service_period_start,
+                SupplierInvoice.service_period_end,
+                SupplierInvoice.invoice_date,
+                month,
+            ),
+        )
+    )
+    return found is not None
 
 
 async def ensure_lease_invoice(
@@ -102,6 +140,8 @@ async def ensure_lease_invoice(
         )
     )
     if existing is not None:
+        return None
+    if await _month_closed_by_landlord(session, lease, month):
         return None
 
     period_start, period_end = month_bounds(month)

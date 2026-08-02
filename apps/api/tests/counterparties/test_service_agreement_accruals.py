@@ -501,3 +501,126 @@ async def test_bill_from_contract_counterparty_still_goes_to_payment_queue(
         await session.refresh(bill)
         assert bill.informational is False
         assert bill.activation_status == "active"
+
+
+async def test_accrual_created_before_informational_flag_is_cancelled(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Начисление, заведённое ДО проверки договора, снимается — порядок вызовов не важен.
+
+    Это тот самый порядок, в котором работали все четыре двери приёма документа (почта ×3,
+    СБИС): сначала ``sync_invoice_accrual``, потом ``apply_closing_document``. Флаг
+    ``informational`` выставляется внутри второго, поэтому первый успевал завести расход по
+    акту, которого не должно быть вовсе, — июнь ИП Наумченко стоил 6 000 ₽ вместо 3 000.
+    Прежний тест этого не ловил, потому что звал функции в обратном, «правильном» порядке.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Договорной обратный порядок", inn="614302067210")
+        agreement = await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        await session.commit()
+
+        accrued = await ensure_agreement_invoice(
+            session, agreement, date(2026, 6, 1), as_of=date(2026, 7, 1)
+        )
+        await session.commit()
+        assert accrued is not None
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="АКТ-101",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+            operational_scope="finance",
+        )
+        act.dds_article_id = agreement.dds_article_id
+        act.service_period_start = date(2026, 6, 1)
+        act.service_period_end = date(2026, 6, 30)
+        act.service_period_status = "ready"
+        await session.flush()
+
+        # БОЕВОЙ порядок: расход заводится раньше, чем становится известно, что документ
+        # справочный.
+        early = await periods.sync_invoice_accrual(session, act)
+        assert early is not None, "начисление по акту создаётся до проверки договора"
+
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 7, 5))
+        await periods.sync_invoice_accrual(session, act)
+        await session.commit()
+
+        await session.refresh(act)
+        assert act.informational is True
+        # Начисление, успевшее появиться, снято — в июне остаётся ровно один расход.
+        await session.refresh(early)
+        assert early.status == "cancelled"
+        live = await session.scalars(
+            select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        assert [row.invoice_id for row in live.all()] == [accrued.id]
+
+
+async def test_future_act_from_contract_counterparty_is_informational_after_activation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Будущий акт договорного контрагента становится справочным в день активации.
+
+    Пока ночная джоба сама ставила ``active`` и звала только гашение авансов, документ с
+    будущей датой навсегда минул и проверку договора, и замещение самоакта: один и тот же УПД
+    учитывался по-разному в зависимости от того, вчерашней он датой или завтрашней.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Договорной будущий акт", inn="614302067211")
+        agreement = await _agreement(session, counterparty_id=cp.id, amount="3000.00")
+        await session.commit()
+
+        accrued = await ensure_agreement_invoice(
+            session, agreement, date(2026, 6, 1), as_of=date(2026, 7, 1)
+        )
+        await session.commit()
+        assert accrued is not None
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3000.00",
+            number="АКТ-102",
+            doc_kind="closing",
+            invoice_date=date(2026, 6, 30),
+            operational_scope="finance",
+        )
+        act.dds_article_id = agreement.dds_article_id
+        act.service_period_start = date(2026, 6, 1)
+        act.service_period_end = date(2026, 6, 30)
+        act.service_period_status = "ready"
+        await session.flush()
+
+        # Приём: документ пришёл 20 июня, датой 30-го — по правилу 4 он ещё не в силе.
+        await periods.sync_invoice_accrual(session, act)
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 6, 20))
+        await periods.sync_invoice_accrual(session, act)
+        await session.commit()
+        await session.refresh(act)
+        assert act.activation_status == "pending"
+        assert act.informational is False, "до своей даты документ ещё ничей"
+
+        # Наступила дата документа — джоба проводит его полным путём.
+        await supplier_prepayments.activate_due_closing_invoices(
+            session, as_of=date(2026, 6, 30), commit=True
+        )
+        await session.refresh(act)
+        assert act.activation_status == "active"
+        assert act.informational is True
+        # Начисление по договору живо, второго расхода не появилось.
+        await session.refresh(accrued)
+        assert accrued.payment_status != "void"
+        live = await session.scalars(
+            select(SupplierExpenseAccrual).where(
+                SupplierExpenseAccrual.counterparty_id == cp.id,
+                SupplierExpenseAccrual.status != "cancelled",
+            )
+        )
+        assert [row.invoice_id for row in live.all()] == [accrued.id]

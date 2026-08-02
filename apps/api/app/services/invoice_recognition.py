@@ -603,9 +603,13 @@ def _number_after_hash(tail: str) -> str | None:
 
 
 def _pick_number(text: str) -> str | None:
-    # 1) «Счёт [на оплату|-фактура|-договор] № <номер>» (iiko, ЛЕММА, СДЭК).
+    # 1) «Счёт [на оплату|-фактура|-договор|-оферта] № <номер>» (iiko, ЛЕММА, СДЭК, ДоксИнБокс).
+    #    Форма «Счет-оферта на оказание услуг №…» номера не отдавала: между «счёт» и «№» стоят
+    #    посторонние слова, и шаблон рвался. Номер счёта уходит в назначение платежа — без него
+    #    поставщик не понимает, за что пришли деньги (так ушёл платёж по 0006643130).
     for m in re.finditer(
-        r"сч[ёе]т(?:[-\s]*фактура|[-\s]*договор)?(?:\s+на\s+оплату)?\s*№",
+        r"сч[ёе]т(?:[-\s]*фактура|[-\s]*договор|[-\s]*оферта)?"
+        r"(?:\s+(?:на\s+оплату|на\s+оказание\s+услуг|за\s+услуги))?\s*№",
         text,
         re.IGNORECASE,
     ):
@@ -616,6 +620,21 @@ def _pick_number(text: str) -> str | None:
     m = re.search(r"сч[ёе]т\s+([0-9][\w\-/]*)\s+от\s+\d", text, re.IGNORECASE)
     if m:
         return m.group(1).strip("-/")
+    # 3) Закрывающий документ: «Акт № ВД-46890», «УПД № 24234», «Акт выполненных работ №…».
+    #    Раньше поиск знал только формы со словом «счёт», и у любого акта номер оставался
+    #    пустым. Дедупликация сравнивает номера — «ВД-46890» против пустоты никогда не
+    #    совпадает, и один и тот же акт ЭкоЦентра заводился двумя кредиторками: 3 348,22 ₽
+    #    услуги превращались в 6 696,44 ₽ долга и расхода.
+    for m in re.finditer(
+        r"(?:универсальн\w*\s+передаточн\w*\s+документ|\bУПД\b|\bакт\b"
+        r"(?:\s+(?:выполненн\w+|оказанн\w+|сдачи[-\s]при[её]мки)\s+(?:работ|услуг))?)"
+        r"\s*(?:от\s+\d[\d.\-/]*\s*)?№",
+        text,
+        re.IGNORECASE,
+    ):
+        candidate = _number_after_hash(text[m.end() :])
+        if candidate:
+            return candidate
     return None
 
 
@@ -631,20 +650,28 @@ def _iiko_product(text: str, number: str | None) -> str | None:
 
 
 def _confidence(rec: RecognizedInvoice) -> float:
-    score = 0.0
+    """Уверенность распознавания: сумма весов найденных полей.
+
+    Считается в ТЫСЯЧНЫХ долях целыми числами, а не сложением float. Причина не
+    теоретическая: 0.35 + 0.30 + 0.10 в двоичной арифметике даёт 0.7499999999999999, и порог
+    автозаведения 0.75 оказывался недостижим для самого частого сочетания «сумма + ИНН +
+    получатель». Полностью распознанный УПД (ЛЕММА № 24234) уходил в ручной разбор из-за
+    разницы в одну триллионную.
+    """
+    score = 0
     if rec.amount is not None:
-        score += 0.35
+        score += 350
     if rec.inn:
-        score += 0.30
+        score += 300
     if rec.recipient_name:
-        score += 0.10
+        score += 100
     if rec.bank_acnt:
-        score += 0.10
+        score += 100
     if rec.bank_bik:
-        score += 0.075
+        score += 75
     if rec.corr_account:
-        score += 0.075
-    return min(score, 1.0)
+        score += 75
+    return min(score, 1000) / 1000
 
 
 def deterministic_recognize(text: str, *, context_text: str | None = None) -> RecognizedInvoice:
@@ -726,6 +753,16 @@ _LLM_TOOL = {
                 "type": "boolean",
                 "description": "true только если документ — счёт на оплату, счёт-фактура или УПД.",
             },
+            "document_kind": {
+                "type": "string",
+                "enum": ["invoice", "upd", "act", "reconciliation", "other"],
+                "description": (
+                    "Вид документа: 'invoice' — счёт на оплату (его ОПЛАЧИВАЮТ); "
+                    "'upd' — универсальный передаточный документ или счёт-фактура; "
+                    "'act' — акт выполненных работ / оказанных услуг; "
+                    "'reconciliation' — акт сверки; 'other' — всё прочее."
+                ),
+            },
             "recipient_name": {
                 "type": "string",
                 "description": "Наименование ПОЛУЧАТЕЛЯ платежа (поставщика).",
@@ -751,7 +788,7 @@ _LLM_TOOL = {
             },
             "confidence": {"type": "number", "description": "Уверенность 0..1."},
         },
-        "required": ["is_invoice", "confidence"],
+        "required": ["is_invoice", "document_kind", "confidence"],
     },
 }
 
@@ -760,9 +797,21 @@ _LLM_PROMPT = (
     "890307589201). Если это счёт на оплату / счёт-фактура / УПД — извлеки реквизиты "
     "ПОЛУЧАТЕЛЯ платежа (поставщика), НЕ покупателя, итоговую сумму К ОПЛАТЕ с НДС и "
     "период оказания услуги, только если он явно указан. "
+    "ОБЯЗАТЕЛЬНО определи вид документа (document_kind): счёт на оплату ОПЛАЧИВАЮТ, а УПД и "
+    "акт подтверждают уже оказанную услугу — это разные роли в учёте, и перепутать их нельзя. "
     "Если документ НЕ является счётом/УПД (письмо, акт сверки, договор, реклама) — верни "
     "is_invoice=false и confidence=0. Вызови инструмент record_invoice."
 )
+
+# Вид документа, как его называет модель → внутренний словарь распознавания. Модель отвечает
+# по своему enum, и молча принять чужое слово нельзя: неизвестное значение должно приводить
+# к 'unknown' (оператор разберёт), а не к дефолтному 'invoice'.
+_LLM_DOCUMENT_KINDS = {
+    "invoice": "invoice",
+    "upd": "upd",
+    "act": "act",
+    "reconciliation": "reconciliation",
+}
 
 
 async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice | None:
@@ -807,6 +856,12 @@ async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice 
         return (str(raw).strip() or None) if raw else None
 
     rec = RecognizedInvoice(engine="llm")
+    # Вид документа модель называет сама. Без этого поле оставалось дефолтным 'invoice', и
+    # СКАН УПД (текстового слоя нет, детерминированный слой пасует, LLM-ответу доверяют
+    # целиком) вставал в систему счётом к оплате: закрывающий документ попадал в очередь
+    # оплат, кредиторки по факту услуги не возникало, а оплата счёта, которого не существует,
+    # заводила дебиторку.
+    rec.document_kind = _LLM_DOCUMENT_KINDS.get(str(payload.get("document_kind") or ""), "unknown")
     rec.recipient_name = _text("recipient_name")
     rec.inn = _digits(payload.get("inn"), (10, 12))
     rec.kpp = _digits(payload.get("kpp"), (9,))

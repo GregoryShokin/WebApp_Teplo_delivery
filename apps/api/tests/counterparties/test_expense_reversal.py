@@ -131,13 +131,14 @@ def test_partial_reversal_returns_money_to_receivable(
     asyncio.run(check())
 
 
-def test_full_reversal_cancels_the_expense_and_frees_the_month(
+def test_full_reversal_cancels_the_expense_and_returns_the_money(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Откат на всю сумму отменяет расход и позволяет признать месяц заново.
+    """Откат на всю сумму отменяет расход, а деньги возвращает в дебиторку.
 
-    Ключ идемпотентности самоакта уникален: пока его держит обнулённый документ, тот же месяц
-    нельзя признать второй раз — а после полного отката это законное действие.
+    Ключ идемпотентности самоакта при этом остаётся ЗАНЯТЫМ — он и служит отметкой «месяц
+    откачен вручную». Пока ключ освобождался, ночная джоба признавала месяц заново уже
+    следующей ночью (см. test_full_reversal_survives_nightly_job).
     """
 
     async def seed() -> uuid.UUID:
@@ -182,14 +183,6 @@ def test_full_reversal_cancels_the_expense_and_frees_the_month(
             assert prepayment.status == "open"
 
     asyncio.run(check())
-
-    # Месяц свободен: признать его заново можно.
-    again = client.post(
-        f"{BASE}/prepayments/{prepayment_id}/recognize",
-        headers=headers,
-        json={"service_period_start": "2026-06-01", "service_period_end": "2026-06-30"},
-    )
-    assert again.status_code == 200, again.text
 
 
 def test_document_backed_expense_cannot_be_reversed(
@@ -305,3 +298,127 @@ def test_reversal_refuses_more_than_recognized(
     )
     assert response.status_code == 409
     assert "больше, чем признано" in response.json()["detail"]
+
+
+def test_full_reversal_survives_nightly_job(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Полностью откаченный месяц ночная джоба НЕ признаёт заново.
+
+    Откат освобождал ключ идемпотентности ``self:{платёж}:{месяц}`` — «чтобы месяц можно было
+    признать заново». Следствие: в 00:04 МСК ``accrue_due_months`` не находила месяц закрытым
+    и заводила самоакт снова. Решение владельца жило до ближайшей ночи, расход возвращался
+    сам собой и без следа в журнале. Теперь занятый ключ и есть отметка «откачено вручную».
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            _, prepayment_id = await _recognized_payment(
+                session, name="Откат Полный Ночь", inn="6155000610", amount="3000.00"
+            )
+            return prepayment_id
+
+    prepayment_id = asyncio.run(seed())
+    headers = _admin(async_session_factory)
+    recognized = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize",
+        headers=headers,
+        json={"service_period_start": "2026-06-01", "service_period_end": "2026-06-30"},
+    )
+    assert recognized.status_code == 200, recognized.text
+
+    async def accrual_id() -> uuid.UUID:
+        async with async_session_factory() as session:
+            row = await session.scalar(
+                select(SupplierExpenseAccrual)
+                .join(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
+                .where(SupplierInvoice.external_id.like(f"self:{prepayment_id}:%"))
+            )
+            return row.id
+
+    accrual = asyncio.run(accrual_id())
+    response = client.post(
+        f"{BASE}/accruals/{accrual}/reverse",
+        headers=headers,
+        json={"amount": 3000, "reason": "Лицензию не подключали — расхода не было"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["fully_cancelled"] is True
+
+    async def nightly_and_check() -> None:
+        from app.services.subscription_accruals import accrue_due_months
+
+        async with async_session_factory() as session:
+            # Ровно то, что делает ночная джоба на следующий день.
+            await accrue_due_months(session, as_of=date(2026, 7, 2), commit=True)
+
+            live = await session.scalars(
+                select(SupplierInvoice).where(
+                    SupplierInvoice.external_id.like(f"self:{prepayment_id}:%"),
+                    SupplierInvoice.payment_status != "void",
+                )
+            )
+            assert live.all() == [], "джоба воскресила откаченный месяц"
+            recognized_rows = await session.scalars(
+                select(SupplierExpenseAccrual).where(
+                    SupplierExpenseAccrual.counterparty_id
+                    == (await session.get(SupplierPrepayment, prepayment_id)).counterparty_id,
+                    SupplierExpenseAccrual.status != "cancelled",
+                )
+            )
+            assert recognized_rows.all() == [], "расход вернулся в P&L после отката"
+
+    asyncio.run(nightly_and_check())
+
+
+def test_manual_recognition_after_reversal_explains_itself(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Повторное ручное признание откаченного месяца отказывает ВНЯТНО, а не молча.
+
+    Ключ месяца занят, поэтому ``ensure_month_accrual`` вернул бы None по каждому месяцу и
+    кнопка «признать» отработала бы вхолостую: ни строки, ни объяснения.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            _, prepayment_id = await _recognized_payment(
+                session, name="Откат Повторный", inn="6155000611", amount="3000.00"
+            )
+            return prepayment_id
+
+    prepayment_id = asyncio.run(seed())
+    headers = _admin(async_session_factory)
+    period = {"service_period_start": "2026-06-01", "service_period_end": "2026-06-30"}
+    assert (
+        client.post(
+            f"{BASE}/prepayments/{prepayment_id}/recognize", headers=headers, json=period
+        ).status_code
+        == 200
+    )
+
+    async def accrual_id() -> uuid.UUID:
+        async with async_session_factory() as session:
+            row = await session.scalar(
+                select(SupplierExpenseAccrual)
+                .join(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
+                .where(SupplierInvoice.external_id.like(f"self:{prepayment_id}:%"))
+            )
+            return row.id
+
+    accrual = asyncio.run(accrual_id())
+    assert (
+        client.post(
+            f"{BASE}/accruals/{accrual}/reverse",
+            headers=headers,
+            json={"amount": 3000, "reason": "Расхода не было"},
+        ).status_code
+        == 200
+    )
+
+    again = client.post(
+        f"{BASE}/prepayments/{prepayment_id}/recognize", headers=headers, json=period
+    )
+    assert again.status_code == 409, again.text
+    assert "откачено вручную" in again.json()["detail"]
+    assert "06.2026" in again.json()["detail"]

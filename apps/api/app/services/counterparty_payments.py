@@ -32,6 +32,7 @@ from app.models import (
     SupplierInvoice,
     Wallet,
 )
+from app.services import clock
 from app.services import supplier_service_periods as service_periods
 from app.services.asset_analytics import AssetLinkError, resolve_asset_context
 from app.services.banking import BankClient, TbankClient
@@ -585,7 +586,7 @@ async def create_expense_payment_draft(
                 location_id=line.location_id,
                 lease_id=line.lease_id,
                 counterparty_id=line.counterparty_id,
-                on_date=date.today(),
+                on_date=clock.moscow_today(),
             )
         except LocationAnalyticsError as exc:
             raise CounterpartyPaymentError(str(exc)) from exc

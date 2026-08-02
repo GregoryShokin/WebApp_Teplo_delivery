@@ -704,3 +704,74 @@ async def test_fixed_tariff_recognizes_without_the_monthly_flag(async_session_fa
             )
         )
         assert accrual.service_period_end == date(2026, 7, 31)
+
+
+async def test_document_supersedes_only_its_own_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """УПД по одной услуге не сносит признание ДРУГОЙ услуги того же контрагента.
+
+    У АО «АЙКО» две лицензии с разными статьями ДДС — iikoOffice и iikoDelivery, — и они
+    признаются самостоятельными самоактами. Фильтра по статье в ``supersede_self_billed``
+    не было: пришедший УПД по одной лицензии аннулировал самоакты ОБЕИХ, расход второй
+    исчезал из месяца, а её дебиторка возвращалась открытой. Деньги при этом сходились —
+    видно было только в прибыли.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="АЙКО две лицензии", inn="6143049390")
+        wallet = await make_wallet(session, code="tbank-sub-art", name="Т-Банк")
+        office = await make_expense_article(session, code="LIC-OFF", name="Лицензия офис")
+        delivery = await make_expense_article(session, code="LIC-DEL", name="Лицензия доставка")
+
+        first = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="16430.00",
+            start=date(2026, 7, 1),
+            months=1,
+        )
+        first.article_id = office.id
+        second = await _subscription_prepayment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="4260.00",
+            start=date(2026, 7, 1),
+            months=1,
+        )
+        second.article_id = delivery.id
+        await session.commit()
+
+        await accrue_due_months(session, as_of=date(2026, 8, 1))
+        await session.refresh(first)
+        await session.refresh(second)
+        assert first.amount_settled == Decimal("16430.00")
+        assert second.amount_settled == Decimal("4260.00")
+
+        # Пришёл УПД только по офисной лицензии.
+        real = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="16430.00",
+            number="УПД-ОФИС",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+        )
+        real.dds_article_id = office.id
+        real.service_period_start = date(2026, 7, 1)
+        real.service_period_end = date(2026, 7, 31)
+        real.service_period_status = "ready"
+        await session.flush()
+
+        superseded = await supersede_self_billed(session, real)
+        await session.commit()
+
+        assert len(superseded) == 1, "снесён самоакт чужой лицензии"
+        # Дебиторка офисной вернулась под настоящий документ...
+        await session.refresh(first)
+        assert first.amount_settled == Decimal("0.00")
+        # ...а доставка осталась признанной: её УПД никто не присылал.
+        await session.refresh(second)
+        assert second.amount_settled == Decimal("4260.00")
+        assert second.status == "settled"

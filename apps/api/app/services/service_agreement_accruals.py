@@ -41,7 +41,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CounterpartyServiceAgreement, SupplierInvoice
-from app.services import supplier_prepayments, supplier_service_periods
+from app.services import clock, supplier_prepayments, supplier_service_periods
 from app.services.subscription_accruals import SELF_BILLED_SOURCE, covers_month
 
 __all__ = [
@@ -183,7 +183,7 @@ async def ensure_agreement_invoice(
     if not agreement_covers_month(agreement, month):
         return None
 
-    today = as_of or date.today()
+    today = as_of or clock.moscow_today()
     _first, last = month_bounds(month)
     # Строго после окончания месяца: весь последний день услуга ещё оказывается. Та же граница,
     # что у признания расходов и у самоактов из предоплаты, — иначе долг возникал бы на день

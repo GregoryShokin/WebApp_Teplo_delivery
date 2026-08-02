@@ -120,6 +120,13 @@ class SupplierAccountingItem(BaseModel):
     # true — период не указан, и срок посчитан по месяцу платежа. Фронт обязан это сказать
     # вслух: иначе выдуманный период читается как подтверждённый.
     period_assumed: bool = False
+    # Насколько признанный расход разошёлся с суммой документа. Признанное начисление не
+    # переписывается молча — оно уже в прибыли закрытого месяца, и менять его без ведома
+    # человека нельзя. Но и промолчать нельзя: у СДЭК документ СКБ-0008640 вырос с 7 893,40
+    # до 7 984,90 через час после признания, и 91,50 ₽ расхода просто не существовало ни в
+    # одном отчёте. Здесь эта разница становится видимой строкой, а решение — за человеком.
+    document_amount: float | None = None
+    amount_mismatch: float = 0
 
 
 class StageTile(BaseModel):
@@ -270,6 +277,7 @@ async def list_supplier_accounting(
                 Counterparty.name,
                 SupplierInvoice.number,
                 SupplierInvoice.payment_status,
+                SupplierInvoice.amount,
                 func.coalesce(allocated.c.paid, 0),
                 CounterpartyPaymentDraft.status,
                 DdsArticle.name,
@@ -296,6 +304,7 @@ async def list_supplier_accounting(
         cp_name,
         number,
         _invoice_status,
+        invoice_amount,
         allocated_amount,
         draft_status,
         article_name,
@@ -338,6 +347,16 @@ async def list_supplier_accounting(
             period_status="ready",
             recognition_month=accrual.recognition_month,
             recognized=accrual.status == "recognized",
+            document_amount=_float(periods.money(invoice_amount))
+            if invoice_amount is not None
+            else None,
+            # Расхождение показываем только у ПРИЗНАННОГО расхода: у непризнанного сумма
+            # подтягивается сама при следующем синке, и разница — просто «ещё не обновилось».
+            amount_mismatch=(
+                _float(periods.money(invoice_amount) - total)
+                if invoice_amount is not None and accrual.status == "recognized"
+                else 0
+            ),
         )
         items.append(item)
 

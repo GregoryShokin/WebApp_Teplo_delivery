@@ -64,6 +64,8 @@ type AccountingItem = {
   expected_by: string | null;
   days_overdue: number;
   period_assumed: boolean;
+  document_amount: number | null;
+  amount_mismatch: number;
   can_recognize: boolean;
   recognize_blocked_reason: string | null;
 };
@@ -149,6 +151,7 @@ type DocumentRow = {
   doc_kind: string;
   // 'active' — документ в силе (в КЗ); 'pending' — будущий УПД, ждёт своей даты (правило 4).
   activation_status: string;
+  informational: boolean;
   counterparty_id: string;
   counterparty_name: string;
   amount: number;
@@ -1394,6 +1397,14 @@ function DocumentsSection({ filters }: { filters: RegisterFilters }) {
                             будущий · ждёт {fmtDate(row.invoice_date)}
                           </span>
                         ) : null}
+                        {/* Документ по контрагенту с договором: виден, но в расчётах не
+                            участвует — расход уже начислен договором. Прятать его нельзя,
+                            расхождение с договором надо замечать. */}
+                        {row.informational ? (
+                          <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                            справочный · расход по договору
+                          </span>
+                        ) : null}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {INVOICE_SOURCE_LABEL[row.source] ?? row.source}
@@ -1568,6 +1579,16 @@ function RecognitionSection({
                             ? `Платёж от ${fmtDate(item.payment_date)}`
                             : "Платёж"}
                       </div>
+                      {/* Документ изменился уже после того, как расход признан. Сумму в
+                          закрытом месяце система не переписывает молча — но и промолчать
+                          нельзя: у СДЭК так потерялись 91,50 ₽ расхода. */}
+                      {item.amount_mismatch !== 0 ? (
+                        <div className="mt-1 text-xs text-amber-700">
+                          Документ на {money.format(item.document_amount ?? 0)} — расход признан на{" "}
+                          {money.format(item.amount)}, разница{" "}
+                          {money.format(Math.abs(item.amount_mismatch))}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-sm">
                       {item.period_assumed ? (

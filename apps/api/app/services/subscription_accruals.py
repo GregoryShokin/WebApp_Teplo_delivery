@@ -35,7 +35,7 @@ from datetime import date
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -44,6 +44,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services import clock
 from app.services import supplier_service_periods as periods
 
 SELF_BILLED_SOURCE = "self_billed"
@@ -311,7 +312,7 @@ async def accrue_due_months(
     session: AsyncSession, *, as_of: date | None = None, commit: bool = True
 ) -> list[SupplierInvoice]:
     """Признать все истёкшие месяцы по абонентским платежам. Идемпотентно."""
-    today = as_of or date.today()
+    today = as_of or clock.moscow_today()
     # Кроме платежей с явной галочкой «признавать помесячно» берём режим «счёт за период»:
     # у таких контрагентов (Синапсис, АЙКО, Лемма, ДоксИнБокс) лицензия оплачена за конкретный
     # месяц, и 31-го обязательство исполнено по определению — УПД по ним не ждут вовсе.
@@ -400,6 +401,36 @@ async def _self_billed_exists(session: AsyncSession, prepayment: SupplierPrepaym
         )
     )
     return found is not None
+
+
+async def manually_reversed_months(
+    session: AsyncSession, prepayment: SupplierPrepayment
+) -> list[date]:
+    """Месяцы этого платежа, признание которых человек откатил вручную.
+
+    Отличить откат от замещения настоящим документом можно по ключу: ``supersede_self_billed``
+    переименовывает external_id побеждённого самоакта (``superseded:…``), а откат ключ
+    сохраняет — именно занятый ключ и служит отметкой «этот месяц закрыт решением человека».
+    """
+    rows = list(
+        (
+            await session.scalars(
+                select(SupplierInvoice.external_id).where(
+                    SupplierInvoice.source == SELF_BILLED_SOURCE,
+                    SupplierInvoice.external_id.like(f"self:{prepayment.id}:%"),
+                    SupplierInvoice.payment_status == "void",
+                )
+            )
+        ).all()
+    )
+    months: list[date] = []
+    for external_id in rows:
+        try:
+            year, month = (external_id or "").rsplit(":", 1)[1].split("-")
+            months.append(date(int(year), int(month), 1))
+        except (IndexError, ValueError):
+            continue
+    return months
 
 
 async def _draft_line_accrual(
@@ -498,6 +529,17 @@ async def recognize_prepayment_period(
             "Расход по этому платежу уже признаётся помесячно. Изменить период можно на строке "
             "признания"
         )
+    # Откат признания — решение человека, и молча переигрывать его нельзя: без этой проверки
+    # кнопка «признать» отработала бы вхолостую (ключ месяца занят), не создав ни строки и не
+    # сказав почему.
+    reversed_months = await manually_reversed_months(session, prepayment)
+    inside = sorted(m for m in reversed_months if start <= m <= end)
+    if inside:
+        listed = ", ".join(f"{m:%m.%Y}" for m in inside)
+        raise RecognitionRefused(
+            f"Признание за {listed} было откачено вручную — повторно признать этот период "
+            "нельзя. Если расход всё же был, заведите его документом"
+        )
     line_accrual = await _draft_line_accrual(session, prepayment, start=start, end=end)
     if line_accrual is not None:
         if line_accrual.status == "recognized":
@@ -571,6 +613,19 @@ async def supersede_self_billed(
     else:
         return []
 
+    # Статья ДДС — разрез услуги, и по ней самоакты не смешиваются. У АЙКО две лицензии
+    # (iikoOffice и iikoDelivery) с разными статьями: пришедший УПД по одной из них сносил
+    # признание ОБЕИХ, потому что фильтра по статье здесь не было, — расход второй лицензии
+    # исчезал из месяца, а её дебиторка возвращалась открытой. Документ без статьи по-прежнему
+    # бьёт по всем: к чему он относится, неизвестно, и оставить месяц признанным дважды хуже.
+    article_scope = (
+        or_(
+            SupplierInvoice.dds_article_id.is_(None),
+            SupplierInvoice.dds_article_id == invoice.dds_article_id,
+        )
+        if invoice.dds_article_id is not None
+        else true()
+    )
     victims = list(
         (
             await session.scalars(
@@ -578,6 +633,7 @@ async def supersede_self_billed(
                     SupplierInvoice.counterparty_id == invoice.counterparty_id,
                     SupplierInvoice.source == SELF_BILLED_SOURCE,
                     SupplierInvoice.payment_status != "void",
+                    article_scope,
                     overlap,
                 )
             )
