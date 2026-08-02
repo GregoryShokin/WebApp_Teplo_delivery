@@ -28,6 +28,7 @@ from app.models import (
     CounterpartyPayableProfile,
     InvoicePaymentAllocation,
     SupplierInvoice,
+    invoice_binds_settlement,
 )
 from app.services.counterparty_matching import (
     CounterpartyMatchError,
@@ -116,8 +117,9 @@ async def suggest_invoice_matches(
         # Receivables (AR) are money owed to us — never matched to outgoing bank payments.
         .where(SupplierInvoice.direction == "payable")
         # Правило 4 канона: будущий закрывающий (activation_status='pending') действует датой
-        # ДОКУМЕНТА — до неё он не обязательство и в кандидаты оплаты не попадает.
-        .where(SupplierInvoice.activation_status == "active")
+        # ДОКУМЕНТА — до неё он не обязательство и в кандидаты оплаты не попадает. Тем же
+        # предикатом отсекается информационный документ: он вообще не обязательство.
+        .where(invoice_binds_settlement())
     )
     if counterparty_id is not None:
         invoice_query = invoice_query.where(SupplierInvoice.counterparty_id == counterparty_id)
@@ -427,6 +429,12 @@ def assert_bank_matchable(
         # Правило 4: будущий закрывающий ждёт своей даты — оплачивать его сейчас нельзя
         # (правило 1 уже завело ДЗ на этот платёж; двойной учёт и оплата до вступления в силу).
         raise CounterpartyMatchError("Документ ещё не вступил в силу (дата в будущем)")
+    if invoice.informational:
+        # Документ справочный: обязательства по нему нет, расход уже начислен договором.
+        # Целить в него деньги нельзя — платёж должен закрывать начисление, а не бумагу.
+        raise CounterpartyMatchError(
+            "Документ справочный: расход по нему уже начислен договором, оплачивать нечего"
+        )
     if operation.direction != "out" or operation.transfer_group_id is not None:
         raise CounterpartyMatchError("Операция не является исходящим платежом поставщику")
     if _is_card_noise(operation) and not allow_card:

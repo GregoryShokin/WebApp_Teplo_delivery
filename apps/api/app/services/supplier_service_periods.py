@@ -53,28 +53,47 @@ def effective_period_status(stored_status: str, *, required: bool) -> str:
     return stored_status
 
 
+def is_expense_bearing(invoice: SupplierInvoice) -> bool:
+    """Может ли документ вообще нести расход — независимо от того, заполнен ли период.
+
+    Два случая, когда не может:
+      • Счёт (doc_kind='bill') расходом не является — это основание для платежа, и по канону
+        он не долг. Расход приносит закрывающий документ либо самоакт. Пока начисление
+        заводилось и на счёте, период, указанный при оплате, признавал расход, а пришедший
+        следом УПД признавал его второй раз: 13 000 ₽ услуги давали 26 000 ₽ в P&L. Деньги
+        при этом сходились (ДЗ по счёту гасил тот же УПД), поэтому увидеть это можно было
+        только в отчёте о прибыли.
+      • Информационный документ расхода не создаёт: месяц уже признан начислением по
+        договору, и вторая строка P&L удвоила бы расход.
+    """
+    return invoice.doc_kind != "bill" and not invoice.informational
+
+
 async def sync_invoice_accrual(
     session: AsyncSession, invoice: SupplierInvoice
 ) -> SupplierExpenseAccrual | None:
-    """Создать/обновить запись P&L для счёта с подтверждённым периодом. Не коммитит."""
+    """Создать/обновить/отменить запись P&L для документа с подтверждённым периодом.
+
+    Отменяет намеренно: признак «расхода не несёт» появляется у документа ПОЗЖЕ, чем его
+    начисление. ``informational`` выставляет ``apply_closing_document``, а он во всех четырёх
+    дверях приёма (почта ×3, СБИС) вызывается после этой функции; будущий закрывающий получает
+    флаг только в день активации, через месяц после приёма. Пока функция на такой документ
+    просто ничего не делала, уже созданное начисление оставалось жить: акт ИП Наумченко по
+    договору 3 000 ₽/мес давал в июне 6 000 ₽ расхода. Отмена задним числом делает порядок
+    вызовов неважным — какой бы дверью документ ни пришёл, лишнее начисление снимется.
+    Не коммитит."""
     existing = await session.scalar(
         select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice.id)
     )
+    if not is_expense_bearing(invoice):
+        return await _cancel_accrual(session, existing)
     if (
         invoice.service_period_status != "ready"
         or invoice.service_period_start is None
         or invoice.service_period_end is None
-        # Счёт (doc_kind='bill') расходом не является — это основание для платежа, и по канону
-        # он не долг. Расход приносит закрывающий документ либо самоакт. Пока начисление
-        # заводилось и на счёте, период, указанный при оплате, признавал расход, а пришедший
-        # следом УПД признавал его второй раз: 13 000 ₽ услуги давали 26 000 ₽ в P&L. Деньги
-        # при этом сходились (ДЗ по счёту гасил тот же УПД), поэтому увидеть это можно было
-        # только в отчёте о прибыли.
-        or invoice.doc_kind == "bill"
-        # Информационный документ расхода не создаёт: месяц уже признан начислением по
-        # договору, и вторая строка P&L удвоила бы расход.
-        or invoice.informational
     ):
+        # Периода нет — начисление создать не из чего, но и отменять существующее не за что:
+        # «период ещё не заполнен» не то же самое, что «расхода не будет».
         return existing
 
     start, end = validate_period(invoice.service_period_start, invoice.service_period_end)
@@ -311,6 +330,17 @@ async def set_invoice_service_period(
     return accrual
 
 
+async def _cancel_accrual(
+    session: AsyncSession, accrual: SupplierExpenseAccrual | None
+) -> SupplierExpenseAccrual | None:
+    """Перевести начисление в ``cancelled``. Идемпотентно, без коммита."""
+    if accrual is None or accrual.status == "cancelled":
+        return accrual
+    accrual.status = "cancelled"
+    await session.flush()
+    return accrual
+
+
 async def cancel_invoice_accrual(
     session: AsyncSession, invoice_id: uuid.UUID
 ) -> SupplierExpenseAccrual | None:
@@ -325,11 +355,7 @@ async def cancel_invoice_accrual(
     accrual = await session.scalar(
         select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice_id)
     )
-    if accrual is None or accrual.status == "cancelled":
-        return accrual
-    accrual.status = "cancelled"
-    await session.flush()
-    return accrual
+    return await _cancel_accrual(session, accrual)
 
 
 def money(value: Decimal | int | float | None) -> Decimal:

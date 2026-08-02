@@ -42,6 +42,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
     Wallet,
+    invoice_binds_settlement,
 )
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_reversal as reversal_service
@@ -758,6 +759,10 @@ class DocumentRegisterRow(BaseModel):
     doc_kind: str
     # 'active' — документ в силе (в КЗ); 'pending' — будущий УПД, ждёт своей даты (правило 4).
     activation_status: str
+    # Документ зарегистрирован, но в расчётах не участвует: у контрагента договор услуги,
+    # и источник истины — он, а не бумага. В реестре виден (расхождение надо замечать),
+    # в кредиторку не входит.
+    informational: bool = False
     counterparty_id: uuid.UUID
     counterparty_name: str
     amount: float
@@ -825,7 +830,7 @@ async def list_counterparty_balances(
                 # Канон ДЗ/КЗ: кредиторка — это АКТИВНЫЕ закрывающие документы. Счета (bill) —
                 # не долг (очередь оплат), будущие УПД (activation='pending') ещё не в силе.
                 SupplierInvoice.doc_kind == "closing",
-                SupplierInvoice.activation_status == "active",
+                invoice_binds_settlement(),
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
@@ -892,7 +897,7 @@ async def list_counterparty_balances(
                 SupplierInvoice.barter_role == "loan",
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
                 SupplierInvoice.doc_kind == "closing",
-                SupplierInvoice.activation_status == "active",
+                invoice_binds_settlement(),
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
@@ -1320,6 +1325,7 @@ async def list_document_register(
                 source=invoice.source,
                 doc_kind=invoice.doc_kind,
                 activation_status=invoice.activation_status,
+                informational=invoice.informational,
                 counterparty_id=invoice.counterparty_id,
                 counterparty_name=cp_name,
                 amount=_float(invoice.amount),
@@ -1333,11 +1339,14 @@ async def list_document_register(
     return DocumentRegisterList(
         items=items,
         total_amount=sum(row.amount for row in items),
-        # Будущие УПД (pending) в кредиторку ещё не входят — из unpaid_total их исключаем.
+        # Будущие УПД (pending) в кредиторку ещё не входят, информационные — тоже: их сумма
+        # уже признана начислением по договору (тот же предикат, что у плиток и гашений).
         unpaid_total=sum(
             row.remainder
             for row in items
-            if row.payment_status in UNPAID_INVOICE_STATUSES and row.activation_status == "active"
+            if row.payment_status in UNPAID_INVOICE_STATUSES
+            and row.activation_status == "active"
+            and not row.informational
         ),
     )
 

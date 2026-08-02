@@ -388,15 +388,16 @@ async def _materialize_companion(
     )
     session.add(closing)
     await session.flush()
-    # Признание расхода (P&L) — ОДНО на пакет, и ведёт его ЗАКРЫВАЮЩИЙ. Счёт расходом не
-    # является по канону, и с 01.08.2026 начисление на нём не заводится вовсе
-    # (``sync_invoice_accrual`` отсекает doc_kind='bill'): период при оплате спрашивают почти
-    # у каждого счёта, и признание на счёте плюс пришедший акт давали двойной расход.
-    await service_periods.sync_invoice_accrual(session, closing)
     intake.companion_invoice_id = closing.id
     # Закрывающий из пакета проводится так же, как пришедший отдельным письмом: правило 2
     # (гасит открытую дебиторку) + правило 4 (будущей датой ждёт своей даты).
     await prepayments.apply_closing_document(session, closing)
+    # Признание расхода (P&L) — ОДНО на пакет, и ведёт его ЗАКРЫВАЮЩИЙ. Счёт расходом не
+    # является по канону, и с 01.08.2026 начисление на нём не заводится вовсе
+    # (``sync_invoice_accrual`` отсекает doc_kind='bill'): период при оплате спрашивают почти
+    # у каждого счёта, и признание на счёте плюс пришедший акт давали двойной расход.
+    # Строго ПОСЛЕ проведения: ``informational`` документ получает внутри него.
+    await service_periods.sync_invoice_accrual(session, closing)
     return closing
 
 
@@ -516,12 +517,15 @@ async def materialize_from_intake(
     )
     session.add(invoice)
     await session.flush()
-    await service_periods.sync_invoice_accrual(session, invoice)
     intake.invoice_id = invoice.id
     if doc_kind == "closing":
         # УПД/акт — «факт выполненных работ»: гасит дебиторку / встаёт в кредиторку (правило 2),
         # будущей датой откладывается до своей даты (правило 4). В очереди оплат не участвует.
         await prepayments.apply_closing_document(session, invoice)
+        # Признание расхода — строго ПОСЛЕ проведения: внутри решается, информационный ли
+        # документ (у контрагента договор), а признание информационного удвоило бы расход.
+        # Счёт (bill) расхода не несёт вовсе, поэтому в ветке else признания нет.
+        await service_periods.sync_invoice_accrual(session, invoice)
         intake.status = "closing"
     else:
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.
@@ -945,12 +949,15 @@ async def process_attachment(
     )
     session.add(invoice)
     await session.flush()
-    await service_periods.sync_invoice_accrual(session, invoice)
     intake.invoice_id = invoice.id
     if doc_kind == "closing":
         # УПД/акт — «факт выполненных работ»: гасит дебиторку / встаёт в кредиторку (правило 2),
         # будущей датой откладывается до своей даты (правило 4). В очереди оплат не участвует.
         await prepayments.apply_closing_document(session, invoice)
+        # Признание расхода — строго ПОСЛЕ проведения: внутри решается, информационный ли
+        # документ (у контрагента договор), а признание информационного удвоило бы расход.
+        # Счёт (bill) расхода не несёт вовсе, поэтому в ветке else признания нет.
+        await service_periods.sync_invoice_accrual(session, invoice)
         intake.status = "closing"
     else:
         # Счёт (bill) — только основание для платежа: живёт в очереди оплат, дебиторку НЕ гасит.

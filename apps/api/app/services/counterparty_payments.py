@@ -229,6 +229,14 @@ async def create_payment_draft_for_invoices(
     not_in_force = [
         inv for inv in invoices if inv.doc_kind == "closing" and inv.activation_status != "active"
     ]
+    informational = [inv for inv in invoices if inv.informational]
+    if informational:
+        first = informational[0]
+        number = f"№{first.number}" if first.number else "Документ"
+        raise CounterpartyPaymentError(
+            f"{number} справочный: расход по нему уже начислен договором услуги, "
+            "и оплачивать его отдельно нельзя. Платите по договору."
+        )
     if not_in_force:
         first = not_in_force[0]
         number = f"№{first.number}" if first.number else "документ"

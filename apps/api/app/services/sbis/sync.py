@@ -430,10 +430,12 @@ async def _materialize_document(
     )
     session.add(invoice)
     await session.flush()
-    await service_periods.sync_invoice_accrual(session, invoice)
     # Закрывающий документ (УПД/акт) гасит дебиторку / встаёт в кредиторку (правило 2); будущей
     # датой откладывается до своей даты (правило 4). Счёт (bill) в баланс не входит — no-op.
     settled = await prepayments.apply_closing_document(session, invoice)
+    # Признание расхода — строго ПОСЛЕ проведения: ``informational`` (у контрагента договор)
+    # выставляется внутри, а признание информационного документа удвоило бы расход месяца.
+    await service_periods.sync_invoice_accrual(session, invoice)
     if settled > 0:
         result.settled_from_prepayments += 1
     doc.invoice_id = invoice.id

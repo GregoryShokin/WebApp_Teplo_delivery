@@ -29,6 +29,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
     Wallet,
+    invoice_binds_settlement,
 )
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
@@ -602,7 +603,7 @@ async def _settle_counterparty_closing_from_prepayments(
                 SupplierInvoice.direction == "payable",
                 SupplierInvoice.doc_kind == "closing",
                 SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
-                SupplierInvoice.activation_status == "active",
+                invoice_binds_settlement(),
                 SupplierInvoice.barter_role.is_(None),
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
             )
@@ -647,7 +648,7 @@ async def _settle_open_kz_from_transaction(
                 SupplierInvoice.direction == "payable",
                 SupplierInvoice.doc_kind == "closing",
                 SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
-                SupplierInvoice.activation_status == "active",
+                invoice_binds_settlement(),
                 SupplierInvoice.barter_role.is_(None),
                 SupplierInvoice.draft_id.is_(None),
                 SupplierInvoice.payment_status.in_(UNPAID_INVOICE_STATUSES),
@@ -1456,8 +1457,17 @@ async def activate_due_closing_invoices(
     Будущий УПД (activation_status='pending') в свою дату активируется: гасит открытую
     дебиторку контрагента FIFO, остаток становится кредиторкой. ``invoice_date <= today``
     (в свою дату уже действует). Идемпотентно: после активации статус 'active', повторно
-    джоба его не берёт. Возвращает счётчики для лога."""
+    джоба его не берёт. Возвращает счётчики для лога.
+
+    Проводит документ ТЕМ ЖЕ ``apply_closing_document``, что и все двери приёма. Пока джоба
+    сама ставила ``active`` и звала только гашение авансов, будущий документ навсегда минул
+    обе проверки, которые ``apply_closing_document`` делает до гашения: не проверялся договор
+    (флаг ``informational``) и не аннулировался самоакт (``supersede_self_billed``). Один и тот
+    же УПД учитывался по-разному в зависимости от того, вчерашней он датой или завтрашней: акт
+    Микроэля на 9 000 ₽ за апрель-июнь, пришедший датой 30.06, оставлял апрель и май
+    признанными дважды — 6 000 ₽ лишнего расхода."""
     today = as_of or datetime.now(MOSCOW_TZ).date()
+    from app.services import supplier_service_periods
     rows = list(
         (
             await session.scalars(
@@ -1475,8 +1485,10 @@ async def activate_due_closing_invoices(
     )
     settled_count = 0
     for invoice in rows:
-        invoice.activation_status = "active"
-        settled = await auto_settle_invoice_from_open_prepayments(session, invoice)
+        settled = await apply_closing_document(session, invoice, as_of=today)
+        # Документ мог оказаться информационным (у контрагента договор) — тогда заведённое
+        # при приёме начисление снимается, иначе месяц был бы признан и договором, и актом.
+        await supplier_service_periods.sync_invoice_accrual(session, invoice)
         if settled > 0:
             settled_count += 1
     if commit:

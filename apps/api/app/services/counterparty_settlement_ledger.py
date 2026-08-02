@@ -133,6 +133,11 @@ class LedgerRow:
     prepayment_id: uuid.UUID | None = None
     # Документ создан нами (source='self_billed'), а не прислан контрагентом.
     self_billed: bool = False
+    # Двигает ли строка бегущий остаток. Платёж — всегда. Документ — только если он в силе
+    # (не будущий) и не информационный: у обоих обязательства ещё/уже нет. Пока остаток
+    # считался по всем документам подряд, два арендных УПД от 31.08 по 50 000 ₽ уводили
+    # сверку на 100 000 ₽ от плитки «Остатки», которая их честно не видела.
+    binds: bool = True
 
 
 @dataclass
@@ -488,6 +493,7 @@ async def build_ledger(
         # выставлял. Называть его «УПД №…» нельзя ни в коем случае: человек решит, что
         # первичка есть, и учтёт расход в налоговой базе, которой он не принадлежит.
         self_billed = doc.source == "self_billed"
+        binds = doc.activation_status == "active" and not doc.informational
         rows.append(
             LedgerRow(
                 kind="document",
@@ -502,16 +508,19 @@ async def build_ledger(
                 subtitle=(
                     "первички нет — в налоговые расходы не идёт"
                     if self_billed
+                    else "расход уже начислен по договору — документ справочный"
+                    if doc.informational
                     else "не оплачен"
                     if remainder > 0 and doc.activation_status == "active"
                     else ("вступает в силу позже" if doc.activation_status != "active" else None)
                 ),
                 period_start=start,
                 period_end=end,
-                uncovered=remainder if doc.activation_status == "active" else Decimal("0"),
+                uncovered=remainder if binds else Decimal("0"),
                 status="ok",
                 links=[f"оплачено {paid}"] if paid > 0 else [],
                 self_billed=self_billed,
+                binds=binds,
             )
         )
 
@@ -521,7 +530,14 @@ async def build_ledger(
     running = Decimal("0")
     visible: list[LedgerRow] = []
     for row in rows:
-        delta = row.amount if row.kind == "payment" else -row.amount
+        if row.kind == "payment":
+            delta = row.amount
+        elif row.binds:
+            delta = -row.amount
+        else:
+            # Будущий или информационный документ виден в хронологии, но остаток не двигает —
+            # обязательства по нему нет. Иначе сверка расходится с плиткой «Остатки».
+            delta = Decimal("0")
         running += delta
         if date_from is not None and row.row_date < date_from:
             opening = running

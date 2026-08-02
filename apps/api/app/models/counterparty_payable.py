@@ -878,6 +878,26 @@ class BarterReturnLine(Base):
     )
 
 
+def invoice_binds_settlement() -> Any:
+    """SQL-условие «документ участвует в расчётах ДЗ/КЗ».
+
+    Два флага, и оба обязательны:
+      • ``activation_status='active'`` — правило 4 канона: закрывающий с будущей датой ещё
+        не долг, он ждёт своей даты;
+      • ``informational=False`` — документ по контрагенту с договором зарегистрирован, но
+        ни на что не влияет (решение владельца 01.08.2026).
+
+    Пока предикат писали руками по месту, флаг ``activation_status`` проверяли все девять
+    точек контура, а ``informational`` — ни одна: акт на 6 000 ₽ по договору 3 000 ₽/мес
+    исправно не создавал расход, но при этом висел кредиторкой на все 6 000 и притягивал
+    к себе деньги при гашении. Один предикат на все витрины и все гашения — чтобы
+    следующий флаг канона нельзя было забыть в восьми местах из девяти.
+    """
+    return (SupplierInvoice.activation_status == "active") & (
+        SupplierInvoice.informational.is_(False)
+    )
+
+
 class SupplierInvoiceTombstone(Base):
     """Marker for a supplier invoice that was intentionally deleted and must NOT be
     re-imported by the cyclic iiko sync.

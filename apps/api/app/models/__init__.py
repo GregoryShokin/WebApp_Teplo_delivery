@@ -37,6 +37,7 @@ from app.models.counterparty_payable import (
     SupplierInvoiceTombstone,
     SupplierPrepayment,
     SupplierServicePeriodChange,
+    invoice_binds_settlement,
 )
 from app.models.counterparty_service_agreement import CounterpartyServiceAgreement
 from app.models.courier import (
@@ -318,5 +319,6 @@ __all__ = [
     "TaxPeriodClose",
     "VacationPeriod",
     "Wallet",
+    "invoice_binds_settlement",
     "WalletBalanceSnapshot",
 ]

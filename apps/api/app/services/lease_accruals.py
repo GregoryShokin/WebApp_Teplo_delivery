@@ -31,7 +31,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import LocationLease, SupplierInvoice
+from app.models import LocationLease, SupplierInvoice, invoice_binds_settlement
 from app.services import supplier_prepayments, supplier_service_periods
 
 LEASE_INVOICE_SOURCE = "lease"
@@ -241,7 +241,7 @@ async def settle_lease_invoice_from_cash(
                 SupplierInvoice.source == LEASE_INVOICE_SOURCE,
                 SupplierInvoice.external_id.like(f"lease:{lease_id}:%"),
                 SupplierInvoice.payment_status.in_(("unpaid", "partially_paid")),
-                SupplierInvoice.activation_status == "active",
+                invoice_binds_settlement(),
             )
             .order_by(SupplierInvoice.invoice_date, SupplierInvoice.created_at)
         )
