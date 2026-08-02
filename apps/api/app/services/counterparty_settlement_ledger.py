@@ -76,17 +76,31 @@ def _clamp(value: Decimal) -> Decimal:
     return value if value > 0 else Decimal("0")
 
 
-def period_of(start: date | None, end: date | None, fallback: date) -> tuple[date, date]:
-    """Период платежа: явный из предоплаты, иначе календарный месяц операции.
+# С какого числа платёж без указанного периода считается авансом за СЛЕДУЮЩИЙ месяц.
+# Услуги оплачивают вперёд, в конце предыдущего месяца: Директ и Синапсис платят 29-го,
+# ДоксИнБокс 23-го и 27-го — и каждый раз это следующий месяц (подтверждено владельцем на
+# его же данных 02.08.2026). Прежний фолбэк «месяц платежа» ставил такие авансы на месяц
+# раньше: расход июля числился июньским, а документ по нему ждали на месяц раньше срока.
+ADVANCE_FOR_NEXT_MONTH_FROM_DAY = 16
 
-    Месяц операции — сознательный фолбэк, а не заглушка: услуга без размеченного периода
-    почти всегда оплачивается в своём же месяце, и разрыв по ней всё равно надо увидеть.
-    Ошибку в периоде человек правит на строке — период предоплаты редактируемый.
+
+def period_of(start: date | None, end: date | None, fallback: date) -> tuple[date, date]:
+    """Период платежа: явный из предоплаты, иначе выведенный из даты денег.
+
+    До 16-го — месяц самого платежа, с 16-го — следующий: во второй половине месяца платят
+    вперёд. Это гипотеза, а не факт, и строка помечена ``period_assumed``; ошибку человек
+    правит прямо на строке — период предоплаты редактируемый.
     """
     if start is not None and end is not None:
         return start, end
-    first = fallback.replace(day=1)
-    return first, fallback.replace(day=monthrange(fallback.year, fallback.month)[1])
+    month = fallback.replace(day=1)
+    if fallback.day >= ADVANCE_FOR_NEXT_MONTH_FROM_DAY:
+        month = (
+            month.replace(year=month.year + 1, month=1)
+            if month.month == 12
+            else month.replace(month=month.month + 1)
+        )
+    return month, month.replace(day=monthrange(month.year, month.month)[1])
 
 
 # До какого числа СЛЕДУЮЩЕГО месяца ждём закрывающий, если у контрагента свой срок не задан.

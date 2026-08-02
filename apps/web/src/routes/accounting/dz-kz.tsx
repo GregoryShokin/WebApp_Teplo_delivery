@@ -51,6 +51,7 @@ type AccountingItem = {
   article_name: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
+  document_kind: string | null;
   amount: number;
   paid_amount: number;
   balance_amount: number;
@@ -1704,7 +1705,9 @@ function RecognitionSection({
                       <div className="font-medium">{item.counterparty_name}</div>
                       <div className="text-xs text-muted-foreground">
                         {item.invoice_number
-                          ? `Счёт № ${item.invoice_number}`
+                          ? /* Счёт — основание платежа, УПД — то, что признало расход.
+                               Одна подпись на оба вводила в заблуждение. */
+                            `${item.document_kind === "closing" ? "УПД / акт" : "Счёт"} № ${item.invoice_number}`
                           : item.opening
                             ? /* Входящее сальдо, а не оплата: искать эти деньги в выписке
                                  бесполезно — их там нет по определению. Без даты намеренно:

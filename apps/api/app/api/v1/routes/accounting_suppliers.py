@@ -106,6 +106,9 @@ class SupplierAccountingItem(BaseModel):
     article_name: str | None = None
     invoice_id: uuid.UUID | None = None
     invoice_number: str | None = None
+    # 'bill' — счёт на оплату, 'closing' — УПД/акт. Строка признания рождается и от того, и от
+    # другого, а подписывались обе «Счёт №»: закрывающий выдавал себя за основание платежа.
+    document_kind: str | None = None
     amount: float
     paid_amount: float
     balance_amount: float
@@ -335,6 +338,7 @@ async def list_supplier_accounting(
                 func.coalesce(allocated.c.paid, 0),
                 CounterpartyPaymentDraft.status,
                 DdsArticle.name,
+                SupplierInvoice.doc_kind,
             )
             .join(Counterparty, Counterparty.id == SupplierExpenseAccrual.counterparty_id)
             .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
@@ -362,6 +366,7 @@ async def list_supplier_accounting(
         allocated_amount,
         draft_status,
         article_name,
+        doc_kind,
     ) in rows:
         if accrual.invoice_id is not None:
             paid = min(periods.money(allocated_amount), periods.money(accrual.amount))
@@ -388,10 +393,18 @@ async def list_supplier_accounting(
             source_kind="service_period",
             counterparty_id=accrual.counterparty_id,
             counterparty_name=cp_name,
-            article_id=accrual.article_id,
-            article_name=article_name,
+            article_id=accrual.article_id
+            or (ctx.default_articles.get(accrual.counterparty_id) or (None, None))[0],
+            # Статья та же, что и у платежей: своя, а если её нет — из карточки контрагента.
+            # Прочерк рядом с признанным расходом читается как «отнести некуда», хотя статья
+            # в карточке заполнена.
+            article_name=article_name
+            or (ctx.default_articles.get(accrual.counterparty_id) or (None, None))[1],
             invoice_id=accrual.invoice_id,
             invoice_number=number,
+            # Счёт и УПД — разные документы, и подписывать закрывающий «Счёт №» значит путать
+            # основание платежа с тем, что признало расход.
+            document_kind=doc_kind,
             amount=_float(total),
             paid_amount=_float(paid),
             balance_amount=_float(balance),

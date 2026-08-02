@@ -417,6 +417,36 @@ async def test_payment_without_period_falls_back_to_its_own_month(
         assert row.status == "overdue"
 
 
+async def test_payment_in_the_second_half_of_the_month_is_an_advance_for_the_next(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж 16-го и позже без периода — аванс за следующий месяц, а не за свой.
+
+    Услуги оплачивают вперёд, в конце предыдущего месяца: Директ и Синапсис платят 29-го,
+    ДоксИнБокс 23-го и 27-го — и каждый раз это следующий месяц (владелец, 02.08.2026).
+    Прежний фолбэк «месяц платежа» ставил такие авансы на месяц раньше: расход июля числился
+    июньским, а документ по нему ждали на месяц раньше срока и зря красили строку.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Аванс вперёд", inn="6143049382")
+        wallet = await make_wallet(session, code="tbank-ledger-8", name="Т-Банк")
+        await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="13000.00",
+            on=date(2026, 6, 29),
+        )
+        await session.commit()
+
+        ledger = await build_ledger(session, cp.id, today=date(2026, 7, 20))
+
+        row = ledger.rows[0]
+        assert (row.period_start, row.period_end) == (date(2026, 7, 1), date(2026, 7, 31))
+        # Период июля ещё идёт — документа ждём до 10 августа, красного быть не должно.
+        assert row.status == "waiting"
+
+
 async def test_barter_documents_stay_out_of_the_ledger(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
