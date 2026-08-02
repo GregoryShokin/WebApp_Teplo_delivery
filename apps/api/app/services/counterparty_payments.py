@@ -277,13 +277,17 @@ async def create_payment_draft_for_invoices(
             raise CounterpartyPaymentError(
                 "Для контрагента обязателен период оказания услуг — заполните его у каждого счёта"
             )
-    # Даже для необязательного периода нельзя смешивать в одном банковском документе разные
-    # правила признания: один черновик = один и тот же период (включая «период не указан»).
+    # Разные периоды в одном платеже по счетам РАЗРЕШЕНЫ (владелец 02.08.2026): за один визит
+    # энергетик привозит два акта — доплату за прошлый месяц и аванс за текущий, — а платятся
+    # они одной суммой одному получателю, потому что перевод один. Дробить платёж ради учёта
+    # значит заставлять человека врать банку.
+    # Разрешать безопасно, потому что период у пачки счетов НИГДЕ не общий: начисление расхода
+    # заводится по каждому счёту (``sync_invoice_accrual`` ниже), дебиторка оплаченного счёта
+    # берёт период с него же (``_invoice_period_fields``), а поле периода у черновика никто не
+    # читает — ``_expense_line_period`` ходит по ``ExpenseDraftLine``, которых у черновика из
+    # накладных нет вовсе. Для свободных строк расхода запрет остаётся: там период у платежа
+    # действительно один на всех.
     period_keys = {(inv.service_period_start, inv.service_period_end) for inv in invoices}
-    if len(period_keys) > 1:
-        raise CounterpartyPaymentError(
-            "Счета с разными периодами оказания услуг нельзя объединять в один платёж"
-        )
     if not pays_via_safe and (profile is None or not profile.requisites_verified):
         raise RequisitesNotVerifiedError(
             "Реквизиты контрагента не подтверждены — отправка в банк недоступна"
@@ -321,7 +325,9 @@ async def create_payment_draft_for_invoices(
             requisites.setdefault("inn", counterparty.inn)
         purpose = _payment_purpose(counterparty, invoices, _aggregate_vat(invoices))
 
-    period_start, period_end = next(iter(period_keys))
+    # Период на черновике заполняем, только когда он у счетов один. Выбрать один из двух —
+    # соврать о платеже; пусто честно отсылает к периодам самих счетов, где они и живут.
+    period_start, period_end = next(iter(period_keys)) if len(period_keys) == 1 else (None, None)
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
         counterparty_id=counterparty_id,

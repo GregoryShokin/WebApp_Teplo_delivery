@@ -308,8 +308,10 @@ class CounterpartyPaymentDraft(Base):
     bank_provider: Mapped[str] = mapped_column(
         String(16), nullable=False, default="tbank", server_default=text("'tbank'")
     )
-    # Единый период черновика. Для пачки накладных он заполняется только когда все счета
-    # имеют одинаковый период; разные периоды на уровне сервиса запрещены.
+    # Единый период черновика — справочная подпись платежа, а не источник учёта: расход и
+    # дебиторка считаются по периоду КАЖДОГО счёта (строки). Пачку счетов с разными периодами
+    # собрать в один платёж можно (энергетик привозит акт за прошлый месяц и аванс за текущий),
+    # и тогда поле остаётся пустым — общего периода у такого платежа нет.
     service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

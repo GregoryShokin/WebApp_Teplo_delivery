@@ -66,13 +66,10 @@ export function BulkPayDialog({
   );
   const total = payable.reduce((sum, item) => sum + (item.remaining || item.amount), 0);
   const counterparties = new Set(payable.map((item) => item.counterparty_id));
-  const servicePeriods = new Set(
-    payable.map(
-      (item) => `${item.service_period_start ?? "none"}:${item.service_period_end ?? "none"}`,
-    ),
-  );
-  const bankAllowed =
-    payable.length > 0 && counterparties.size === 1 && servicePeriods.size === 1;
+  // Периоды услуг в одной пачке могут различаться: энергетик за один визит привозит акт за
+  // прошлый месяц и аванс за текущий, а перевод владелец делает один. Каждый счёт несёт свой
+  // период сам, поэтому учёту слияние не мешает (гард снят и на бэке).
+  const bankAllowed = payable.length > 0 && counterparties.size === 1;
 
   const walletsQuery = useQuery({ queryKey: ["cp", "wallets"], queryFn: getWallets, enabled: open });
   const cashWallets = (walletsQuery.data ?? []).filter((wallet) =>
@@ -176,11 +173,7 @@ export function BulkPayDialog({
               <span className="font-medium">Отправить в банк</span>
               <span className="block text-xs text-muted-foreground">
                 Черновик платежа в Т-Банке — останется подписать в банке.
-                {bankAllowed
-                  ? ""
-                  : counterparties.size > 1
-                    ? " Доступно для накладных одного контрагента."
-                    : " Счета с разными периодами услуг нужно отправить отдельно."}
+                {bankAllowed ? "" : " Доступно для накладных одного контрагента."}
               </span>
             </span>
           </button>
