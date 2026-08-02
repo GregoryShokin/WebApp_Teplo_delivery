@@ -17,7 +17,11 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from app.services.utility_recognition import UtilityRecognition, recognize_utility_document
+from app.services.utility_recognition import (
+    UtilityRecognition,
+    recognize_utility_document,
+    recognize_utility_documents,
+)
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "utility"
 
@@ -290,3 +294,51 @@ def test_types_are_normalized_for_the_caller() -> None:
     assert isinstance(result.document_number, str)
     assert isinstance(result.confidence, float)
     assert result.raw["source_file"] == "synthetic_water_utility_invoice.txt"
+
+
+def test_one_file_with_two_acts_yields_both() -> None:
+    """Факт и аванс приходят ОДНИМ файлом — и оба обязаны из него выйти.
+
+    Так их присылает энергетик (подтверждено владельцем 02.08.2026). Парсер определяет вид
+    акта для всего текста сразу, поэтому на склейке он видел только первый и молча терял
+    второй — с высокой уверенностью, без единой жалобы. Цена ровно в сумме аванса: платёж
+    уходит заниженным, а следующий факт-акт не находит предоплаты, которую должен был зачесть.
+    """
+    fact = (FIXTURE_ROOT / "synthetic_electricity_actual_act.txt").read_text(encoding="utf-8")
+    advance = (FIXTURE_ROOT / "synthetic_electricity_advance_act.txt").read_text(encoding="utf-8")
+
+    documents = recognize_utility_documents(f"{fact}\n\n{advance}")
+
+    assert len(documents) == 2
+    by_kind = {doc.raw.get("electricity_act_kind"): doc for doc in documents}
+    assert set(by_kind) == {"actual", "advance"}
+
+    actual = by_kind["actual"]
+    # Расход месяца и сумма к оплате — РАЗНЫЕ числа: из потребления с потерями вычтен ранее
+    # внесённый аванс. Спутать их значит либо занизить расход, либо заплатить дважды.
+    assert actual.raw["electricity_period_amount"] == "73000.00"
+    assert actual.amount == Decimal("22000.00")
+    assert (actual.period_start, actual.period_end) == (date(2026, 1, 1), date(2026, 1, 31))
+
+    advance_doc = by_kind["advance"]
+    assert advance_doc.amount == Decimal("50000.00")
+    # Аванс — следующий месяц, а не тот, за который отчитался факт.
+    assert (advance_doc.period_start, advance_doc.period_end) == (
+        date(2026, 2, 1),
+        date(2026, 2, 28),
+    )
+
+
+def test_single_document_file_is_not_split() -> None:
+    """Счёт за воду один в файле — разбиение не должно его тронуть.
+
+    Проверка от обратного: механизм, который режет файл на части, обязан молчать там, где
+    резать нечего. Иначе квитанция Водоканала распалась бы на обрывки, и сумма строк 4-7 —
+    единственная, которую мы платим, — не собралась бы ни в одном из них.
+    """
+    text = (FIXTURE_ROOT / "synthetic_water_utility_invoice.txt").read_text(encoding="utf-8")
+
+    documents = recognize_utility_documents(text)
+
+    assert len(documents) == 1
+    assert documents[0].kind == "water"
