@@ -191,3 +191,41 @@ test("окно разбора спрашивает поток, период и �
   await expect(dialog.getByLabel("К оплате, ₽")).toHaveValue("30402.00");
   await expect(dialog.getByLabel("Расход за период, ₽")).toHaveValue("95402.00");
 });
+
+test("снимок показывается картинкой и увеличивается до читаемого", async ({ page }) => {
+  await page.route("**/api/v1/payment-page/intakes", (route) =>
+    fulfillJson(route, [{ ...ACTUAL, status: "needs_review", invoice_id: null }]),
+  );
+  await page.route("**/api/v1/accounting/utilities/accounts**", (route) =>
+    fulfillJson(route, { items: [] }),
+  );
+  // Однопиксельный JPEG: проверяем ветку показа, а не содержимое снимка.
+  await page.route("**/api/v1/payment-page/intakes/intake-actual/pdf", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: Buffer.from(
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a" +
+          "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA" +
+          "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+        "base64",
+      ),
+    }),
+  );
+
+  await page.goto("/payment-page");
+  await page.getByRole("button", { name: "Разобрать" }).click();
+  const dialog = page.getByRole("dialog");
+
+  // Картинкой, а не фреймом: JPEG во фрейме браузер рисует пустым прямоугольником, и сверять
+  // разбор человеку становится не по чему.
+  const shot = dialog.getByAltText("Снимок документа");
+  await expect(shot).toBeVisible();
+
+  // Вписанная в колонку страница акта нечитаема — строку «Оплачено аванс: 65000р» надо
+  // увидеть глазами, поэтому снимок разворачивается в натуральный размер.
+  await expect(shot).toHaveClass(/object-contain/);
+  await dialog.getByRole("button", { name: "Увеличить" }).click();
+  await expect(shot).toHaveClass(/max-w-none/);
+  await expect(dialog.getByRole("button", { name: "Вписать" })).toBeVisible();
+});
