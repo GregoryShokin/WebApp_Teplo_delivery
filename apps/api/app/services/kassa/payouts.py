@@ -66,6 +66,7 @@ from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
 )
+from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
 from app.services.wallets import CashWalletError, resolve_cash_wallet
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -315,6 +316,10 @@ async def create_payout(
             on_date=today,
         )
     except LocationAnalyticsError as exc:
+        raise KassaPayoutError(str(exc)) from exc
+    try:
+        await ensure_owner_context(session, article=article, counterparty_id=counterparty_id)
+    except OwnerAnalyticsError as exc:
         raise KassaPayoutError(str(exc)) from exc
     if location_context.counterparty_id is not None:
         counterparty_id = location_context.counterparty_id

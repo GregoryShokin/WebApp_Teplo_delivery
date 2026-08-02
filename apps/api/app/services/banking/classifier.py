@@ -37,6 +37,7 @@ from app.services.location_analytics import (
     LocationContext,
     resolve_location_context,
 )
+from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
 
 # Статья ДДС «Авансы поставщикам»: строка сплита с ней рождает дебиторку
 # (supplier_prepayment) на выбранного контрагента, а не просто расход.
@@ -1065,6 +1066,12 @@ async def apply_operation_split(
                 on_date=operation.operation_date,
             )
         except LocationAnalyticsError as exc:
+            raise ValueError(str(exc)) from exc
+        try:
+            await ensure_owner_context(
+                session, article=article, counterparty_id=line_counterparty(line)
+            )
+        except OwnerAnalyticsError as exc:
             raise ValueError(str(exc)) from exc
 
     # Основные средства: то же правило и та же причина считать ДО записей. Объект берём со

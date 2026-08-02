@@ -104,3 +104,51 @@ def test_transaction_classify_validation(
         headers=HEADERS,
     )
     assert missing.status_code == 404, missing.text
+
+
+def test_owner_article_requires_owner_on_classify(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Разметка дивидендов без собственника отвергается ЭНДПОИНТОМ, а не только модулем.
+
+    Проверка живёт в ``owner_analytics`` и врезана в пять входов ДДС. Модульного теста мало:
+    правило, до которого не доходит ни один путь, ничего не защищает — а именно так и выглядит
+    забытая врезка. Здесь путь настоящий: PATCH /dds/transactions/{id}.
+    """
+
+    async def seed() -> dict[str, str]:
+        async with async_session_factory() as session:
+            wallet = Wallet(code="owner_classify_bank", name="Банк тест", type="bank_account")
+            article = DdsArticle(
+                code="owner_classify_dividends",
+                name="Дивиденды тест",
+                movement_type="outflow",
+                activity_type="financing",
+                owner_required=True,
+            )
+            session.add_all([wallet, article])
+            await session.flush()
+            txn = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("100000.00"),
+                operation_date=date(2026, 6, 20),
+                article_id=None,
+                source_kind="manual_adjustment",
+                payment_purpose="Выплата собственнику",
+                quality_status="requires_review",
+            )
+            session.add(txn)
+            await session.commit()
+            return {"txn_id": str(txn.id), "article_id": str(article.id)}
+
+    seeded = _run(seed())
+
+    response = client.patch(
+        f"/api/v1/dds/transactions/{seeded['txn_id']}",
+        json={"article_id": seeded["article_id"]},
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 422, response.text
+    assert "собственник" in response.json()["detail"].lower()

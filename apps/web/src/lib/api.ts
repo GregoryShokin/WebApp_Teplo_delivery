@@ -6146,6 +6146,31 @@ export async function getKdsDashboard(params?: {
   return response.data;
 }
 
+// --- Собственники --------------------------------------------------------------
+
+// Собственник — обычный контрагент с ролью owner: ему нужны те же расчёты, что и любому
+// контрагенту, и второй реестр означал бы вторую, несовместимую историю долга.
+export type OwnerRecord = {
+  id: string;
+  name: string;
+  inn: string | null;
+  type: string;
+  status: string;
+};
+
+export async function getOwners(): Promise<OwnerRecord[]> {
+  const response = await api.get<OwnerRecord[]>("/owners");
+  return response.data;
+}
+
+export async function createOwner(payload: {
+  name: string;
+  inn?: string | null;
+}): Promise<OwnerRecord> {
+  const response = await api.post<OwnerRecord>("/owners", payload);
+  return response.data;
+}
+
 // --- Коммунальные услуги -----------------------------------------------------
 
 export type UtilityKind = "water" | "gas" | "electricity";

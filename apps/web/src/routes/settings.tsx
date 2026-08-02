@@ -51,6 +51,7 @@ import {
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { PayinPresetsPanel } from "@/routes/settings-payin-presets";
 import { LocationsPanel } from "@/routes/settings-locations";
+import { OwnersPanel } from "@/routes/settings-owners";
 import { PositionsPanel } from "@/routes/settings-positions";
 import { usePermissions } from "@/lib/permissions";
 import {
@@ -302,6 +303,7 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
     canViewPositions && (!selectedCategory || selectedCategory === "positions");
   const showLocationsPanel =
     canViewLocations && (!selectedCategory || selectedCategory === "locations");
+  const showOwnersPanel = !selectedCategory || selectedCategory === "locations";
   const showSubstitutePairsPanel = !selectedCategory || selectedCategory === "payroll";
   const showPayinPresetsPanel = !selectedCategory || selectedCategory === "kassa";
   const substitutePairs = substitutePairsQuery.data?.pairs ?? [];
@@ -398,6 +400,10 @@ export function SettingsRoute({ onNavigate }: SettingsRouteProps = {}) {
 
       <div className="space-y-6">
         {showLocationsPanel ? <LocationsPanel canEdit={canEditLocations} /> : null}
+
+        {/* Реестр собственников — рядом с помещениями: обе панели про постоянные сущности,
+            без которых движение денег не к чему привязать. */}
+        {showOwnersPanel ? <OwnersPanel canEdit={canWriteSettings} /> : null}
 
         {showPositionsPanel ? <PositionsPanel canEdit={canEditPositions} /> : null}
 

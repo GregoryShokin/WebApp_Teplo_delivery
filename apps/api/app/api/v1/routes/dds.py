@@ -170,6 +170,7 @@ from app.services.new_payment import (
     ensure_reservable_article_allowed,
     list_payout_attribution_employees,
 )
+from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
 from app.services.payroll_advance_service import (
     book_operation_advance,
     list_kassa_pending_advances,
@@ -791,6 +792,12 @@ async def post_new_payment_expense_cash(
                 on_date=datetime.now(MOSCOW_TZ).date(),
             )
         except LocationAnalyticsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        try:
+            await ensure_owner_context(
+                session, article=article, counterparty_id=line.counterparty_id
+            )
+        except OwnerAnalyticsError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         # Аренда знает арендодателя — он и есть получатель наличной аренды.
         effective_counterparty_id = location_context.counterparty_id
@@ -2194,6 +2201,12 @@ async def classify_transaction(
             on_date=txn.operation_date,
         )
     except LocationAnalyticsError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    try:
+        await ensure_owner_context(
+            session, article=article, counterparty_id=payload.counterparty_id
+        )
+    except OwnerAnalyticsError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     # Основные средства — та же логика, что у помещения, и обе стороны важны. Прямая: статья
     # «Покупка ОС» без объекта — покупка мимо баланса. Обратная опаснее: увести проводку,

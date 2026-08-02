@@ -52,6 +52,7 @@ from app.services.location_analytics import (
     resolve_location_context,
 )
 from app.services.new_payment import ensure_expense_article_allowed
+from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
 
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
@@ -595,6 +596,12 @@ async def create_expense_payment_draft(
                 on_date=clock.moscow_today(),
             )
         except LocationAnalyticsError as exc:
+            raise CounterpartyPaymentError(str(exc)) from exc
+        try:
+            await ensure_owner_context(
+                session, article=article, counterparty_id=line.counterparty_id
+            )
+        except OwnerAnalyticsError as exc:
             raise CounterpartyPaymentError(str(exc)) from exc
         # Основное средство — то же правило и та же причина проверять ДО записей. Гейт нужен
         # именно здесь, а не при разборе будущей проводки: к тому моменту человек, который
