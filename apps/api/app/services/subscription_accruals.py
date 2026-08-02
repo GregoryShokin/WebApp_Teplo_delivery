@@ -50,6 +50,9 @@ from app.services import supplier_service_periods as periods
 SELF_BILLED_SOURCE = "self_billed"
 # Режим «счёт за период»: расход признаётся по окончании периода, УПД не ждём (канон владельца).
 BILLING_MODE_FIXED_TARIFF = "fixed_tariff"
+# Режим «счёт + закрывающий»: расход признаёт УПД. Сумма плавает от месяца к месяцу (реклама,
+# связь по факту), поэтому признавать её по календарным долям нельзя — только по документу.
+BILLING_MODE_PER_INVOICE = "per_invoice"
 # Предоплаты, которые ещё держат дебиторку и потому подлежат помесячному признанию.
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 
@@ -375,7 +378,11 @@ NON_RECOGNIZABLE_KINDS = ("goods", "deposit")
 
 
 def refusal_reason(
-    prepayment: SupplierPrepayment, *, documents_expected: bool, covered_by_agreement: bool
+    prepayment: SupplierPrepayment,
+    *,
+    documents_expected: bool,
+    covered_by_agreement: bool,
+    closed_by_document: bool = False,
 ) -> str | None:
     """Почему признать расход по этому платежу нельзя — или ``None``, если можно.
 
@@ -383,13 +390,23 @@ def refusal_reason(
     показывать ли кнопку. Пока правило жило только в сервисе, кнопка стояла на строках, где
     ответ всегда был 409 — примерно на половине вкладки «ждём документ».
 
-    ``prepaid_bill`` — ДЗ по оплаченному счёту. По канону её гасит закрывающий УПД (правило 2),
-    поэтому признавать её руками нельзя, ПОКА документ ожидается. Там, где документов не будет
-    (разовые работы, договор informal), запрет превращался бы в тупик: оплаченный счёт от
-    такого контрагента не стал бы расходом никогда.
+    Решает РЕЖИМ контрагента, а не происхождение строки. Прежде правило смотрело только на
+    ``prepaid_bill`` — дебиторку от оплаченного счёта, — и потому у одного и того же Яндекс
+    Директа платёж со счётом кнопку не имел, а платёж без счёта имел. У Манго, который платится
+    вообще без счетов, кнопка стояла на всех строках, хотя расход по нему закрывает УПД.
+    ``closed_by_document`` — это режим ``per_invoice``: закрывающий придёт, признавать по
+    календарным долям нечего.
+
+    ``prepaid_bill`` там, где документов не будет (разовые работы, договор informal, «счёт за
+    период»), не блокируется: иначе оплаченный счёт от такого контрагента не стал бы расходом
+    никогда.
     """
     if prepayment.kind in NON_RECOGNIZABLE_KINDS:
         return "Такой платёж закрывается накладной или возвратом, а не признанием по месяцам"
+    # Режим проверяем ПЕРВЫМ: иначе у одного контрагента строка со счётом и строка без счёта
+    # объясняются разными словами, а разнобой в объяснениях владелец читает как разное правило.
+    if closed_by_document:
+        return "Расход по этому контрагенту закрывает УПД, а не признание по месяцам"
     if prepayment.kind == "prepaid_bill" and documents_expected:
         return "Это оплата счёта — её закроет закрывающий документ, а не признание по месяцам"
     if prepayment.status not in OPEN_PREPAYMENT_STATUSES:
@@ -503,12 +520,20 @@ async def recognize_prepayment_period(
     ) or await covered_by_agreement(
         session, prepayment.counterparty_id, on=end, article_id=prepayment.article_id
     )
+    billing_mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == prepayment.counterparty_id
+        )
+    )
     refusal = refusal_reason(
         prepayment,
         documents_expected=not await documents_not_expected(
             session, prepayment.counterparty_id, today=as_of
         ),
         covered_by_agreement=agreement_covers,
+        # Входящий остаток — исключение: он не оплата, закрывающего на него не выставит никто,
+        # и запрет по режиму запер бы его в дебиторке навсегда.
+        closed_by_document=billing_mode == BILLING_MODE_PER_INVOICE and not prepayment.opening,
     )
     if refusal is not None:
         raise RecognitionRefused(refusal)

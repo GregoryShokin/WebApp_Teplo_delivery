@@ -17,7 +17,13 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from cp_helpers import admin_headers, make_counterparty, make_invoice, make_wallet
+from cp_helpers import (
+    admin_headers,
+    make_counterparty,
+    make_expense_article,
+    make_invoice,
+    make_wallet,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import (
     CashflowTransaction,
     CounterpartyPayableProfile,
+    InvoicePaymentAllocation,
     SupplierExpenseAccrual,
     SupplierPrepayment,
 )
@@ -171,6 +178,196 @@ def test_stages_split_queue_by_who_makes_the_step(
     assert filtered.status_code == 200
     stages = {item["stage"] for item in filtered.json()["items"]}
     assert stages == {"needs_period"}
+
+
+def test_recognition_button_follows_the_billing_mode_not_the_paper_trail(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Кнопку признания решает РЕЖИМ контрагента, а не то, дошёл ли счёт до системы.
+
+    Так экран выглядел до правки (02.08.2026, прод): у Яндекс Директа платёж со счётом кнопки
+    не имел, а платёж из выписки — имел, хотя контрагент один и закрывающий по обоим придёт
+    один. У Манго, который платится вообще без счетов, кнопка стояла на КАЖДОЙ строке: правило
+    смотрело только на ``prepaid_bill``, а его платежи — ``subscription``. Нажатие вело в тупик:
+    расход по ``per_invoice`` признаёт УПД, а не календарные доли.
+    """
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            # Платит без счетов, закрывающий выставляет — режим «счёт + УПД».
+            by_document = await make_counterparty(
+                session, name="Режим Документ", inn="6155000411"
+            )
+            await _set_billing_mode(session, by_document.id, "per_invoice")
+            await _open_prepayment(
+                session,
+                counterparty_id=by_document.id,
+                amount="5000.00",
+                paid_on=date(2026, 7, 21),
+            )
+
+            # Счёт за период: закрывающих не выставляет вовсе, признание по месяцам — его
+            # единственный путь в расход.
+            by_period = await make_counterparty(session, name="Режим Период", inn="6155000412")
+            await _set_billing_mode(session, by_period.id, "fixed_tariff")
+            await _open_prepayment(
+                session,
+                counterparty_id=by_period.id,
+                amount="3700.00",
+                paid_on=date(2026, 7, 27),
+            )
+            await session.commit()
+            return by_document.id, by_period.id
+
+    document_id, period_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    by_cp = {item["counterparty_id"]: item for item in response.json()["items"]}
+
+    blocked = by_cp[str(document_id)]
+    assert blocked["can_recognize"] is False
+    assert "УПД" in blocked["recognize_blocked_reason"]
+
+    assert by_cp[str(period_id)]["can_recognize"] is True
+
+
+def test_row_without_its_own_article_shows_the_one_from_the_card(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Статья по умолчанию из карточки — там, где своей проводки у строки нет.
+
+    У дебиторки, рождённой из оплаченного счёта, проводки ДДС не бывает по конструкции, и
+    экран показывал «—» рядом со строкой контрагента, у которого статья в карточке давно
+    заполнена. Читалось это как «расход некуда отнести».
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Статья Карточка", inn="6155000413")
+            article = await make_expense_article(
+                session, code="telecom_services", name="Телекоммуникации"
+            )
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == cp.id
+                )
+            )
+            profile.default_dds_article_id = article.id
+            await _open_prepayment(
+                session, counterparty_id=cp.id, amount="5000.00", paid_on=date(2026, 7, 21)
+            )
+            await session.commit()
+            return cp.id
+
+    cp_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    row = {item["counterparty_id"]: item for item in response.json()["items"]}[str(cp_id)]
+    assert row["article_name"] == "Телекоммуникации"
+
+
+def test_paid_bill_row_is_dated_by_the_money_not_by_the_record(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """«Платёж от» у дебиторки со счётом — день, когда ушли деньги.
+
+    Своей проводки у ``prepaid_bill`` нет, и строка подписывалась датой СОЗДАНИЯ записи: счёт
+    АЙКО от 04.07 оплачен 08.07, а экран говорил «Платёж от 20.07» — день, когда система завела
+    дебиторку. Владелец шёл искать этот платёж в выписке и не находил.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Дата Денег", inn="6155000414")
+            bill = await make_invoice(
+                session,
+                counterparty_id=cp.id,
+                amount="16430.00",
+                doc_kind="bill",
+                payment_status="paid",
+                invoice_date=date(2026, 7, 4),
+            )
+            wallet = await make_wallet(session, name="Дата Денег Кошелёк")
+            tx = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("16430.00"),
+                operation_date=date(2026, 7, 8),
+                counterparty_id=cp.id,
+                source_kind="bank_feed",
+            )
+            session.add(tx)
+            await session.flush()
+            session.add(
+                InvoicePaymentAllocation(
+                    invoice_id=bill.id,
+                    source_kind="bank",
+                    cashflow_transaction_id=tx.id,
+                    amount=Decimal("16430.00"),
+                )
+            )
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=cp.id,
+                    kind="prepaid_bill",
+                    amount=Decimal("16430.00"),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    bill_invoice_id=bill.id,
+                )
+            )
+            await session.commit()
+            return cp.id
+
+    cp_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    rows = [
+        item
+        for item in response.json()["items"]
+        if item["counterparty_id"] == str(cp_id) and item["source_kind"] == "legacy_prepayment"
+    ]
+    assert [row["payment_date"] for row in rows] == ["2026-07-08"]
+
+
+def test_opening_balance_is_not_waiting_for_any_document(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Входящий остаток — не платёж: закрывающего на него не выставит никто.
+
+    Остаток рекламного кабинета Яндекс Директа на 01.06.2026 стоял в очереди «ждём документ»
+    наравне с оплатами — потому что режим контрагента описывает его ОПЛАТЫ, а не входящее
+    сальдо. Ждать по такой строке нечего и некого: решение за человеком, и кнопка ему нужна.
+    """
+
+    async def seed() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="Остаток Кабинет", inn="6155000415")
+            await _set_billing_mode(session, cp.id, "per_invoice")
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=cp.id,
+                    kind="ad",
+                    amount=Decimal("13429.35"),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    opening=True,
+                    note="Остаток кабинета на 01.06.2026",
+                )
+            )
+            await session.commit()
+            return cp.id
+
+    cp_id = asyncio.run(seed())
+    response = client.get(f"{BASE}?view=all", headers=_admin(async_session_factory))
+    assert response.status_code == 200
+    row = {item["counterparty_id"]: item for item in response.json()["items"]}[str(cp_id)]
+
+    assert row["opening"] is True
+    assert row["stage"] == "needs_period"
+    # Режим контрагента блокирует признание его ОПЛАТ — но не входящего сальдо: иначе оно
+    # осталось бы в дебиторке навсегда.
+    assert row["can_recognize"] is True
 
 
 def test_goods_supplier_stays_out_of_the_recognition_queue(

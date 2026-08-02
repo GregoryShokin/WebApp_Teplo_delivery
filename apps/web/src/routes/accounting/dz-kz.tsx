@@ -64,6 +64,7 @@ type AccountingItem = {
   expected_by: string | null;
   days_overdue: number;
   period_assumed: boolean;
+  opening: boolean;
   auto_recognition_on: string | null;
   document_amount: number | null;
   amount_mismatch: number;
@@ -1677,9 +1678,15 @@ function RecognitionSection({
                       <div className="text-xs text-muted-foreground">
                         {item.invoice_number
                           ? `Счёт № ${item.invoice_number}`
-                          : item.payment_date
-                            ? `Платёж от ${fmtDate(item.payment_date)}`
-                            : "Платёж"}
+                          : item.opening
+                            ? /* Входящее сальдо, а не оплата: искать эти деньги в выписке
+                                 бесполезно — их там нет по определению. Без даты намеренно:
+                                 у сальдо её нет, а ``payment_date`` здесь — день, когда
+                                 остаток занесли в систему, и он выдал бы себя за дату денег. */
+                              "Входящий остаток"
+                            : item.payment_date
+                              ? `Платёж от ${fmtDate(item.payment_date)}`
+                              : "Платёж"}
                       </div>
                       {/* Документ изменился уже после того, как расход признан. Сумму в
                           закрытом месяце система не переписывает молча — но и промолчать
@@ -1745,6 +1752,18 @@ function RecognitionSection({
                       {money.format(
                         item.stage === "in_expense" ? item.amount : item.balance_amount,
                       )}
+                      {/* Частично закрытый платёж: в строке остаток, а подписана она платежом.
+                          Манго платится по 5 000 ₽, УПД приходят на фактический объём — и
+                          строка «Платёж от 26.06 — 3 891 ₽» читалась как платёж, которого в
+                          выписке нет. Разницу называем вслух. */}
+                      {item.stage !== "in_expense" &&
+                      item.balance_amount > 0 &&
+                      item.amount - item.balance_amount > 0.005 ? (
+                        <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+                          из {money.format(item.amount)} закрыто{" "}
+                          {money.format(item.amount - item.balance_amount)}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="text-right">
                       {/* «За что заплатили» — тот же вопрос, что решает окно разбора на
