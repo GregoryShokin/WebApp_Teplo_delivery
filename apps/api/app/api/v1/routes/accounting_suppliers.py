@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.api.deps import CurrentActor, ensure_permission, get_current_actor, req
 from app.db.session import get_session
 from app.models import (
     AccountingPeriodClose,
+    EmailInvoiceIntake,
     AccumulationFundAccount,
     BarterReturnLine,
     CashflowTransaction,
@@ -2235,3 +2237,193 @@ async def reopen_accounting_period(
     row = await periods_service.reopen_month(session, period_month=period_month)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Месяц не был закрыт")
+
+
+class OriginDocument(BaseModel):
+    """Документ в цепочке признания: чем платёж обоснован и чем закрыт.
+
+    ``kind`` отвечает на вопрос «что это»: 'bill' — счёт на оплату, 'closing' — закрывающий
+    документ контрагента (УПД/акт), 'self_billed' — наше признание без первички, 'lease' —
+    начисление по договору аренды. ``intake_id`` заполнен, когда документ пришёл почтой и
+    его PDF можно показать.
+    """
+
+    kind: str
+    invoice_id: uuid.UUID | None = None
+    number: str | None = None
+    invoice_date: date | None = None
+    amount: float | None = None
+    intake_id: uuid.UUID | None = None
+    has_pdf: bool = False
+
+
+class RecognitionOrigin(BaseModel):
+    """Откуда взялся платёж и чем закрыт — для окна «Основание» в признании расходов.
+
+    Так же, как окно разбора на «Странице на оплату» показывает счёт, из-за которого платёж
+    появился. Разница в том, что здесь цепочка длиннее: у платежа есть НАЧАЛО (счёт или
+    договор) и КОНЕЦ (закрывающий документ, наше признание по периоду или по договору).
+    Без этого окна человек видит строку «АЙКО 16 430 ₽» и не может проверить, за что платили,
+    не уходя в другой раздел.
+    """
+
+    counterparty_name: str
+    amount: float
+    # Чем платёж обоснован. None — основания нет вовсе (свободный платёж).
+    basis: OriginDocument | None = None
+    basis_note: str
+    # Чем расход признан/закрыт. None — ещё не закрыт.
+    closing: OriginDocument | None = None
+    closing_note: str
+
+
+async def _origin_document(
+    session: AsyncSession, invoice: SupplierInvoice | None
+) -> OriginDocument | None:
+    """Собрать карточку документа и найти его PDF, если он приходил почтой."""
+    if invoice is None:
+        return None
+    intake_id = await session.scalar(
+        select(EmailInvoiceIntake.id).where(
+            or_(
+                EmailInvoiceIntake.invoice_id == invoice.id,
+                EmailInvoiceIntake.companion_invoice_id == invoice.id,
+            ),
+            EmailInvoiceIntake.pdf_bytes.is_not(None),
+        )
+    )
+    return OriginDocument(
+        kind=(
+            "self_billed"
+            if invoice.source == "self_billed"
+            else "lease"
+            if invoice.source == "lease"
+            else invoice.doc_kind
+        ),
+        invoice_id=invoice.id,
+        number=invoice.number,
+        invoice_date=invoice.invoice_date,
+        amount=_float(invoice.amount),
+        intake_id=intake_id,
+        has_pdf=intake_id is not None,
+    )
+
+
+@router.get("/prepayments/{prepayment_id}/origin", response_model=RecognitionOrigin, dependencies=READ)
+async def prepayment_origin(
+    prepayment_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RecognitionOrigin:
+    """Основание платежа и то, чем он закрыт.
+
+    Отвечает на два вопроса, которые человек задаёт, глядя на строку признания: «за что
+    заплатили» и «чем это закрылось». У платежа по счёту оба ответа — документы, и их можно
+    открыть прямо здесь. У договорного контрагента счёта нет вовсе, и вместо документа
+    честно сказано, что основание — договор: подсунуть вместо него чужую бумагу было бы
+    хуже, чем признаться, что бумаги нет.
+    """
+    prepayment = await session.get(SupplierPrepayment, prepayment_id)
+    if prepayment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Платёж не найден")
+    cp_name = await session.scalar(
+        select(Counterparty.name).where(Counterparty.id == prepayment.counterparty_id)
+    )
+
+    bill = (
+        await session.get(SupplierInvoice, prepayment.bill_invoice_id)
+        if prepayment.bill_invoice_id
+        else None
+    )
+    basis = await _origin_document(session, bill)
+    if basis is not None:
+        basis_note = f"Счёт № {bill.number}" if bill and bill.number else "Счёт на оплату"
+    else:
+        # Счёта нет. Причина бывает разной, и человеку важно понимать, какая именно.
+        agreement_title = await session.scalar(
+            select(CounterpartyServiceAgreement.title).where(
+                CounterpartyServiceAgreement.counterparty_id == prepayment.counterparty_id,
+                CounterpartyServiceAgreement.accrual_enabled.is_(True),
+            )
+        )
+        lease_exists = await session.scalar(
+            select(LocationLease.id).where(
+                LocationLease.counterparty_id == prepayment.counterparty_id,
+                LocationLease.accrual_enabled.is_(True),
+            )
+        )
+        if agreement_title:
+            basis_note = f"Счёта нет — платёж по договору «{agreement_title}»"
+        elif lease_exists:
+            basis_note = "Счёта нет — платёж по договору аренды"
+        else:
+            basis_note = "Счёта нет — свободный платёж"
+
+    # Чем закрыт: документы, погасившие эту дебиторку.
+    closing_ids = (
+        await session.scalars(
+            select(InvoicePaymentAllocation.invoice_id).where(
+                InvoicePaymentAllocation.prepayment_id == prepayment.id
+            )
+        )
+    ).all()
+    closing_invoice = (
+        await session.get(SupplierInvoice, closing_ids[0]) if closing_ids else None
+    )
+    closing = await _origin_document(session, closing_invoice)
+    if closing_invoice is None:
+        mode = await session.scalar(
+            select(CounterpartyPayableProfile.service_billing_mode).where(
+                CounterpartyPayableProfile.counterparty_id == prepayment.counterparty_id
+            )
+        )
+        if mode == subscriptions.BILLING_MODE_FIXED_TARIFF:
+            closing_note = "Закрывается по периоду — УПД по этому контрагенту не ждём"
+        elif mode == settlement.BILLING_MODE_ONE_OFF:
+            closing_note = "Разовый платёж — расход признан сразу, закрывать нечем"
+        elif mode == settlement.BILLING_MODE_AGREEMENT:
+            closing_note = "Закроется начислением по договору по окончании месяца"
+        else:
+            closing_note = "Ещё не закрыт — ждём закрывающий документ"
+    elif closing_invoice.source == "self_billed":
+        closing_note = "Признано нами без первички — документа от контрагента не будет"
+    elif closing_invoice.source == "lease":
+        closing_note = "Закрыто начислением по договору аренды"
+    else:
+        number = closing_invoice.number
+        closing_note = f"Закрыто документом № {number}" if number else "Закрыто документом"
+
+    return RecognitionOrigin(
+        counterparty_name=cp_name or "—",
+        amount=_float(prepayment.amount),
+        basis=basis,
+        basis_note=basis_note,
+        closing=closing,
+        closing_note=closing_note,
+    )
+
+
+@router.get("/intakes/{intake_id}/pdf", dependencies=READ)
+async def recognition_origin_pdf(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """PDF документа-основания для окна признания расходов.
+
+    Тот же файл, что показывает «Страница на оплату», но под правом этого раздела
+    (``accounting.suppliers.read``): смотреть взаиморасчёты и смотреть очередь оплат — разные
+    роли, и заставлять бухгалтера получать второе право ради просмотра собственного основания
+    было бы странно.
+    """
+    intake = await session.get(EmailInvoiceIntake, intake_id)
+    if intake is None or not intake.pdf_bytes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF недоступен")
+    # Имя файла кириллическое, а HTTP-заголовки только latin-1 → ASCII-фолбэк + RFC 5987,
+    # иначе Starlette роняет ответ (см. тот же приём в payment_page).
+    raw_name = intake.attachment_filename or "document.pdf"
+    ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "document.pdf"
+    disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw_name)}"
+    return Response(
+        content=bytes(intake.pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )

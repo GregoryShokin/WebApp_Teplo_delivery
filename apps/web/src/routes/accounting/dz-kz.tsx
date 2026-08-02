@@ -403,6 +403,39 @@ type BalanceAsOf = {
   approximate_settlements: number;
 };
 
+type OriginDocument = {
+  kind: string;
+  invoice_id: string | null;
+  number: string | null;
+  invoice_date: string | null;
+  amount: number | null;
+  intake_id: string | null;
+  has_pdf: boolean;
+};
+
+type RecognitionOrigin = {
+  counterparty_name: string;
+  amount: number;
+  basis: OriginDocument | null;
+  basis_note: string;
+  closing: OriginDocument | null;
+  closing_note: string;
+};
+
+async function getRecognitionOrigin(prepaymentId: string): Promise<RecognitionOrigin> {
+  const response = await api.get<RecognitionOrigin>(
+    `/accounting/suppliers/prepayments/${prepaymentId}/origin`,
+  );
+  return response.data;
+}
+
+async function fetchOriginPdfUrl(intakeId: string): Promise<string> {
+  const response = await api.get(`/accounting/suppliers/intakes/${intakeId}/pdf`, {
+    responseType: "blob",
+  });
+  return URL.createObjectURL(response.data as Blob);
+}
+
 async function getBalancesAsOf(asOf: string): Promise<BalanceAsOf> {
   const response = await api.get<BalanceAsOf>("/accounting/suppliers/balances/as-of", {
     params: { as_of: asOf },
@@ -1555,6 +1588,7 @@ function RecognitionSection({
   const [stage, setStage] = useState<Stage>("needs_period");
   const [editing, setEditing] = useState<AccountingItem | null>(null);
   const [recognizing, setRecognizing] = useState<AccountingItem | null>(null);
+  const [origin, setOrigin] = useState<AccountingItem | null>(null);
   const [reversing, setReversing] = useState<AccountingItem | null>(null);
   const query = useQuery({
     queryKey: ["accounting", "suppliers", stage],
@@ -1713,6 +1747,19 @@ function RecognitionSection({
                       )}
                     </TableCell>
                     <TableCell className="text-right">
+                      {/* «За что заплатили» — тот же вопрос, что решает окно разбора на
+                          «Странице на оплату». Здесь он даже острее: строка признания живёт
+                          отдельно от документа, и проверить основание было негде. */}
+                      {isPrepayment ? (
+                        <Button
+                          className="mr-1 h-8 px-2 text-xs"
+                          onClick={() => setOrigin(item)}
+                          size="sm"
+                          variant="ghost"
+                        >
+                          Основание
+                        </Button>
+                      ) : null}
                       {!canEdit ? null : isPrepayment ? (
                         item.can_recognize ? (
                           <Button size="sm" variant="outline" onClick={() => setRecognizing(item)}>
@@ -1764,6 +1811,7 @@ function RecognitionSection({
       {recognizing ? (
         <RecognizeDialog item={recognizing} onClose={() => setRecognizing(null)} />
       ) : null}
+      {origin ? <OriginDialog item={origin} onClose={() => setOrigin(null)} /> : null}
       {reversing ? (
         <ReverseDialog item={reversing} onClose={() => setReversing(null)} />
       ) : null}
@@ -2239,5 +2287,84 @@ function BalanceAsOfCard() {
         </div>
       )}
     </div>
+  );
+}
+
+function OriginDialog({ item, onClose }: { item: AccountingItem; onClose: () => void }) {
+  const query = useQuery({
+    queryKey: ["accounting", "origin", item.id],
+    queryFn: () => getRecognitionOrigin(item.id),
+  });
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfFor, setPdfFor] = useState<string | null>(null);
+
+  // PDF грузим по требованию: у одной строки бывает два документа (счёт и УПД), и тянуть оба
+  // сразу — лишний трафик ради того, на что человек, возможно, и не посмотрит.
+  const openPdf = (intakeId: string) => {
+    if (pdfFor === intakeId) return;
+    setPdfFor(intakeId);
+    setPdfUrl(null);
+    fetchOriginPdfUrl(intakeId)
+      .then(setPdfUrl)
+      .catch(() => setPdfUrl(null));
+  };
+
+  const card = (doc: OriginDocument | null, note: string, title: string) => (
+    <div className="rounded-lg border bg-background p-3">
+      <div className="text-xs font-medium uppercase text-muted-foreground">{title}</div>
+      <div className="mt-1 text-sm">{note}</div>
+      {doc ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {doc.invoice_date ? <span>от {fmtDate(doc.invoice_date)}</span> : null}
+          {doc.amount != null ? <span>{money.format(doc.amount)}</span> : null}
+          {doc.has_pdf && doc.intake_id ? (
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => openPdf(doc.intake_id as string)}
+            >
+              {pdfFor === doc.intake_id ? "показан ниже" : "открыть PDF"}
+            </button>
+          ) : (
+            <span>файла нет — документ заведён вручную</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Основание платежа</DialogTitle>
+          <DialogDescription>
+            {query.data
+              ? `${query.data.counterparty_name} · ${money.format(query.data.amount)}`
+              : item.counterparty_name}
+          </DialogDescription>
+        </DialogHeader>
+
+        {query.isLoading ? (
+          <p className="text-sm text-muted-foreground">Загружаем…</p>
+        ) : query.isError ? (
+          <p className="text-sm text-rose-700">
+            {apiErrorMessage(query.error, "Не удалось загрузить основание")}
+          </p>
+        ) : query.data ? (
+          <div className="flex flex-col gap-3">
+            {card(query.data.basis, query.data.basis_note, "За что заплатили")}
+            {card(query.data.closing, query.data.closing_note, "Чем закрыто")}
+            {pdfFor ? (
+              pdfUrl ? (
+                <iframe title="Документ" src={pdfUrl} className="h-[55vh] w-full rounded-md border" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Загружаем PDF…</p>
+              )
+            ) : null}
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
