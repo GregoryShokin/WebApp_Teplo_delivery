@@ -142,7 +142,11 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
     return {
       total: all.length,
       review: by("needs_review"),
-      linked: by("linked"),
+      // «Готовы к оплате» — сколько ещё предстоит заплатить, а не сколько строк в статусе
+      // linked: оплаченный мимо очереди счёт денег уже не ждёт.
+      linked: all.filter(
+        (item) => item.status === "linked" && item.invoice_payment_status !== "paid"
+      ).length,
       noise: by("duplicate") + by("ignored"),
     };
   }, [all]);
@@ -395,8 +399,15 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
                 const inWork =
                   ["needs_review", "new", "failed"].includes(item.status) ||
                   (item.status === "linked" && !item.invoice_in_draft);
-                // Готов к отправке/планированию: статус linked и ещё не ушёл в банк.
-                const isReadyRow = item.status === "linked" && !item.invoice_in_draft;
+                // Готов к отправке/планированию: статус linked, ещё не ушёл в банк И НЕ ОПЛАЧЕН.
+                // Оплатить счёт можно мимо очереди — свободным платежом из выписки, наличными из
+                // Сейфа, ручной сверкой операции. Бейдж такую строку уже показывает как
+                // «Оплачен», а кнопка «В банк» на ней оставалась: бэкенд платёж отбивал
+                // («есть оплаченные накладные»), но человеку предлагалось заплатить второй раз.
+                const isReadyRow =
+                  item.status === "linked" &&
+                  !item.invoice_in_draft &&
+                  item.invoice_payment_status !== "paid";
                 return (
                   <TableRow key={item.id}>
                     <TableCell>

@@ -1,7 +1,9 @@
 """Канон учёта ДЗ/КЗ поставщиков (владелец 17.07.2026): четыре правила.
 
-1. Свободный платёж контрагенту FIFO гасит только финансовую кредиторку (УПД/акты),
-   излишек становится дебиторкой (предоплатой). Товарную поставку он сам не выбирает.
+1. Свободный платёж контрагенту по хронологии закрывает открытые финансовые документы — счёт
+   и УПД/акты (счёт того же дня первым), излишек становится дебиторкой (предоплатой). Оплата
+   счёта долгом его не делает: она заводит по нему ДЗ, и та неттит закрывающий (правило 3
+   не нарушено). Товарную поставку платёж сам не выбирает.
 2. Финансовый УПД/акт гасит открытую дебиторку автоматически. Товарная накладная встаёт в
    кредиторку отдельно и связывается с авансом только вручную.
 3. Счёт (bill) — НЕ долг: очередь оплат, в баланс ДЗ/КЗ не входит; дебиторку не гасит.
@@ -314,18 +316,22 @@ async def test_rule1_frozen_kz_blocks_reclassify_cleanup(
             await _drop_untouched_bank_prepayments(session, {tx.id})
 
 
-async def test_rule1_bill_is_not_settled_only_closing(
+async def test_rule1_bill_outside_finance_scope_is_not_settled(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
+    """Счёт вне финансового документооборота платёж не подбирает — как и товарную накладную.
+
+    Счёт на товар от того же поставщика может относиться к любой из нескольких независимых
+    поставок; выбрать её вправе только оператор (``settle_invoice_from_prepayment``)."""
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Правило1-В", inn="6155010103")
         await _enable_bank_prepayment(session, cp.id)
-        # Счёт (bill) — не долг: платёж его НЕ гасит, целиком уходит в предоплату.
         bill = await make_invoice(
             session,
             counterparty_id=cp.id,
             amount="1000.00",
             doc_kind="bill",
+            operational_scope="warehouse",
             invoice_date=date(2026, 6, 1),
         )
         wallet = await make_wallet(session, name="Банк-3", wallet_type="bank")
@@ -335,6 +341,202 @@ async def test_rule1_bill_is_not_settled_only_closing(
 
         assert prepayment is not None and prepayment.amount == Decimal("700.00")
         assert (await session.get(SupplierInvoice, bill.id)).payment_status == "unpaid"
+
+
+async def test_rule1_closes_the_bill_and_its_closing_together(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пара «счёт + закрывающий» одного месяца закрывается свободным платежом ЦЕЛИКОМ.
+
+    Дефект зонда 02.08.2026: правило 1 подбирало только закрывающие, поэтому свободный платёж
+    выпиской гасил УПД, а счёт за уже оплаченный месяц оставался ``unpaid`` и висел на «Странице
+    на оплату» как «Готов к оплате» — человек видел неоплаченный счёт и мог заплатить второй раз.
+    Деньги и долг при этом считались верно: врала только очередь оплат.
+
+    Теперь деньги идут тем же путём, что при оплате из очереди и наличной выдаче из Сейфа: счёт
+    гасится ПЕРВЫМ, единый чокпоинт заводит по нему ДЗ ``prepaid_bill``, и она неттит закрывающий.
+    Баланс ДЗ/КЗ от этого не меняется — меняется только то, какой документ помечен оплаченным."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-пара", inn="6155010107")
+        # Счёт и закрывающий из одной бумаги: одна дата документа, одна транзакция создания —
+        # порядок между ними задаёт только явный ключ сортировки правила 1.
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        closing = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        wallet = await make_wallet(session, name="Банк-пара", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="500.00")
+
+        prepayment = await ensure_prepayment_from_bank_transaction(session, tx)
+
+        # Закрыты ОБА документа, и дебиторки сверх оплаты не осталось.
+        assert prepayment is None
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "paid"
+        assert (await session.get(SupplierInvoice, closing.id)).payment_status == "paid"
+
+        # Носитель ДЗ ровно один — запись по счёту, погашенная закрывающим.
+        rows = (await session.scalars(select(SupplierPrepayment))).all()
+        assert len(rows) == 1
+        assert rows[0].kind == "prepaid_bill" and rows[0].bill_invoice_id == bill.id
+        assert rows[0].amount == Decimal("500.00")
+        assert rows[0].amount_settled == Decimal("500.00")
+
+        # Дублей аллокаций нет: 500 деньгами на счёт + 500 зачётом на закрывающий, не больше.
+        bill_allocs = (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(
+                    InvoicePaymentAllocation.invoice_id == bill.id
+                )
+            )
+        ).all()
+        assert [(a.source_kind, a.origin, a.amount) for a in bill_allocs] == [
+            ("cash", "rule1", Decimal("500.00"))
+        ]
+        closing_allocs = (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(
+                    InvoicePaymentAllocation.invoice_id == closing.id
+                )
+            )
+        ).all()
+        assert [(a.source_kind, a.amount) for a in closing_allocs] == [
+            ("prepayment", Decimal("500.00"))
+        ]
+
+
+async def test_rule1_older_closing_is_paid_before_a_newer_bill(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Хронология сильнее вида документа: старый долг вперёд свежей просьбы об оплате.
+
+    Счёт первым идёт только внутри ОДНОЙ даты (пара из одной бумаги). Иначе платёж, которого
+    хватает лишь на один документ, ушёл бы на счёт следующего месяца, оставив непогашенным
+    настоящее обязательство прошлого."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-хронология", inn="6155010108")
+        closing = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="400.00",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="400.00",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 5),
+        )
+        wallet = await make_wallet(session, name="Банк-хроно", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="400.00")
+
+        await ensure_prepayment_from_bank_transaction(session, tx)
+
+        assert (await session.get(SupplierInvoice, closing.id)).payment_status == "paid"
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "unpaid"
+
+
+async def test_rule1_rebuild_unwinds_its_own_bill_settlement(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Переклассификация проводки не оставляет фантомов на паре документов.
+
+    Пересборка обязана снять СВОЙ зачёт счёта (метка ``origin='rule1'``): иначе деньги уезжают
+    к другому контрагенту, а счёт остаётся оплаченным ими же, и заведённая по нему ДЗ держит
+    закрывающий погашенным — двойной зачёт на пустом месте."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-пара-реклас", inn="6155010109")
+        other = await make_counterparty(session, name="Правило1-пара-новый", inn="6155010110")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        closing = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="500.00",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 30),
+        )
+        wallet = await make_wallet(session, name="Банк-пара-реклас", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="500.00")
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "paid"
+
+        # Оператор переклассифицировал операцию на другого контрагента.
+        tx.counterparty_id = other.id
+        await session.flush()
+        moved = await ensure_prepayment_from_bank_transaction(session, tx)
+
+        # Оба документа прежнего контрагента вернулись в исходное состояние, ДЗ по счёту снята.
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "unpaid"
+        assert (await session.get(SupplierInvoice, closing.id)).payment_status == "unpaid"
+        assert await _remaining(session, bill.id) == Decimal("500.00")
+        assert await _remaining(session, closing.id) == Decimal("500.00")
+        orphans = await session.scalar(
+            select(func.count())
+            .select_from(InvoicePaymentAllocation)
+            .where(InvoicePaymentAllocation.cashflow_transaction_id == tx.id)
+        )
+        assert orphans == 0
+        # Деньги целиком стали дебиторкой нового контрагента — ровно один раз.
+        rows = (await session.scalars(select(SupplierPrepayment))).all()
+        assert len(rows) == 1
+        assert moved is not None and rows[0].id == moved.id
+        assert rows[0].counterparty_id == other.id and rows[0].amount == Decimal("500.00")
+
+
+async def test_rule1_rebuild_keeps_manual_bill_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ручную оплату СЧЁТА оператором пересборка правила 1 не снимает — она без метки автора.
+
+    Снять её значило бы вернуть оплаченный счёт в очередь оплат: человек увидел бы «Готов к
+    оплате» по уже оплаченному счёту и мог заплатить дважды."""
+    from app.services.counterparty_matching import allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-ручной-счёт", inn="6155010111")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="600.00",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 6, 1),
+        )
+        wallet = await make_wallet(session, name="Банк-ручной-счёт", wallet_type="bank")
+        tx = await _bank_tx(session, wallet_id=wallet.id, counterparty_id=cp.id, amount="600.00")
+        await allocate_cash_to_invoice(
+            session, invoice_id=bill.id, amount=Decimal("600.00"), cashflow_transaction_id=tx.id
+        )
+
+        prepayment = await ensure_prepayment_from_bank_transaction(session, tx)
+
+        assert prepayment is None  # деньги уже пристроены оператором
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "paid"
+        rows = (await session.scalars(select(SupplierPrepayment))).all()
+        assert len(rows) == 1 and rows[0].kind == "prepaid_bill"  # ДЗ завёл чокпоинт, не правило 1
 
 
 # --- Правило 2: закрывающий документ гасит открытую предоплату (зачёт) ------------------------

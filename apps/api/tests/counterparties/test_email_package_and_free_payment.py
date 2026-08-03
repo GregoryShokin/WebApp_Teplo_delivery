@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from cp_helpers import make_counterparty
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_admin_payout_split import _payer_wallet, _safe_wallet
 
@@ -513,6 +513,71 @@ async def test_free_payment_does_not_double_book_when_statement_row_came_first(
         # Деньги учтены ОДИН раз: остаток кредиторки не изменился, дебиторка не появилась.
         assert await _payable(session, cp.id) == Decimal("0.90")
         assert await _receivable(session, cp.id) == Decimal("0.00")
+
+
+async def test_statement_payment_closes_both_documents_of_the_package(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пакет «счёт + УПД» и свободный платёж ВЫПИСКОЙ: закрываются оба документа.
+
+    Зонд 02.08.2026: платёж, пришедший не через очередь оплат, уходил в правило 1, а то
+    подбирало только закрывающие. УПД гасился, а счёт за тот же месяц оставался ``unpaid`` и
+    висел на «Странице на оплату» как «Готов к оплате» — человек видел неоплаченный счёт за уже
+    оплаченный месяц и мог заплатить второй раз. Свойство пакета, а не одного поставщика: так
+    ведут себя счета СДЭК и любая пара из ``_materialize_package_companion``."""
+    from app.services.banking.classifier import _drop_untouched_bank_prepayments
+
+    async with async_session_factory() as session:
+        _account, payer_wallet = await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        cp = await make_counterparty(session, name="СДЭК-выписка", inn="2370006162")
+        intake = _package_intake(cp.id)
+        session.add(intake)
+        await session.flush()
+        await materialize_from_intake(session, intake)
+        await session.commit()
+        bill_id, closing_id = intake.invoice_id, intake.companion_invoice_id
+        assert await _payable(session, cp.id) == Decimal("7984.90")
+
+        # Платёж пришёл банковской выпиской: своя проводка, ссылки на документы нет.
+        txn = CashflowTransaction(
+            wallet_id=payer_wallet.id,
+            direction="out",
+            amount=Decimal("7984.90"),
+            operation_date=PAST,
+            article_id=article.id,
+            counterparty_id=cp.id,
+            source_kind="bank_operation",
+            payment_purpose="Оплата по счёту СКБ-0437096",
+            quality_status="auto",
+        )
+        session.add(txn)
+        await session.flush()
+        from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
+
+        await ensure_prepayment_from_bank_transaction(session, txn)
+        await session.commit()
+
+        # Месяц закрыт целиком: счёт ушёл из очереди оплат, кредиторки и дебиторки не осталось.
+        assert (await session.get(SupplierInvoice, bill_id)).payment_status == "paid"
+        assert (await session.get(SupplierInvoice, closing_id)).payment_status == "paid"
+        assert await _payable(session, cp.id) == Decimal("0.00")
+        assert await _receivable(session, cp.id) == Decimal("0.00")
+
+        # Исключение операции возвращает пару в исходное состояние — без фантомов.
+        await _drop_untouched_bank_prepayments(session, {txn.id})
+        await session.commit()
+        assert (await session.get(SupplierInvoice, bill_id)).payment_status == "unpaid"
+        assert (await session.get(SupplierInvoice, closing_id)).payment_status == "unpaid"
+        assert await _payable(session, cp.id) == Decimal("7984.90")
+        assert (
+            await session.scalar(
+                select(func.count()).select_from(SupplierPrepayment).where(
+                    SupplierPrepayment.counterparty_id == cp.id
+                )
+            )
+        ) == 0
 
 
 async def test_free_payment_does_not_settle_document_awaiting_bank(

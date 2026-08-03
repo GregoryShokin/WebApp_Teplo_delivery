@@ -806,6 +806,16 @@ class InvoicePaymentAllocation(Base):
         ForeignKey("barter_settlement.id", ondelete="CASCADE"), nullable=True
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # ЧЬЯ это запись. NULL — человек или адресная дверь (сверка операции, оплата из очереди,
+    # касса, Сейф): такую аллокацию автоматика снимать не вправе, за ней стоит решение оператора.
+    # 'rule1' — авто-раскладка свободного платежа (``ensure_prepayment_from_bank_transaction``):
+    # правило 1 её создало, оно же обязано её пересобрать при переклассификации проводки.
+    # До появления признака «своё» отличали по ``doc_kind``: зачёты ЗАКРЫВАЮЩИХ считались
+    # правиловыми, оплаты СЧЕТОВ — ручными. Как только правило 1 научилось гасить и счёт,
+    # эвристика перестала работать: пересборка либо оставляла бы свой зачёт счёта висеть
+    # (двойной зачёт), либо снимала бы чужую ручную оплату (счёт возвращался в очередь оплат
+    # и риск заплатить дважды). Старые строки остаются NULL — для них doc_kind-правило и верно.
+    origin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
