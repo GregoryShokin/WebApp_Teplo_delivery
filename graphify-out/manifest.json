@@ -2670,14 +2670,14 @@
     "semantic_hash": "22e3ca5c127018c6d8697063ce15b08a"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/components/deposits/DepositsSettingsTab.tsx": {
-    "mtime": 1780601061.7175705,
-    "ast_hash": "e94b1a08e41edc1dbd4e3c597a73c8df",
-    "semantic_hash": "e94b1a08e41edc1dbd4e3c597a73c8df"
+    "mtime": 1785750535.1208947,
+    "ast_hash": "1438c016bbd2c73f0875aba9a0d85023",
+    "semantic_hash": "1438c016bbd2c73f0875aba9a0d85023"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/components/deposits/EmployeeDepositSection.tsx": {
-    "mtime": 1783608816.8129857,
-    "ast_hash": "32c55980df7637183acc8d3470414cea",
-    "semantic_hash": "32c55980df7637183acc8d3470414cea"
+    "mtime": 1785750535.121517,
+    "ast_hash": "04b4be82b9da9b5428e399c3973c6ff3",
+    "semantic_hash": "04b4be82b9da9b5428e399c3973c6ff3"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/components/deposits/courier-deposit-utils.ts": {
     "mtime": 1784562714.8315463,
@@ -2685,9 +2685,9 @@
     "semantic_hash": "b7efda1ab03f3fcdc4963eb482122d4e"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/components/deposits/deposit-utils.ts": {
-    "mtime": 1780218863.3827636,
-    "ast_hash": "455521e96138b48e6681cfc7fa640181",
-    "semantic_hash": "455521e96138b48e6681cfc7fa640181"
+    "mtime": 1785750535.1217692,
+    "ast_hash": "fee91e16b5fe20964ba2e4af52f1c110",
+    "semantic_hash": "fee91e16b5fe20964ba2e4af52f1c110"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/components/layout/AppLayout.tsx": {
     "mtime": 1785173434.908857,
@@ -3265,9 +3265,9 @@
     "semantic_hash": "ecf3c9abc41f2c345b1b3395d121e95a"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payroll/deposits.tsx": {
-    "mtime": 1784203631.6926048,
-    "ast_hash": "f91070dca5a2560f7d9839746f6b17c8",
-    "semantic_hash": "f91070dca5a2560f7d9839746f6b17c8"
+    "mtime": 1785750535.1224296,
+    "ast_hash": "3a96ce1283aad3f363b9434a483025bb",
+    "semantic_hash": "3a96ce1283aad3f363b9434a483025bb"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/payroll/employee-payout-dialog.tsx": {
     "mtime": 1783327453.8060412,
@@ -3390,9 +3390,9 @@
     "semantic_hash": "64463a71d4ff18c1dcec3604ff73103d"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/deposits.spec.ts": {
-    "mtime": 1780240886.5971901,
-    "ast_hash": "70b80e80410d1b9afa01ffbe4fbbe236",
-    "semantic_hash": "70b80e80410d1b9afa01ffbe4fbbe236"
+    "mtime": 1785750535.1230302,
+    "ast_hash": "28bb24f966ff39e90ce2998f65d21ff8",
+    "semantic_hash": "28bb24f966ff39e90ce2998f65d21ff8"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/payroll-configuration.spec.ts": {
     "mtime": 1785427183.6423144,
@@ -7393,5 +7393,10 @@
     "mtime": 1785706625.559092,
     "ast_hash": "c77ea8025f39552e9819721d6c7ce28d",
     "semantic_hash": "c77ea8025f39552e9819721d6c7ce28d"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/tests/deposit-writeoff-kopecks.spec.ts": {
+    "mtime": 1785750535.1226556,
+    "ast_hash": "7933ee03ff651fead50379c2bf09b99e",
+    "semantic_hash": "7933ee03ff651fead50379c2bf09b99e"
   }
 }
