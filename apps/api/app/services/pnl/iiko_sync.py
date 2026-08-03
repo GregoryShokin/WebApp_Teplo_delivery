@@ -263,6 +263,12 @@ WHITELIST_METRIC = {
 }
 
 
+#: Корзины, которые считаются ПО ИНВЕНТАРИЗАЦИИ (остаток на складе).
+INVENTORY_BASKETS = frozenset({METRIC_PACKAGING, METRIC_PIZZA_BOX})
+#: Корзины, которые считаются ПО ПРИХОДНЫМ НАКЛАДНЫМ (закупка).
+INVOICE_BASKETS = frozenset({METRIC_SHOP_MAINTENANCE, METRIC_AUX_GOODS})
+
+
 async def load_whitelist(session: AsyncSession) -> dict[str, str]:
     """Идентификатор товара → метрика. Берём только ``include``.
 
@@ -339,6 +345,62 @@ async def _fetch_raw(endpoint: str, params: dict[str, str]) -> Any:
     return await anyio.to_thread.run_sync(_call)
 
 
+async def _fetch_inventory_rows(start: dt.date, last: dt.date) -> list[dict[str, Any]]:
+    """Товарные строки инвентаризаций периода. Ответ XML — парсер общий с загрузчиком ревизий."""
+
+    def _call() -> list[dict[str, Any]]:
+        from app.services.iiko_inventory import _load_inventory_module
+
+        inventory = _load_inventory_module()
+        inventory.load_local_env()
+        client = inventory.IikoClient()
+        params = inventory.inventory_params(start, last)
+        _status, data = client.request(INVENTORY_ENDPOINT, params=params)
+        _format, rows = inventory.parse_store_operations(data)
+        return [row for row in rows if isinstance(row, dict)]
+
+    return await anyio.to_thread.run_sync(_call)
+
+
+async def _fetch_invoice_rows(start: dt.date, last: dt.date) -> list[dict[str, Any]]:
+    """Товарные строки приходных накладных периода. Берём только проведённые документы."""
+
+    def _call() -> list[dict[str, Any]]:
+        import importlib
+        import sys
+        from pathlib import Path
+
+        from app.services.iiko_inventory import _candidate_project_roots
+
+        for root in _candidate_project_roots():
+            script_dir = Path(root) / "integrations/iiko/scripts"
+            if (script_dir / "build_pnl_from_invoices.py").exists():
+                if str(script_dir) not in sys.path:
+                    sys.path.insert(0, str(script_dir))
+                module = importlib.import_module("build_pnl_from_invoices")
+                break
+        else:
+            raise RuntimeError("build_pnl_from_invoices.py недоступен")
+
+        module.load_local_env()
+        client = module.IikoClient()
+        _status, data = client.request(
+            INCOMING_INVOICE_ENDPOINT,
+            params={"from": start.isoformat(), "to": last.isoformat()},
+        )
+        payload = module.xml_payload(data)
+        rows: list[dict[str, Any]] = []
+        for document in payload.get("document") or []:
+            if str(document.get("status") or "").upper() != PROCESSED_STATUS:
+                continue
+            for item in document.get("item") or []:
+                if isinstance(item, dict):
+                    rows.append(item)
+        return rows
+
+    return await anyio.to_thread.run_sync(_call)
+
+
 async def fetch_goods_metrics(
     session: AsyncSession, month: dt.date
 ) -> tuple[dict[str, Decimal], list[str]]:
@@ -369,32 +431,27 @@ async def fetch_goods_metrics(
     except Exception as error:  # noqa: BLE001 — недоступность одного эндпоинта не должна ронять синк
         notes.append(f"Акты списания не получены: {error}")
 
-    # Инвентаризация: даты в формате дд.мм.гггг, иначе эндпоинт не понимает.
+    # Инвентаризация: даты в формате дд.мм.гггг (на ISO эндпоинт не отвечает), а ОТВЕТ
+    # приходит XML, а не JSON — в отличие от соседних эндпоинтов. Разбор берём готовый:
+    # тот же, которым пользуется загрузчик ревизий, чтобы формат разбирался в одном месте.
     try:
-        payload = await _fetch_raw(
-            INVENTORY_ENDPOINT,
-            {
-                "dateFrom": start.strftime("%d.%m.%Y"),
-                "dateTo": last.strftime("%d.%m.%Y"),
-                "documentTypes": "INCOMING_INVENTORY",
-                "productDetalization": "true",
-                "showCostCorrections": "false",
-            },
-        )
-        rows = _parse_rows(payload)
-        metrics.update(whitelist_totals(rows, whitelist, "sum"))
+        rows = await _fetch_inventory_rows(start, last)
+        # ТОЛЬКО упаковка и коробки. Вспомогательные товары и расходники торговых точек
+        # тоже встречаются в инвентаризации (за июль 2026 — на 9 879,78 и 5 177,36 ₽), но
+        # их строки эталона считаются по ЗАКУПКЕ из накладных, а не по остатку на складе.
+        # Взять их отсюда значило бы посчитать те же товары дважды и в двух разных смыслах.
+        inventory_wl = {g: m for g, m in whitelist.items() if m in INVENTORY_BASKETS}
+        metrics.update(whitelist_totals(rows, inventory_wl, "sum"))
     except Exception as error:  # noqa: BLE001
         notes.append(f"Инвентаризация не получена: {error}")
 
-    # Приходные накладные: параметры называются from/to, формат ISO — на дд.мм.гггг
-    # эндпоинт отвечает 409.
+    # Приходные накладные: параметры называются from/to (не dateFrom/dateTo), формат ISO —
+    # на дд.мм.гггг эндпоинт отвечает 409. Ответ XML СО СВОЕЙ структурой: документы с
+    # вложенными item, а не плоские строки отчёта, поэтому парсер отдельный от инвентаризации.
     try:
-        payload = await _fetch_raw(
-            INCOMING_INVOICE_ENDPOINT,
-            {"from": start.isoformat(), "to": last.isoformat()},
-        )
-        rows = _parse_rows(payload)
-        metrics.update(whitelist_totals(rows, whitelist, "sum"))
+        rows = await _fetch_invoice_rows(start, last)
+        invoice_wl = {g: m for g, m in whitelist.items() if m in INVOICE_BASKETS}
+        metrics.update(whitelist_totals(rows, invoice_wl, "sum"))
     except Exception as error:  # noqa: BLE001
         notes.append(f"Приходные накладные не получены: {error}")
 
