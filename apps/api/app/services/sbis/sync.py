@@ -27,7 +27,7 @@ import dataclasses
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -447,6 +447,10 @@ async def _materialize_document(
 # Письмо (КоррВх) считаем счётом, если у вложения «говорящее» имя. Неформализованные
 # счета в СБИС ходят именно письмами (пример: счёт-оферта ДоксИнБокс).
 _INVOICE_LETTER_MARKERS = ("счет", "счёт", "invoice")
+# «Счет-фактура и УПД № …» — имя вложения самого УПД, а не счёта на оплату: маркер «счет»
+# в нём от счёта-фактуры (налоговой части УПД). Такое вложение в разбор не отдаём — иначе
+# закрывающий документ приехал бы вторым обязательством ещё и как счёт.
+_INVOICE_FACTURE_MARKERS = ("счет-фактура", "счёт-фактура")
 
 
 def _letter_invoice_attachment(doc: SbisDocument) -> dict[str, str] | None:
@@ -456,32 +460,33 @@ def _letter_invoice_attachment(doc: SbisDocument) -> dict[str, str] | None:
             continue
         file_info = attachment.get("Файл") or {}
         name = str(attachment.get("Название") or file_info.get("Имя") or "")
+        folded = name.casefold()
         link = file_info.get("Ссылка")
-        if link and any(marker in name.casefold() for marker in _INVOICE_LETTER_MARKERS):
+        if any(marker in folded for marker in _INVOICE_FACTURE_MARKERS):
+            continue
+        if link and any(marker in folded for marker in _INVOICE_LETTER_MARKERS):
             return {"name": name, "link": link}
     return None
 
 
-async def _route_invoice_letter(
+async def _send_attachment_to_recognition(
     session: AsyncSession,
     client: SbisClient,
     doc: SbisDocument,
+    attachment: dict[str, str],
     result: SbisSyncResult,
 ) -> bool:
-    """Письмо-счёт → распознавание «Страницы на оплату» (суммы в письме нет — она в PDF).
+    """Скачать PDF-вложение и отдать в конвейер intake «Страницы на оплату».
 
-    Скачиваем PDF и отдаём в существующий конвейер intake (распознавание regex+LLM,
-    ручной разбор, дедуп, статья ДДС, банк). Идемпотентность — по SHA-256 файла."""
-    attachment = _letter_invoice_attachment(doc)
-    if attachment is None:
-        return False
+    Дальше работает существующий путь: распознавание regex+LLM, ручной разбор, дедуп с
+    почтой, статья ДДС, отправка в банк. Идемпотентность — по SHA-256 файла."""
     from app.models import EmailInvoiceIntake
 
     try:
         content = await client.download_file(attachment["link"])
-    except Exception as exc:  # noqa: BLE001 — одно битое письмо не валит синк
-        logger.warning("СБИС письмо-счёт: не скачался PDF (%s): %s", doc.sbis_doc_id, exc)
-        result.errors.append(f"письмо {doc.number}: PDF не скачался")
+    except Exception as exc:  # noqa: BLE001 — одно битое вложение не валит синк
+        logger.warning("СБИС счёт-вложение: не скачался PDF (%s): %s", doc.sbis_doc_id, exc)
+        result.errors.append(f"документ {doc.number}: PDF не скачался")
         return False
     fetched = FetchedAttachment(
         mailbox="sbis",
@@ -503,8 +508,84 @@ async def _route_invoice_letter(
         settings = get_settings()
         await process_attachment(session, fetched, settings=settings)
         result.sent_to_recognition += 1
+    return True
+
+
+async def _route_invoice_letter(
+    session: AsyncSession,
+    client: SbisClient,
+    doc: SbisDocument,
+    result: SbisSyncResult,
+) -> bool:
+    """Письмо-счёт → распознавание «Страницы на оплату» (суммы в письме нет — она в PDF)."""
+    attachment = _letter_invoice_attachment(doc)
+    if attachment is None:
+        return False
+    if not await _send_attachment_to_recognition(session, client, doc, attachment, result):
+        return False
     doc.intake_status = "sent_to_recognition"
     return True
+
+
+async def _route_package_invoices(
+    session: AsyncSession, result: SbisSyncResult, client: SbisClient | None = None
+) -> None:
+    """PDF счёта на оплату из пакета отгрузки → «Страница на оплату».
+
+    ЭкоЦентр и «Назад в Будущее» кладут в один пакет ``ДокОтгрВх`` формализованный УПД и
+    PDF счёта на оплату; письмом счёт при этом не приходит. УПД материализуется закрывающим
+    и до своей даты не вступает в силу (правило 4: УПД за август датирован 31.08), поэтому
+    заплатить по нему нельзя — платят по счёту. Без этого моста счёт из ЭДО в очередь оплат
+    не попадал вовсе, и приходилось ждать почтовую копию.
+
+    Берём только документы, которые уже стали накладной (``materialized``): дубль означает,
+    что тот же документ пришёл и другим каналом — его счёт там уже разобран. Идемпотентность
+    двойная: ``message_id`` пакета отсекает повторный проход до скачивания файла, SHA-256
+    внутри моста — если тот же PDF приехал ещё и почтой."""
+    from app.models import EmailInvoiceIntake
+
+    client = client or SbisClient()
+    channel_ids = select(CounterpartyCollectionSource.counterparty_id).where(
+        CounterpartyCollectionSource.kind == "sbis",
+        CounterpartyCollectionSource.is_active.is_(True),
+    )
+    # Ссылки на файлы СБИС живут около месяца и освежаются апсертом, пока документ попадает
+    # в окно синка. За пределами окна качать нечего: ссылка мертва, а счёт давно оплачен —
+    # без этого гарда каждый прогон ломился бы в протухшие ссылки и копил ошибки.
+    fresh_since = datetime.now(clock.MOSCOW_TZ) - timedelta(days=2)
+    docs = (
+        await session.scalars(
+            select(SbisDocument)
+            .options(undefer(SbisDocument.raw))  # вложения лежат в raw
+            .where(
+                SbisDocument.doc_type == "ДокОтгрВх",
+                SbisDocument.intake_status == "materialized",
+                SbisDocument.counterparty_id.in_(channel_ids),
+                SbisDocument.last_synced_at >= fresh_since,
+            )
+        )
+    ).all()
+    if not docs:
+        return
+    # Один запрос на пачку: какие пакеты уже отдавали счёт в разбор.
+    seen = set(
+        (
+            await session.scalars(
+                select(EmailInvoiceIntake.message_id).where(
+                    EmailInvoiceIntake.message_id.in_(
+                        [f"sbis:{doc.sbis_doc_id}" for doc in docs]
+                    )
+                )
+            )
+        ).all()
+    )
+    for doc in docs:
+        if f"sbis:{doc.sbis_doc_id}" in seen:
+            continue
+        attachment = _letter_invoice_attachment(doc)
+        if attachment is None:
+            continue
+        await _send_attachment_to_recognition(session, client, doc, attachment, result)
 
 
 async def _route_documents(
@@ -723,6 +804,9 @@ async def sync_sbis_documents(
         await _upsert_documents(session, items, result)
         await session.flush()
         await _route_documents(session, result, client)
+        await session.flush()
+        # После маршрутизации: у свежематериализованных пакетов забираем PDF счёта на оплату.
+        await _route_package_invoices(session, result, client)
         await session.flush()
         await _match_documents(session, result)
         await session.commit()

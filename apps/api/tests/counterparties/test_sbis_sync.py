@@ -1211,3 +1211,199 @@ async def test_saving_sbis_placeholder_card_activates_channel_and_routes_pending
         assert doc.intake_status == "sent_to_recognition"
         intake = (await session.execute(select(EmailInvoiceIntake))).scalar_one()
         assert intake.attachment_filename.startswith("Счет-оферта")
+
+
+def _package_item(
+    *,
+    doc_id: str = "019fb6be-506d-78d7-8a0e-4a1b71d79b66",
+    number: str = "ВД-54475",
+    amount: str = "4185.28",
+    doc_date: str = "31.08.2026",
+    invoice_name: str = "Счет на оплату ВД-54475 от 31.08.2026 .pdf",
+) -> dict[str, Any]:
+    """Пакет отгрузки ЭкоЦентра: формализованный УПД + PDF счёта на оплату в одном документе.
+
+    Копия живого ответа (03.08.2026): УПД за август датирован 31.08, отправлен 31.07 —
+    заплатить по нему нельзя, платят по вложенному счёту."""
+    item = _registry_item(doc_id=doc_id, number=number, amount=amount, doc_date=doc_date)
+    item["Документ"]["Название"] = f"Поступление № {number} от {doc_date} на сумму {amount}"
+    item["Документ"]["Контрагент"] = {
+        "Тип": "ЮЛ",
+        "СвЮЛ": {"ИНН": "3444177534", "Название": "Экоцентр, ООО"},
+    }
+    item["Документ"]["Вложение"] = [
+        {
+            "Служебный": "Нет",
+            "Тип": "УпдДоп",
+            "Название": f"УПД 31.08.26 № {number} = {amount} без НДС",
+            "Номер": number,
+            "Сумма": amount,
+            "СуммаБезНДС": amount,
+            "Файл": {"Ссылка": "https://disk.sbis.ru/disk/api/v1/upd"},
+        },
+        {
+            "Служебный": "Нет",
+            "Название": invoice_name,
+            "Файл": {"Имя": invoice_name, "Ссылка": "https://disk.sbis.ru/disk/api/v1/bill"},
+        },
+        {
+            "Служебный": "Да",
+            "Тип": "ПодтвДатОтпр",
+            "Название": "Подтверждение отправки электронного документа оператором",
+            "Файл": {"Ссылка": "https://disk.sbis.ru/disk/api/v1/confirm"},
+        },
+    ]
+    return item
+
+
+class _PackageClient:
+    """Отдаёт разный PDF на разные ссылки — чтобы SHA-дедуп ловил именно счёт."""
+
+    def __init__(self) -> None:
+        self.downloaded: list[str] = []
+
+    async def download_file(self, url: str) -> bytes:
+        self.downloaded.append(url)
+        return b"%PDF-1.7 " + url.rsplit("/", 1)[-1].encode()
+
+
+async def _sbis_counterparty_with_channel(session, *, inn: str = "3444177534"):
+    from app.models import CounterpartyCollectionSource
+
+    cp = await make_counterparty(session, name="ЭкоЦентр", inn=inn)
+    session.add(CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value=inn))
+    await session.flush()
+    return cp
+
+
+async def test_package_invoice_attachment_goes_to_payment_page(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт из пакета отгрузки уходит в разбор «Страницы на оплату», УПД остаётся закрывающим.
+
+    Без этого платить нечем: закрывающий с будущей датой в очередь оплат не попадает."""
+    from app.models import EmailInvoiceIntake
+    from app.services.sbis.sync import _route_documents, _route_package_invoices
+
+    async with async_session_factory() as session:
+        await _sbis_counterparty_with_channel(session)
+        client = _PackageClient()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_package_item()], result)
+        await session.flush()
+        await _route_documents(session, result, client)
+        await session.flush()
+        await _route_package_invoices(session, result, client)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        # УПД материализовался закрывающим — статус пакета им и определяется.
+        assert doc.intake_status == "materialized"
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert invoice is not None
+        assert invoice.doc_kind == "closing"
+        # А PDF счёта уехал в разбор отдельной записью «Страницы на оплату».
+        assert result.sent_to_recognition == 1
+        intake = (await session.execute(select(EmailInvoiceIntake))).scalar_one()
+        assert intake.mailbox == "sbis"
+        assert intake.message_id == f"sbis:{doc.sbis_doc_id}"
+        assert intake.attachment_filename.startswith("Счет на оплату")
+
+        # Повторный проход не качает файл заново и не плодит записей.
+        client.downloaded.clear()
+        again = SbisSyncResult()
+        await _route_package_invoices(session, again, client)
+        await session.commit()
+        assert again.sent_to_recognition == 0
+        assert client.downloaded == []
+        assert await session.scalar(select(func.count()).select_from(EmailInvoiceIntake)) == 1
+
+
+async def test_package_invoice_facture_attachment_not_routed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Счет-фактура и УПД № …» — имя вложения самого УПД: в разбор оно не идёт."""
+    from app.models import EmailInvoiceIntake
+    from app.services.sbis.sync import _route_documents, _route_package_invoices
+
+    async with async_session_factory() as session:
+        await _sbis_counterparty_with_channel(session)
+        item = _package_item(invoice_name="Счет-фактура и УПД 30.07.26 № ВД-54475 = 4 185.28")
+        client = _PackageClient()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        await _route_documents(session, result, client)
+        await session.flush()
+        await _route_package_invoices(session, result, client)
+        await session.commit()
+
+        assert result.sent_to_recognition == 0
+        assert await session.scalar(select(func.count()).select_from(EmailInvoiceIntake)) == 0
+
+
+async def test_package_invoice_skipped_for_iiko_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """У iiko-поставщика приход живёт в iiko: пакет остаётся зеркалом, счёт не заводим."""
+    from app.models import CounterpartyCollectionSource, EmailInvoiceIntake
+    from app.services.sbis.sync import _route_documents, _route_package_invoices
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ЭкоЦентр", inn="3444177534")
+        session.add(
+            CounterpartyCollectionSource(
+                counterparty_id=cp.id, kind="iiko", value="3444177534"
+            )
+        )
+        await session.flush()
+        client = _PackageClient()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_package_item()], result)
+        await session.flush()
+        await _route_documents(session, result, client)
+        await session.flush()
+        await _route_package_invoices(session, result, client)
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        assert doc.intake_status == "mirror"
+        assert result.sent_to_recognition == 0
+        assert await session.scalar(select(func.count()).select_from(EmailInvoiceIntake)) == 0
+
+
+async def test_package_invoice_skipped_when_links_are_stale(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ вне окна синка не трогаем: ссылки СБИС живут ~месяц и уже мертвы.
+
+    Иначе каждый прогон ломился бы в протухшие ссылки давно оплаченных счетов."""
+    from datetime import datetime, timedelta
+
+    from app.models import EmailInvoiceIntake
+    from app.services.clock import MOSCOW_TZ
+    from app.services.sbis.sync import _route_documents, _route_package_invoices
+
+    async with async_session_factory() as session:
+        await _sbis_counterparty_with_channel(session)
+        client = _PackageClient()
+
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_package_item()], result)
+        await session.flush()
+        await _route_documents(session, result, client)
+        await session.flush()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        doc.last_synced_at = datetime.now(MOSCOW_TZ) - timedelta(days=40)
+        await session.flush()
+
+        await _route_package_invoices(session, result, client)
+        await session.commit()
+
+        assert result.sent_to_recognition == 0
+        assert client.downloaded == []
+        assert await session.scalar(select(func.count()).select_from(EmailInvoiceIntake)) == 0
