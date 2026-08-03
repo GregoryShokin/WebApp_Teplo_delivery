@@ -156,6 +156,13 @@ from app.models.payroll import (
 )
 from app.models.payroll_forecast import PayrollForecastRun, ShiftCostEstimate
 from app.models.period import Period
+from app.models.pnl import (
+    PnlArticleRule,
+    PnlCashOrigin,
+    PnlLine,
+    PnlManualEntry,
+    PnlSourceRule,
+)
 from app.models.position import Position, PositionChangeEvent
 from app.models.revenue_forecast import RevenueForecast
 from app.models.sbis_document import SbisDocument
@@ -288,6 +295,11 @@ __all__ = [
     "PayrollSeniorityPremium",
     "Period",
     "Permission",
+    "PnlArticleRule",
+    "PnlCashOrigin",
+    "PnlLine",
+    "PnlManualEntry",
+    "PnlSourceRule",
     "Position",
     "PositionChangeEvent",
     "ReconciliationCase",
