@@ -602,6 +602,105 @@ async def test_new_counterparty_backfills_after_setup(
         assert doc.invoice_id is not None
 
 
+async def test_reroute_after_card_setup_clears_new_counterparty_without_full_sync(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разобрал карточку — строка ушла из «новых» сразу, без похода в реестр СБИС.
+
+    До этого перемаршрутизация жила только внутри полного синка: настройка карточки
+    снимала ``requires_setup`` и подключала канал, но документ оставался
+    ``new_counterparty`` до следующего часового прохода — человек читал это как
+    «кнопка не сработала» и жал её ещё раз.
+    """
+    from app.models import Counterparty
+    from app.services.counterparty_registry import update_profile
+    from app.services.sbis.sync import reroute_counterparty_documents
+
+    async with async_session_factory() as session:
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item(doc_id="reroute-one")], result)
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        placeholder = (
+            await session.execute(select(Counterparty).where(Counterparty.inn == "231006560100"))
+        ).scalar_one()
+        assert placeholder.status == "requires_setup"
+
+        article = await make_expense_article(session, code="reroute_services")
+        await update_profile(
+            session,
+            placeholder.id,
+            relationship="official",
+            default_dds_article_id=article.id,
+        )
+        await session.refresh(placeholder)
+        assert placeholder.status == "active"
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        # Карточка настроена, но документ ещё «новый» — это и есть та самая пауза до синка.
+        assert doc.intake_status == "new_counterparty"
+
+        reroute = await reroute_counterparty_documents(session, placeholder.id)
+
+        await session.refresh(doc)
+        assert reroute.materialized == 1
+        assert doc.intake_status == "materialized"
+        assert doc.invoice_id is not None
+
+
+async def test_reroute_touches_only_requested_counterparty(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Переразбор одной карточки не трогает чужие документы, даже готовые к материализации."""
+    from app.models import Counterparty, CounterpartyCollectionSource
+    from app.services.sbis.sync import reroute_counterparty_documents
+
+    other_item = _registry_item(doc_id="reroute-other", number="ЦБ-9438", amount="500.00")
+    other_item["Документ"]["Контрагент"] = {
+        "Тип": "ЮЛ",
+        "СвЮЛ": {"ИНН": "7802193688", "Название": 'ООО "ДОКСИНБОКС"'},
+    }
+
+    async with async_session_factory() as session:
+        result = SbisSyncResult()
+        await _upsert_documents(
+            session, [_registry_item(doc_id="reroute-mine"), other_item], result
+        )
+        await session.flush()
+        await _route(session)
+        await session.commit()
+
+        mine = (
+            await session.execute(select(Counterparty).where(Counterparty.inn == "231006560100"))
+        ).scalar_one()
+        other = (
+            await session.execute(select(Counterparty).where(Counterparty.inn == "7802193688"))
+        ).scalar_one()
+        # Обе карточки настроены и с каналом: единственная разница — какую переразбираем.
+        for counterparty in (mine, other):
+            counterparty.status = "active"
+            session.add(
+                CounterpartyCollectionSource(
+                    counterparty_id=counterparty.id, kind="sbis", value=counterparty.inn
+                )
+            )
+        await session.flush()
+        await session.commit()
+
+        reroute = await reroute_counterparty_documents(session, mine.id)
+
+        docs = {
+            doc.sbis_doc_id: doc
+            for doc in (await session.execute(select(SbisDocument))).scalars().all()
+        }
+        assert reroute.materialized == 1
+        assert docs["reroute-mine"].intake_status == "materialized"
+        assert docs["reroute-other"].intake_status == "new_counterparty"
+        assert docs["reroute-other"].invoice_id is None
+
+
 async def test_archived_counterparty_not_materialized_even_with_channel(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

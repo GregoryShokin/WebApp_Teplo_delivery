@@ -82,7 +82,15 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
       </div>
 
       {scope === "edo" ? (
-        <SbisTab canOperate={permissions.canPerformAction("counterparties.operate")} />
+        <SbisTab
+          canOperate={permissions.canPerformAction("counterparties.operate")}
+          // Разбор карточки нового контрагента — правка профиля, а она под ADMIN:
+          // те же два права, что и в реестре контрагентов.
+          canAdmin={
+            permissions.canPerformAction("counterparties.admin") ||
+            permissions.canPerformAction("finance.counterparties.edit")
+          }
+        />
       ) : (
       <div className="rounded-lg border">
         <Table>

@@ -528,7 +528,11 @@ async def _route_invoice_letter(
 
 
 async def _route_package_invoices(
-    session: AsyncSession, result: SbisSyncResult, client: SbisClient | None = None
+    session: AsyncSession,
+    result: SbisSyncResult,
+    client: SbisClient | None = None,
+    *,
+    counterparty_id: uuid.UUID | None = None,
 ) -> None:
     """PDF счёта на оплату из пакета отгрузки → «Страница на оплату».
 
@@ -553,16 +557,19 @@ async def _route_package_invoices(
     # в окно синка. За пределами окна качать нечего: ссылка мертва, а счёт давно оплачен —
     # без этого гарда каждый прогон ломился бы в протухшие ссылки и копил ошибки.
     fresh_since = datetime.now(clock.MOSCOW_TZ) - timedelta(days=2)
+    filters = [
+        SbisDocument.doc_type == "ДокОтгрВх",
+        SbisDocument.intake_status == "materialized",
+        SbisDocument.counterparty_id.in_(channel_ids),
+        SbisDocument.last_synced_at >= fresh_since,
+    ]
+    if counterparty_id is not None:
+        filters.append(SbisDocument.counterparty_id == counterparty_id)
     docs = (
         await session.scalars(
             select(SbisDocument)
             .options(undefer(SbisDocument.raw))  # вложения лежат в raw
-            .where(
-                SbisDocument.doc_type == "ДокОтгрВх",
-                SbisDocument.intake_status == "materialized",
-                SbisDocument.counterparty_id.in_(channel_ids),
-                SbisDocument.last_synced_at >= fresh_since,
-            )
+            .where(*filters)
         )
     ).all()
     if not docs:
@@ -589,18 +596,30 @@ async def _route_package_invoices(
 
 
 async def _route_documents(
-    session: AsyncSession, result: SbisSyncResult, client: SbisClient | None = None
+    session: AsyncSession,
+    result: SbisSyncResult,
+    client: SbisClient | None = None,
+    *,
+    counterparty_id: uuid.UUID | None = None,
 ) -> None:
-    """Маршрутизация: режим определяет карточка контрагента, а не документ."""
+    """Маршрутизация: режим определяет карточка контрагента, а не документ.
+
+    ``counterparty_id`` сужает проход до документов одной карточки — этим живёт
+    переразбор после её настройки (см. ``reroute_counterparty_documents``): человек
+    только что решил судьбу поставщика и ждёт результата сейчас, а не через час.
+    """
     client = client or SbisClient()
+    filters = [
+        SbisDocument.intake_status.in_(("mirror", "new_counterparty")),
+        SbisDocument.invoice_id.is_(None),
+    ]
+    if counterparty_id is not None:
+        filters.append(SbisDocument.counterparty_id == counterparty_id)
     docs = (
         await session.scalars(
             select(SbisDocument)
             .options(undefer(SbisDocument.raw))  # raw deferred; конвейеру нужен целиком
-            .where(
-                SbisDocument.intake_status.in_(("mirror", "new_counterparty")),
-                SbisDocument.invoice_id.is_(None),
-            )
+            .where(*filters)
         )
     ).all()
     if not docs:
@@ -778,6 +797,36 @@ async def _match_documents(session: AsyncSession, result: SbisSyncResult) -> Non
             doc.matched_invoice_id = matched.id
             doc.match_note = note
             result.matched += 1
+
+
+async def reroute_counterparty_documents(
+    session: AsyncSession, counterparty_id: uuid.UUID
+) -> SbisSyncResult:
+    """Переразобрать накопленные документы ОДНОГО контрагента, не ходя в реестр СБИС.
+
+    Настройка карточки снимает ``requires_setup`` и подключает канал 'sbis'
+    (``activate_configured_placeholder``), но статуса документов не меняет: перемаршрутизация
+    жила только внутри полного синка, и разобранный поставщик висел с бейджем «Новый
+    контрагент» до следующего часового прохода. Человек читает это как «разбор не сработал»
+    и жмёт кнопку ещё раз.
+
+    Полный ``sync_sbis_documents`` ради одной карточки тянет реестр за 30 дней по сети —
+    здесь мы переиспользуем ту же маршрутизацию, но по документам одного контрагента.
+    Сеть остаётся возможной, но только по делу: письмо-счёт (КоррВх) и PDF из пакета
+    отгрузки надо скачать, чтобы отдать в распознавание. Для типового «нового контрагента
+    со счётом» запросов наружу не будет вовсе.
+    """
+    result = SbisSyncResult()
+    client = SbisClient()
+    try:
+        await _route_documents(session, result, client, counterparty_id=counterparty_id)
+        await session.flush()
+        await _route_package_invoices(session, result, client, counterparty_id=counterparty_id)
+        await session.commit()
+    finally:
+        await client.aclose()
+    logger.info("sbis reroute (counterparty=%s): %s", counterparty_id, result.as_dict())
+    return result
 
 
 async def sync_sbis_documents(

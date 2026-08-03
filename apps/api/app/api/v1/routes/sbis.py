@@ -29,7 +29,7 @@ from app.models import (
 )
 from app.services import counterparty_registry as registry
 from app.services.sbis.client import SbisApiError, SbisClient, SbisCredentialsError
-from app.services.sbis.sync import sync_sbis_documents
+from app.services.sbis.sync import reroute_counterparty_documents, sync_sbis_documents
 
 router = APIRouter()
 
@@ -251,6 +251,38 @@ async def force_sync(session: Annotated[AsyncSession, Depends(get_session)]) -> 
             status_code=status.HTTP_409_CONFLICT,
             detail="СБИС не настроен: заполните SBIS_APP_CLIENT_ID и SBIS_SECRET_KEY",
         )
+    return SyncResultRead(**{k: v for k, v in result.as_dict().items() if k != "errors"})
+
+
+@router.post(
+    "/counterparties/{counterparty_id}/reroute",
+    response_model=SyncResultRead,
+    dependencies=OPERATE,
+)
+async def reroute_counterparty(
+    counterparty_id: uuid.UUID, session: Annotated[AsyncSession, Depends(get_session)]
+) -> SyncResultRead:
+    """Переразобрать документы контрагента после настройки его карточки.
+
+    Фронт зовёт это сразу за сохранением карточки: настройка снимает ``requires_setup`` и
+    подключает канал СБИС, но статус самих документов меняет только маршрутизация — без неё
+    разобранный поставщик висит в «новых» до следующего часового синка, и человек читает
+    это как «кнопка не сработала».
+
+    Ошибку СБИС отдаём как есть: карточка к этому моменту уже сохранена, и фронт обязан
+    показать неудачу переразбора отдельно от неудачи сохранения.
+    """
+    counterparty = await session.get(Counterparty, counterparty_id)
+    if counterparty is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден"
+        )
+    try:
+        result = await reroute_counterparty_documents(session, counterparty_id)
+    except SbisCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except SbisApiError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return SyncResultRead(**{k: v for k, v in result.as_dict().items() if k != "errors"})
 
 

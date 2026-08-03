@@ -1,6 +1,15 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeOff, ExternalLink, FileText, LoaderCircle, Plug, RefreshCw, Undo2 } from "lucide-react";
+import {
+  EyeOff,
+  ExternalLink,
+  FileText,
+  LoaderCircle,
+  Plug,
+  RefreshCw,
+  Settings2,
+  Undo2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,9 +30,11 @@ import {
   fetchSbisPdfUrl,
   getSbisDocuments,
   restoreSbisDocument,
+  rerouteSbisCounterparty,
   syncSbisDocuments,
   type SbisDocument,
 } from "../api";
+import { CounterpartyCard } from "../CounterpartyCard";
 import { MetricCard, formatDate, formatRub } from "../shared";
 
 // Человеческие подписи типов документов СБИС (Документ.Тип).
@@ -138,10 +149,21 @@ function StatusBadge({ doc }: { doc: SbisDocument }) {
 
 type Props = {
   canOperate: boolean;
+  /** Право править карточку контрагента. Разбор «нового контрагента» — это PUT профиля,
+   *  и он живёт под ADMIN, тогда как сама вкладка открыта операционному праву. Без гейта
+   *  управляющий видел бы кнопку и получал 403. */
+  canAdmin: boolean;
 };
 
-export function SbisTab({ canOperate }: Props) {
+export function SbisTab({ canOperate, canAdmin }: Props) {
   const [filter, setFilter] = useState<FilterValue>("all");
+  // needsReroute — карточку открыли со строки «новый контрагент». Только тогда сохранение
+  // означает разбор; для давно настроенного поставщика переразбор был бы холостым, а тост
+  // о нём — ложным поводом решить, что правка реквизитов что-то сделала с документами.
+  const [openCounterparty, setOpenCounterparty] = useState<{
+    id: string;
+    needsReroute: boolean;
+  } | null>(null);
   const queryClient = useQueryClient();
 
   const documentsQuery = useQuery({
@@ -197,6 +219,34 @@ export function SbisTab({ canOperate }: Props) {
     onSuccess: invalidate,
     onError: (e) => toast.error(apiErrorMessage(e, "Не удалось вернуть документ")),
   });
+  // Настройка карточки снимает «требует настройки» и подключает канал СБИС, но статус
+  // самих документов меняет только маршрутизация. Без этого вызова разобранный поставщик
+  // висел бы в «новых» до следующего часового синка — человек читает это как «не сработало».
+  const rerouteMutation = useMutation({
+    mutationFn: rerouteSbisCounterparty,
+    onSuccess: async (result) => {
+      await invalidate();
+      await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      if (result.materialized > 0) {
+        toast.success(
+          `Карточка настроена, счетов в очередь оплат: ${result.materialized}`,
+        );
+      } else if (result.sent_to_recognition > 0) {
+        toast.success(
+          `Карточка настроена, писем-счетов в разбор: ${result.sent_to_recognition}`,
+        );
+      } else {
+        toast.success("Карточка настроена — документы поставщика перепроверены");
+      }
+    },
+    // Карточка к этому моменту УЖЕ сохранена — не выдаём неудачу переразбора за неудачу
+    // сохранения, иначе человек полезет настраивать заново то, что уже настроено.
+    onError: (e) =>
+      toast.warning(
+        `${apiErrorMessage(e, "не удалось переразобрать документы")}. Карточка сохранена — документы разберутся ближайшим обновлением из СБИС.`,
+      ),
+  });
+
   const enableChannelMutation = useMutation({
     mutationFn: enableSbisChannel,
     onSuccess: async () => {
@@ -234,6 +284,21 @@ export function SbisTab({ canOperate }: Props) {
   // «Быстрое переподключение» почтовика на ЭДО: контрагент настроен, канала sbis нет,
   // но почтовый канал есть — кнопка прямо в строке. Остальным канал включается из
   // карточки контрагента (секция источников, kind «СБИС (ЭДО)»).
+  // Разбор «нового контрагента» = настройка его карточки: карточка снимает requires_setup
+  // и сама подключает канал СБИС. Своей формы разбора здесь нет намеренно — иначе рядом
+  // с реестром завёлся бы второй, неполный путь настройки поставщика.
+  const openCard = (doc: SbisDocument) => {
+    if (doc.counterparty_id) {
+      setOpenCounterparty({
+        id: doc.counterparty_id,
+        needsReroute: doc.intake_status === "new_counterparty",
+      });
+      return;
+    }
+    // Карточка заводится по ИНН; без него документ не с чем связать даже вручную.
+    toast.info("У документа нет ИНН — связать его с карточкой контрагента нельзя");
+  };
+
   const showEnableChannel = (doc: SbisDocument) =>
     canOperate &&
     !doc.channel_enabled &&
@@ -294,6 +359,20 @@ export function SbisTab({ canOperate }: Props) {
       className: "text-right",
       cell: (doc) => (
         <div className="flex items-center justify-end gap-1">
+          {canAdmin && doc.intake_status === "new_counterparty" && doc.counterparty_id ? (
+            <Button
+              variant="outline"
+              size="sm"
+              title="Открыть карточку контрагента и завершить настройку"
+              onClick={(event) => {
+                event.stopPropagation();
+                openCard(doc);
+              }}
+            >
+              <Settings2 size={15} aria-hidden="true" />
+              Настроить карточку
+            </Button>
+          ) : null}
           {showEnableChannel(doc) ? (
             <Button
               variant="outline"
@@ -434,9 +513,26 @@ export function SbisTab({ canOperate }: Props) {
           rows={visible}
           isLoading={documentsQuery.isLoading}
           getRowKey={(doc) => doc.id}
+          onRowClick={openCard}
           emptyMessage="Документов СБИС нет — нажмите «Обновить из СБИС» или дождитесь автосинка."
         />
       )}
+
+      {/* Карточка живёт прямо здесь: разбор «нового контрагента» — это её сохранение,
+          и уводить человека в реестр ради него значит терять место в реестре ЭДО. */}
+      <CounterpartyCard
+        counterpartyId={openCounterparty?.id ?? null}
+        canOperate={canOperate}
+        canAdmin={canAdmin}
+        onClose={() => setOpenCounterparty(null)}
+        onProfileSaved={(counterpartyId) => {
+          // Переразбор — операция над документами ЭДО, она под operate. Без права молчим:
+          // карточка сохранена, а документы подхватит ближайший синк.
+          if (openCounterparty?.needsReroute && canOperate) {
+            rerouteMutation.mutate(counterpartyId);
+          }
+        }}
+      />
     </div>
   );
 }

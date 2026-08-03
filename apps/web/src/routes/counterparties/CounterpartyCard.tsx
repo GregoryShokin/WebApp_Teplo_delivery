@@ -80,6 +80,11 @@ function useReportDirty(formId: string, dirty: boolean) {
   }, [report, formId, dirty]);
 }
 
+/** Профиль сохранён — тем, кто открыл карточку, может быть нужно доделать своё.
+ *  Реестру не нужно ничего, вкладке ЭДО нужно: сохранение снимает «требует настройки»,
+ *  и накопленные документы поставщика пора переразобрать. */
+const ProfileSavedContext = createContext<(() => void) | null>(null);
+
 export function CounterpartyCard({
   counterpartyId,
   canOperate,
@@ -88,12 +93,16 @@ export function CounterpartyCard({
   /** С какой вкладки открыть. Из остатков и признания расходов ведём сразу в «Сверку»:
    *  человек пришёл разбираться с конкретным долгом, а не читать реквизиты. */
   defaultTab = "general",
+  onProfileSaved,
 }: {
   counterpartyId: string | null;
   canOperate: boolean;
   canAdmin: boolean;
   onClose: () => void;
   defaultTab?: string;
+  /** Вызывается после успешного сохранения общей информации. Нужен вкладке ЭДО:
+   *  сохранение завершает настройку карточки, и документы поставщика надо переразобрать. */
+  onProfileSaved?: (counterpartyId: string) => void;
 }) {
   const cardQuery = useQuery({
     queryKey: ["cp", "card", counterpartyId],
@@ -106,6 +115,9 @@ export function CounterpartyCard({
     if (dirty) dirtyForms.current.add(formId);
     else dirtyForms.current.delete(formId);
   }, []);
+  const notifyProfileSaved = useCallback(() => {
+    if (counterpartyId) onProfileSaved?.(counterpartyId);
+  }, [counterpartyId, onProfileSaved]);
 
   function close() {
     dirtyForms.current.clear();
@@ -141,12 +153,14 @@ export function CounterpartyCard({
         </SheetHeader>
         {cardQuery.data ? (
           <DirtyFormsContext.Provider value={reportDirty}>
-            <CardBody
-              card={cardQuery.data}
-              canOperate={canOperate}
-              canAdmin={canAdmin}
-              defaultTab={defaultTab}
-            />
+            <ProfileSavedContext.Provider value={notifyProfileSaved}>
+              <CardBody
+                card={cardQuery.data}
+                canOperate={canOperate}
+                canAdmin={canAdmin}
+                defaultTab={defaultTab}
+              />
+            </ProfileSavedContext.Provider>
           </DirtyFormsContext.Provider>
         ) : null}
       </SheetContent>
@@ -275,6 +289,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean }) {
   const queryClient = useQueryClient();
+  const notifyProfileSaved = useContext(ProfileSavedContext);
   const articlesQuery = useQuery({ queryKey: ["dds", "articles"], queryFn: getDdsArticles });
   const profile = card.profile;
   const [relationship, setRelationship] = useState("official");
@@ -339,6 +354,9 @@ function ProfileSection({ card, canAdmin }: { card: CardData; canAdmin: boolean 
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
       toast.success("Общая информация сохранена");
+      // Сохранение может завершить настройку карточки-заглушки (снять «требует настройки»).
+      // Кто открыл карточку — тот и доделывает: вкладке ЭДО пора переразобрать документы.
+      notifyProfileSaved?.();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить")),
   });

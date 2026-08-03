@@ -819,6 +819,15 @@ export async function syncSbisDocuments(): Promise<SbisSyncResult> {
   return response.data;
 }
 
+/** Переразобрать накопленные документы одного контрагента после настройки его карточки.
+ *  Полный синк ради одной карточки тянул бы реестр СБИС за 30 дней по сети. */
+export async function rerouteSbisCounterparty(counterpartyId: string): Promise<SbisSyncResult> {
+  const response = await api.post<SbisSyncResult>(
+    `${SBIS_BASE}/counterparties/${counterpartyId}/reroute`,
+  );
+  return response.data;
+}
+
 export async function fetchSbisPdfUrl(id: string): Promise<string> {
   const response = await api.get(`${SBIS_BASE}/documents/${id}/pdf`, { responseType: "blob" });
   return URL.createObjectURL(response.data as Blob);
