@@ -73,10 +73,15 @@ const ENGINE_LABELS: Record<string, string> = {
 };
 
 const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
-  // По умолчанию показываем только актуальное; повторы и «не счета» — шум, прячем за фильтром.
+  // Очередь оплат отвечает на вопрос «что ещё предстоит заплатить». Оплаченное на этот
+  // вопрос не отвечает: у статуса linked внутри три разных состояния (готов / в банке /
+  // оплачен), и, пока они лежали вперемешку, список рос, а работы в нём не прибавлялось.
+  // Оплаченные теперь живут за своим фильтром — как история, а не как очередь.
   { value: "active", label: "Актуальные" },
   { value: "needs_review", label: "Требуют проверки" },
   { value: "linked", label: "Готовы к оплате" },
+  { value: "in_bank", label: "Отправлены в банк" },
+  { value: "paid", label: "Оплаченные" },
   { value: "closing", label: "Закрывающие (ДЗ/КЗ)" },
   { value: "duplicate", label: "Дубли" },
   { value: "ignored", label: "Не счета" },
@@ -84,6 +89,12 @@ const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "failed", label: "Ошибки" },
   { value: "all", label: "Все" },
 ];
+
+/** Оплачен ли счёт строки. Статус intake остаётся `linked` и после оплаты — платёж живёт
+ *  на связанной накладной, поэтому «оплачено» читается только отсюда. */
+function isPaid(item: PaymentIntake): boolean {
+  return item.invoice_payment_status === "paid";
+}
 
 function contractorOf(item: PaymentIntake): string {
   return (
@@ -147,9 +158,29 @@ export function PaymentIntakesTab() {
   const all = useMemo(() => intakesQuery.data ?? [], [intakesQuery.data]);
   const rows = useMemo(() => {
     if (filter === "all") return all;
-    // «Актуальные» = то, что реально требует внимания или ждёт оплаты; повторы/«не счета» скрыты.
+    // «Актуальные» = то, что ещё требует рук или денег. Оплаченное сюда не входит: счёт,
+    // за который заплатили, работы больше не ждёт, а очередь он удлиняет — и чем дольше
+    // работает система, тем сильнее (оплаченные копятся, неоплаченные — нет).
     if (filter === "active") {
-      return all.filter((item) => item.status === "needs_review" || item.status === "linked");
+      return all.filter(
+        (item) =>
+          (item.status === "needs_review" || item.status === "linked") && !isPaid(item),
+      );
+    }
+    // Три состояния одного статуса linked разведены по своим фильтрам: платить нечего,
+    // если счёт уже в банке, и тем более если он оплачен.
+    if (filter === "linked") {
+      return all.filter(
+        (item) => item.status === "linked" && !isPaid(item) && !item.invoice_in_draft,
+      );
+    }
+    if (filter === "in_bank") {
+      return all.filter(
+        (item) => item.status === "linked" && !isPaid(item) && item.invoice_in_draft,
+      );
+    }
+    if (filter === "paid") {
+      return all.filter(isPaid);
     }
     return all.filter((item) => item.status === filter);
   }, [all, filter]);
@@ -159,10 +190,10 @@ export function PaymentIntakesTab() {
     return {
       total: all.length,
       review: by("needs_review"),
-      // «Готовы к оплате» — сколько ещё предстоит заплатить, а не сколько строк в статусе
-      // linked: оплаченный мимо очереди счёт денег уже не ждёт.
+      // Ровно то, что показывает одноимённый фильтр: счёт, по которому можно нажать «В банк».
+      // Оплаченный денег уже не ждёт, ушедший в банк ждать нечего — он ждёт банк.
       linked: all.filter(
-        (item) => item.status === "linked" && item.invoice_payment_status !== "paid"
+        (item) => item.status === "linked" && !isPaid(item) && !item.invoice_in_draft,
       ).length,
       noise: by("duplicate") + by("ignored"),
     };
@@ -384,15 +415,18 @@ export function PaymentIntakesTab() {
       <div className="rounded-md border">
         <Table>
           <TableHeader>
+            {/* Ширины заданы явно: без них восемь колонок делят место поровну, «Статус» и
+                «№ счёта» переносятся на две строки, а вслед за ними тянется вся строка —
+                на широком мониторе список из пяти счетов занимал целый экран. */}
             <TableRow>
               <TableHead className="w-8" />
-              <TableHead>Статус</TableHead>
-              <TableHead>Дата</TableHead>
+              <TableHead className="w-[132px]">Статус</TableHead>
+              <TableHead className="w-[104px]">Дата</TableHead>
               <TableHead>Контрагент</TableHead>
-              <TableHead className="text-right">Сумма</TableHead>
-              <TableHead>№ счёта</TableHead>
-              <TableHead>Распознавание</TableHead>
-              <TableHead className="text-right">Действия</TableHead>
+              <TableHead className="w-[128px] text-right">Сумма</TableHead>
+              <TableHead className="w-[124px]">№ счёта</TableHead>
+              <TableHead className="w-[116px]">Распознавание</TableHead>
+              <TableHead className="w-[224px] text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -460,7 +494,9 @@ export function PaymentIntakesTab() {
                     <TableCell>
                       {(() => {
                         const b = statusBadge(item);
-                        return <Badge className={b.cls}>{b.label}</Badge>;
+                        return (
+                          <Badge className={`${b.cls} whitespace-nowrap`}>{b.label}</Badge>
+                        );
                       })()}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
@@ -501,16 +537,24 @@ export function PaymentIntakesTab() {
                         <div className="text-xs text-amber-700">{item.utility_hints.join(". ")}</div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {item.amount ? formatRub(item.amount) : "—"}
                     </TableCell>
-                    <TableCell className="text-sm">{item.invoice_number ?? "—"}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    {/* Номер счёта не переносим: «0000-003174» ломался пополам и один тянул
+                        строку на вторую высоту. Длинный — обрезаем, полный виден в подсказке. */}
+                    <TableCell className="text-sm">
+                      <div className="truncate" title={item.invoice_number ?? undefined}>
+                        {item.invoice_number ?? "—"}
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {item.engine ? ENGINE_LABELS[item.engine] ?? item.engine : "—"}
                       {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap items-center justify-end gap-1">
+                      {/* nowrap: кнопки уезжали на вторую строку под «Разобрать» и удваивали
+                          высоту каждой строки очереди. */}
+                      <div className="flex flex-nowrap items-center justify-end gap-1">
                         {item.has_pdf ? (
                           <Button
                             size="sm"
