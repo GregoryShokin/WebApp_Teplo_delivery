@@ -227,10 +227,14 @@ export function SbisTab({ canOperate, canAdmin }: Props) {
     onSuccess: async (result) => {
       await invalidate();
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      // Письмо-счёт из ЭДО заводит строку журнала «Активных» — обновляем и её.
+      await queryClient.invalidateQueries({ queryKey: ["payment-page"] });
+      await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
+      // Формулировки разные не для красоты: материализация заводит SupplierInvoice(source='sbis')
+      // — он живёт в накладных и в очередь оплат «Активных» НЕ попадает (та собрана из
+      // email_invoice_intake). В очередь уходит только письмо-счёт, отданное в распознавание.
       if (result.materialized > 0) {
-        toast.success(
-          `Карточка настроена, счетов в очередь оплат: ${result.materialized}`,
-        );
+        toast.success(`Карточка настроена, счетов создано из ЭДО: ${result.materialized}`);
       } else if (result.sent_to_recognition > 0) {
         toast.success(
           `Карточка настроена, писем-счетов в разбор: ${result.sent_to_recognition}`,

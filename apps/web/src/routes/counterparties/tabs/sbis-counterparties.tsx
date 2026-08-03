@@ -30,10 +30,8 @@ function groupByCounterparty(documents: SbisDocument[]): PendingCounterparty[] {
     if (doc.intake_status !== "new_counterparty" || doc.match_status === "dismissed") continue;
     if (!doc.counterparty_id) continue;
     const existing = byId.get(doc.counterparty_id);
-    const amount = Number(doc.amount ?? 0);
     if (existing) {
       existing.documents.push(doc);
-      existing.total += amount;
       if (doc.doc_date && (!existing.firstSeen || doc.doc_date < existing.firstSeen)) {
         existing.firstSeen = doc.doc_date;
       }
@@ -44,11 +42,36 @@ function groupByCounterparty(documents: SbisDocument[]): PendingCounterparty[] {
       name: doc.counterparty_name ?? (doc.counterparty_inn ? `ИНН ${doc.counterparty_inn}` : "—"),
       inn: doc.counterparty_inn,
       documents: [doc],
-      total: amount,
+      total: 0,
       firstSeen: doc.doc_date,
     });
   }
-  return [...byId.values()].sort((a, b) => (a.firstSeen ?? "").localeCompare(b.firstSeen ?? ""));
+  for (const row of byId.values()) {
+    row.total = payableTotal(row.documents);
+  }
+  // Сортировка по дате документа как по строке ISO — она лексикографически совпадает с
+  // хронологией; строки без даты уходят вниз, а не всплывают «самыми старыми».
+  return [...byId.values()].sort((a, b) =>
+    (a.firstSeen ?? "9999-12-31").localeCompare(b.firstSeen ?? "9999-12-31"),
+  );
+}
+
+/** Сколько поставщик реально ждёт денег.
+ *
+ *  Без разбора по типам сумма врала: в очередь «нового контрагента» попадают ВСЕ его
+ *  документы — маршрутизировать их без карточки нельзя, — а счётом после настройки станут
+ *  только СчетВх и ДокОтгрВх (``_MATERIALIZABLE_DOC_TYPES`` в services/sbis/sync.py). Акт
+ *  сверки и договор денег не требуют вовсе. Хуже того, пакет «счёт + закрывающий УПД» — это
+ *  одна поставка двумя документами: сложив их, экран показал бы двойной долг. Поэтому когда
+ *  счета есть — считаем по ним, а УПД берём только там, где счёта не приходило.
+ */
+function payableTotal(documents: SbisDocument[]): number {
+  const sum = (type: string) =>
+    documents
+      .filter((doc) => doc.doc_type === type)
+      .reduce((acc, doc) => acc + Number(doc.amount ?? 0), 0);
+  const bills = sum("СчетВх");
+  return bills > 0 ? bills : sum("ДокОтгрВх");
 }
 
 type Props = {
@@ -74,7 +97,14 @@ export function SbisCounterpartiesTab({ canOperate, canAdmin }: Props) {
   const withoutInn = useMemo(
     () =>
       documents.filter(
-        (doc) => !doc.counterparty_inn && doc.match_status !== "dismissed" && !doc.counterparty_id,
+        (doc) =>
+          !doc.counterparty_inn &&
+          !doc.counterparty_id &&
+          doc.match_status === "unmatched" &&
+          // Связанный с iiko-накладной документ разбирать не нужно: пара найдена без ИНН,
+          // по сумме и дате. Он остаётся в зеркале, а в очереди «нечего связать» — шум,
+          // который отсюда ничем не убрать (скрытие живёт на вкладке ЭДО).
+          doc.intake_status === "mirror",
       ),
     [documents],
   );
@@ -84,8 +114,14 @@ export function SbisCounterpartiesTab({ canOperate, canAdmin }: Props) {
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["sbis"] });
       await queryClient.invalidateQueries({ queryKey: ["cp"] });
+      // Письмо-счёт из ЭДО заводит строку в журнале «Активных» — соседняя вкладка обязана
+      // её увидеть, а не показывать очередь такой, какой она была до разбора.
+      await queryClient.invalidateQueries({ queryKey: ["payment-page"] });
+      await queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
+      // «Создано из ЭДО», а не «в очередь оплат»: материализованный счёт — это
+      // SupplierInvoice(source='sbis'), он живёт в накладных, а не в журнале «Активных».
       if (result.materialized > 0) {
-        toast.success(`Карточка настроена, счетов в очередь оплат: ${result.materialized}`);
+        toast.success(`Карточка настроена, счетов создано из ЭДО: ${result.materialized}`);
       } else if (result.sent_to_recognition > 0) {
         toast.success(`Карточка настроена, писем-счетов в разбор: ${result.sent_to_recognition}`);
       } else {
@@ -128,7 +164,10 @@ export function SbisCounterpartiesTab({ canOperate, canAdmin }: Props) {
     },
     {
       key: "first",
-      header: "Ждёт с",
+      // Дата документа, а не дата появления в системе: УПД за август датируют 31.08, а
+      // приезжает он в начале сентября. Колонка так и названа — «Дата документа», чтобы
+      // не читаться как «столько дней ждём».
+      header: "Дата документа",
       cell: (row) => (row.firstSeen ? formatDate(row.firstSeen) : "—"),
     },
     {
@@ -191,14 +230,18 @@ export function SbisCounterpartiesTab({ canOperate, canAdmin }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <MetricCard
-          label="Ждут разбора"
-          value={String(pending.length)}
-          accent={pending.length > 0 ? "danger" : undefined}
-        />
-        <MetricCard label="Документов без ИНН" value={String(withoutInn.length)} />
-      </div>
+      {/* Плитки прячем, когда реестр не загрузился: «0 ждут разбора» поверх красного баннера
+          — самое опасное сочетание, потому что глаз читает цифру, а не текст ошибки. */}
+      {documentsQuery.isError ? null : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MetricCard
+            label="Ждут разбора"
+            value={String(pending.length)}
+            accent={pending.length > 0 ? "danger" : undefined}
+          />
+          <MetricCard label="Документов без ИНН" value={String(withoutInn.length)} />
+        </div>
+      )}
 
       {documentsQuery.isError ? (
         // Ошибка запроса и пустая очередь — разные состояния: «разбирать некого» по

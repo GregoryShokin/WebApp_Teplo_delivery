@@ -49,6 +49,10 @@ type MatchedRoute = {
 
 function Redirect({ to, navigate }: { to: string; navigate: Navigate }): null {
   useEffect(() => {
+    // replaceState, а не push: иначе старый URL остаётся в истории, и «Назад» с целевой
+    // страницы возвращает на редирект, который тут же отправляет обратно — кнопка «Назад»
+    // перестаёт работать. Заметно на /payment-page: он жил пунктом меню и осел в закладках.
+    window.history.replaceState({}, "", to);
     navigate(to);
   }, [to, navigate]);
   return null;

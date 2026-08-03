@@ -420,6 +420,11 @@ function isActiveRoute(currentPath: string, href: string) {
   if (href === "/kassa") {
     return currentPath === href || currentPath.startsWith("/kassa/");
   }
+  if (href === "/finance/payments") {
+    // Вкладки «Платежей» — пути (/history, /edo, /edo-counterparties): без префикса пункт
+    // меню гас на всех, кроме первой, и страница выглядела покинутой.
+    return currentPath === href || currentPath.startsWith("/finance/payments/");
+  }
   return currentPath === href;
 }
 

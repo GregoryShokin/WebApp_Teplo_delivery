@@ -818,6 +818,10 @@ async def reroute_counterparty_documents(
     """
     result = SbisSyncResult()
     client = SbisClient()
+    # Без кредов маршрутизация всё равно разложит счета (сеть нужна только письмам-счетам и
+    # PDF из пакета), но соврать «configured: true» нельзя: у /sbis/sync это поле — причина
+    # показать «СБИС не настроен», и вкладка обязана говорить одно и то же про один стенд.
+    result.configured = client.configured
     try:
         await _route_documents(session, result, client, counterparty_id=counterparty_id)
         await session.flush()

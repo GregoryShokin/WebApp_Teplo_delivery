@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/permissions";
 import { formatDate, formatRub, MetricCard } from "@/routes/counterparties/shared";
 
 import {
@@ -115,6 +116,11 @@ function statusBadge(item: PaymentIntake): { label: string; cls: string } {
  *  единого действия — две правды об одной строке в соседних пунктах меню. */
 export function PaymentIntakesTab() {
   const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  // Все действия журнала (разбор, «В банк», исключение, удаление, загрузка) на бэкенде под
+  // counterparties.operate. Читать очередь может и финансовая роль — ей кнопки не показываем,
+  // иначе каждая даёт 403 там, где человек ничего неправильного не сделал.
+  const canOperate = permissions.canPerformAction("counterparties.operate");
   const [filter, setFilter] = useState("active");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reviewItem, setReviewItem] = useState<PaymentIntake | null>(null);
@@ -131,6 +137,12 @@ export function PaymentIntakesTab() {
     queryKey: ["payment-page", "counterparties"],
     queryFn: listCounterpartyOptions,
   });
+
+  // react-query держит сетевой сбой в состоянии paused (isError=false), поэтому одного isError
+  // мало: мёртвый сервер иначе притворяется пустой очередью.
+  const loadFailed =
+    (intakesQuery.isError || intakesQuery.fetchStatus === "paused") &&
+    intakesQuery.data === undefined;
 
   const all = useMemo(() => intakesQuery.data ?? [], [intakesQuery.data]);
   const rows = useMemo(() => {
@@ -307,14 +319,16 @@ export function PaymentIntakesTab() {
               if (file) uploadMutation.mutate(file);
             }}
           />
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            {uploadMutation.isPending ? "Распознаём…" : "Загрузить документ"}
-          </Button>
+          {canOperate ? (
+            <Button
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadMutation.isPending}
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              {uploadMutation.isPending ? "Распознаём…" : "Загрузить документ"}
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             onClick={() => void intakesQuery.refetch()}
@@ -388,6 +402,23 @@ export function PaymentIntakesTab() {
                   Загрузка…
                 </TableCell>
               </TableRow>
+            ) : loadFailed ? (
+              // Пустая очередь и недоступная очередь — разные состояния. Раньше вкладка была
+              // отдельной страницей, куда заходили осознанно; теперь она открывается по умолчанию,
+              // и «Пусто» вместо 403/500 читается как «всё оплачено».
+              <TableRow>
+                <TableCell colSpan={8} className="py-8 text-center text-destructive">
+                  Не удалось загрузить счета:{" "}
+                  {apiErrorMessage(intakesQuery.error, "ошибка запроса")}.{" "}
+                  <button
+                    className="underline"
+                    onClick={() => void intakesQuery.refetch()}
+                    type="button"
+                  >
+                    Повторить
+                  </button>
+                </TableCell>
+              </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
@@ -398,15 +429,19 @@ export function PaymentIntakesTab() {
               rows.map((item) => {
                 const busy = pendingId === item.id;
                 // «В работе» = неразобранные + готовый-к-оплате, ещё не ушедший в банк.
+                // canOperate во всех трёх признаках: у финансовой роли право на чтение очереди
+                // есть, а на действия — нет, и показывать ей кнопки значит обещать 403.
                 const inWork =
-                  ["needs_review", "new", "failed"].includes(item.status) ||
-                  (item.status === "linked" && !item.invoice_in_draft);
+                  canOperate &&
+                  (["needs_review", "new", "failed"].includes(item.status) ||
+                    (item.status === "linked" && !item.invoice_in_draft));
                 // Готов к отправке/планированию: статус linked, ещё не ушёл в банк И НЕ ОПЛАЧЕН.
                 // Оплатить счёт можно мимо очереди — свободным платежом из выписки, наличными из
                 // Сейфа, ручной сверкой операции. Бейдж такую строку уже показывает как
                 // «Оплачен», а кнопка «В банк» на ней оставалась: бэкенд платёж отбивал
                 // («есть оплаченные накладные»), но человеку предлагалось заплатить второй раз.
                 const isReadyRow =
+                  canOperate &&
                   item.status === "linked" &&
                   !item.invoice_in_draft &&
                   item.invoice_payment_status !== "paid";
@@ -462,7 +497,7 @@ export function PaymentIntakesTab() {
                           ) : null}
                         </div>
                       ) : null}
-                      {item.utility_hints.length > 0 ? (
+                      {item.utility_hints?.length ? (
                         <div className="text-xs text-amber-700">{item.utility_hints.join(". ")}</div>
                       ) : null}
                     </TableCell>
@@ -487,7 +522,7 @@ export function PaymentIntakesTab() {
                           </Button>
                         ) : null}
 
-                        {item.status === "excluded" ? (
+                        {item.status === "excluded" && canOperate ? (
                           <>
                             {/* Корзина «Исключённые»: вернуть в работу или удалить навсегда. */}
                             <Button
@@ -564,7 +599,8 @@ export function PaymentIntakesTab() {
                               </Button>
                             ) : null}
 
-                            {["needs_review", "new", "failed"].includes(item.status) ? (
+                            {canOperate &&
+                            ["needs_review", "new", "failed"].includes(item.status) ? (
                               <Button
                                 size="sm"
                                 variant="ghost"
