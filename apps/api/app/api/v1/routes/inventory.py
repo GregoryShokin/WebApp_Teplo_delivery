@@ -422,9 +422,7 @@ async def patch_audit(
                 actor=actor,
             )
         except InventoryAuditConflictError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except InventoryAuditValidationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -459,15 +457,11 @@ async def audit_deferred_on_payout(
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict[str, Any]:
     audit = await load_audit_or_404(session, audit_id)
-    period_start, _period_end, _payout = payroll_period_for_date(
-        effective_penalty_work_date(audit)
-    )
+    period_start, _period_end, _payout = payroll_period_for_date(effective_penalty_work_date(audit))
     charges = await list_deferred_charges(session)
     charge_rows = deferred_splits_on_payout(charges, period_start=period_start)
     by_employee = deferred_by_employee_on_payout(charges, period_start=period_start)
-    total = decimal_string(
-        sum((Decimal(row["total_amount"]) for row in charge_rows), Decimal("0"))
-    )
+    total = decimal_string(sum((Decimal(row["total_amount"]) for row in charge_rows), Decimal("0")))
     return {"total": total, "charges": charge_rows, "by_employee": by_employee}
 
 
@@ -697,10 +691,7 @@ async def audit_carryover_suggestions(
 ) -> list[dict[str, Any]]:
     audit = await load_audit_or_404(session, audit_id)
     suggestions = await carryover_suggestions(session, audit)
-    return [
-        {"item_id": item_id, **payload}
-        for item_id, payload in suggestions.items()
-    ]
+    return [{"item_id": item_id, **payload} for item_id, payload in suggestions.items()]
 
 
 @router.post(

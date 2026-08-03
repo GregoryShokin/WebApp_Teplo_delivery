@@ -95,9 +95,7 @@ COURIERS_DEPOSITS_READ_ACCESS = (Depends(require_permission("couriers.deposits.r
 # Операции с курьерским депозитом разведены на пополнение/возврат/списание — проверяются
 # динамически по типу операции внутри post_courier_deposit_transaction. Настройка (начальный
 # баланс) — отдельное право couriers.deposits.configure.
-COURIERS_DEPOSITS_CONFIGURE_ACCESS = (
-    Depends(require_permission("couriers.deposits.configure")),
-)
+COURIERS_DEPOSITS_CONFIGURE_ACCESS = (Depends(require_permission("couriers.deposits.configure")),)
 COURIERS_DEPOSITS_OP_PERMISSIONS = {
     "top_up": "couriers.deposits.top_up",
     "return": "couriers.deposits.return",
@@ -105,9 +103,7 @@ COURIERS_DEPOSITS_OP_PERMISSIONS = {
 }
 # Удаление пополнения (вместе с проводкой ДДС) — отдельное «опасное» право. Без него история
 # только для просмотра. Возврат/списание удалять нельзя (правятся обратным пополнением).
-COURIERS_DEPOSITS_DELETE_ACCESS = (
-    Depends(require_permission("couriers.deposits.delete")),
-)
+COURIERS_DEPOSITS_DELETE_ACCESS = (Depends(require_permission("couriers.deposits.delete")),)
 COURIERS_DEPOSITS_SETTINGS_READ_ACCESS = (
     Depends(
         require_any_permission(("couriers.deposits.configure", "source.deposit_settings.read"))
@@ -119,9 +115,7 @@ COURIERS_DEPOSITS_SETTINGS_EDIT_ACCESS = (
     ),
 )
 COURIERS_SHIFT_DAY_READ_ACCESS = (
-    Depends(
-        require_any_permission(("couriers.deposits.read", "couriers.evaluations.read"))
-    ),
+    Depends(require_any_permission(("couriers.deposits.read", "couriers.evaluations.read"))),
 )
 COURIERS_SHIFT_DAY_EDIT_ACCESS = (
     Depends(
@@ -387,9 +381,7 @@ async def get_iiko_courier_deliveries(
     employees: dict[str, str] = {}
     if courier_iiko_ids:
         emp_rows = (
-            await session.scalars(
-                select(Employee).where(Employee.iiko_id.in_(courier_iiko_ids))
-            )
+            await session.scalars(select(Employee).where(Employee.iiko_id.in_(courier_iiko_ids)))
         ).all()
         for emp in emp_rows:
             if emp.iiko_id:
@@ -471,15 +463,11 @@ async def post_iiko_delivery_sync(
         date_from = today
 
     try:
-        result = await sync_courier_olap_deliveries(
-            session, date_from=date_from, date_to=date_to
-        )
+        result = await sync_courier_olap_deliveries(session, date_from=date_from, date_to=date_to)
         await session.commit()
     except RuntimeError as exc:
         await session.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     return result.as_dict()
 
@@ -523,7 +511,9 @@ async def get_couriers_list(
     month_end = kpi_service.month_bounds(month_start)[1]
     couriers = (
         await session.scalars(
-            select(Employee).where(Employee.position.in_(courier_positions())).order_by(Employee.full_name)
+            select(Employee)
+            .where(Employee.position.in_(courier_positions()))
+            .order_by(Employee.full_name)
         )
     ).all()
     active_couriers = [courier for courier in couriers if courier.status == "active"]
@@ -1334,5 +1324,3 @@ def _require_actor_user_id(actor: CurrentActor) -> uuid.UUID:
             detail="Не удалось определить текущего пользователя",
         )
     return actor.user_id
-
-

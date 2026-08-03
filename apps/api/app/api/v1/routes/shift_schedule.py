@@ -230,10 +230,7 @@ async def get_schedule_ledger(
         _ledger_to_read(entry, employee)
         for entry, employee in result.all()
         if date_from <= entry.work_date <= date_to
-        and (
-            employee.position in schedule_positions()
-            or entry.payroll_role in PAYROLL_ROLE_LABELS
-        )
+        and (employee.position in schedule_positions() or entry.payroll_role in PAYROLL_ROLE_LABELS)
     ]
 
 

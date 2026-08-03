@@ -200,9 +200,7 @@ async def patch_adjustment(
     employee = await get_adjustment_employee(session, next_employee_id)
     validate_adjustment_target(employee)
     next_role = (
-        resolve_adjustment_role(employee, updates["role"])
-        if "role" in updates
-        else adjustment.role
+        resolve_adjustment_role(employee, updates["role"]) if "role" in updates else adjustment.role
     )
     # Право зависит от роли: правка существующей записи требует права на её роль,
     # а результат — права на новую роль (админ-персонал отдельно от субститутов).
@@ -409,9 +407,7 @@ async def get_category_for_payload(
     return category
 
 
-async def ensure_date_unlocked(
-    session: AsyncSession, work_date: date, role: str | None
-) -> None:
+async def ensure_date_unlocked(session: AsyncSession, work_date: date, role: str | None) -> None:
     # Блокировка по каденсу должности: производственник (повар/кассир/субститут) —
     # недельная ведомость, админ — полумесячная. Финализация одной не блокирует другую.
     try:

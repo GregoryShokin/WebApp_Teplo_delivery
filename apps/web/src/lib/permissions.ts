@@ -32,6 +32,7 @@ export type AppSection =
   | "finance.dds"
   | "finance.payment-calendar"
   | "finance.balance"
+  | "reports.pnl"
   | "counterparties"
   | "kassa"
   | "accounting"
@@ -211,6 +212,8 @@ export const PERMISSION_GROUPS = {
   financeRead: [
     "finance.cashflow.read",
     "finance.balance.read",
+    "reports.pnl.read",
+    "reports.pnl.manual_input",
     "finance.wallets.read",
     "finance.store_cash.read",
     "finance.payment_calendar.read",
@@ -292,6 +295,7 @@ const SECTION_PERMISSIONS: Record<AppSection, readonly PermissionCode[]> = {
   "finance.dds": [...PERMISSION_GROUPS.financeRead, ...PERMISSION_GROUPS.financeWrite],
   "finance.payment-calendar": ["finance.payment_calendar.read", "finance.payment_calendar.edit"],
   "finance.balance": ["finance.balance.read", "finance.balance.edit"],
+  "reports.pnl": ["reports.pnl.read", "reports.pnl.manual_input"],
   // Старое право ДДС ведёт в тот же справочник «Финансы → Контрагенты».
   counterparties: ["counterparties.read", "finance.counterparties.read"],
   kassa: [

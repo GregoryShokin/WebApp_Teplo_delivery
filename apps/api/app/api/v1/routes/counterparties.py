@@ -1030,9 +1030,7 @@ async def get_wallets(
     return [WalletRead.model_validate(wallet) for wallet in await registry.list_wallets(session)]
 
 
-@router.get(
-    "/requisites/search", response_model=list[RequisitesCandidateRead], dependencies=ADMIN
-)
+@router.get("/requisites/search", response_model=list[RequisitesCandidateRead], dependencies=ADMIN)
 async def search_requisites(
     session: Annotated[AsyncSession, Depends(get_session)],
     query: Annotated[str, Query(min_length=3, max_length=255)],

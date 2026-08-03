@@ -317,7 +317,9 @@ async def get_admin_salaries(
     return await list_admin_oklady(session)
 
 
-@router.put("/salaries/default", response_model=AdminSalariesRead, dependencies=SOURCE_RATES_EDIT_ACCESS)
+@router.put(
+    "/salaries/default", response_model=AdminSalariesRead, dependencies=SOURCE_RATES_EDIT_ACCESS
+)
 async def put_admin_salary_default(
     payload: AdminSalaryUpsert,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -470,9 +472,7 @@ async def get_dishwasher_shifts(
     session: Annotated[AsyncSession, Depends(get_session)],
     _actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> list[DishwasherShiftRead]:
-    shifts = await list_dishwasher_shifts(
-        session, period_start=period_start, period_end=period_end
-    )
+    shifts = await list_dishwasher_shifts(session, period_start=period_start, period_end=period_end)
     return [DishwasherShiftRead.model_validate(shift) for shift in shifts]
 
 

@@ -24,6 +24,7 @@ from app.api.v1.routes.payroll_adjustments import router as payroll_adjustments_
 from app.api.v1.routes.payroll_admin import router as payroll_admin_router
 from app.api.v1.routes.payroll_advances import router as payroll_advances_router
 from app.api.v1.routes.positions import router as positions_router
+from app.api.v1.routes.reports_pnl import router as reports_pnl_router
 from app.api.v1.routes.sbis import router as sbis_router
 from app.api.v1.routes.settings import router as settings_router
 from app.api.v1.routes.shift_schedule import router as shift_schedule_router
@@ -64,9 +65,7 @@ api_router.include_router(fixed_assets_router, prefix="/fixed-assets", tags=["fi
 api_router.include_router(shift_schedule_router, prefix="/schedule", tags=["schedule"])
 api_router.include_router(shifts_router, prefix="/shifts", tags=["shifts"])
 api_router.include_router(taxes_router, prefix="/taxes", tags=["taxes"])
-api_router.include_router(
-    utilities_router, prefix="/accounting/utilities", tags=["utilities"]
-)
+api_router.include_router(utilities_router, prefix="/accounting/utilities", tags=["utilities"])
 api_router.include_router(vacations_router, prefix="/vacations", tags=["vacations"])
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])
 api_router.include_router(warehouse_router, prefix="/warehouse", tags=["warehouse"])
@@ -76,3 +75,4 @@ api_router.include_router(owners_router, prefix="/owners", tags=["owners"])
 api_router.include_router(
     finance_payments_router, prefix="/finance/payments", tags=["finance-payments"]
 )
+api_router.include_router(reports_pnl_router, prefix="/reports/pnl", tags=["reports"])

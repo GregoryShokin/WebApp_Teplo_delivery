@@ -168,9 +168,7 @@ class IikoDirectoryRead(BaseModel):
     stores: list[IikoDirectoryItemRead]
 
 
-@router.get(
-    "/iiko-directory", response_model=IikoDirectoryRead, dependencies=LOCATIONS_READ_ACCESS
-)
+@router.get("/iiko-directory", response_model=IikoDirectoryRead, dependencies=LOCATIONS_READ_ACCESS)
 async def get_iiko_directory_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> IikoDirectoryRead:
@@ -748,9 +746,7 @@ async def replace_lease_landlord(
         )
 
     await _assert_lease_article(session, payload.terms.dds_article_id)
-    new_landlord = await _resolve_landlord(
-        session, payload.landlord, payload.terms.documents_mode
-    )
+    new_landlord = await _resolve_landlord(session, payload.landlord, payload.terms.documents_mode)
     if new_landlord.id == previous.counterparty_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -984,8 +980,7 @@ async def _lease_ledger(session: AsyncSession, lease: LocationLease) -> LeaseLed
             func.coalesce(
                 func.sum(SupplierPrepayment.amount - SupplierPrepayment.amount_settled), 0
             )
-        )
-        .where(
+        ).where(
             SupplierPrepayment.lease_id == lease.id,
             SupplierPrepayment.status.in_(("open", "partially_settled")),
         )

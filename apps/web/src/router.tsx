@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyModule } from "@/components/layout/EmptyModule";
+import { PnlRoute } from "@/routes/reports/pnl";
 import { Toaster } from "@/components/ui/sonner";
 import { restoreSession } from "@/lib/api";
 import { getAuthSnapshot } from "@/lib/auth";
@@ -521,6 +522,10 @@ const routes: AppRoute[] = [
   {
     path: "/balance",
     render: () => <EmptyModule name="Баланс" />,
+  },
+  {
+    path: "/reports/pnl",
+    render: () => <PnlRoute />,
   },
   {
     path: "/fixed-assets",

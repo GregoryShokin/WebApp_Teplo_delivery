@@ -145,16 +145,12 @@ async def _load_state(session: AsyncSession, as_of: date) -> TaxState:
         ) from exc
 
 
-async def _load_ledger(
-    session: AsyncSession, as_of: date, state: TaxState
-) -> LedgerSummary:
+async def _load_ledger(session: AsyncSession, as_of: date, state: TaxState) -> LedgerSummary:
     """Сводка «начислено / уплачено / осталось» на дату среза."""
     try:
         inputs = await load_tax_inputs(session, as_of=as_of)
         cfg = inputs.config
-        return await build_ledger_summary(
-            session, state=state, inputs=inputs, cfg=cfg, as_of=as_of
-        )
+        return await build_ledger_summary(session, state=state, inputs=inputs, cfg=cfg, as_of=as_of)
     except TaxComputationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -250,9 +246,7 @@ async def get_reconciliation(
 @router.get("/debt", response_model=TaxDebtRead, dependencies=TAXES_READ)
 async def get_tax_debt(
     session: Annotated[AsyncSession, Depends(get_session)],
-    as_of: Annotated[
-        date | None, Query(description="Дата среза. По умолчанию — сегодня.")
-    ] = None,
+    as_of: Annotated[date | None, Query(description="Дата среза. По умолчанию — сегодня.")] = None,
 ) -> TaxDebtRead:
     """Расчёты с бюджетом для страницы «Учёт ДЗ/КЗ»: одна строка + детализация.
 
@@ -277,9 +271,7 @@ async def get_tax_debt(
     # сверка кодирует его годом, платёжка приходит на прирост квартала).
     drafts = (
         await session.scalars(
-            select(TaxBankDraft).where(
-                TaxBankDraft.status.in_(("ready_to_send", "in_bank"))
-            )
+            select(TaxBankDraft).where(TaxBankDraft.status.in_(("ready_to_send", "in_bank")))
         )
     ).all()
 
@@ -431,8 +423,7 @@ async def list_payments(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"Неизвестный вид платежа: {kind!r}. "
-                f"Допустимые: {', '.join(TAX_PAYMENT_KINDS)}."
+                f"Неизвестный вид платежа: {kind!r}. Допустимые: {', '.join(TAX_PAYMENT_KINDS)}."
             ),
         )
 
@@ -445,9 +436,7 @@ async def list_payments(
     if kind is not None:
         stmt = stmt.where(TaxPayment.kind == kind)
 
-    rows = (
-        await session.scalars(stmt.order_by(TaxPayment.paid_on.desc(), TaxPayment.kind))
-    ).all()
+    rows = (await session.scalars(stmt.order_by(TaxPayment.paid_on.desc(), TaxPayment.kind))).all()
 
     paid_total = ZERO
     totals_by_kind: dict[str, Decimal] = {}
@@ -472,8 +461,7 @@ async def list_documents(
         Query(
             alias="status",
             description=(
-                "Статус разбора: parsed | needs_review | promoted | "
-                "unsupported | error | ignored."
+                "Статус разбора: parsed | needs_review | promoted | unsupported | error | ignored."
             ),
         ),
     ] = None,
@@ -512,9 +500,7 @@ async def list_documents(
     # письма приходит одной секундой) порядок без него не определён, и строки под `limit`
     # могут прыгать между запросами.
     rows = (
-        await session.execute(
-            stmt.order_by(received.desc(), TaxDocumentIntake.id).limit(limit)
-        )
+        await session.execute(stmt.order_by(received.desc(), TaxDocumentIntake.id).limit(limit))
     ).all()
 
     counts = (
@@ -649,9 +635,7 @@ async def review_document(
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
     try:
-        await set_intake_review(
-            session, intake, status=body.status, overrides=overrides or None
-        )
+        await set_intake_review(session, intake, status=body.status, overrides=overrides or None)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     await session.commit()
@@ -795,9 +779,7 @@ async def get_vat_criterion(
     """Зарплатный критерий льготы по НДС: средние начисления действующего работника ↔ порог."""
     resolved = year or date.today().year
     threshold = await load_regional_wage(session, year=resolved)
-    criterion = await evaluate_vat_wage_criterion(
-        session, year=resolved, threshold=threshold
-    )
+    criterion = await evaluate_vat_wage_criterion(session, year=resolved, threshold=threshold)
     return _vat_read(criterion)
 
 
@@ -812,15 +794,11 @@ async def set_vat_threshold(
 ) -> VatWageCriterionRead:
     """Ввести региональный порог за год (Росстат/ЕМИСС) и пересчитать критерий."""
     if body.amount <= ZERO:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "Порог должен быть больше нуля."
-        )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Порог должен быть больше нуля.")
     await save_regional_wage(session, year=body.year, amount=body.amount)
     await session.commit()
     threshold = await load_regional_wage(session, year=body.year)
-    criterion = await evaluate_vat_wage_criterion(
-        session, year=body.year, threshold=threshold
-    )
+    criterion = await evaluate_vat_wage_criterion(session, year=body.year, threshold=threshold)
     return _vat_read(criterion)
 
 

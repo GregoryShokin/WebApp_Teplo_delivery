@@ -59,9 +59,7 @@ router = APIRouter()
 # соседние роуты того же контура (finance_payments, sbis, counterparties) принимают оба.
 # Здесь принималось только первое — finance-роль видела пункт меню и получала тихий 403,
 # читая его как «счетов нет». Особенно важно после переезда экрана вкладкой на «Платежи».
-READ = (
-    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
-)
+READ = (Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 
 
@@ -550,9 +548,7 @@ async def get_intake_pdf(
     raw = bytes(intake.pdf_bytes)
     content, media_type = utility_images.to_displayable(
         raw,
-        utility_images.sniff_media_type(
-            raw, intake.attachment_mime, fallback="application/pdf"
-        ),
+        utility_images.sniff_media_type(raw, intake.attachment_mime, fallback="application/pdf"),
     )
     # Имя файла кириллическое, а HTTP-заголовки только latin-1 → ASCII-фолбэк + RFC 5987
     # (filename*) с percent-encoding, иначе Starlette роняет ответ («Network Error» в браузере).

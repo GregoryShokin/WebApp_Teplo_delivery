@@ -27,9 +27,7 @@ router = APIRouter()
 
 # Страница «Финансы → Платежи» в навигации открыта обоим правам — бэкенд обязан принимать
 # те же, иначе finance-роль видит вечное фейковое «Платежей нет» при тихом 403.
-READ = (
-    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
-)
+READ = (Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),)
 
 
 class PaymentRead(BaseModel):

@@ -19,6 +19,7 @@ import {
   LogOut,
   Menu,
   ReceiptText,
+  TrendingUp,
   Settings,
   UsersRound,
   Wallet,
@@ -143,6 +144,7 @@ const navGroups: NavGroup[] = [
     // «Учёт», а через две недели сюда — лишний переезд для всех, кто уже привык.
     title: "Отчёты",
     items: [
+      { label: "ОПиУ", href: "/reports/pnl", icon: TrendingUp, section: "reports.pnl" },
       { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
     ],
   },

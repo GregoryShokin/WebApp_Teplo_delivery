@@ -1011,9 +1011,7 @@ async def void_freelancer_shift_endpoint(
     return await kassa_pending_payload(session)
 
 
-async def _mirror_advance_payout_to_iiko(
-    session: AsyncSession, result: KassaPayoutResult
-) -> None:
+async def _mirror_advance_payout_to_iiko(session: AsyncSession, result: KassaPayoutResult) -> None:
     """Наличный аванс/заём с ТК Черникова зеркалится изъятием в iiko «Главная касса».
 
     Тот же контур, что при выдаче со страницы авансов (payroll_advances): вызывается

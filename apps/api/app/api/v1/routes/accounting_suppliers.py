@@ -648,11 +648,7 @@ async def list_supplier_accounting(
                 paid_amount=_float(prepayment.amount),
                 balance_amount=_float(balance),
                 balance_type=(
-                    "closed"
-                    if is_settled
-                    else "needs_review"
-                    if not period_known
-                    else "receivable"
+                    "closed" if is_settled else "needs_review" if not period_known else "receivable"
                 ),
                 # У самозакрывающихся (аренда, договор) период известен механизму, даже когда
                 # на платеже он не проставлен: показываем выведенное окно вместо «Период не
@@ -691,9 +687,7 @@ async def list_supplier_accounting(
     # следующий месяц. Отдельный плюс — постоплатные договоры (Наумченко) впервые видны в
     # очереди вовсе: раньше их было видно, только пока висел открытый аванс.
     month_start = current_month
-    month_end = month_start.replace(
-        day=calendar.monthrange(month_start.year, month_start.month)[1]
-    )
+    month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
     schedule_rows: list[
         tuple[uuid.UUID, uuid.UUID, str, Decimal, uuid.UUID | None, str | None]
     ] = []
@@ -743,20 +737,30 @@ async def list_supplier_accounting(
         )
     ).all()
     schedule_rows.extend(
-        (row_id, cp_id, f"Аренда — {location_name}" if location_name else "Аренда", amount,
-         article_id, article_title)
+        (
+            row_id,
+            cp_id,
+            f"Аренда — {location_name}" if location_name else "Аренда",
+            amount,
+            article_id,
+            article_title,
+        )
         for row_id, cp_id, location_name, amount, article_id, article_title in lease_rows
     )
-    counterparty_names = {
-        cp_id: name
-        for cp_id, name in (
-            await session.execute(
-                select(Counterparty.id, Counterparty.name).where(
-                    Counterparty.id.in_({row[1] for row in schedule_rows})
+    counterparty_names = (
+        {
+            cp_id: name
+            for cp_id, name in (
+                await session.execute(
+                    select(Counterparty.id, Counterparty.name).where(
+                        Counterparty.id.in_({row[1] for row in schedule_rows})
+                    )
                 )
-            )
-        ).all()
-    } if schedule_rows else {}
+            ).all()
+        }
+        if schedule_rows
+        else {}
+    )
     for row_id, cp_id, title, amount, article_id, article_title in schedule_rows:
         if article_id is None:
             default_article = ctx.default_articles.get(cp_id)
@@ -2051,9 +2055,7 @@ async def list_staff_payable(
                 fund_by_emp.get(account.employee_id, Decimal("0.00")) + outstanding
             )
             year_target = (
-                fund_current_year_by_emp
-                if account.year == as_of.year
-                else fund_prior_years_by_emp
+                fund_current_year_by_emp if account.year == as_of.year else fund_prior_years_by_emp
             )
             year_target[account.employee_id] = (
                 year_target.get(account.employee_id, Decimal("0.00")) + outstanding
@@ -2253,12 +2255,7 @@ async def list_staff_payable(
         courier_deposit = courier_deposit_by_emp.get(employee.id, Decimal("0.00"))
         deposit_payable = production_deposit + courier_deposit
         payable = salary_payable + fund_payable + deposit_payable
-        receivable = (
-            advances
-            + loans
-            + salary_payouts
-            + _clamp_money(-on_demand_debt)
-        )
+        receivable = advances + loans + salary_payouts + _clamp_money(-on_demand_debt)
         if payable <= 0 and receivable <= 0:
             continue
         payable_total += payable
@@ -2474,9 +2471,7 @@ async def list_closed_periods(
     ).all()
     return PeriodCloseList(
         items=[
-            PeriodCloseRow(
-                period_month=row.period_month, note=row.note, closed_at=row.created_at
-            )
+            PeriodCloseRow(period_month=row.period_month, note=row.note, closed_at=row.created_at)
             for row in rows
         ]
     )
@@ -2647,9 +2642,7 @@ async def prepayment_origin(
             )
         )
     ).all()
-    closing_invoice = (
-        await session.get(SupplierInvoice, closing_ids[0]) if closing_ids else None
-    )
+    closing_invoice = await session.get(SupplierInvoice, closing_ids[0]) if closing_ids else None
     closing = await _origin_document(session, closing_invoice)
     if closing_invoice is None:
         mode = await session.scalar(

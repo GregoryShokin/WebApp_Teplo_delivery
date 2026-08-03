@@ -111,9 +111,7 @@ class AdvanceRead(BaseModel):
     payout_status: str = "disbursed"
 
 
-def _advance_read(
-    advance: SalaryAdvance, draft: SalaryAdvanceBankDraft | None
-) -> AdvanceRead:
+def _advance_read(advance: SalaryAdvance, draft: SalaryAdvanceBankDraft | None) -> AdvanceRead:
     read = AdvanceRead.model_validate(advance)
     read.payout_status = advance_payout_status(advance, draft)
     return read
@@ -220,9 +218,7 @@ async def get_upcoming_payslips(
     rows = await upcoming_payslips(
         session, employee, datetime.now(_MOSCOW_TZ).date(), count=max(1, min(count, 6))
     )
-    return [
-        UpcomingPayslipRead(period_start=s, period_end=e, payout_date=p) for s, e, p in rows
-    ]
+    return [UpcomingPayslipRead(period_start=s, period_end=e, payout_date=p) for s, e, p in rows]
 
 
 @router.get("", response_model=list[AdvanceRead], dependencies=ADVANCES_READ_ACCESS)
@@ -403,9 +399,7 @@ async def post_revoke_kassa_advance(
     """
     ensure_any_permission(actor, _ISSUE_CODES)
     try:
-        advance = await cancel_kassa_advance(
-            session, advance_id=advance_id, by_kassa_admin=False
-        )
+        advance = await cancel_kassa_advance(session, advance_id=advance_id, by_kassa_admin=False)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:

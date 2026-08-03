@@ -4418,8 +4418,7 @@ async def put_official_profile(
 
     def _snapshot() -> dict[str, Any]:
         return {
-            f: (str(v) if isinstance(v := getattr(employee, f), Decimal) else v)
-            for f in fields
+            f: (str(v) if isinstance(v := getattr(employee, f), Decimal) else v) for f in fields
         }
 
     before = _snapshot()

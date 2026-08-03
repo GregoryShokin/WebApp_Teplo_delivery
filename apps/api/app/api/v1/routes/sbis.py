@@ -35,9 +35,7 @@ router = APIRouter()
 
 # Реестр ЭДО живёт на «Финансы → Платежи», куда навигация пускает и finance-право —
 # чтение обязано принимать оба, иначе вкладка тихо показывает фейковое «пусто» (403).
-READ = (
-    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
-)
+READ = (Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 
 
@@ -230,9 +228,7 @@ async def enable_channel(
                 note="подключено из вкладки СБИС",
             )
         except registry.CounterpartyRegistryError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     counterparty = await session.get(Counterparty, doc.counterparty_id)
     return _to_read(doc, None, None, counterparty, {"sbis"})
@@ -274,9 +270,7 @@ async def reroute_counterparty(
     """
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Контрагент не найден")
     try:
         result = await reroute_counterparty_documents(session, counterparty_id)
     except SbisCredentialsError as exc:
@@ -301,9 +295,7 @@ async def document_pdf(
         except SbisCredentialsError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except SbisApiError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     # ASCII-фолбэк обязателен: кириллица в Content-Disposition роняет Starlette (latin-1).
     filename = (
         f"sbis-{doc.number or doc.sbis_doc_id}.pdf".replace('"', "")

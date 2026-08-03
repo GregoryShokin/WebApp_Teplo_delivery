@@ -46,6 +46,7 @@ router = APIRouter()
 READ_ACCESS = (Depends(require_permission("accounting.suppliers.read")),)
 EDIT_ACCESS = (Depends(require_permission("accounting.suppliers.edit")),)
 
+
 class AccountWrite(BaseModel):
     location_id: uuid.UUID
     kind: Literal["water", "gas", "electricity"]
@@ -275,14 +276,9 @@ async def utilities_calendar(
     """
     months_back = max(1, min(months_back, 24))
     accounts = (
-        await session.scalars(
-            select(UtilityAccount).where(UtilityAccount.is_active.is_(True))
-        )
+        await session.scalars(select(UtilityAccount).where(UtilityAccount.is_active.is_(True)))
     ).all()
-    names = {
-        row.id: row.location_name
-        for row in await _accounts_with_names(session)
-    }
+    names = {row.id: row.location_name for row in await _accounts_with_names(session)}
     items: list[CalendarRow] = []
     for account in accounts:
         location_name = names.get(account.id, "")
@@ -307,11 +303,8 @@ async def utilities_calendar(
     return CalendarRead(items=items)
 
 
-
 @router.get("/kinds", dependencies=READ_ACCESS)
 async def utility_kinds() -> dict[str, list[dict[str, str]]]:
     return {
-        "items": [
-            {"value": kind, "label": UTILITY_KIND_LABELS[kind]} for kind in UTILITY_KINDS
-        ]
+        "items": [{"value": kind, "label": UTILITY_KIND_LABELS[kind]} for kind in UTILITY_KINDS]
     }

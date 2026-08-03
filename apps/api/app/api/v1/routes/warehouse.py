@@ -91,14 +91,10 @@ READ = (Depends(require_permission("counterparties.read")),)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 # Справочники для формы накладной — доступны и из контура Кассы:
 # право «Создавать накладные из Кассы» само открывает номенклатуру/статьи.
-INVOICE_REFS = (
-    Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),
-)
+INVOICE_REFS = (Depends(require_any_permission(("counterparties.read", "kassa.invoices.create"))),)
 # Отправка накладной в iiko: управляющий/менеджер (counterparties.operate) либо
 # кассир через узкое право (накладные из Кассы тоже должны попадать на склад).
-PUSH = (
-    Depends(require_any_permission(("counterparties.operate", "kassa.invoices.push"))),
-)
+PUSH = (Depends(require_any_permission(("counterparties.operate", "kassa.invoices.push"))),)
 
 
 class LineCreate(BaseModel):
@@ -686,9 +682,7 @@ async def _settle_paid_from_kassa(
             session, invoice, wallet_id=wallet.id, operation_date=kassa_today()
         )
     else:
-        cash_parts = [
-            CashPart(wallet_id=wallet.id, amount=amount, operation_date=kassa_today())
-        ]
+        cash_parts = [CashPart(wallet_id=wallet.id, amount=amount, operation_date=kassa_today())]
     await pay_invoice_split(
         session,
         invoice_id=invoice.id,
