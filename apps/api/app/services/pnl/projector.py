@@ -27,6 +27,7 @@ from app.models import PnlLine
 from app.services.pnl import formulas
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import fixed_assets as fixed_assets_source
+from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
@@ -132,6 +133,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     await _apply_fixed_assets(session, lines, month_start)
     await _apply_taxes(session, lines, month_start)
     await _apply_payroll(session, lines, month_start, month_end)
+    await _apply_inventory(session, lines, month_start, month_end, report)
 
     formulas.apply_formulas(lines, catalog)
     _apply_percentages(lines)
@@ -242,6 +244,61 @@ async def _apply_payroll(
             stream="payroll",
             amount=amount if month.has_data else None,
             status=known,
+        )
+
+
+async def _apply_inventory(
+    session: AsyncSession,
+    lines: dict[str, LineValue],
+    month_start: date,
+    month_end: date,
+    report: PnlReport,
+) -> None:
+    """«Результаты ревизии» = продуктовые инвентаризации минус штрафы по ревизиям.
+
+    Штрафы приходят из зарплатного контура и вычитаются здесь, а не там: они компенсируют
+    ревизионные потери, а не уменьшают фонд оплаты труда.
+    """
+    month = await inventory_source.build_inventory_month(session, month_start, month_end)
+    payroll_month = await payroll_source.build_payroll_month(session, month_start, month_end)
+
+    if month.product_result is None:
+        _add_component(
+            lines, "audit_results", stream="inventory", amount=None, status=LineStatus.NO_DATA
+        )
+        return
+
+    _add_component(
+        lines,
+        "audit_results",
+        stream="inventory",
+        amount=month.product_result,
+        status=LineStatus.OK,
+        note=f"Ревизий за месяц: {month.audits_count}",
+    )
+    if payroll_month.audit_penalties:
+        _add_component(
+            lines,
+            "audit_results",
+            stream="payroll",
+            amount=-payroll_month.audit_penalties,
+            status=LineStatus.OK,
+            note="Штрафы по ревизиям — компенсируют потери",
+        )
+    # Ревизии еженедельные. Если месяц накрыт двумя документами вместо четырёх, строка не
+    # ошибочна, но неполна — и молчать об этом нельзя: недостача второй половины месяца
+    # просто не обнаружена.
+    if month.audits_count < 3:
+        report.warnings.append(
+            Warning(
+                code="inventory_sparse",
+                line_code="audit_results",
+                message=(
+                    f"За месяц найдено ревизий: {month.audits_count} "
+                    f"({', '.join(d.strftime('%d.%m') for d in month.audit_dates)}). "
+                    "Ревизии еженедельные — результат покрывает не весь месяц"
+                ),
+            )
         )
 
 
