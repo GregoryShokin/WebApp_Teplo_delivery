@@ -536,16 +536,23 @@ async def get_intake_pdf(
 ) -> Response:
     """Исходный документ строки: PDF из письма или фотография квитанции.
 
-    Тип отдаём тот, что определили на приёме ПО СОДЕРЖИМОМУ файла. Пока источник был один,
-    ``application/pdf`` был константой — на снимке она превращала окно разбора в пустой
-    прямоугольник, и проверять разбор человеку было не по чему. HEIC с айфона конвертируем на
-    лету: в браузерах, кроме Safari, он не показывается вовсе.
+    Тип определяем ПО СОДЕРЖИМОМУ, а не по тому, что написал отправитель. Заявленному верить
+    нельзя: 1С-рассылки и часть почтовых шлюзов подписывают PDF как ``application/octet-stream``,
+    и с таким типом браузер не рисует документ во фрейме, а скачивает его на диск — окно разбора
+    показывало пустой прямоугольник, а счёт уезжал в «Загрузки» (прод, «Назад в будущее», 03.08).
+    Раньше здесь стояла константа ``application/pdf`` — она ломала показ снимков; заявленный тип
+    исправил снимки, но принёс эту беду. HEIC с айфона конвертируем на лету: в браузерах, кроме
+    Safari, он не показывается вовсе.
     """
     intake = await _get_intake(session, intake_id)
     if not intake.pdf_bytes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл недоступен")
+    raw = bytes(intake.pdf_bytes)
     content, media_type = utility_images.to_displayable(
-        bytes(intake.pdf_bytes), intake.attachment_mime or "application/pdf"
+        raw,
+        utility_images.sniff_media_type(
+            raw, intake.attachment_mime, fallback="application/pdf"
+        ),
     )
     # Имя файла кириллическое, а HTTP-заголовки только latin-1 → ASCII-фолбэк + RFC 5987
     # (filename*) с percent-encoding, иначе Starlette роняет ответ («Network Error» в браузере).

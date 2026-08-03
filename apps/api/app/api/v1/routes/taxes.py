@@ -67,6 +67,7 @@ from app.schemas.taxes import (
     VatThresholdInput,
     VatWageCriterionRead,
 )
+from app.services import utility_images
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.taxes.ai_reviewer import TaxAiError, apply_ai_proposal, review_all
 from app.services.taxes.ai_reviewer import review_document as ai_review_document
@@ -563,9 +564,12 @@ async def get_document_file(
     raw_name = intake.filename or "document"
     ascii_name = raw_name.encode("ascii", "ignore").decode("ascii") or "document"
     disposition = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(raw_name)}"
+    raw = bytes(intake.content)
     return Response(
-        content=bytes(intake.content),
-        media_type=intake.mime or "application/octet-stream",
+        content=raw,
+        # Тип берём по содержимому: почтовые шлюзы подписывают PDF как octet-stream, и с таким
+        # заголовком браузер не показывает документ, а скачивает его (см. payment_page).
+        media_type=utility_images.sniff_media_type(raw, intake.mime, fallback="application/pdf"),
         headers={"Content-Disposition": disposition},
     )
 
