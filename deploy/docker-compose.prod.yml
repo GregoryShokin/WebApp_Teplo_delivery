@@ -53,6 +53,13 @@ services:
       - ./.env.integrations
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    # Телеграм у этого провайдера доступен НЕ ВЕСЬ: DNS отдаёт 149.154.166.110 (и локальный
+    # резолвер, и 1.1.1.1, и 8.8.8.8), а до этого адреса с сервера нет связи — TCP 443 закрыт,
+    # опрос бота падал ConnectTimeout каждые полминуты. Адрес 149.154.167.220 из той же сети
+    # жив: getMe через него отвечает 200. Пин — самое дешёвое лечение; если однажды закроют и
+    # его, контур встанет с тем же явным ConnectTimeout в логах, а не молча.
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     depends_on:
       postgres:
         condition: service_healthy
