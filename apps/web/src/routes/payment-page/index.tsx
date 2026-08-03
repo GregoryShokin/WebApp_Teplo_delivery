@@ -66,12 +66,6 @@ const STATUS_BADGE: Record<string, string> = {
   recognized: "border-slate-200 bg-slate-50 text-slate-700",
 };
 
-const ENGINE_LABELS: Record<string, string> = {
-  deterministic: "регекс",
-  llm: "LLM",
-  "deterministic+llm": "регекс+LLM",
-};
-
 const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   // Очередь оплат отвечает на вопрос «что ещё предстоит заплатить». Оплаченное на этот
   // вопрос не отвечает: у статуса linked внутри три разных состояния (готов / в банке /
@@ -425,14 +419,13 @@ export function PaymentIntakesTab() {
               <TableHead>Контрагент</TableHead>
               <TableHead className="w-[128px] text-right">Сумма</TableHead>
               <TableHead className="w-[124px]">№ счёта</TableHead>
-              <TableHead className="w-[116px]">Распознавание</TableHead>
               <TableHead className="w-[224px] text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {intakesQuery.isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
@@ -441,7 +434,7 @@ export function PaymentIntakesTab() {
               // отдельной страницей, куда заходили осознанно; теперь она открывается по умолчанию,
               // и «Пусто» вместо 403/500 читается как «всё оплачено».
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-destructive">
+                <TableCell colSpan={7} className="py-8 text-center text-destructive">
                   Не удалось загрузить счета:{" "}
                   {apiErrorMessage(intakesQuery.error, "ошибка запроса")}.{" "}
                   <button
@@ -455,7 +448,7 @@ export function PaymentIntakesTab() {
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                   Пусто. Счета приходят почтой и по ЭДО, а квитанцию можно принести кнопкой «Загрузить документ».
                 </TableCell>
               </TableRow>
@@ -546,10 +539,6 @@ export function PaymentIntakesTab() {
                       <div className="truncate" title={item.invoice_number ?? undefined}>
                         {item.invoice_number ?? "—"}
                       </div>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                      {item.engine ? ENGINE_LABELS[item.engine] ?? item.engine : "—"}
-                      {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                     </TableCell>
                     <TableCell>
                       {/* nowrap: кнопки уезжали на вторую строку под «Разобрать» и удваивали
