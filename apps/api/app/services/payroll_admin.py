@@ -510,6 +510,39 @@ async def compute_on_demand_debt(
     return result
 
 
+async def on_demand_accrued_months(
+    session: AsyncSession,
+    employee_ids: Iterable[uuid.UUID],
+) -> dict[uuid.UUID, set[str]]:
+    """Месяцы (``YYYY-MM``), за которые ``on_demand``-начисление УЖЕ проведено ведомостью.
+
+    Начисление режима «по востребованию» появляется только вместе с прогоном ведомости
+    месяца, поэтому до первого прогона заработанное сотрудником не отражено нигде: строк
+    ещё нет, а ``total_payable`` у режима всегда 0. Знание «за какие месяцы начисление уже
+    есть» нужно потребителям (учёт ДЗ/КЗ), чтобы не задваивать его с синтетическим
+    прорейтом и одновременно не терять заработанное в начале месяца.
+    """
+    unique_ids = list({eid for eid in employee_ids})
+    if not unique_ids:
+        return {}
+    line_rows = await session.scalars(
+        select(PayrollLine).where(PayrollLine.employee_id.in_(unique_ids))
+    )
+    months: dict[uuid.UUID, set[str]] = {}
+    for line in line_rows.all():
+        components = line.components if isinstance(line.components, dict) else {}
+        proration = components.get("proration")
+        if not isinstance(proration, dict) or not proration.get("on_demand"):
+            continue
+        if proration.get("accrual_amount") is None:
+            continue
+        month = proration.get("period_month")
+        if not month:
+            continue
+        months.setdefault(line.employee_id, set()).add(str(month))
+    return months
+
+
 async def load_included_payouts_by_employee(
     session: AsyncSession,
     run_id: uuid.UUID,

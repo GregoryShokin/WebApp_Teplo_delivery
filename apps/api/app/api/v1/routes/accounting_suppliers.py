@@ -65,7 +65,11 @@ from app.services.accumulation_fund_service import (
     fund_outstanding,
 )
 from app.services.couriers.deposit_service import is_senior_courier
-from app.services.payroll_admin import compute_on_demand_debt, list_on_demand_employees
+from app.services.payroll_admin import (
+    compute_on_demand_debt,
+    list_on_demand_employees,
+    on_demand_accrued_months,
+)
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.position_registry import (
     eligible_for_personal_report,
@@ -1984,6 +1988,12 @@ async def list_staff_payable(
     отдельными компонентами: производственный депозит берётся из ``DepositAccount.balance``,
     курьерский — из ``opening + top_up - return - forfeit``.
 
+    Режим ``on_demand`` — единственный, где текущий заработок и начисление конкурируют за одну
+    и ту же сумму: месяц начисляется ЦЕЛИКОМ, но только вместе с прогоном ведомости. Поэтому
+    зарплатой считается либо начисление (когда оно за текущий месяц уже проведено), либо
+    синтетический прорейт (пока нет) — ровно одно из двух, без задвоения и без провала в окне
+    до первого прогона месяца.
+
     Накопительный фонд берётся ровно тем же срезом, что страница «Расчёты → Накопительный
     фонд», и она здесь единственный источник истины: копят его только кассиры и повара
     (``production_payroll_positions``), обязательством считаются лишь ``active``-счета,
@@ -2131,6 +2141,10 @@ async def list_staff_payable(
     current_on_demand_ids = {
         employee.id for employee in await list_on_demand_employees(session)
     } & salary_employee_ids
+    # Месяцы, за которые on_demand-начисление уже проведено ведомостью, — см. ниже, где
+    # решается, обнулять ли синтетический прорейт.
+    on_demand_months = await on_demand_accrued_months(session, current_on_demand_ids)
+    current_month_key = f"{as_of.year:04d}-{as_of.month:02d}"
 
     finalized_unpaid = await _finalized_unpaid_by_employee(session)
     advances_by_emp: dict[uuid.UUID, Decimal] = {}
@@ -2227,9 +2241,16 @@ async def list_staff_payable(
                 # Транш закрытой ведомости тоже сидит в tail — иначе задвоится.
                 vacation = Decimal("0.00")
 
-            if employee.id in current_on_demand_ids:
-                # 52 500 ₽ у оклада 140 000 ₽ на 21 июля — это именно этот синтетический прорейт.
-                # Он не является отдельной кредиторкой поверх накопленного on_demand-долга.
+            # on_demand: месяц несёт начисление ЦЕЛИКОМ (полный оклад), и оно уже сидит в
+            # on_demand_debt — синтетический прорейт поверх него был бы задвоением (52 500 ₽
+            # у оклада 140 000 ₽ на 21 июля — это именно он). Но начисление появляется лишь
+            # вместе с прогоном ведомости месяца, а полумесячные периоды создаются не с 1-го
+            # числа: до первого прогона обнулять прорейт нечем — заработанное не отражено НИГДЕ,
+            # и сотрудник целиком выпадал из витрины (payable=0 и receivable=0). Поэтому
+            # обнуляем, только когда начисление за текущий месяц уже проведено.
+            if employee.id in current_on_demand_ids and current_month_key in on_demand_months.get(
+                employee.id, frozenset()
+            ):
                 earned = Decimal("0.00")
 
         else:
