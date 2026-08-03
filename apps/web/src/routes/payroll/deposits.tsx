@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   formatDateTime,
   formatMoney,
+  formatMoneyPrecise,
   formatPercentValue,
   isDepositTargetPosition,
   normalizeDecimalInput,
@@ -354,14 +355,14 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      <span className="font-semibold">{formatMoney(row.balance)}</span>
+                      <span className="font-semibold">{formatMoneyPrecise(row.balance)}</span>
                       <span className="text-muted-foreground"> / {formatMoney(row.target)}</span>
                       {Number(row.surplus ?? 0) > 0 ? (
                         <Badge
                           className="ml-auto mt-1 block w-fit rounded-md border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-50"
                           variant="outline"
                         >
-                          Излишек {formatMoney(row.surplus)}
+                          Излишек {formatMoneyPrecise(row.surplus)}
                         </Badge>
                       ) : null}
                     </TableCell>
@@ -516,8 +517,10 @@ function DepositOperationDialog({
     if (!operation) {
       return;
     }
-    // Выдача по умолчанию — весь остаток; списание — пустая сумма.
-    setAmount(operation.type === "payout" ? String(balanceNumber(operation.row)) : "");
+    // По умолчанию — весь остаток, и для выдачи, и для списания: остаток бывает дробным
+    // (удержание урезано заработком), а на экране он округлён до рубля. Набирая сумму
+    // руками, пользователь вводил округление и упирался в проверку баланса.
+    setAmount(String(balanceNumber(operation.row)));
     setComment("");
     setPayoutMethod(allowedChannels[0] ?? "cash_tk");
     setCashMode("immediate");
@@ -608,7 +611,7 @@ function DepositOperationDialog({
             <DialogTitle>{OPERATION_TITLE[type]}</DialogTitle>
             <DialogDescription>
               {operation
-                ? `${operation.row.full_name} · баланс ${formatMoney(operation.row.balance)}`
+                ? `${operation.row.full_name} · баланс ${formatMoneyPrecise(operation.row.balance)}`
                 : "Операция с депозитом"}
             </DialogDescription>
           </DialogHeader>
@@ -645,19 +648,32 @@ function DepositOperationDialog({
 
             <Label className="grid gap-2">
               <span>{isScheduled ? "Сумма ₽ (пусто = весь остаток)" : "Сумма ₽"}</span>
-              <Input
-                disabled={mutation.isPending}
-                min={0}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder={isScheduled ? "Весь накопленный остаток" : undefined}
-                type="number"
-                value={amount}
-              />
+              <div className="flex gap-2">
+                <Input
+                  className="flex-1"
+                  disabled={mutation.isPending}
+                  min={0}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder={isScheduled ? "Весь накопленный остаток" : undefined}
+                  step="0.01"
+                  type="number"
+                  value={amount}
+                />
+                <Button
+                  className="shrink-0"
+                  disabled={mutation.isPending || balance <= 0}
+                  onClick={() => setAmount(String(balance))}
+                  type="button"
+                  variant="outline"
+                >
+                  Весь остаток
+                </Button>
+              </div>
               {submitted && !amountValid ? (
                 <span className="text-sm text-destructive">Введите положительную сумму.</span>
               ) : submitted && !withinBalance ? (
                 <span className="text-sm text-destructive">
-                  Сумма больше текущего баланса ({formatMoney(balance)}).
+                  Сумма больше текущего баланса ({formatMoneyPrecise(balance)}).
                 </span>
               ) : null}
             </Label>
@@ -785,9 +801,9 @@ function DepositOperationDialog({
                 ? ""
                 : isScheduled
                   ? `Запланировать выдачу депозита ${
-                      amountProvided ? `на ${formatMoney(normalized)}` : "(весь остаток)"
+                      amountProvided ? `на ${formatMoneyPrecise(normalized)}` : "(весь остаток)"
                     } для «${operation.row.full_name}» в ближайшей ведомости?`
-                  : `${OPERATION_TITLE[operation.type]} на ${formatMoney(
+                  : `${OPERATION_TITLE[operation.type]} на ${formatMoneyPrecise(
                       normalized,
                     )} для «${operation.row.full_name}»? Баланс депозита уменьшится.`}
             </AlertDialogDescription>
@@ -842,7 +858,9 @@ function DepositHistoryDialog({
         <DialogHeader>
           <DialogTitle>История депозита</DialogTitle>
           <DialogDescription>
-            {employee ? `${employee.full_name} · баланс ${formatMoney(employee.balance)}` : ""}
+            {employee
+              ? `${employee.full_name} · баланс ${formatMoneyPrecise(employee.balance)}`
+              : ""}
           </DialogDescription>
         </DialogHeader>
 
@@ -905,7 +923,7 @@ function DepositHistoryRow({ transaction }: { transaction: DepositTransaction })
         )}
       >
         {positive ? "+" : "−"}
-        {formatMoney(transaction.amount)}
+        {formatMoneyPrecise(transaction.amount)}
       </TableCell>
       <TableCell className="text-sm text-muted-foreground">
         {transaction.comment || transaction.reason || "—"}

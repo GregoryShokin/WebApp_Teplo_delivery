@@ -47,6 +47,7 @@ import {
   formatDate,
   formatDateTime,
   formatMoney,
+  formatMoneyPrecise,
   formatPercentValue,
   inferredOverrideValue,
   isDepositTargetPosition,
@@ -99,7 +100,7 @@ export function EmployeeDepositSection({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm text-muted-foreground">Текущий баланс</div>
               <div className="font-semibold tabular-nums">
-                {formatMoney(deposit.balance)} / цель {formatMoney(deposit.target)}
+                {formatMoneyPrecise(deposit.balance)} / цель {formatMoney(deposit.target)}
               </div>
             </div>
             <DepositBalanceBreakdown className="mt-2" deposit={deposit} />
@@ -118,7 +119,7 @@ export function EmployeeDepositSection({
           {surplus > 0 ? (
             <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <Badge className="w-fit rounded-md border-amber-200 bg-amber-100 text-amber-800 shadow-none">
-                Излишек {formatMoney(deposit.surplus)}
+                Излишек {formatMoneyPrecise(deposit.surplus)}
               </Badge>
               <span>Собрано больше цели — долг перед сотрудником, его нужно выдать.</span>
               <Button
@@ -355,7 +356,7 @@ function IndividualDepositDialog({
                     <div>
                       <div className="text-sm text-muted-foreground">Текущее состояние</div>
                       <div className="mt-1 text-xl font-semibold tabular-nums">
-                        Баланс: {formatMoney(deposit.balance)}
+                        Баланс: {formatMoneyPrecise(deposit.balance)}
                       </div>
                       <DepositBalanceBreakdown className="mt-2" deposit={deposit} />
                     </div>
@@ -562,7 +563,7 @@ function IndividualDepositDialog({
                               {transactionTypeLabel(transaction.transaction_type)}
                             </td>
                             <td className="border-b p-3 text-right tabular-nums">
-                              {formatMoney(transaction.amount)}
+                              {formatMoneyPrecise(transaction.amount)}
                             </td>
                             <td className="border-b p-3 text-muted-foreground">
                               {transaction.comment ?? transaction.reason ?? "—"}
@@ -633,7 +634,7 @@ function IndividualDepositDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>Выплатить остаток?</AlertDialogTitle>
             <AlertDialogDescription>
-              Выплатить {formatMoney(deposit?.balance)} сотруднику {employeeName}? Депозит
+              Выплатить {formatMoneyPrecise(deposit?.balance)} сотруднику {employeeName}? Депозит
               обнулится.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -666,8 +667,8 @@ function DepositBalanceBreakdown({
   const accumulatedBalance = numericValue(deposit.balance) - historicalBalance;
   return (
     <div className={cn("text-xs leading-5 text-muted-foreground", className)}>
-      из них исторический: {formatMoney(historicalBalance)}; накоплено приложением:{" "}
-      {formatMoney(accumulatedBalance)}
+      из них исторический: {formatMoneyPrecise(historicalBalance)}; накоплено приложением:{" "}
+      {formatMoneyPrecise(accumulatedBalance)}
     </div>
   );
 }

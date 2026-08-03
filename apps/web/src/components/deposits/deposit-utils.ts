@@ -86,6 +86,29 @@ export function formatMoney(value: string | number | null | undefined, emptyValu
   }).format(amount);
 }
 
+/**
+ * Деньги с копейками — но только когда они есть.
+ *
+ * `formatMoney` округляет до рубля, и остаток депозита 719,91 ₽ выглядит как «720 ₽».
+ * Пользователь вводит увиденное число в списание и получает отказ «сумма больше
+ * текущего баланса (720 ₽)» — сообщение противоречит вводу. Поэтому там, где по числу
+ * принимают решение (остаток в таблице, диалоги операций, суммы транзакций), показываем
+ * точное значение; целые суммы при этом остаются без хвоста «,00».
+ */
+export function formatMoneyPrecise(value: string | number | null | undefined, emptyValue = "—") {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) {
+    return emptyValue;
+  }
+  const fractionDigits = Math.abs(amount - Math.round(amount)) > 1e-9 ? 2 : 0;
+  return new Intl.NumberFormat("ru-RU", {
+    currency: "RUB",
+    maximumFractionDigits: fractionDigits,
+    minimumFractionDigits: fractionDigits,
+    style: "currency",
+  }).format(amount);
+}
+
 export function formatPercentValue(value: string | number | null | undefined) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) {

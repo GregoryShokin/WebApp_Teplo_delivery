@@ -35,6 +35,7 @@ import {
   depositRuleKeyByCategory,
   extractDepositSettings,
   formatMoney,
+  formatMoneyPrecise,
   formatPercentValue,
   isDepositTargetPosition,
   normalizeDecimalInput,
@@ -316,7 +317,7 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
                       {deposit.category ? EMPLOYEE_CATEGORY_LABELS[deposit.category] : "Не задана"}
                     </td>
                     <td className="border-b p-3 text-right tabular-nums">
-                      {formatMoney(deposit.initial_balance)}
+                      {formatMoneyPrecise(deposit.initial_balance)}
                     </td>
                     <td className="border-b p-2">
                       <Input
@@ -379,7 +380,7 @@ export function DepositsSettingsTab({ canWrite }: DepositsSettingsTabProps) {
             <AlertDialogTitle>Установить начальный баланс?</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingInitialBalance
-                ? `Установить ${formatMoney(pendingInitialBalance.amount)} для ${pendingInitialBalance.employee.full_name}? Это создаст транзакцию accrual с пометкой initial.`
+                ? `Установить ${formatMoneyPrecise(pendingInitialBalance.amount)} для ${pendingInitialBalance.employee.full_name}? Это создаст транзакцию accrual с пометкой initial.`
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
