@@ -11,7 +11,9 @@ from decimal import Decimal
 
 from app.services.pnl import formulas
 from app.services.pnl.projector import INVERTED_IIKO_METRICS, rubles
+from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources.deposits import _msk_bounds, _msk_date
+from app.services.pnl.sources.recognition import classify_origin
 from app.services.pnl.sources.waiting import month_share
 from app.services.pnl.types import LineStatus, LineValue
 
@@ -191,6 +193,35 @@ class TestWaitingMonthAttribution:
 
     def test_without_period_and_without_payment_belongs_nowhere(self) -> None:
         assert self._share("15862.24") is None
+
+
+class TestRecognitionOrigin:
+    """Чем подтверждён расход — «документа нет» и «документа не ждут» это разные новости."""
+
+    def test_self_billed_by_tariff_is_not_a_gap(self) -> None:
+        # Синапсис в режиме «счёт за период»: признание строится самоактом по окончании
+        # месяца, закрывающего не ждут вовсе. Подпись «без первички» читалась упрёком, и
+        # владелец справедливо возразил — счета от него приходят.
+        assert classify_origin("self_billed", "fixed_tariff") == recognition_source.ORIGIN_BY_TARIFF
+
+    def test_self_billed_where_document_is_expected_is_a_gap(self) -> None:
+        assert (
+            classify_origin("self_billed", "per_invoice")
+            == recognition_source.ORIGIN_AWAITING_DOCUMENT
+        )
+        assert classify_origin("self_billed", None) == recognition_source.ORIGIN_AWAITING_DOCUMENT
+
+    def test_contract_sources_speak_for_themselves(self) -> None:
+        assert classify_origin("lease", None) == recognition_source.ORIGIN_LEASE
+        assert classify_origin("utility", None) == recognition_source.ORIGIN_UTILITY
+
+    def test_counterparty_document_wins_over_mode(self) -> None:
+        # Микроэл тоже fixed_tariff, но по июлю приехал настоящий счёт — подпись обязана
+        # отличаться от соседней строки того же режима.
+        assert classify_origin("email", "fixed_tariff") == recognition_source.ORIGIN_DOCUMENT
+
+    def test_accrual_without_invoice_is_a_payment_line(self) -> None:
+        assert classify_origin(None, "agreement") == recognition_source.ORIGIN_PAYMENT_LINE
 
 
 class TestMoscowMonthBounds:

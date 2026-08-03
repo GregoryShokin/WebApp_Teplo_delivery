@@ -61,6 +61,21 @@ from app.services.pnl.sources import waiting as waiting_source
 WAITING_VERDICT = "excluded_accrual_counterparty"
 WAITING_TITLE = "Оплачено, расход берётся из документа"
 
+#: Чем подтверждён признанный расход — словами, которые не звучат упрёком там, где всё
+#: работает как задумано. Прежняя подпись «без первички (самоакт/расчёт)» стояла у Синапсиса,
+#: и владелец справедливо спросил, при чём тут отсутствие первички, если счета приходят:
+#: счета действительно приходят, но признание в режиме «счёт за период» строится самоактом по
+#: окончании месяца и закрывающего документа не ждёт вовсе. Пробел остался ровно один —
+#: ``awaiting_document``.
+ORIGIN_LABEL = {
+    recognition_source.ORIGIN_DOCUMENT: "документ от контрагента",
+    recognition_source.ORIGIN_LEASE: "начислено по договору аренды",
+    recognition_source.ORIGIN_UTILITY: "по расчёту арендодателя",
+    recognition_source.ORIGIN_BY_TARIFF: "начислено по тарифу — закрывающих не ждём",
+    recognition_source.ORIGIN_AWAITING_DOCUMENT: "закрывающего документа ещё нет",
+    recognition_source.ORIGIN_PAYMENT_LINE: "начислено по строке платежа, документа нет",
+}
+
 #: Направления зеркала iiko. ``total`` не показываем строкой — это и есть итог группы.
 DIRECTION_TITLE = {
     "rolls": "Роллы",
@@ -195,11 +210,11 @@ async def _recognition_group(
     )
     for detail in sorted(details, key=lambda item: -item.amount):
         period = _period_label(detail.service_period_start, detail.service_period_end)
-        primary = "документ есть" if detail.has_primary else "без первички (самоакт/расчёт)"
+        origin = ORIGIN_LABEL.get(detail.origin, detail.origin)
         group.rows.append(
             DrillRow(
                 title=names.get(detail.counterparty_id) or "Без контрагента",
-                subtitle=f"{period} · {primary}" if period else primary,
+                subtitle=f"{period} · {origin}" if period else origin,
                 row_date=detail.service_period_start,
                 amount=detail.amount,
                 kind="included",
