@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.db.session import get_session
+from app.services.pnl import drill as drill_service
 from app.services.pnl import projector
 from app.services.pnl.types import LineValue, PnlReport
 
@@ -173,6 +174,55 @@ def _report_out(report: PnlReport) -> PnlReportOut:
     )
 
 
+class DrillRowOut(BaseModel):
+    title: str
+    subtitle: str | None
+    row_date: date | None
+    amount: Decimal
+    kind: str
+
+    @field_serializer("amount")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class DrillGroupOut(BaseModel):
+    stream: str
+    title: str
+    amount: Decimal
+    note: str | None
+    counts_in_total: bool
+    rows: list[DrillRowOut]
+
+    @field_serializer("amount")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class DrillOut(BaseModel):
+    line_code: str
+    line_title: str
+    month: date
+    total: Decimal
+    undecomposed: list[str]
+    groups: list[DrillGroupOut]
+
+    @field_serializer("total")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+def _month_or_422(month: str) -> date:
+    try:
+        year, month_number = (int(part) for part in month.split("-"))
+        return date(year, month_number, 1)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Некорректный месяц: {month}",
+        ) from error
+
+
 @router.get(
     "",
     response_model=PnlReportOut,
@@ -193,14 +243,56 @@ async def get_pnl(
     Месяц принимается строкой ГГГГ-ММ, а не датой: у отчёта нет дня, и принимать полную дату
     значило бы делать вид, что 15 июля отличается от 1 июля.
     """
-    try:
-        year, month_number = (int(part) for part in month.split("-"))
-        first_day = date(year, month_number, 1)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Некорректный месяц: {month}",
-        ) from error
-
-    report = await projector.build_report(session, first_day)
+    report = await projector.build_report(session, _month_or_422(month))
     return _report_out(report)
+
+
+@router.get(
+    "/lines/{line_code}",
+    response_model=DrillOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_pnl_line(
+    line_code: str,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DrillOut:
+    """Из чего сложилась строка: контрагенты, сотрудники, документы, направления.
+
+    Отдельным запросом, а не полем отчёта: расшифровки нужны по одной строке за раз, а
+    восемьдесят разложений в каждом ответе утяжелили бы главный экран ради данных, которые
+    в девяти случаях из десяти никто не откроет.
+    """
+    drill = await drill_service.build_drill(session, line_code, _month_or_422(month))
+    if drill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Строки {line_code} нет в справочнике ОПиУ",
+        )
+    return DrillOut(
+        line_code=drill.line_code,
+        line_title=drill.line_title,
+        month=drill.month,
+        total=drill.total,
+        undecomposed=drill.undecomposed,
+        groups=[
+            DrillGroupOut(
+                stream=group.stream,
+                title=group.title,
+                amount=group.amount,
+                note=group.note,
+                counts_in_total=group.counts_in_total,
+                rows=[
+                    DrillRowOut(
+                        title=row.title,
+                        subtitle=row.subtitle,
+                        row_date=row.row_date,
+                        amount=row.amount,
+                        kind=row.kind,
+                    )
+                    for row in group.rows
+                ],
+            )
+            for group in drill.groups
+        ],
+    )

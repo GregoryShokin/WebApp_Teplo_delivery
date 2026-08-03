@@ -61,6 +61,13 @@ class PayrollMonth:
     other_penalties: Decimal = Decimal("0.00")
     #: По ролям — для будущего разреза по направлениям (Роллы / Пицца / Горячий цех).
     by_role: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+    #: Для расшифровки строки: (код строки ОПиУ, сотрудник) → начислено за месяц. Копится в
+    #: том же проходе, что и итоги, — отдельный проход по ведомостям повторил бы разбор
+    #: подневной детализации и правило «по востребованию», а расшифровка обязана объяснять
+    #: ровно ту сумму, которая стоит в строке.
+    by_employee: dict[tuple[str, uuid.UUID], Decimal] = field(
+        default_factory=lambda: defaultdict(Decimal)
+    )
     has_data: bool = False
 
 
@@ -157,11 +164,17 @@ async def build_payroll_month(
                 result.by_role[role] += amount
                 if role in COOK_PAYROLL_ROLES:
                     result.cook_pay += amount
+                    result.by_employee[("cook_payroll", line.employee_id)] += amount
                 elif role == CASHIER_ROLE:
                     result.cashier_pay += amount
+                    result.by_employee[("administrator_payroll", line.employee_id)] += amount
                 else:
                     result.admin_pay += amount
-                result.fund_accrual += money_decimal(day.get("fund_accrual"))
+                    result.by_employee[("admin_payroll", line.employee_id)] += amount
+                fund = money_decimal(day.get("fund_accrual"))
+                result.fund_accrual += fund
+                if fund:
+                    result.by_employee[("accumulation_fund", line.employee_id)] += fund
         else:
             # Подневной детализации нет — это административная ведомость. Её полумесячный
             # период целиком внутри месяца, поэтому строка относится к нему как есть.
@@ -178,18 +191,25 @@ async def build_payroll_month(
             result.by_role[str(line.role)] += amount
             if line.role in COOK_PAYROLL_ROLES:
                 result.cook_pay += amount
+                result.by_employee[("cook_payroll", line.employee_id)] += amount
             elif line.role == CASHIER_ROLE:
                 result.cashier_pay += amount
+                result.by_employee[("administrator_payroll", line.employee_id)] += amount
             else:
                 result.admin_pay += amount
-            result.fund_accrual += money_decimal(line.fund_accrual)
+                result.by_employee[("admin_payroll", line.employee_id)] += amount
+            fund = money_decimal(line.fund_accrual)
+            result.fund_accrual += fund
+            if fund:
+                result.by_employee[("accumulation_fund", line.employee_id)] += fund
 
-    for amount in on_demand.values():
+    for (employee_id, _period_month), amount in on_demand.items():
         if amount == 0:
             continue
         result.has_data = True
         result.admin_pay += amount
         result.by_role["Оклад по востребованию"] += amount
+        result.by_employee[("admin_payroll", employee_id)] += amount
 
     await _apply_adjustments(session, result, month_start, month_end)
     return result
@@ -220,10 +240,15 @@ async def _apply_adjustments(
         result.has_data = True
         if adjustment.type == "bonus":
             result.bonuses += amount
+            result.by_employee[("bonuses", adjustment.employee_id)] += amount
         elif is_audit_penalty(adjustment):
             result.audit_penalties += amount
+            result.by_employee[("audit_results", adjustment.employee_id)] -= amount
         else:
             result.other_penalties += amount
+            # Прочий штраф уменьшает зарплату поваров — в расшифровке он и должен стоять
+            # там же, отрицательной строкой, а не прятаться внутри итога.
+            result.by_employee[("cook_payroll", adjustment.employee_id)] -= amount
 
 
 def cook_payroll(month: PayrollMonth) -> Decimal:

@@ -89,3 +89,42 @@ export async function fetchPnlReport(month: string): Promise<PnlReport> {
   });
   return response.data;
 }
+
+/** Строка расшифровки. `kind` решает, как её читать, а не как покрасить. */
+export type DrillRowKind = "included" | "waiting" | "excluded" | "info";
+
+export type DrillRow = {
+  title: string;
+  subtitle: string | null;
+  row_date: string | null;
+  amount: string;
+  kind: DrillRowKind;
+};
+
+export type DrillGroup = {
+  stream: string;
+  title: string;
+  amount: string;
+  note: string | null;
+  /** Входит ли группа в итог строки. У «оплачено, документа нет» — нет. */
+  counts_in_total: boolean;
+  rows: DrillRow[];
+};
+
+export type PnlDrill = {
+  line_code: string;
+  line_title: string;
+  month: string;
+  total: string;
+  undecomposed: string[];
+  groups: DrillGroup[];
+};
+
+/** Из чего сложилась строка: контрагенты, сотрудники, документы, направления. */
+export async function fetchPnlLineDrill(line: string, month: string): Promise<PnlDrill> {
+  const response = await api.get<PnlDrill>(`/reports/pnl/lines/${encodeURIComponent(line)}`, {
+    params: { month },
+    timeout: 60_000,
+  });
+  return response.data;
+}

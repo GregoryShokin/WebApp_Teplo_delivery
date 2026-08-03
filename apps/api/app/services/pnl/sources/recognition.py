@@ -41,10 +41,29 @@ class RecognitionBucket:
 
 
 @dataclass(slots=True)
+class RecognitionDetail:
+    """Доля одного начисления, попавшая в месяц, — строка расшифровки.
+
+    Хранится всегда, а не по запросу: начислений за месяц полсотни, а собранные отдельным
+    проходом они разошлись бы с отчётом на той же развилке, где уже ошибались, — подстановке
+    статьи из карточки и делении периода по месяцам.
+    """
+
+    accrual_id: uuid.UUID
+    counterparty_id: uuid.UUID | None
+    article_id: uuid.UUID | None
+    amount: Decimal
+    service_period_start: date | None
+    service_period_end: date | None
+    has_primary: bool
+
+
+@dataclass(slots=True)
 class RecognitionLayer:
     """Признанный расход месяца в разрезе статей и пар «контрагент × статья»."""
 
     by_article: dict[uuid.UUID | None, RecognitionBucket] = field(default_factory=dict)
+    details: list[RecognitionDetail] = field(default_factory=list)
     by_pair: dict[tuple[uuid.UUID, uuid.UUID | None], Decimal] = field(
         default_factory=lambda: defaultdict(Decimal)
     )
@@ -119,6 +138,17 @@ async def build_recognition_layer(
                 bucket.counterparties.add(accrual.counterparty_id)
                 layer.by_pair[(accrual.counterparty_id, accrual.article_id)] += share
             layer.total += share
+            layer.details.append(
+                RecognitionDetail(
+                    accrual_id=accrual.id,
+                    counterparty_id=accrual.counterparty_id,
+                    article_id=article_id,
+                    amount=share,
+                    service_period_start=period_start,
+                    service_period_end=period_end,
+                    has_primary=not no_primary,
+                )
+            )
             if article_id is None:
                 layer.unattributed += share
             if no_primary:

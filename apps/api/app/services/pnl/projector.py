@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import PnlLine
 from app.services.pnl import formulas
 from app.services.pnl.sources import cashflow as cash_source
+from app.services.pnl.sources import deposits as deposits_source
 from app.services.pnl.sources import fixed_assets as fixed_assets_source
 from app.services.pnl.sources import iiko as iiko_source
 from app.services.pnl.sources import inventory as inventory_source
@@ -47,6 +48,56 @@ from app.services.pnl.types import (
 #: статусом, а не нулями: до неё данные в приложении неполны, и рисовать по ним прибыль —
 #: значит выдавать пробел за факт.
 ACCOUNTING_START = date(2026, 7, 1)
+
+#: Строка ОПиУ ← метрика зеркала iiko. Живёт на уровне модуля, потому что ту же карту читает
+#: расшифровка строки: собери она свою копию — разошлись бы молча.
+IIKO_LINE_METRIC = {
+    "revenue_gross_chernikova": "revenue_gross",
+    "revenue_net_chernikova": "revenue_net",
+    "food_cost_chernikova": "food_cost",
+    "courier_service": "courier_salary",
+    "writeoffs": "writeoff_cost",
+    "packaging_inventory": "packaging_result",
+    "pizza_box_inventory": "pizza_box_result",
+    "aux_goods": "aux_goods_invoices",
+}
+
+#: Метрики инвентаризации, знак которых переворачивается на границе «зеркало → строка».
+#:
+#: В iiko отрицательная сумма инвентаризации — НЕДОСТАЧА (товар ушёл со склада), положительная
+#: — излишек. В отчёте соглашение обратное и общее для всех блоков: величина расходной строки
+#: положительна, отрицательной приходит только компенсирующая. Без этого шага июльская
+#: недостача упаковки 30 810 ₽ стояла в блоке общепроизводственных со знаком минус и работала
+#: как доход, завышая EBITDA; излишек коробок 7 290,59 ₽ зеркально занижал прибыль. Владелец
+#: увидел это сразу — «минус тридцать тысяч, это плюсовая ревизия?».
+#:
+#: Инверсия сделана ЗДЕСЬ, а не в синке: зеркало обязано хранить то, что ответил iiko, иначе
+#: сверка с источником перестанет сходиться. Формулировка «знак сохраняется» в методологии
+#: относится к сложению ТОВАРНЫХ строк внутри метрики (брать модуль нельзя — излишки и
+#: недостачи схлопнутся), а не к знаку строки отчёта.
+#:
+#: Соседняя строка «Результаты ревизии» инвертируется в своём источнике
+#: (``sources/inventory.py``) — три строки из одного эндпоинта ведут себя одинаково.
+INVERTED_IIKO_METRICS = frozenset({"packaging_result", "pizza_box_result"})
+
+
+def rubles(amount: Decimal) -> str:
+    """Сумма по-русски: неразрывный пробел в разрядах, запятая в копейках.
+
+    Раньше каждый текст предупреждения делал ``f"{amount:,.2f}".replace(",", " ")`` — и
+    вместе с разделителем разрядов вычищал ЗАПЯТЫЕ САМОГО ПРЕДЛОЖЕНИЯ. Получалось «оплачено
+    10 995.59 ₽  документа за период ещё нет» и «за 2024  2025 год(ы)». Форматирование числа
+    не должно уметь трогать текст вокруг, поэтому оно живёт отдельной функцией.
+    """
+    whole, _, fraction = f"{amount:.2f}".partition(".")
+    sign = "−" if whole.startswith("-") else ""
+    digits = whole.lstrip("-")
+    groups = []
+    while len(digits) > 3:
+        groups.insert(0, digits[-3:])
+        digits = digits[:-3]
+    groups.insert(0, digits)
+    return f"{sign}{' '.join(groups)},{fraction}"
 
 
 def month_bounds(month: date) -> tuple[date, date]:
@@ -136,6 +187,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     await _apply_fixed_assets(session, lines, month_start)
     await _apply_taxes(session, lines, month_start)
     await _apply_payroll(session, lines, month_start, month_end)
+    await _apply_releases(session, lines, month_start, month_end, report)
     await _apply_inventory(session, lines, month_start, month_end, report)
     await _apply_iiko(session, lines, month_start)
 
@@ -258,6 +310,62 @@ async def _apply_payroll(
         )
 
 
+async def _apply_releases(
+    session: AsyncSession,
+    lines: dict[str, LineValue],
+    month_start: date,
+    month_end: date,
+    report: PnlReport,
+) -> None:
+    """Невостребованные обязательства перед сотрудниками: депозиты и накопительный фонд.
+
+    Ледджеры отвечают всегда, поэтому месяц без списаний — ПОДТВЕРЖДЁННЫЙ НОЛЬ, а не пробел.
+    За 26 месяцев истории списаний было одиннадцать: если бы пустой месяц читался как «нет
+    данных», строка «Списание невостребованных депозитов» делала бы чистую прибыль неполной
+    почти всегда — и предупреждение об этом перестали бы замечать.
+    """
+    releases = await deposits_source.build_release_month(
+        session, month_start, month_end, horizon_start=ACCOUNTING_START
+    )
+    _add_component(
+        lines,
+        "unclaimed_deposits_writeoff",
+        stream="payroll",
+        amount=releases.deposits_written_off,
+        status=(LineStatus.OK if releases.deposits_written_off else LineStatus.ZERO_CONFIRMED),
+        note="Депозиты уволенных, оставшиеся у бизнеса",
+    )
+    if releases.fund_forfeited:
+        # Отмена признанного расхода идёт в ТУ ЖЕ строку отрицательным компонентом: фонд
+        # начислялся расходом здесь, здесь же он и отменяется.
+        _add_component(
+            lines,
+            "accumulation_fund",
+            stream="payroll",
+            amount=-releases.fund_forfeited,
+            status=LineStatus.OK,
+            note="Списание фонда уволенных — отмена ранее начисленного расхода",
+        )
+    if releases.fund_forfeited_before_horizon:
+        years = ", ".join(
+            str(year)
+            for year in sorted(releases.fund_forfeited_years)
+            if year < ACCOUNTING_START.year
+        )
+        report.warnings.append(
+            Warning(
+                code="fund_forfeit_before_horizon",
+                line_code="accumulation_fund",
+                message=(
+                    f"Списано фондов за {years} на "
+                    f"{rubles(releases.fund_forfeited_before_horizon)} ₽. Начисления тех лет "
+                    "в отчёт не входили, поэтому отмена уменьшает расход месяца без своей пары"
+                ),
+                amount=releases.fund_forfeited_before_horizon,
+            )
+        )
+
+
 async def _apply_inventory(
     session: AsyncSession,
     lines: dict[str, LineValue],
@@ -318,18 +426,10 @@ async def _apply_iiko(
 ) -> None:
     """Выручка, фудкост и курьеры — из зеркала, наполняемого ночной джобой."""
     facts = await iiko_source.month_facts(session, month_start)
-    mapping = {
-        "revenue_gross_chernikova": "revenue_gross",
-        "revenue_net_chernikova": "revenue_net",
-        "food_cost_chernikova": "food_cost",
-        "courier_service": "courier_salary",
-        "writeoffs": "writeoff_cost",
-        "packaging_inventory": "packaging_result",
-        "pizza_box_inventory": "pizza_box_result",
-        "aux_goods": "aux_goods_invoices",
-    }
-    for line_code, metric in mapping.items():
+    for line_code, metric in IIKO_LINE_METRIC.items():
         amount = facts.get(metric)
+        if amount is not None and metric in INVERTED_IIKO_METRICS:
+            amount = -amount
         _add_component(
             lines,
             line_code,
@@ -496,8 +596,10 @@ def _collapse(line: LineValue) -> None:
 def _apply_percentages(lines: dict[str, LineValue]) -> None:
     """Процент от выручки для строк с известной суммой.
 
-    База — итоговая строка «Выручка». Если она неизвестна или неполна, проценты не считаются
-    вовсе: доля от неполной базы выглядит как факт и при этом врёт.
+    База — итоговая строка «Выручка». Неполная БАЗА по-прежнему отменяет все проценты: доля
+    от неизвестной выручки не значит ничего. А вот неполный ЧИСЛИТЕЛЬ процент не отменяет —
+    он показывается рядом с «≈» на самой сумме, и этот знак читается как оговорка. Пустая
+    колонка на месте доли расходов сообщала бы меньше, чем приблизительная цифра.
     """
     revenue = lines.get("revenue")
     if revenue is None or revenue.amount is None or revenue.amount == 0:
@@ -507,13 +609,31 @@ def _apply_percentages(lines: dict[str, LineValue]) -> None:
     for line in lines.values():
         if line.kind == "ratio" or line.amount is None:
             continue
-        if line.status not in (LineStatus.OK, LineStatus.ZERO_CONFIRMED, LineStatus.MANUAL):
+        if line.status not in (
+            LineStatus.OK,
+            LineStatus.ZERO_CONFIRMED,
+            LineStatus.MANUAL,
+            LineStatus.INCOMPLETE,
+        ):
             continue
         line.pct_of_revenue = (line.amount / revenue.amount).quantize(Decimal("0.0001"))
 
 
 def _ordered(lines: dict[str, LineValue], catalog: list[dict[str, Any]]) -> list[LineValue]:
-    return [lines[row["code"]] for row in sorted(catalog, key=lambda item: item["sort_order"])]
+    """Строки отчёта в порядке справочника, БЕЗ неработающих.
+
+    Закрытая точка (Гагарина) и снятая с учёта строка остаются в справочнике — они нужны
+    формулам и истории, — но в отчёт не выводятся вовсе: владелец 03.08.2026 попросил их
+    просто убрать. Бледная строка «не используется» ничего не сообщает и занимает место в
+    каскаде, который читают сверху вниз. Из СЧЁТА они и так исключены: ``_operand``
+    возвращает по ним ноль, а не пробел.
+    """
+    ordered = sorted(catalog, key=lambda item: item["sort_order"])
+    return [
+        lines[row["code"]]
+        for row in ordered
+        if lines[row["code"]].status is not LineStatus.NOT_USED
+    ]
 
 
 def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
@@ -545,9 +665,9 @@ def _warnings(
             Warning(
                 code="unmapped_cash",
                 message=(
-                    f"{cash.unmapped_count} проводок на {cash.unmapped:,.2f} ₽ не разнесены "
+                    f"{cash.unmapped_count} проводок на {rubles(cash.unmapped)} ₽ не разнесены "
                     "по статьям — отчёт неполон ровно на эту сумму"
-                ).replace(",", " "),
+                ),
                 amount=cash.unmapped,
             )
         )
@@ -556,9 +676,9 @@ def _warnings(
             Warning(
                 code="recognition_unattributed",
                 message=(
-                    f"Признанный расход на {recognition.unattributed:,.2f} ₽ без статьи ДДС: "
-                    "в отчёт он не попал"
-                ).replace(",", " "),
+                    f"Признанный расход на {rubles(recognition.unattributed)} ₽ без статьи "
+                    "ДДС: в отчёт он не попал"
+                ),
                 amount=recognition.unattributed,
             )
         )
@@ -570,8 +690,8 @@ def _warnings(
                     code="waiting_document",
                     line_code=line.code,
                     message=(
-                        f"«{line.title}»: оплачено {paid:,.2f} ₽, документа за период ещё нет"
-                    ).replace(",", " "),
+                        f"«{line.title}»: оплачено {rubles(paid)} ₽, документа за период ещё нет"
+                    ),
                     amount=paid,
                 )
             )

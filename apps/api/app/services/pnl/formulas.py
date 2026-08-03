@@ -134,21 +134,35 @@ def _ratio(
     formula: dict[str, Any],
     lines: dict[str, LineValue],
 ) -> tuple[Decimal | None, list[str]]:
-    """Рентабельность. Считается только когда числитель И знаменатель полностью известны.
+    """Рентабельность. Неполнота не прячет показатель, а переносится на него.
 
-    Процент от неполной базы хуже отсутствия процента: он выглядит как факт, читается как
-    факт и при этом врёт. Поэтому неполный числитель обнуляет и сам показатель.
+    Раньше неполный числитель обнулял процент целиком — из опасения, что доля от неполной
+    базы выглядит как факт. Опасение верное, вывод оказался слишком резким: 03.08.2026 одна
+    неприехавшая УПД по контекстной рекламе стёрла из июльского отчёта ВСЕ рентабельности,
+    включая ту единственную, ради которой отчёт и открывают. Пустая ячейка при этом сообщает
+    меньше, чем «≈ 23,6 %» рядом с «≈» на самой EBITDA.
+
+    Поэтому неполный ЧИСЛИТЕЛЬ показатель не отменяет: он считается от известных слагаемых,
+    а неполнота передаётся статусом и списком недостающих строк — тем же механизмом, что и у
+    сумм.
+
+    А вот неполный ЗНАМЕНАТЕЛЬ отменяет по-прежнему, и разница здесь не косметическая.
+    Числитель неполон на величину недостающего документа — процент смещается на проценты.
+    Знаменатель у нас всегда выручка: пока она не подтянулась из iiko, доля считается от
+    остатка вроде −1 428 ₽ и выдаёт «≈ 100 %» на пустом месяце. Такую цифру нельзя показать
+    даже с оговоркой.
     """
     num = lines.get(formula["num"])
     den = lines.get(formula["den"])
     if num is None or den is None:
         raise FormulaError("ratio ссылается на несуществующую строку")
-    if num.status is LineStatus.INCOMPLETE or den.status is LineStatus.INCOMPLETE:
-        return None, list(num.missing_lines) + list(den.missing_lines)
+    if den.status is LineStatus.INCOMPLETE:
+        return None, list(den.missing_lines)
+    missing_from_operands = list(num.missing_lines) + list(den.missing_lines)
     if num.amount is None or den.amount is None or den.amount == 0:
         missing = [c for c, v in ((formula["num"], num), (formula["den"], den)) if v.amount is None]
-        return None, missing
-    return (num.amount / den.amount).quantize(Decimal("0.0001")), []
+        return None, missing + missing_from_operands
+    return (num.amount / den.amount).quantize(Decimal("0.0001")), missing_from_operands
 
 
 def _dependencies(formula: dict[str, Any], catalog: list[dict[str, Any]]) -> set[str]:

@@ -24,9 +24,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { fetchPnlReport, type LineStatus, type PnlLine, type PnlReport } from "./api";
+import {
+  fetchPnlLineDrill,
+  fetchPnlReport,
+  type LineStatus,
+  type PnlDrill,
+  type PnlLine,
+  type PnlReport,
+} from "./api";
 
 const MONTH_NAMES = [
   "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -85,9 +99,13 @@ const STATUS_LABEL: Partial<Record<LineStatus, string>> = {
   not_used: "не используется",
   before_accounting_start: "учёт не вёлся",
   manual: "вручную",
+  incomplete: "неполно",
+  ok: "",
+  zero_confirmed: "",
 };
 
 const STATUS_VARIANT: Partial<Record<LineStatus, "secondary" | "outline" | "destructive">> = {
+  incomplete: "outline",
   overdue_document: "destructive",
   needs_review: "destructive",
   waiting_document: "outline",
@@ -96,10 +114,17 @@ const STATUS_VARIANT: Partial<Record<LineStatus, "secondary" | "outline" | "dest
 
 function LineAmount({ line }: { line: PnlLine }) {
   if (line.kind === "ratio") {
-    return <span className="tabular-nums">{formatPercent(line.amount)}</span>;
+    // «≈» переносится и на рентабельность: она посчитана от неполного числителя, и знак
+    // оговорки должен стоять там же, где стоит у самой суммы.
+    return (
+      <span className="tabular-nums">
+        {line.status === "incomplete" && line.amount !== null ? "≈ " : ""}
+        {formatPercent(line.amount)}
+      </span>
+    );
   }
   if (line.amount === null) {
-    const label = STATUS_LABEL[line.status] ?? line.status;
+    const label = STATUS_LABEL[line.status] || line.status;
     return (
       <Badge variant={STATUS_VARIANT[line.status] ?? "secondary"} className="font-normal">
         {label}
@@ -115,7 +140,13 @@ function LineAmount({ line }: { line: PnlLine }) {
   );
 }
 
-function ReportTable({ report }: { report: PnlReport }) {
+function ReportTable({
+  report,
+  onOpenLine,
+}: {
+  report: PnlReport;
+  onOpenLine: (code: string) => void;
+}) {
   const visible = report.lines.filter((line) => line.kind !== "service");
   return (
     <div className="overflow-x-auto">
@@ -132,6 +163,9 @@ function ReportTable({ report }: { report: PnlReport }) {
           {visible.map((line) => {
             const isTotal = line.kind === "subtotal";
             const isRatio = line.kind === "ratio";
+            // Расшифровка есть у строк с источниками. Подытог раскрывать нечем — он и так
+            // виден слагаемыми, стоящими под ним в таблице.
+            const openable = line.drill_available && !isTotal && !isRatio;
             return (
               <tr
                 key={line.code}
@@ -139,11 +173,28 @@ function ReportTable({ report }: { report: PnlReport }) {
                   "border-b border-muted/40",
                   isTotal ? "bg-muted/40 font-semibold" : "",
                   isRatio ? "text-muted-foreground" : "",
-                  line.status === "not_used" ? "opacity-45" : "",
+                  openable ? "cursor-pointer hover:bg-muted/50" : "",
                 ].join(" ")}
+                onClick={openable ? () => onOpenLine(line.code) : undefined}
+                tabIndex={openable ? 0 : undefined}
+                onKeyDown={
+                  openable
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onOpenLine(line.code);
+                        }
+                      }
+                    : undefined
+                }
               >
                 <td className="py-1.5" style={{ paddingLeft: `${line.level * 16}px` }}>
                   {line.title}
+                  {openable && (
+                    <span className="ml-1.5 text-xs text-muted-foreground/60" aria-hidden>
+                      ›
+                    </span>
+                  )}
                   {line.status === "incomplete" && line.missing_lines.length > 0 && (
                     <span className="ml-2 text-xs font-normal text-amber-600">
                       неполно: нет {line.missing_lines.length} источников
@@ -167,6 +218,105 @@ function ReportTable({ report }: { report: PnlReport }) {
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const STREAM_TITLE: Record<string, string> = {
+  recognition: "признание",
+  cashflow: "касса",
+  cashflow_excluded: "касса",
+  payroll: "зарплата",
+  iiko: "iiko",
+  inventory: "ревизии",
+  manual: "вручную",
+};
+
+function formatRowDate(value: string | null): string {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  return `${day}.${month}.${year.slice(2)}`;
+}
+
+/** Расшифровка строки: кто и на сколько её сформировал.
+ *
+ * Группы «не в итоге» показываются наравне с остальными и НЕ приглушаются: именно они
+ * отвечают на вопрос, с которым сюда чаще всего приходят, — «я заплатил, где эти деньги».
+ */
+function DrillPanel({
+  drill,
+  loading,
+  error,
+}: {
+  drill: PnlDrill | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="mt-6 space-y-2">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-5 w-full" />
+        <Skeleton className="h-5 w-1/2" />
+      </div>
+    );
+  }
+  if (error) {
+    return <p className="mt-6 text-sm text-destructive">{error}</p>;
+  }
+  if (!drill) return null;
+  if (drill.groups.length === 0) {
+    return (
+      <p className="mt-6 text-sm text-muted-foreground">
+        {drill.undecomposed[0] ?? "Расшифровки у этой строки нет."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-6 space-y-6">
+      {drill.groups.map((group) => (
+        <div key={`${group.stream}-${group.title}`}>
+          <div className="flex items-baseline justify-between gap-3 border-b pb-1">
+            <div className="text-sm font-medium">
+              {group.title}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {STREAM_TITLE[group.stream] ?? group.stream}
+              </span>
+            </div>
+            <div className="tabular-nums text-sm font-medium">
+              {formatMoney(group.amount)} ₽
+            </div>
+          </div>
+          {group.note && (
+            <p className="mt-1 text-xs text-muted-foreground">{group.note}</p>
+          )}
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {group.rows.map((row, index) => (
+                <tr key={`${row.title}-${index}`} className="border-b border-muted/30">
+                  <td className="w-16 py-1 text-xs tabular-nums text-muted-foreground">
+                    {formatRowDate(row.row_date)}
+                  </td>
+                  <td className="py-1">
+                    {row.title}
+                    {row.subtitle && (
+                      <div className="text-xs text-muted-foreground">{row.subtitle}</div>
+                    )}
+                  </td>
+                  <td className="w-32 py-1 text-right tabular-nums">
+                    {formatMoney(row.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div className="flex justify-between border-t pt-2 text-sm font-semibold">
+        <span>Итого в строке</span>
+        <span className="tabular-nums">{formatMoney(drill.total)} ₽</span>
+      </div>
     </div>
   );
 }
@@ -215,6 +365,10 @@ export function PnlRoute() {
   const [report, setReport] = useState<PnlReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openLine, setOpenLine] = useState<string | null>(null);
+  const [drill, setDrill] = useState<PnlDrill | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState<string | null>(null);
 
   const load = useCallback((target: string) => {
     setLoading(true);
@@ -232,6 +386,33 @@ export function PnlRoute() {
     load(month);
   }, [month, load]);
 
+  // Расшифровка запрашивается по клику, а не вместе с отчётом: восемьдесят разложений в
+  // каждом ответе утяжелили бы главный экран ради данных, которые чаще всего не откроют.
+  useEffect(() => {
+    if (openLine === null) return;
+    let cancelled = false;
+    setDrillLoading(true);
+    setDrillError(null);
+    setDrill(null);
+    fetchPnlLineDrill(openLine, month)
+      .then((value) => {
+        if (!cancelled) setDrill(value);
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setDrillError(
+          cause instanceof Error ? cause.message : "Не удалось загрузить расшифровку",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setDrillLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openLine, month]);
+
+  const openedLine = report?.lines.find((line) => line.code === openLine) ?? null;
   const canGoBack = month > FIRST_MONTH;
   const canGoForward = month < months[0];
 
@@ -301,11 +482,30 @@ export function PnlRoute() {
             </Card>
           )}
           <Card className="p-4">
-            <ReportTable report={report} />
+            <ReportTable report={report} onOpenLine={setOpenLine} />
           </Card>
           <Reconciliation report={report} />
         </>
       )}
+
+      <Sheet open={openLine !== null} onOpenChange={(next) => !next && setOpenLine(null)}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{openedLine?.title ?? drill?.line_title ?? "Расшифровка"}</SheetTitle>
+            <SheetDescription>
+              {monthLabel(month)}
+              {openedLine?.amount !== null && openedLine?.amount !== undefined && (
+                <>
+                  {" · "}
+                  {openedLine.status === "incomplete" ? "≈ " : ""}
+                  {formatMoney(openedLine.amount)} ₽
+                </>
+              )}
+            </SheetDescription>
+          </SheetHeader>
+          <DrillPanel drill={drill} loading={drillLoading} error={drillError} />
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
