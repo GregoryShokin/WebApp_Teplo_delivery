@@ -109,7 +109,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("акт за факт показывает и платёж, и расход периода", async ({ page }) => {
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
 
   // Различаем строки по НОМЕРУ документа, а не по дате: обе бумаги подписаны 17.07.2026,
   // и по дате в строку попадали бы обе.
@@ -124,7 +124,7 @@ test("акт за факт показывает и платёж, и расход
 });
 
 test("аванс помечен как аванс и расхода не показывает", async ({ page }) => {
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
 
   const row = page.getByRole("row").filter({ hasText: "Возмещение: электричество, 07.2026" });
   await expect(row).toContainText("65 000");
@@ -133,7 +133,7 @@ test("аванс помечен как аванс и расхода не пок�
 });
 
 test("два акта выбираются вместе и уходят одним переводом", async ({ page }) => {
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
 
   const boxes = page.getByRole("checkbox", { name: "Выбрать для общего платежа" });
   await expect(boxes).toHaveCount(2);
@@ -182,7 +182,7 @@ test("окно разбора спрашивает поток, период и �
     }),
   );
 
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
   await page.getByRole("button", { name: "Разобрать" }).click();
 
   const dialog = page.getByRole("dialog");
@@ -213,7 +213,7 @@ test("снимок показывается картинкой и увеличи
     }),
   );
 
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
   await page.getByRole("button", { name: "Разобрать" }).click();
   const dialog = page.getByRole("dialog");
 

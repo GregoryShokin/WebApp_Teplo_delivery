@@ -186,7 +186,7 @@ export function LocationUtilities({
           <div className="text-sm font-medium">Коммунальные услуги</div>
           <p className="mt-1 text-xs text-muted-foreground">
             {accounts.length > 0
-              ? `Потоков: ${accounts.length}. Платёжки приходят на «Страницу на оплату».`
+              ? `Потоков: ${accounts.length}. Платёжки приходят в «Финансы → Платежи».`
               : "Потоки не заведены — принесённую квитанцию не к чему привязать"}
           </p>
         </div>

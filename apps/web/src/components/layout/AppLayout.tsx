@@ -15,7 +15,6 @@ import {
   CreditCard,
   Flame,
   Home,
-  Inbox,
   Landmark,
   LogOut,
   Menu,
@@ -128,12 +127,9 @@ const navGroups: NavGroup[] = [
         icon: Warehouse,
         section: "counterparties",
       },
-      {
-        label: "Страница на оплату",
-        href: "/payment-page",
-        icon: Inbox,
-        section: "counterparties",
-      },
+      // «Страница на оплату» переехала вкладкой «Активные» на «Финансы → Платежи»
+      // (решение владельца 03.08): счета из ЭДО, почты и телеграм-бота разбираются там же,
+      // где живёт остальной платёжный контур.
     ],
   },
   {

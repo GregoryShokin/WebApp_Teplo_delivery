@@ -104,7 +104,7 @@ test("реквизиты, которых нет в счёте, подставл�
   await mockCommon(page);
   await page.route("**/api/v1/payment-page/intakes**", (route) => fulfillJson(route, [intake()]));
 
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
   await page.getByRole("button", { name: "Разобрать" }).first().click();
 
   const dialog = page.getByRole("dialog");
@@ -141,7 +141,7 @@ test("расчётный счёт в счёте разошёлся с карто
     ]),
   );
 
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
   await page.getByRole("button", { name: "Разобрать" }).first().click();
 
   const dialog = page.getByRole("dialog");
@@ -166,7 +166,7 @@ test("правки прошлого разбора важнее и счёта, �
     ]),
   );
 
-  await page.goto("/payment-page");
+  await page.goto("/finance/payments");
   await page.getByRole("button", { name: "Разобрать" }).first().click();
 
   const dialog = page.getByRole("dialog");

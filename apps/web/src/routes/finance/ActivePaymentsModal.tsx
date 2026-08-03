@@ -248,7 +248,8 @@ export function ActivePaymentsModal({
 
   function goReview() {
     onOpenChange(false);
-    navigateTo("/payment-page");
+    // Разбор живёт вкладкой «Активные» страницы «Платежи» — там же, где счёт и появился.
+    navigateTo("/finance/payments");
   }
 
   function sendButton(row: PaymentRow) {

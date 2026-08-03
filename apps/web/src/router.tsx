@@ -10,7 +10,6 @@ import { CourierShiftRoute } from "@/routes/couriers/shift";
 import { PayrollRoute } from "@/routes/payroll";
 import { DdsRoute } from "@/routes/dds";
 import { KassaRoute } from "@/routes/kassa";
-import { PaymentPageRoute } from "@/routes/payment-page";
 import { FinanceCounterpartiesRoute } from "@/routes/finance/counterparties";
 import { FinancePaymentsRoute } from "@/routes/finance/payments";
 import { WarehouseInvoicesRoute } from "@/routes/warehouse";
@@ -90,8 +89,10 @@ const routes: AppRoute[] = [
     ],
   },
   {
+    // «Страница на оплату» переехала вкладкой «Активные» на «Платежи» (решение владельца
+    // 03.08). Старый URL держим редиректом: на него ссылались из FAB-модалки и закладок.
     path: "/payment-page",
-    render: ({ navigate }) => <PaymentPageRoute onNavigate={navigate} />,
+    render: ({ navigate }) => <Redirect to="/finance/payments" navigate={navigate} />,
   },
   {
     // Вкладки — путями (как /dds/*): на них ссылаются извне, и состояние в React
@@ -111,6 +112,12 @@ const routes: AppRoute[] = [
       {
         path: "edo",
         render: ({ navigate }) => <FinancePaymentsRoute activeTab="edo" onNavigate={navigate} />,
+      },
+      {
+        path: "edo-counterparties",
+        render: ({ navigate }) => (
+          <FinancePaymentsRoute activeTab="edo-counterparties" onNavigate={navigate} />
+        ),
       },
       {
         // Неизвестный хвост — не «Раздел не найден», а первая вкладка: ссылка на

@@ -107,8 +107,13 @@ function statusBadge(item: PaymentIntake): { label: string; cls: string } {
   return { label: STATUS_LABELS[item.status] ?? item.status, cls: STATUS_BADGE[item.status] ?? "" };
 }
 
-// onNavigate придёт в дело в Фазе 3 (оплата со страницы); сейчас не используется.
-export function PaymentPageRoute(_props: { onNavigate: (path: string) => void }) {
+/** Журнал входящих счетов на оплату — вкладка «Активные» страницы «Платежи».
+ *
+ *  Жил отдельной страницей «Страница на оплату» и переехал сюда целиком (решение
+ *  владельца 03.08): это основной модуль обработки платёжек из ЭДО СБИС, почты и
+ *  телеграм-бота, а прежняя вкладка «Активные» показывала те же счета витриной без
+ *  единого действия — две правды об одной строке в соседних пунктах меню. */
+export function PaymentIntakesTab() {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState("active");
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -282,14 +287,11 @@ export function PaymentPageRoute(_props: { onNavigate: (path: string) => void })
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-medium">Страница на оплату</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Счета на оплату от непроизводственных контрагентов (услуги, маркетинг, подписки):
-            распознанные контрагент и сумма. Склад не затрагивают. Приходят почтой, по ЭДО и
-            фотографией из рук. Подтвердите счёт — он будет готов к оплате в банк прямо отсюда.
-          </p>
-        </div>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Счета от непроизводственных контрагентов (услуги, маркетинг, подписки): распознанные
+          контрагент и сумма. Склад не затрагивают. Приходят почтой, по ЭДО и фотографией из рук.
+          Подтвердите счёт — он будет готов к оплате в банк прямо отсюда.
+        </p>
         <div className="flex items-center gap-2">
           {/* Третий источник рядом с почтой и ЭДО: коммунальную квитанцию приносят снимком. */}
           <input

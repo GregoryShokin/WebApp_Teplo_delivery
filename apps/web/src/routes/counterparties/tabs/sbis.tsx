@@ -120,7 +120,7 @@ function StatusBadge({ doc }: { doc: SbisDocument }) {
   if (doc.intake_status === "sent_to_recognition") {
     return (
       <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-700">
-        Счёт-письмо — в разборе на «Странице на оплату»
+        Счёт-письмо — в разборе на вкладке «Активные»
       </Badge>
     );
   }

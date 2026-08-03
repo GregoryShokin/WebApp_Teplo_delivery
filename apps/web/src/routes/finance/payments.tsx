@@ -14,7 +14,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 
+import { SbisCounterpartiesTab } from "@/routes/counterparties/tabs/sbis-counterparties";
 import { SbisTab } from "@/routes/counterparties/tabs/sbis";
+import { PaymentIntakesTab } from "@/routes/payment-page";
 import { getPayments, type PaymentRow } from "./payments-api";
 
 const money = new Intl.NumberFormat("ru-RU", {
@@ -39,12 +41,13 @@ function methodLabel(row: PaymentRow): string {
 /** Вкладки страницы «Платежи». Живут в URL, а не в состоянии: без этого нельзя дать
  *  ссылку «вот здесь новые контрагенты», а редирект со старого /warehouse/sbis
  *  приземлял человека на «Активные» вместо реестра ЭДО, ради которого он и шёл. */
-export type PaymentsTab = "active" | "history" | "edo";
+export type PaymentsTab = "active" | "history" | "edo" | "edo-counterparties";
 
 const TAB_PATHS: Record<PaymentsTab, string> = {
   active: "/finance/payments",
   history: "/finance/payments/history",
   edo: "/finance/payments/edo",
+  "edo-counterparties": "/finance/payments/edo-counterparties",
 };
 
 export function FinancePaymentsRoute({
@@ -55,24 +58,29 @@ export function FinancePaymentsRoute({
   onNavigate?: (path: string) => void;
 }) {
   const permissions = usePermissions();
-  // Агрегатор различает только active/all — «Вся история» это его scope=all.
-  const scope = activeTab === "history" ? "all" : "active";
+  const canOperate = permissions.canPerformAction("counterparties.operate");
+  // Разбор карточки контрагента — правка профиля, а она под ADMIN: те же два права,
+  // что и в реестре контрагентов.
+  const canAdmin =
+    permissions.canPerformAction("counterparties.admin") ||
+    permissions.canPerformAction("finance.counterparties.edit");
+  // Агрегатор нужен ровно одной вкладке: «Активные» показывают очередь на оплату
+  // (журнал входящих счетов), а не сводку платёжного контура.
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["finance-payments", scope],
-    queryFn: () => getPayments(scope),
-    enabled: activeTab !== "edo",
+    queryKey: ["finance-payments", "all"],
+    queryFn: () => getPayments("all"),
+    enabled: activeTab === "history",
   });
 
   const items = data?.items ?? [];
-  const buckets = data?.buckets ?? [];
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
       <div>
         <h1 className="text-2xl font-semibold">Платежи</h1>
         <p className="text-sm text-muted-foreground">
-          Все исходящие платежи платёжного контура: счета на оплату, свободные траты и
-          предоплаты, резервы Сейфа и Кассы.
+          Счета на оплату из почты, ЭДО и от телеграм-бота — и вся история исходящих платежей
+          контура: свободные траты, предоплаты, резервы Сейфа и Кассы.
         </p>
       </div>
 
@@ -85,32 +93,17 @@ export function FinancePaymentsRoute({
             <TabsTrigger value="active">Активные</TabsTrigger>
             <TabsTrigger value="history">Вся история</TabsTrigger>
             <TabsTrigger value="edo">ЭДО (СБИС)</TabsTrigger>
+            <TabsTrigger value="edo-counterparties">Новые контрагенты</TabsTrigger>
           </TabsList>
         </Tabs>
-        {activeTab === "active" ? (
-          <div className="flex flex-wrap gap-2">
-            {buckets.map((b) => (
-              <span
-                key={b.key}
-                className="rounded-full border px-3 py-1 text-xs text-muted-foreground"
-              >
-                {b.label}: <span className="font-semibold text-foreground">{b.count}</span>
-              </span>
-            ))}
-          </div>
-        ) : null}
       </div>
 
-      {activeTab === "edo" ? (
-        <SbisTab
-          canOperate={permissions.canPerformAction("counterparties.operate")}
-          // Разбор карточки нового контрагента — правка профиля, а она под ADMIN:
-          // те же два права, что и в реестре контрагентов.
-          canAdmin={
-            permissions.canPerformAction("counterparties.admin") ||
-            permissions.canPerformAction("finance.counterparties.edit")
-          }
-        />
+      {activeTab === "active" ? (
+        <PaymentIntakesTab />
+      ) : activeTab === "edo-counterparties" ? (
+        <SbisCounterpartiesTab canOperate={canOperate} canAdmin={canAdmin} />
+      ) : activeTab === "edo" ? (
+        <SbisTab canOperate={canOperate} canAdmin={canAdmin} />
       ) : (
       <div className="rounded-lg border">
         <Table>

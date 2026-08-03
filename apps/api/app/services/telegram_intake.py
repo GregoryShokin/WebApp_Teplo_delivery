@@ -196,12 +196,12 @@ def _row_line(row: EmailInvoiceIntake) -> str:
         return f"🔁 {title}: за этот месяц документ уже заведён — второй долг не создан"
     blocking = utility.get("blocking") or []
     reason = "; ".join(blocking) if blocking else (row.error or "разобрать не удалось")
-    return f"⚠️ Нужны руки: {reason}.\n   Откройте «Страницу на оплату» → «Разобрать»"
+    return f"⚠️ Нужны руки: {reason}.\n   Откройте «Финансы → Платежи» → «Разобрать»"
 
 
 def _reply_text(rows: list[EmailInvoiceIntake]) -> str:
     if not rows:
-        return "Ничего не разобрал — откройте «Страницу на оплату»"
+        return "Ничего не разобрал — откройте «Финансы → Платежи»"
     head = "Принял документ" if len(rows) == 1 else f"Принял, документов в файле: {len(rows)}"
     return head + "\n" + "\n".join(_row_line(row) for row in rows)
 
