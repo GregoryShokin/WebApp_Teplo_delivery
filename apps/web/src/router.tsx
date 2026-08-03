@@ -201,6 +201,10 @@ const routes: AppRoute[] = [
         render: ({ navigate }) => <PayrollRoute activeTab="advances" onNavigate={navigate} />,
       },
       {
+        path: "deposits",
+        render: ({ navigate }) => <PayrollRoute activeTab="deposits" onNavigate={navigate} />,
+      },
+      {
         path: "admin",
         render: ({ navigate }) => <PayrollRoute activeTab="admin" onNavigate={navigate} />,
       },
@@ -251,8 +255,10 @@ const routes: AppRoute[] = [
     ],
   },
   {
+    // Депозиты производства переехали вкладкой в «Зарплату» (решение владельца 03.08).
+    // Старый URL держим редиректом: он был пунктом меню и осел в закладках.
     path: "/deposits",
-    render: ({ navigate }) => <PayrollDepositsRoute onNavigate={navigate} />,
+    render: ({ navigate }) => <Redirect to="/payroll/deposits" navigate={navigate} />,
   },
   {
     path: "/payroll-adjustments",

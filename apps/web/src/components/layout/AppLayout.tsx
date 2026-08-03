@@ -18,7 +18,6 @@ import {
   Landmark,
   LogOut,
   Menu,
-  PiggyBank,
   ReceiptText,
   Settings,
   UsersRound,
@@ -72,15 +71,16 @@ const navGroups: NavGroup[] = [
     items: [{ label: "Главная", href: "/", icon: Home }],
   },
   {
-    title: "Кадры",
-    items: [{ label: "Штат", href: "/staff", icon: UsersRound, section: "staff" }],
-  },
-  {
-    title: "Зарплата",
+    // «Кадры» с единственным «Штатом» и «Зарплата» — один и тот же контур сотрудника
+    // (решение владельца 03.08). Раздел из одного пункта — это заголовок над пунктом,
+    // а не раздел. «Расчёты» переименованы в «Зарплату»: без группового заголовка слово
+    // «Расчёты» ни о чём не говорит. Депозиты ушли вкладкой внутрь — они часть расчёта
+    // с сотрудником, как фонд, премии и авансы.
+    title: "Сотрудники",
     items: [
-      { label: "Расчёты", href: "/payroll", icon: Banknote, section: "payroll" },
-      { label: "Депозиты", href: "/deposits", icon: PiggyBank, section: "payroll.deposits" },
-      { label: "График сотрудников", href: "/schedule", icon: CalendarDays, section: "schedule" },
+      { label: "Штат", href: "/staff", icon: UsersRound, section: "staff" },
+      { label: "Зарплата", href: "/payroll", icon: Banknote, section: "payroll" },
+      { label: "График", href: "/schedule", icon: CalendarDays, section: "schedule" },
       { label: "Исходные данные", href: "/source-data", icon: ClipboardList, section: "source-data" },
     ],
   },
@@ -98,7 +98,10 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: "Финансы",
+    // Контрагенты и накладные — один контур и по смыслу, и по правам (общая секция
+    // counterparties). «Управление складом» с единственным пунктом «Накладные» было тем же
+    // заголовком-над-пунктом, что и «Кадры». Сюда же лягут будущие заказы поставщикам.
+    title: "Закупки",
     items: [
       {
         label: "Контрагенты",
@@ -106,21 +109,6 @@ const navGroups: NavGroup[] = [
         icon: Building2,
         section: "counterparties",
       },
-      { label: "Платежи", href: "/finance/payments", icon: CreditCard, section: "counterparties" },
-      { label: "ДДС", href: "/dds", icon: Banknote, section: "finance.dds" },
-      {
-        label: "Платёжный календарь",
-        href: "/payment-calendar",
-        icon: CalendarClock,
-        section: "finance.payment-calendar",
-      },
-      { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
-      { label: "Касса", href: "/kassa", icon: Wallet, section: "kassa" },
-    ],
-  },
-  {
-    title: "Управление складом",
-    items: [
       {
         label: "Накладные",
         href: "/warehouse/invoices",
@@ -130,6 +118,32 @@ const navGroups: NavGroup[] = [
       // «Страница на оплату» переехала вкладкой «Активные» на «Финансы → Платежи»
       // (решение владельца 03.08): счета из ЭДО, почты и телеграм-бота разбираются там же,
       // где живёт остальной платёжный контур.
+    ],
+  },
+  {
+    // Только операционные деньги: то, где ежедневно работают руками. Баланс — витрина,
+    // его место в «Отчётах»; ДДС остаётся здесь, потому что это рабочий стол разбора
+    // выписки, а не отчёт о движении (тот появится в «Отчётах» отдельной страницей).
+    title: "Финансы",
+    items: [
+      { label: "Платежи", href: "/finance/payments", icon: CreditCard, section: "counterparties" },
+      { label: "Касса", href: "/kassa", icon: Wallet, section: "kassa" },
+      { label: "ДДС", href: "/dds", icon: Banknote, section: "finance.dds" },
+      {
+        label: "Платёжный календарь",
+        href: "/payment-calendar",
+        icon: CalendarClock,
+        section: "finance.payment-calendar",
+      },
+    ],
+  },
+  {
+    // Витрины: здесь ничего не вводят руками. Пока живёт один Баланс — раздел заведён под
+    // P&L, который делается следующим (решение владельца 03.08); гонять Баланс сначала в
+    // «Учёт», а через две недели сюда — лишний переезд для всех, кто уже привык.
+    title: "Отчёты",
+    items: [
+      { label: "Баланс", href: "/balance", icon: ReceiptText, section: "finance.balance" },
     ],
   },
   {
@@ -403,13 +417,10 @@ function isActiveRoute(currentPath: string, href: string) {
     return currentPath === "/";
   }
   if (href === "/payroll") {
-    return (
-      currentPath === href ||
-      currentPath === "/payroll/fund" ||
-      currentPath === "/payroll/adjustments" ||
-      currentPath.startsWith("/payroll/admin") ||
-      currentPath.startsWith("/payroll/runs/")
-    );
+    // Префикс вместо перечисления вкладок: список уже отставал (audits, accruals, personal,
+    // advances в нём не значились, и на них пункт меню гас), а с переездом депозитов вкладкой
+    // отставал бы снова. Все вкладки зарплаты — дети /payroll, других жильцов у префикса нет.
+    return currentPath === href || currentPath.startsWith("/payroll/");
   }
   if (href === "/schedule") {
     return currentPath === href || currentPath.startsWith("/schedule/");

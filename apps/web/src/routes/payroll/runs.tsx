@@ -48,6 +48,7 @@ import { PayrollAdminRunsTab } from "@/routes/payroll/admin-runs";
 import { PayrollAdjustmentsRoute } from "@/routes/payroll/adjustments";
 import { PayrollAdvancesRoute } from "@/routes/payroll/advances-tab";
 import { InventoryAuditsRoute } from "@/routes/payroll/audits";
+import { PayrollDepositsRoute } from "@/routes/payroll/deposits";
 import { PayrollPersonalReportPageTab } from "@/routes/payroll/personal-tab";
 import { StatusBadge } from "@/components/ui-app/StatusBadge";
 import {
@@ -85,7 +86,8 @@ type PayrollActiveTab =
   | "audits"
   | "accruals"
   | "personal"
-  | "advances";
+  | "advances"
+  | "deposits";
 
 const PAYROLL_ACTIVE_TAB_STORAGE_KEY = "payroll.activeTab";
 
@@ -120,6 +122,12 @@ export function PayrollRunsRoute({
       : null,
     permissions.canOpenSection("payroll.advances")
       ? { value: "advances", label: "Авансы и займы" }
+      : null,
+    // Депозиты производства переехали сюда из отдельного пункта меню (решение владельца
+    // 03.08): это часть расчёта с сотрудником, как фонд, премии и авансы, а не свой модуль.
+    // Своя секция прав payroll.deposits при этом сохранена — доступ настраивается отдельно.
+    permissions.canOpenSection("payroll.deposits")
+      ? { value: "deposits", label: "Депозиты" }
       : null,
   ].filter((tab): tab is { value: PayrollActiveTab; label: string } => Boolean(tab));
   const runsQuery = useQuery({ queryKey: ["payroll-runs"], queryFn: getPayrollRuns });
@@ -562,6 +570,12 @@ export function PayrollRunsRoute({
                 <PayrollAdvancesRoute />
               </TabsContent>
             ) : null}
+
+            {permissions.canOpenSection("payroll.deposits") ? (
+              <TabsContent className="mt-0" value="deposits">
+                <PayrollDepositsRoute onNavigate={onNavigate} />
+              </TabsContent>
+            ) : null}
           </>
         )}
       </Tabs>
@@ -589,6 +603,9 @@ function payrollTabPath(tab: PayrollActiveTab) {
   if (tab === "advances") {
     return "/payroll/advances";
   }
+  if (tab === "deposits") {
+    return "/payroll/deposits";
+  }
   return tab === "adjustments" ? "/payroll/adjustments" : "/payroll";
 }
 
@@ -601,7 +618,8 @@ function isPayrollTab(value: unknown): value is PayrollActiveTab {
     value === "audits" ||
     value === "accruals" ||
     value === "personal" ||
-    value === "advances"
+    value === "advances" ||
+    value === "deposits"
   );
 }
 

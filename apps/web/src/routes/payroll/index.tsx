@@ -10,7 +10,8 @@ type PayrollActiveTab =
   | "audits"
   | "accruals"
   | "personal"
-  | "advances";
+  | "advances"
+  | "deposits";
 
 type PayrollRouteProps = {
   activeTab: PayrollActiveTab;
