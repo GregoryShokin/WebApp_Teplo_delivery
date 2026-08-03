@@ -336,7 +336,8 @@ async def run_payroll(
     # Зеркало гарда `run_admin_payroll` («период не является полумесячным»).
     if period.period_type != "week":
         raise PayrollConflictError(
-            "Период полумесячный (административный) — пересчитывается во вкладке «Администрация»"
+            "Период полумесячный (административный) — пересчитывается во вкладке "
+            "«Зарплата администрации»"
         )
     imported_run = await session.scalar(
         select(PayrollRun)

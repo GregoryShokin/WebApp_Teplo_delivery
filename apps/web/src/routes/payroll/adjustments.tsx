@@ -362,7 +362,7 @@ export function PayrollAdjustmentsRoute({
       ) : (
         <>
           <PageHeader
-            title="Расчёты ЗП — Премии и штрафы"
+            title="Зарплата — Премии и штрафы"
             description="Ручные корректировки для поваров, кассиров и подменных сотрудников."
             action={addButton}
           />
