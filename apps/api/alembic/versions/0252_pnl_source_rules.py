@@ -34,6 +34,92 @@ branch_labels = None
 depends_on = None
 
 
+#: Код статьи → её имя в каталоге. Нужен потому, что коды на проде и в миграциях
+#: расходятся: статьи, заведённые через интерфейс, получают хэш-суффикс
+#: («kommunalnye_platezhi_0b0b4c» против «kommunalnye_platezhi»). Поиск только по коду
+#: молча не создал бы правило, и статья выпала бы из отчёта.
+ARTICLE_NAMES: dict[str, str] = {
+    "komissiya_partneram": "Комиссия партнерам",
+    "vozvraty_klientam": "Возвраты клиентам",
+    "customer_refund": "Возврат покупателю",
+    "arenda_torgovyh_tochek": "Аренда торговых точек",
+    "rent": "Аренда",
+    "ekvairing": "Эквайринг",
+    "transportnye_uslugi": "Транспортные услуги",
+    "rashody_na_pitanie_personala": "Расходы на питание персонала",
+    "oplaty_sistem_avtomatizacii": "Оплаты систем автоматизации",
+    "soderzhanie_torgovyh_tochek": "Содержание торговых точек",
+    "remont_oborudovaniya_0a2198": "Ремонт оборудования",
+    "arenda_sklada": "Аренда склада",
+    "nalogi_s_z_p": "Налоги с з/п",
+    "kommunalnye_platezhi_0b0b4c": "Коммунальные платежи",
+    "arenda_ofisa": "Аренда офиса",
+    "soderzhanie_ofisa": "Содержание офиса",
+    "bank_service_fee": "РКО",
+    "bankovskie_komissi_2706ff": "Банковские комисси",
+    "uslugi_fd_i_nk": "Услуги ФД и НК",
+    "rashody_na_personal": "Расходы на персонал",
+    "obuchenie_personala": "Обучение персонала",
+    "telekommunikacii": "Телекоммуникации",
+    "poisk_i_naim_personala": "Поиск и найм персонала",
+    "komissiya_agregatoru": "Комиссия агрегатору",
+    "targetirovannaya_reklama": "Таргетированная реклама",
+    "bannernaya_reklama": "Баннерная реклама",
+    "reklama_na_yandeks_kartah": "Реклама на Яндекс-картах",
+    "kontekstnaya_reklama": "Контекстная реклама",
+    "pechatnye_materialy": "Печатные материалы",
+    "listovki": "Листовки",
+    "seo_optimizaciya": "SEO-оптимизация",
+    "prochie_marketingovye_uslugi": "Прочие маркетинговые услуги",
+    "sait_i_prilozhenie": "Сайт и приложение",
+    "prochie_postupleniya": "Прочие поступления",
+    "prochie_postupl_ot_fin_operacii": "Прочие поступл. от фин. операций",
+    "korretirovki_kassy": "Корретировки кассы +",
+    "prochie_rashody": "Прочие расходы",
+    "korretirovki_kassy_2": "Корретировки кассы -",
+    "overdraft": "Овердрафт",
+    "postuplenie_deneg_s_torg_tochek": "Поступление денег с торг. точек",
+    "revenue_acquiring_tbank": "Выручка эквайринг T-Bank",
+    "revenue_acquiring_sber": "Выручка эквайринг Sber",
+    "revenue_cash": "Выручка наличная",
+    "payment_to_supplier": "Оплата поставщикам",
+    "supplier_staff_payment": "Оплата поставщику (персонал)",
+    "advance_to_supplier": "Авансы поставщикам",
+    "vozvrat_pereplaty_ot_postavschikov": "Возврат переплаты от поставщиков",
+    "kurerskaya_sluzhba": "Курьерская служба -",
+    "kurerskaya_sluzhba_2": "Курьерская служба +",
+    "zarplata_proizvodstvennogo_personala": "Зарплата производственного персонала",
+    "zarplata_administrativnogo_personala": "Зарплата административного персонала",
+    "payroll_payout": "Выплата ЗП",
+    "employee_advance": "Авансы сотрудникам",
+    "vydacha_zaymov_sotrudnikam": "Выдача займов сотрудникам",
+    "vydacha_depozita_sotrudniku": "Выдача депозита",
+    "vozvrat_depozita_kurera": "Возврат депозита курьеру",
+    "tax_payment": "Налоги",
+    "internal_transfer": "Внутренний перевод",
+    "postuplenie_perevod_mezhdu_schetami": "Поступление — Перевод между счетами",
+    "vybytie_perevod_mezhdu_schetami": "Выбытие — Перевод между счетами",
+    "rezervy_postuplenie": "Резервы поступление",
+    "rezervy_vyvod": "Резервы вывод",
+    "pokupka_nalichnosti": "Покупка наличности",
+    "poluchenie_kreditov_i_zaimov": "Получение кредитов и займов",
+    "vozvrat_kreditov_i_zaimov": "Возврат кредитов и займов",
+    "vydacha_kreditov_i_zaimov": "Выдача кредитов и займов",
+    "oplaty_po_kreditam_i_zaimam": "Оплаты по кредитам и займам",
+    "loan_principal_payment": "Погашение тела кредита",
+    "poluchenie_overdrafta": "Получение овердрафта",
+    "pogashenie_overdrafta": "Погашение овердрафта",
+    "overdraft_fee": "Овердрафт комиссия",
+    "postuplenie_deneg_ot_sobstvennikov": "Поступление денег от собственников",
+    "vozvrat_deneg_sobstvennikam": "Возврат денег собственникам",
+    "dividendy": "Дивиденды",
+    "pokupka_os": "Покупка ОС",
+    "remont_os": "Капитальный ремонт ОС",
+    "modernizaciya_os": "Модернизация ОС",
+    "prodazha_os": "Продажа ОС",
+    "unknown": "Не размечено",
+}
+
 # Статья ДДС → строка ОПиУ. (code статьи, line_code | None, owner_stream | None, note)
 # line_code = None означает in_pnl=false: статья никогда не расход и не доход отчёта.
 IN_PNL: list[tuple[str, str, str | None]] = [
@@ -44,16 +130,23 @@ IN_PNL: list[tuple[str, str, str | None]] = [
     # --- Общепроизводственные --------------------------------------------------------
     ("arenda_torgovyh_tochek", "rent_chernikova", None),
     ("rent", "rent_chernikova", "Устаревшая статья аренды: история"),
-    ("ekvairing", "acquiring", "Только комиссия по терминалам; онлайн-эквайринг и приём "
-                               "платежей парсятся из назначений зачислений Сбера"),
+    (
+        "ekvairing",
+        "acquiring",
+        "Только комиссия по терминалам; онлайн-эквайринг и приём "
+        "платежей парсятся из назначений зачислений Сбера",
+    ),
     ("transportnye_uslugi", "transport", None),
     ("rashody_na_pitanie_personala", "staff_meals", None),
     ("oplaty_sistem_avtomatizacii", "automation", None),
     ("soderzhanie_torgovyh_tochek", "shop_maintenance", None),
     ("remont_oborudovaniya_0a2198", "equipment_repair", None),
     ("arenda_sklada", "warehouse_rent", None),
-    ("nalogi_s_z_p", "payroll_taxes",
-     "Из ДДС, а не из ведомости: взносы работодателя в ведомость не входят"),
+    (
+        "nalogi_s_z_p",
+        "payroll_taxes",
+        "Из ДДС, а не из ведомости: взносы работодателя в ведомость не входят",
+    ),
     # --- Административные ------------------------------------------------------------
     ("kommunalnye_platezhi_0b0b4c", "utilities_chernikova", None),
     ("arenda_ofisa", "office_rent", None),
@@ -68,8 +161,7 @@ IN_PNL: list[tuple[str, str, str | None]] = [
     # --- Коммерческие ----------------------------------------------------------------
     ("komissiya_agregatoru", "aggregator_commission", None),
     ("targetirovannaya_reklama", "targeted_ads", None),
-    ("bannernaya_reklama", "outdoor_ads",
-     "Алиас: в эталоне строка называется «Наружная реклама»"),
+    ("bannernaya_reklama", "outdoor_ads", "Алиас: в эталоне строка называется «Наружная реклама»"),
     ("reklama_na_yandeks_kartah", "yandex_maps_ads", None),
     ("kontekstnaya_reklama", "context_ads", None),
     ("pechatnye_materialy", "printed_materials", "Строка помечена как неиспользуемая"),
@@ -84,48 +176,72 @@ IN_PNL: list[tuple[str, str, str | None]] = [
     ("prochie_rashody", "other_expenses", None),
     ("korretirovki_kassy_2", "other_expenses", "Недостача кассы — расход месяца"),
     ("overdraft", "overdraft_fee", "Перечисление процентов по овердрафту"),
-    ("fines_penalties", "fines_penalties",
-     "Заводится этой же миграцией: в каталоге статьи не было"),
+    (
+        "fines_penalties",
+        "fines_penalties",
+        "Заводится этой же миграцией: в каталоге статьи не было",
+    ),
 ]
 
 # Статьи, чей факт принадлежит другому слою либо не является доходом/расходом вовсе.
 OUT_OF_PNL: list[tuple[str, str, str]] = [
     # (code, owner_stream, note)
     # --- Выручка и товар приходят из iiko -------------------------------------------
-    ("postuplenie_deneg_s_torg_tochek", "iiko",
-     "Инкассация выручки. Сама выручка — из OLAP, иначе задвоится"),
+    (
+        "postuplenie_deneg_s_torg_tochek",
+        "iiko",
+        "Инкассация выручки. Сама выручка — из OLAP, иначе задвоится",
+    ),
     ("revenue_acquiring_tbank", "iiko", "Зачисление эквайринга: выручка приходит из OLAP"),
     ("revenue_acquiring_sber", "iiko", "То же, устаревшая статья"),
     ("revenue_cash", "iiko", "То же, устаревшая статья"),
-    ("payment_to_supplier", "iiko",
-     "Оплата товара поставщику. В ОПиУ товар приходит фудкостом по себестоимости продаж, "
-     "а не закупкой: иначе месяц закупки разъедется с месяцем продажи"),
+    (
+        "payment_to_supplier",
+        "iiko",
+        "Оплата товара поставщику. В ОПиУ товар приходит фудкостом по себестоимости продаж, "
+        "а не закупкой: иначе месяц закупки разъедется с месяцем продажи",
+    ),
     ("supplier_staff_payment", "supplier", "Строчная оплата поставщику, устаревшая статья"),
     ("advance_to_supplier", "supplier", "Аванс — это дебиторка, а не расход"),
     ("vozvrat_pereplaty_ot_postavschikov", "supplier", "Возврат аванса, не доход"),
-    ("kurerskaya_sluzhba", "iiko",
-     "Выдачи курьерам. Строка «Траты на курьерскую службу» берётся из пресета iiko целиком"),
+    (
+        "kurerskaya_sluzhba",
+        "iiko",
+        "Выдачи курьерам. Строка «Траты на курьерскую службу» берётся из пресета iiko целиком",
+    ),
     ("kurerskaya_sluzhba_2", "deposits", "Депозиты курьеров: приход, не доход"),
     # --- Зарплатный контур ------------------------------------------------------------
     ("zarplata_proizvodstvennogo_personala", "payroll", "Начисление берётся из ведомости"),
-    ("zarplata_administrativnogo_personala", "payroll",
-     "Начисление берётся из ведомости. Сюда же платятся оклад старшего курьера, уборщиц и "
-     "посудомоек, и зарплата собственника — все они начислены в админ-ведомости"),
+    (
+        "zarplata_administrativnogo_personala",
+        "payroll",
+        "Начисление берётся из ведомости. Сюда же платятся оклад старшего курьера, уборщиц и "
+        "посудомоек, и зарплата собственника — все они начислены в админ-ведомости",
+    ),
     ("payroll_payout", "payroll", "Устаревшая статья выплаты ЗП"),
     ("employee_advance", "payroll", "Аванс сотруднику — не расход месяца"),
     ("vydacha_zaymov_sotrudnikam", "payroll", "Заём сотруднику — дебиторка"),
     ("vydacha_depozita_sotrudniku", "deposits", "Депозит — не расход"),
     ("vozvrat_depozita_kurera", "deposits", "Возврат депозита — не расход"),
     # --- Налоги -----------------------------------------------------------------------
-    ("tax_payment", "taxes",
-     "Факт уплаты. Строка «Налоги» берёт начисление модуля «Налоги» (решение владельца "
-     "03.08.2026). Налоговые пени сидят внутри этой же статьи"),
+    (
+        "tax_payment",
+        "taxes",
+        "Факт уплаты. Строка «Налоги» берёт начисление модуля «Налоги» (решение владельца "
+        "03.08.2026). Налоговые пени сидят внутри этой же статьи",
+    ),
     # --- Переводы и резервы -----------------------------------------------------------
     ("internal_transfer", "transfer", None),
-    ("postuplenie_perevod_mezhdu_schetami", "transfer",
-     "Деактивирована, но история есть: июль 2026 — 857 860,72 ₽"),
-    ("vybytie_perevod_mezhdu_schetami", "transfer",
-     "Деактивирована, но история есть: июль 2026 — 799 360,72 ₽"),
+    (
+        "postuplenie_perevod_mezhdu_schetami",
+        "transfer",
+        "Деактивирована, но история есть: июль 2026 — 857 860,72 ₽",
+    ),
+    (
+        "vybytie_perevod_mezhdu_schetami",
+        "transfer",
+        "Деактивирована, но история есть: июль 2026 — 799 360,72 ₽",
+    ),
     ("rezervy_postuplenie", "transfer", "Резервирование денег в Сейфе"),
     ("rezervy_vyvod", "transfer", "Снятие резерва"),
     ("pokupka_nalichnosti", "transfer", "Обмен безнала на наличные"),
@@ -133,10 +249,13 @@ OUT_OF_PNL: list[tuple[str, str, str]] = [
     ("poluchenie_kreditov_i_zaimov", "financing", None),
     ("vozvrat_kreditov_i_zaimov", "financing", None),
     ("vydacha_kreditov_i_zaimov", "financing", None),
-    ("oplaty_po_kreditam_i_zaimam", "financing",
-     "Тело и проценты одной статьёй. Строка «Проценты по кредитам» заполняется вручную, "
-     "пока учёта кредитов в приложении нет: взять статью целиком значило бы записать в "
-     "расход возврат тела"),
+    (
+        "oplaty_po_kreditam_i_zaimam",
+        "financing",
+        "Тело и проценты одной статьёй. Строка «Проценты по кредитам» заполняется вручную, "
+        "пока учёта кредитов в приложении нет: взять статью целиком значило бы записать в "
+        "расход возврат тела",
+    ),
     ("loan_principal_payment", "financing", "Устаревшая статья"),
     ("poluchenie_overdrafta", "financing", None),
     ("pogashenie_overdrafta", "financing", "Тело овердрафта; проценты — статья «Овердрафт»"),
@@ -148,12 +267,18 @@ OUT_OF_PNL: list[tuple[str, str, str]] = [
     ("pokupka_os", "investing", "Стоимость объекта приходит в ОПиУ амортизацией"),
     ("remont_os", "investing", "Капитальный ремонт капитализируется в стоимость ОС"),
     ("modernizaciya_os", "investing", "То же"),
-    ("prodazha_os", "investing",
-     "Выручка от продажи ОС. Убыток от выбытия считает модуль «Учёт ОС» своей строкой"),
+    (
+        "prodazha_os",
+        "investing",
+        "Выручка от продажи ОС. Убыток от выбытия считает модуль «Учёт ОС» своей строкой",
+    ),
     # --- Приёмник неразмеченного ------------------------------------------------------
-    ("unknown", "none",
-     "Проводка без классификации. Проектор считает её «не разнесено» — эта цифра обязана "
-     "быть нулём, она и есть сигнал о потере"),
+    (
+        "unknown",
+        "none",
+        "Проводка без классификации. Проектор считает её «не разнесено» — эта цифра обязана "
+        "быть нулём, она и есть сигнал о потере",
+    ),
 ]
 
 # Механизмы выдачи, чей факт уже посчитан другим слоем.
@@ -202,9 +327,7 @@ def upgrade() -> None:
         sa.Column("in_pnl", sa.Boolean, nullable=False),
         sa.Column("owner_stream", sa.String(24), nullable=True),
         sa.Column("sign", sa.SmallInteger, nullable=False, server_default=sa.text("1")),
-        sa.Column(
-            "applies_to", sa.String(16), nullable=False, server_default=sa.text("'both'")
-        ),
+        sa.Column("applies_to", sa.String(16), nullable=False, server_default=sa.text("'both'")),
         sa.Column("note", sa.Text, nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column(
@@ -241,14 +364,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("stream", sa.String(24), nullable=False),
-        sa.Column(
-            "component", sa.String(32), nullable=False, server_default=sa.text("'main'")
-        ),
+        sa.Column("component", sa.String(32), nullable=False, server_default=sa.text("'main'")),
         sa.Column("selector", postgresql.JSONB, nullable=True),
         sa.Column("sign", sa.SmallInteger, nullable=False, server_default=sa.text("1")),
-        sa.Column(
-            "sign_policy", sa.String(16), nullable=False, server_default=sa.text("'as_is'")
-        ),
+        sa.Column("sign_policy", sa.String(16), nullable=False, server_default=sa.text("'as_is'")),
         sa.Column("priority", sa.SmallInteger, nullable=False, server_default=sa.text("100")),
         sa.Column("note", sa.Text, nullable=True),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
@@ -314,12 +433,8 @@ def upgrade() -> None:
             sa.ForeignKey("pnl_line.code", ondelete="RESTRICT"),
             nullable=False,
         ),
-        sa.Column(
-            "component", sa.String(32), nullable=False, server_default=sa.text("'main'")
-        ),
-        sa.Column(
-            "direction", sa.String(16), nullable=False, server_default=sa.text("'total'")
-        ),
+        sa.Column("component", sa.String(32), nullable=False, server_default=sa.text("'main'")),
+        sa.Column("direction", sa.String(16), nullable=False, server_default=sa.text("'total'")),
         sa.Column("amount", sa.Numeric(14, 2), nullable=False),
         sa.Column("sign", sa.SmallInteger, nullable=False, server_default=sa.text("1")),
         sa.Column("reason", sa.Text, nullable=False),
@@ -373,10 +488,13 @@ def upgrade() -> None:
                 """
                 INSERT INTO pnl_article_rule (id, article_id, line_code, in_pnl, note)
                 SELECT gen_random_uuid(), a.id, :line_code, true, :note
-                FROM dds_articles a WHERE a.code = :code
+                FROM dds_articles a
+                WHERE a.code = CAST(:code AS text)
+                   OR a.name = CAST(:name AS text)
+                ORDER BY (a.code = CAST(:code AS text)) DESC LIMIT 1
                 """
             ),
-            {"code": code, "line_code": line_code, "note": note},
+            {"code": code, "name": ARTICLE_NAMES.get(code), "line_code": line_code, "note": note},
         )
 
     for code, owner_stream, note in OUT_OF_PNL:
@@ -386,10 +504,18 @@ def upgrade() -> None:
                 INSERT INTO pnl_article_rule (id, article_id, line_code, in_pnl,
                                               owner_stream, note)
                 SELECT gen_random_uuid(), a.id, NULL, false, :owner_stream, :note
-                FROM dds_articles a WHERE a.code = :code
+                FROM dds_articles a
+                WHERE a.code = CAST(:code AS text)
+                   OR a.name = CAST(:name AS text)
+                ORDER BY (a.code = CAST(:code AS text)) DESC LIMIT 1
                 """
             ),
-            {"code": code, "owner_stream": owner_stream, "note": note},
+            {
+                "code": code,
+                "name": ARTICLE_NAMES.get(code),
+                "owner_stream": owner_stream,
+                "note": note,
+            },
         )
 
     for source_kind, article_code, owner_stream, note in CASH_ORIGINS:
