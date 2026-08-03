@@ -151,20 +151,70 @@ def _ratio(
     return (num.amount / den.amount).quantize(Decimal("0.0001")), []
 
 
+def _dependencies(formula: dict[str, Any], catalog: list[dict[str, Any]]) -> set[str]:
+    """Коды строк, от которых зависит формула, включая раскрытые ссылки на блок."""
+    deps: set[str] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, str):
+            deps.add(node)
+            return
+        if not isinstance(node, dict):
+            return
+        if "block" in node:
+            deps.update(
+                row["code"]
+                for row in catalog
+                if row["block"] == node["block"] and row["kind"] in SUMMABLE_KINDS
+            )
+        for arg in node.get("args", []):
+            walk(arg)
+        for key in ("num", "den"):
+            if key in node:
+                deps.add(node[key])
+
+    walk(formula)
+    return deps
+
+
+def computation_order(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Расчётные строки в порядке ЗАВИСИМОСТЕЙ, а не отображения.
+
+    Порядок в отчёте и порядок вычисления — разные вещи, и это не мелочь: «Производственные
+    расходы» и «Косвенные расходы» показываются заголовками НАД своими слагаемыми, но
+    сложить их можно только после. Считая в порядке ``sort_order``, мы получали бы пустой
+    подытог при полностью известных слагаемых — молча и правдоподобно.
+    """
+    computed = [row for row in catalog if row["kind"] in {"subtotal", "ratio"}]
+    by_code = {row["code"]: row for row in computed}
+    ordered: list[dict[str, Any]] = []
+    visited: set[str] = set()
+    visiting: set[str] = set()
+
+    def visit(code: str) -> None:
+        if code in visited or code not in by_code:
+            return
+        if code in visiting:
+            raise FormulaError(f"циклическая зависимость формул на строке {code!r}")
+        visiting.add(code)
+        row = by_code[code]
+        for dependency in _dependencies(row.get("formula") or {}, catalog):
+            visit(dependency)
+        visiting.discard(code)
+        visited.add(code)
+        ordered.append(row)
+
+    for row in sorted(computed, key=lambda item: item["sort_order"]):
+        visit(row["code"])
+    return ordered
+
+
 def apply_formulas(
     lines: dict[str, LineValue],
     catalog: list[dict[str, Any]],
 ) -> None:
-    """Досчитать подытоги и рентабельности на месте, в порядке справочника.
-
-    Порядок ``sort_order`` в справочнике совпадает с порядком вычисления каскада: подытог
-    всегда стоит после своих слагаемых. Отдельная топологическая сортировка не нужна, а её
-    отсутствие проверяется тестом на сиде — если кто-то заведёт формулу, ссылающуюся вперёд,
-    расчёт упадёт на ``FormulaError`` вместо тихого нуля.
-    """
-    for row in sorted(catalog, key=lambda item: item["sort_order"]):
-        if row["kind"] not in {"subtotal", "ratio"}:
-            continue
+    """Досчитать подытоги и рентабельности на месте, в порядке зависимостей."""
+    for row in computation_order(catalog):
         line = lines.get(row["code"])
         if line is None or not row.get("formula"):
             continue

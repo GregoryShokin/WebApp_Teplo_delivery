@@ -128,14 +128,23 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     recognition = await recognition_source.build_recognition_layer(session, month_start, month_end)
     manual = await manual_source.build_manual_layer(session, month_start)
 
-    _apply_recognition(lines, recognition, session_article_lines=await _article_lines(session))
+    article_lines = await _article_lines(session)
+    _apply_recognition(lines, recognition, session_article_lines=article_lines)
     _apply_cash(lines, cash)
+    _apply_silent_articles(lines, cash, article_lines)
     _apply_manual(lines, manual)
     await _apply_fixed_assets(session, lines, month_start)
     await _apply_taxes(session, lines, month_start)
     await _apply_payroll(session, lines, month_start, month_end)
     await _apply_inventory(session, lines, month_start, month_end, report)
     await _apply_iiko(session, lines, month_start)
+
+    # Порядок значим: сначала свести компоненты каждой строки в итог, и только потом считать
+    # каскад. Иначе формулы читают строки-источники ещё пустыми и любой подытог выходит
+    # «неполным» — при полностью известных слагаемых.
+    for row in catalog:
+        if row["kind"] in {"source", "memo"}:
+            _collapse(lines[row["code"]])
 
     formulas.apply_formulas(lines, catalog)
     _apply_percentages(lines)
@@ -403,6 +412,35 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
         line.drill_available = True
 
 
+def _apply_silent_articles(
+    lines: dict[str, LineValue],
+    layer: cash_source.CashLayer,
+    article_lines: dict[Any, str],
+) -> None:
+    """Статья размечена, а движения за месяц не было — это ПОДТВЕРЖДЁННЫЙ НОЛЬ.
+
+    Без этого правила каскад не сходится никогда: «Возвраты клиентам» и «Комиссия партнёрам»
+    в спокойный месяц пусты по-честному, но строка со статусом «нет данных» делает неполной
+    выручку, а за ней — маржинальный доход, валовую прибыль и всё остальное. Разница между
+    «источник молчит» и «источника нет» здесь и проходит: статья ДДС существует и размечена,
+    значит ответ получен, и ответ этот — ноль.
+    """
+    for line_code in set(article_lines.values()):
+        line = lines.get(line_code)
+        if line is None or line.components or line.status is LineStatus.NOT_USED:
+            continue
+        if line_code in layer.buckets:
+            continue
+        _add_component(
+            lines,
+            line_code,
+            stream="cashflow",
+            amount=Decimal("0.00"),
+            status=LineStatus.ZERO_CONFIRMED,
+            note="Движения по статье за месяц не было",
+        )
+
+
 def _apply_manual(lines: dict[str, LineValue], manual: dict[str, list[Any]]) -> None:
     for line_code, entries in manual.items():
         line = lines.get(line_code)
@@ -475,9 +513,6 @@ def _apply_percentages(lines: dict[str, LineValue]) -> None:
 
 
 def _ordered(lines: dict[str, LineValue], catalog: list[dict[str, Any]]) -> list[LineValue]:
-    for row in catalog:
-        if row["kind"] in {"source", "memo"}:
-            _collapse(lines[row["code"]])
     return [lines[row["code"]] for row in sorted(catalog, key=lambda item: item["sort_order"])]
 
 

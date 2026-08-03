@@ -30,7 +30,6 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IikoRevenuePeriod
 from app.models.tax import TaxPayrollLedger
 from app.services.taxes.engine import TaxComputationError, money
 from app.services.taxes.repository import year_config
@@ -70,16 +69,20 @@ async def payroll_taxes_for_month(session: AsyncSession, month_start: date) -> D
 
 
 async def _month_revenue(session: AsyncSession, month_start: date, metric: str) -> Decimal | None:
-    """Выручка месяца из зеркала iiko по метрике, принятой за налоговую базу."""
-    column = (
-        IikoRevenuePeriod.revenue_net
-        if metric == "revenue_net"
-        else IikoRevenuePeriod.revenue_gross
-    )
+    """Выручка месяца из зеркала ОПиУ по метрике, принятой за налоговую базу.
+
+    Берём ИМЕННО зеркало отчёта, а не налоговую таблицу ``iiko_revenue_period``: та
+    заполняется своим ручным скриптом и своей гранулярностью, и расхождение между базой
+    налога в отчёте и цифрой выручки в соседней строке того же отчёта объяснить было бы
+    нечем. Один отчёт — один источник выручки.
+    """
+    from app.models.pnl import PnlIikoFact
+
     return await session.scalar(
-        select(column).where(
-            IikoRevenuePeriod.period_start == month_start,
-            IikoRevenuePeriod.granularity == "month",
+        select(PnlIikoFact.amount).where(
+            PnlIikoFact.period_month == month_start,
+            PnlIikoFact.metric_code == metric,
+            PnlIikoFact.direction == "total",
         )
     )
 
