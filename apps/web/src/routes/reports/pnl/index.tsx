@@ -226,6 +226,7 @@ const STREAM_TITLE: Record<string, string> = {
   recognition: "признание",
   cashflow: "касса",
   cashflow_excluded: "касса",
+  waiting: "ДЗ/КЗ",
   payroll: "зарплата",
   iiko: "iiko",
   inventory: "ревизии",

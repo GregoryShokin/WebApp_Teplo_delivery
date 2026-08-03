@@ -34,6 +34,7 @@ from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources import taxes as taxes_source
+from app.services.pnl.sources import waiting as waiting_source
 from app.services.pnl.types import (
     Component,
     LineStatus,
@@ -179,9 +180,20 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     recognition = await recognition_source.build_recognition_layer(session, month_start, month_end)
     manual = await manual_source.build_manual_layer(session, month_start)
 
+    waiting = await waiting_source.build_waiting_layer(
+        session,
+        month_start,
+        month_end,
+        recognized_counterparties={
+            detail.counterparty_id
+            for detail in recognition.details
+            if detail.counterparty_id is not None
+        },
+    )
     article_lines = await _article_lines(session)
     _apply_recognition(lines, recognition, session_article_lines=article_lines)
     _apply_cash(lines, cash)
+    _apply_waiting(lines, waiting, article_lines)
     _apply_silent_articles(lines, cash, article_lines)
     _apply_manual(lines, manual)
     await _apply_fixed_assets(session, lines, month_start)
@@ -503,12 +515,40 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
             status=LineStatus.OK if has_amount else LineStatus.ZERO_CONFIRMED,
             excluded_amount=bucket.excluded_amount,
             excluded_reason="accrual" if bucket.excluded_count else None,
-            unrecognized_paid=bucket.unrecognized_paid,
+            unattributed_paid=bucket.unattributed_paid,
             cash_proxy_amount=(
                 bucket.amount if has_amount and line.month_basis == "document" else Decimal("0.00")
             ),
         )
         line.components.append(component)
+        line.drill_available = True
+
+
+def _apply_waiting(
+    lines: dict[str, LineValue],
+    layer: waiting_source.WaitingLayer,
+    article_lines: dict[Any, str],
+) -> None:
+    """«Оплачено, документа за период нет» — из ДЗ/КЗ, а не из кассы месяца.
+
+    Компонент несёт только ожидание: суммы у него нет и быть не должно, иначе расход
+    посчитается дважды — сейчас деньгами и потом документом. Он нужен, чтобы строка получила
+    статус «ждём документ» и предупреждение с настоящей цифрой.
+    """
+    for article_id, amount in layer.by_article.items():
+        line_code = article_lines.get(article_id)
+        if line_code is None or line_code not in lines or amount <= 0:
+            continue
+        line = lines[line_code]
+        line.components.append(
+            Component(
+                stream="recognition",
+                component="waiting",
+                amount=None,
+                status=LineStatus.WAITING_DOCUMENT,
+                unrecognized_paid=amount,
+            )
+        )
         line.drill_available = True
 
 
@@ -690,9 +730,29 @@ def _warnings(
                     code="waiting_document",
                     line_code=line.code,
                     message=(
-                        f"«{line.title}»: оплачено {rubles(paid)} ₽, документа за период ещё нет"
+                        f"«{line.title}»: за период оплачено {rubles(paid)} ₽, "
+                        "закрывающего документа ещё нет"
                     ),
                     amount=paid,
+                )
+            )
+        # Отдельная беда с отдельным лечением. «Ждём документ» решается временем — документ
+        # приедет сам. Здесь же ждать нечего: платёж не привязан к контрагенту, в ДЗ/КЗ его
+        # нет, и в расход он не попадёт никогда, пока человек не поставит контрагента.
+        unattributed = sum(
+            (component.unattributed_paid for component in line.components), Decimal("0.00")
+        )
+        if unattributed > 0:
+            result.append(
+                Warning(
+                    code="unattributed_paid",
+                    line_code=line.code,
+                    message=(
+                        f"«{line.title}»: {rubles(unattributed)} ₽ оплачено без контрагента — "
+                        "в ДЗ/КЗ платежа нет, в расход он не попал. Проставьте контрагента, "
+                        "чтобы сумма встала в свой месяц"
+                    ),
+                    amount=unattributed,
                 )
             )
     return result

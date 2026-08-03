@@ -12,6 +12,7 @@ from decimal import Decimal
 from app.services.pnl import formulas
 from app.services.pnl.projector import INVERTED_IIKO_METRICS, rubles
 from app.services.pnl.sources.deposits import _msk_bounds, _msk_date
+from app.services.pnl.sources.waiting import month_share
 from app.services.pnl.types import LineStatus, LineValue
 
 
@@ -125,6 +126,71 @@ class TestInventorySign:
     def test_shortage_becomes_positive_expense(self) -> None:
         mirror = Decimal("-30810.00")  # недостача в терминах iiko
         assert -mirror == Decimal("30810.00")
+
+
+class TestWaitingMonthAttribution:
+    """К какому месяцу относится оплаченное, но не закрытое документом.
+
+    Все четыре правила давали неверный ответ на данных июля 2026, и все четыре владелец
+    назвал вслух. Проверяются они здесь, а не через базу: через базу проверялись бы фикстуры.
+    """
+
+    JULY = (date(2026, 7, 1), date(2026, 7, 31))
+
+    def _share(self, outstanding: str, **kwargs) -> Decimal | None:
+        defaults = {
+            "month_start": self.JULY[0],
+            "month_end": self.JULY[1],
+            "period_start": None,
+            "period_end": None,
+            "paid_on": None,
+            "counterparty_recognized": False,
+        }
+        return month_share(Decimal(outstanding), **{**defaults, **kwargs})
+
+    def test_july_payment_for_august_is_not_july(self) -> None:
+        # Синапсис и О.О заплачены 22.07 — период услуги август. Раньше обе суммы вставали
+        # в июльское «ждём документ», и владелец увидел это первым.
+        assert (
+            self._share(
+                "68000.00",
+                period_start=date(2026, 8, 1),
+                period_end=date(2026, 8, 31),
+                paid_on=date(2026, 7, 22),
+            )
+            is None
+        )
+
+    def test_june_payment_for_july_is_july(self) -> None:
+        # А то, чего июль действительно ждёт, оплачено 29.06 и в июльскую кассу не попадало.
+        assert self._share(
+            "48000.00",
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 7, 31),
+            paid_on=date(2026, 6, 29),
+        ) == Decimal("48000.00")
+
+    def test_period_longer_than_month_is_split(self) -> None:
+        assert self._share(
+            "30000.00",
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 9, 30),
+            paid_on=date(2026, 6, 20),
+        ) == Decimal("10000.00")
+
+    def test_without_period_month_comes_from_payment(self) -> None:
+        # Манго: телефония по потреблению, период известен только из УПД. Другой привязки нет.
+        assert self._share("10000.00", paid_on=date(2026, 7, 7)) == Decimal("10000.00")
+
+    def test_without_period_recognized_counterparty_is_not_waiting(self) -> None:
+        # Арендодатель заплачен 30.07, периода у платежа нет — но июльская аренда по нему уже
+        # признана начислением из договора. Значит платёж относится к другому месяцу.
+        assert (
+            self._share("50000.00", paid_on=date(2026, 7, 30), counterparty_recognized=True) is None
+        )
+
+    def test_without_period_and_without_payment_belongs_nowhere(self) -> None:
+        assert self._share("15862.24") is None
 
 
 class TestMoscowMonthBounds:

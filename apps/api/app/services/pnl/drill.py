@@ -44,6 +44,7 @@ from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
+from app.services.pnl.sources import waiting as waiting_source
 
 #: Единственный вердикт исключённой кассы, который показывается таблицей.
 #:
@@ -135,6 +136,7 @@ async def build_drill(session: AsyncSession, line_code: str, month: date) -> Dri
 
     await _recognition_group(session, result, line_code, month_start, month_end)
     await _cash_group(session, result, line_code, month_start, month_end, sign_roles)
+    await _waiting_group(session, result, line_code, month_start, month_end)
     await _payroll_group(session, result, line_code, month_start, month_end)
     await _releases_group(session, result, line_code, month_start, month_end)
     await _iiko_group(session, result, line_code, month_start)
@@ -243,8 +245,7 @@ async def _cash_group(
     )
 
     included = [detail for detail in details if detail.verdict == "included"]
-    waiting = [detail for detail in details if detail.verdict == WAITING_VERDICT]
-    aside = [detail for detail in details if detail.verdict not in ("included", WAITING_VERDICT)]
+    aside = [detail for detail in details if detail.verdict != "included"]
 
     if included:
         group = DrillGroup(
@@ -256,23 +257,76 @@ async def _cash_group(
             group.rows.append(_cash_row(detail, names, articles, kind="included"))
         result.groups.append(group)
 
-    if waiting:
-        group = DrillGroup(
-            stream="cashflow_excluded",
-            title=WAITING_TITLE,
-            amount=sum((detail.amount for detail in waiting), Decimal("0.00")),
-            counts_in_total=False,
-            note=(
-                "Деньги ушли, но расход по ним признаёт документ. Пока документа нет, "
-                "сумма в отчёт не идёт — иначе месяц получил бы расход дважды"
-            ),
-        )
-        for detail in waiting:
-            group.rows.append(_cash_row(detail, names, articles, kind="waiting"))
-        result.groups.append(group)
-
+    # Вся исключённая касса месяца уходит в свёрнутую строку — включая ту, что раньше
+    # показывалась как «ждём документ». Месяц платежа ничего не говорит о том, за какой
+    # период платили, поэтому ожидание теперь строится из ДЗ/КЗ — см. ``_waiting_group``.
     result.aside_amount += sum((detail.amount for detail in aside), Decimal("0.00"))
     result.aside_count += len(aside)
+
+
+async def _waiting_group(
+    session: AsyncSession,
+    result: DrillResult,
+    line_code: str,
+    month_start: date,
+    month_end: date,
+) -> None:
+    """Чего строка ещё ждёт ЗА ЭТОТ МЕСЯЦ — по периоду услуги из ДЗ/КЗ.
+
+    Дата платежа здесь справочная и часто лежит в прошлом месяце: реклама за июль оплачена
+    29.06. Ровно поэтому группа и не строится из кассы июля.
+    """
+    recognition = await recognition_source.build_recognition_layer(session, month_start, month_end)
+    layer = await waiting_source.build_waiting_layer(
+        session,
+        month_start,
+        month_end,
+        recognized_counterparties={
+            detail.counterparty_id
+            for detail in recognition.details
+            if detail.counterparty_id is not None
+        },
+    )
+    article_lines = await _article_line_map(session)
+    items = [
+        item
+        for item in layer.items
+        if article_lines.get(item.article_id) == line_code  # type: ignore[arg-type]
+    ]
+    if not items:
+        return
+
+    names = await _names(
+        session,
+        Counterparty,
+        {item.counterparty_id for item in items if item.counterparty_id},
+        Counterparty.name,
+    )
+    group = DrillGroup(
+        stream="waiting",
+        title=WAITING_TITLE,
+        amount=sum((item.amount for item in items), Decimal("0.00")),
+        counts_in_total=False,
+        note=(
+            "Деньги ушли, но расход по ним признаёт документ. Пока документа нет, сумма в "
+            "отчёт не идёт — иначе месяц получил бы расход дважды"
+        ),
+    )
+    for item in sorted(items, key=lambda entry: -entry.amount):
+        group.rows.append(
+            DrillRow(
+                title=names.get(item.counterparty_id) or "Без контрагента",
+                subtitle=(
+                    f"период {_period_label(item.period_start, item.period_end)}"
+                    if item.period_known
+                    else "период не указан — месяц взят по дате платежа"
+                ),
+                row_date=item.paid_on,
+                amount=item.amount,
+                kind="waiting",
+            )
+        )
+    result.groups.append(group)
 
 
 def _cash_row(

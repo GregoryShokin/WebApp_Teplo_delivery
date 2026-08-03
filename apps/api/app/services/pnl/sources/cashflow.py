@@ -67,8 +67,9 @@ class CashBucket:
     count: int = 0
     excluded_amount: Decimal = Decimal("0.00")
     excluded_count: int = 0
-    unrecognized_paid: Decimal = Decimal("0.00")
-    waiting_counterparties: set[uuid.UUID] = field(default_factory=set)
+    #: Исключено, но в ДЗ/КЗ этого платежа нет: проводка без контрагента по статье, где
+    #: признание пришло от другого поставщика. Не «ждём документ» — ждать некому.
+    unattributed_paid: Decimal = Decimal("0.00")
 
 
 @dataclass(slots=True)
@@ -223,7 +224,6 @@ async def build_cash_layer(
     rules = context.rules
     origins = context.origins
     circuit = context.circuit
-    recognized = context.recognized
     settled = context.settled
     recognized_articles = context.recognized_articles
 
@@ -270,15 +270,14 @@ async def build_cash_layer(
         else:
             bucket.excluded_amount += amount
             bucket.excluded_count += 1
-            if verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY:
-                key = (tx.counterparty_id, tx.article_id)
-                if tx.counterparty_id is None or key not in recognized:
-                    # Деньги ушли, а признания именно этой пары за месяц нет — «ждём документ».
-                    # Сумма НЕ идёт в расход: когда документ приедет, месяц получил бы расход
-                    # дважды. Показываем её отдельной цифрой и статусом строки.
-                    if tx.counterparty_id is not None:
-                        bucket.waiting_counterparties.add(tx.counterparty_id)
-                    bucket.unrecognized_paid += amount
+            if verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY and tx.counterparty_id is None:
+                # Проводка без контрагента, исключённая только потому, что по её СТАТЬЕ за
+                # месяц есть признание. В ДЗ/КЗ такого платежа нет вовсе — значит никто не
+                # ждёт по нему документа, и называть это «ждём документ» было бы выдумкой.
+                # Но и молчать нельзя: расход реален, а в отчёт он не попал. За июль 2026 это
+                # 18 600 ₽ за нейросеть и 4 000 ₽ мусорщикам — оба платежа без контрагента по
+                # статьям, где признание пришло от совсем других поставщиков.
+                bucket.unattributed_paid += amount
 
     return layer
 
