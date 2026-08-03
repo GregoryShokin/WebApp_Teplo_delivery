@@ -198,6 +198,11 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
     courier_rows = await _fetch_preset(PNL_PRESET_ID, start, end_exclusive)
     result.facts[(METRIC_COURIER_SALARY, "total")] = courier_salary_from_rows(courier_rows)
 
+    goods, notes = await fetch_goods_metrics(session, start)
+    for metric, amount in goods.items():
+        result.facts[(metric, "total")] = amount
+    result.changed.extend(notes)
+
     for (metric, direction), amount in sorted(result.facts.items()):
         existing = await session.scalar(
             select(PnlIikoFact).where(
@@ -229,3 +234,168 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
         existing.rows_count = result.rows_seen
     await session.flush()
     return result
+
+
+# ── Товарные строки: списания, инвентаризация упаковки, приходные накладные ──────────
+#
+# ФОРМАТЫ ДАТ У ТРЁХ ЭНДПОИНТОВ РАЗНЫЕ, и это не придирка: ``/documents/export/incomingInvoice``
+# на формате ``01.03.2026`` отвечает ошибкой 409, а ``/reports/storeOperations`` — наоборот,
+# ждёт именно его. Поэтому каждый запрос форматирует даты сам, а не через общий хелпер.
+
+WRITEOFF_ENDPOINT = "/v2/documents/writeoff"
+INVENTORY_ENDPOINT = "/reports/storeOperations"
+INCOMING_INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
+
+PROCESSED_STATUS = "PROCESSED"
+
+METRIC_WRITEOFF = "writeoff_cost"
+METRIC_PACKAGING = "packaging_result"
+METRIC_PIZZA_BOX = "pizza_box_result"
+METRIC_SHOP_MAINTENANCE = "shop_maintenance_invoices"
+METRIC_AUX_GOODS = "aux_goods_invoices"
+
+#: Корзина whitelist → метрика зеркала.
+WHITELIST_METRIC = {
+    "packaging_inventory": METRIC_PACKAGING,
+    "pizza_box_inventory": METRIC_PIZZA_BOX,
+    "shop_maintenance": METRIC_SHOP_MAINTENANCE,
+    "aux_goods": METRIC_AUX_GOODS,
+}
+
+
+async def load_whitelist(session: AsyncSession) -> dict[str, str]:
+    """Идентификатор товара → метрика. Берём только ``include``.
+
+    Позиции ``requires_owner_review`` в расчёт НЕ идут: по ним суммы iiko не сошлись с
+    контрольной расшифровкой, и включить их значило бы тихо принять спорную цифру. Они
+    показываются отдельно как «не отнесено» — пробел должен быть виден.
+    """
+    from app.models.pnl import PnlProductWhitelist
+
+    rows = (
+        await session.execute(
+            select(PnlProductWhitelist.iiko_product_guid, PnlProductWhitelist.line_code).where(
+                PnlProductWhitelist.include_status == "include"
+            )
+        )
+    ).all()
+    return {guid: WHITELIST_METRIC[line] for guid, line in rows if line in WHITELIST_METRIC}
+
+
+def writeoff_total(payload: Any) -> Decimal:
+    """Сумма проведённых актов списания за период.
+
+    Только ``PROCESSED``: черновик акта — это ещё не списание, товар физически на месте.
+    """
+    import json
+
+    if isinstance(payload, (bytes, str)):
+        payload = json.loads(payload)
+    documents = payload.get("response") if isinstance(payload, dict) else payload
+    if not isinstance(documents, list):
+        return Decimal("0.00")
+    total = Decimal("0.00")
+    for document in documents:
+        if not isinstance(document, dict):
+            continue
+        if str(document.get("status") or "").upper() != PROCESSED_STATUS:
+            continue
+        for item in document.get("items") or []:
+            if isinstance(item, dict):
+                total += _number(item.get("cost"))
+    return total
+
+
+def whitelist_totals(
+    rows: list[dict[str, Any]], whitelist: dict[str, str], amount_field: str
+) -> dict[str, Decimal]:
+    """Свернуть товарные строки по корзинам whitelist.
+
+    Знак НЕ трогаем: для инвентаризации упаковки методология требует сохранять знак iiko —
+    в отличие от продуктовой ревизии, где он инвертируется. Две соседние строки отчёта с
+    противоположными политиками — самое лёгкое место для ошибки, поэтому инверсии здесь нет
+    вовсе, и это сказано явно.
+    """
+    totals: dict[str, Decimal] = {}
+    for row in rows:
+        guid = str(_field(row, "product", "productId", "iiko_product_guid") or "").strip()
+        metric = whitelist.get(guid)
+        if metric is None:
+            continue
+        totals[metric] = totals.get(metric, Decimal("0.00")) + _number(_field(row, amount_field))
+    return totals
+
+
+async def _fetch_raw(endpoint: str, params: dict[str, str]) -> Any:
+    """Запрос к iiko Server синхронным клиентом в отдельном треде."""
+
+    def _call() -> Any:
+        export_employees = _load_export_employees_module()
+        export_employees.load_local_env()
+        client = export_employees.IikoClient()
+        _status, data = _request_iiko_with_incomplete_read_retry(client, endpoint, params=params)
+        return data
+
+    return await anyio.to_thread.run_sync(_call)
+
+
+async def fetch_goods_metrics(
+    session: AsyncSession, month: dt.date
+) -> tuple[dict[str, Decimal], list[str]]:
+    """Списания, инвентаризация упаковки и товары из приходных накладных за месяц.
+
+    Возвращает (метрики, замечания). Замечание вместо исключения: если один эндпоинт из
+    трёх не ответил, остальные метрики залить всё равно нужно — иначе одна недоступность
+    оставляет месяц вовсе без товарных строк.
+    """
+    start = month.replace(day=1)
+    _, following = month_bounds_exclusive(month)
+    last = following - dt.timedelta(days=1)
+    whitelist = await load_whitelist(session)
+    metrics: dict[str, Decimal] = {}
+    notes: list[str] = []
+
+    # Акты списания: даты ISO, только проведённые.
+    try:
+        payload = await _fetch_raw(
+            WRITEOFF_ENDPOINT,
+            {
+                "dateFrom": start.isoformat(),
+                "dateTo": last.isoformat(),
+                "status": PROCESSED_STATUS,
+            },
+        )
+        metrics[METRIC_WRITEOFF] = writeoff_total(payload)
+    except Exception as error:  # noqa: BLE001 — недоступность одного эндпоинта не должна ронять синк
+        notes.append(f"Акты списания не получены: {error}")
+
+    # Инвентаризация: даты в формате дд.мм.гггг, иначе эндпоинт не понимает.
+    try:
+        payload = await _fetch_raw(
+            INVENTORY_ENDPOINT,
+            {
+                "dateFrom": start.strftime("%d.%m.%Y"),
+                "dateTo": last.strftime("%d.%m.%Y"),
+                "documentTypes": "INCOMING_INVENTORY",
+                "productDetalization": "true",
+                "showCostCorrections": "false",
+            },
+        )
+        rows = _parse_rows(payload)
+        metrics.update(whitelist_totals(rows, whitelist, "sum"))
+    except Exception as error:  # noqa: BLE001
+        notes.append(f"Инвентаризация не получена: {error}")
+
+    # Приходные накладные: параметры называются from/to, формат ISO — на дд.мм.гггг
+    # эндпоинт отвечает 409.
+    try:
+        payload = await _fetch_raw(
+            INCOMING_INVOICE_ENDPOINT,
+            {"from": start.isoformat(), "to": last.isoformat()},
+        )
+        rows = _parse_rows(payload)
+        metrics.update(whitelist_totals(rows, whitelist, "sum"))
+    except Exception as error:  # noqa: BLE001
+        notes.append(f"Приходные накладные не получены: {error}")
+
+    return metrics, notes

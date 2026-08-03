@@ -314,6 +314,10 @@ async def _apply_iiko(
         "revenue_net_chernikova": "revenue_net",
         "food_cost_chernikova": "food_cost",
         "courier_service": "courier_salary",
+        "writeoffs": "writeoff_cost",
+        "packaging_inventory": "packaging_result",
+        "pizza_box_inventory": "pizza_box_result",
+        "aux_goods": "aux_goods_invoices",
     }
     for line_code, metric in mapping.items():
         amount = facts.get(metric)
@@ -323,6 +327,21 @@ async def _apply_iiko(
             stream="iiko",
             amount=amount,
             status=LineStatus.OK if amount is not None else LineStatus.NO_DATA,
+        )
+
+    # «Содержание торговых точек» — составная строка: касса по статье ПЛЮС закупка
+    # расходников из приходных накладных. Так её описывает методология, и оба компонента
+    # реальны: часть расходников покупают наличными администраторы, часть приходит
+    # накладной. Компонент добавляется ВТОРЫМ, кассовый уже стоит.
+    shop_goods = facts.get("shop_maintenance_invoices")
+    if shop_goods is not None:
+        _add_component(
+            lines,
+            "shop_maintenance",
+            stream="iiko",
+            amount=shop_goods,
+            status=LineStatus.OK,
+            note="Закупка расходников из приходных накладных",
         )
 
 
