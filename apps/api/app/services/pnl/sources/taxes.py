@@ -27,47 +27,46 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import IikoRevenuePeriod, TaxPayment
+from app.models import IikoRevenuePeriod
+from app.models.tax import TaxPayrollLedger
 from app.services.taxes.engine import TaxComputationError, money
 from app.services.taxes.repository import year_config
 
-#: Виды платежей строки «Налоги с ЗП»: НДФЛ, взносы за работников, травматизм.
-#: Это налоги на фонд оплаты труда, а не налог с дохода предпринимателя.
-PAYROLL_TAX_KINDS = ("ndfl", "contrib_employees", "contrib_injury")
-
-
-def _month_code(month_start: date) -> str:
-    """Код помесячного периода в модуле налогов: ``2026-07``."""
-    return f"{month_start.year:04d}-{month_start.month:02d}"
-
 
 async def payroll_taxes_for_month(session: AsyncSession, month_start: date) -> Decimal | None:
-    """Налоги с ЗП, НАЧИСЛЕННЫЕ за месяц (не уплаченные в нём).
+    """Налоги с ЗП, НАЧИСЛЕННЫЕ за месяц: НДФЛ + взносы за работников + травматизм.
 
-    Отбираем по ``for_period``, а не по дате списания: взносы за июль уходят в бюджет 28
-    августа, но расходом являются июльскими. Плановые строки берём тоже — начисление
-    существует независимо от того, ушли ли деньги; отменённые не берём.
+    ИСТОЧНИК — ОБОРОТКА БУХГАЛТЕРА (``tax_payroll_ledger``), а не платежи. Причина не в
+    удобстве, а в том, что по платежам эту цифру посчитать НЕЛЬЗЯ: один и тот же факт лежит
+    там дважды — строкой из банковской выписки и строкой из налогового уведомления. За
+    январь 2026 взносы 13 595,93 ₽ дали бы 27 191,86 ₽, если сложить обе. Оборотка же
+    хранит ровно одно начисление на сотрудника и месяц.
+
+    НДФЛ включён по решению владельца 03.08.2026, и это парное решение: зарплата в отчёте
+    берётся БЕЗ него, «на руки». Иначе НДФЛ посчитался бы дважды — внутри начисленной
+    зарплаты и здесь.
+
+    Оборотка покрывает только официальный контур — иного и не требуется: взносы и НДФЛ
+    возникают ровно по нему.
     """
-    rows = (
-        (
-            await session.execute(
-                select(TaxPayment.amount).where(
-                    TaxPayment.kind.in_(PAYROLL_TAX_KINDS),
-                    TaxPayment.for_period == _month_code(month_start),
-                    TaxPayment.for_year == month_start.year,
-                    TaxPayment.status != "cancelled",
-                )
+    row = (
+        await session.execute(
+            select(
+                func.sum(TaxPayrollLedger.ndfl),
+                func.sum(TaxPayrollLedger.contributions),
+                func.sum(TaxPayrollLedger.injury),
+            ).where(
+                TaxPayrollLedger.year == month_start.year,
+                TaxPayrollLedger.month == month_start.month,
             )
         )
-        .scalars()
-        .all()
-    )
-    if not rows:
+    ).one()
+    if all(value is None for value in row):
         return None
-    return money(sum(rows, Decimal("0.00")))
+    return money(sum((value or Decimal("0.00") for value in row), Decimal("0.00")))
 
 
 async def _month_revenue(session: AsyncSession, month_start: date, metric: str) -> Decimal | None:
