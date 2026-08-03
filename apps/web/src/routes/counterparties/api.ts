@@ -824,6 +824,14 @@ export async function syncSbisDocuments(): Promise<SbisSyncResult> {
 export async function rerouteSbisCounterparty(counterpartyId: string): Promise<SbisSyncResult> {
   const response = await api.post<SbisSyncResult>(
     `${SBIS_BASE}/counterparties/${counterpartyId}/reroute`,
+    undefined,
+    {
+      // Счета раскладываются мгновенно, а вот письмо-счёт (КоррВх) и PDF из пакета отгрузки
+      // надо скачать из СБИС и прогнать через распознавание — это минуты, а не дефолтные 15 с.
+      // На обрыве по таймауту сервер всё равно досчитывает и коммитит, но человек видит
+      // «не удалось» и жмёт кнопку второй раз — поверх ещё идущего первого прохода.
+      timeout: 180_000,
+    },
   );
   return response.data;
 }

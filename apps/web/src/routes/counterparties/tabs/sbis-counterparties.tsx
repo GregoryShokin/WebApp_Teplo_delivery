@@ -128,10 +128,15 @@ export function SbisCounterpartiesTab({ canOperate, canAdmin }: Props) {
         toast.success("Карточка настроена — документы поставщика перепроверены");
       }
     },
-    onError: (error) =>
+    onError: async (error) => {
+      // Список обновляем и на ошибке: обрыв по таймауту не отменяет работу сервера — он
+      // досчитывает и коммитит. Без этого строка осталась бы в очереди, человек нажал бы
+      // «Настроить карточку» второй раз и запустил второй проход поверх идущего.
+      await queryClient.invalidateQueries({ queryKey: ["sbis"] });
       toast.warning(
         `${apiErrorMessage(error, "не удалось переразобрать документы")}. Карточка сохранена — документы разберутся ближайшим обновлением из СБИС.`,
-      ),
+      );
+    },
   });
 
   const columns: Array<DataTableColumn<PendingCounterparty>> = [
