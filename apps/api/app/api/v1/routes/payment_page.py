@@ -3,7 +3,8 @@
 Журнал разбора счетов из почты (``email_invoice_intake``): список со статусами, превью
 исходного PDF, подтверждение оператором (материализация накладной) и игнор. Редактирование
 полей и применение реквизитов в профиль — следующий шаг. Права: чтение —
-``counterparties.read``, операции — ``counterparties.operate`` (страница в контуре контрагентов).
+``counterparties.read`` ИЛИ ``finance.counterparties.read``, операции —
+``counterparties.operate`` (экран в контуре контрагентов).
 """
 
 from __future__ import annotations
@@ -29,7 +30,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentActor, get_current_actor, require_permission
+from app.api.deps import (
+    CurrentActor,
+    get_current_actor,
+    require_any_permission,
+    require_permission,
+)
 from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.models import (
@@ -48,7 +54,14 @@ from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 
 router = APIRouter()
 
-READ = (Depends(require_permission("counterparties.read")),)
+# Экран живёт в секции «counterparties», которая открывается ЛЮБЫМ из двух прав чтения
+# (permissions.ts: counterparties → counterparties.read | finance.counterparties.read), и
+# соседние роуты того же контура (finance_payments, sbis, counterparties) принимают оба.
+# Здесь принималось только первое — finance-роль видела пункт меню и получала тихий 403,
+# читая его как «счетов нет». Особенно важно после переезда экрана вкладкой на «Платежи».
+READ = (
+    Depends(require_any_permission(("counterparties.read", "finance.counterparties.read"))),
+)
 OPERATE = (Depends(require_permission("counterparties.operate")),)
 
 
