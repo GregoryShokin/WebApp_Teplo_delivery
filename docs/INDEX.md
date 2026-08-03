@@ -18,7 +18,7 @@
 |---|---|---|---|---|
 | FEAT-001 | Пополнение счетов (Сейф/Касса) и реестр партнёров с выплатой изъятий | draft | [features/feat-001-account-replenishment-partners.md](features/feat-001-account-replenishment-partners.md) | 2026-07-09 |
 | FEAT-002 | Поставщики с обязательным указанием НДС по товарам в накладных | draft | [features/feat-002-supplier-vat-invoices.md](features/feat-002-supplier-vat-invoices.md) | 2026-07-09 |
-| FEAT-003 | Страница «Платежи» — перенос «Страницы на оплату» в Финансы и агрегатор платежей | draft | [features/feat-003-payments-page.md](features/feat-003-payments-page.md) | 2026-07-09 |
+| FEAT-003 | Страница «Платежи» — перенос «Страницы на оплату» в Финансы и агрегатор платежей | done | [features/feat-003-payments-page.md](features/feat-003-payments-page.md) | 2026-08-03 |
 
 ## Граф связей
 
