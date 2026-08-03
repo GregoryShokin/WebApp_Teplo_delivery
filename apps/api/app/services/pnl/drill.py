@@ -5,10 +5,17 @@
 3 230 ₽ признано» и «Манго 10 000 ₽ оплачено, УПД нет», говорит всё — включая то, что
 делать дальше.
 
-ИСКЛЮЧЁННОЕ ПОКАЗЫВАЕТСЯ НАРАВНЕ С ВКЛЮЧЁННЫМ, и это главное решение файла. Расшифровка,
-которая показывает только слагаемые, отвечает на лёгкий вопрос. Тяжёлый — «я заплатил
-68 000 ₽ за рекламу, где они?». Ответ «платёж есть, расход по нему признаёт УПД» обязан
-быть в той же таблице, иначе владелец ищет пропажу руками и находит недоверие к отчёту.
+ПОКАЗЫВАЕМ ДВА ВОПРОСА, А НЕ ВСЁ ПОДРЯД. Первый — «из чего сложилось это число». Второй —
+«я заплатил 68 000 ₽ за рекламу, где они?»: ответ «платёж есть, расход по нему признаёт УПД»
+обязан быть здесь же, иначе владелец ищет пропажу руками и находит недоверие к отчёту.
+
+А вот третьего вопроса — «какие ещё деньги проходили по этим статьям» — никто не задаёт.
+Оплата уже признанного расхода, перевод между счетами, выплата из Сейфа, посчитанная
+зарплатным модулем: число строки они не меняют и не изменят. В июльской строке «Сайт и
+приложение» такой платёж (80 455 ₽ от 08.07, закрывающий счёт за ИЮНЬ) стоял таблицей рядом
+с признанием — владелец спросил ровно это, «расход показывается верный, но зачем эта
+информация?». Теперь всё такое свёрнуто в одну итоговую строку внизу: видно, что ничего не
+спрятано, и не приходится читать чужой месяц.
 
 РАСШИФРОВКА НЕ СЧИТАЕТ ЗАНОВО. Все слои поднимаются теми же функциями, что и отчёт:
 ``cashflow.explain_line`` переиспользует ``_classify``, признание берёт ``details`` из того
@@ -38,18 +45,20 @@ from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
 
-#: Человеческие подписи вердиктов денежного слоя. Те же формулировки, что на подвале отчёта:
-#: одно и то же понятие не должно называться на экране двумя словами.
-VERDICT_TITLE = {
-    "included": "В расходе",
-    "excluded_accrual_counterparty": "Оплачено, расход берётся из документа",
-    "excluded_accrual_settlement": "Оплата уже признанного расхода",
-    "excluded_owned_by_layer": "Посчитано другим модулем",
-    "excluded_out_of_pnl": "Вне ОПиУ",
-    "excluded_quality": "Исключено при разборе выписки",
-    "excluded_transfer": "Перевод между счетами",
-    "unmapped": "Не разнесено по статьям",
-}
+#: Единственный вердикт исключённой кассы, который показывается таблицей.
+#:
+#: Все остальные исключения объединяет одно: они НЕ МЕНЯЮТ и НЕ ИЗМЕНЯТ число строки. Оплата
+#: уже признанного расхода закрывает документ, который свой месяц давно получил; перевод
+#: между счетами не расход вовсе; выплата из Сейфа посчитана зарплатным модулем. Показывать
+#: их построчно — значит отвечать на вопрос, которого никто не задавал: владелец 03.08.2026
+#: увидел в июльской строке «Сайт и приложение» платёж 80 455 ₽ от 08.07, закрывающий счёт за
+#: ИЮНЬ, и спросил ровно это — «расход показывается верный, но зачем эта информация?».
+#:
+#: «Оплачено, документа нет» остаётся, потому что это единственное исключение, после которого
+#: строка ЕЩЁ ВЫРАСТЕТ: документ приедет — сумма встанет в свой месяц. Им же и ловятся ошибки
+#: разметки контрагентов.
+WAITING_VERDICT = "excluded_accrual_counterparty"
+WAITING_TITLE = "Оплачено, расход берётся из документа"
 
 #: Направления зеркала iiko. ``total`` не показываем строкой — это и есть итог группы.
 DIRECTION_TITLE = {
@@ -96,6 +105,11 @@ class DrillResult:
     total: Decimal = Decimal("0.00")
     #: Слой, который расшифровать не удалось (налоги, амортизация), — честной пометкой.
     undecomposed: list[str] = field(default_factory=list)
+    #: Платежи месяца по статьям строки, которые в её число не входят и не войдут: закрывают
+    #: документы других периодов, посчитаны другим модулем, вообще не расход. Таблицей их не
+    #: показываем — только одной строкой итога, чтобы было видно, что ничего не спрятано.
+    aside_amount: Decimal = Decimal("0.00")
+    aside_count: int = 0
 
 
 async def _names(session: AsyncSession, model, ids: set[uuid.UUID], column) -> dict:
@@ -200,10 +214,14 @@ async def _cash_group(
     month_end: date,
     sign_roles: dict[str, int],
 ) -> None:
-    """Денежный слой: включённые проводки и — отдельной группой — исключённые.
+    """Денежный слой: проводки, которые формируют число, и те, что его ещё изменят.
 
     Разделение на группы, а не колонку-признак: складывать в глазах читателя расход с
     неотнесённым платежом нельзя, а видеть их рядом — нужно.
+
+    Всё остальное — оплата уже признанного расхода, перевод, чужой слой — сворачивается в
+    одну итоговую строку внизу. Оно не меняет число ни сейчас, ни потом, и таблицей только
+    отвлекает от того, ради чего расшифровку открыли.
     """
     details = await cash_source.explain_line(
         session, month_start, month_end, line_code, sign_roles=sign_roles
@@ -225,7 +243,8 @@ async def _cash_group(
     )
 
     included = [detail for detail in details if detail.verdict == "included"]
-    excluded = [detail for detail in details if detail.verdict != "included"]
+    waiting = [detail for detail in details if detail.verdict == WAITING_VERDICT]
+    aside = [detail for detail in details if detail.verdict not in ("included", WAITING_VERDICT)]
 
     if included:
         group = DrillGroup(
@@ -237,29 +256,23 @@ async def _cash_group(
             group.rows.append(_cash_row(detail, names, articles, kind="included"))
         result.groups.append(group)
 
-    if excluded:
-        by_verdict: dict[str, list[cash_source.CashDetail]] = {}
-        for detail in excluded:
-            by_verdict.setdefault(detail.verdict, []).append(detail)
-        for verdict, items in by_verdict.items():
-            waiting = verdict == "excluded_accrual_counterparty"
-            group = DrillGroup(
-                stream="cashflow_excluded",
-                title=VERDICT_TITLE.get(verdict, verdict),
-                amount=sum((detail.amount for detail in items), Decimal("0.00")),
-                counts_in_total=False,
-                note=(
-                    "Деньги ушли, но расход по ним признаёт документ. Пока документа нет, "
-                    "сумма в отчёт не идёт — иначе месяц получил бы расход дважды"
-                    if waiting
-                    else None
-                ),
-            )
-            for detail in items:
-                group.rows.append(
-                    _cash_row(detail, names, articles, kind="waiting" if waiting else "excluded")
-                )
-            result.groups.append(group)
+    if waiting:
+        group = DrillGroup(
+            stream="cashflow_excluded",
+            title=WAITING_TITLE,
+            amount=sum((detail.amount for detail in waiting), Decimal("0.00")),
+            counts_in_total=False,
+            note=(
+                "Деньги ушли, но расход по ним признаёт документ. Пока документа нет, "
+                "сумма в отчёт не идёт — иначе месяц получил бы расход дважды"
+            ),
+        )
+        for detail in waiting:
+            group.rows.append(_cash_row(detail, names, articles, kind="waiting"))
+        result.groups.append(group)
+
+    result.aside_amount += sum((detail.amount for detail in aside), Decimal("0.00"))
+    result.aside_count += len(aside)
 
 
 def _cash_row(

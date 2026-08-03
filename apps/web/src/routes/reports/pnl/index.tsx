@@ -232,6 +232,22 @@ const STREAM_TITLE: Record<string, string> = {
   manual: "вручную",
 };
 
+/** «1 платёж», «2 платежа», «5 платежей» — иначе подпись читается как машинный вывод. */
+function paymentsWord(count: number): string {
+  const tens = count % 100;
+  if (tens >= 11 && tens <= 14) return "платежей";
+  switch (count % 10) {
+    case 1:
+      return "платёж";
+    case 2:
+    case 3:
+    case 4:
+      return "платежа";
+    default:
+      return "платежей";
+  }
+}
+
 function formatRowDate(value: string | null): string {
   if (!value) return "";
   const [year, month, day] = value.split("-");
@@ -317,6 +333,14 @@ function DrillPanel({
         <span>Итого в строке</span>
         <span className="tabular-nums">{formatMoney(drill.total)} ₽</span>
       </div>
+      {drill.aside_count > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Ещё {formatMoney(drill.aside_amount)} ₽ ({drill.aside_count}{" "}
+          {paymentsWord(drill.aside_count)}) прошло по этим статьям в этом месяце, но к строке не
+          относится: оплата документов других периодов, переводы, суммы, посчитанные другими
+          модулями.
+        </p>
+      )}
     </div>
   );
 }

@@ -205,9 +205,13 @@ class DrillOut(BaseModel):
     month: date
     total: Decimal
     undecomposed: list[str]
+    #: Платежи месяца, которые число строки не меняют и не изменят. Одна цифра вместо
+    #: таблицы: показать, что ничего не спрятано, не отвлекая от сути.
+    aside_amount: Decimal
+    aside_count: int
     groups: list[DrillGroupOut]
 
-    @field_serializer("total")
+    @field_serializer("total", "aside_amount")
     def _money(self, value: Decimal) -> str:
         return f"{value:.2f}"
 
@@ -275,6 +279,8 @@ async def get_pnl_line(
         month=drill.month,
         total=drill.total,
         undecomposed=drill.undecomposed,
+        aside_amount=drill.aside_amount,
+        aside_count=drill.aside_count,
         groups=[
             DrillGroupOut(
                 stream=group.stream,
