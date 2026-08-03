@@ -28,6 +28,7 @@ from app.services.pnl import formulas
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import fixed_assets as fixed_assets_source
 from app.services.pnl.sources import manual as manual_source
+from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources import taxes as taxes_source
 from app.services.pnl.types import (
@@ -130,6 +131,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     _apply_manual(lines, manual)
     await _apply_fixed_assets(session, lines, month_start)
     await _apply_taxes(session, lines, month_start)
+    await _apply_payroll(session, lines, month_start, month_end)
 
     formulas.apply_formulas(lines, catalog)
     _apply_percentages(lines)
@@ -210,6 +212,37 @@ async def _apply_taxes(
         status=LineStatus.OK if income_tax is not None else LineStatus.NO_DATA,
         note=note,
     )
+
+
+async def _apply_payroll(
+    session: AsyncSession,
+    lines: dict[str, LineValue],
+    month_start: date,
+    month_end: date,
+) -> None:
+    """Зарплаты, премии и накопительный фонд.
+
+    Ревизионные штрафы сюда не вычитаются — они уходят в строку «Результаты ревизии»
+    отдельным компонентом. Прочие штрафы уменьшают зарплату поваров: именно с их выплаты
+    они и удерживаются.
+    """
+    month = await payroll_source.build_payroll_month(session, month_start, month_end)
+    known = LineStatus.OK if month.has_data else LineStatus.NO_DATA
+    values = {
+        "cook_payroll": payroll_source.cook_payroll(month),
+        "administrator_payroll": month.cashier_pay,
+        "admin_payroll": month.admin_pay,
+        "bonuses": month.bonuses,
+        "accumulation_fund": month.fund_accrual,
+    }
+    for line_code, amount in values.items():
+        _add_component(
+            lines,
+            line_code,
+            stream="payroll",
+            amount=amount if month.has_data else None,
+            status=known,
+        )
 
 
 async def _article_lines(session: AsyncSession) -> dict[Any, str]:
