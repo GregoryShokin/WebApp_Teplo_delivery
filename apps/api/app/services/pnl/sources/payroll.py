@@ -102,8 +102,27 @@ async def build_payroll_month(
     # поэтому берём его один раз на пару «сотрудник + месяц»: сложив две строки, мы удвоили бы
     # зарплату собственника (за июль 2026 это 280 000 ₽ вместо 140 000 ₽).
     on_demand: dict[tuple[uuid.UUID, str], Decimal] = {}
+    # Сотрудники, у которых за этот месяц есть оклад «по востребованию». Их обычные строки
+    # того же месяца учитывать НЕЛЬЗЯ: ``accrual_amount`` — оклад за ВЕСЬ месяц, а не за
+    # остаток. В июне 2026 собственника перевели на этот режим с середины месяца, и первая
+    # половина осталась обычной строкой на 70 000 ₽ — сложив её с окладом 140 000 ₽,
+    # получили бы 210 000 ₽ при окладе 140 000 ₽.
+    on_demand_employees: set[uuid.UUID] = set()
+
+    for line, _period in rows:
+        proration = line.components.get("proration") if isinstance(line.components, dict) else None
+        if isinstance(proration, dict) and proration.get("on_demand"):
+            period_month = str(proration.get("period_month") or "")
+            if period_month.startswith(f"{month_start.year:04d}-{month_start.month:02d}"):
+                on_demand_employees.add(line.employee_id)
 
     for line, period in rows:
+        if line.employee_id in on_demand_employees and not (
+            isinstance(line.components, dict)
+            and isinstance(line.components.get("proration"), dict)
+            and line.components["proration"].get("on_demand")
+        ):
+            continue
         proration = line.components.get("proration") if isinstance(line.components, dict) else None
         if isinstance(proration, dict) and proration.get("on_demand"):
             raw_amount = proration.get("accrual_amount")
