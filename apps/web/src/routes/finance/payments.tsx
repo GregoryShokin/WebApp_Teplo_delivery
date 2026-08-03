@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,13 +36,31 @@ function methodLabel(row: PaymentRow): string {
   return row.bank_channel === "sber" ? "Сбербанк" : "Т-Банк";
 }
 
-export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => void }) {
-  const [scope, setScope] = useState<"active" | "all" | "edo">("active");
+/** Вкладки страницы «Платежи». Живут в URL, а не в состоянии: без этого нельзя дать
+ *  ссылку «вот здесь новые контрагенты», а редирект со старого /warehouse/sbis
+ *  приземлял человека на «Активные» вместо реестра ЭДО, ради которого он и шёл. */
+export type PaymentsTab = "active" | "history" | "edo";
+
+const TAB_PATHS: Record<PaymentsTab, string> = {
+  active: "/finance/payments",
+  history: "/finance/payments/history",
+  edo: "/finance/payments/edo",
+};
+
+export function FinancePaymentsRoute({
+  activeTab = "active",
+  onNavigate,
+}: {
+  activeTab?: PaymentsTab;
+  onNavigate?: (path: string) => void;
+}) {
   const permissions = usePermissions();
+  // Агрегатор различает только active/all — «Вся история» это его scope=all.
+  const scope = activeTab === "history" ? "all" : "active";
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["finance-payments", scope],
-    queryFn: () => getPayments(scope === "edo" ? "active" : scope),
-    enabled: scope !== "edo",
+    queryFn: () => getPayments(scope),
+    enabled: activeTab !== "edo",
   });
 
   const items = data?.items ?? [];
@@ -60,14 +77,17 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <Tabs value={scope} onValueChange={(v) => setScope(v as "active" | "all" | "edo")}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => onNavigate?.(TAB_PATHS[v as PaymentsTab])}
+        >
           <TabsList>
             <TabsTrigger value="active">Активные</TabsTrigger>
-            <TabsTrigger value="all">Вся история</TabsTrigger>
+            <TabsTrigger value="history">Вся история</TabsTrigger>
             <TabsTrigger value="edo">ЭДО (СБИС)</TabsTrigger>
           </TabsList>
         </Tabs>
-        {scope === "active" ? (
+        {activeTab === "active" ? (
           <div className="flex flex-wrap gap-2">
             {buckets.map((b) => (
               <span
@@ -81,7 +101,7 @@ export function FinancePaymentsRoute(_props: { onNavigate?: (path: string) => vo
         ) : null}
       </div>
 
-      {scope === "edo" ? (
+      {activeTab === "edo" ? (
         <SbisTab
           canOperate={permissions.canPerformAction("counterparties.operate")}
           // Разбор карточки нового контрагента — правка профиля, а она под ADMIN:

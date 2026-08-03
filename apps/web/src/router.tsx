@@ -94,8 +94,31 @@ const routes: AppRoute[] = [
     render: ({ navigate }) => <PaymentPageRoute onNavigate={navigate} />,
   },
   {
+    // Вкладки — путями (как /dds/*): на них ссылаются извне, и состояние в React
+    // не пережило бы ни редиректа со старого URL, ни ссылки «вот тут новые контрагенты».
     path: "/finance/payments",
-    render: ({ navigate }) => <FinancePaymentsRoute onNavigate={navigate} />,
+    children: [
+      {
+        path: "",
+        render: ({ navigate }) => <FinancePaymentsRoute activeTab="active" onNavigate={navigate} />,
+      },
+      {
+        path: "history",
+        render: ({ navigate }) => (
+          <FinancePaymentsRoute activeTab="history" onNavigate={navigate} />
+        ),
+      },
+      {
+        path: "edo",
+        render: ({ navigate }) => <FinancePaymentsRoute activeTab="edo" onNavigate={navigate} />,
+      },
+      {
+        // Неизвестный хвост — не «Раздел не найден», а первая вкладка: ссылка на
+        // страницу платежей должна открывать страницу платежей.
+        path: ":unknown",
+        render: ({ navigate }) => <FinancePaymentsRoute activeTab="active" onNavigate={navigate} />,
+      },
+    ],
   },
   {
     path: "/finance/counterparties",
@@ -126,8 +149,10 @@ const routes: AppRoute[] = [
       },
       {
         // Реестр ЭДО переехал на страницу «Платежи» (решение владельца 16.07).
+        // Ведём прямо на его вкладку: до вкладок-путей этот редирект приземлял
+        // человека на «Активные» — то есть куда угодно, кроме реестра ЭДО.
         path: "sbis",
-        render: ({ navigate }) => <Redirect to="/finance/payments" navigate={navigate} />,
+        render: ({ navigate }) => <Redirect to="/finance/payments/edo" navigate={navigate} />,
       },
     ],
   },
