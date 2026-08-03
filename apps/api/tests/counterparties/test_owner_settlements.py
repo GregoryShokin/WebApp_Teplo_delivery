@@ -77,6 +77,8 @@ def _seed(factory: async_sessionmaker[AsyncSession]) -> dict[str, str]:
                 name="Выдача кредитов и займов",
                 movement_type="outflow",
                 activity_type="investing",
+                # Как на проде после 0249: статья займа обязана называть собственника.
+                owner_required=True,
             )
             session.add_all([wallet, article])
             await session.flush()
@@ -130,6 +132,41 @@ def test_owner_debt_shows_up_and_grows_with_the_loan(
 
     # 200 000 входящего остатка + 30 000 июльского займа. Долг вырос сам: правило 1 превращает
     # свободный платёж контрагенту в дебиторку, отдельной кнопки «оформить займ» не нужно.
+    assert _receivable(client, seeded["pavel"]) == Decimal("230000.00")
+    assert _receivable(client, seeded["grigoriy"]) == Decimal("1020000.00")
+
+
+def test_owner_settlements_never_wait_for_a_document(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Расчёты с собственником не стоят в очереди признания расходов.
+
+    Долг собственника — не услуга: документа по нему не будет никогда, расходом он не станет ни
+    при каких условиях, и «признать за период» система такой строке всё равно не даст. А очередь
+    по умолчанию ЖДЁТ документ, и на проде 03.08.2026 три строки собственников (1 020 000 +
+    200 000 входящих остатков и 30 000 июльского займа) дали 1,25 млн ₽ из 1,4 млн ₽ плитки
+    «Ждём документ»: экран читался как долг перед поставщиками, которого нет.
+
+    Проверяется и то, что долг НЕ ПОТЕРЯЛСЯ: из ДЗ он никуда не делся, ушёл только из очереди.
+    """
+    seeded = _seed(async_session_factory)
+    response = client.patch(
+        f"/api/v1/dds/transactions/{seeded['txn']}",
+        json={"article_id": seeded["article"], "counterparty_id": seeded["pavel"]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200, response.text
+
+    queue = client.get("/api/v1/accounting/suppliers", headers=HEADERS)
+    assert queue.status_code == 200, queue.text
+    payload = queue.json()
+    owners = {seeded["pavel"], seeded["grigoriy"]}
+    stuck = [item for item in payload["items"] if item["counterparty_id"] in owners]
+    assert stuck == [], "расчёты с собственником стоят в очереди признания расходов"
+    assert payload["waiting_document"]["amount"] == 0
+    assert payload["needs_period"]["amount"] == 0
+
+    # Деньги при этом на месте: 230 000 у Павла и 1 020 000 у Григория — в дебиторке.
     assert _receivable(client, seeded["pavel"]) == Decimal("230000.00")
     assert _receivable(client, seeded["grigoriy"]) == Decimal("1020000.00")
 

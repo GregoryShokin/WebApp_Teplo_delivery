@@ -8,11 +8,11 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from cp_helpers import make_counterparty, make_invoice
+from cp_helpers import make_counterparty, make_invoice, ongoing_service_window
 from sqlalchemy import select
 
 from app.models import CounterpartyPayableProfile, SupplierExpenseAccrual
@@ -50,8 +50,9 @@ async def test_void_cancels_accrual_and_recognition_skips_it(async_session_facto
         await _require_period(session, cp.id)
         invoice = await make_invoice(session, counterparty_id=cp.id, amount="5000.00")
         await session.commit()
+        start, end = ongoing_service_window()
         await set_invoice_service_period(
-            session, invoice=invoice, start=date(2026, 6, 1), end=date(2026, 6, 30),
+            session, invoice=invoice, start=start, end=end,
             actor_user_id=None,
         )
         accrual = await _accrual(session, invoice.id)
@@ -64,7 +65,7 @@ async def test_void_cancels_accrual_and_recognition_skips_it(async_session_facto
 
         # Джоба признания начисление аннулированной накладной не трогает.
         recognized = await recognize_due_expenses(
-            session, as_of=date(2027, 1, 1), commit=False
+            session, as_of=end + timedelta(days=1), commit=False
         )
         assert recognized == 0
         await session.refresh(accrual)
@@ -102,8 +103,9 @@ async def test_scheduled_amount_still_tracks_invoice(async_session_factory):
         await _require_period(session, cp.id)
         invoice = await make_invoice(session, counterparty_id=cp.id, amount="5000.00")
         await session.commit()
+        start, end = ongoing_service_window()
         await set_invoice_service_period(
-            session, invoice=invoice, start=date(2026, 6, 1), end=date(2026, 6, 30),
+            session, invoice=invoice, start=start, end=end,
             actor_user_id=None,
         )
         invoice.amount = Decimal("6200.00")
@@ -176,18 +178,56 @@ async def test_recognition_is_strict_after_last_day(async_session_factory):
         await _require_period(session, cp.id)
         invoice = await make_invoice(session, counterparty_id=cp.id, amount="3000.00")
         await session.commit()
+        start, end = ongoing_service_window()
         await set_invoice_service_period(
-            session, invoice=invoice, start=date(2026, 6, 1), end=date(2026, 6, 30),
+            session, invoice=invoice, start=start, end=end,
             actor_user_id=None,
         )
 
         # В последний день услуги ещё не признаём (граница строгая).
-        assert await recognize_due_expenses(session, as_of=date(2026, 6, 30), commit=False) == 0
+        assert await recognize_due_expenses(session, as_of=end, commit=False) == 0
         accrual = await _accrual(session, invoice.id)
         assert accrual.status == "scheduled"
 
         # Первый день следующего периода — признаём, месяц = месяц окончания.
-        assert await recognize_due_expenses(session, as_of=date(2026, 7, 1), commit=True) == 1
+        assert (
+            await recognize_due_expenses(session, as_of=end + timedelta(days=1), commit=True) == 1
+        )
         await session.refresh(accrual)
         assert accrual.status == "recognized"
-        assert accrual.recognition_month == date(2026, 6, 1)
+        assert accrual.recognition_month == start
+
+
+async def test_late_document_is_recognized_at_once(async_session_factory):
+    """Документ, пришедший ПОСЛЕ конца своего периода, признаётся сразу, а не следующей ночью.
+
+    УПД за июль приходит в августе — это норма, а не исключение. Пока признание было целиком
+    делом ночной джобы, такой расход ждал ближайших 00:05 МСК: до суток. Владелец 03.08.2026
+    видел у УПД «Назад в будущее» на 83 092 ₽ подпись «признание после 31.07.2026» и читал её
+    как поломку — дата наступила, а расхода в июле нет.
+
+    Условие признания при этом ОДНО И ТО ЖЕ с джобой: строго после последнего дня периода.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ООО «Назад в будущее»", inn="7710000005")
+        await _require_period(session, cp.id)
+        invoice = await make_invoice(session, counterparty_id=cp.id, amount="83092.00")
+        await session.commit()
+
+        # Период кончился до сегодня: документ опоздал.
+        last_month_end = date.today().replace(day=1) - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        await set_invoice_service_period(
+            session,
+            invoice=invoice,
+            start=last_month_start,
+            end=last_month_end,
+            actor_user_id=None,
+        )
+
+        accrual = await _accrual(session, invoice.id)
+        assert accrual is not None
+        assert accrual.status == "recognized", "опоздавший документ ждёт ночной джобы"
+        assert accrual.recognition_month == last_month_start
+        # Джобе делать больше нечего — двойного признания не будет.
+        assert await recognize_due_expenses(session, commit=False) == 0

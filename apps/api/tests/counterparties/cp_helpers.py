@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -101,6 +101,21 @@ async def admin_headers(session_factory: async_sessionmaker[AsyncSession]) -> di
 
 
 # --- domain factories ---------------------------------------------------------
+
+
+def ongoing_service_window() -> tuple[date, date]:
+    """Период услуги, который на момент прогона ЕЩЁ ИДЁТ, — следующий календарный месяц.
+
+    Нужен там, где проверяется поведение НЕпризнанного начисления. Документ, чей период уже
+    кончился, теперь признаётся сразу при синхронизации (``sync_invoice_accrual``), и тест с
+    захардкоженным «июнем 2026» проверял бы совсем не то, что написано в его названии, — просто
+    потому что июнь давно прошёл. Дата вычисляется от сегодняшнего дня: фиксированный 2027-й
+    протух бы ровно так же, только позже и незаметнее.
+    """
+    today = date.today()
+    start = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    end = (start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    return start, end
 
 
 def _money(value: Any) -> Decimal:

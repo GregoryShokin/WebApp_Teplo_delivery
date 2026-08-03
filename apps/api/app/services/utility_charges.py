@@ -46,6 +46,7 @@ from app.models import (
     UtilityAccount,
 )
 from app.services import (
+    accounting_periods,
     clock,
     counterparty_matching,
     supplier_prepayments,
@@ -427,6 +428,15 @@ async def expected_periods(
             index += 12
             year -= 1
         month = date(year, index, 1)
+        # ДО НАЧАЛА УЧЁТА КВИТАНЦИЙ НЕ ЖДЁМ. Расход тех месяцев уже сидит во входящих остатках
+        # на 01.07.2026, и требовать за них бумажку значит звать человека к работе, которая
+        # ничего не изменит. Поток заводится датой начала подачи ресурса (у Черниковой —
+        # 01.01.2026), и без этой отсечки календарь честно краснел февралём–июнем, к учёту не
+        # относящимися вовсе: пятнадцать просрочек, среди которых терялся единственный
+        # настоящий пропуск. Отсечка гасит ОЖИДАНИЕ, а не саму возможность: принести квитанцию
+        # за старый месяц по-прежнему можно, разбор её примет.
+        if accounting_periods.before_accounting_start(month_bounds(month)[1]):
+            continue
         if month < account.started_on.replace(day=1):
             continue
         if account.ended_on is not None and month > account.ended_on:

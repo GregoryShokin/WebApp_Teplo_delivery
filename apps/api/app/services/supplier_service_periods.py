@@ -138,6 +138,15 @@ async def sync_invoice_accrual(
             existing.service_period_start = start
             existing.service_period_end = end
     await session.flush()
+    # ОПОЗДАВШИЙ ДОКУМЕНТ ПРИЗНАЁТСЯ СРАЗУ, А НЕ СЛЕДУЮЩЕЙ НОЧЬЮ. Ночная джоба права ровно в
+    # одном: пока период идёт, признавать нечего. Но УПД за июль приходит в августе, и до этой
+    # строки он ждал ближайших 00:05 — до суток. Владелец видел строку «признание после
+    # 31.07.2026» третьего августа и читал её как поломку: дата наступила, а расхода нет
+    # (УПД «Назад в будущее» на 83 092 ₽, 03.08.2026). Условие признания у джобы и здесь одно и
+    # то же (``recognize_due_expenses``), включая отказ дописывать расход в закрытый месяц, —
+    # разница только в моменте вызова, поэтому расхождения двух путей быть не может.
+    if existing.status == "scheduled" and end < datetime.now(MOSCOW_TZ).date():
+        await recognize_due_expenses(session, invoice_ids=[invoice.id], commit=False)
     return existing
 
 

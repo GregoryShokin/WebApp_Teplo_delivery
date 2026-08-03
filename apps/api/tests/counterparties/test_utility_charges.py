@@ -707,21 +707,46 @@ async def test_calendar_shows_month_without_document(
         await utility_charges.build_utility_documents(
             session,
             account,
-            period_start=date(2026, 6, 1),
-            period_end=date(2026, 6, 30),
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 7, 31),
             expense_amount=Decimal("8500.00"),
             payable_amount=Decimal("8500.00"),
-            as_of=date(2026, 7, 5),
+            as_of=date(2026, 8, 5),
         )
 
         rows = await utility_charges.expected_periods(
-            session, account=account, months_back=3, as_of=date(2026, 8, 20)
+            session, account=account, months_back=3, as_of=date(2026, 9, 20)
         )
         by_month = {row["month"]: row["state"] for row in rows}
 
-        assert by_month[date(2026, 6, 1)] == "provided"
-        # За июль документа нет, а срок (10 августа) прошёл — это просрочка, а не тишина.
-        assert by_month[date(2026, 7, 1)] == "overdue"
+        assert by_month[date(2026, 7, 1)] == "provided"
+        # За август документа нет, а срок (10 сентября) прошёл — это просрочка, а не тишина.
+        assert by_month[date(2026, 8, 1)] == "overdue"
+        await session.rollback()
+
+
+async def test_calendar_is_silent_before_accounting_start(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Месяцы до начала учёта не спрашиваются вовсе — даже когда поток начался раньше.
+
+    Поток заводится датой начала подачи ресурса: у Черниковой вода, газ и свет идут с 01.01.2026,
+    а учёт расчётов ведётся с 01.07.2026, и расход первого полугодия уже сидит во входящих
+    остатках. Пока отсечки не было, календарь честно краснел пятнадцатью просрочками за
+    февраль–июнь (владелец, 03.08.2026): работа, которую невозможно и не нужно делать, а на
+    её фоне терялся единственный настоящий пропуск.
+    """
+    async with async_session_factory() as session:
+        account = await _account(session, expected_day=20, started_on=date(2026, 1, 1))
+
+        rows = await utility_charges.expected_periods(
+            session, account=account, months_back=6, as_of=date(2026, 8, 3)
+        )
+        months = [row["month"] for row in rows]
+
+        assert months == [date(2026, 7, 1)], "спрошены месяцы, к учёту не относящиеся"
+        # Июль ещё не просрочен: срок по нему — 20 августа.
+        assert rows[0]["state"] == "waiting"
         await session.rollback()
 
 

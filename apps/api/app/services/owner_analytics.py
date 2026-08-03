@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import BusinessOwner, Counterparty, CounterpartyRole, DdsArticle
 
 __all__ = [
+    "OWNER_LOAN_KIND",
     "OWNER_ROLE",
     "OwnerAnalyticsError",
     "OwnerRow",
@@ -40,6 +41,12 @@ __all__ = [
 ]
 
 OWNER_ROLE = "owner"
+
+# Вид дебиторки «собственник должен бизнесу»: заём выданный и входящий остаток по нему. Отдельный
+# вид, а не ``subscription``, потому что услугой он не станет никогда — расход по нему не
+# признаётся, документа от собственника не ждут, и очередь признания расходов такие строки
+# обязана пропускать (иначе 1,25 млн ₽ входящих остатков вечно висят в «Ждём документ»).
+OWNER_LOAN_KIND = "owner_loan"
 
 
 class OwnerAnalyticsError(ValueError):

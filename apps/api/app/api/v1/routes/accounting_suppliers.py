@@ -57,6 +57,7 @@ from app.services import counterparty_balance_as_of as balance_as_of
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
 from app.services import expense_reversal as reversal_service
+from app.services import owner_analytics
 from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import (
@@ -226,6 +227,11 @@ class _QueueContext:
     # Товарный контур: авансы поставщикам товара гасятся накладной, а расход по сырью идёт
     # фудкостом. В очереди признания расходов им не место — владелец это же и сказал.
     goods_contour: set[uuid.UUID] = field(default_factory=set)
+    # Статьи расчётов с собственниками: заём, его возврат, взнос, дивиденды. Отбор по СТАТЬЕ, а
+    # не по контрагенту: собственник бывает бизнесу ещё и арендодателем, и подрядчиком (о том же
+    # говорит отказ от обратного запрета в ``owner_analytics``), и выкинуть из очереди все его
+    # платежи значило бы спрятать настоящую услугу вместе с займом.
+    owner_settlement_articles: set[uuid.UUID] = field(default_factory=set)
 
 
 async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext:
@@ -307,6 +313,11 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
         )
     ).all()
     ctx.goods_contour.update(cp_id for cp_id in warehouse if cp_id not in explicit_service)
+
+    owner_articles = (
+        await session.scalars(select(DdsArticle.id).where(DdsArticle.owner_required.is_(True)))
+    ).all()
+    ctx.owner_settlement_articles.update(owner_articles)
     return ctx
 
 
@@ -509,6 +520,18 @@ async def list_supplier_accounting(
         # Товарные авансы гасит накладная, а расход по сырью идёт фудкостом — в очереди
         # признания расходов их быть не должно (требование владельца 01.08.2026).
         if prepayment.counterparty_id in ctx.goods_contour:
+            continue
+        # Расчёты с собственником — не услуга и услугой не станут: заём, взнос, дивиденды. Ждать
+        # по ним документ не от кого, признавать расход нечего, и «признать за период» система
+        # такой строке всё равно не даст. В очереди она только копила просрочку: входящие
+        # остатки собственников (1 020 000 и 200 000 ₽ на 01.07.2026) плюс июльский заём давали
+        # 1,25 млн ₽ из 1,4 млн ₽ плитки «Ждём документ» — экран читался как долг перед
+        # поставщиками, которого нет. Долг собственника при этом никуда не делся: он живёт в
+        # ДЗ/КЗ и в «Остатках», где ему и место.
+        if (
+            prepayment.kind == owner_analytics.OWNER_LOAN_KIND
+            or prepayment.article_id in ctx.owner_settlement_articles
+        ):
             continue
         # Договор и аренда: платежи — это просто деньги, гасящие кредиторку начислений
         # (правило 1 канона), и в очереди признания им делать нечего — модель владельца

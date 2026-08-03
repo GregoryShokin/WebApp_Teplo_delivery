@@ -25,6 +25,7 @@ from cp_helpers import (
     make_expense_article,
     make_invoice,
     make_wallet,
+    ongoing_service_window,
 )
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -499,7 +500,11 @@ def test_recognition_does_not_touch_other_counterparties(
                 session, counterparty_id=mine.id, amount="3000.00", article_id=article.id
             )
 
-            # Чужое начисление, у которого период давно закончился: джоба признает его ночью.
+            # Чужое начисление, у которого период уже закончился, а признания ещё не было:
+            # джоба признает его ночью. Заводится оно ИДУЩИМ периодом, а созревает правкой
+            # строки напрямую — иначе опоздавший документ признался бы прямо в синхронизации
+            # (sync_invoice_accrual), и проверять было бы нечего. В жизни это состояние живёт
+            # ровно между концом периода и ближайшими 00:05.
             other = await make_counterparty(session, name="Признание Чужое", inn="6155000509")
             invoice = await make_invoice(
                 session,
@@ -508,11 +513,12 @@ def test_recognition_does_not_touch_other_counterparties(
                 invoice_date=date(2026, 5, 31),
             )
             await session.commit()
+            running_start, running_end = ongoing_service_window()
             await periods.set_invoice_service_period(
                 session,
                 invoice=invoice,
-                start=date(2026, 5, 1),
-                end=date(2026, 5, 31),
+                start=running_start,
+                end=running_end,
                 actor_user_id=None,
             )
             foreign = await session.scalar(
@@ -521,6 +527,9 @@ def test_recognition_does_not_touch_other_counterparties(
                 )
             )
             assert foreign.status == "scheduled"
+            foreign.service_period_start = date(2026, 5, 1)
+            foreign.service_period_end = date(2026, 5, 31)
+            await session.commit()
             return prepayment.id, foreign.id
 
     prepayment_id, foreign_id = asyncio.run(seed())

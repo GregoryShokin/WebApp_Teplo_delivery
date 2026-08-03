@@ -14,7 +14,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from cp_helpers import make_counterparty, make_invoice
+from cp_helpers import make_counterparty, make_invoice, ongoing_service_window
 from sqlalchemy import func, select
 
 from app.models import (
@@ -71,25 +71,29 @@ async def test_set_invoice_service_period_creates_accrual_and_unblocks(async_ses
         invoice = await make_invoice(session, counterparty_id=cp.id, amount="4900.00")
         await session.commit()
 
+        # Период ещё идёт: начисление обязано быть заведено, но не признано. Опоздавший
+        # документ признаётся сразу (см. test_late_document_is_recognized_at_once), и
+        # захардкоженный прошлый месяц проверял бы здесь совсем не то, что написано в названии.
+        start, end = ongoing_service_window()
         await set_invoice_service_period(
             session,
             invoice=invoice,
-            start=date(2026, 6, 1),
-            end=date(2026, 6, 30),
+            start=start,
+            end=end,
             actor_user_id=None,
         )
 
         await session.refresh(invoice)
         assert invoice.service_period_status == "ready"
         assert invoice.service_period_source == "manual"
-        assert invoice.service_period_start == date(2026, 6, 1)
+        assert invoice.service_period_start == start
 
         accrual = await session.scalar(
             select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice.id)
         )
         assert accrual is not None
         assert accrual.status == "scheduled"
-        assert accrual.service_period_end == date(2026, 6, 30)
+        assert accrual.service_period_end == end
 
         # Гард периода снят: вызов больше не жалуется на период (другие гарды допустимы).
         try:
