@@ -95,7 +95,25 @@ async def build_payroll_month(
         )
     ).all()
 
+    # Оклад «по востребованию» (собственник) начисляется ИНАЧЕ: в ``base_pay`` у такой строки
+    # ноль, а месячный оклад лежит в ``components['proration']['accrual_amount']``. Причина —
+    # этот оклад не привязан к периоду ведомости: он копится долгом с 1-го числа и гасится
+    # произвольными суммами по кнопке. ОБЕ полумесячные строки несут ПОЛНЫЙ месячный оклад,
+    # поэтому берём его один раз на пару «сотрудник + месяц»: сложив две строки, мы удвоили бы
+    # зарплату собственника (за июль 2026 это 280 000 ₽ вместо 140 000 ₽).
+    on_demand: dict[tuple[uuid.UUID, str], Decimal] = {}
+
     for line, period in rows:
+        proration = line.components.get("proration") if isinstance(line.components, dict) else None
+        if isinstance(proration, dict) and proration.get("on_demand"):
+            raw_amount = proration.get("accrual_amount")
+            period_month = str(proration.get("period_month") or "")
+            if raw_amount is not None and period_month.startswith(
+                f"{month_start.year:04d}-{month_start.month:02d}"
+            ):
+                on_demand[(line.employee_id, period_month)] = money_decimal(raw_amount)
+            continue
+
         days = line.components.get("days") if isinstance(line.components, dict) else None
         if isinstance(days, list) and days:
             for day in days:
@@ -146,6 +164,13 @@ async def build_payroll_month(
             else:
                 result.admin_pay += amount
             result.fund_accrual += money_decimal(line.fund_accrual)
+
+    for amount in on_demand.values():
+        if amount == 0:
+            continue
+        result.has_data = True
+        result.admin_pay += amount
+        result.by_role["Оклад по востребованию"] += amount
 
     await _apply_adjustments(session, result, month_start, month_end)
     return result
