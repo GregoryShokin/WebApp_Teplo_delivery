@@ -345,3 +345,79 @@ class PnlManualEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class PnlIikoFact(Base):
+    """Месячный факт из iiko: выручка, фудкост, зарплата курьеров.
+
+    Единственное место проектора, где данные ХРАНЯТСЯ. Причина не в скорости расчёта, а в
+    доступности источника: iiko Server отвечает только с прод-адреса, отвечает секундами и
+    ограничивает частоту. Ходить в него при каждом открытии отчёта — значит поставить
+    страницу в зависимость от внешней системы.
+
+    ``previous_amount`` хранит прошлое значение при перезаливке месяца. Выручка закрытого
+    месяца меняться не должна; если изменилась — это видно, а не подменяется молча.
+    """
+
+    __tablename__ = "pnl_iiko_fact"
+    __table_args__ = (
+        Index(
+            "uq_pnl_iiko_fact_slot",
+            "period_month",
+            "metric_code",
+            "direction",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    metric_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    # rolls / pizza / hot_shop / bar либо total.
+    direction: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="total", server_default=text("'total'")
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    rows_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PnlProductWhitelist(Base):
+    """Товар iiko → товарная строка ОПиУ.
+
+    Отбор идёт по конкретным идентификаторам, а не по словам в названии, и это не
+    перестраховка: проверка на марте 2026 показала, что поиск по слову «вакуум» даёт
+    2 352 ₽ против 1 658 ₽ контрольной суммы — в выдачу попадает посторонний товар.
+    """
+
+    __tablename__ = "pnl_product_whitelist"
+    __table_args__ = (
+        CheckConstraint(
+            "include_status in ('include', 'requires_owner_review', 'exclude')",
+            name="ck_pnl_product_whitelist_status",
+        ),
+        Index(
+            "uq_pnl_product_whitelist_guid_line",
+            "iiko_product_guid",
+            "line_code",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    line_code: Mapped[str] = mapped_column(
+        ForeignKey("pnl_line.code", ondelete="RESTRICT"), nullable=False
+    )
+    # requires_owner_review — расхождение с контрольной суммой: в расчёт НЕ идёт, но
+    # показывается отдельной цифрой «не отнесено», чтобы пробел был виден.
+    include_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

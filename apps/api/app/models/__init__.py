@@ -159,8 +159,10 @@ from app.models.period import Period
 from app.models.pnl import (
     PnlArticleRule,
     PnlCashOrigin,
+    PnlIikoFact,
     PnlLine,
     PnlManualEntry,
+    PnlProductWhitelist,
     PnlSourceRule,
 )
 from app.models.position import Position, PositionChangeEvent
@@ -297,8 +299,10 @@ __all__ = [
     "Permission",
     "PnlArticleRule",
     "PnlCashOrigin",
+    "PnlIikoFact",
     "PnlLine",
     "PnlManualEntry",
+    "PnlProductWhitelist",
     "PnlSourceRule",
     "Position",
     "PositionChangeEvent",

@@ -27,6 +27,7 @@ from app.models import PnlLine
 from app.services.pnl import formulas
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import fixed_assets as fixed_assets_source
+from app.services.pnl.sources import iiko as iiko_source
 from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
@@ -134,6 +135,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     await _apply_taxes(session, lines, month_start)
     await _apply_payroll(session, lines, month_start, month_end)
     await _apply_inventory(session, lines, month_start, month_end, report)
+    await _apply_iiko(session, lines, month_start)
 
     formulas.apply_formulas(lines, catalog)
     _apply_percentages(lines)
@@ -299,6 +301,28 @@ async def _apply_inventory(
                     "Ревизии еженедельные — результат покрывает не весь месяц"
                 ),
             )
+        )
+
+
+async def _apply_iiko(
+    session: AsyncSession, lines: dict[str, LineValue], month_start: date
+) -> None:
+    """Выручка, фудкост и курьеры — из зеркала, наполняемого ночной джобой."""
+    facts = await iiko_source.month_facts(session, month_start)
+    mapping = {
+        "revenue_gross_chernikova": "revenue_gross",
+        "revenue_net_chernikova": "revenue_net",
+        "food_cost_chernikova": "food_cost",
+        "courier_service": "courier_salary",
+    }
+    for line_code, metric in mapping.items():
+        amount = facts.get(metric)
+        _add_component(
+            lines,
+            line_code,
+            stream="iiko",
+            amount=amount,
+            status=LineStatus.OK if amount is not None else LineStatus.NO_DATA,
         )
 
 
