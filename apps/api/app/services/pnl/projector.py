@@ -26,8 +26,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import PnlLine
 from app.services.pnl import formulas
 from app.services.pnl.sources import cashflow as cash_source
+from app.services.pnl.sources import fixed_assets as fixed_assets_source
 from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import recognition as recognition_source
+from app.services.pnl.sources import taxes as taxes_source
 from app.services.pnl.types import (
     Component,
     LineStatus,
@@ -126,6 +128,8 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     _apply_recognition(lines, recognition, session_article_lines=await _article_lines(session))
     _apply_cash(lines, cash)
     _apply_manual(lines, manual)
+    await _apply_fixed_assets(session, lines, month_start)
+    await _apply_taxes(session, lines, month_start)
 
     formulas.apply_formulas(lines, catalog)
     _apply_percentages(lines)
@@ -141,6 +145,71 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
         "cash_in_pnl": cash.by_verdict.get(Verdict.INCLUDED.value, Decimal("0.00")),
     }
     return report
+
+
+def _add_component(
+    lines: dict[str, LineValue],
+    line_code: str,
+    *,
+    stream: str,
+    amount: Decimal | None,
+    status: LineStatus,
+    note: str | None = None,
+) -> None:
+    line = lines.get(line_code)
+    if line is None:
+        return
+    line.components.append(
+        Component(stream=stream, component="main", amount=amount, status=status, note=note)
+    )
+    line.drill_available = amount is not None
+
+
+async def _apply_fixed_assets(
+    session: AsyncSession, lines: dict[str, LineValue], month_start: date
+) -> None:
+    """Амортизация и убыток от выбытия — обе величины неденежные, проводки в ДДС не имеют."""
+    depreciation = await fixed_assets_source.depreciation_for_month(session, month_start)
+    _add_component(
+        lines,
+        "depreciation",
+        stream="fixed_assets",
+        amount=depreciation,
+        status=LineStatus.OK if depreciation is not None else LineStatus.NO_DATA,
+    )
+    disposal = await fixed_assets_source.disposal_loss_for_month(session, month_start)
+    # Выбытий в месяце может не быть — это подтверждённый ноль, а не пробел: реестр отвечает,
+    # что списаний не происходило.
+    _add_component(
+        lines,
+        "asset_disposal_loss",
+        stream="fixed_assets",
+        amount=disposal if disposal is not None else Decimal("0.00"),
+        status=LineStatus.OK if disposal is not None else LineStatus.ZERO_CONFIRMED,
+    )
+
+
+async def _apply_taxes(
+    session: AsyncSession, lines: dict[str, LineValue], month_start: date
+) -> None:
+    """Налоги — из модуля по ПЕРИОДУ налога, а не по дате списания денег."""
+    payroll_tax = await taxes_source.payroll_taxes_for_month(session, month_start)
+    _add_component(
+        lines,
+        "payroll_taxes",
+        stream="taxes",
+        amount=payroll_tax,
+        status=LineStatus.OK if payroll_tax is not None else LineStatus.NO_DATA,
+    )
+    income_tax, note = await taxes_source.income_tax_for_month(session, month_start)
+    _add_component(
+        lines,
+        "taxes",
+        stream="taxes",
+        amount=income_tax,
+        status=LineStatus.OK if income_tax is not None else LineStatus.NO_DATA,
+        note=note,
+    )
 
 
 async def _article_lines(session: AsyncSession) -> dict[Any, str]:

@@ -142,11 +142,6 @@ IN_PNL: list[tuple[str, str, str | None]] = [
     ("soderzhanie_torgovyh_tochek", "shop_maintenance", None),
     ("remont_oborudovaniya_0a2198", "equipment_repair", None),
     ("arenda_sklada", "warehouse_rent", None),
-    (
-        "nalogi_s_z_p",
-        "payroll_taxes",
-        "Из ДДС, а не из ведомости: взносы работодателя в ведомость не входят",
-    ),
     # --- Административные ------------------------------------------------------------
     ("kommunalnye_platezhi_0b0b4c", "utilities_chernikova", None),
     ("arenda_ofisa", "office_rent", None),
@@ -224,6 +219,13 @@ OUT_OF_PNL: list[tuple[str, str, str]] = [
     ("vydacha_depozita_sotrudniku", "deposits", "Депозит — не расход"),
     ("vozvrat_depozita_kurera", "deposits", "Возврат депозита — не расход"),
     # --- Налоги -----------------------------------------------------------------------
+    (
+        "nalogi_s_z_p",
+        "taxes",
+        "Факт уплаты. Строка «Налоги с ЗП» берёт НАЧИСЛЕНИЕ из модуля «Налоги» по периоду "
+        "налога: 28-29 июля 2026 уплачены НДФЛ и взносы за ИЮНЬ, и касса записала бы их в "
+        "июльский расход — и так каждый месяц",
+    ),
     (
         "tax_payment",
         "taxes",
