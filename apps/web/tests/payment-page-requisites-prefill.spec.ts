@@ -167,7 +167,10 @@ test("правки прошлого разбора важнее и счёта, �
   );
 
   await page.goto("/finance/payments");
-  await page.getByRole("button", { name: "Разобрать" }).first().click();
+  // У готового счёта своей кнопки «Разобрать» больше нет: сверка идёт в окне отправки,
+  // а вход в разбор — оттуда же, на случай «сумма или контрагент не те».
+  await page.getByRole("button", { name: "В банк" }).first().click();
+  await page.getByRole("button", { name: /поправить разбор/i }).click();
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("КПП")).toHaveValue("614301002");

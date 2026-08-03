@@ -462,6 +462,12 @@ export function PaymentIntakesTab() {
                   canOperate &&
                   (["needs_review", "new", "failed"].includes(item.status) ||
                     (item.status === "linked" && !item.invoice_in_draft));
+                // Разбор нужен только неразобранному. У готового счёта та же сверка идёт в
+                // окне отправки — оно показывает документ, реквизиты, период и статью и само
+                // сохраняет правки перед отправкой. Две кнопки на строке означали два входа
+                // в одно действие, и «Разобрать» на готовом читалось как «что-то не так».
+                const needsReview =
+                  canOperate && ["needs_review", "new", "failed"].includes(item.status);
                 // Готов к отправке/планированию: статус linked, ещё не ушёл в банк И НЕ ОПЛАЧЕН.
                 // Оплатить счёт можно мимо очереди — свободным платежом из выписки, наличными из
                 // Сейфа, ручной сверкой операции. Бейдж такую строку уже показывает как
@@ -491,6 +497,13 @@ export function PaymentIntakesTab() {
                           <Badge className={`${b.cls} whitespace-nowrap`}>{b.label}</Badge>
                         );
                       })()}
+                      {/* Плановая отправка — состояние счёта, а не действие: в колонке
+                          действий она сдвигала кнопки и ломала их вертикаль. */}
+                      {item.scheduled_send_date ? (
+                        <div className="mt-1 whitespace-nowrap text-xs text-violet-700">
+                          → банк {formatDate(item.scheduled_send_date)}
+                        </div>
+                      ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
                       {formatDate(item.invoice_date ?? item.received_at ?? item.created_at)}
@@ -541,23 +554,27 @@ export function PaymentIntakesTab() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {/* nowrap: кнопки уезжали на вторую строку под «Разобрать» и удваивали
-                          высоту каждой строки очереди. */}
+                      {/* Слоты фиксированной ширины, а не поток справа налево: набор кнопок у
+                          строк разный, и при выравнивании по краю «В банк» вставала туда, где
+                          у соседней строки «Разобрать», а иконки съезжали каждая по-своему.
+                          Пустой слот занимает своё место — колонки держат вертикаль. */}
                       <div className="flex flex-nowrap items-center justify-end gap-1">
-                        {item.has_pdf ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Открыть PDF"
-                            onClick={() => void handlePdf(item)}
-                          >
-                            <FileText className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        ) : null}
+                        <span className="flex w-9 justify-center">
+                          {item.has_pdf ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Открыть документ"
+                              onClick={() => void handlePdf(item)}
+                            >
+                              <FileText className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </span>
 
-                        {item.status === "excluded" && canOperate ? (
-                          <>
-                            {/* Корзина «Исключённые»: вернуть в работу или удалить навсегда. */}
+                        {/* Главное действие строки: одно на все состояния. */}
+                        <span className="flex w-[112px] justify-end">
+                          {item.status === "excluded" && canOperate ? (
                             <Button
                               size="sm"
                               variant="outline"
@@ -567,6 +584,34 @@ export function PaymentIntakesTab() {
                               <RotateCcw className="h-4 w-4" aria-hidden="true" />
                               Вернуть
                             </Button>
+                          ) : needsReview ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                // У коммунальной платёжки свой разбор: там поток, период и две
+                                // суммы, а контрагента менять нельзя — он задан потоком.
+                                item.utility_kind ? setUtilityItem(item) : setReviewItem(item)
+                              }
+                            >
+                              Разобрать
+                            </Button>
+                          ) : isReadyRow ? (
+                            // Единственная кнопка готовой строки: окно отправки показывает
+                            // документ, реквизиты, период и статью — сверка и подтверждение там.
+                            <Button
+                              size="sm"
+                              title="Сверить и отправить в банк"
+                              onClick={() => setSendItem(item)}
+                            >
+                              <Send className="h-4 w-4" aria-hidden="true" />В банк
+                            </Button>
+                          ) : null}
+                        </span>
+
+                        {/* Отказ от оплаты: исключить рабочий счёт / удалить исключённый. */}
+                        <span className="flex w-9 justify-center">
+                          {item.status === "excluded" && canOperate ? (
                             <Button
                               size="sm"
                               variant="ghost"
@@ -580,72 +625,33 @@ export function PaymentIntakesTab() {
                             >
                               <Trash2 className="h-4 w-4" aria-hidden="true" />
                             </Button>
-                          </>
-                        ) : (
-                          <>
-                            {/* Разобрать: для неразобранных и для готового, пока не ушёл в банк. */}
-                            {inWork ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  // У коммунальной платёжки свой разбор: там поток, период и две
-                                  // суммы, а контрагента менять нельзя — он задан потоком.
-                                  item.utility_kind
-                                    ? setUtilityItem(item)
-                                    : setReviewItem(item)
-                                }
-                              >
-                                Разобрать
-                              </Button>
-                            ) : null}
+                          ) : inWork ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Исключить из оплаты"
+                              disabled={busy}
+                              onClick={() => excludeMutation.mutate(item.id)}
+                            >
+                              <Ban className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </span>
 
-                            {isReadyRow ? (
-                              <>
-                                {item.scheduled_send_date ? (
-                                  <Badge className="border-violet-200 bg-violet-50 text-violet-700">
-                                    → банк {formatDate(item.scheduled_send_date)}
-                                  </Badge>
-                                ) : null}
-                                {/* Единая кнопка на всех готовых строках → окно отправки с выбором
-                                    даты (реквизиты сверяются и подтверждаются прямо там). */}
-                                <Button
-                                  size="sm"
-                                  title="Отправить в банк"
-                                  onClick={() => setSendItem(item)}
-                                >
-                                  <Send className="h-4 w-4" aria-hidden="true" />В банк
-                                </Button>
-                              </>
-                            ) : null}
-
-                            {/* Исключить рабочий счёт в «Исключённые» (решение «не платим»). */}
-                            {inWork ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Исключить из оплаты"
-                                disabled={busy}
-                                onClick={() => excludeMutation.mutate(item.id)}
-                              >
-                                <Ban className="h-4 w-4" aria-hidden="true" />
-                              </Button>
-                            ) : null}
-
-                            {canOperate &&
-                            ["needs_review", "new", "failed"].includes(item.status) ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Не счёт"
-                                disabled={busy}
-                                onClick={() => ignoreMutation.mutate(item.id)}
-                              >
-                                <X className="h-4 w-4" aria-hidden="true" />
-                              </Button>
-                            ) : null}
-                          </>
-                        )}
+                        {/* «Не счёт» — только у неразобранного; у остальных слот пуст. */}
+                        <span className="flex w-9 justify-center">
+                          {needsReview ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Не счёт"
+                              disabled={busy}
+                              onClick={() => ignoreMutation.mutate(item.id)}
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </span>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -669,7 +675,18 @@ export function PaymentIntakesTab() {
       ) : null}
 
       {sendItem ? (
-        <SendDialog intake={sendItem} onClose={() => setSendItem(null)} />
+        <SendDialog
+          intake={sendItem}
+          onClose={() => setSendItem(null)}
+          onEditRecognition={(item) => {
+            // Переключаем окна, а не открываем поверх: разбор меняет ровно те поля, из-за
+            // которых человек сюда и вернулся, и после него отправку начинают заново с
+            // обновлёнными данными.
+            setSendItem(null);
+            if (item.utility_kind) setUtilityItem(item);
+            else setReviewItem(item);
+          }}
+        />
       ) : null}
     </div>
   );

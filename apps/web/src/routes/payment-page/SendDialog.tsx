@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -21,10 +21,12 @@ import { formatDate, formatRub } from "@/routes/counterparties/shared";
 import {
   cancelSchedule,
   confirmIntake,
+  fetchIntakeFileUrl,
   scheduleSend,
   sendToBank,
   type PaymentIntake,
 } from "./api";
+import { DocumentPreview } from "./DocumentPreview";
 import { RequisitesFields } from "./RequisitesFields";
 import { useRequisitesForm } from "./requisites";
 
@@ -34,9 +36,13 @@ import { useRequisitesForm } from "./requisites";
 export function SendDialog({
   intake,
   onClose,
+  onEditRecognition,
 }: {
   intake: PaymentIntake;
   onClose: () => void;
+  /** «Поправить разбор» — окно отправки правит реквизиты, период и статью, но не сумму,
+   *  номер и контрагента. Если сверка с документом показала, что не то, — путь назад. */
+  onEditRecognition?: (intake: PaymentIntake) => void;
 }) {
   const queryClient = useQueryClient();
   const today = todayIso();
@@ -124,9 +130,35 @@ export function SendDialog({
 
   const busy = send.isPending || cancel.isPending;
 
+  // Документ рядом с формой: у готового счёта это единственная возможность сверить платёж
+  // с бумагой — отдельной кнопки «Разобрать» на строке больше нет. Ссылка живёт ровно
+  // столько, сколько открыто окно.
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!intake.has_pdf) return;
+    let revoked: string | null = null;
+    let cancelled = false;
+    fetchIntakeFileUrl(intake.id)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        revoked = url;
+        setPdfUrl(url);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [intake.id, intake.has_pdf]);
+
   return (
     <Dialog open onOpenChange={(open) => (!open ? onClose() : undefined)}>
-      <DialogContent className="max-w-lg">
+      {/* Шире прежнего: документ и форма стоят рядом, как в окне разбора — иначе сверять
+          реквизиты приходилось бы по памяти. */}
+      <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Отправка счёта в банк</DialogTitle>
           <DialogDescription>
@@ -135,17 +167,39 @@ export function SendDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3">
-          <div className="flex items-baseline justify-between rounded-md border bg-muted/30 px-3 py-2">
-            <div className="font-medium">
-              {r.recipientName || intake.counterparty_name || "—"}
-              {intake.invoice_number ? (
-                <span className="ml-2 text-sm text-muted-foreground">№ {intake.invoice_number}</span>
-              ) : null}
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+          <DocumentPreview
+            url={pdfUrl}
+            mime={intake.attachment_mime}
+            hasFile={intake.has_pdf}
+          />
+
+          <div className="grid content-start gap-3">
+          <div className="rounded-md border bg-muted/30 px-3 py-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-medium">
+                {r.recipientName || intake.counterparty_name || "—"}
+                {intake.invoice_number ? (
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    № {intake.invoice_number}
+                  </span>
+                ) : null}
+              </div>
+              <div className="text-lg font-semibold tabular-nums">
+                {intake.amount ? formatRub(intake.amount) : "—"}
+              </div>
             </div>
-            <div className="text-lg font-semibold tabular-nums">
-              {intake.amount ? formatRub(intake.amount) : "—"}
-            </div>
+            {/* Сумму, номер и контрагента это окно не правит — если сверка с документом
+                показала, что распознано не то, отсюда есть ход в разбор. */}
+            {onEditRecognition ? (
+              <button
+                type="button"
+                className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                onClick={() => onEditRecognition(intake)}
+              >
+                Сумма или контрагент не те — поправить разбор
+              </button>
+            ) : null}
           </div>
 
           <div className="grid gap-2">
@@ -263,6 +317,7 @@ export function SendDialog({
               Не складские поставщики (ПО, реклама, техподдержка) — оплата пойдёт по выбранной
               статье; без выбора — «Оплата поставщикам».
             </p>
+          </div>
           </div>
         </div>
 
