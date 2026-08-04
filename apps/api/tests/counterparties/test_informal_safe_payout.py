@@ -212,6 +212,39 @@ async def test_paid_books_transfer_settles_invoices_creates_reserve(
         assert all("[TPL-" not in (t.payment_purpose or "") for t in legs)
 
 
+async def test_paid_via_safe_keeps_single_invoice_article_on_reserve(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Коммунальный счёт через карту ИП остаётся коммуналкой и на Сейфе."""
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        utility_article = await make_expense_article(
+            session, code="utilities", name="Коммунальные платежи"
+        )
+        landlord = await make_counterparty(session, name="Арендодатель без реквизитов")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=landlord.id,
+            amount="9654.25",
+            number="Вода",
+        )
+        invoice.dds_article_id = utility_article.id
+        await session.commit()
+        draft = await create_payment_draft_for_invoices(
+            session,
+            invoice_ids=[invoice.id],
+            actor_user_id=None,
+            allow_official_via_safe=True,
+        )
+
+        await apply_payment_status(session, draft=draft, raw_status="executed")
+
+        reserve = await _draft_reserve(session, draft.id)
+        assert reserve is not None
+        assert reserve.article_id == utility_article.id
+
+
 async def test_paid_is_idempotent(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

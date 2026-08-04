@@ -258,6 +258,25 @@ async def _settle_draft_via_safe(
         )
     )
     if existing_allocation is None:
+        # Счёт из почты может быть проведён через Сейф не только для неофициального
+        # поставщика, но и для коммуналки арендодателя без реквизитов. В таком случае
+        # расход должен остаться на статье самого счёта (например, «Коммунальные
+        # платежи»), а не молча стать «Оплатой поставщикам». Один резерв не умеет
+        # честно представить несколько разных статей, поэтому при смешанном пакете
+        # сохраняем прежний безопасный fallback.
+        invoice_article_ids = set(
+            (
+                await session.scalars(
+                    select(SupplierInvoice.dds_article_id).where(
+                        SupplierInvoice.draft_id == draft.id,
+                        SupplierInvoice.dds_article_id.is_not(None),
+                    )
+                )
+            ).all()
+        )
+        invoice_article_id = (
+            next(iter(invoice_article_ids)) if len(invoice_article_ids) == 1 else None
+        )
         logger.info(
             "apply_payment_status: авто-резерв Сейфа под черновик %s на %s "
             "(без проверки «свободно» — транзит уже пополнил Сейф)",
@@ -269,9 +288,10 @@ async def _settle_draft_via_safe(
             wallet_id=safe_wallet.id,
             amount=draft.amount,
             free_amount=None,
-            # «Просто трата» несёт целевую статью в черновике; неофициальный закуп —
-            # дефолтную «Оплата поставщикам» (расход признается при выплате резерва).
-            article_id=draft.target_article_id or article_id,
+            # «Просто трата» несёт целевую статью в черновике. Для счёта, отправленного
+            # через Сейф, берём единственную статью самого счёта; иначе неофициальный
+            # закуп остаётся на дефолтной «Оплате поставщикам».
+            article_id=draft.target_article_id or invoice_article_id or article_id,
             counterparty_id=draft.counterparty_id,
             purpose=purpose,
             source_draft_id=draft.id,
