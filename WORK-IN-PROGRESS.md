@@ -25,13 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-utility-send — ветка `agent/utility-send-fix/utility-send-ready-payment`
-- worktree: `../Teplo-agent-utility-send`
-- compose: не используется
-- трогает: `apps/web/src/routes/payment-page/requisites.ts`, `apps/web/tests/payment-page-requisites-prefill.spec.ts`
-- НЕ трогать другим: приоритет получателя между карточкой контрагента и распознанным счётом
-- статус: в работе
-
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (web 5203 / api 8030 / pg 5462, БД `teplo`, тест `teplo_test_c`)
