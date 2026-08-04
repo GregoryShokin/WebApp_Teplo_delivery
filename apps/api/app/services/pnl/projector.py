@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PnlLine
 from app.services.pnl import formulas
+from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import deposits as deposits_source
 from app.services.pnl.sources import fixed_assets as fixed_assets_source
@@ -202,6 +203,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     await _apply_payroll(session, lines, month_start, month_end)
     await _apply_releases(session, lines, month_start, month_end, report)
     await _apply_inventory(session, lines, month_start, month_end, report)
+    await _apply_acquiring(session, lines, month_start, month_end, report)
     await _apply_iiko(session, lines, month_start)
 
     # Порядок значим: сначала свести компоненты каждой строки в итог, и только потом считать
@@ -416,6 +418,42 @@ async def _apply_inventory(
                     f"За месяц найдено ревизий: {month.audits_count} "
                     f"({', '.join(d.strftime('%d.%m') for d in month.audit_dates)}). "
                     "Ревизии еженедельные — результат покрывает не весь месяц"
+                ),
+            )
+        )
+
+
+async def _apply_acquiring(
+    session: AsyncSession,
+    lines: dict[str, LineValue],
+    month_start: date,
+    month_end: date,
+    report: PnlReport,
+) -> None:
+    """Комиссия, удержанная банком до зачисления, — вторым компонентом к кассовому.
+
+    Кассовый компонент уже стоит и несёт терминальный эквайринг: там движение денег есть.
+    Здесь добавляется то, чего в ДДС нет физически, — удержанное из выручки. За июль 2026
+    это 42 238,45 ₽ сверх 6 668,93 ₽ по статье.
+    """
+    month = await acquiring_source.build_acquiring_month(session, month_start, month_end)
+    if month.total:
+        _add_component(
+            lines,
+            "acquiring",
+            stream="acquiring",
+            amount=month.total,
+            status=LineStatus.OK,
+            note="Удержано банком из зачислений — движения денег по этой сумме нет",
+        )
+    if month.unparsed:
+        report.warnings.append(
+            Warning(
+                code="acquiring_unparsed",
+                line_code="acquiring",
+                message=(
+                    f"{month.unparsed} зачислений эквайринга без распознанной комиссии — "
+                    "банк изменил формулировку назначения, строка занижена"
                 ),
             )
         )

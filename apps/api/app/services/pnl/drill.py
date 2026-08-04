@@ -38,6 +38,7 @@ from app.models import Counterparty, DdsArticle, Employee, PnlArticleRule, PnlLi
 from app.models.inventory import InventoryAudit, InventoryAuditItem
 from app.models.pnl import PnlIikoFact
 from app.services.pnl import projector
+from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import deposits as deposits_source
 from app.services.pnl.sources import inventory as inventory_source
@@ -136,6 +137,19 @@ class DrillResult:
     asides: list[DrillAside] = field(default_factory=list)
 
 
+def _plural(count: int, one: str, few: str, many: str) -> str:
+    """Русское согласование числительного: «31 зачисление», а не «31 зачислений»."""
+    tens = count % 100
+    if 11 <= tens <= 14:
+        return many
+    last = count % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
 async def _names(session: AsyncSession, model, ids: set[uuid.UUID], column) -> dict:
     if not ids:
         return {}
@@ -163,6 +177,7 @@ async def build_drill(session: AsyncSession, line_code: str, month: date) -> Dri
     await _unperiodled_group(session, result, line_code, month_start, month_end)
     await _payroll_group(session, result, line_code, month_start, month_end)
     await _releases_group(session, result, line_code, month_start, month_end)
+    await _acquiring_group(session, result, line_code, month_start, month_end)
     await _iiko_group(session, result, line_code, month_start)
     await _inventory_group(session, result, line_code, month_start, month_end)
     await _manual_group(session, result, line_code, month_start)
@@ -547,6 +562,47 @@ async def _releases_group(
                 subtitle=(f"фонд {entry.period_year} года" if entry.period_year else None),
                 row_date=entry.happened_on,
                 amount=entry.amount if deposits else -entry.amount,
+                kind="included",
+            )
+        )
+    result.groups.append(group)
+
+
+async def _acquiring_group(
+    session: AsyncSession,
+    result: DrillResult,
+    line_code: str,
+    month_start: date,
+    month_end: date,
+) -> None:
+    """Комиссия, удержанная из зачислений, — по каналам.
+
+    Разрез по каналам здесь не украшение: терминалы видны в ДДС отдельными проводками, а
+    карты и приём платежей — только текстом в назначении. Владелец должен видеть, что строка
+    собрана из двух разных по природе источников.
+    """
+    if line_code != "acquiring":
+        return
+    month = await acquiring_source.build_acquiring_month(session, month_start, month_end)
+    if not month.by_channel:
+        return
+    group = DrillGroup(
+        stream="acquiring",
+        title="Удержано банком из зачислений",
+        amount=month.total,
+        note=(
+            "Движения денег по этой сумме нет: на счёт приходит уже чистое зачисление, "
+            "величина названа текстом в назначении платежа"
+        ),
+    )
+    for channel, amount in sorted(month.by_channel.items(), key=lambda item: -item[1]):
+        count = month.counts.get(channel, 0)
+        group.rows.append(
+            DrillRow(
+                title=acquiring_source.CHANNEL_TITLE.get(channel, channel),
+                subtitle=f"{count} {_plural(count, 'зачисление', 'зачисления', 'зачислений')}",
+                row_date=None,
+                amount=amount,
                 kind="included",
             )
         )

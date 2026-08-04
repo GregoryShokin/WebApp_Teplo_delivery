@@ -11,7 +11,9 @@ from decimal import Decimal
 
 from app.services.pnl import formulas
 from app.services.pnl.projector import INVERTED_IIKO_METRICS, rubles
+from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import recognition as recognition_source
+from app.services.pnl.sources.acquiring import parse_commission
 from app.services.pnl.sources.deposits import _msk_bounds, _msk_date
 from app.services.pnl.sources.recognition import classify_origin
 from app.services.pnl.sources.waiting import month_share
@@ -245,6 +247,55 @@ class TestFundForfeitHorizon:
         # Счёт текущего года: половина накоплена до начала учёта, половина после. Резать по
         # году было бы грубо — январский и августовский рубль попали бы в одну корзину.
         assert self._counted("12000.00", "0.5") == Decimal("6000.00")
+
+
+class TestAcquiringCommission:
+    """Комиссия эквайринга живёт текстом в назначении платежа — разбор пинуется тестом.
+
+    Отдельного поля у Сбера нет, зачисления приходят нетто, и любая правка регулярки молча
+    занижает строку. Все четыре формата взяты из боевой выписки за июль 2026.
+    """
+
+    def test_two_part_commission_sums_both(self) -> None:
+        # Самый коварный формат: вторая часть в реальных данных бывает ненулевой, и взяв
+        # только первую, теряем деньги молча.
+        channel, amount = parse_commission(
+            "Зачисление средств по операциям эквайринга. Мерчант №211000343261. "
+            "Комиссия 242.57 (в т.ч. НДС 43.74) и 16.20 (НДС не обл). Возврат покупки 0.00/0.00."
+        )
+        assert channel == acquiring_source.CHANNEL_CARD
+        assert amount == Decimal("258.77")
+
+    def test_single_part_with_vat(self) -> None:
+        channel, amount = parse_commission(
+            "Зачисление средств по операциям эквайринга. Мерчант №211000343261. "
+            "Комиссия 198.27 (в т.ч. НДС 35.76). Возврат покупки 0.00/0.00."
+        )
+        assert channel == acquiring_source.CHANNEL_CARD
+        assert amount == Decimal("198.27")
+
+    def test_bare_amount_does_not_swallow_the_full_stop(self) -> None:
+        # «Комиссия 4.90.» — точка конца предложения стоит вплотную к числу, а сразу за ней
+        # идёт «Возврат покупки 0.00/0.00» из таких же цифр.
+        channel, amount = parse_commission(
+            "Зачисление средств по операциям эквайринга. Мерчант №211000343219. "
+            "Комиссия 4.90. Возврат покупки 0.00/0.00.НДС не облагается."
+        )
+        assert channel == acquiring_source.CHANNEL_CARD
+        assert amount == Decimal("4.90")
+
+    def test_payments_channel_has_its_own_wording(self) -> None:
+        channel, amount = parse_commission(
+            "Перевод средств по договору №СТ22989030758920125 от 07  июля 2025 г.. "
+            "За дату 30.06.2026, удержано комиссии за прием платежей  721.12 руб. "
+            "НДС не облагается."
+        )
+        assert channel == acquiring_source.CHANNEL_PAYMENTS
+        assert amount == Decimal("721.12")
+
+    def test_unrelated_purpose_yields_nothing(self) -> None:
+        assert parse_commission("Оплата по счету 513573 от 16.06.2026") is None
+        assert parse_commission(None) is None
 
 
 class TestMoscowMonthBounds:
