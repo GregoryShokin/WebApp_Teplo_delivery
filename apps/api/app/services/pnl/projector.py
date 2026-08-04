@@ -194,6 +194,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     _apply_recognition(lines, recognition, session_article_lines=article_lines)
     _apply_cash(lines, cash)
     _apply_waiting(lines, waiting, article_lines)
+    unperiodled = await waiting_source.build_unperiodled_layer(session, month_start, month_end)
     _apply_silent_articles(lines, cash, article_lines)
     _apply_manual(lines, manual)
     await _apply_fixed_assets(session, lines, month_start)
@@ -216,6 +217,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     report.lines = _ordered(lines, catalog)
     report.reconciliation = _reconciliation(cash)
     report.warnings.extend(_warnings(lines, cash, recognition))
+    report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
         "without_primary": recognition.without_primary,
@@ -678,6 +680,42 @@ def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
         balanced=layer.unmapped == 0 and drift == 0,
         drift=drift,
     )
+
+
+def _unperiodled_warnings(
+    layer: waiting_source.UnperiodedLayer,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
+) -> list[Warning]:
+    """Документ лежит оплаченным, но без периода услуги — расход по нему не признан.
+
+    Самая тихая из всех потерь: «ждём документ» чинится временем, а это — никогда, пока
+    человек не откроет карточку и не поставит период. Строка при этом выглядит законченной.
+    Сумма в расход НЕ добавляется: месяц документа здесь догадка по его дате, а признание —
+    работа ДЗ/КЗ, и подменять её отчётом значило бы завести второй источник истины и получить
+    задвоение в тот день, когда период всё-таки заполнят.
+    """
+    result: list[Warning] = []
+    by_line: dict[str, Decimal] = {}
+    for item in layer.items:
+        line_code = article_lines.get(item.article_id)
+        if line_code is None or line_code not in lines:
+            continue
+        by_line[line_code] = by_line.get(line_code, Decimal("0.00")) + item.amount
+    for line_code, amount in by_line.items():
+        result.append(
+            Warning(
+                code="document_without_period",
+                line_code=line_code,
+                message=(
+                    f"«{lines[line_code].title}»: закрывающие документы на {rubles(amount)} ₽ "
+                    "лежат оплаченными без периода услуги — расход по ним не признан. "
+                    "Заполните период в ДЗ/КЗ, и сумма встанет в свой месяц"
+                ),
+                amount=amount,
+            )
+        )
+    return result
 
 
 def _warnings(

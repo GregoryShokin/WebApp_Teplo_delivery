@@ -160,6 +160,7 @@ async def build_drill(session: AsyncSession, line_code: str, month: date) -> Dri
     await _recognition_group(session, result, line_code, month_start, month_end)
     await _cash_group(session, result, line_code, month_start, month_end, sign_roles)
     await _waiting_group(session, result, line_code, month_start, month_end)
+    await _unperiodled_group(session, result, line_code, month_start, month_end)
     await _payroll_group(session, result, line_code, month_start, month_end)
     await _releases_group(session, result, line_code, month_start, month_end)
     await _iiko_group(session, result, line_code, month_start)
@@ -294,6 +295,57 @@ async def _cash_group(
                 ),
             )
         )
+
+
+async def _unperiodled_group(
+    session: AsyncSession,
+    result: DrillResult,
+    line_code: str,
+    month_start: date,
+    month_end: date,
+) -> None:
+    """Оплаченные документы месяца без периода услуги — расход по ним не признан.
+
+    Показываем таблицей, а не свёрнутой пометкой: здесь у владельца есть что сделать, и он
+    должен видеть, какой именно документ открывать.
+    """
+    layer = await waiting_source.build_unperiodled_layer(session, month_start, month_end)
+    article_lines = await _article_line_map(session)
+    items = [
+        item
+        for item in layer.items
+        if article_lines.get(item.article_id) == line_code  # type: ignore[arg-type]
+    ]
+    if not items:
+        return
+
+    names = await _names(
+        session,
+        Counterparty,
+        {item.counterparty_id for item in items if item.counterparty_id},
+        Counterparty.name,
+    )
+    group = DrillGroup(
+        stream="unperiodled",
+        title="Документ есть, период услуги не заполнен",
+        amount=sum((item.amount for item in items), Decimal("0.00")),
+        counts_in_total=False,
+        note=(
+            "Расход по этим документам не признан и сам не появится. Заполните период "
+            "услуги в ДЗ/КЗ — сумма встанет в свой месяц"
+        ),
+    )
+    for item in sorted(items, key=lambda entry: -entry.amount):
+        group.rows.append(
+            DrillRow(
+                title=names.get(item.counterparty_id) or "Без контрагента",
+                subtitle=f"документ {item.number}" if item.number else None,
+                row_date=item.invoice_date,
+                amount=item.amount,
+                kind="waiting",
+            )
+        )
+    result.groups.append(group)
 
 
 async def _waiting_group(
@@ -588,7 +640,7 @@ async def _inventory_group(
         stream="inventory",
         title="Проведённые ревизии",
         amount=Decimal("0.00"),
-        note="Недостача — положительная величина расхода, излишек уменьшает его",
+        note="Недостача всего по данным iiko — не штрафная база и не нетто с излишками",
     )
     totals = {
         audit_id: value
@@ -596,7 +648,7 @@ async def _inventory_group(
             await session.execute(
                 select(
                     InventoryAuditItem.audit_id,
-                    func.coalesce(func.sum(InventoryAuditItem.amount), 0),
+                    func.coalesce(func.sum(InventoryAuditItem.shortage_amount), 0),
                 )
                 .where(InventoryAuditItem.audit_id.in_([audit.id for audit in audits]))
                 .group_by(InventoryAuditItem.audit_id)
@@ -604,12 +656,15 @@ async def _inventory_group(
         ).all()
     }
     for audit in sorted(audits, key=lambda item: item.business_date):
-        amount = Decimal(totals.get(audit.id) or 0) * Decimal("-1")
+        amount = Decimal(totals.get(audit.id) or 0)
         group.amount += amount
+        # Штрафная база рядом со своей ревизией: владелец сверяет строку с экраном ревизий,
+        # и без неё пришлось бы гадать, почему число не совпало с колонкой «Штраф».
+        penalty_base = audit.total_shortage_amount or Decimal("0.00")
         group.rows.append(
             DrillRow(
                 title=f"Ревизия {audit.business_date.strftime('%d.%m.%Y')}",
-                subtitle="недостача" if amount > 0 else "излишек",
+                subtitle=f"в штрафной базе {penalty_base:.2f} ₽".replace(".", ","),
                 row_date=audit.business_date,
                 amount=amount,
                 kind="included",

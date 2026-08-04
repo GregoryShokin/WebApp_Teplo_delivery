@@ -227,6 +227,7 @@ const STREAM_TITLE: Record<string, string> = {
   cashflow: "касса",
   cashflow_excluded: "касса",
   waiting: "ДЗ/КЗ",
+  unperiodled: "ДЗ/КЗ",
   payroll: "зарплата",
   iiko: "iiko",
   inventory: "ревизии",
