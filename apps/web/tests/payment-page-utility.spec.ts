@@ -132,6 +132,45 @@ test("аванс помечен как аванс и расхода не пок�
   await expect(row).not.toContainText("расход");
 });
 
+test("готовая коммунальная платёжка отправляется без повторного обычного разбора", async ({ page }) => {
+  const calls: string[] = [];
+  await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, []));
+  await page.route(
+    "**/api/v1/payment-page/counterparties/landlord-1/requisites",
+    (route) =>
+      fulfillJson(route, {
+        counterparty_id: "landlord-1",
+        name: "Гордеев Виталий Анатольевич",
+        inn: null,
+        requisites: {},
+        requisites_verified: false,
+      }),
+  );
+  // Если фронтенд снова вызовет этот путь, сервер вернёт ту же ошибку, которую увидел человек.
+  await page.route("**/api/v1/payment-page/intakes/intake-actual/confirm", (route) => {
+    calls.push("confirm");
+    return route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Коммунальную платёжку проводят через окно коммунальных услуг" }),
+    });
+  });
+  await page.route("**/api/v1/payment-page/intakes/intake-actual/send-to-bank", (route) => {
+    calls.push("send-to-bank");
+    return fulfillJson(route, { ...ACTUAL, invoice_in_draft: true });
+  });
+
+  await page.goto("/finance/payments");
+  const row = page.getByRole("row").filter({ hasText: "Возмещение: электричество, 06.2026" });
+  await row.getByRole("button", { name: "В банк" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("label", { hasText: "нет реквизитов" }).locator("input").check();
+  await dialog.getByRole("button", { name: "Отправить в банк" }).click();
+
+  await expect.poll(() => calls).toEqual(["send-to-bank"]);
+});
+
 test("два акта выбираются вместе и уходят одним переводом", async ({ page }) => {
   await page.goto("/finance/payments");
 

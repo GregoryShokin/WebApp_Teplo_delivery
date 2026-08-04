@@ -106,16 +106,22 @@ export function SendDialog({
 
   const send = useMutation({
     mutationFn: async () => {
-      // Подтверждаем реквизиты (заносим в карточку + verified), затем отправляем или планируем.
-      // При выводе на карту ИП реквизиты не трогаем вовсе: занеси мы сейчас в карточку то, что
-      // распозналось в бумаге (у коммуналки там ресурсник, а платим арендодателю), следующий
-      // платёж ушёл бы по ним молча и мимо получателя.
-      await confirmIntake(intake.id, {
-        requisites: viaIpCard ? undefined : r,
-        apply_requisites: !viaIpCard,
-        service_period_start: periodStart || null,
-        service_period_end: periodEnd || null,
-      });
+      // Обычный счёт подтверждаем здесь: так реквизиты попадают в карточку и получают статус
+      // verified. Коммунальная строка к этому моменту УЖЕ подтверждена специальным окном
+      // (поток → арендодатель → помещение → период). Повторный вызов обычного /confirm сервер
+      // намеренно отвергает: он провёл бы квитанцию как счёт ресурсника. Поэтому ей остаётся
+      // только создать банковский черновик.
+      if (!intake.utility_kind) {
+        // При выводе на карту ИП реквизиты не трогаем вовсе: занеси мы сейчас в карточку то,
+        // что распозналось в бумаге (у коммуналки там ресурсник, а платим арендодателю),
+        // следующий платёж ушёл бы по ним молча и мимо получателя.
+        await confirmIntake(intake.id, {
+          requisites: viaIpCard ? undefined : r,
+          apply_requisites: !viaIpCard,
+          service_period_start: periodStart || null,
+          service_period_end: periodEnd || null,
+        });
+      }
       const choice = {
         dds_article_id: ddsArticleId || null,
         remember_for_counterparty: rememberForCp,
