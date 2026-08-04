@@ -111,6 +111,15 @@ class DrillGroup:
 
 
 @dataclass(slots=True)
+class DrillAside:
+    """Сумма, прошедшая по строке, но к её числу не относящаяся, — с объяснением почему."""
+
+    amount: Decimal
+    count: int
+    reason: str
+
+
+@dataclass(slots=True)
 class DrillResult:
     line_code: str
     line_title: str
@@ -121,11 +130,10 @@ class DrillResult:
     total: Decimal = Decimal("0.00")
     #: Слой, который расшифровать не удалось (налоги, амортизация), — честной пометкой.
     undecomposed: list[str] = field(default_factory=list)
-    #: Платежи месяца по статьям строки, которые в её число не входят и не войдут: закрывают
-    #: документы других периодов, посчитаны другим модулем, вообще не расход. Таблицей их не
-    #: показываем — только одной строкой итога, чтобы было видно, что ничего не спрятано.
-    aside_amount: Decimal = Decimal("0.00")
-    aside_count: int = 0
+    #: То, что прошло по строке в этом месяце, но в её число не входит и не войдёт. Таблицей
+    #: не показываем — по одной строке итога на причину, чтобы было видно, что ничего не
+    #: спрятано, и при этом не приходилось читать чужой период.
+    asides: list[DrillAside] = field(default_factory=list)
 
 
 async def _names(session: AsyncSession, model, ids: set[uuid.UUID], column) -> dict:
@@ -275,8 +283,17 @@ async def _cash_group(
     # Вся исключённая касса месяца уходит в свёрнутую строку — включая ту, что раньше
     # показывалась как «ждём документ». Месяц платежа ничего не говорит о том, за какой
     # период платили, поэтому ожидание теперь строится из ДЗ/КЗ — см. ``_waiting_group``.
-    result.aside_amount += sum((detail.amount for detail in aside), Decimal("0.00"))
-    result.aside_count += len(aside)
+    if aside:
+        result.asides.append(
+            DrillAside(
+                amount=sum((detail.amount for detail in aside), Decimal("0.00")),
+                count=len(aside),
+                reason=(
+                    "прошло по этим статьям в этом месяце, но к строке не относится: оплата "
+                    "документов других периодов, переводы, суммы, посчитанные другими модулями"
+                ),
+            )
+        )
 
 
 async def _waiting_group(
@@ -429,6 +446,20 @@ async def _releases_group(
     releases = await deposits_source.build_release_month(
         session, month_start, month_end, horizon_start=projector.ACCOUNTING_START
     )
+    if line_code == "accumulation_fund" and releases.fund_forfeited_out_of_horizon:
+        years = ", ".join(
+            str(year) for year in sorted(releases.fund_forfeited_out_of_horizon_years)
+        )
+        result.asides.append(
+            DrillAside(
+                amount=releases.fund_forfeited_out_of_horizon,
+                count=releases.fund_forfeited_out_of_horizon_count,
+                reason=(
+                    f"списано фондов за {years} — эти начисления делались до начала "
+                    "управленческого учёта, поэтому их отмена расход месяца не уменьшает"
+                ),
+            )
+        )
     entries = (
         releases.deposit_entries
         if line_code == "unclaimed_deposits_writeoff"

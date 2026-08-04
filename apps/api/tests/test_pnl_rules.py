@@ -224,6 +224,29 @@ class TestRecognitionOrigin:
         assert classify_origin(None, "agreement") == recognition_source.ORIGIN_PAYMENT_LINE
 
 
+class TestFundForfeitHorizon:
+    """Отменить можно только тот расход, который отчёт когда-то признал."""
+
+    @staticmethod
+    def _counted(forfeit: str, share: str) -> Decimal:
+        # Та же арифметика, что в build_release_month: доля счёта, накопленная внутри
+        # горизонта, умножается на сумму списания.
+        return (Decimal(forfeit) * Decimal(share)).quantize(Decimal("0.01"))
+
+    def test_legacy_fund_is_fully_excluded(self) -> None:
+        # Фонды 2024–2025 давно уволенных: ни рубля не начислено после 01.07.2026, значит
+        # отмена расход июля не уменьшает. Владелец назвал их рудиментарными.
+        assert self._counted("62260.00", "0") == Decimal("0.00")
+
+    def test_fund_accrued_inside_horizon_is_reversed(self) -> None:
+        assert self._counted("12000.00", "1") == Decimal("12000.00")
+
+    def test_partially_pre_horizon_fund_is_split(self) -> None:
+        # Счёт текущего года: половина накоплена до начала учёта, половина после. Резать по
+        # году было бы грубо — январский и августовский рубль попали бы в одну корзину.
+        assert self._counted("12000.00", "0.5") == Decimal("6000.00")
+
+
 class TestMoscowMonthBounds:
     """Месяц списания считается по Москве, а не по UTC."""
 

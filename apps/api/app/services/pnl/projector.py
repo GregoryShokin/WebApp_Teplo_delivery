@@ -358,24 +358,10 @@ async def _apply_releases(
             status=LineStatus.OK,
             note="Списание фонда уволенных — отмена ранее начисленного расхода",
         )
-    if releases.fund_forfeited_before_horizon:
-        years = ", ".join(
-            str(year)
-            for year in sorted(releases.fund_forfeited_years)
-            if year < ACCOUNTING_START.year
-        )
-        report.warnings.append(
-            Warning(
-                code="fund_forfeit_before_horizon",
-                line_code="accumulation_fund",
-                message=(
-                    f"Списано фондов за {years} на "
-                    f"{rubles(releases.fund_forfeited_before_horizon)} ₽. Начисления тех лет "
-                    "в отчёт не входили, поэтому отмена уменьшает расход месяца без своей пары"
-                ),
-                amount=releases.fund_forfeited_before_horizon,
-            )
-        )
+    # Списания фондов, накопленных до начала учёта, в строку не идут вовсе и предупреждением
+    # не становятся: предупреждение нужно там, где владельцу есть что сделать, а здесь делать
+    # нечего — это разбор исторических хвостов. Сумма видна в расшифровке строки отдельной
+    # пометкой, чтобы «пропажа» 93 762 ₽ не выглядела потерей.
 
 
 async def _apply_inventory(

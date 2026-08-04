@@ -14,12 +14,17 @@
 там же, где был признан, отрицательным компонентом той же строки. Отдельной строкой дохода
 это показывать нельзя: расход и его отмена разъехались бы по разным блокам отчёта.
 
-ЦЕНА ВТОРОГО ПРАВИЛА ВИДНА НА ИЮЛЕ 2026. Пачкой от 23.07 закрыты фонды 2024 и 2025 годов
-давно уволенных — 93 752 ₽ из 93 762 ₽. Начисления тех лет в этот отчёт не входили
-(управленческий учёт ведётся с 01.07.2026), поэтому отмена приходит без своей пары и
-уменьшает июльский расход на величину, к июлю не относящуюся. Спрятать её нельзя — это
-настоящие деньги бизнеса; поэтому она попадает в строку и одновременно называется вслух
-предупреждением с суммой и годами.
+ОТМЕНИТЬ МОЖНО ТОЛЬКО ТО, ЧТО ОТЧЁТ ПРИЗНАВАЛ. Пачкой от 23.07.2026 закрыты фонды 2024 и
+2025 годов давно уволенных — 93 762 ₽. Управленческий учёт ведётся с 01.07.2026, тех
+начислений отчёт не видел, и их отмена не уменьшает расход июля ни на рубль: владелец назвал
+такие списания рудиментарными и попросил убрать их из строки целиком. Сначала они входили в
+строку с предупреждением — предупреждение объясняло цифру, но цифра всё равно была чужой.
+
+Отсекаются они не по году, а по ДАТАМ НАЧИСЛЕНИЯ фонда: считается, какая доля счёта накоплена
+уже внутри горизонта отчёта, и отменяется только она. Год для этого слишком груб — фонд
+копится помесячно, и счёт текущего года наполовину относится к месяцам до начала учёта.
+Проверка на данных: у всех восьми июльских списаний доля внутри горизонта равна нулю, включая
+счёт 2026 года.
 
 МЕСЯЦ СЧИТАЕТСЯ ПО МОСКОВСКОМУ ВРЕМЕНИ. У обеих таблиц единственная дата — ``created_at``
 в UTC. Списание, сделанное 1 августа в 00:30 МСК, при наивной группировке уехало бы в июль.
@@ -32,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payroll import (
@@ -46,6 +51,7 @@ from app.models.payroll import (
 DEPOSIT_WRITEOFF_TYPES = ("write_off", "dismissal_writeoff")
 
 FUND_FORFEIT_TYPE = "forfeit"
+FUND_ACCRUAL_TYPE = "accrual"
 
 #: Строка ведомости считается фактом только после финализации прогона. До неё списание —
 #: превью расчёта: баланс сотрудника оно не двигает, а при переоткрытии прогона откатывается,
@@ -71,11 +77,14 @@ class ReleaseEntry:
 @dataclass(slots=True)
 class ReleaseMonth:
     deposits_written_off: Decimal = Decimal("0.00")
+    #: Отмена расхода, признанного ЭТИМ отчётом, — только она и попадает в строку.
     fund_forfeited: Decimal = Decimal("0.00")
-    #: Часть отменённого фонда, начисленная до начала управленческого учёта.
-    fund_forfeited_before_horizon: Decimal = Decimal("0.00")
-    fund_forfeited_years: set[int] = field(default_factory=set)
+    #: Списание фондов, начисленных до начала управленческого учёта. В строку НЕ идёт.
+    fund_forfeited_out_of_horizon: Decimal = Decimal("0.00")
+    fund_forfeited_out_of_horizon_count: int = 0
+    fund_forfeited_out_of_horizon_years: set[int] = field(default_factory=set)
     deposit_entries: list[ReleaseEntry] = field(default_factory=list)
+    #: Только те списания, что относятся к отчёту. Разбор исторических хвостов сюда не идёт.
     fund_entries: list[ReleaseEntry] = field(default_factory=list)
 
 
@@ -147,16 +156,27 @@ async def build_release_month(
         .scalars()
         .all()
     )
+    in_horizon_share = await _in_horizon_accrual_share(
+        session, {transaction.account_id for transaction in fund_rows}, horizon_start
+    )
     for transaction in fund_rows:
         amount = transaction.amount or Decimal("0.00")
-        result.fund_forfeited += amount
-        result.fund_forfeited_years.add(transaction.year)
-        if transaction.year < horizon_start.year:
-            result.fund_forfeited_before_horizon += amount
+        # Отменять можно только тот расход, который отчёт когда-то признал. Долю фонда,
+        # начисленную до начала учёта, он не видел — её отмена сюда не относится.
+        share = in_horizon_share.get(transaction.account_id, Decimal("0.00"))
+        counted = (amount * share).quantize(Decimal("0.01"))
+        skipped = amount - counted
+        if skipped > 0:
+            result.fund_forfeited_out_of_horizon += skipped
+            result.fund_forfeited_out_of_horizon_count += 1
+            result.fund_forfeited_out_of_horizon_years.add(transaction.year)
+        if counted <= 0:
+            continue
+        result.fund_forfeited += counted
         result.fund_entries.append(
             ReleaseEntry(
                 employee_id=transaction.employee_id,
-                amount=amount,
+                amount=counted,
                 happened_on=_msk_date(transaction.created_at),
                 period_year=transaction.year,
                 comment=transaction.comment,
@@ -164,3 +184,44 @@ async def build_release_month(
         )
 
     return result
+
+
+async def _in_horizon_accrual_share(
+    session: AsyncSession, account_ids: set[uuid.UUID], horizon_start: date
+) -> dict[uuid.UUID, Decimal]:
+    """Какая доля фонда каждого счёта начислена уже внутри горизонта отчёта.
+
+    Доля, а не флаг: фонд копится помесячно весь год, и счёт 2026 года у работающего
+    сотрудника наполовину относится к месяцам до начала учёта. Резать по ``year`` было бы
+    грубее — январский и августовский рубль этого года попали бы в одну корзину.
+    """
+    if not account_ids:
+        return {}
+    cutoff = datetime.combine(horizon_start, datetime.min.time()) - MOSCOW_OFFSET
+    rows = (
+        await session.execute(
+            select(
+                AccumulationFundTransaction.account_id,
+                func.sum(AccumulationFundTransaction.amount),
+                func.sum(
+                    case(
+                        (
+                            AccumulationFundTransaction.created_at >= cutoff,
+                            AccumulationFundTransaction.amount,
+                        ),
+                        else_=0,
+                    )
+                ),
+            )
+            .where(
+                AccumulationFundTransaction.account_id.in_(account_ids),
+                AccumulationFundTransaction.transaction_type == FUND_ACCRUAL_TYPE,
+            )
+            .group_by(AccumulationFundTransaction.account_id)
+        )
+    ).all()
+    shares: dict[uuid.UUID, Decimal] = {}
+    for account_id, total, inside in rows:
+        total = total or Decimal("0.00")
+        shares[account_id] = (inside or Decimal("0.00")) / total if total > 0 else Decimal("0.00")
+    return shares

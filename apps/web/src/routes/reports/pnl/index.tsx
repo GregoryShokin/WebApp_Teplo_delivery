@@ -233,19 +233,20 @@ const STREAM_TITLE: Record<string, string> = {
   manual: "вручную",
 };
 
-/** «1 платёж», «2 платежа», «5 платежей» — иначе подпись читается как машинный вывод. */
-function paymentsWord(count: number): string {
+/** «1 операция», «2 операции», «5 операций» — иначе подпись читается как машинный вывод.
+ *  Слово нейтральное: за пометкой стоят и платежи, и списания фонда. */
+function operationsWord(count: number): string {
   const tens = count % 100;
-  if (tens >= 11 && tens <= 14) return "платежей";
+  if (tens >= 11 && tens <= 14) return "операций";
   switch (count % 10) {
     case 1:
-      return "платёж";
+      return "операция";
     case 2:
     case 3:
     case 4:
-      return "платежа";
+      return "операции";
     default:
-      return "платежей";
+      return "операций";
   }
 }
 
@@ -334,14 +335,12 @@ function DrillPanel({
         <span>Итого в строке</span>
         <span className="tabular-nums">{formatMoney(drill.total)} ₽</span>
       </div>
-      {drill.aside_count > 0 && (
-        <p className="text-xs text-muted-foreground">
-          Ещё {formatMoney(drill.aside_amount)} ₽ ({drill.aside_count}{" "}
-          {paymentsWord(drill.aside_count)}) прошло по этим статьям в этом месяце, но к строке не
-          относится: оплата документов других периодов, переводы, суммы, посчитанные другими
-          модулями.
+      {drill.asides.map((aside, index) => (
+        <p key={index} className="text-xs text-muted-foreground">
+          Ещё {formatMoney(aside.amount)} ₽ ({aside.count} {operationsWord(aside.count)}) —{" "}
+          {aside.reason}.
         </p>
-      )}
+      ))}
     </div>
   );
 }
