@@ -5756,6 +5756,72 @@ async def test_personal_report_merges_production_roles_into_one_payslip() -> Non
     assert daily_by_date[date(2026, 5, 22)]["role"] == "sushi"
 
 
+async def test_personal_report_keeps_payslip_days_scoped_to_selected_run() -> None:
+    """Повторный расчёт недели не должен подмешиваться в другую расчётку."""
+    employee = make_employee()
+    period = make_period(
+        start=date(2026, 5, 19),
+        end=date(2026, 5, 25),
+        payroll_date=date(2026, 5, 26),
+    )
+    first_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 26, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    recalculated_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 5, 27, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    first_line = make_payroll_line(
+        first_run.id,
+        employee.id,
+        base_pay=Decimal("100"),
+        total_payable=Decimal("100"),
+        components={
+            "days": [{"date": "2026-05-20", "base_pay": "100", "percent_pay": "0"}],
+            "adjustments": {"bonuses": [], "penalties": []},
+        },
+    )
+    recalculated_line = make_payroll_line(
+        recalculated_run.id,
+        employee.id,
+        base_pay=Decimal("250"),
+        total_payable=Decimal("250"),
+        components={
+            "days": [{"date": "2026-05-20", "base_pay": "250", "percent_pay": "0"}],
+            "adjustments": {"bonuses": [], "penalties": []},
+        },
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[
+            (recalculated_line, recalculated_run, period),
+            (first_line, first_run, period),
+        ],
+        adjustments=[],
+        deposit_transactions=[],
+    )
+
+    report = await build_personal_report(
+        session,  # type: ignore[arg-type]
+        employee.id,
+        date(2026, 5, 19),
+        date(2026, 5, 25),
+    )
+
+    payslip_days = {item["run_id"]: item["days"] for item in report["periods"]}
+    assert payslip_days[first_run.id][0]["base_pay"] == "100"
+    assert payslip_days[recalculated_run.id][0]["base_pay"] == "250"
+
+
 def test_personal_report_fund_from_ledger() -> None:
     # Фонд в отчёте берётся из ЛЕДЖЕРА (accumulation_fund_*), а не из payroll_line.fund_accrual:
     # у строки фонд 0 (как на проде у импортированных строк), но в леджере — реальные суммы.

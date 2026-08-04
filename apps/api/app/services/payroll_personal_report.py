@@ -227,6 +227,8 @@ async def build_personal_report(
                 "is_substitute": is_substitute,
                 # Разбивка объединённой расчётки по ролям (для секций внутри расчётки).
                 "roles": [],
+                "days": [],
+                "adjustments": {"bonuses": [], "penalties": []},
                 **amounts,
             }
             period_groups[group_key] = group
@@ -234,6 +236,28 @@ async def build_personal_report(
             for key in amounts:
                 group[key] += amounts[key]
         group["roles"].append({"role": line.role, **amounts})
+        components = line.components if isinstance(line.components, dict) else {}
+        component_days = components.get("days")
+        if isinstance(component_days, list):
+            group["days"].extend(
+                dict(day)
+                for day in component_days
+                if isinstance(day, dict)
+                and (work_date := parse_component_date(day.get("date"))) is not None
+                and date_from <= work_date <= date_to
+            )
+        component_adjustments = components.get("adjustments")
+        if isinstance(component_adjustments, dict):
+            for kind in ("bonuses", "penalties"):
+                items = component_adjustments.get(kind)
+                if isinstance(items, list):
+                    group["adjustments"][kind].extend(
+                        dict(item)
+                        for item in items
+                        if isinstance(item, dict)
+                        and (work_date := parse_component_date(item.get("work_date"))) is not None
+                        and date_from <= work_date <= date_to
+                    )
 
     # Ярлык объединённой расчётки — перечисление её ролей («Пиццерист, Сушист»).
     for group in period_groups.values():

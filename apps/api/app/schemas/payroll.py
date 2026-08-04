@@ -577,6 +577,10 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     # Разбивка объединённой расчётки по ролям (для чипов/секций внутри расчётки). Сервис
     # всегда строит этот список; по одной роли — один элемент.
     roles: list[PayrollPersonalReportRoleRead] = []
+    # Детализация принадлежит конкретному payroll run. Её использует модалка
+    # ведомости, чтобы не смешивать пересчёты одной и той же недели.
+    days: list[dict[str, Any]] = []
+    adjustments: dict[str, list[dict[str, Any]]] = {}
 
 
 class PayrollPersonalReportDailyRead(BaseModel):

@@ -732,6 +732,9 @@ export type PayrollPersonalReport = {
       penalty_total: number;
       total_payable: number;
     }>;
+    // Детализация конкретного прогона для модалки ведомости.
+    days: Array<Record<string, unknown>>;
+    adjustments: Record<string, Array<Record<string, unknown>>>;
   }>;
   daily: Array<{
     date: string;

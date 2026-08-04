@@ -265,12 +265,10 @@ export function PayrollPersonalReportPageTab() {
     if (!openWeek) {
       return [];
     }
-    const rows = operations.filter((row) => {
-      if (row.periodStart) {
-        return row.periodStart === openWeek.period_start;
-      }
-      return row.date >= openWeek.period_start && row.date <= openWeek.period_end;
-    });
+    // `report.daily` — это сводная история сотрудника, которая может включать
+    // несколько пересчётов одной недели. Для ведомости берём только компоненты
+    // выбранного run_id: это тот же источник, из которого получаются её KPI.
+    const rows = buildPayslipOperations(openWeek);
     // Запланированную выдачу депозита показываем из данных периода: она привязана к ведомости,
     // тогда как deposit_transaction датирована временем прогона и может выпасть из периода.
     if (openWeek.deposit_payout > 0 && !rows.some((row) => row.kind === "deposit_payout")) {
@@ -290,7 +288,7 @@ export function PayrollPersonalReportPageTab() {
       });
     }
     return rows;
-  }, [openWeek, operations]);
+  }, [openWeek]);
   const hasReportData = Boolean(
     report &&
     (report.periods.length > 0 ||
@@ -704,6 +702,60 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
     return kindOrder || left.id.localeCompare(right.id);
   });
 
+  return rows;
+}
+
+function buildPayslipOperations(period: PayrollPersonalReportPeriod): OperationRow[] {
+  const rows: OperationRow[] = [];
+  for (const day of period.days ?? []) {
+    const date = String(day.date ?? "");
+    if (!date) continue;
+    const add = (kind: OperationKind, value: unknown) => {
+      const amount = Number(value ?? 0);
+      if (amount <= 0) return;
+      rows.push({
+        id: `${period.run_id}-${kind}-${date}-${rows.length}`,
+        date,
+        kind,
+        amount: String(amount),
+        comment: null,
+        role: typeof day.role === "string" ? day.role : null,
+      });
+    };
+    add("base_pay", day.base_pay);
+    add("percent_pay", day.percent_pay);
+    add("vacation_pay", day.vacation_pay);
+    add("ndfl", day.ndfl_withheld);
+  }
+
+  const adjustments = period.adjustments ?? {};
+  for (const [source, kind] of [
+    ["bonuses", "premium"],
+    ["penalties", "manual_penalty"],
+  ] as const) {
+    for (const adjustment of adjustments[source] ?? []) {
+      const date = String(adjustment.work_date ?? "");
+      const amount = Number(adjustment.amount ?? 0);
+      if (!date || amount <= 0) continue;
+      rows.push({
+        id: `${period.run_id}-${source}-${String(adjustment.id ?? rows.length)}`,
+        date,
+        kind,
+        amount: String(amount),
+        comment:
+          typeof adjustment.comment === "string"
+            ? adjustment.comment
+            : typeof adjustment.category === "string"
+              ? adjustment.category
+              : null,
+      });
+    }
+  }
+
+  rows.sort((left, right) => {
+    if (left.date !== right.date) return left.date < right.date ? 1 : -1;
+    return KIND_ORDER[left.kind] - KIND_ORDER[right.kind] || left.id.localeCompare(right.id);
+  });
   return rows;
 }
 
