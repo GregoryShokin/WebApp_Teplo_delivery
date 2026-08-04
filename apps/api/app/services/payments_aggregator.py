@@ -298,12 +298,15 @@ async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
             | (CounterpartyPaymentDraft.creates_prepayment.is_(True))
             | (CounterpartyPaymentDraft.target_article_id.is_not(None))
         )
-        # Черновик, созданный из счёта, уже представлен строкой самого счёта: у него есть
-        # ссылка SupplierInvoice.draft_id и состояние «в банке». Покажи оба — одна платёжка
-        # попадёт в активные платежи дважды, причём черновик ещё и принесёт статью отдельно.
+        # Скрываем только черновик, уже представленный строкой *входящего журнала*.
+        # SupplierInvoice бывает и у накладной поставщика (овощи): у неё нет строки
+        # EmailInvoiceIntake, поэтому черновик — единственная видимая платёжка и скрывать его
+        # нельзя. У коммунального счёта есть обе сущности, там вторая строка была дублем.
         .where(
             CounterpartyPaymentDraft.id.not_in(
-                select(SupplierInvoice.draft_id).where(SupplierInvoice.draft_id.is_not(None))
+                select(SupplierInvoice.draft_id)
+                .join(EmailInvoiceIntake, EmailInvoiceIntake.invoice_id == SupplierInvoice.id)
+                .where(SupplierInvoice.draft_id.is_not(None))
             )
         )
         .order_by(CounterpartyPaymentDraft.created_at.desc())
