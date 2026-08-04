@@ -132,6 +132,9 @@ class IntakeRead(BaseModel):
     utility_blocking: list[str]
     # Дата плановой авто-отправки в банк (ISO). None = отправка только вручную.
     scheduled_send_date: str | None
+    # Согласие «без реквизитов — на карту ИП», данное при планировании: окно показывает его
+    # включённым, когда счёт открывают повторно, чтобы отмена плана была осознанной.
+    scheduled_pays_via_safe: bool = False
     created_at: datetime
 
 
@@ -191,6 +194,10 @@ class SendToBankIn(BaseModel):
     dds_article_id: uuid.UUID | None = None
     # Закрепить выбранную статью за контрагентом (предзаполнит окно при следующей оплате).
     remember_for_counterparty: bool = False
+    # Галочка «у получателя нет реквизитов»: платёж выписывается на карту ИП, деньги приходят
+    # на Сейф, а счёт закрывается, когда наличные выданы. Работает, только пока реквизитов в
+    # карточке нет вовсе — см. payments.create_payment_draft_for_invoices.
+    pays_via_safe: bool = False
 
 
 class SendManyToBankIn(BaseModel):
@@ -206,6 +213,8 @@ class ScheduleSendIn(BaseModel):
     # Статья ДДС / закрепление — как при немедленной отправке (счёт уйдёт позже с этой статьёй).
     dds_article_id: uuid.UUID | None = None
     remember_for_counterparty: bool = False
+    # То же согласие «без реквизитов → карта ИП», но его придётся хранить: платёж создаст джоба.
+    pays_via_safe: bool = False
 
 
 def _to_read(
@@ -303,6 +312,7 @@ def _to_read(
         scheduled_send_date=(
             intake.scheduled_send_date.isoformat() if intake.scheduled_send_date else None
         ),
+        scheduled_pays_via_safe=bool(intake.scheduled_pays_via_safe),
         created_at=intake.created_at,
     )
 
@@ -730,7 +740,12 @@ async def send_to_bank(
         remember_for_counterparty=body.remember_for_counterparty,
     )
     try:
-        await ingest.send_intake_to_bank(session, intake, actor_user_id=actor.user_id)
+        await ingest.send_intake_to_bank(
+            session,
+            intake,
+            actor_user_id=actor.user_id,
+            allow_official_via_safe=body.pays_via_safe,
+        )
     except payments.RequisitesNotVerifiedError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -783,7 +798,12 @@ async def schedule_send(
 ) -> IntakeRead:
     """Запланировать авто-отправку счёта в банк к заданной дате (джоба отправит, когда дата
     наступит). Те же условия, что и при ручной отправке: счёт подтверждён, реквизиты проверены,
-    ещё не в банке."""
+    ещё не в банке.
+
+    «Проверены» не требуется там, где платёж идёт не по реквизитам получателя, а на карту ИП →
+    Сейф: у неофициального контрагента (``relationship='informal'``) их не бывает по определению,
+    у официального без реквизитов согласие даёт оператор галочкой. Иначе такой счёт нельзя было
+    бы запланировать вовсе, хотя вручную он отправляется."""
     intake = await _get_intake(session, intake_id)
     if intake.status != "linked" or intake.invoice_id is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Счёт ещё не подтверждён")
@@ -802,12 +822,10 @@ async def schedule_send(
             status_code=status.HTTP_409_CONFLICT,
             detail="Для этого контрагента обязателен период оказания услуги",
         )
-    verified = await session.scalar(
-        select(CounterpartyPayableProfile.requisites_verified).where(
-            CounterpartyPayableProfile.counterparty_id == intake.counterparty_id
-        )
-    )
-    if not verified:
+    pays_via_safe = profile is not None and profile.relationship == "informal"
+    if not pays_via_safe and body.pays_via_safe and not (profile and profile.requisites):
+        pays_via_safe = True
+    if not pays_via_safe and not (profile and profile.requisites_verified):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Реквизиты контрагента не подтверждены — откройте «Разобрать» и подтвердите их",
@@ -819,6 +837,11 @@ async def schedule_send(
         remember_for_counterparty=body.remember_for_counterparty,
     )
     intake.scheduled_send_date = body.send_date
+    # Хранится ТОЛЬКО согласие оператора: у informal маршрут и так свой, и лишний флаг на строке
+    # заставил бы читателя гадать, что здесь первично.
+    intake.scheduled_pays_via_safe = bool(body.pays_via_safe) and not (
+        profile and profile.requisites
+    )
     await session.commit()
     return await _load_read(session, intake_id)
 
@@ -833,6 +856,8 @@ async def cancel_schedule(
     """Отменить плановую авто-отправку (счёт остаётся готовым к ручной отправке)."""
     intake = await _get_intake(session, intake_id)
     intake.scheduled_send_date = None
+    # Согласие на вывод «без реквизитов» давалось под ЭТУ отправку — вместе с планом снимаем и его.
+    intake.scheduled_pays_via_safe = False
     await session.commit()
     return await _load_read(session, intake_id)
 

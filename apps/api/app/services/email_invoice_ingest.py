@@ -790,6 +790,7 @@ async def send_intakes_to_bank(
     intakes: list[EmailInvoiceIntake],
     *,
     actor_user_id: uuid.UUID | None,
+    allow_official_via_safe: bool = False,
 ) -> None:
     """Отправить в банк ОДНИМ черновиком все переданные счета.
 
@@ -802,35 +803,61 @@ async def send_intakes_to_bank(
     Проверяем ВСЕ строки до создания черновика: отказ на середине оставил бы часть счетов
     отправленными, а человек нажимал одну кнопку и ждёт одного исхода. ``payments.*`` ошибки
     (один контрагент, неподтверждённые реквизиты) поднимаются наружу как есть.
+
+    ``allow_official_via_safe`` — галочка «без реквизитов» из окна отправки: получателю без
+    реквизитов платёж уходит на карту ИП → Сейф (см. ``create_payment_draft_for_invoices``).
     """
     if not intakes:
         raise payments.CounterpartyPaymentError("Не выбрано ни одного счёта")
     invoices = [await _prepare_intake_for_bank(session, intake) for intake in intakes]
     await payments.create_payment_draft_for_invoices(
-        session, invoice_ids=[invoice.id for invoice in invoices], actor_user_id=actor_user_id
+        session,
+        invoice_ids=[invoice.id for invoice in invoices],
+        actor_user_id=actor_user_id,
+        allow_official_via_safe=allow_official_via_safe,
     )
-    scheduled = [intake for intake in intakes if intake.scheduled_send_date is not None]
+    # Плановая отправка отработала — снимаем и дату, и подтверждение вывода на карту ИП:
+    # оно давалось под этот платёж, а не навсегда.
+    scheduled = [
+        intake
+        for intake in intakes
+        if intake.scheduled_send_date is not None or intake.scheduled_pays_via_safe
+    ]
     if scheduled:
         for intake in scheduled:
             intake.scheduled_send_date = None
+            intake.scheduled_pays_via_safe = False
         await session.commit()
 
 
 async def send_intake_to_bank(
-    session: AsyncSession, intake: EmailInvoiceIntake, *, actor_user_id: uuid.UUID | None
+    session: AsyncSession,
+    intake: EmailInvoiceIntake,
+    *,
+    actor_user_id: uuid.UUID | None,
+    allow_official_via_safe: bool = False,
 ) -> None:
     """Создать банк-черновик по подтверждённому счёту — ОБЩИЙ путь для ручной кнопки «Отправить
     в банк» и плановой джобы ``send_scheduled_payments``. Деньги не списываются: уходит черновик
     на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
     решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
     даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
-    await send_intakes_to_bank(session, [intake], actor_user_id=actor_user_id)
+    await send_intakes_to_bank(
+        session,
+        [intake],
+        actor_user_id=actor_user_id,
+        allow_official_via_safe=allow_official_via_safe,
+    )
 
 
 async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:
     """Найти счета с наступившей плановой датой и отправить их в банк. Контрагент с
     неподтверждёнными реквизитами / ошибка банка — пропускаем (дату НЕ снимаем, повторим в
-    следующий проход). Возвращает счётчики для лога джобы."""
+    следующий проход). Возвращает счётчики для лога джобы.
+
+    Подтверждение вывода на карту ИП джоба берёт со строки (``scheduled_pays_via_safe``): его
+    дал человек, когда планировал отправку, — иначе плановый счёт получателя без реквизитов
+    вечно висел бы в «пропущено», ожидая реквизитов, которых не будет."""
     today = datetime.now(MOSCOW_TZ).date()
     rows = (
         await session.scalars(
@@ -844,7 +871,12 @@ async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:
     result = {"due": len(rows), "sent": 0, "skipped": 0, "errors": 0}
     for intake in rows:
         try:
-            await send_intake_to_bank(session, intake, actor_user_id=None)
+            await send_intake_to_bank(
+                session,
+                intake,
+                actor_user_id=None,
+                allow_official_via_safe=intake.scheduled_pays_via_safe,
+            )
             result["sent"] += 1
         except payments.RequisitesNotVerifiedError:
             result["skipped"] += 1  # ждём, пока оператор подтвердит реквизиты
