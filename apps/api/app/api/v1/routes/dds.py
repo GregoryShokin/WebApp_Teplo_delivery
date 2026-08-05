@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -123,6 +123,7 @@ from app.services.banking.classifier import (
     resolve_or_create_operation_counterparty,
 )
 from app.services.banking.credentials import set_credential
+from app.services.banking.merchant_text import merchant_token
 from app.services.banking.safe_allocations import (
     CASH_WITHDRAWAL_WALLET_CODE,
     allocation_advance_draft_id,
@@ -141,7 +142,7 @@ from app.services.banking.safe_allocations import (
     transfer_allocation_to_kassa,
 )
 from app.services.banking.transfer_matching import find_and_link_transfer_pairs
-from app.services.counterparty_bank_match import _is_card_noise
+from app.services.counterparty_bank_match import BANK_NOISE_INNS, _is_card_noise
 from app.services.counterparty_payments import (
     ARCHIVED_COUNTERPARTY_STATUSES,
     CounterpartyPaymentError,
@@ -486,6 +487,7 @@ async def list_journal(
                     # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое
                     # предупреждение при ручной привязке к накладной вместо жёсткой ошибки.
                     "is_card": _is_card_noise(op),
+                    "merchant": merchant_token(op.payment_purpose),
                 }
             )
 
@@ -514,6 +516,7 @@ async def list_journal(
                     # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое
                     # предупреждение при ручной привязке к накладной вместо жёсткой ошибки.
                     "is_card": _is_card_noise(op),
+                    "merchant": merchant_token(op.payment_purpose),
                 }
             )
 
@@ -1669,20 +1672,23 @@ async def classify_owner_review_case(
         await find_and_link_transfer_pairs(session)
 
     rule_id = None
+    rule_warning = None
     if payload.remember_as_rule:
         if payload.action == "set_article":
-            rule = await _remember_binding_rule(
+            remembered = await _remember_binding_rule(
                 session,
                 operation,
                 article_id=payload.article_id,
                 counterparty_id=payload.counterparty_id,
                 comment=f"Created from owner-review case for {operation.provider_operation_id}",
             )
+            rule, rule_warning = remembered.rule, remembered.warning
         else:
             rule = _rule_from_owner_review(operation, payload)
             session.add(rule)
-        await session.flush()
-        rule_id = rule.id
+        if rule is not None:
+            await session.flush()
+            rule_id = rule.id
 
     await close_reconciliation_case(
         session,
@@ -1702,6 +1708,7 @@ async def classify_owner_review_case(
         "bank_operation_id": operation.id,
         "classification_status": operation.classification_status,
         "rule_id": rule_id,
+        "rule_warning": rule_warning,
     }
 
 
@@ -2111,6 +2118,7 @@ async def classify_operation(
             await find_and_link_transfer_pairs(session)
 
     rule_id = None
+    rule_warning = None
     # Карт-привязку к накладной (allow_card) правилом НЕ запоминаем: правило не должно
     # авто-матчить будущие карт-операции к накладным — это разовое ручное действие.
     if (
@@ -2119,7 +2127,7 @@ async def classify_operation(
         and len(payload.splits) == 1
         and not payload.allow_card
     ):
-        rule = await _remember_binding_rule(
+        remembered = await _remember_binding_rule(
             session,
             operation,
             article_id=payload.splits[0].article_id,
@@ -2132,8 +2140,10 @@ async def classify_operation(
             or counterparty_id,
             comment=f"Created from operation review for {operation.provider_operation_id}",
         )
-        await session.flush()
-        rule_id = rule.id
+        rule_warning = remembered.warning
+        if remembered.rule is not None:
+            await session.flush()
+            rule_id = remembered.rule.id
 
     case = await session.scalar(
         select(ReconciliationCase).where(
@@ -2159,6 +2169,7 @@ async def classify_operation(
         "classification_status": operation.classification_status,
         "cashflow_transaction_ids": created_ids,
         "rule_id": rule_id,
+        "rule_warning": rule_warning,
     }
 
 
@@ -2946,6 +2957,7 @@ def _bank_operation_payload(operation: BankOperation) -> dict[str, object]:
         # Карт-операция (получатель — эквайер): фронт показывает мягкое предупреждение при
         # ручной привязке к накладной вместо жёсткой ошибки guard.
         "is_card": _is_card_noise(operation),
+        "merchant": merchant_token(operation.payment_purpose),
     }
 
 
@@ -3039,6 +3051,13 @@ def _rule_from_owner_review(
     )
 
 
+class RememberedRule(NamedTuple):
+    """Итог «запомнить»: правило (если создалось) и причина отказа для владельца."""
+
+    rule: ClassificationRule | None
+    warning: str | None = None
+
+
 async def _remember_binding_rule(
     session: AsyncSession,
     operation: BankOperation,
@@ -3046,38 +3065,49 @@ async def _remember_binding_rule(
     article_id: UUID | None,
     counterparty_id: UUID | None,
     comment: str,
-) -> ClassificationRule:
+) -> RememberedRule:
     """«Запомнить при разборе»: будущие платежи этого отправителя — этому контрагенту.
 
-    Есть ИНН в выписке — он и есть личность отправителя: матчим ТОЛЬКО по нему и направлению.
-    Раньше правило прибивало ещё и полный текст назначения, а у подписочных списаний в нём
-    номер счёта и даты, меняющиеся от платежа к платежу, — правило срабатывало ровно один раз
-    и дальше молчало. Провайдера не прибиваем по той же причине: смена банка не должна молча
-    выключать привязку. ИНН нет (карт-списание: в выписке только текст мерчанта) — матчим по
-    стабильным подстрокам, как раньше.
+    Личность отправителя ищем в том поле, где она реально есть:
 
-    По одному ИНН держим ОДНО правило: повторное «запомнить» обновляет существующее, а не
+    * **Настоящий ИНН в выписке** — он и есть личность: матчим ТОЛЬКО по нему и направлению.
+      Полный текст назначения сюда прибивать нельзя: у подписочных списаний в нём номер счёта
+      и даты, меняющиеся от платежа к платежу, — правило срабатывало бы ровно один раз.
+      Провайдера не прибиваем по той же причине: смена банка не должна выключать привязку.
+    * **Карт-операция** — ИНН в выписке чужой: T-Банк ставит СЕБЯ (эквайер, 7710140679),
+      одинаково для покупки в Ozon, в «Магните» и оплаты хостинга. Единственная личность
+      продавца — имя мерчанта в назначении, по нему и матчим (``merchant_token``).
+      Инцидент 03.08.2026: «запомнить» на карт-оплате ihc.ru расширило правило до «любой
+      расход с ИНН эквайера» и увело в IHC.ru покупки в Ozon, «Магните» и «Магистре».
+
+    По одной личности держим ОДНО правило: повторное «запомнить» обновляет существующее, а не
     копит дубли. Человек, запоминающий заново, пере-решает — его выбор побеждает старый.
+    Расширять чужое правило при этом нельзя: если существующее ловит операции ДРУГОГО
+    контрагента (его паттерн пересекается с нашим), молча забрать их себе — тот же инцидент
+    в профиль, поэтому такой конфликт возвращается владельцу текстом, а не решается за него.
     """
     inn = clean_digits(operation.counterparty_inn_raw)
-    if inn:
+    if inn and inn not in BANK_NOISE_INNS:
+        # Обновляем только правило, которое УЖЕ работает по одному ИНН без уточнений.
+        # Узкое правило с текстом назначения (сеяные правила банка) — чужое: обнулив ему
+        # паттерн, мы бы забрали все платежи этого ИНН, а не только свои.
         existing = await session.scalar(
             select(ClassificationRule).where(
                 ClassificationRule.action == "set_article",
                 ClassificationRule.counterparty_inn_match.in_(
                     tuple({inn, operation.counterparty_inn_raw or inn})
                 ),
+                ClassificationRule.purpose_pattern.is_(None),
             )
         )
         if existing is not None:
             existing.is_active = True
             existing.article_id = article_id
             existing.counterparty_id = counterparty_id
-            existing.purpose_pattern = None
             existing.counterparty_name_pattern = None
             existing.provider = None
             existing.comment = comment
-            return existing
+            return RememberedRule(existing)
         rule = ClassificationRule(
             name=f"Привязка по ИНН {inn}",
             priority=50,
@@ -3090,23 +3120,98 @@ async def _remember_binding_rule(
             comment=comment,
         )
         session.add(rule)
-        return rule
+        return RememberedRule(rule)
 
-    rule = ClassificationRule(
-        name=f"Owner review {operation.provider} {operation.provider_operation_id}",
-        priority=50,
-        is_active=True,
-        provider=operation.provider,
-        direction=operation.direction,
-        counterparty_name_pattern=_short_pattern(operation.counterparty_name_raw),
-        purpose_pattern=_short_pattern(operation.payment_purpose),
-        action="set_article",
-        article_id=article_id,
-        counterparty_id=counterparty_id,
-        comment=comment,
+    merchant = merchant_token(operation.payment_purpose)
+    if merchant is not None:
+        # Карт-операция: имя мерчанта — и паттерн, и имя правила. Имя контрагента из выписки
+        # («АО "ТБанк"») в правило не кладём — оно про банк, а не про продавца.
+        pattern, name_pattern, rule_name = merchant, None, f"Карт-списания: {merchant}"
+    else:
+        pattern = _short_pattern(operation.payment_purpose)
+        name_pattern = (
+            None if inn in BANK_NOISE_INNS else _short_pattern(operation.counterparty_name_raw)
+        )
+        rule_name = f"Owner review {operation.provider} {operation.provider_operation_id}"
+    if not pattern:
+        return RememberedRule(None, "В операции нет ни ИНН, ни назначения — запоминать нечего")
+
+    wanted = pattern.casefold()
+    # ВЫКЛЮЧЕННЫЕ правила тоже смотрим: правило с тем же текстом надо оживить и перенастроить,
+    # иначе рядом копится второе с той же подстрокой. А вот перехват чужих операций выключенное
+    # правило не создаёт — в проверку пересечений оно не идёт.
+    candidates = (
+        await session.scalars(
+            select(ClassificationRule).where(ClassificationRule.purpose_pattern.is_not(None))
+        )
+    ).all()
+    existing = None
+    for candidate in candidates:
+        other = (candidate.purpose_pattern or "").casefold()
+        if other == wanted:
+            if candidate.action != "set_article":
+                return RememberedRule(
+                    None,
+                    f"Текст «{pattern}» уже занят правилом «{candidate.name}» с действием "
+                    f"«{candidate.action}» — измените его в настройках ДДС",
+                )
+            existing = candidate
+            continue
+        if not candidate.is_active:
+            continue
+        if candidate.counterparty_id == counterparty_id and counterparty_id is not None:
+            continue  # оба ведут к нам — пересечение безвредно
+        if other and (other in wanted or wanted in other):
+            return RememberedRule(
+                None,
+                f"Текст «{pattern}» пересекается с правилом «{candidate.name}» "
+                f"(«{candidate.purpose_pattern}») — одно перехватило бы операции другого. "
+                "Разрешите конфликт в настройках ДДС",
+            )
+
+    if existing is not None:
+        existing.is_active = True
+        existing.article_id = article_id
+        existing.counterparty_id = counterparty_id
+        existing.direction = operation.direction
+        existing.comment = comment
+        rule = existing
+    else:
+        rule = ClassificationRule(
+            name=rule_name,
+            priority=50,
+            is_active=True,
+            provider=None if merchant else operation.provider,
+            direction=operation.direction,
+            counterparty_name_pattern=name_pattern,
+            purpose_pattern=pattern,
+            action="set_article",
+            article_id=article_id,
+            counterparty_id=counterparty_id,
+            comment=comment,
+        )
+        session.add(rule)
+    if merchant is not None and counterparty_id is not None:
+        await _remember_merchant_alias(session, merchant, counterparty_id)
+    return RememberedRule(rule)
+
+
+async def _remember_merchant_alias(
+    session: AsyncSession, merchant: str, counterparty_id: UUID
+) -> None:
+    """Записать имя мерчанта псевдонимом контрагента — чтобы реестр узнавал его и без правила.
+
+    Тот же продавец приходит и другими путями (новый город, другой агрегатор, ручная проводка);
+    псевдоним делает связку «текст выписки → карточка» общим знанием, а не свойством одного
+    правила. Псевдоним уникален по всему реестру, поэтому чужой не перехватываем."""
+    taken = await session.scalar(
+        select(CounterpartyAlias).where(func.lower(CounterpartyAlias.alias) == merchant.casefold())
     )
-    session.add(rule)
-    return rule
+    if taken is not None:
+        return
+    session.add(
+        CounterpartyAlias(counterparty_id=counterparty_id, alias=merchant, source="card_merchant")
+    )
 
 
 def _short_pattern(value: str | None) -> str | None:

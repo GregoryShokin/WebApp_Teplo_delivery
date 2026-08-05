@@ -2299,6 +2299,8 @@ export type BankOperationRead = {
   // Карт-операция (получатель — эквайер): при ручной привязке к накладной диалог показывает
   // мягкое предупреждение вместо жёсткой ошибки.
   is_card: boolean;
+  // Имя продавца из назначения карт-операции — по нему запоминается правило.
+  merchant?: string | null;
 };
 
 export type BankOperationsQuery = {
@@ -2471,6 +2473,13 @@ export type OperationSplitItem = {
   // Основное средство ЭТОЙ доли: один платёж покупает три стеллажа — это три разные карточки,
   // поэтому объект живёт в строке, а не в разборе целиком.
   asset_id?: string | null;
+};
+
+export type ClassifyResult = {
+  rule_id?: string | null;
+  // Почему «Запомнить» не создало правило (текст мерчанта пересёкся с чужим правилом).
+  // Разбор при этом прошёл — молча проглотить нельзя, иначе владелец ждёт автоматизации.
+  rule_warning?: string | null;
 };
 
 export type OperationClassifyPayload = {
@@ -2728,6 +2737,9 @@ export type JournalRow = {
   // Карт-операция (получатель в банке — эквайер): при ручной привязке к накладной диалог
   // показывает мягкое предупреждение вместо жёсткой ошибки. Для проводок всегда false.
   is_card: boolean;
+  // Имя продавца из назначения карт-операции («Оплата в OZON Moskva RUS» → «OZON»).
+  // Реквизиты у такой операции банковские, поэтому «Запомнить» работает по этому имени.
+  merchant?: string | null;
   // Основное средство проводки. У банк-операции объект берётся из /split, а у РУЧНОЙ
   // проводки другого источника нет — без него переоткрытие разбора снимало бы привязку.
   asset_id?: string | null;
@@ -3112,15 +3124,17 @@ export async function getDdsOwnerReview(
 export async function classifyOwnerReviewCase(
   caseId: string,
   payload: ClassifyPayload,
-): Promise<void> {
-  await api.post(`/dds/owner-review/${caseId}/classify`, payload);
+): Promise<ClassifyResult> {
+  const res = await api.post(`/dds/owner-review/${caseId}/classify`, payload);
+  return res.data;
 }
 
 export async function classifyOperation(
   operationId: string,
   payload: OperationClassifyPayload,
-): Promise<void> {
-  await api.post(`/dds/operations/${operationId}/classify`, payload);
+): Promise<ClassifyResult> {
+  const res = await api.post(`/dds/operations/${operationId}/classify`, payload);
+  return res.data;
 }
 
 export async function classifyCashflowTransaction(

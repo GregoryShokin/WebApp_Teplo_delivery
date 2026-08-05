@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -16,6 +16,7 @@ from app.models import (
     CashflowTransaction,
     ClassificationRule,
     Counterparty,
+    CounterpartyAlias,
     CounterpartyPayableProfile,
     DdsArticle,
     EmployeePayout,
@@ -32,6 +33,7 @@ from app.services.asset_analytics import (
     resolve_asset_context,
 )
 from app.services.banking.base import clean_digits
+from app.services.banking.merchant_text import merchant_token, normalized_name
 from app.services.location_analytics import (
     LocationAnalyticsError,
     LocationContext,
@@ -163,6 +165,23 @@ async def run_classification_rules(
             elif rule.action == "exclude":
                 counts["excluded"] += 1
             break
+        if not matched:
+            # Правила молчат — спрашиваем реестр: имя продавца из назначения могло уже
+            # встречаться как контрагент или его псевдоним.
+            registry = await match_counterparty_by_merchant(session, operation)
+            if registry is not None:
+                await apply_operation_action(
+                    session,
+                    operation,
+                    action="set_article",
+                    article_id=registry.article_id,
+                    counterparty_id=registry.counterparty_id,
+                    quality_status="auto",
+                )
+                # Кошелёк мог не найтись — тогда операция уже уехала в needs_review сама.
+                if operation.classification_status == "classified":
+                    matched = True
+                    counts["classified"] += 1
         if not matched:
             operation.classification_status = "needs_review"
             await create_or_update_reconciliation_case(
@@ -682,6 +701,64 @@ def _contains(value: str | None, pattern: str) -> bool:
     return pattern.casefold() in (value or "").casefold()
 
 
+def _escape_like(pattern: str) -> str:
+    return pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+class MerchantMatch(NamedTuple):
+    counterparty_id: UUID
+    article_id: UUID
+
+
+async def match_counterparty_by_merchant(
+    session: AsyncSession, operation: BankOperation
+) -> MerchantMatch | None:
+    """Опознать карт-операцию по имени продавца в назначении, а не по реквизитам.
+
+    У карт-списания реквизиты чужие (эквайер), поэтому единственная зацепка — текст
+    «Оплата в <МЕРЧАНТ> <Город> <СТРАНА>». Если очищенное имя мерчанта совпало с карточкой
+    реестра или её псевдонимом, а у карточки задана статья ДДС по умолчанию, — размечаем сами.
+
+    Совпадение требуется ТОЧНОЕ и ЕДИНСТВЕННОЕ: подстрочный матч по реестру сливал бы
+    «MAGAZIN» с «MAGAZIN MAGISTR», а два кандидата означают, что выбор за человеком.
+    Нет статьи по умолчанию — не угадываем: операция уходит в разбор, как и раньше.
+    """
+    merchant = merchant_token(operation.payment_purpose)
+    if merchant is None:
+        return None
+    wanted = normalized_name(merchant)
+    if not wanted:
+        return None
+
+    rows = (
+        await session.execute(
+            select(Counterparty.id, CounterpartyPayableProfile.default_dds_article_id)
+            .outerjoin(
+                CounterpartyPayableProfile,
+                CounterpartyPayableProfile.counterparty_id == Counterparty.id,
+            )
+            .outerjoin(CounterpartyAlias, CounterpartyAlias.counterparty_id == Counterparty.id)
+            .where(
+                or_(
+                    func.lower(Counterparty.name) == wanted,
+                    # «IHC.ru (поставщик серверов)»: уточнение в скобках не мешает узнать
+                    # продавца. Имя мерчанта экранируем — «SP_GRYADKA» содержит подчёркивание,
+                    # а в LIKE это шаблон «любой символ».
+                    func.lower(Counterparty.name).like(f"{_escape_like(wanted)} (%", escape="\\"),
+                    func.lower(CounterpartyAlias.alias) == wanted,
+                )
+            )
+            .distinct()
+        )
+    ).all()
+    if len(rows) != 1:
+        return None
+    counterparty_id, article_id = rows[0]
+    if article_id is None:
+        return None
+    return MerchantMatch(counterparty_id=counterparty_id, article_id=article_id)
+
+
 def _operation_review_payload(operation: BankOperation) -> dict[str, Any]:
     return {
         "provider": operation.provider,
@@ -693,6 +770,9 @@ def _operation_review_payload(operation: BankOperation) -> dict[str, Any]:
         "counterparty_inn_raw": operation.counterparty_inn_raw,
         "counterparty_account_raw": operation.counterparty_account_raw,
         "payment_purpose": operation.payment_purpose,
+        # Имя продавца из текста карт-операции: по нему разбор ищет карточку в реестре,
+        # тогда как реквизиты в такой операции принадлежат эквайеру, а не продавцу.
+        "merchant": merchant_token(operation.payment_purpose),
     }
 
 

@@ -30,6 +30,9 @@ class BankOperationRead(BaseModel):
     # Карт-операция (получатель — эквайер): фронт показывает мягкое предупреждение при ручной
     # привязке к накладной. Совпадает с флагом is_card строки журнала.
     is_card: bool = False
+    # Имя продавца, вынутое из назначения карт-операции: реквизиты у неё принадлежат банку,
+    # и «запомнить» работает по этому имени. Разбор показывает владельцу, что именно запомнит.
+    merchant: str | None = None
 
 
 class BankOperationListRead(BaseModel):
@@ -316,6 +319,8 @@ class OwnerReviewActionRead(BaseModel):
     bank_operation_id: uuid.UUID | None = None
     classification_status: str | None = None
     rule_id: uuid.UUID | None = None
+    # Почему «Запомнить» не создало правило (текст пересёкся с чужим правилом).
+    rule_warning: str | None = None
     # «Повторить отправку»: текст ошибки iiko, если синхронный add_payment не прошёл (кейс остался).
     iiko_payment_push_error: str | None = None
 
@@ -466,6 +471,9 @@ class OperationClassifyRead(BaseModel):
     classification_status: str
     cashflow_transaction_ids: list[uuid.UUID] = Field(default_factory=list)
     rule_id: uuid.UUID | None = None
+    # Почему «Запомнить» не создало правило (текст пересёкся с чужим). Сама разметка при
+    # этом прошла — молчать нельзя, иначе владелец ждёт автоматизации, которой нет.
+    rule_warning: str | None = None
 
 
 class SafeAllocationCreate(BaseModel):
@@ -854,6 +862,9 @@ class JournalRow(BaseModel):
     # Карт-операция (получатель в банке — эквайер): фронт показывает мягкое предупреждение при
     # ручной привязке к накладной. Для проводок (kind="cashflow") всегда False.
     is_card: bool = False
+    # Имя продавца из назначения карт-операции: реквизиты у неё банковские, и «Запомнить»
+    # работает по этому имени. Разбор показывает владельцу, что именно он запоминает.
+    merchant: str | None = None
     # Основное средство проводки. У банк-операции диалог берёт объект из ``/split``, а у РУЧНОЙ
     # проводки такого источника нет — форма собирается из этой строки. Без поля переоткрытие
     # разбора отдавало бы пустой объект, и «Разнести» сняло бы привязку, по которой покупка
