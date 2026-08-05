@@ -29,6 +29,7 @@ import {
   getPayrollAdvanceAvailability,
   type AssetOption,
   type CashflowClassifyPayload,
+  type ClassifyResult,
   type JournalRow,
   type LocationOption,
   type OperationClassifyPayload,
@@ -220,13 +221,19 @@ export function OperationClassifyDialog({
   };
 
   const mutation = useMutation({
-    mutationFn: (payload: OperationClassifyPayload | CashflowClassifyPayload) =>
+    mutationFn: (
+      payload: OperationClassifyPayload | CashflowClassifyPayload,
+    ): Promise<ClassifyResult> =>
       isOperation
         ? classifyOperation(targetId, payload as OperationClassifyPayload)
-        : classifyCashflowTransaction(targetId, payload as CashflowClassifyPayload),
-    onSuccess: async (_data, payload) => {
+        : // Ручная проводка правил не порождает — приводим к общему типу ответа.
+          classifyCashflowTransaction(targetId, payload as CashflowClassifyPayload).then(() => ({})),
+    onSuccess: async (result, payload) => {
       await invalidate();
       toast.success(ACTION_TOAST[payload.action] ?? "Готово");
+      // Разбор прошёл, а правило не создалось: без этого владелец ждёт автоматизации,
+      // которой нет, и удивляется на следующем таком же списании.
+      if (result?.rule_warning) toast.warning(result.rule_warning, { duration: 10000 });
       onClose();
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось сохранить разбор")),
@@ -770,9 +777,14 @@ export function OperationClassifyDialog({
                   <span>
                     <span className="block">Запомнить</span>
                     <span className="block text-xs text-muted-foreground">
-                      {row?.counterparty_inn_raw
-                        ? `Будущие платежи с ИНН ${row.counterparty_inn_raw} разберутся сами — даже с другим текстом назначения`
-                        : "Будущие списания с таким же текстом разберутся сами"}
+                      {/* У карт-операции реквизиты банковские (эквайер один на все покупки),
+                          поэтому запоминаем продавца из назначения, а не ИНН — иначе правило
+                          заберёт себе все карт-списания подряд. */}
+                      {row?.merchant
+                        ? `Будущие оплаты продавцу «${row.merchant}» разберутся сами — даже в другом городе`
+                        : row?.counterparty_inn_raw
+                          ? `Будущие платежи с ИНН ${row.counterparty_inn_raw} разберутся сами — даже с другим текстом назначения`
+                          : "Будущие списания с таким же текстом разберутся сами"}
                     </span>
                   </span>
                 </label>

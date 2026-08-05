@@ -126,6 +126,39 @@ test("реквизиты, которых нет в счёте, подставл�
   ).toBeVisible();
 });
 
+test("получатель из карточки не заменяется ошибочно распознанным названием банка", async ({ page }) => {
+  const ecoCenter = {
+    ...CARD_REQUISITES,
+    recipientName: 'Общество с ограниченной ответственностью «Экоцентр»',
+  };
+  await mockCommon(page, ecoCenter);
+  await page.route("**/api/v1/payment-page/intakes**", (route) =>
+    fulfillJson(route, [
+      intake({
+        counterparty_name: 'Общество с ограниченной ответственностью «Экоцентр»',
+        requisites: {
+          recipientName: "ВОЛГО-ДОНСКОЙ БАНК ПАО СБЕРБАНК",
+          inn: "3444177534",
+          bankAcnt: "40702810900000055555",
+          bankBik: "046015602",
+          recipientCorrAccountNumber: "30101810600000000602",
+        },
+      }),
+    ]),
+  );
+
+  await page.goto("/finance/payments");
+  await page.getByRole("button", { name: "Разобрать" }).first().click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Получатель")).toHaveValue(
+    'Общество с ограниченной ответственностью «Экоцентр»',
+  );
+  await expect(dialog.getByLabel("Расчётный счёт")).toHaveValue("40702810900000055555");
+  await expect(dialog.getByLabel("БИК")).toHaveValue("046015602");
+  await expect(dialog.getByText("из карточки").first()).toBeVisible();
+});
+
 test("расчётный счёт в счёте разошёлся с карточкой — окно просит сверить", async ({ page }) => {
   await mockCommon(page);
   await page.route("**/api/v1/payment-page/intakes**", (route) =>

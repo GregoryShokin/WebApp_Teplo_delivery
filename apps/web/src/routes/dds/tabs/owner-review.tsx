@@ -176,11 +176,11 @@ function OwnerReviewCard({
 
   const classifyMutation = useMutation({
     mutationFn: (payload: ClassifyPayload) => classifyOwnerReviewCase(item.id, payload),
-    onSuccess: async (_result, payload) => {
+    onSuccess: async (result, payload) => {
       await invalidate();
-      toast.success(
-        payload.remember_as_rule ? "Классифицировано. Правило сохранено" : "Классифицировано",
-      );
+      const remembered = payload.remember_as_rule && !result?.rule_warning;
+      toast.success(remembered ? "Классифицировано. Правило сохранено" : "Классифицировано");
+      if (result?.rule_warning) toast.warning(result.rule_warning, { duration: 10000 });
     },
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось классифицировать")),
   });
@@ -520,8 +520,8 @@ function OwnerReviewCard({
               <span>
                 <span className="block font-medium">Запомнить как правило</span>
                 <span className="block text-muted-foreground">
-                  Если включить, операции с тем же ИНН или паттерном в назначении будут
-                  классифицироваться автоматически.
+                  Если включить, будущие операции этого же отправителя разберутся сами: обычная
+                  платёжка — по ИНН, оплата картой — по имени продавца в назначении.
                 </span>
               </span>
             </label>

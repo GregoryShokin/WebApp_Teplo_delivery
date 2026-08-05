@@ -65,19 +65,33 @@ export function SendDialog({
     sources,
     setValue: setField,
     applyCandidate,
+    cardRequisites,
     cardLoading,
     mismatch,
   } = useRequisitesForm(intake, intake.counterparty_id);
+
+  // «У получателя нет реквизитов» — арендодатель с возмещением коммуналки, физлицо со счётом
+  // на бумаге: платить надо, а платёжку собрать не из чего. Тогда платёж выписывается на карту
+  // ИП (как неофициальному поставщику), деньги приходят на Сейф, и счёт закрывается, когда
+  // наличные выданы получателю. Выбор предлагаем ТОЛЬКО когда карточка контрагента пуста:
+  // там, где счёт получателя известен, платим по нему — ровно это правило и на бэке.
+  const [payViaIpCard, setPayViaIpCard] = useState(intake.scheduled_pays_via_safe);
+  const cardEmpty =
+    !cardRequisites ||
+    Object.values(cardRequisites).every((value) => !String(value ?? "").trim());
+  const canPayViaIpCard = !cardLoading && cardEmpty;
+  const viaIpCard = canPayViaIpCard && payViaIpCard;
 
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
 
   const ready =
-    r.recipientName.trim() !== "" &&
-    r.bankAcnt.trim() !== "" &&
-    r.bankBik.trim() !== "" &&
-    r.inn.trim() !== "" &&
-    r.recipientCorrAccountNumber.trim() !== "";
+    viaIpCard ||
+    (r.recipientName.trim() !== "" &&
+      r.bankAcnt.trim() !== "" &&
+      r.bankBik.trim() !== "" &&
+      r.inn.trim() !== "" &&
+      r.recipientCorrAccountNumber.trim() !== "");
   // Наполовину заполненный период — не «пусто», а незаконченный ввод: одна дата уходит в
   // confirm, где период без второй границы просто отбрасывается. Платёж уходил, период
   // терялся молча, и этот же счёт возвращался в очередь «период не указан».
@@ -92,16 +106,26 @@ export function SendDialog({
 
   const send = useMutation({
     mutationFn: async () => {
-      // Подтверждаем реквизиты (заносим в карточку + verified), затем отправляем или планируем.
-      await confirmIntake(intake.id, {
-        requisites: r,
-        apply_requisites: true,
-        service_period_start: periodStart || null,
-        service_period_end: periodEnd || null,
-      });
+      // Обычный счёт подтверждаем здесь: так реквизиты попадают в карточку и получают статус
+      // verified. Коммунальная строка к этому моменту УЖЕ подтверждена специальным окном
+      // (поток → арендодатель → помещение → период). Повторный вызов обычного /confirm сервер
+      // намеренно отвергает: он провёл бы квитанцию как счёт ресурсника. Поэтому ей остаётся
+      // только создать банковский черновик.
+      if (!intake.utility_kind) {
+        // При выводе на карту ИП реквизиты не трогаем вовсе: занеси мы сейчас в карточку то,
+        // что распозналось в бумаге (у коммуналки там ресурсник, а платим арендодателю),
+        // следующий платёж ушёл бы по ним молча и мимо получателя.
+        await confirmIntake(intake.id, {
+          requisites: viaIpCard ? undefined : r,
+          apply_requisites: !viaIpCard,
+          service_period_start: periodStart || null,
+          service_period_end: periodEnd || null,
+        });
+      }
       const choice = {
         dds_article_id: ddsArticleId || null,
         remember_for_counterparty: rememberForCp,
+        pays_via_safe: viaIpCard,
       };
       if (isNow) await sendToBank(intake.id, choice);
       else await scheduleSend(intake.id, date, choice);
@@ -110,7 +134,9 @@ export function SendDialog({
       invalidate();
       toast.success(
         isNow
-          ? "Отправлено в банк — ожидает подтверждения"
+          ? viaIpCard
+            ? "Отправлено на карту ИП — деньги придут на Сейф"
+            : "Отправлено в банк — ожидает подтверждения"
           : `Запланировано на ${formatDate(date)} — уйдёт в банк автоматически`,
       );
       onClose();
@@ -211,13 +237,31 @@ export function SendDialog({
               onPickFromHistory={applyCandidate}
               searchQuery={r.inn || r.recipientName || intake.counterparty_name || ""}
               counterpartyId={intake.counterparty_id}
-              highlightMissing
+              highlightMissing={!viaIpCard}
               loading={cardLoading}
             />
             {!ready ? (
               <p className="text-xs text-amber-600">
                 Заполните название, ИНН, БИК, расчётный и корреспондентский счета.
               </p>
+            ) : null}
+            {canPayViaIpCard ? (
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  checked={payViaIpCard}
+                  className="mt-0.5 h-4 w-4"
+                  onChange={(event) => setPayViaIpCard(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  У получателя нет реквизитов — вывести на карту ИП
+                  <span className="block text-xs text-muted-foreground">
+                    {viaIpCard
+                      ? "Платёж уйдёт на карту ИП, деньги придут на Сейф. Счёт закроется, когда наличные выданы получателю."
+                      : "Для тех, кому платим не по счёту в банке: реквизиты спрашивать не будем."}
+                  </span>
+                </span>
+              </label>
             ) : null}
           </div>
 

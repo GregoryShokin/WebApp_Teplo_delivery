@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -110,6 +111,12 @@ class EmailInvoiceIntake(Base):
     )
     # Дата плановой авто-отправки в банк (джоба send_scheduled_payments). None = отправка вручную.
     scheduled_send_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Подтверждение «у получателя нет реквизитов — вывести на карту ИП», данное при планировании
+    # отправки. Живёт на строке, потому что платёж создаст джоба, когда человека рядом не будет;
+    # снимается вместе с плановой датой — согласие давалось на один платёж.
+    scheduled_pays_via_safe: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Статус до ручного исключения — чтобы «Вернуть» из «Исключённых» восстановило прежнее место.
     previous_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

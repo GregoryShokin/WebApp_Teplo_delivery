@@ -187,10 +187,16 @@ async def create_payment_draft_for_invoices(
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None = None,
     channel: str | None = None,
+    allow_official_via_safe: bool = False,
 ) -> CounterpartyPaymentDraft:
     """Черновик оплаты накладных. ``channel`` выбирает банк-плательщика: ``bank_draft``
     (по умолчанию, Т-Банк) или ``bank_draft_sber`` (Сбер) — тем же интерфейсом, что и
-    свободный вывод из окна «Новый платёж»; провайдер запоминается на черновике."""
+    свободный вывод из окна «Новый платёж»; провайдер запоминается на черновике.
+
+    ``allow_official_via_safe`` — осознанное подтверждение оператора «у получателя нет
+    реквизитов, вывести на карту ИП» (галочка в окне отправки счёта). Работает ровно так же,
+    как в окне «Новый платёж»: маршрут подменяется ТОЛЬКО когда реквизитов в карточке нет
+    вовсе; там, где счёт получателя известен, флаг ничего не обходит."""
     unique_ids = list(dict.fromkeys(invoice_ids))
     if not unique_ids:
         raise CounterpartyPaymentError("Не выбраны накладные для оплаты")
@@ -272,6 +278,14 @@ async def create_payment_draft_for_invoices(
     # на Сейф, а контроль «поставщик получил наличные» несёт целевой резерв Сейфа,
     # который заводит paid-переход (см. bank_payment_status.apply_payment_status).
     pays_via_safe = profile is not None and profile.relationship == "informal"
+    # Тот же маршрут — официальному получателю, у которого реквизитов нет вовсе (арендодатель
+    # с возмещением коммуналки, физлицо со счётом на бумаге): оператор ставит галочку «без
+    # реквизитов» в окне отправки и берёт на себя вывод на карту ИП. Условие ровно как в окне
+    # «Новый платёж»: подменяем маршрут, только пока карточка пуста. Появились реквизиты —
+    # платим по ним, и флаг не отменяет их подтверждения: иначе одна забытая галочка увела бы
+    # деньги мимо поставщика, у которого счёт в системе уже есть.
+    if not pays_via_safe and allow_official_via_safe and not (profile and profile.requisites):
+        pays_via_safe = True
     if profile is not None and profile.service_period_required:
         missing_period = [inv for inv in invoices if inv.service_period_status != "ready"]
         if missing_period:

@@ -460,6 +460,10 @@ def test_classify_new_counterparty_rule_keeps_resolved_counterparty(
                 account_id=account.id,
                 classification_status="needs_review",
             )
+            # Назначение обязательно: без ИНН и без текста правилу не за что зацепиться, и
+            # «запомнить» честно отказывается (иначе получилось бы правило без единого условия,
+            # забирающее все исходящие операции банка).
+            operation.payment_purpose = "Оплата по счету 41 от 12.05.2026"
             await session.commit()
             return article.id, operation.id
 

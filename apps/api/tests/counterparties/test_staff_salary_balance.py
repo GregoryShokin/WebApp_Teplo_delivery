@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -168,6 +169,124 @@ def test_on_demand_debt_replaces_current_half_month_proration(
     assert row["on_demand_paid"] == 140000.0
     assert row["on_demand_debt"] == 140000.0
     assert row["payable"] == 140000.0
+
+
+def _half_month_prorate(oklad: Decimal, today: date) -> Decimal:
+    """Ожидаемый прорейт оклада на дату — независимая копия формулы `_prorated_amount`."""
+    if today.day <= 15:
+        start, end = date(today.year, today.month, 1), date(today.year, today.month, 15)
+    else:
+        last_day = calendar.monthrange(today.year, today.month)[1]
+        start, end = date(today.year, today.month, 16), date(today.year, today.month, last_day)
+    total_days = (end - start).days + 1
+    worked_days = (today - start).days + 1
+    if worked_days >= total_days:
+        return oklad.quantize(Decimal("0.01"))
+    return (oklad * Decimal(worked_days) / Decimal(total_days)).quantize(Decimal("0.01"))
+
+
+def test_on_demand_shows_prorate_until_month_accrual_is_posted(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Пока ведомость текущего месяца не прогнана, on_demand держится на прорейте.
+
+    Начисление «по востребованию» появляется только вместе с прогоном ведомости, а
+    полумесячные периоды заводятся не с 1-го числа. Раньше прорейт обнулялся безусловно,
+    и в этом окне заработанное не отражалось НИГДЕ: при полностью выбранном остатке
+    (accrued == paid) сотрудник целиком выпадал из витрины ДЗ/КЗ. Кейс с прода 03.08.2026:
+    собственнику считался аванс 28 000 ₽, а строки в «Учёте ДЗ/КЗ» не было вовсе.
+    """
+
+    async def seed() -> uuid.UUID:
+        today = date.today()
+        prev_year = today.year if today.month > 1 else today.year - 1
+        prev_month = today.month - 1 if today.month > 1 else 12
+        async with async_session_factory() as session:
+            employee = _employee("Собственник Прорейт", position="Управляющий")
+            session.add(employee)
+            await session.flush()
+            session.add_all(
+                [
+                    EmployeePositionAssignment(
+                        id=uuid.uuid4(),
+                        employee_id=employee.id,
+                        position="Управляющий",
+                        effective_from=date(prev_year, prev_month, 1),
+                    ),
+                    PayrollRate(
+                        id=uuid.uuid4(),
+                        employee_id=employee.id,
+                        position_group="Управляющий",
+                        category="admin",
+                        station=None,
+                        rate_type="monthly",
+                        amount=Decimal("140000"),
+                        is_active=True,
+                        effective_from=date(prev_year, prev_month, 1),
+                    ),
+                    AppSetting(
+                        key="payroll.okladnik_payout_modes",
+                        value={"Управляющий": "on_demand"},
+                        value_type="object",
+                        category="payroll",
+                        display_name="Режим выплаты окладов",
+                        widget_type="json",
+                    ),
+                ]
+            )
+            # Прошлый месяц закрыт и ПОЛНОСТЬЮ выбран (остаток 0). Ведомости текущего месяца
+            # ещё нет — ровно состояние прода в начале месяца.
+            period = PayrollPeriod(
+                id=uuid.uuid4(),
+                period_type="half_month",
+                start_date=date(prev_year, prev_month, 1),
+                end_date=date(prev_year, prev_month, 15),
+                payroll_date=date(prev_year, prev_month, 15),
+                status="finalized",
+            )
+            run = PayrollRun(
+                id=uuid.uuid4(),
+                period_id=period.id,
+                status="completed",
+                is_imported_legacy=False,
+                started_at=datetime.now(tz=UTC),
+            )
+            session.add_all([period, run])
+            await session.flush()
+            session.add(
+                _on_demand_line(
+                    run.id,
+                    employee.id,
+                    month=f"{prev_year:04d}-{prev_month:02d}",
+                    amount="140000.00",
+                )
+            )
+            session.add(
+                EmployeePayout(
+                    id=uuid.uuid4(),
+                    employee_id=employee.id,
+                    kind="owner_salary",
+                    amount=Decimal("140000"),
+                    payout_date=date(prev_year, prev_month, 15),
+                    status="paid",
+                )
+            )
+            await session.commit()
+            return employee.id
+
+    employee_id = asyncio.run(seed())
+    response = client.get(f"{BASE}/staff-payable", headers=_admin(async_session_factory))
+    assert response.status_code == 200, response.text
+    row = next(
+        (item for item in response.json()["items"] if item["employee_id"] == str(employee_id)),
+        None,
+    )
+    assert row is not None, "сотрудник on_demand пропал из витрины ДЗ/КЗ"
+
+    expected = _half_month_prorate(Decimal("140000"), date.today())
+    assert row["on_demand_debt"] == 0.0
+    assert row["earned_to_date"] == float(expected)
+    assert row["payable"] == float(expected)
 
 
 def test_no_pay_employee_is_absent_from_salary_balance(

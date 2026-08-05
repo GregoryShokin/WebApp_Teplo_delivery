@@ -209,6 +209,9 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
             SupplierInvoice.draft_id,
             SupplierInvoice.dds_article_id,
             SupplierInvoice.amount,
+            CounterpartyPaymentDraft.status,
+            CounterpartyPaymentDraft.pays_via_safe,
+            SafeAllocation.id,
         )
         .outerjoin(Counterparty, Counterparty.id == EmailInvoiceIntake.counterparty_id)
         .outerjoin(
@@ -216,6 +219,18 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
             CounterpartyPayableProfile.counterparty_id == EmailInvoiceIntake.counterparty_id,
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == EmailInvoiceIntake.invoice_id)
+        .outerjoin(
+            CounterpartyPaymentDraft,
+            CounterpartyPaymentDraft.id == SupplierInvoice.draft_id,
+        )
+        .outerjoin(
+            SafeAllocation,
+            and_(
+                SafeAllocation.source_draft_id == SupplierInvoice.draft_id,
+                SafeAllocation.source_draft_line_id.is_(None),
+                SafeAllocation.status.in_(("reserved", "partially_paid")),
+            ),
+        )
         .order_by(EmailInvoiceIntake.created_at.desc())
         # PDF счёта витрине не нужен, а весит сотни килобайт на запись: без defer
         # каждый опрос списка тянул из TOAST все вложения за всю историю почты.
@@ -226,7 +241,23 @@ async def _invoice_items(session: AsyncSession) -> list[PaymentItem]:
     article_names = await _article_names(session, article_ids)
 
     items: list[PaymentItem] = []
-    for intake, cp_name, verified, pay_status, draft_id, article_id, inv_amount in rows:
+    for (
+        intake,
+        cp_name,
+        verified,
+        pay_status,
+        draft_id,
+        article_id,
+        inv_amount,
+        draft_status,
+        draft_pays_via_safe,
+        reserve_id,
+    ) in rows:
+        # После исполнения via-safe черновика исходный счёт всё ещё неоплачен: наличные
+        # не выданы получателю. Но его уже представляет созданный резерв «На Сейфе».
+        # Не дублируем один и тот же платёж строкой «Отправлен в банк».
+        if draft_status == "paid" and draft_pays_via_safe and reserve_id is not None:
+            continue
         # Скрытые/служебные записи журнала разбора не относятся к активным платежам. Закрывающий
         # документ (closing: УПД/акт) — не счёт к оплате: он гасит дебиторку / встаёт в кредиторку,
         # живёт в учёте ДЗ/КЗ, а не в очереди оплат.
@@ -297,6 +328,17 @@ async def _draft_items(session: AsyncSession) -> list[PaymentItem]:
             (CounterpartyPaymentDraft.pays_via_safe.is_(True))
             | (CounterpartyPaymentDraft.creates_prepayment.is_(True))
             | (CounterpartyPaymentDraft.target_article_id.is_not(None))
+        )
+        # Скрываем только черновик, уже представленный строкой *входящего журнала*.
+        # SupplierInvoice бывает и у накладной поставщика (овощи): у неё нет строки
+        # EmailInvoiceIntake, поэтому черновик — единственная видимая платёжка и скрывать его
+        # нельзя. У коммунального счёта есть обе сущности, там вторая строка была дублем.
+        .where(
+            CounterpartyPaymentDraft.id.not_in(
+                select(SupplierInvoice.draft_id)
+                .join(EmailInvoiceIntake, EmailInvoiceIntake.invoice_id == SupplierInvoice.id)
+                .where(SupplierInvoice.draft_id.is_not(None))
+            )
         )
         .order_by(CounterpartyPaymentDraft.created_at.desc())
     )
@@ -885,9 +927,7 @@ async def _tax_due_items(session: AsyncSession) -> list[PaymentItem]:
         logger.warning("payments: не удалось собрать налоговые обязательства", exc_info=True)
         return []
 
-    existing_drafts = (
-        (await session.execute(select(TaxBankDraft))).scalars().all()
-    )
+    existing_drafts = (await session.execute(select(TaxBankDraft))).scalars().all()
     draft_keys = {
         (d.tax_kind, d.for_period)
         for d in existing_drafts

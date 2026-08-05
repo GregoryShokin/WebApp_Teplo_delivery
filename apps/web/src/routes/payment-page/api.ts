@@ -60,6 +60,8 @@ export type PaymentIntake = {
   /** Из-за чего строка ждёт рук человека. Пусто — разбор прошёл. */
   utility_blocking: string[];
   scheduled_send_date: string | null;
+  /** Согласие «без реквизитов — на карту ИП», данное при планировании отправки. */
+  scheduled_pays_via_safe: boolean;
   created_at: string;
 };
 
@@ -176,6 +178,9 @@ export async function ignoreIntake(id: string): Promise<PaymentIntake> {
 export type ArticleChoice = {
   dds_article_id?: string | null;
   remember_for_counterparty?: boolean;
+  /** «У получателя нет реквизитов»: платёж уходит на карту ИП → Сейф, дальше выдача наличными.
+   *  Бэк применяет флаг, только пока реквизитов в карточке нет вовсе. */
+  pays_via_safe?: boolean;
 };
 
 // Отправить подтверждённый счёт в банк (банк-черновик, как у накладных). Деньги не списываются.

@@ -255,6 +255,38 @@ async def _find_duplicate_email_invoice(
     return None
 
 
+async def _basis_invoice(
+    session: AsyncSession, cp_id: uuid.UUID, rec_json: dict[str, object]
+) -> SupplierInvoice | None:
+    """Счёт, на который ссылается закрывающий документ («Основание Счет № X от DD.MM.YYYY»).
+
+    Ищем строго по номеру у того же контрагента и только среди счетов (``bill``) с готовым
+    периодом: наследовать нечего, если у основания период сам не определён. Номер счёта у
+    одного поставщика уникален, но подстраховываемся — при нескольких кандидатах берём тот,
+    чья дата совпала с датой основания, иначе не угадываем."""
+    number = str(rec_json.get("basis_number") or "").strip()
+    if not number:
+        return None
+    candidates = (
+        await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.counterparty_id == cp_id,
+                SupplierInvoice.doc_kind == "bill",
+                SupplierInvoice.number == number,
+                SupplierInvoice.payment_status != "void",
+                SupplierInvoice.service_period_status == "ready",
+            )
+        )
+    ).all()
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    basis_date = _date_or_none(rec_json.get("basis_date"))
+    exact = [c for c in candidates if basis_date is not None and c.invoice_date == basis_date]
+    return exact[0] if len(exact) == 1 else None
+
+
 def _enrich_duplicate_period(
     invoice: SupplierInvoice,
     *,
@@ -457,6 +489,21 @@ async def materialize_from_intake(
         raise ValueError(
             "В счёте найдено несколько периодов оказания услуг — выберите один вручную"
         )
+
+    intake.counterparty_id = cp_id
+    # Роль документа: счёт(bill)/УПД(closing). Оператор подтверждает неопознанный макет как счёт
+    # к оплате — поэтому None (reconciliation/unknown) трактуем как 'bill'.
+    doc_kind = _doc_kind_from_recognition(rec_json.get("document_kind")) or "bill"
+    period_source = rec_json.get("service_period_source") or None
+    if doc_kind == "closing" and not period_ambiguous and period_start is None:
+        # Период своего оказания закрывающий документ обычно не печатает — он есть в счёте,
+        # на который тот ссылается («Основание Счет № … от …»). Наследуем оттуда, иначе расход
+        # по акту не признаётся вовсе: у актов iiko периода в тексте нет.
+        basis = await _basis_invoice(session, cp_id, rec_json)
+        if basis is not None:
+            period_start, period_end = basis.service_period_start, basis.service_period_end
+            period_source = "basis_invoice"
+
     if period_ambiguous:
         period_status = "ambiguous"
     elif period_start is not None and period_end is not None:
@@ -464,11 +511,6 @@ async def materialize_from_intake(
         period_status = "ready"
     else:
         period_status = "missing" if period_required else "not_required"
-
-    intake.counterparty_id = cp_id
-    # Роль документа: счёт(bill)/УПД(closing). Оператор подтверждает неопознанный макет как счёт
-    # к оплате — поэтому None (reconciliation/unknown) трактуем как 'bill'.
-    doc_kind = _doc_kind_from_recognition(rec_json.get("document_kind")) or "bill"
     probe = RecognizedInvoice(amount=amount, invoice_number=number, invoice_date=inv_date)
     dup = await _find_duplicate_email_invoice(session, cp_id, probe, doc_kind=doc_kind)
     if dup is not None:
@@ -499,7 +541,7 @@ async def materialize_from_intake(
         invoice_date=inv_date,
         service_period_start=period_start,
         service_period_end=period_end,
-        service_period_source=rec_json.get("service_period_source") or None,
+        service_period_source=period_source,
         service_period_status=period_status,
         service_period_confidence=rec_json.get("service_period_confidence"),
         amount=amount,
@@ -790,6 +832,7 @@ async def send_intakes_to_bank(
     intakes: list[EmailInvoiceIntake],
     *,
     actor_user_id: uuid.UUID | None,
+    allow_official_via_safe: bool = False,
 ) -> None:
     """Отправить в банк ОДНИМ черновиком все переданные счета.
 
@@ -802,35 +845,61 @@ async def send_intakes_to_bank(
     Проверяем ВСЕ строки до создания черновика: отказ на середине оставил бы часть счетов
     отправленными, а человек нажимал одну кнопку и ждёт одного исхода. ``payments.*`` ошибки
     (один контрагент, неподтверждённые реквизиты) поднимаются наружу как есть.
+
+    ``allow_official_via_safe`` — галочка «без реквизитов» из окна отправки: получателю без
+    реквизитов платёж уходит на карту ИП → Сейф (см. ``create_payment_draft_for_invoices``).
     """
     if not intakes:
         raise payments.CounterpartyPaymentError("Не выбрано ни одного счёта")
     invoices = [await _prepare_intake_for_bank(session, intake) for intake in intakes]
     await payments.create_payment_draft_for_invoices(
-        session, invoice_ids=[invoice.id for invoice in invoices], actor_user_id=actor_user_id
+        session,
+        invoice_ids=[invoice.id for invoice in invoices],
+        actor_user_id=actor_user_id,
+        allow_official_via_safe=allow_official_via_safe,
     )
-    scheduled = [intake for intake in intakes if intake.scheduled_send_date is not None]
+    # Плановая отправка отработала — снимаем и дату, и подтверждение вывода на карту ИП:
+    # оно давалось под этот платёж, а не навсегда.
+    scheduled = [
+        intake
+        for intake in intakes
+        if intake.scheduled_send_date is not None or intake.scheduled_pays_via_safe
+    ]
     if scheduled:
         for intake in scheduled:
             intake.scheduled_send_date = None
+            intake.scheduled_pays_via_safe = False
         await session.commit()
 
 
 async def send_intake_to_bank(
-    session: AsyncSession, intake: EmailInvoiceIntake, *, actor_user_id: uuid.UUID | None
+    session: AsyncSession,
+    intake: EmailInvoiceIntake,
+    *,
+    actor_user_id: uuid.UUID | None,
+    allow_official_via_safe: bool = False,
 ) -> None:
     """Создать банк-черновик по подтверждённому счёту — ОБЩИЙ путь для ручной кнопки «Отправить
     в банк» и плановой джобы ``send_scheduled_payments``. Деньги не списываются: уходит черновик
     на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
     решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
     даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
-    await send_intakes_to_bank(session, [intake], actor_user_id=actor_user_id)
+    await send_intakes_to_bank(
+        session,
+        [intake],
+        actor_user_id=actor_user_id,
+        allow_official_via_safe=allow_official_via_safe,
+    )
 
 
 async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:
     """Найти счета с наступившей плановой датой и отправить их в банк. Контрагент с
     неподтверждёнными реквизитами / ошибка банка — пропускаем (дату НЕ снимаем, повторим в
-    следующий проход). Возвращает счётчики для лога джобы."""
+    следующий проход). Возвращает счётчики для лога джобы.
+
+    Подтверждение вывода на карту ИП джоба берёт со строки (``scheduled_pays_via_safe``): его
+    дал человек, когда планировал отправку, — иначе плановый счёт получателя без реквизитов
+    вечно висел бы в «пропущено», ожидая реквизитов, которых не будет."""
     today = datetime.now(MOSCOW_TZ).date()
     rows = (
         await session.scalars(
@@ -844,7 +913,12 @@ async def run_scheduled_sends(session: AsyncSession) -> dict[str, int]:
     result = {"due": len(rows), "sent": 0, "skipped": 0, "errors": 0}
     for intake in rows:
         try:
-            await send_intake_to_bank(session, intake, actor_user_id=None)
+            await send_intake_to_bank(
+                session,
+                intake,
+                actor_user_id=None,
+                allow_official_via_safe=intake.scheduled_pays_via_safe,
+            )
             result["sent"] += 1
         except payments.RequisitesNotVerifiedError:
             result["skipped"] += 1  # ждём, пока оператор подтвердит реквизиты
@@ -948,6 +1022,16 @@ async def process_attachment(
             await service_periods.sync_invoice_accrual(session, dup)
         return intake.status
 
+    period_start, period_end = rec.service_period_start, rec.service_period_end
+    period_source = rec.service_period_source
+    if doc_kind == "closing" and period_start is None:
+        # Своего периода у закрывающего в тексте может не быть — берём его из счёта-основания
+        # (см. ``_basis_invoice``), иначе расход по акту не признаётся вовсе.
+        basis = await _basis_invoice(session, cp_id, rec.to_json())
+        if basis is not None:
+            period_start, period_end = basis.service_period_start, basis.service_period_end
+            period_source = "basis_invoice"
+
     invoice = SupplierInvoice(
         counterparty_id=cp_id,
         source="email",
@@ -957,12 +1041,12 @@ async def process_attachment(
         external_id=att.sha256[:128],
         number=rec.invoice_number,
         invoice_date=rec.invoice_date,
-        service_period_start=rec.service_period_start,
-        service_period_end=rec.service_period_end,
-        service_period_source=rec.service_period_source,
+        service_period_start=period_start,
+        service_period_end=period_end,
+        service_period_source=period_source,
         service_period_status=(
             "ready"
-            if rec.service_period_start and rec.service_period_end
+            if period_start and period_end
             else "missing"
             if period_required
             else "not_required"
