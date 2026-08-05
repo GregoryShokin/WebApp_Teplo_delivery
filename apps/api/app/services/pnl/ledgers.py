@@ -26,6 +26,7 @@ from app.models.pnl import (
     PnlProductMonthlyDecision,
     PnlProductWhitelist,
 )
+from app.services import accounting_periods
 from app.services.pnl import iiko_sync, projector
 from app.services.pnl.revision_products import (
     load_revision_product_guids,
@@ -803,9 +804,33 @@ async def rebuild_goods_from_observations(
     month: date,
     source_kind: str,
 ) -> None:
-    """Пересчитать один товарный источник после изменения правила разметки."""
+    """Пересчитать один товарный источник после изменения правила разметки.
+
+    МЕСЯЦ БЕЗ ВЫГРУЗКИ iiko НЕ ТРОГАЕМ ВОВСЕ. Пересчёт выводит суммы из сохранённых строк
+    и, когда строк нет, честно обнуляет каждую метрику — вот только этот ноль означает
+    «выгрузки не было», а не «расхода не было». Записав его, мы бы стёрли живые цифры
+    месяца, который просто не синхронизировался (iiko Server привязан к IP прода, так что
+    вне прода это норма).
+
+    ГРАНИЦА ИМЕННО «МЕСЯЦ ВЫГРУЖЕН», а не «у этого источника есть строки». Ноль внутри
+    выгруженного месяца законен и должен записываться: товар перевели в складской контур,
+    складского движения у него в месяце не было — метрика обязана появиться нулевой, иначе
+    отчёт покажет «нет данных» там, где данные есть. Поэтому признак берётся по месяцу
+    целиком: любая строка любого товарного источника означает, что выгрузка была.
+    """
     if source_kind not in GOODS_LINES_BY_SOURCE:
         raise ValueError("Неизвестный источник товара")
+
+    month_synced = await session.scalar(
+        select(
+            select(PnlIikoProductObservation.id)
+            .where(PnlIikoProductObservation.period_month == month)
+            .exists()
+            | select(PnlIikoStockFact.id).where(PnlIikoStockFact.period_month == month).exists()
+        )
+    )
+    if not month_synced:
+        return
 
     now = datetime.now(UTC)
 
@@ -973,6 +998,9 @@ async def save_goods_classification(
 ) -> GoodsClassificationLedger:
     """Сохранить постоянное правило либо временную «Проработку» выбранного месяца."""
     month_start, _month_end = projector.month_bounds(display_month)
+    await accounting_periods.assert_month_open(
+        session, month_start, action="менять разметку товаров"
+    )
     revision_product_guids = await load_revision_product_guids(session)
     is_revision_product = normalize_iiko_product_guid(product_guid) in revision_product_guids
     if source_kind not in GOODS_LINES_BY_SOURCE:
@@ -1114,8 +1142,18 @@ async def save_goods_classification(
             rule.product_code = any_latest_observation.product_code or rule.product_code
     await session.flush()
 
-    affected_months = set(
-        (
+    # ПРАВКА ДЕЙСТВУЕТ С РЕДАКТИРУЕМОГО МЕСЯЦА ВПЕРЁД, а не на всю историю товара. Раньше
+    # пересчитывались ВСЕ месяцы, где встречался GUID: разметив товар на августовской
+    # странице, человек молча менял прибыль июля — уже показанного и сверенного. Владелец
+    # назвал это косяком 05.08.2026. Поправить нужно именно прошлый месяц — правку делают
+    # на ЕГО странице, и тогда он приходит сюда как ``month_start`` осознанно.
+    #
+    # Закрытые месяцы отсекаются отдельно поверх этого: правка вперёд может задеть месяц,
+    # который уже закрыли (правку июля видит и закрытый август). Замок сильнее направления.
+    closed = await accounting_periods.closed_months(session)
+    affected_months = {
+        month
+        for month in (
             await session.execute(
                 select(PnlIikoProductObservation.period_month)
                 .where(
@@ -1124,9 +1162,10 @@ async def save_goods_classification(
                 .distinct()
             )
         ).scalars()
-    )
+        if month >= month_start
+    }
     affected_months.add(month_start)
-    for affected_month in affected_months:
+    for affected_month in sorted(affected_months - closed):
         # Источник — единое решение для товара. Его смена одновременно убирает товар
         # из старого леджера и добавляет в новый, поэтому пересчитываем оба контура.
         await rebuild_goods_from_observations(session, affected_month, "inventory")

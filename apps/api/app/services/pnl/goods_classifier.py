@@ -4,6 +4,21 @@
 рекурсивная связь ингредиента с блюдами через техкарты. Модель получает уже ограниченный
 набор допустимых статей и может отказаться от решения; отказ, низкая уверенность или
 несовместимая статья всегда оставляют строку владельцу, а не создают молчаливый расход.
+
+ЧЕТЫРЕ ПРАВИЛА ВЛАДЕЛЬЦА (сформулированы 04–05.08.2026), в порядке применения:
+
+1. ГЕЙТ ИНВЕНТАРИЗАЦИИ. Товар проходит через складской пересчёт — он складской, и больше
+   ничего решать не нужно. Проверка идёт первой, до всех рассуждений о блюдах и накладных:
+   иначе сырьё, попавшее в накладную раньше, чем в остатки, успело бы уехать в «Проработку».
+2. ПРОРАБОТКА. Не в инвентаризации и не входит ни в одно блюдо в продаже — товар куплен,
+   чтобы его попробовать. Признаётся расходом по накладной только своего месяца.
+3. АВТОПЕРЕХОД. Блюдо с этим товаром включили в продажу — товар становится складским сам,
+   без вопроса человеку. Это же снимает и подвешенный ``requires_owner_review``, если его
+   поставила автоматика: вопрос разрешился фактом, а не ответом.
+4. ТРЕТИЙ ЗАКАЗ. Товар заказали в третий раз, а он всё ещё не в блюде и не в остатках —
+   значит это не проработка, а регулярная закупка. Проработка ему больше не полагается:
+   модель обязана выбрать постоянную статью — вспомогательные материалы или содержание
+   торговых точек.
 """
 
 from __future__ import annotations
@@ -12,7 +27,7 @@ import json
 from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -44,6 +59,15 @@ INVENTORY_DECISIONS = frozenset({"stocked"})
 INVOICE_DECISIONS = frozenset({"stocked", "shop_maintenance", "aux_goods", "workup"})
 ALL_DECISIONS = INVENTORY_DECISIONS | INVOICE_DECISIONS
 SELLABLE_TYPES = frozenset({"DISH", "MODIFIER"})
+
+#: Статусы, которые закрывают вопрос по товару окончательно. ``requires_owner_review`` сюда
+#: не входит намеренно: это не решение, а зафиксированное «не знаю», и правило 3 обязано
+#: уметь его снять, когда товар появился в активном блюде.
+FINAL_STATUSES = frozenset({"include", "exclude", STATUS_STOCKED})
+
+#: Начиная с какого по счёту заказа товар перестаёт считаться проработкой (правило 4).
+#: Заказ = строка приходной накладной: ``rows_count`` наблюдения как раз их и считает.
+WORKUP_ORDER_LIMIT = 3
 
 
 @dataclass(slots=True, frozen=True)
@@ -306,6 +330,11 @@ CLASSIFICATION_SYSTEM = """Ты классификатор номенклату�
   приходной накладной только в текущем месяце; в следующем месяце решение нужно принять снова.
 - manual_review: данных недостаточно или возможны несколько экономически разных трактовок.
 
+Проработка не бывает бесконечной. Если товар заказывали три раза и больше, а он до сих пор не
+входит ни в одно блюдо в продаже, — это регулярная закупка, и решения workup для него уже нет
+в allowed_decisions. Выбирай постоянную статью: aux_goods, если товар расходуется в работе,
+или shop_maintenance, если он относится к оснащению и содержанию точки.
+
 Название может быть неоднозначным. Если уверенность ниже 0.8, выбирай manual_review. Не меняй
 источник вопреки allowed_decisions и верни ровно одно решение для каждого product_guid."""
 
@@ -318,19 +347,74 @@ def _observation_name(observations: dict[str, Any], attribute: str) -> str | Non
     return None
 
 
-def _review_rule(candidate: AutoClassificationCandidate, note: str) -> PnlProductWhitelist | None:
+async def _write_rule(
+    session: AsyncSession,
+    pending: dict[str, list[PnlProductWhitelist]],
+    *,
+    product_guid: str,
+    source_kind: str,
+    line_code: str | None,
+    status: str,
+    product_name: str | None,
+    product_code: str | None,
+    note: str,
+) -> None:
+    """Записать автоматическое правило, заменив собой прежнее автоматическое «не знаю».
+
+    Пересмотр подвешенного ``requires_owner_review`` — это правило 3, и слепой ``add`` его не
+    исполнил бы: у товара уже есть строка, уникальный индекс (guid, source_kind) её защищает,
+    а при смене источника товар оказался бы сразу в двух потоках. Поэтому запись идёт одной
+    точкой: прежние автоматические правила ТОГО ЖЕ товара заменяются, а не дополняются.
+    """
+    stale = pending.pop(product_guid, [])
+    for extra in stale[1:]:
+        await session.delete(extra)
+    rule = stale[0] if stale else None
+    if rule is None:
+        session.add(
+            PnlProductWhitelist(
+                iiko_product_guid=product_guid,
+                source_kind=source_kind,
+                line_code=line_code,
+                include_status=status,
+                product_name=product_name,
+                product_code=product_code,
+                note=note[:2000],
+                updated_by_user_id=None,
+            )
+        )
+        return
+    rule.source_kind = source_kind
+    rule.line_code = line_code
+    rule.include_status = status
+    rule.product_name = product_name or rule.product_name
+    rule.product_code = product_code or rule.product_code
+    rule.note = note[:2000]
+    rule.updated_by_user_id = None
+    rule.updated_at = datetime.now(UTC)
+
+
+async def _write_review(
+    session: AsyncSession,
+    pending: dict[str, list[PnlProductWhitelist]],
+    candidate: AutoClassificationCandidate,
+    note: str,
+) -> bool:
+    """Оставить вопрос владельцу. ``False`` — источник неизвестен, писать нечего."""
     if candidate.preferred_source is None:
-        return None
-    return PnlProductWhitelist(
-        iiko_product_guid=candidate.product_guid,
+        return False
+    await _write_rule(
+        session,
+        pending,
+        product_guid=candidate.product_guid,
         source_kind=candidate.preferred_source,
         line_code=None,
-        include_status="requires_owner_review",
+        status="requires_owner_review",
         product_name=candidate.product_name,
         product_code=candidate.product_code,
-        note=note[:2000],
-        updated_by_user_id=None,
+        note=note,
     )
+    return True
 
 
 def _decision_rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -381,7 +465,19 @@ async def auto_classify_new_goods(
         .scalars()
         .all()
     )
-    decided_guids = {rule.iiko_product_guid for rule in existing_rules}
+    # Решением считается окончательный статус ИЛИ любая пометка человека — даже если человек
+    # выбрал именно «нужен ответ владельца»: это его осознанная отсрочка, и автоматика её не
+    # снимает. А своё собственное «не знаю» она обязана пересматривать (правило 3), иначе
+    # товар остаётся подвешенным навсегда, хотя блюдо с ним уже продаётся.
+    decided_guids = {
+        rule.iiko_product_guid
+        for rule in existing_rules
+        if rule.include_status in FINAL_STATUSES or rule.updated_by_user_id is not None
+    }
+    pending_rules: dict[str, list[PnlProductWhitelist]] = defaultdict(list)
+    for rule in existing_rules:
+        if rule.iiko_product_guid not in decided_guids:
+            pending_rules[rule.iiko_product_guid].append(rule)
     monthly_decisions = (
         (
             await session.execute(
@@ -396,21 +492,37 @@ async def auto_classify_new_goods(
     current_monthly = {
         item.iiko_product_guid for item in monthly_decisions if item.period_month == month_start
     }
-    previous_workup = {
-        item.iiko_product_guid for item in monthly_decisions if item.period_month < month_start
-    }
-    first_seen = dict(
+    # Правило 4 считает ЗАКАЗЫ, а не месяцы: товар могут купить трижды за один месяц, и это
+    # уже регулярная закупка, а не проба. ``rows_count`` наблюдения — число строк приходных
+    # накладных за месяц, то есть ровно число заказов товара. Прежний признак «встречался в
+    # более раннем месяце» отправлял владельцу уже ВТОРУЮ покупку, хотя по методологии вторая
+    # проработка законна.
+    #
+    # Прошлое берётся из базы, текущий месяц — из переданных наблюдений. Так счёт не зависит
+    # от того, успел ли вызывающий записать наблюдения месяца до классификации, и не двоит их,
+    # если успел.
+    orders_count: dict[str, int] = dict(
         (
             await session.execute(
                 select(
                     PnlIikoProductObservation.iiko_product_guid,
-                    func.min(PnlIikoProductObservation.period_month),
+                    func.coalesce(func.sum(PnlIikoProductObservation.rows_count), 0),
                 )
-                .where(PnlIikoProductObservation.iiko_product_guid.in_(product_guids))
+                .where(
+                    PnlIikoProductObservation.iiko_product_guid.in_(product_guids),
+                    PnlIikoProductObservation.source_kind == SOURCE_INVOICE,
+                    PnlIikoProductObservation.period_month < month_start,
+                )
                 .group_by(PnlIikoProductObservation.iiko_product_guid)
             )
         ).all()
     )
+    for guid, product_observations in observations_by_guid.items():
+        current = product_observations.get(SOURCE_INVOICE)
+        if current is not None:
+            orders_count[guid] = orders_count.get(guid, 0) + int(
+                getattr(current, "rows_count", 0) or 0
+            )
     snapshot = build_menu_usage_snapshot(
         products_payload,
         charts_payload,
@@ -432,21 +544,24 @@ async def auto_classify_new_goods(
         )
         code = _observation_name(product_observations, "product_code")
 
+        orders = int(orders_count.get(product_guid, 0))
+        workup_exhausted = orders >= WORKUP_ORDER_LIMIT
+
+        # ── Правило 1: гейт инвентаризации. Стоит первым и решает без модели ─────────
         if normalize_iiko_product_guid(product_guid) in revision_product_guids:
-            session.add(
-                PnlProductWhitelist(
-                    iiko_product_guid=product_guid,
-                    source_kind=SOURCE_INVENTORY,
-                    line_code=None,
-                    include_status=STATUS_STOCKED,
-                    product_name=name,
-                    product_code=code,
-                    note=(
-                        "Автоматически: товар входит в активный список складского учёта. "
-                        "Расход считается по остаткам на границах месяца."
-                    ),
-                    updated_by_user_id=None,
-                )
+            await _write_rule(
+                session,
+                pending_rules,
+                product_guid=product_guid,
+                source_kind=SOURCE_INVENTORY,
+                line_code=None,
+                status=STATUS_STOCKED,
+                product_name=name,
+                product_code=code,
+                note=(
+                    "Автоматически: товар входит в активный список складского учёта. "
+                    "Расход считается по остаткам на границах месяца."
+                ),
             )
             result.classified += 1
             continue
@@ -455,103 +570,76 @@ async def auto_classify_new_goods(
             # Сам факт появления в складских остатках определяет контур без LLM.
             # Явное пользовательское правило уже отфильтровано через decided_guids
             # и по-прежнему может перенести такой товар в прямые расходы.
-            session.add(
-                PnlProductWhitelist(
-                    iiko_product_guid=product_guid,
-                    source_kind=SOURCE_INVENTORY,
-                    line_code=None,
-                    include_status=STATUS_STOCKED,
-                    product_name=name,
-                    product_code=code,
-                    note=(
-                        "Автоматически: товар найден в складских остатках iiko и "
-                        "учитывается по формуле начало + приход − конец."
-                    ),
-                    updated_by_user_id=None,
-                )
+            await _write_rule(
+                session,
+                pending_rules,
+                product_guid=product_guid,
+                source_kind=SOURCE_INVENTORY,
+                line_code=None,
+                status=STATUS_STOCKED,
+                product_name=name,
+                product_code=code,
+                note=(
+                    "Автоматически: товар найден в складских остатках iiko и "
+                    "учитывается по формуле начало + приход − конец."
+                ),
             )
             result.classified += 1
             continue
 
+        # ── Правило 3: блюдо с товаром в продаже — товар складской, вопрос снят ──────
+        if usage.active_dishes:
+            await _write_rule(
+                session,
+                pending_rules,
+                product_guid=product_guid,
+                source_kind=SOURCE_INVENTORY,
+                line_code=None,
+                status=STATUS_STOCKED,
+                product_name=name,
+                product_code=code,
+                note=(
+                    "Автоматически: товар входит хотя бы в одно активное блюдо "
+                    f"({', '.join(usage.active_dishes[:4])}) и учитывается по складским "
+                    "остаткам на границах месяца."
+                ),
+            )
+            result.classified += 1
+            continue
+
+        # ── Правило 2: не в остатках и не в продаваемом блюде — это проработка ───────
         if usage.only_inactive:
             inactive_names = ", ".join(usage.inactive_dishes[:4])
-            seen_before_month = first_seen.get(product_guid, month_start) < month_start
-            if product_guid in previous_workup or seen_before_month:
-                source = SOURCE_INVOICE if SOURCE_INVOICE in sources else sources[0]
-                candidate = AutoClassificationCandidate(
-                    product_guid=product_guid,
-                    product_name=name,
-                    product_code=code,
-                    observed_sources=sources,
-                    preferred_source=source,
-                    allowed_decisions=(
-                        INVOICE_DECISIONS if source == SOURCE_INVOICE else INVENTORY_DECISIONS
-                    ),
-                    usage=usage,
-                    product_type=(catalogue_product.product_type if catalogue_product else None),
-                    place_type=(catalogue_product.place_type if catalogue_product else None),
-                    source_reason=(
-                        "ранее товар уже проходил месячную Проработку"
-                        if product_guid in previous_workup
-                        else "товар встречался до текущего месяца"
-                    ),
-                )
-                history_reason = (
-                    "в прошлом месяце товар уже был в «Проработке»"
-                    if product_guid in previous_workup
-                    else "товар не новый: он уже встречался в более раннем месяце"
-                )
-                review = _review_rule(
-                    candidate,
-                    f"Автоматически выбран источник, но не расход: {history_reason}. Сейчас "
-                    "он по-прежнему встречается только в "
-                    f"выключенных блюдах ({inactive_names}); требуется постоянное решение.",
-                )
-                if review is not None:
-                    session.add(review)
-                    result.review += 1
-                else:
-                    result.unresolved += 1
-                continue
             if SOURCE_INVOICE not in sources:
+                # Проработка признаётся расходом ПО ПРИХОДНОЙ НАКЛАДНОЙ. Без накладной
+                # признавать нечего, а гадать о постоянной статье не на чем.
                 result.unresolved += 1
                 continue
-            session.add(
-                PnlProductMonthlyDecision(
-                    period_month=month_start,
-                    iiko_product_guid=product_guid,
-                    source_kind=SOURCE_INVOICE,
-                    decision_kind="workup",
-                    note=(
-                        "Автоматически: товар входит только в выключенные блюда "
-                        f"({inactive_names}). Учтён по накладным в Проработке только за "
-                        f"{month_start:%m.%Y}; в следующем месяце потребуется новое решение."
-                    ),
-                    updated_by_user_id=None,
+            if not workup_exhausted:
+                session.add(
+                    PnlProductMonthlyDecision(
+                        period_month=month_start,
+                        iiko_product_guid=product_guid,
+                        source_kind=SOURCE_INVOICE,
+                        decision_kind="workup",
+                        note=(
+                            "Автоматически: товар входит только в выключенные блюда "
+                            f"({inactive_names}), заказан {orders}-й раз. Учтён по накладным "
+                            f"в Проработке только за {month_start:%m.%Y}; в следующем месяце "
+                            "потребуется новое решение."
+                        )[:2000],
+                        updated_by_user_id=None,
+                    )
                 )
+                result.workup += 1
+                continue
+            # ── Правило 4: третий заказ закрывает проработку ─────────────────────────
+            preferred_source = SOURCE_INVOICE
+            allowed = INVOICE_DECISIONS - {"workup"}
+            source_reason = (
+                f"товар заказывали {orders} раз, но он до сих пор входит только в "
+                f"выключенные блюда ({inactive_names}) — регулярная закупка, не проба"
             )
-            result.workup += 1
-            continue
-
-        if usage.active_dishes:
-            session.add(
-                PnlProductWhitelist(
-                    iiko_product_guid=product_guid,
-                    source_kind=SOURCE_INVENTORY,
-                    line_code=None,
-                    include_status=STATUS_STOCKED,
-                    product_name=name,
-                    product_code=code,
-                    note=(
-                        "Автоматически: товар входит хотя бы в одно активное блюдо "
-                        f"({', '.join(usage.active_dishes[:4])}) и учитывается по складским "
-                        "остаткам на границах месяца."
-                    )[:2000],
-                    updated_by_user_id=None,
-                )
-            )
-            result.classified += 1
-            continue
         elif sources == (SOURCE_INVOICE,):
             preferred_source = SOURCE_INVOICE
             allowed = INVOICE_DECISIONS
@@ -567,6 +655,12 @@ async def auto_classify_new_goods(
                 "товар встретился и в остатках, и в приходных накладных, но не связан "
                 "с активными блюдами"
             )
+        if workup_exhausted and "workup" in allowed:
+            # Правило 4 действует и здесь: товар без единого блюда, заказанный трижды, —
+            # такая же регулярная закупка. Иначе модель могла бы продлевать проработку
+            # бесконечно, и постоянная статья у товара не появилась бы никогда.
+            allowed = allowed - {"workup"}
+            source_reason = f"{source_reason}; заказан {orders} раз, проработка исчерпана"
         candidates.append(
             AutoClassificationCandidate(
                 product_guid=product_guid,
@@ -637,21 +731,20 @@ async def auto_classify_new_goods(
                     result.workup += 1
                     continue
                 source_kind, status, line_code = DECISION_TARGETS[decision]
-                session.add(
-                    PnlProductWhitelist(
-                        iiko_product_guid=candidate.product_guid,
-                        source_kind=source_kind,
-                        line_code=line_code,
-                        include_status=status,
-                        product_name=candidate.product_name,
-                        product_code=candidate.product_code,
-                        note=(
-                            f"Автоматически · {settings.pnl_goods_classification_model} · "
-                            f"уверенность {confidence:.0%}. {candidate.source_reason}. "
-                            f"{reason}"
-                        )[:2000],
-                        updated_by_user_id=None,
-                    )
+                await _write_rule(
+                    session,
+                    pending_rules,
+                    product_guid=candidate.product_guid,
+                    source_kind=source_kind,
+                    line_code=line_code,
+                    status=status,
+                    product_name=candidate.product_name,
+                    product_code=candidate.product_code,
+                    note=(
+                        f"Автоматически · {settings.pnl_goods_classification_model} · "
+                        f"уверенность {confidence:.0%}. {candidate.source_reason}. "
+                        f"{reason}"
+                    ),
                 )
                 result.classified += 1
                 continue
@@ -661,16 +754,17 @@ async def auto_classify_new_goods(
                 if model_error
                 else reason or "Модель не дала уверенного совместимого решения"
             )
-            review = _review_rule(
+            written = await _write_review(
+                session,
+                pending_rules,
                 candidate,
                 f"Источник выбран автоматически: {candidate.source_reason}. Статья требует "
                 f"ручной проверки. {fallback_reason}",
             )
-            if review is None:
-                result.unresolved += 1
-            else:
-                session.add(review)
+            if written:
                 result.review += 1
+            else:
+                result.unresolved += 1
 
     await session.flush()
     return result

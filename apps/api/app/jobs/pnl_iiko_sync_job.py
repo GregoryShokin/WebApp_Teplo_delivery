@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.services import accounting_periods
 from app.services.pnl.iiko_sync import sync_month
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,11 @@ async def _run(today: date | None = None) -> None:
     Предыдущий месяц перечитывается вместе с текущим: закрывающие инвентаризации и
     накладные часто появляются уже после первого числа. Каждый месяц коммитится отдельно,
     поэтому временная ошибка второго запроса не откатывает уже обновлённый первый.
+
+    ЗАКРЫТЫЙ МЕСЯЦ ПРОПУСКАЕТСЯ. Ровно то, ради чего перечитывается предыдущий месяц —
+    поздние документы, — после закрытия становится вредом: цифры уже показаны и сверены,
+    а ночной прогон изменил бы их без единого следа. Замок снимается человеком в разделе
+    «Учёт», и тогда следующая же ночь дотянет всё, что накопилось.
     """
     settings = get_settings()
     engine = create_async_engine(settings.database_url, poolclass=NullPool)
@@ -35,6 +41,12 @@ async def _run(today: date | None = None) -> None:
         for month in target_months(today or date.today()):
             try:
                 async with session_maker() as session:
+                    if await accounting_periods.is_month_closed(session, month):
+                        logger.info(
+                            "pnl iiko sync skipped: month=%s закрыт в учёте",
+                            month.isoformat(),
+                        )
+                        continue
                     result = await sync_month(session, month)
                     await session.commit()
                 logger.info(

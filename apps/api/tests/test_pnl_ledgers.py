@@ -4,20 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 
 from app.core.config import Settings
 from app.jobs.pnl_iiko_sync_job import target_months
 from app.models import (
+    AccountingPeriodClose,
     CashflowTransaction,
     DdsArticle,
     InventoryAudit,
     InventoryAuditItem,
     InventoryAuditPosition,
     SupplierPrepayment,
+    User,
 )
 from app.models.pnl import (
     PnlArticleRule,
@@ -30,6 +34,7 @@ from app.models.pnl import (
     PnlProductMonthlyDecision,
     PnlProductWhitelist,
 )
+from app.services import accounting_periods
 from app.services.pnl import goods_classifier, iiko_sync, projector
 from app.services.pnl.iiko_sync import (
     aggregate_partner_rows,
@@ -808,6 +813,11 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
         # Внешней модели не передаются суммы или цены — только классификационный контекст.
         assert '"amount"' not in prompt
         assert '"price"' not in prompt
+        # Правило 4: товару с тремя заказами проработка уже не предлагается, и модель
+        # физически не может её выбрать — решения нет в allowed_decisions его строки.
+        sent = {row["product_guid"]: row for row in json.loads(prompt)["candidates"]}
+        assert "workup" not in sent["inactive-old"]["allowed_decisions"]
+        assert "workup" in sent["llm-workup"]["allowed_decisions"]
         return {
             "decisions": [
                 {
@@ -827,6 +837,12 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
                     "decision": "workup",
                     "confidence": 0.96,
                     "reason": "новый тестовый ингредиент",
+                },
+                {
+                    "product_guid": "inactive-old",
+                    "decision": "shop_maintenance",
+                    "confidence": 0.9,
+                    "reason": "закупается регулярно, к блюдам отношения не имеет",
                 },
             ]
         }
@@ -938,6 +954,8 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
         }
 
         async with async_session_factory() as session:
+            # Два июньских заказа плюс июльский — третий. По правилу владельца проработка
+            # для этого товара исчерпана, и решать его должна постоянная статья.
             session.add(
                 PnlIikoProductObservation(
                     period_month=date(2026, 6, 1),
@@ -946,7 +964,7 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
                     product_name="Старая тестовая позиция",
                     product_code="P-2",
                     amount=Decimal("70.00"),
-                    rows_count=1,
+                    rows_count=2,
                 )
             )
             session.add(
@@ -970,9 +988,11 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
             )
             await session.commit()
 
-            assert result.workup == 2
-            assert result.classified == 3
-            assert result.review == 2
+            # inactive-new и llm-workup — первые заказы, previous-workup — второй: все три
+            # законно уходят в Проработку. Третьего заказа нет ни у кого из них.
+            assert result.workup == 3
+            assert result.classified == 4
+            assert result.review == 0
 
             rules = {
                 rule.iiko_product_guid: rule
@@ -986,8 +1006,17 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
             assert rules["gloves"].line_code == "aux_goods"
             assert rules["uncertain-pack"].include_status == "stocked"
             assert rules["uncertain-pack"].source_kind == "inventory"
-            assert rules["previous-workup"].include_status == "requires_owner_review"
-            assert rules["inactive-old"].include_status == "requires_owner_review"
+            # Вторая проработка подряд остаётся проработкой, а не вопросом владельцу.
+            assert "previous-workup" not in rules
+            assert await session.scalar(
+                select(PnlProductMonthlyDecision.id).where(
+                    PnlProductMonthlyDecision.period_month == date(2026, 7, 1),
+                    PnlProductMonthlyDecision.iiko_product_guid == "previous-workup",
+                )
+            )
+            # Третий заказ закрывает проработку постоянной статьёй.
+            assert rules["inactive-old"].include_status == "include"
+            assert rules["inactive-old"].line_code == "shop_maintenance"
 
             july_workup = await session.scalar(
                 select(PnlProductMonthlyDecision).where(
@@ -1005,6 +1034,112 @@ def test_auto_classification_uses_menu_rules_and_safe_llm_fallback(
             )
             assert llm_workup is not None
             assert "следующем месяце" in (llm_workup.note or "")
+
+    asyncio.run(scenario())
+
+
+def test_active_dish_resolves_pending_question_but_not_owner_decision(
+    async_session_factory,
+) -> None:
+    """Правило 3: блюдо включили в продажу — вопрос снят фактом, а не ответом.
+
+    Своё автоматическое «нужен ответ владельца» разметка обязана пересматривать, иначе товар
+    висит без статьи навсегда, хотя блюдо с ним уже продаётся. А пометку ЧЕЛОВЕКА — того же
+    вида — не трогает: это его осознанная отсрочка.
+    """
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            owner = User(
+                id=uuid.uuid4(),
+                email=f"pnl-goods-{uuid.uuid4()}@test.local",
+                hashed_password="hashed",
+                full_name="Владелец",
+                is_active=True,
+            )
+            session.add(owner)
+            await session.flush()
+            session.add(
+                PnlProductWhitelist(
+                    iiko_product_guid="pending-auto",
+                    source_kind="incoming_invoice",
+                    line_code=None,
+                    include_status="requires_owner_review",
+                    product_name="Спорный ингредиент",
+                    note="Автоматически: модель не дала уверенного решения",
+                    updated_by_user_id=None,
+                )
+            )
+            session.add(
+                PnlProductWhitelist(
+                    iiko_product_guid="pending-owner",
+                    source_kind="incoming_invoice",
+                    line_code=None,
+                    include_status="requires_owner_review",
+                    product_name="Отложено владельцем",
+                    note="Разберусь позже",
+                    updated_by_user_id=owner.id,
+                )
+            )
+            await session.commit()
+
+            observations = [
+                iiko_sync.GoodsProductObservation(
+                    source_kind="incoming_invoice",
+                    iiko_product_guid=guid,
+                    product_name=guid,
+                    product_code=None,
+                    amount=Decimal("10.00"),
+                    rows_count=1,
+                )
+                for guid in ("pending-auto", "pending-owner")
+            ]
+            products = [
+                {"id": "pending-auto", "name": "Спорный ингредиент", "type": "GOODS"},
+                {"id": "pending-owner", "name": "Отложено владельцем", "type": "GOODS"},
+                {
+                    "id": "sold-dish",
+                    "name": "Новинка",
+                    "type": "DISH",
+                    "defaultIncludedInMenu": True,
+                    "deleted": False,
+                },
+            ]
+            charts = {
+                "assemblyCharts": [
+                    {
+                        "assembledProductId": "sold-dish",
+                        "dateFrom": "2026-01-01",
+                        "dateTo": None,
+                        "items": [{"productId": "pending-auto"}, {"productId": "pending-owner"}],
+                    }
+                ],
+                "preparedCharts": [],
+            }
+
+            await goods_classifier.auto_classify_new_goods(
+                session,
+                month_start=date(2026, 7, 1),
+                month_end=date(2026, 7, 31),
+                observations=observations,
+                products_payload=products,
+                charts_payload=charts,
+                settings=Settings(anthropic_api_key="test-key"),
+            )
+            await session.commit()
+
+            rules = {
+                rule.iiko_product_guid: rule
+                for rule in (await session.execute(select(PnlProductWhitelist))).scalars()
+                if rule.iiko_product_guid.startswith("pending-")
+            }
+            # Одно правило на товар, а не второе рядом со старым.
+            assert len(rules) == 2
+            assert rules["pending-auto"].include_status == "stocked"
+            assert rules["pending-auto"].source_kind == "inventory"
+            assert "активное блюдо" in (rules["pending-auto"].note or "")
+            assert rules["pending-owner"].include_status == "requires_owner_review"
+            assert rules["pending-owner"].updated_by_user_id == owner.id
 
     asyncio.run(scenario())
 
@@ -1089,3 +1224,180 @@ def test_recognition_ledger_excludes_non_pnl_loan_waiting(
 def test_pnl_iiko_job_refreshes_current_and_previous_month() -> None:
     assert target_months(date(2026, 8, 4)) == (date(2026, 8, 1), date(2026, 7, 1))
     assert target_months(date(2027, 1, 1)) == (date(2027, 1, 1), date(2026, 12, 1))
+
+
+def _invoice_observation(month: date, guid: str, amount: str, rows: int = 1):
+    return PnlIikoProductObservation(
+        period_month=month,
+        source_kind="incoming_invoice",
+        iiko_product_guid=guid,
+        product_name="Товар с историей",
+        product_code="H-1",
+        amount=Decimal(amount),
+        rows_count=rows,
+    )
+
+
+def test_classification_edit_does_not_rewrite_earlier_months(async_session_factory) -> None:
+    """Разметка августа не должна менять прибыль июля — он уже показан и сверен.
+
+    Прежде пересчитывались ВСЕ месяцы, где встречался товар: правка на августовской странице
+    молча переписывала июль. Владелец назвал это косяком 05.08.2026.
+    """
+
+    async def scenario() -> None:
+        guid = "retro-guid"
+        async with async_session_factory() as session:
+            session.add(_invoice_observation(date(2026, 7, 1), guid, "700.00"))
+            session.add(_invoice_observation(date(2026, 8, 1), guid, "800.00"))
+            await session.commit()
+
+            # Июль размечен и посчитан на своей странице — как это и происходит в жизни.
+            await save_goods_classification(
+                session,
+                display_month=date(2026, 7, 1),
+                product_guid=guid,
+                source_kind="incoming_invoice",
+                status="include",
+                line_code="aux_goods",
+                note=None,
+                user_id=None,
+            )
+            july = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == date(2026, 7, 1),
+                    PnlIikoFact.metric_code == "aux_goods_invoices",
+                    PnlIikoFact.direction == "total",
+                )
+            )
+            assert july is not None
+            assert july.amount == Decimal("700.00")
+
+            # А теперь тот же товар переразмечают уже на августовской странице.
+            await save_goods_classification(
+                session,
+                display_month=date(2026, 8, 1),
+                product_guid=guid,
+                source_kind="incoming_invoice",
+                status="exclude",
+                line_code=None,
+                note="С августа считаем иначе",
+                user_id=None,
+            )
+            august = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == date(2026, 8, 1),
+                    PnlIikoFact.metric_code == "aux_goods_invoices",
+                    PnlIikoFact.direction == "total",
+                )
+            )
+            assert august is not None
+            assert august.amount == Decimal("0.00")
+
+            await session.refresh(july)
+            assert july.amount == Decimal("700.00")
+            july_detail = await session.scalar(
+                select(PnlIikoGoodsFact).where(
+                    PnlIikoGoodsFact.period_month == date(2026, 7, 1),
+                    PnlIikoGoodsFact.iiko_product_guid == guid,
+                )
+            )
+            assert july_detail is not None
+
+    asyncio.run(scenario())
+
+
+def test_classification_edit_is_refused_in_a_closed_month(async_session_factory) -> None:
+    """Закрытый месяц не правится даже на своей странице — замок сильнее направления."""
+
+    async def scenario() -> None:
+        guid = "closed-month-guid"
+        async with async_session_factory() as session:
+            session.add(_invoice_observation(date(2026, 7, 1), guid, "500.00"))
+            session.add(AccountingPeriodClose(period_month=date(2026, 7, 1)))
+            await session.commit()
+
+            with pytest.raises(accounting_periods.PeriodClosed):
+                await save_goods_classification(
+                    session,
+                    display_month=date(2026, 7, 1),
+                    product_guid=guid,
+                    source_kind="incoming_invoice",
+                    status="include",
+                    line_code="aux_goods",
+                    note=None,
+                    user_id=None,
+                )
+
+    asyncio.run(scenario())
+
+
+def test_forward_rebuild_skips_closed_future_month(async_session_factory) -> None:
+    """Правка июля не переписывает август, если август уже закрыли."""
+
+    async def scenario() -> None:
+        guid = "closed-forward-guid"
+        async with async_session_factory() as session:
+            session.add(_invoice_observation(date(2026, 7, 1), guid, "300.00"))
+            session.add(_invoice_observation(date(2026, 8, 1), guid, "400.00"))
+            session.add(AccountingPeriodClose(period_month=date(2026, 8, 1)))
+            await session.commit()
+
+            await save_goods_classification(
+                session,
+                display_month=date(2026, 7, 1),
+                product_guid=guid,
+                source_kind="incoming_invoice",
+                status="include",
+                line_code="aux_goods",
+                note=None,
+                user_id=None,
+            )
+            assert await session.scalar(
+                select(PnlIikoGoodsFact.id).where(
+                    PnlIikoGoodsFact.period_month == date(2026, 7, 1),
+                    PnlIikoGoodsFact.iiko_product_guid == guid,
+                )
+            )
+            assert (
+                await session.scalar(
+                    select(PnlIikoGoodsFact.id).where(
+                        PnlIikoGoodsFact.period_month == date(2026, 8, 1),
+                        PnlIikoGoodsFact.iiko_product_guid == guid,
+                    )
+                )
+                is None
+            )
+
+    asyncio.run(scenario())
+
+
+def test_rebuild_leaves_unsynced_month_untouched(async_session_factory) -> None:
+    """В месяце без выгрузки iiko метрика не обнуляется: ноль там значил бы «нет данных»."""
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            session.add(
+                PnlIikoFact(
+                    period_month=date(2026, 5, 1),
+                    metric_code="aux_goods_invoices",
+                    direction="total",
+                    amount=Decimal("1234.00"),
+                    rows_count=3,
+                    source_ref="manual-backfill",
+                )
+            )
+            await session.commit()
+
+            await rebuild_goods_from_observations(session, date(2026, 5, 1), "incoming_invoice")
+
+            fact = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == date(2026, 5, 1),
+                    PnlIikoFact.metric_code == "aux_goods_invoices",
+                )
+            )
+            assert fact is not None
+            assert fact.amount == Decimal("1234.00")
+
+    asyncio.run(scenario())
