@@ -204,7 +204,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     await _apply_releases(session, lines, month_start, month_end, report)
     await _apply_inventory(session, lines, month_start, month_end, report)
     await _apply_acquiring(session, lines, month_start, month_end, report)
-    await _apply_iiko(session, lines, month_start)
+    await _apply_iiko(session, lines, month_start, report)
 
     # Порядок значим: сначала свести компоненты каждой строки в итог, и только потом считать
     # каскад. Иначе формулы читают строки-источники ещё пустыми и любой подытог выходит
@@ -470,7 +470,10 @@ async def _apply_acquiring(
 
 
 async def _apply_iiko(
-    session: AsyncSession, lines: dict[str, LineValue], month_start: date
+    session: AsyncSession,
+    lines: dict[str, LineValue],
+    month_start: date,
+    report: PnlReport,
 ) -> None:
     """Выручка, партнёры, фудкост и курьеры — из зеркала ночной джобы."""
     facts = await iiko_source.month_facts(session, month_start)
@@ -495,6 +498,31 @@ async def _apply_iiko(
         status=LineStatus.OK,
         note="Временная разметка только этого месяца",
     )
+
+    # Товар проработки, списанный ещё и актом, посчитан расходом дважды: по накладной здесь
+    # и по себестоимости в «Списании продукции и сырья». Расчёт сам не выбирает, какую из
+    # двух строк уменьшить, — это методологическое решение владельца. Пока оно не принято,
+    # задвоение обязано быть видно вслух: молча оно только раздувает расход.
+    overlaps = await iiko_source.month_workup_writeoff_overlap(session, month_start)
+    if overlaps:
+        listed = ", ".join(
+            f"{item.product_name} ({rubles(item.workup_amount)} ₽ по накладной и "
+            f"{rubles(item.writeoff_amount)} ₽ актом)"
+            for item in overlaps[:5]
+        )
+        total = sum((item.writeoff_amount for item in overlaps), Decimal("0.00"))
+        report.warnings.append(
+            Warning(
+                code="workup_written_off_twice",
+                line_code="goods_workup",
+                message=(
+                    f"Товары проработки списаны ещё и актами: {listed}"
+                    + (f" и ещё {len(overlaps) - 5}" if len(overlaps) > 5 else "")
+                    + f". Расход задвоен на {rubles(total)} ₽ — "
+                    "проработка признаётся по накладной, а акт списывает тот же товар повторно"
+                ),
+            )
+        )
 
     # «Содержание торговых точек» — составная строка: касса по статье ПЛЮС закупка
     # расходников из приходных накладных. Так её описывает методология, и оба компонента

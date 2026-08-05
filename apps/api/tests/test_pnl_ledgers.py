@@ -29,6 +29,7 @@ from app.models.pnl import (
     PnlIikoGoodsFact,
     PnlIikoProductObservation,
     PnlIikoStockFact,
+    PnlIikoWriteoffFact,
     PnlPartnerCommissionFact,
     PnlPartnerCommissionRule,
     PnlProductMonthlyDecision,
@@ -54,6 +55,7 @@ from app.services.pnl.ledgers import (
     recognition_reason,
     save_goods_classification,
 )
+from app.services.pnl.sources import iiko as iiko_source
 from app.services.pnl.sources.inventory import build_inventory_month, load_packaging_guids
 from app.services.pnl.sources.payroll import PayrollBreakdown
 from app.services.pnl.sources.recognition import (
@@ -1678,6 +1680,107 @@ def test_invoice_expense_product_never_becomes_an_audit_loss(async_session_facto
                 packaging_guids=excluded,
             )
             assert month.product_result == Decimal("500.00")
+
+    asyncio.run(scenario())
+
+
+def test_writeoff_observations_keep_names_behind_the_total() -> None:
+    """Строка одна, но номенклатуру храним: без имён задвоение проработки невидимо."""
+    payload = {
+        "response": [
+            {
+                "status": "PROCESSED",
+                "items": [
+                    {"productId": "cup", "cost": "656.00"},
+                    {"productId": "cup", "cost": "44.00"},
+                    {"productId": "cheese", "cost": "1200.00"},
+                ],
+            },
+            # Черновик не списание: товар физически на месте.
+            {"status": "NEW", "items": [{"productId": "cup", "cost": "9999.00"}]},
+        ]
+    }
+    assert iiko_sync.writeoff_total(payload) == Decimal("1900.00")
+
+    observations = iiko_sync.writeoff_observations(
+        payload, catalog={"cup": ("Контейнер 300мл", "C-1")}
+    )
+    by_guid = {item.iiko_product_guid: item for item in observations}
+    assert by_guid["cup"].amount == Decimal("700.00")
+    assert by_guid["cup"].rows_count == 2
+    assert by_guid["cup"].product_name == "Контейнер 300мл"
+    assert by_guid["cheese"].amount == Decimal("1200.00")
+    # Товар без имени в каталоге всё равно сохраняется: пропасть он не должен.
+    assert by_guid["cheese"].product_name is None
+    assert sum(item.amount for item in observations) == iiko_sync.writeoff_total(payload)
+
+
+def test_workup_written_off_by_act_is_reported_as_double_expense(async_session_factory) -> None:
+    """Проработка, списанная ещё и актом, — расход дважды, и это должно быть видно.
+
+    Товар проработки не заводят в складской учёт, поэтому его расход признаётся сразу по
+    приходной накладной. Управляющий, списавший тот же товар актом, добавляет его
+    себестоимость в «Списание продукции и сырья» — тот же расход вторым разом.
+    """
+
+    async def scenario() -> None:
+        guid = "workup-and-writeoff"
+        async with async_session_factory() as session:
+            session.add(
+                PnlIikoProductObservation(
+                    period_month=date(2026, 7, 1),
+                    source_kind="incoming_invoice",
+                    iiko_product_guid=guid,
+                    product_name="Контейнер 300мл",
+                    product_code="C-1",
+                    amount=Decimal("656.00"),
+                    rows_count=1,
+                )
+            )
+            session.add(
+                PnlProductMonthlyDecision(
+                    period_month=date(2026, 7, 1),
+                    iiko_product_guid=guid,
+                    source_kind="incoming_invoice",
+                    decision_kind="workup",
+                )
+            )
+            session.add(
+                PnlIikoWriteoffFact(
+                    period_month=date(2026, 7, 1),
+                    iiko_product_guid=guid,
+                    product_name="Контейнер 300мл",
+                    amount=Decimal("612.00"),
+                    rows_count=1,
+                )
+            )
+            # Списанное сырьё, которое проработкой не было, — это не задвоение.
+            session.add(
+                PnlIikoWriteoffFact(
+                    period_month=date(2026, 7, 1),
+                    iiko_product_guid="plain-raw",
+                    product_name="Семга",
+                    amount=Decimal("5000.00"),
+                    rows_count=2,
+                )
+            )
+            await session.commit()
+
+            overlaps = await iiko_source.month_workup_writeoff_overlap(session, date(2026, 7, 1))
+            assert len(overlaps) == 1
+            assert overlaps[0].product_name == "Контейнер 300мл"
+            assert overlaps[0].workup_amount == Decimal("656.00")
+            assert overlaps[0].writeoff_amount == Decimal("612.00")
+
+            report = await projector.build_report(session, date(2026, 7, 1))
+            warning = next(
+                item for item in report.warnings if item.code == "workup_written_off_twice"
+            )
+            assert "Контейнер 300мл" in warning.message
+            assert warning.line_code == "goods_workup"
+            # Названа сумма именно повторного расхода, а не суммы обеих строк.
+            assert "612,00" in warning.message
+            assert "Семга" not in warning.message
 
     asyncio.run(scenario())
 

@@ -79,6 +79,76 @@ def workup_expense_amount(source_kind: str, amount: Decimal) -> Decimal:
     return amount
 
 
+@dataclass(slots=True)
+class WorkupWriteoffOverlap:
+    """Товар проработки, списанный ещё и актом: его расход посчитан дважды."""
+
+    product_guid: str
+    product_name: str
+    workup_amount: Decimal
+    writeoff_amount: Decimal
+
+
+async def month_workup_writeoff_overlap(
+    session: AsyncSession, month_start: date
+) -> list[WorkupWriteoffOverlap]:
+    """Пересечение «Проработки» и актов списания за месяц.
+
+    ОТКУДА БЕРЁТСЯ ЗАДВОЕНИЕ. Товар на проработку не заводят в складской учёт, поэтому его
+    расход признаётся сразу по приходной накладной — строкой «Проработка». Если управляющий
+    потом списывает тот же товар актом, его себестоимость встаёт вторым разом в «Списание
+    продукции и сырья». Оба расхода настоящие по отдельности и оба лишние вместе.
+
+    Здесь только ОБНАРУЖЕНИЕ, без вычитания. Какую из двух строк считать правильной — решение
+    владельца, а не догадка расчёта: пока оно не принято, честнее показать расхождение вслух,
+    чем молча уменьшить одну из строк.
+    """
+    from app.models.pnl import PnlIikoWriteoffFact
+
+    rows = (
+        await session.execute(
+            select(
+                PnlProductMonthlyDecision.iiko_product_guid,
+                PnlIikoProductObservation.product_name,
+                PnlIikoProductObservation.amount,
+                PnlIikoWriteoffFact.amount,
+                PnlIikoWriteoffFact.product_name,
+            )
+            .join(
+                PnlIikoProductObservation,
+                and_(
+                    PnlIikoProductObservation.period_month
+                    == PnlProductMonthlyDecision.period_month,
+                    PnlIikoProductObservation.iiko_product_guid
+                    == PnlProductMonthlyDecision.iiko_product_guid,
+                    PnlIikoProductObservation.source_kind == PnlProductMonthlyDecision.source_kind,
+                ),
+            )
+            .join(
+                PnlIikoWriteoffFact,
+                and_(
+                    PnlIikoWriteoffFact.period_month == PnlProductMonthlyDecision.period_month,
+                    PnlIikoWriteoffFact.iiko_product_guid
+                    == PnlProductMonthlyDecision.iiko_product_guid,
+                ),
+            )
+            .where(
+                PnlProductMonthlyDecision.period_month == month_start,
+                PnlProductMonthlyDecision.decision_kind == "workup",
+            )
+        )
+    ).all()
+    return [
+        WorkupWriteoffOverlap(
+            product_guid=guid,
+            product_name=observation_name or writeoff_name or guid,
+            workup_amount=workup_amount,
+            writeoff_amount=writeoff_amount,
+        )
+        for guid, observation_name, workup_amount, writeoff_amount, writeoff_name in rows
+    ]
+
+
 async def month_workup_items(session: AsyncSession, month_start: date) -> list[GoodsWorkupItem]:
     """Товары, временно признанные расходом только в указанном месяце."""
     revision_product_guids = await load_revision_product_guids(session)

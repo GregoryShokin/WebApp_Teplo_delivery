@@ -538,6 +538,44 @@ class PnlIikoStockFact(Base):
     )
 
 
+class PnlIikoWriteoffFact(Base):
+    """Номенклатура проведённых актов списания за месяц.
+
+    ЗАЧЕМ ХРАНИТЬ ПОИМЁННО, РАЗ СТРОКА ОПиУ — ОДНА СУММА. Потому что без имён невозможно
+    поймать задвоение. Товар на проработку приходит накладной и признаётся расходом строкой
+    «Проработка»; если управляющий потом списывает его же актом, тот же расход встаёт вторым
+    разом в «Списание продукции и сырья». Пока таблица считала один итог, такое задвоение не
+    было видно ни в отчёте, ни в расшифровке — оно просто увеличивало расход.
+
+    Здесь нет ``source_kind``: у списаний источник ровно один — ``/v2/documents/writeoff``,
+    только документы в статусе PROCESSED. Черновик акта списанием не является: товар ещё
+    физически на месте.
+    """
+
+    __tablename__ = "pnl_iiko_writeoff_fact"
+    __table_args__ = (
+        Index(
+            "uq_pnl_iiko_writeoff_fact_slot",
+            "period_month",
+            "iiko_product_guid",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    product_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Себестоимость списанного — поле ``cost`` позиции акта, ровно то, что суммирует строка.
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    #: Сколько строк актов сложилось в эту сумму: один товар списывают несколькими актами.
+    rows_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PnlIikoProductObservation(Base):
     """Вся номенклатура, встреченная в товарных источниках iiko за месяц.
 
@@ -587,8 +625,7 @@ class PnlProductWhitelist(Base):
     __tablename__ = "pnl_product_whitelist"
     __table_args__ = (
         CheckConstraint(
-            "include_status in "
-            "('include', 'requires_owner_review', 'exclude', 'stocked')",
+            "include_status in ('include', 'requires_owner_review', 'exclude', 'stocked')",
             name="ck_pnl_product_whitelist_status",
         ),
         CheckConstraint(

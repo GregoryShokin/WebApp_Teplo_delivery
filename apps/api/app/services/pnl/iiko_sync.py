@@ -38,6 +38,7 @@ from app.models.pnl import (
     PnlIikoGoodsFact,
     PnlIikoProductObservation,
     PnlIikoStockFact,
+    PnlIikoWriteoffFact,
     PnlPartnerCommissionFact,
     PnlPartnerCommissionRule,
     PnlProductMonthlyDecision,
@@ -395,6 +396,26 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
             )
         )
 
+    # Номенклатура списаний живёт своим циклом: у неё свой эндпоинт, который мог не ответить,
+    # когда товарные источники ответили — и наоборот. ``None`` означает «ответа не было»,
+    # и тогда прежние строки месяца остаются нетронутыми.
+    if goods.writeoff_observations is not None:
+        await session.execute(
+            delete(PnlIikoWriteoffFact).where(PnlIikoWriteoffFact.period_month == start)
+        )
+        for observation in goods.writeoff_observations:
+            session.add(
+                PnlIikoWriteoffFact(
+                    period_month=start,
+                    iiko_product_guid=observation.iiko_product_guid,
+                    product_name=observation.product_name,
+                    product_code=observation.product_code,
+                    amount=observation.amount,
+                    rows_count=observation.rows_count,
+                )
+            )
+        await session.flush()
+
     # Детализация заменяется только по тем внешним источникам, которые успешно ответили.
     # Если iiko временно недоступен, старый проверенный разрез не стирается пустотой.
     if goods.refreshed_sources:
@@ -631,6 +652,10 @@ class GoodsSyncResult:
     details: list[GoodsMetricDetail] = field(default_factory=list)
     observations: list[GoodsProductObservation] = field(default_factory=list)
     stock_facts: list[GoodsStockFact] = field(default_factory=list)
+    #: Номенклатура актов списания. Отдельным полем, а не в ``observations``: списания не
+    #: участвуют в разметке whitelist и живут в своей таблице. ``None`` — эндпоинт не ответил,
+    #: и прежние строки месяца стирать нельзя; пустой список — ответ пришёл, списаний нет.
+    writeoff_observations: list[GoodsProductObservation] | None = None
     notes: list[str] = field(default_factory=list)
     refreshed_sources: set[str] = field(default_factory=set)
     products_payload: Any = None
@@ -715,8 +740,8 @@ async def load_whitelist(
     }
 
 
-def writeoff_total(payload: Any) -> Decimal:
-    """Сумма проведённых актов списания за период.
+def _writeoff_items(payload: Any) -> list[dict[str, Any]]:
+    """Позиции проведённых актов списания. Черновики отброшены.
 
     Только ``PROCESSED``: черновик акта — это ещё не списание, товар физически на месте.
     """
@@ -726,17 +751,53 @@ def writeoff_total(payload: Any) -> Decimal:
         payload = json.loads(payload)
     documents = payload.get("response") if isinstance(payload, dict) else payload
     if not isinstance(documents, list):
-        return Decimal("0.00")
-    total = Decimal("0.00")
+        return []
+    items: list[dict[str, Any]] = []
     for document in documents:
         if not isinstance(document, dict):
             continue
         if str(document.get("status") or "").upper() != PROCESSED_STATUS:
             continue
-        for item in document.get("items") or []:
-            if isinstance(item, dict):
-                total += _number(item.get("cost"))
-    return total
+        items.extend(item for item in (document.get("items") or []) if isinstance(item, dict))
+    return items
+
+
+def writeoff_total(payload: Any) -> Decimal:
+    """Сумма проведённых актов списания за период."""
+    return sum((_number(item.get("cost")) for item in _writeoff_items(payload)), Decimal("0.00"))
+
+
+def writeoff_observations(
+    payload: Any, *, catalog: dict[str, tuple[str | None, str | None]] | None = None
+) -> list[GoodsProductObservation]:
+    """Номенклатура списаний за период, свёрнутая по товару.
+
+    Строка ОПиУ — одна сумма, но задвоение видно только поимённо: товар проработки, списанный
+    ещё и актом, попадает в расход дважды. Поэтому имена сохраняются рядом с итогом, ровно как
+    у накладных и инвентаризации.
+
+    ``source_kind`` у результата — ``writeoff``: он не участвует в разметке whitelist и нужен
+    только чтобы объект был того же типа, что и остальные наблюдения.
+    """
+    catalog = catalog or {}
+    grouped: dict[str, tuple[Decimal, int]] = {}
+    for item in _writeoff_items(payload):
+        guid = str(_field(item, "productId", "product", "product_id") or "").strip()
+        if not guid:
+            continue
+        amount, count = grouped.get(guid, (Decimal("0.00"), 0))
+        grouped[guid] = (amount + _number(item.get("cost")), count + 1)
+    return [
+        GoodsProductObservation(
+            source_kind="writeoff",
+            iiko_product_guid=guid,
+            product_name=catalog.get(guid, (None, None))[0],
+            product_code=catalog.get(guid, (None, None))[1],
+            amount=amount,
+            rows_count=count,
+        )
+        for guid, (amount, count) in sorted(grouped.items())
+    ]
 
 
 def whitelist_totals(
@@ -1078,6 +1139,9 @@ async def fetch_goods_metrics(session: AsyncSession, month: dt.date) -> GoodsSyn
             },
         )
         result.metrics[METRIC_WRITEOFF] = writeoff_total(payload)
+        # Номенклатуру сохраняем рядом с итогом: без неё не видно, что товар проработки
+        # списали ещё и актом, то есть посчитали расходом дважды.
+        result.writeoff_observations = writeoff_observations(payload, catalog=catalog)
     except Exception as error:  # noqa: BLE001 — недоступность одного эндпоинта не должна ронять синк
         result.notes.append(f"Акты списания не получены: {error}")
 
