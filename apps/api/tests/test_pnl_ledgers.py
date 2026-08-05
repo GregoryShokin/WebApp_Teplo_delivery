@@ -1715,16 +1715,17 @@ def test_writeoff_observations_keep_names_behind_the_total() -> None:
     assert sum(item.amount for item in observations) == iiko_sync.writeoff_total(payload)
 
 
-def test_workup_written_off_by_act_is_reported_as_double_expense(async_session_factory) -> None:
-    """Проработка, списанная ещё и актом, — расход дважды, и это должно быть видно.
+def test_workup_without_a_writeoff_act_is_reported_as_lost_expense(async_session_factory) -> None:
+    """Расход проработки признаётся АКТОМ. Нет акта — расхода нет нигде, и это надо сказать.
 
-    Товар проработки не заводят в складской учёт, поэтому его расход признаётся сразу по
-    приходной накладной. Управляющий, списавший тот же товар актом, добавляет его
-    себестоимость в «Списание продукции и сырья» — тот же расход вторым разом.
+    После смены правила (владелец, 05.08.2026) опасно не задвоение, а пропажа: строка
+    «Проработка» справочная, поэтому купленный на пробу и не списанный товар не попадает
+    в прибыль вовсе.
     """
 
     async def scenario() -> None:
         guid = "workup-and-writeoff"
+        lost = "workup-without-act"
         async with async_session_factory() as session:
             session.add(
                 PnlIikoProductObservation(
@@ -1741,6 +1742,26 @@ def test_workup_written_off_by_act_is_reported_as_double_expense(async_session_f
                 PnlProductMonthlyDecision(
                     period_month=date(2026, 7, 1),
                     iiko_product_guid=guid,
+                    source_kind="incoming_invoice",
+                    decision_kind="workup",
+                )
+            )
+            # Вторая проработка — куплена, но актом не списана.
+            session.add(
+                PnlIikoProductObservation(
+                    period_month=date(2026, 7, 1),
+                    source_kind="incoming_invoice",
+                    iiko_product_guid=lost,
+                    product_name="Крышка к контейнеру 500мл",
+                    product_code="C-2",
+                    amount=Decimal("300.00"),
+                    rows_count=1,
+                )
+            )
+            session.add(
+                PnlProductMonthlyDecision(
+                    period_month=date(2026, 7, 1),
+                    iiko_product_guid=lost,
                     source_kind="incoming_invoice",
                     decision_kind="workup",
                 )
@@ -1766,21 +1787,29 @@ def test_workup_written_off_by_act_is_reported_as_double_expense(async_session_f
             )
             await session.commit()
 
-            overlaps = await iiko_source.month_workup_writeoff_overlap(session, date(2026, 7, 1))
-            assert len(overlaps) == 1
-            assert overlaps[0].product_name == "Контейнер 300мл"
-            assert overlaps[0].workup_amount == Decimal("656.00")
-            assert overlaps[0].writeoff_amount == Decimal("612.00")
+            state = await iiko_source.month_workup_writeoff_state(session, date(2026, 7, 1))
+            by_guid = {item.product_guid: item for item in state}
+            # Списанный товар расход даёт — предупреждать не о чем.
+            assert by_guid[guid].written_off is True
+            assert by_guid[guid].writeoff_amount == Decimal("612.00")
+            # А несписанный не попал в прибыль вовсе.
+            assert by_guid[lost].written_off is False
+            assert by_guid[lost].purchase_amount == Decimal("300.00")
 
             report = await projector.build_report(session, date(2026, 7, 1))
             warning = next(
-                item for item in report.warnings if item.code == "workup_written_off_twice"
+                item for item in report.warnings if item.code == "workup_not_written_off"
             )
-            assert "Контейнер 300мл" in warning.message
             assert warning.line_code == "goods_workup"
-            # Названа сумма именно повторного расхода, а не суммы обеих строк.
-            assert "612,00" in warning.message
+            assert "Крышка к контейнеру" in warning.message
+            assert "300,00" in warning.message
+            # Про списанный товар и про чужое сырьё речи нет.
+            assert "Контейнер 300мл" not in warning.message
             assert "Семга" not in warning.message
+
+            # Строка справочная: в подытог блока она не входит.
+            workup_line = next(item for item in report.lines if item.code == "goods_workup")
+            assert workup_line.kind == "memo"
 
     asyncio.run(scenario())
 

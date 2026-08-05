@@ -80,28 +80,32 @@ def workup_expense_amount(source_kind: str, amount: Decimal) -> Decimal:
 
 
 @dataclass(slots=True)
-class WorkupWriteoffOverlap:
-    """Товар проработки, списанный ещё и актом: его расход посчитан дважды."""
+class WorkupWriteoffState:
+    """Товар проработки и его акт списания: есть акт — расход посчитан, нет — потерян."""
 
     product_guid: str
     product_name: str
-    workup_amount: Decimal
-    writeoff_amount: Decimal
+    purchase_amount: Decimal
+    writeoff_amount: Decimal | None
+
+    @property
+    def written_off(self) -> bool:
+        return self.writeoff_amount is not None
 
 
-async def month_workup_writeoff_overlap(
+async def month_workup_writeoff_state(
     session: AsyncSession, month_start: date
-) -> list[WorkupWriteoffOverlap]:
-    """Пересечение «Проработки» и актов списания за месяц.
+) -> list[WorkupWriteoffState]:
+    """Товары проработки месяца вместе с их актами списания, если те есть.
 
-    ОТКУДА БЕРЁТСЯ ЗАДВОЕНИЕ. Товар на проработку не заводят в складской учёт, поэтому его
-    расход признаётся сразу по приходной накладной — строкой «Проработка». Если управляющий
-    потом списывает тот же товар актом, его себестоимость встаёт вторым разом в «Списание
-    продукции и сырья». Оба расхода настоящие по отдельности и оба лишние вместе.
+    ЗАЧЕМ ЭТО НУЖНО ПОСЛЕ СМЕНЫ ПРАВИЛА. Расход товара проработки признаётся АКТОМ СПИСАНИЯ
+    (решение владельца 05.08.2026), а закупка по накладной осталась справочной. Значит опасен
+    теперь не двойной счёт, а его отсутствие: купили на пробу и не списали — расхода нет
+    нигде, и прибыль завышена ровно на стоимость закупки. Раньше такой товар был посчитан
+    всегда, поэтому пробел незаметен именно тем, кто помнит прежнее поведение.
 
-    Здесь только ОБНАРУЖЕНИЕ, без вычитания. Какую из двух строк считать правильной — решение
-    владельца, а не догадка расчёта: пока оно не принято, честнее показать расхождение вслух,
-    чем молча уменьшить одну из строк.
+    ``writeoff_amount is None`` и означает «акта нет». Ноль в этом поле — законная величина:
+    акт есть, но списали на нулевую себестоимость.
     """
     from app.models.pnl import PnlIikoWriteoffFact
 
@@ -124,7 +128,7 @@ async def month_workup_writeoff_overlap(
                     PnlIikoProductObservation.source_kind == PnlProductMonthlyDecision.source_kind,
                 ),
             )
-            .join(
+            .outerjoin(
                 PnlIikoWriteoffFact,
                 and_(
                     PnlIikoWriteoffFact.period_month == PnlProductMonthlyDecision.period_month,
@@ -139,13 +143,13 @@ async def month_workup_writeoff_overlap(
         )
     ).all()
     return [
-        WorkupWriteoffOverlap(
+        WorkupWriteoffState(
             product_guid=guid,
             product_name=observation_name or writeoff_name or guid,
-            workup_amount=workup_amount,
+            purchase_amount=purchase_amount,
             writeoff_amount=writeoff_amount,
         )
-        for guid, observation_name, workup_amount, writeoff_amount, writeoff_name in rows
+        for guid, observation_name, purchase_amount, writeoff_amount, writeoff_name in rows
     ]
 
 

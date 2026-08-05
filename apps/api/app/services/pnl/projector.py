@@ -496,30 +496,29 @@ async def _apply_iiko(
         stream="iiko_workup",
         amount=sum((item.amount for item in workup_items), Decimal("0.00")),
         status=LineStatus.OK,
-        note="Временная разметка только этого месяца",
+        note="Справочно: закуплено на проработку. Расход признаётся актом списания",
     )
 
-    # Товар проработки, списанный ещё и актом, посчитан расходом дважды: по накладной здесь
-    # и по себестоимости в «Списании продукции и сырья». Расчёт сам не выбирает, какую из
-    # двух строк уменьшить, — это методологическое решение владельца. Пока оно не принято,
-    # задвоение обязано быть видно вслух: молча оно только раздувает расход.
-    overlaps = await iiko_source.month_workup_writeoff_overlap(session, month_start)
-    if overlaps:
+    # Расход товара проработки признаётся АКТОМ СПИСАНИЯ, а закупка справочная. Значит товар,
+    # который купили на пробу и не списали, не посчитан расходом НИГДЕ — прибыль завышена
+    # ровно на его стоимость. Пробел молчит: строка «Проработка» показывает закупку как ни в
+    # чём не бывало, просто теперь она в прибыль не идёт.
+    workup_state = await iiko_source.month_workup_writeoff_state(session, month_start)
+    missing = [item for item in workup_state if not item.written_off]
+    if missing:
         listed = ", ".join(
-            f"{item.product_name} ({rubles(item.workup_amount)} ₽ по накладной и "
-            f"{rubles(item.writeoff_amount)} ₽ актом)"
-            for item in overlaps[:5]
+            f"{item.product_name} ({rubles(item.purchase_amount)} ₽)" for item in missing[:5]
         )
-        total = sum((item.writeoff_amount for item in overlaps), Decimal("0.00"))
+        total = sum((item.purchase_amount for item in missing), Decimal("0.00"))
         report.warnings.append(
             Warning(
-                code="workup_written_off_twice",
+                code="workup_not_written_off",
                 line_code="goods_workup",
                 message=(
-                    f"Товары проработки списаны ещё и актами: {listed}"
-                    + (f" и ещё {len(overlaps) - 5}" if len(overlaps) > 5 else "")
-                    + f". Расход задвоен на {rubles(total)} ₽ — "
-                    "проработка признаётся по накладной, а акт списывает тот же товар повторно"
+                    f"Проработка закуплена, но не списана актом: {listed}"
+                    + (f" и ещё {len(missing) - 5}" if len(missing) > 5 else "")
+                    + f". Расход {rubles(total)} ₽ не попал в прибыль — он признаётся "
+                    "актом списания, а акта по этим товарам нет"
                 ),
             )
         )
