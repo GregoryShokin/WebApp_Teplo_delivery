@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 
 from sqlalchemy import select
 
@@ -40,7 +41,9 @@ AFFECTED_PURPOSES = (
     "Оплата в MAGNIT MM BEREGOVOJ Volgodonsk RUS",
     "Оплата в MAGAZIN MAGISTR Volgodonsk RUS",
 )
-AFFECTED_FROM = "2026-08-03"
+# Именно date, а не строка: asyncpg сравнивает типы строго и на varchar даёт
+# «operator does not exist: date >= character varying».
+AFFECTED_FROM = date(2026, 8, 3)
 
 
 async def main() -> None:
