@@ -54,6 +54,7 @@ from app.services.pnl.ledgers import (
     recognition_reason,
     save_goods_classification,
 )
+from app.services.pnl.sources.inventory import build_inventory_month, load_packaging_guids
 from app.services.pnl.sources.payroll import PayrollBreakdown
 from app.services.pnl.sources.recognition import (
     ORIGIN_AWAITING_DOCUMENT,
@@ -198,7 +199,14 @@ def test_product_observations_keep_unknown_products_for_review() -> None:
 
 
 def test_product_classification_options_are_source_specific() -> None:
-    assert GOODS_LINES_BY_SOURCE["inventory"] == set()
+    # У складского источника это строки БАРНОЙ ревизии: товар пересчитывают на складе, и его
+    # расхождение идёт в свою строку. Пока список был пуст, человек не мог ни увидеть привязку,
+    # ни выбрать её — а каждое сохранение «складского учёта» её стирало.
+    assert GOODS_LINES_BY_SOURCE["inventory"] == {
+        "packaging_inventory",
+        "pizza_box_inventory",
+        "beverage_inventory",
+    }
     assert GOODS_LINES_BY_SOURCE["incoming_invoice"] == {
         "shop_maintenance",
         "aux_goods",
@@ -1222,8 +1230,20 @@ def test_recognition_ledger_excludes_non_pnl_loan_waiting(
 
 
 def test_pnl_iiko_job_refreshes_current_and_previous_month() -> None:
+    # В начале месяца прошлый ещё добирает поздние документы.
     assert target_months(date(2026, 8, 4)) == (date(2026, 8, 1), date(2026, 7, 1))
     assert target_months(date(2027, 1, 1)) == (date(2027, 1, 1), date(2026, 12, 1))
+    assert target_months(date(2026, 8, 10)) == (date(2026, 8, 1), date(2026, 7, 1))
+
+
+def test_pnl_iiko_job_stops_touching_the_previous_month_after_the_window() -> None:
+    """После десятого числа прошлый месяц застывает — иначе его переписала бы любая разметка.
+
+    Правило разметки глобально и не знает периода: ночной прогон применил бы к июлю то, что
+    человек выбрал в августе. Синхронная правка так делать уже не умеет, ночная не должна тоже.
+    """
+    assert target_months(date(2026, 8, 11)) == (date(2026, 8, 1),)
+    assert target_months(date(2026, 8, 31)) == (date(2026, 8, 1),)
 
 
 def _invoice_observation(month: date, guid: str, amount: str, rows: int = 1):
@@ -1364,6 +1384,233 @@ def test_forward_rebuild_skips_closed_future_month(async_session_factory) -> Non
                     select(PnlIikoGoodsFact.id).where(
                         PnlIikoGoodsFact.period_month == date(2026, 8, 1),
                         PnlIikoGoodsFact.iiko_product_guid == guid,
+                    )
+                )
+                is None
+            )
+
+    asyncio.run(scenario())
+
+
+def test_bar_audit_products_never_hit_the_cook_audit_line(async_session_factory) -> None:
+    """Проведённая барная ревизия не должна попасть ещё и в строку поварской.
+
+    Модуль «Ревизии» не различает вид ревизии: барную туда тоже заводили — документ от
+    01.06.2026 на 34 позиции лежит отменённым. Проведи его кто-нибудь, и расхождение барной
+    стойки посчиталось бы дважды, в двух разных блоках отчёта. Единственная защита —
+    исключение по ``line_code``, и она обязана покрывать все три барные строки, включая
+    напитки.
+    """
+
+    async def scenario() -> None:
+        packaging_guid = "bar-packaging-guid"
+        beverage_guid = "bar-beverage-guid"
+        cook_guid = "cook-raw-guid"
+        async with async_session_factory() as session:
+            for guid, line_code in (
+                (packaging_guid, "packaging_inventory"),
+                (beverage_guid, "beverage_inventory"),
+            ):
+                session.add(
+                    PnlProductWhitelist(
+                        iiko_product_guid=guid,
+                        source_kind="inventory",
+                        line_code=line_code,
+                        include_status="stocked",
+                        product_name=guid,
+                    )
+                )
+            audit = InventoryAudit(business_date=date(2026, 7, 20), status="applied")
+            session.add(audit)
+            await session.flush()
+            for guid, shortage in (
+                (packaging_guid, "1000.00"),
+                (beverage_guid, "500.00"),
+                (cook_guid, "300.00"),
+            ):
+                session.add(
+                    InventoryAuditItem(
+                        audit_id=audit.id,
+                        iiko_product_guid=guid,
+                        product_name_snapshot=guid,
+                        shortage_amount=Decimal(shortage),
+                        amount=Decimal(shortage),
+                    )
+                )
+            await session.commit()
+
+            excluded = await load_packaging_guids(session)
+            assert {packaging_guid, beverage_guid} <= excluded
+            assert cook_guid not in excluded
+
+            month = await build_inventory_month(
+                session,
+                date(2026, 7, 1),
+                date(2026, 7, 31),
+                packaging_guids=excluded,
+            )
+            # В строке поварской ревизии остаётся только сырьё.
+            assert month.product_result == Decimal("300.00")
+
+    asyncio.run(scenario())
+
+
+def test_stocked_product_keeps_its_bar_audit_line(async_session_factory) -> None:
+    """Повторное «Складской учёт» не должно стирать привязку к строке барной ревизии.
+
+    До правки экран не показывал строку у складского товара и не давал её выбрать: единственный
+    пункт слал ``line_code = null``, и один клик молча уносил упаковку из своей строки. Вернуть
+    привязку было нечем — автоматика ``stocked`` не пересматривает. Ровно так уже пропала
+    разметка напитков.
+    """
+
+    async def scenario() -> None:
+        guid = "bar-line-keeper"
+        async with async_session_factory() as session:
+            session.add(
+                PnlIikoProductObservation(
+                    period_month=date(2026, 7, 1),
+                    source_kind="inventory",
+                    iiko_product_guid=guid,
+                    product_name="Стакан барный",
+                    product_code="BAR-1",
+                    amount=Decimal("-40.00"),
+                    rows_count=1,
+                )
+            )
+            await session.commit()
+
+            saved = await save_goods_classification(
+                session,
+                display_month=date(2026, 7, 1),
+                product_guid=guid,
+                source_kind="inventory",
+                status="stocked",
+                line_code="packaging_inventory",
+                note=None,
+                user_id=None,
+            )
+            row = next(item for item in saved.rows if item.product_guid == guid)
+            assert row.status == "stocked"
+            assert row.line_code == "packaging_inventory"
+
+            # Экран предлагает эту строку — иначе выбрать её было бы нечем.
+            assert "packaging_inventory" in {
+                option.line_code for option in saved.options if option.source_kind == "inventory"
+            }
+
+            # Тот же товар сохраняют как «включён» — источник инвентаризации не знает разницы
+            # между include и stocked, и привязка обязана уцелеть.
+            again = await save_goods_classification(
+                session,
+                display_month=date(2026, 7, 1),
+                product_guid=guid,
+                source_kind="inventory",
+                status="include",
+                line_code="packaging_inventory",
+                note=None,
+                user_id=None,
+            )
+            row = next(item for item in again.rows if item.product_guid == guid)
+            assert row.status == "stocked"
+            assert row.line_code == "packaging_inventory"
+
+    asyncio.run(scenario())
+
+
+def test_classification_edit_keeps_bar_audit_details(async_session_factory) -> None:
+    """Правка разметки не должна стирать расшифровку барной ревизии и обязана её пересобрать."""
+
+    async def scenario() -> None:
+        guid = "bar-detail-guid"
+        async with async_session_factory() as session:
+            session.add(
+                PnlIikoProductObservation(
+                    period_month=date(2026, 7, 1),
+                    source_kind="inventory",
+                    iiko_product_guid=guid,
+                    product_name="Кола 0.5",
+                    product_code="COLA-1",
+                    amount=Decimal("-90.00"),
+                    rows_count=1,
+                )
+            )
+            session.add(
+                PnlProductWhitelist(
+                    iiko_product_guid=guid,
+                    source_kind="inventory",
+                    line_code="packaging_inventory",
+                    include_status="stocked",
+                    product_name="Кола 0.5",
+                )
+            )
+            session.add(
+                PnlIikoGoodsFact(
+                    period_month=date(2026, 7, 1),
+                    metric_code="packaging_result",
+                    line_code="packaging_inventory",
+                    source_kind="inventory",
+                    iiko_product_guid=guid,
+                    product_name="Кола 0.5",
+                    amount=Decimal("-90.00"),
+                    rows_count=1,
+                )
+            )
+            session.add(
+                PnlIikoFact(
+                    period_month=date(2026, 7, 1),
+                    metric_code="packaging_result",
+                    direction="total",
+                    amount=Decimal("-90.00"),
+                    rows_count=1,
+                    source_ref="/reports/storeOperations",
+                )
+            )
+            await session.commit()
+
+            # Товар переносят из упаковки в напитки — обе величины обязаны переехать.
+            await save_goods_classification(
+                session,
+                display_month=date(2026, 7, 1),
+                product_guid=guid,
+                source_kind="inventory",
+                status="stocked",
+                line_code="beverage_inventory",
+                note=None,
+                user_id=None,
+            )
+
+            detail = await session.scalar(
+                select(PnlIikoGoodsFact).where(
+                    PnlIikoGoodsFact.period_month == date(2026, 7, 1),
+                    PnlIikoGoodsFact.iiko_product_guid == guid,
+                )
+            )
+            assert detail is not None, "расшифровка барной строки не должна пропадать"
+            assert detail.metric_code == "beverage_result"
+            beverage = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == date(2026, 7, 1),
+                    PnlIikoFact.metric_code == "beverage_result",
+                )
+            )
+            assert beverage is not None
+            assert beverage.amount == Decimal("-90.00")
+            packaging = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == date(2026, 7, 1),
+                    PnlIikoFact.metric_code == "packaging_result",
+                )
+            )
+            assert packaging is not None
+            assert packaging.amount == Decimal("0.00")
+            # Корзина, про которую ничего не известно, остаётся без факта: ноль в отчёте
+            # читается как утверждение, а тут утверждать нечего.
+            assert (
+                await session.scalar(
+                    select(PnlIikoFact).where(
+                        PnlIikoFact.period_month == date(2026, 7, 1),
+                        PnlIikoFact.metric_code == "pizza_box_result",
                     )
                 )
                 is None

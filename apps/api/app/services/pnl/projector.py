@@ -62,6 +62,7 @@ IIKO_LINE_METRIC = {
     "writeoffs": "writeoff_cost",
     "packaging_inventory": "packaging_result",
     "pizza_box_inventory": "pizza_box_result",
+    "beverage_inventory": "beverage_result",
     "aux_goods": "aux_goods_invoices",
 }
 
@@ -79,7 +80,7 @@ IIKO_LINE_METRIC = {
 #: Складских метрик (``stock_consumption``, ``stock_closing_balance``) здесь нет и быть не
 #: должно: они не строки ОПиУ вовсе. Roll-forward «начало + приход − конец» — это расход
 #: периода, то есть фудкост; подключать его к отчёту значит задваивать себестоимость.
-INVERTED_IIKO_METRICS = frozenset({"packaging_result", "pizza_box_result"})
+INVERTED_IIKO_METRICS = frozenset({"packaging_result", "pizza_box_result", "beverage_result"})
 
 
 def rubles(amount: Decimal) -> str:

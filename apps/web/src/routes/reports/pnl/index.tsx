@@ -687,8 +687,14 @@ function GoodsClassificationView({
                     row.status === "requires_owner_review" ||
                     row.status === "workup"),
               );
+              // Складской товар может нести строку барной ревизии — тогда показываем именно
+              // её, а не общий «Складской учёт». Иначе привязка не видна на экране, и человек
+              // не понимает, что она вообще есть.
               const lineValue =
-                (row.status === "include" || row.status === "workup") && row.line_code
+                (row.status === "include" ||
+                  row.status === "workup" ||
+                  row.status === "stocked") &&
+                row.line_code
                   ? row.line_code
                   : row.status === "stocked"
                     ? "stocked"
@@ -779,7 +785,7 @@ function GoodsClassificationView({
                           status:
                             value === "exclude"
                               ? "exclude"
-                              : value === "stocked"
+                              : value === "stocked" || selectedSource === "inventory"
                                 ? "stocked"
                                 : selectedOption?.temporary
                                   ? "workup"

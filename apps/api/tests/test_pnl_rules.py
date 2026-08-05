@@ -9,9 +9,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.services.pnl import formulas
+from app.services.pnl import formulas, iiko_sync
 from app.services.pnl.projector import IIKO_LINE_METRIC, INVERTED_IIKO_METRICS, rubles
 from app.services.pnl.sources import acquiring as acquiring_source
+from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources.acquiring import parse_commission
 from app.services.pnl.sources.deposits import _msk_bounds, _msk_date
@@ -129,7 +130,12 @@ class TestInventoryVersusStock:
 
     def test_inventory_metrics_are_inverted(self) -> None:
         # Строка отчёта держит расход положительным; зеркало iiko отдаёт недостачу минусом.
-        assert set(INVERTED_IIKO_METRICS) == {"packaging_result", "pizza_box_result"}
+        # Все три корзины приходят одним документом барной ревизии и инвертируются одинаково.
+        assert set(INVERTED_IIKO_METRICS) == {
+            "packaging_result",
+            "pizza_box_result",
+            "beverage_result",
+        }
 
     def test_stock_metrics_are_not_pnl_lines(self) -> None:
         # Roll-forward в ОПиУ не идёт ни при каком знаке: он задвоил бы себестоимость.
@@ -140,12 +146,51 @@ class TestInventoryVersusStock:
     def test_inventory_lines_are_fed_from_the_variance_metric(self) -> None:
         assert IIKO_LINE_METRIC["packaging_inventory"] == "packaging_result"
         assert IIKO_LINE_METRIC["pizza_box_inventory"] == "pizza_box_result"
+        assert IIKO_LINE_METRIC["beverage_inventory"] == "beverage_result"
 
     def test_shortage_is_expense_and_surplus_compensates(self) -> None:
         shortage_in_iiko = Decimal("-28308.86")  # недостача упаковки в терминах iiko
         surplus_in_iiko = Decimal("7290.59")  # излишек коробок
         assert -shortage_in_iiko == Decimal("28308.86")
         assert -surplus_in_iiko == Decimal("-7290.59")
+
+
+class TestBarAudit:
+    """Барная ревизия: один документ, три строки, и ни одна не должна пересечься с поварской.
+
+    Ревизий на точке две (владелец, 05.08.2026): поварская считает сырьё каждую неделю и
+    живёт в модуле «Ревизии», барная считает барную стойку раз в месяц и приходит документом
+    iiko. Упаковка, коробки для пиццы и напитки едут ОДНИМ документом, и разводит их только
+    whitelist — по природе товара, а не по источнику.
+    """
+
+    def test_all_three_baskets_come_from_the_inventory_document(self) -> None:
+        assert {
+            iiko_sync.METRIC_PACKAGING,
+            iiko_sync.METRIC_PIZZA_BOX,
+            iiko_sync.METRIC_BEVERAGE,
+        } == iiko_sync.INVENTORY_BASKETS
+        for metric in iiko_sync.INVENTORY_BASKETS:
+            assert iiko_sync.GOODS_METRIC_SOURCE[metric] == iiko_sync.INVENTORY_ENDPOINT
+
+    def test_every_inventory_basket_has_its_own_line(self) -> None:
+        # Корзина без строки ОПиУ — это молча потерянный расход: синк её посчитает,
+        # а показать будет негде.
+        line_by_metric = {metric: line for line, metric in iiko_sync.WHITELIST_METRIC.items()}
+        for metric in iiko_sync.INVENTORY_BASKETS:
+            line_code = line_by_metric[metric]
+            assert IIKO_LINE_METRIC[line_code] == metric
+
+    def test_invoice_and_inventory_baskets_do_not_overlap(self) -> None:
+        # Один и тот же расход не может считаться и по закупке, и по пересчёту.
+        assert not iiko_sync.INVOICE_BASKETS & iiko_sync.INVENTORY_BASKETS
+
+    def test_bar_lines_are_excluded_from_the_cook_audit(self) -> None:
+        # Товары всех трёх барных строк обязаны выпадать из строки поварской ревизии,
+        # иначе одно расхождение попадёт в два блока отчёта.
+        line_by_metric = {metric: line for line, metric in iiko_sync.WHITELIST_METRIC.items()}
+        bar_lines = {line_by_metric[metric] for metric in iiko_sync.INVENTORY_BASKETS}
+        assert bar_lines == set(inventory_source.BAR_AUDIT_LINES)
 
 
 class TestWaitingMonthAttribution:

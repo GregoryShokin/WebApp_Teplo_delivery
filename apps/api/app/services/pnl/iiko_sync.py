@@ -543,6 +543,9 @@ METRIC_SHOP_MAINTENANCE = "shop_maintenance_invoices"
 METRIC_AUX_GOODS = "aux_goods_invoices"
 METRIC_PACKAGING = "packaging_result"
 METRIC_PIZZA_BOX = "pizza_box_result"
+#: Напитки барной ревизии. Считают их вместе с упаковкой — они стоят на одной стойке, — но
+#: экономически это товар на продажу, а не накладной расход, поэтому строка отдельная.
+METRIC_BEVERAGE = "beverage_result"
 
 #: Корзина whitelist → метрика зеркала.
 WHITELIST_METRIC = {
@@ -550,6 +553,7 @@ WHITELIST_METRIC = {
     "aux_goods": METRIC_AUX_GOODS,
     "packaging_inventory": METRIC_PACKAGING,
     "pizza_box_inventory": METRIC_PIZZA_BOX,
+    "beverage_inventory": METRIC_BEVERAGE,
 }
 
 #: Корзины, которые считаются ПО ПРИХОДНЫМ НАКЛАДНЫМ (закупка).
@@ -564,6 +568,7 @@ GOODS_METRIC_SOURCE = {
     METRIC_AUX_GOODS: INCOMING_INVOICE_ENDPOINT,
     METRIC_PACKAGING: INVENTORY_ENDPOINT,
     METRIC_PIZZA_BOX: INVENTORY_ENDPOINT,
+    METRIC_BEVERAGE: INVENTORY_ENDPOINT,
 }
 
 #: Корзины, которые считаются ПО РЕЗУЛЬТАТУ ИНВЕНТАРИЗАЦИИ — расхождению книги с фактом.
@@ -578,7 +583,11 @@ GOODS_METRIC_SOURCE = {
 #: Когда обе строки выключили в пользу roll-forward, из июля молча ушёл расход 21 018,27 ₽
 #: (недостача упаковки 28 308,86 минус излишек коробок 7 290,59), а замены не появилось:
 #: потребление уже посчитано фудкостом, потери не считались нигде.
-INVENTORY_BASKETS = frozenset({METRIC_PACKAGING, METRIC_PIZZA_BOX})
+#:
+#: Все три корзины приходят ОДНИМ документом — барной ревизией: кассиры считают за раз
+#: упаковку, диппоты и напитки, стоящие на одной стойке. Разводит их не источник, а
+#: whitelist по природе товара.
+INVENTORY_BASKETS = frozenset({METRIC_PACKAGING, METRIC_PIZZA_BOX, METRIC_BEVERAGE})
 
 _CENTS = Decimal("0.01")
 

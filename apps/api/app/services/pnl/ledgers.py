@@ -34,6 +34,7 @@ from app.services.pnl.revision_products import (
 )
 from app.services.pnl.sources import deposits as deposits_source
 from app.services.pnl.sources import iiko as iiko_source
+from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import payroll as payroll_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources import waiting as waiting_source
@@ -401,10 +402,16 @@ async def build_goods_ledger(session: AsyncSession, month: date) -> GoodsLedger:
             )
         )
 
+    # Товары барной ревизии исключаются ТЕМ ЖЕ фильтром, что и в своде. Без него расшифровка
+    # показывала бы недостачу упаковки и напитков ещё раз — и расходилась бы со строкой
+    # «Результаты ревизий», которую проектор считает уже за вычетом этих товаров.
+    bar_audit_guids = await inventory_source.load_packaging_guids(session)
     revision_shortage = Decimal("0.00")
     revision_surplus = Decimal("0.00")
     revision_synced_at: datetime | None = None
     for audit, detail in revision_rows:
+        if detail.iiko_product_guid in bar_audit_guids:
+            continue
         shortage = Decimal(detail.shortage_amount or 0)
         surplus = max(Decimal(detail.amount or 0), Decimal("0.00"))
         revision_shortage += shortage
@@ -544,8 +551,17 @@ class GoodsClassificationLedger:
     rows: list[GoodsClassificationRow]
 
 
+#: Строки ОПиУ, доступные для выбора у каждого источника.
+#:
+#: У СКЛАДСКОГО ИСТОЧНИКА СПИСОК БЫЛ ПУСТ, И ЭТО ЛОМАЛО РАЗМЕТКУ БАРНОЙ РЕВИЗИИ. Товары
+#: барной стойки — складские (их пересчитывают), и одновременно у них есть своя строка ОПиУ:
+#: упаковка, коробки для пиццы, напитки. Пока выбора не было, человек мог сказать про такой
+#: товар только «складской», а сохранение проставляло ``line_code = None`` — то есть каждый
+#: клик по уже размеченной упаковке молча уносил её из своей строки, и вернуть привязку было
+#: нечем: автоматика ``stocked`` не пересматривает. Ровно этот механизм и обнулил разметку
+#: напитков в прошлый раз.
 GOODS_LINES_BY_SOURCE = {
-    "inventory": frozenset(),
+    "inventory": frozenset(inventory_source.BAR_AUDIT_LINES),
     "incoming_invoice": frozenset({"shop_maintenance", "aux_goods"}),
 }
 
@@ -799,6 +815,82 @@ async def build_goods_classifications(
     )
 
 
+async def _rebuild_bar_audit_details(
+    session: AsyncSession,
+    month: date,
+    carried: list[tuple[str, str | None, Decimal, int]],
+    upsert_total,
+) -> None:
+    """Разложить расхождения барной ревизии по строкам заново — по ТЕКУЩЕЙ разметке.
+
+    Складская ветка пересчёта раньше не трогала барные корзины вовсе, а детализацию месяца
+    при этом удаляла: после правки разметки суммы упаковки и напитков оставались прежними,
+    расшифровка пустела, и расхождение между сводом и вкладкой выглядело как сбой синка.
+
+    ЧЕГО ЭТОТ ПЕРЕСЧЁТ НЕ УМЕЕТ — добавить товар, которого в выгрузке ещё не было. Расхождение
+    приходит из документа iiko и живёт только в уже сохранённой детализации; товар, впервые
+    получивший строку, попадёт в неё лишь со следующей выгрузкой. Это ограничение источника,
+    а не расчёта, и молчать о нём нельзя — величина строки просто не изменится.
+    """
+    rules = {
+        guid: line_code
+        for guid, line_code in (
+            await session.execute(
+                select(PnlProductWhitelist.iiko_product_guid, PnlProductWhitelist.line_code).where(
+                    PnlProductWhitelist.source_kind == "inventory",
+                    PnlProductWhitelist.line_code.in_(inventory_source.BAR_AUDIT_LINES),
+                )
+            )
+        ).all()
+    }
+    totals = {
+        iiko_sync.WHITELIST_METRIC[line_code]: Decimal("0.00")
+        for line_code in inventory_source.BAR_AUDIT_LINES
+    }
+    rows_count = dict.fromkeys(totals, 0)
+    seen: set[str] = set()
+    for guid, product_name, amount, count in carried:
+        line_code = rules.get(guid)
+        if line_code is None:
+            continue
+        metric_code = iiko_sync.WHITELIST_METRIC[line_code]
+        totals[metric_code] += amount
+        rows_count[metric_code] += count
+        seen.add(metric_code)
+        session.add(
+            PnlIikoGoodsFact(
+                period_month=month,
+                metric_code=metric_code,
+                line_code=line_code,
+                source_kind="inventory",
+                iiko_product_guid=guid,
+                product_name=product_name,
+                amount=amount,
+                rows_count=count,
+            )
+        )
+    # Ноль пишем только там, где величина УЖЕ была: корзина, по которой выгрузки не приходило,
+    # обязана остаться «нет данных». Иначе правка разметки соседнего товара нарисовала бы
+    # 0,00 ₽ в строке, про которую ничего не известно, — а ноль в отчёте читается как факт.
+    existing = set(
+        (
+            await session.execute(
+                select(PnlIikoFact.metric_code).where(
+                    PnlIikoFact.period_month == month,
+                    PnlIikoFact.metric_code.in_(totals),
+                    PnlIikoFact.direction == "total",
+                )
+            )
+        ).scalars()
+    )
+    for metric_code, amount in totals.items():
+        if metric_code not in seen and metric_code not in existing:
+            continue
+        await upsert_total(
+            metric_code, amount, rows_count[metric_code], iiko_sync.INVENTORY_ENDPOINT
+        )
+
+
 async def rebuild_goods_from_observations(
     session: AsyncSession,
     month: date,
@@ -867,6 +959,25 @@ async def rebuild_goods_from_observations(
         fact.source_ref = source_ref
         fact.synced_at = now
 
+    # Детализацию читаем ДО удаления: для складского источника она и есть единственный
+    # носитель расхождений барной ревизии. Заново получить их можно только новой выгрузкой
+    # из iiko, а пересчитать разметку по ним — можно и нужно.
+    previous_details = (
+        (
+            await session.execute(
+                select(PnlIikoGoodsFact).where(
+                    PnlIikoGoodsFact.period_month == month,
+                    PnlIikoGoodsFact.source_kind == source_kind,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    carried = [
+        (item.iiko_product_guid, item.product_name, item.amount, item.rows_count)
+        for item in previous_details
+    ]
     await session.execute(
         delete(PnlIikoGoodsFact).where(
             PnlIikoGoodsFact.period_month == month,
@@ -875,6 +986,7 @@ async def rebuild_goods_from_observations(
     )
 
     if source_kind == "inventory":
+        await _rebuild_bar_audit_details(session, month, carried, upsert_total)
         stocked_guids = await _stocked_product_guids(session, month)
         stock_facts = (
             (
@@ -1017,11 +1129,22 @@ async def save_goods_classification(
         raise ValueError("Для временного решения выберите статью «Проработка»")
     if status == "workup" and source_kind != "incoming_invoice":
         raise ValueError("Проработка учитывается по приходной накладной текущего месяца")
+    # «Включить» и «складской» — для инвентаризации одно и то же состояние: товар пересчитывают
+    # на складе, и его расхождение идёт в барную строку. Экран шлёт include для любой выбранной
+    # статьи, поэтому нормализуем здесь, а не заставляем клиента знать это различие.
+    if source_kind == "inventory" and status == "include":
+        status = "stocked"
     if status == "include" and line_code not in GOODS_LINES_BY_SOURCE[source_kind]:
         raise ValueError("Выбранная строка ОПиУ не соответствует источнику")
     if status == "stocked" and source_kind != "inventory":
         raise ValueError("Складской учёт доступен только для складских остатков iiko")
-    if status not in {"include", "workup"} and line_code is not None:
+    if (
+        status == "stocked"
+        and line_code is not None
+        and line_code not in GOODS_LINES_BY_SOURCE["inventory"]
+    ):
+        raise ValueError("Складскому товару доступны только строки барной ревизии")
+    if status not in {"include", "workup", "stocked"} and line_code is not None:
         raise ValueError("Для проверки или исключения строка ОПиУ не выбирается")
     if is_revision_product and (
         source_kind != "inventory" or status != "stocked" or line_code is not None
