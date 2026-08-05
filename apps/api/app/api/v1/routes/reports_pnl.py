@@ -203,6 +203,7 @@ class GoodsLedgerSummaryOut(BaseModel):
     receipts_amount: Decimal | None = None
     closing_amount: Decimal | None = None
     surplus_amount: Decimal | None = None
+    shortage_amount: Decimal | None = None
 
     @field_serializer(
         "amount",
@@ -211,6 +212,7 @@ class GoodsLedgerSummaryOut(BaseModel):
         "receipts_amount",
         "closing_amount",
         "surplus_amount",
+        "shortage_amount",
     )
     def _money(self, value: Decimal | None) -> str | None:
         return None if value is None else f"{value:.2f}"
@@ -589,6 +591,7 @@ async def get_goods_ledger(
                 receipts_amount=row.receipts_amount,
                 closing_amount=row.closing_amount,
                 surplus_amount=row.surplus_amount,
+                shortage_amount=row.shortage_amount,
             )
             for row in ledger.summaries
         ],

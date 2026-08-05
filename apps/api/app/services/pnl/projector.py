@@ -404,7 +404,11 @@ async def _apply_inventory(
         stream="inventory",
         amount=month.product_result,
         status=LineStatus.OK if month.product_result else LineStatus.ZERO_CONFIRMED,
-        note=f"Недостача по проведённым ревизиям; ревизий за месяц: {month.audits_count}",
+        note=(
+            f"Недостача {rubles(month.shortage_amount)} ₽ минус излишки "
+            f"{rubles(month.surplus_amount)} ₽ по проведённым ревизиям; "
+            f"ревизий за месяц: {month.audits_count}"
+        ),
     )
     if payroll_month.audit_penalties:
         _add_component(

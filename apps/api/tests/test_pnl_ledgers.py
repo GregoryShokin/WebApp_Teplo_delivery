@@ -247,7 +247,7 @@ def test_stock_rollforward_includes_shortage_and_surplus() -> None:
     assert by_guid["surplus"].consumption_amount == Decimal("-15.00")
 
 
-def test_projector_uses_revision_shortage_and_ignores_stock_consumption(
+def test_projector_nets_surplus_against_shortage_and_ignores_stock_consumption(
     async_session_factory,
 ) -> None:
     async def scenario() -> None:
@@ -313,8 +313,11 @@ def test_projector_uses_revision_shortage_and_ignores_stock_consumption(
                 date(2026, 7, 31),
                 report,
             )
-            assert line.components[0].amount == Decimal("25.00")
+            # Недостача 25,00 минус излишек 7,00. Владелец 05.08.2026: «излишки тоже должны
+            # влиять на расчёт прибыли», без всякого зачёта пересорта — просто разность.
+            assert line.components[0].amount == Decimal("18.00")
             assert line.components[0].status == LineStatus.OK
+            assert "минус излишки" in (line.components[0].note or "")
 
             ledger = await build_goods_ledger(session, date(2026, 7, 1))
             # По КОДУ, а не по источнику: рядом с продуктовыми ревизиями в том же источнике
@@ -323,7 +326,9 @@ def test_projector_uses_revision_shortage_and_ignores_stock_consumption(
             revision_summary = next(
                 item for item in ledger.summaries if item.line_code == "audit_results"
             )
-            assert revision_summary.amount == Decimal("25.00")
+            # Плитка расшифровки показывает ровно то же, что свод, плюс обе составляющие.
+            assert revision_summary.amount == Decimal("18.00")
+            assert revision_summary.shortage_amount == Decimal("25.00")
             assert revision_summary.surplus_amount == Decimal("7.00")
             assert {(row.product_name, row.amount, row.surplus_amount) for row in ledger.rows} >= {
                 ("Недостача", Decimal("25.00"), Decimal("0.00")),
@@ -1434,7 +1439,10 @@ def test_bar_audit_products_never_hit_the_cook_audit_line(async_session_factory)
                         iiko_product_guid=guid,
                         product_name_snapshot=guid,
                         shortage_amount=Decimal(shortage),
-                        amount=Decimal(shortage),
+                        # У недостачи знаковый amount отрицателен — так его пишет загрузчик
+                        # ревизии (``signed_amount = -shortage_amount``). Положительный
+                        # amount означал бы излишек, и он уменьшил бы расход.
+                        amount=-Decimal(shortage),
                     )
                 )
             await session.commit()
@@ -1651,7 +1659,10 @@ def test_invoice_expense_product_never_becomes_an_audit_loss(async_session_facto
                         iiko_product_guid=guid,
                         product_name_snapshot=guid,
                         shortage_amount=Decimal(shortage),
-                        amount=Decimal(shortage),
+                        # У недостачи знаковый amount отрицателен — так его пишет загрузчик
+                        # ревизии (``signed_amount = -shortage_amount``). Положительный
+                        # amount означал бы излишек, и он уменьшил бы расход.
+                        amount=-Decimal(shortage),
                     )
                 )
             await session.commit()

@@ -926,14 +926,19 @@ function GoodsLedgerView({
                   этом же блоке стоят результаты инвентаризации упаковки, и summaries[0]
                   однажды окажется не тем, чем кажется. */}
               <MetricCard
-                title="Недостача по ревизиям"
+                title="Результат ревизий"
                 amount={auditSummary?.amount ?? null}
-                note="Входит в расход ОПиУ"
+                note="Недостача минус излишки — входит в расход ОПиУ"
+              />
+              <MetricCard
+                title="Недостача по ревизиям"
+                amount={auditSummary?.shortage_amount ?? null}
+                note="До вычета излишков"
               />
               <MetricCard
                 title="Излишки по ревизиям"
                 amount={auditSummary?.surplus_amount ?? null}
-                note="Показаны справочно, недостачу не уменьшают"
+                note="Уменьшают расход"
               />
               {summaries
                 .filter((item) => item.line_code !== "audit_results")

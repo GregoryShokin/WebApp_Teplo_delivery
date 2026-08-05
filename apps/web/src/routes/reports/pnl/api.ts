@@ -167,6 +167,7 @@ export type GoodsLedgerSummary = {
   receipts_amount: string | null;
   closing_amount: string | null;
   surplus_amount: string | null;
+  shortage_amount: string | null;
 };
 
 export type GoodsSourceKind = "inventory" | "incoming_invoice";

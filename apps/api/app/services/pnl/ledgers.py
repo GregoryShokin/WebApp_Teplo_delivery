@@ -243,8 +243,11 @@ class GoodsLedgerSummary:
     opening_amount: Decimal | None = None
     receipts_amount: Decimal | None = None
     closing_amount: Decimal | None = None
-    #: Излишки проведённых ревизий показываются справочно и не уменьшают расход ОПиУ.
+    #: Составляющие результата ревизий. С 05.08.2026 излишки не справочные: строка ОПиУ равна
+    #: ``shortage_amount - surplus_amount``, и обе величины показываются, чтобы разность
+    #: читалась глазами.
     surplus_amount: Decimal | None = None
+    shortage_amount: Decimal | None = None
 
 
 @dataclass(slots=True)
@@ -474,16 +477,20 @@ async def build_goods_ledger(session: AsyncSession, month: date) -> GoodsLedger:
                 synced_at=fact.synced_at if fact is not None else None,
             )
         )
+    # Величина строки — недостача МИНУС излишки (решение владельца 05.08.2026). Плитка
+    # расшифровки обязана показывать ровно то, что стоит в своде: пока она показывала одну
+    # недостачу, вкладка и отчёт расходились бы на всю сумму излишков.
     summaries.append(
         GoodsLedgerSummary(
             line_code="audit_results",
             line_title=line_titles.get("audit_results", "Результаты ревизии"),
             source_kind="inventory",
-            amount=revision_shortage if revision_rows else None,
-            details_amount=revision_shortage,
+            amount=(revision_shortage - revision_surplus) if revision_rows else None,
+            details_amount=revision_shortage - revision_surplus,
             details_complete=True,
             synced_at=revision_synced_at,
             surplus_amount=revision_surplus if revision_rows else None,
+            shortage_amount=revision_shortage if revision_rows else None,
         )
     )
     summaries.append(
