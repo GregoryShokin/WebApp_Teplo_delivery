@@ -45,10 +45,15 @@ import {
   fetchPnlLineDrill,
   fetchPnlReport,
   fetchRecognitionLedger,
+  confirmWorkupReview,
+  fetchWorkupReview,
+  rejectWorkupReview,
   updateGoodsClassification,
   type GoodsClassificationDecision,
   type GoodsClassificationLedger,
   type GoodsClassificationRow,
+  type WorkupReviewLedger,
+  type WorkupReviewRow,
   type GoodsLedger,
   type GoodsSourceKind,
   type LineStatus,
@@ -630,6 +635,99 @@ const GOODS_SOURCE_LABEL: Record<GoodsSourceKind | "temporary", string> = {
   temporary: "Временная разметка месяца",
 };
 
+/** Очередь «Требует проверки»: товар похож на проработку, человек подтверждает или отклоняет.
+
+    Расход проработки признаётся АКТОМ СПИСАНИЯ, поэтому вопрос не косметический: подтвердили —
+    система создаёт акт в iiko и расход попадает в прибыль; не ответили — он не считается нигде. */
+function WorkupReviewView({
+  ledger,
+  savingId,
+  onConfirm,
+  onReject,
+}: {
+  ledger: WorkupReviewLedger | null;
+  savingId: string | null;
+  onConfirm: (row: WorkupReviewRow) => void;
+  onReject: (row: WorkupReviewRow) => void;
+}) {
+  if (!ledger || ledger.rows.length === 0) return null;
+  return (
+    <Card className="p-4">
+      <div className="flex items-baseline justify-between">
+        <div className="text-sm font-medium">Требует проверки: это проработка?</div>
+        {ledger.pending_count > 0 ? (
+          <Badge variant="outline">ждут ответа: {ledger.pending_count}</Badge>
+        ) : null}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        Расход проработки признаётся актом списания. Подтвердите — система спишет товар в iiko сама;
+        пока ответа нет, эта закупка в прибыль не входит.
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="py-2 pr-4">Номенклатура</th>
+              <th className="py-2 pr-4">Накладная</th>
+              <th className="py-2 pr-4 text-right">Закупка</th>
+              <th className="py-2 pr-4 text-right">Кол-во</th>
+              <th className="py-2 pl-4">Ответ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ledger.rows.map((row) => (
+              <tr key={row.id} className="border-b border-muted/40 align-middle">
+                <td className="py-3 pr-4">
+                  <div className="font-medium">{row.product_name}</div>
+                  {row.writeoff_error ? (
+                    <div className="text-xs text-destructive">{row.writeoff_error}</div>
+                  ) : null}
+                  {row.writeoff_number ? (
+                    <div className="text-xs text-muted-foreground">
+                      Акт списания {row.writeoff_number} создан в iiko
+                    </div>
+                  ) : null}
+                </td>
+                <td className="py-3 pr-4 text-muted-foreground">
+                  {row.invoice_number ?? "—"}
+                  {row.supplier_name ? ` · ${row.supplier_name}` : ""}
+                </td>
+                <td className="py-3 pr-4 text-right tabular-nums">{row.purchase_amount}</td>
+                <td className="py-3 pr-4 text-right tabular-nums">{row.quantity ?? "—"}</td>
+                <td className="py-3 pl-4">
+                  {row.status === "pending" ? (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        disabled={savingId === row.id}
+                        onClick={() => onConfirm(row)}
+                      >
+                        Да, проработка
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={savingId === row.id}
+                        onClick={() => onReject(row)}
+                      >
+                        Нет
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge variant={row.status === "confirmed" ? "secondary" : "outline"}>
+                      {row.status === "confirmed" ? "проработка" : "не проработка"}
+                    </Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 function GoodsClassificationView({
   ledger,
   savingKey,
@@ -691,9 +789,7 @@ function GoodsClassificationView({
               // её, а не общий «Складской учёт». Иначе привязка не видна на экране, и человек
               // не понимает, что она вообще есть.
               const lineValue =
-                (row.status === "include" ||
-                  row.status === "workup" ||
-                  row.status === "stocked") &&
+                (row.status === "include" || row.status === "workup" || row.status === "stocked") &&
                 row.line_code
                   ? row.line_code
                   : row.status === "stocked"
@@ -889,11 +985,17 @@ function GoodsClassificationView({
 function GoodsLedgerView({
   ledger,
   classifications,
+  workupReview,
+  workupSavingId,
+  onWorkupAnswer,
   savingKey,
   onClassificationChange,
 }: {
   ledger: GoodsLedger;
   classifications: GoodsClassificationLedger;
+  workupReview: WorkupReviewLedger | null;
+  workupSavingId: string | null;
+  onWorkupAnswer: (row: WorkupReviewRow, confirmed: boolean) => void;
   savingKey: string | null;
   onClassificationChange: (
     row: GoodsClassificationRow,
@@ -1061,6 +1163,12 @@ function GoodsLedgerView({
           {renderLedger(suppliesSummaries, suppliesRows, "supplies")}
         </TabsContent>
       </Tabs>
+      <WorkupReviewView
+        ledger={workupReview}
+        savingId={workupSavingId}
+        onConfirm={(row) => onWorkupAnswer(row, true)}
+        onReject={(row) => onWorkupAnswer(row, false)}
+      />
       <GoodsClassificationView
         ledger={classifications}
         savingKey={savingKey}
@@ -1168,6 +1276,41 @@ export function PnlRoute() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const workupReview = useLedger(activeTab === "goods", month, fetchWorkupReview);
+  const [workupSavingId, setWorkupSavingId] = useState<string | null>(null);
+
+  // Ответ на вопрос о проработке меняет ОПиУ: подтверждение создаёт акт списания, и расход
+  // товара появляется в прибыли. Поэтому после ответа перезагружаем и сам отчёт.
+  const answerWorkup = useCallback(
+    async (row: WorkupReviewRow, confirmed: boolean) => {
+      setWorkupSavingId(row.id);
+      try {
+        const updated = confirmed
+          ? await confirmWorkupReview(month, row.id)
+          : await rejectWorkupReview(month, row.id);
+        workupReview.replace(updated);
+        const answered = updated.rows.find((item) => item.id === row.id);
+        if (answered?.writeoff_error) {
+          toast.warning(`Ответ сохранён, но акт не создан: ${answered.writeoff_error}`);
+        } else if (confirmed) {
+          toast.success(
+            answered?.writeoff_number
+              ? `Акт списания ${answered.writeoff_number} создан в iiko`
+              : "Проработка подтверждена",
+          );
+        } else {
+          toast.success("Товар вернулся в обычную разметку");
+        }
+        load(month);
+      } catch (cause: unknown) {
+        toast.error(apiErrorMessage(cause, "Не удалось сохранить ответ"));
+      } finally {
+        setWorkupSavingId(null);
+      }
+    },
+    [month, workupReview, load],
+  );
 
   useEffect(() => {
     load(month);
@@ -1372,6 +1515,9 @@ export function PnlRoute() {
             <GoodsLedgerView
               ledger={goodsLedger.data}
               classifications={goodsClassifications.data}
+              workupReview={workupReview.data}
+              workupSavingId={workupSavingId}
+              onWorkupAnswer={answerWorkup}
               savingKey={goodsSavingKey}
               onClassificationChange={saveGoodsClassification}
             />

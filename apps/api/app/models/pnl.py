@@ -538,6 +538,68 @@ class PnlIikoStockFact(Base):
     )
 
 
+class PnlWorkupReview(Base):
+    """Вопрос человеку: «этот товар брали на проработку?» — и след ответа.
+
+    ЗАЧЕМ ОЧЕРЕДЬ, А НЕ ФЛАГ У НАКЛАДНОЙ. Проработкой бывает ОДНА позиция из десяти, а
+    решение принимается по товару и месяцу — ровно так его хранит ``PnlProductMonthlyDecision``.
+    Флаг на документе не смог бы ответить, про какую его строку идёт речь, и повторное
+    подтверждение накладной пришлось бы разбирать заново.
+
+    ЗАЧЕМ СЛЕД АКТА (``writeoff_document_id``). Cloud ``create`` НЕ идемпотентен: каждый вызов
+    плодит новый документ в боевой iiko. Единственный гейт повтора — на нашей стороне, и это
+    он: пока id заполнен, второй акт не создаётся ни ретраем, ни двойным кликом.
+
+    ``writeoff_error`` держит текст отказа iiko. Ошибка внешней системы не должна ронять
+    ответ пользователю и не должна молча теряться — иначе товар останется без акта, а расход
+    (он признаётся именно актом) не попадёт в прибыль вовсе.
+    """
+
+    __tablename__ = "pnl_workup_review"
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending', 'confirmed', 'rejected')",
+            name="ck_pnl_workup_review_status",
+        ),
+        Index(
+            "uq_pnl_workup_review_slot",
+            "period_month",
+            "iiko_product_guid",
+            unique=True,
+        ),
+        Index("ix_pnl_workup_review_status", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Накладная, которой товар пришёл. Опциональна: связь ищется по номенклатуре, и у
+    #: товара из iiko-выгрузки нашей накладной может не быть вовсе.
+    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("supplier_invoice.id", ondelete="SET NULL"), nullable=True
+    )
+    purchase_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: GUID акта списания в iiko. Заполнен — акт уже создан, повторять нельзя.
+    writeoff_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    writeoff_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    writeoff_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class PnlIikoWriteoffFact(Base):
     """Номенклатура проведённых актов списания за месяц.
 

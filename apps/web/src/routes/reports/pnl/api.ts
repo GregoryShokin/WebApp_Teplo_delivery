@@ -205,7 +205,12 @@ export async function fetchGoodsLedger(month: string): Promise<GoodsLedger> {
 }
 
 export type GoodsClassificationStatus =
-  "include" | "requires_owner_review" | "exclude" | "workup" | "stocked" | "unclassified";
+  | "include"
+  | "requires_owner_review"
+  | "exclude"
+  | "workup"
+  | "stocked"
+  | "unclassified";
 
 export type GoodsClassificationOption = {
   line_code: string;
@@ -359,5 +364,60 @@ export async function fetchPnlLineDrill(line: string, month: string): Promise<Pn
     params: { month },
     timeout: 60_000,
   });
+  return response.data;
+}
+
+export type WorkupReviewRow = {
+  id: string;
+  product_guid: string;
+  product_name: string;
+  purchase_amount: string;
+  quantity: string | null;
+  status: "pending" | "confirmed" | "rejected";
+  invoice_id: string | null;
+  invoice_number: string | null;
+  supplier_name: string | null;
+  writeoff_document_id: string | null;
+  writeoff_number: string | null;
+  writeoff_error: string | null;
+  decided_at: string | null;
+};
+
+export type WorkupReviewLedger = {
+  month: string;
+  pending_count: number;
+  rows: WorkupReviewRow[];
+};
+
+export async function fetchWorkupReview(month: string): Promise<WorkupReviewLedger> {
+  const response = await api.get<WorkupReviewLedger>("/reports/pnl/workup-review", {
+    params: { month },
+    timeout: 60_000,
+  });
+  return response.data;
+}
+
+/** Ответ «да, проработка» — система создаёт акт списания в iiko. */
+export async function confirmWorkupReview(
+  month: string,
+  reviewId: string,
+): Promise<WorkupReviewLedger> {
+  const response = await api.post<WorkupReviewLedger>(
+    `/reports/pnl/workup-review/${reviewId}/confirm`,
+    null,
+    { params: { month }, timeout: 60_000 },
+  );
+  return response.data;
+}
+
+export async function rejectWorkupReview(
+  month: string,
+  reviewId: string,
+): Promise<WorkupReviewLedger> {
+  const response = await api.post<WorkupReviewLedger>(
+    `/reports/pnl/workup-review/${reviewId}/reject`,
+    null,
+    { params: { month }, timeout: 60_000 },
+  );
   return response.data;
 }

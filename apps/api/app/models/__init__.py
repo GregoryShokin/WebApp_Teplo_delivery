@@ -171,6 +171,7 @@ from app.models.pnl import (
     PnlProductMonthlyDecision,
     PnlProductWhitelist,
     PnlSourceRule,
+    PnlWorkupReview,
 )
 from app.models.position import Position, PositionChangeEvent
 from app.models.revenue_forecast import RevenueForecast
@@ -311,6 +312,7 @@ __all__ = [
     "PnlIikoProductObservation",
     "PnlIikoStockFact",
     "PnlIikoWriteoffFact",
+    "PnlWorkupReview",
     "PnlLine",
     "PnlManualEntry",
     "PnlPartnerCommissionFact",

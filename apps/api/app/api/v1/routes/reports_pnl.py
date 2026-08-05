@@ -28,7 +28,7 @@ from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.services.pnl import drill as drill_service
 from app.services.pnl import ledgers as ledger_service
-from app.services.pnl import projector
+from app.services.pnl import projector, workup_review
 from app.services.pnl.types import LineValue, PnlReport
 
 router = APIRouter()
@@ -803,3 +803,121 @@ async def get_pnl_line(
             for group in drill.groups
         ],
     )
+
+
+class WorkupReviewRowOut(BaseModel):
+    """Строка очереди «Требует проверки»: товар, который автоматика считает проработкой."""
+
+    id: uuid.UUID
+    product_guid: str
+    product_name: str
+    purchase_amount: Decimal
+    quantity: Decimal | None
+    status: str
+    invoice_id: uuid.UUID | None
+    invoice_number: str | None
+    supplier_name: str | None
+    writeoff_document_id: str | None
+    writeoff_number: str | None
+    writeoff_error: str | None
+    decided_at: datetime | None
+
+    @field_serializer("purchase_amount", "quantity")
+    def _money(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.3f}"
+
+
+class WorkupReviewLedgerOut(BaseModel):
+    month: date
+    pending_count: int
+    rows: list[WorkupReviewRowOut]
+
+
+def _workup_review_out(month: date, rows: list) -> WorkupReviewLedgerOut:
+    return WorkupReviewLedgerOut(
+        month=month,
+        pending_count=sum(1 for row in rows if row.status == "pending"),
+        rows=[
+            WorkupReviewRowOut(
+                id=row.id,
+                product_guid=row.product_guid,
+                product_name=row.product_name,
+                purchase_amount=row.purchase_amount,
+                quantity=row.quantity,
+                status=row.status,
+                invoice_id=row.invoice_id,
+                invoice_number=row.invoice_number,
+                supplier_name=row.supplier_name,
+                writeoff_document_id=row.writeoff_document_id,
+                writeoff_number=row.writeoff_number,
+                writeoff_error=row.writeoff_error,
+                decided_at=row.decided_at,
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get(
+    "/workup-review",
+    response_model=WorkupReviewLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_workup_review(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkupReviewLedgerOut:
+    """Очередь подтверждения проработки за месяц."""
+    month_start = _month_or_422(month)
+    # Очередь достраивается на чтении: товары проработки появляются ночным синком ОПиУ, и
+    # ждать отдельного прогона, чтобы задать вопрос, незачем.
+    await workup_review.build_review_queue(session, month_start)
+    await session.commit()
+    rows = await workup_review.list_reviews(session, month_start)
+    return _workup_review_out(month_start, rows)
+
+
+@router.post(
+    "/workup-review/{review_id}/confirm",
+    response_model=WorkupReviewLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.manual_input"))],
+)
+async def confirm_workup_review(
+    review_id: uuid.UUID,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> WorkupReviewLedgerOut:
+    """«Да, проработка» — система списывает товар актом в iiko."""
+    month_start = _month_or_422(month)
+    try:
+        await workup_review.confirm_workup(session, review_id, user_id=actor.user_id)
+    except workup_review.WorkupReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+    rows = await workup_review.list_reviews(session, month_start)
+    return _workup_review_out(month_start, rows)
+
+
+@router.post(
+    "/workup-review/{review_id}/reject",
+    response_model=WorkupReviewLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.manual_input"))],
+)
+async def reject_workup_review(
+    review_id: uuid.UUID,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> WorkupReviewLedgerOut:
+    """«Нет, не проработка» — товар возвращается в обычную разметку."""
+    month_start = _month_or_422(month)
+    try:
+        await workup_review.reject_workup(session, review_id, user_id=actor.user_id)
+    except workup_review.WorkupReviewError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
+    rows = await workup_review.list_reviews(session, month_start)
+    return _workup_review_out(month_start, rows)
