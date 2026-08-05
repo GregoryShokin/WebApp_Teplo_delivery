@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from app.services.pnl import formulas
-from app.services.pnl.projector import INVERTED_IIKO_METRICS, rubles
+from app.services.pnl.projector import IIKO_LINE_METRIC, INVERTED_IIKO_METRICS, rubles
 from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources.acquiring import parse_commission
@@ -118,18 +118,34 @@ class TestNotUsedLines:
         assert missing == []
 
 
-class TestInventorySign:
-    """Недостача упаковки — расход, а не доход."""
+class TestInventoryVersusStock:
+    """Результат инвентаризации и складской оборот — разные величины, и их уже путали.
 
-    def test_both_inventory_metrics_are_inverted(self) -> None:
+    Инвентаризация мерит ПОТЕРЮ: расхождение книжного остатка с фактическим. Roll-forward
+    «начало + приход − конец» мерит РАСХОД ЗА ПЕРИОД, то есть ровно то, что считает фудкост.
+    Подмена первого вторым выключила из июля 2026 расход 21 018,27 ₽ и не дала замены:
+    потребление уже было посчитано, потери перестали считаться вовсе.
+    """
+
+    def test_inventory_metrics_are_inverted(self) -> None:
         # Строка отчёта держит расход положительным; зеркало iiko отдаёт недостачу минусом.
-        # Забыть здесь одну из двух метрик — значит показать соседние строки в разных
-        # соглашениях, что уже случалось.
         assert set(INVERTED_IIKO_METRICS) == {"packaging_result", "pizza_box_result"}
 
-    def test_shortage_becomes_positive_expense(self) -> None:
-        mirror = Decimal("-30810.00")  # недостача в терминах iiko
-        assert -mirror == Decimal("30810.00")
+    def test_stock_metrics_are_not_pnl_lines(self) -> None:
+        # Roll-forward в ОПиУ не идёт ни при каком знаке: он задвоил бы себестоимость.
+        stock_metrics = {"stock_consumption", "stock_closing_balance"}
+        assert not stock_metrics & set(IIKO_LINE_METRIC.values())
+        assert not stock_metrics & set(INVERTED_IIKO_METRICS)
+
+    def test_inventory_lines_are_fed_from_the_variance_metric(self) -> None:
+        assert IIKO_LINE_METRIC["packaging_inventory"] == "packaging_result"
+        assert IIKO_LINE_METRIC["pizza_box_inventory"] == "pizza_box_result"
+
+    def test_shortage_is_expense_and_surplus_compensates(self) -> None:
+        shortage_in_iiko = Decimal("-28308.86")  # недостача упаковки в терминах iiko
+        surplus_in_iiko = Decimal("7290.59")  # излишек коробок
+        assert -shortage_in_iiko == Decimal("28308.86")
+        assert -surplus_in_iiko == Decimal("-7290.59")
 
 
 class TestWaitingMonthAttribution:

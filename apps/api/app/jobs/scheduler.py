@@ -10,6 +10,7 @@ from app.jobs.counterparty_invoice_sync_job import run_counterparty_invoice_sync
 from app.jobs.depreciation_job import run_depreciation_job
 from app.jobs.employee_sync_job import run_employee_sync_job
 from app.jobs.lease_accrual_job import run_lease_accrual_job
+from app.jobs.pnl_iiko_sync_job import run_pnl_iiko_sync_job
 from app.jobs.sbis_sync_job import run_sbis_sync_job
 from app.jobs.service_agreement_accrual_job import run_service_agreement_accrual_job
 from app.jobs.subscription_accrual_job import run_subscription_accrual_job
@@ -110,6 +111,19 @@ def register_jobs(scheduler: BackgroundScheduler) -> None:
         hour=0,
         minute=10,
         id="supplier_closing_activation",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # Ночное зеркало ОПиУ: перечитываем текущий и предыдущий месяц из iiko. Предыдущий
+    # нужен для запоздавших накладных и финальной инвентаризации; кроме контрольных итогов
+    # джоба сохраняет расшифровку whitelist-товаров для леджера на странице ОПиУ.
+    scheduler.add_job(
+        run_pnl_iiko_sync_job,
+        "cron",
+        hour=4,
+        minute=15,
+        id="pnl_iiko_month_sync",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

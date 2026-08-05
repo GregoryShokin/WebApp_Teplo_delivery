@@ -386,6 +386,196 @@ class PnlIikoFact(Base):
     )
 
 
+class PnlPartnerCommissionRule(Base):
+    """Ставка партнёра и сохранённый OLAP-пресет, из которого берётся его выручка.
+
+    Ставка хранится отдельно от факта: партнёров станет больше, договорный процент может
+    измениться, а уже закрытый месяц обязан сохранить ставку, по которой был рассчитан.
+    ``partner_key`` — нормализованное имя клиента из ``Delivery.CustomerName``; исходное имя
+    остаётся в ``partner_name`` для понятного отображения владельцу.
+    """
+
+    __tablename__ = "pnl_partner_commission_rule"
+    __table_args__ = (
+        CheckConstraint(
+            "commission_rate >= 0 and commission_rate <= 1",
+            name="ck_pnl_partner_commission_rule_rate",
+        ),
+        Index("uq_pnl_partner_commission_rule_key", "partner_key", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    partner_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    partner_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    commission_rate: Mapped[Decimal] = mapped_column(Numeric(7, 6), nullable=False)
+    source_preset_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PnlPartnerCommissionFact(Base):
+    """Месячный расчёт комиссии: выручка партнёра × ставка договора.
+
+    Это детализация агрегата ``PnlIikoFact(metric_code='partner_commission')``. В ней
+    намеренно снимком лежат и имя, и ставка: изменение карточки партнёра не переписывает
+    объяснение уже рассчитанного месяца.
+    """
+
+    __tablename__ = "pnl_partner_commission_fact"
+    __table_args__ = (
+        CheckConstraint(
+            "commission_rate >= 0 and commission_rate <= 1",
+            name="ck_pnl_partner_commission_fact_rate",
+        ),
+        Index(
+            "uq_pnl_partner_commission_fact_slot",
+            "period_month",
+            "rule_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pnl_partner_commission_rule.id", ondelete="RESTRICT"), nullable=False
+    )
+    partner_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    partner_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    revenue_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    commission_rate: Mapped[Decimal] = mapped_column(Numeric(7, 6), nullable=False)
+    commission_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    rows_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    source_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PnlIikoGoodsFact(Base):
+    """Вклад одной номенклатуры whitelist в месячную товарную строку ОПиУ.
+
+    ``PnlIikoFact`` хранит контрольный итог корзины, а эта таблица — объяснение итога.
+    Данные сохраняются в тот же момент синхронизации: повторно ходить в iiko при открытии
+    вкладки нельзя, потому что Server доступен только с прод-адреса и ограничивает частоту.
+    """
+
+    __tablename__ = "pnl_iiko_goods_fact"
+    __table_args__ = (
+        CheckConstraint(
+            "source_kind in ('inventory', 'incoming_invoice')",
+            name="ck_pnl_iiko_goods_fact_source_kind",
+        ),
+        Index(
+            "uq_pnl_iiko_goods_fact_slot",
+            "period_month",
+            "metric_code",
+            "source_kind",
+            "iiko_product_guid",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    metric_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    line_code: Mapped[str] = mapped_column(
+        ForeignKey("pnl_line.code", ondelete="RESTRICT"), nullable=False
+    )
+    source_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Знак хранится ровно как в iiko. В расходное соглашение он переводится при чтении,
+    # тем же правилом, которым проектор переводит контрольный итог корзины.
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    rows_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PnlIikoStockFact(Base):
+    """Месячный roll-forward складского товара из двух снимков iiko.
+
+    Таблица хранит сырой мост для ОПиУ и будущего Баланса: начальный остаток, закупки,
+    конечный остаток и вычисленный фактический расход. Внутренние перемещения между
+    складами взаимно погашаются, потому что снимки агрегируются по всем складам бизнеса.
+    """
+
+    __tablename__ = "pnl_iiko_stock_fact"
+    __table_args__ = (
+        Index(
+            "uq_pnl_iiko_stock_fact_slot",
+            "period_month",
+            "iiko_product_guid",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    product_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    opening_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    opening_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    receipts_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    closing_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    closing_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    consumption_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    stores_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PnlIikoProductObservation(Base):
+    """Вся номенклатура, встреченная в товарных источниках iiko за месяц.
+
+    Детализация ОПиУ хранит только уже размеченные товары. Этот реестр намеренно шире:
+    он сохраняет и неизвестные GUID, чтобы они не исчезали из расчёта молча, а попадали
+    в очередь разметки вместе с суммой и источником.
+    """
+
+    __tablename__ = "pnl_iiko_product_observation"
+    __table_args__ = (
+        CheckConstraint(
+            "source_kind in ('inventory', 'incoming_invoice')",
+            name="ck_pnl_iiko_product_observation_source_kind",
+        ),
+        Index(
+            "uq_pnl_iiko_product_observation_slot",
+            "period_month",
+            "source_kind",
+            "iiko_product_guid",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    product_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Для складского источника это вычисленный фактический расход (начало + приход − конец),
+    # для накладных — стоимость закупки.
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    rows_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class PnlProductWhitelist(Base):
     """Товар iiko → товарная строка ОПиУ.
 
@@ -397,27 +587,86 @@ class PnlProductWhitelist(Base):
     __tablename__ = "pnl_product_whitelist"
     __table_args__ = (
         CheckConstraint(
-            "include_status in ('include', 'requires_owner_review', 'exclude')",
+            "include_status in "
+            "('include', 'requires_owner_review', 'exclude', 'stocked')",
             name="ck_pnl_product_whitelist_status",
         ),
+        CheckConstraint(
+            "source_kind in ('inventory', 'incoming_invoice')",
+            name="ck_pnl_product_whitelist_source_kind",
+        ),
         Index(
-            "uq_pnl_product_whitelist_guid_line",
+            "uq_pnl_product_whitelist_guid_source",
             "iiko_product_guid",
-            "line_code",
+            "source_kind",
             unique=True,
         ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
-    line_code: Mapped[str] = mapped_column(
-        ForeignKey("pnl_line.code", ondelete="RESTRICT"), nullable=False
+    source_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    line_code: Mapped[str | None] = mapped_column(
+        ForeignKey("pnl_line.code", ondelete="RESTRICT"), nullable=True
     )
-    # requires_owner_review — расхождение с контрольной суммой: в расчёт НЕ идёт, но
-    # показывается отдельной цифрой «не отнесено», чтобы пробел был виден.
+    # requires_owner_review — решение ещё нужно владельцу; stocked — товар учитывается
+    # через складской roll-forward (начало + приходы − конец), а не как прямой расход
+    # накладной. Оба статуса в прямые товарные расходы не входят.
     include_status: Mapped[str] = mapped_column(String(24), nullable=False)
     product_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    product_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PnlProductMonthlyDecision(Base):
+    """Временное решение по неизвестному товару только для одного месяца.
+
+    ``workup`` позволяет не занижать расход открытого периода, но намеренно не становится
+    whitelist-правилом. В следующем месяце того же GUID в этой таблице ещё нет, поэтому он
+    снова возвращается владельцу на разметку.
+    """
+
+    __tablename__ = "pnl_product_monthly_decision"
+    __table_args__ = (
+        CheckConstraint(
+            "source_kind in ('inventory', 'incoming_invoice')",
+            name="ck_pnl_product_monthly_decision_source_kind",
+        ),
+        CheckConstraint(
+            "decision_kind = 'workup'",
+            name="ck_pnl_product_monthly_decision_kind",
+        ),
+        Index(
+            "uq_pnl_product_monthly_decision_slot",
+            "period_month",
+            "iiko_product_guid",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_month: Mapped[date] = mapped_column(Date, nullable=False)
+    iiko_product_guid: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    decision_kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="workup", server_default=text("'workup'")
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

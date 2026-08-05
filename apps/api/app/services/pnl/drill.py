@@ -41,6 +41,7 @@ from app.services.pnl import projector
 from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import deposits as deposits_source
+from app.services.pnl.sources import iiko as iiko_source
 from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import manual as manual_source
 from app.services.pnl.sources import payroll as payroll_source
@@ -613,6 +614,56 @@ async def _iiko_group(
     session: AsyncSession, result: DrillResult, line_code: str, month_start: date
 ) -> None:
     """Зеркало iiko — по направлениям. Строка ``total`` не дублируется: она и есть итог."""
+    if line_code == "partner_commission":
+        items = await iiko_source.month_partner_commissions(session, month_start)
+        if not items:
+            return
+        group = DrillGroup(
+            stream="iiko_partners",
+            title="Расчёты с партнёрами",
+            amount=sum((item.commission_amount for item in items), Decimal("0.00")),
+            note="Выручка со скидкой из OLAP «Отчёт о партнёрах» × договорная ставка",
+        )
+        for item in items:
+            rate = item.commission_rate * Decimal("100")
+            group.rows.append(
+                DrillRow(
+                    title=item.partner_name,
+                    subtitle=(
+                        f"выручка {item.revenue_amount:.2f} ₽ × {rate.normalize()}%; "
+                        f"{item.rows_count} строк OLAP"
+                    ),
+                    row_date=month_start,
+                    amount=item.commission_amount,
+                    kind="included",
+                )
+            )
+        result.groups.append(group)
+        return
+
+    if line_code == "goods_workup":
+        items = await iiko_source.month_workup_items(session, month_start)
+        if not items:
+            return
+        group = DrillGroup(
+            stream="iiko_workup",
+            title="Временная проработка номенклатуры",
+            amount=sum((item.amount for item in items), Decimal("0.00")),
+            note="В следующем месяце эти товары снова потребуют постоянного решения",
+        )
+        for item in sorted(items, key=lambda value: -abs(value.amount)):
+            group.rows.append(
+                DrillRow(
+                    title=item.product_name,
+                    subtitle="Приходные накладные",
+                    row_date=month_start,
+                    amount=item.amount,
+                    kind="included",
+                )
+            )
+        result.groups.append(group)
+        return
+
     metric = projector.IIKO_LINE_METRIC.get(line_code)
     if metric is None:
         return
@@ -668,12 +719,7 @@ async def _inventory_group(
     month_start: date,
     month_end: date,
 ) -> None:
-    """«Результаты ревизии» — по одной строке на проведённую ревизию.
-
-    Знак инвертирован так же, как в источнике: недостача положительна (расход), излишек
-    отрицателен. Показать здесь сырой знак базы значило бы объяснять строку числами, которые
-    ей противоречат.
-    """
+    """«Результаты ревизии» — недостача по каждой проведённой ревизии."""
     if line_code != "audit_results":
         return
     audits = (
@@ -696,7 +742,10 @@ async def _inventory_group(
         stream="inventory",
         title="Проведённые ревизии",
         amount=Decimal("0.00"),
-        note="Недостача всего по данным iiko — не штрафная база и не нетто с излишками",
+        note=(
+            "Недостача всего из iiko. Излишки видны в товарном леджере отдельно "
+            "и расход не уменьшают."
+        ),
     )
     totals = {
         audit_id: value
@@ -714,8 +763,6 @@ async def _inventory_group(
     for audit in sorted(audits, key=lambda item: item.business_date):
         amount = Decimal(totals.get(audit.id) or 0)
         group.amount += amount
-        # Штрафная база рядом со своей ревизией: владелец сверяет строку с экраном ревизий,
-        # и без неё пришлось бы гадать, почему число не совпало с колонкой «Штраф».
         penalty_base = audit.total_shortage_amount or Decimal("0.00")
         group.rows.append(
             DrillRow(

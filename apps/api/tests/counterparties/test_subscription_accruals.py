@@ -552,6 +552,215 @@ async def test_settlement_prefers_prepayment_of_the_same_period(
         assert second_quarter.amount_settled == Decimal("0.00")
 
 
+async def test_unperioded_closing_prefers_exact_bill_and_inherits_its_period(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Акт без периода связывается с равным счётом, а не со старым большим платежом."""
+    from app.services import supplier_service_periods
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="АЙКО-точная-сумма", inn="1655166016")
+        legacy = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="subscription",
+            amount=Decimal("16430.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            service_period_status="missing",
+        )
+        july_bill = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="prepaid_bill",
+            amount=Decimal("4260.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            service_period_status="ready",
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+        )
+        session.add_all([legacy, july_bill])
+        await session.flush()
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            number="070626-33538-лсп-акт",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
+        )
+
+        settled = await supplier_prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await supplier_service_periods.sync_invoice_accrual(session, act)
+
+        assert settled == Decimal("4260.00")
+        assert july_bill.amount_settled == Decimal("4260.00")
+        assert legacy.amount_settled == Decimal("0.00")
+        assert act.service_period_status == "ready"
+        assert act.service_period_start == date(2026, 7, 1)
+        assert act.service_period_end == date(2026, 7, 31)
+        assert act.service_period_source == "settled_prepayment"
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == act.id)
+        )
+        assert accrual is not None
+        assert accrual.service_period_start == date(2026, 7, 1)
+        assert accrual.service_period_end == date(2026, 7, 31)
+
+
+async def test_repair_unperioded_closings_rebuilds_old_fifo_cross_match(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ремонт освобождает старые перекрёстные зачёты и собирает их по точной сумме заново."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="АЙКО-ремонт-FIFO", inn="1655166017")
+        legacy = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="subscription",
+            amount=Decimal("16430.00"),
+            amount_settled=Decimal("16430.00"),
+            status="settled",
+            service_period_status="missing",
+        )
+        july_bill = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="prepaid_bill",
+            amount=Decimal("4260.00"),
+            amount_settled=Decimal("4260.00"),
+            status="settled",
+            service_period_status="ready",
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+        )
+        session.add_all([legacy, july_bill])
+        await session.flush()
+        small = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            number="АКТ-4260",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
+        )
+        large = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="16430.00",
+            number="АКТ-16430",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
+        )
+        small.payment_status = "paid"
+        large.payment_status = "paid"
+        session.add_all(
+            [
+                InvoicePaymentAllocation(
+                    invoice_id=small.id,
+                    source_kind="prepayment",
+                    prepayment_id=legacy.id,
+                    amount=Decimal("4260.00"),
+                ),
+                InvoicePaymentAllocation(
+                    invoice_id=large.id,
+                    source_kind="prepayment",
+                    prepayment_id=legacy.id,
+                    amount=Decimal("12170.00"),
+                ),
+                InvoicePaymentAllocation(
+                    invoice_id=large.id,
+                    source_kind="prepayment",
+                    prepayment_id=july_bill.id,
+                    amount=Decimal("4260.00"),
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await supplier_prepayments.repair_unperioded_closing_settlements(
+            session,
+            invoice_ids=[small.id, large.id],
+        )
+
+        assert result == {"documents": 2, "periods_restored": 1}
+        await session.refresh(small)
+        await session.refresh(large)
+        await session.refresh(legacy)
+        await session.refresh(july_bill)
+        assert small.service_period_start == date(2026, 7, 1)
+        assert small.service_period_end == date(2026, 7, 31)
+        assert large.service_period_start is None
+        assert july_bill.amount_settled == Decimal("4260.00")
+        assert legacy.amount_settled == Decimal("16430.00")
+        small_allocations = (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(
+                    InvoicePaymentAllocation.invoice_id == small.id
+                )
+            )
+        ).all()
+        large_allocations = (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(
+                    InvoicePaymentAllocation.invoice_id == large.id
+                )
+            )
+        ).all()
+        assert [(row.prepayment_id, row.amount) for row in small_allocations] == [
+            (july_bill.id, Decimal("4260.00"))
+        ]
+        assert [(row.prepayment_id, row.amount) for row in large_allocations] == [
+            (legacy.id, Decimal("16430.00"))
+        ]
+
+
+async def test_equal_open_bills_of_different_periods_do_not_infer_period(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Одинаковая сумма двух месяцев не даёт права выбрать период по FIFO."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Два одинаковых счёта", inn="1655166018")
+        july = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="prepaid_bill",
+            amount=Decimal("4260.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            service_period_status="ready",
+            service_period_start=date(2026, 7, 1),
+            service_period_end=date(2026, 7, 31),
+        )
+        august = SupplierPrepayment(
+            counterparty_id=cp.id,
+            kind="prepaid_bill",
+            amount=Decimal("4260.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            service_period_status="ready",
+            service_period_start=date(2026, 8, 1),
+            service_period_end=date(2026, 8, 31),
+        )
+        session.add_all([july, august])
+        await session.flush()
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            number="АКТ-БЕЗ-ПЕРИОДА",
+            doc_kind="closing",
+            invoice_date=date(2026, 8, 31),
+            operational_scope="finance",
+        )
+
+        settled = await supplier_prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+
+        assert settled == Decimal("4260.00")
+        assert act.service_period_start is None
+        assert act.service_period_end is None
+        assert act.service_period_status != "ready"
+
+
 async def test_monthly_recognition_does_not_double_the_expense_line(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -701,9 +910,7 @@ async def test_fixed_tariff_recognizes_without_the_monthly_flag(async_session_fa
         assert created[0].amount == Decimal("13000.00")
 
         accrual = await session.scalar(
-            select(SupplierExpenseAccrual).where(
-                SupplierExpenseAccrual.invoice_id == created[0].id
-            )
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == created[0].id)
         )
         assert accrual.service_period_end == date(2026, 7, 31)
 

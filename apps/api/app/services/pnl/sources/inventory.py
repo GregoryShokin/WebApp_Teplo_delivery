@@ -59,6 +59,24 @@ class InventoryMonth:
             self.audit_dates = []
 
 
+async def load_packaging_guids(session: AsyncSession) -> set[str]:
+    """Товары, чьё расхождение уходит в СВОИ строки инвентаризации упаковки.
+
+    Берём по ``line_code``, а не по статусу: упаковка размечена как складская (``stocked``,
+    это нужно балансу) и при этом имеет строку ОПиУ. Именно пара «складской + со строкой» и
+    означает «его расхождение уже посчитано отдельно, сюда его брать нельзя».
+    """
+    from app.models.pnl import PnlProductWhitelist
+
+    rows = await session.execute(
+        select(PnlProductWhitelist.iiko_product_guid).where(
+            PnlProductWhitelist.source_kind == "inventory",
+            PnlProductWhitelist.line_code.in_(("packaging_inventory", "pizza_box_inventory")),
+        )
+    )
+    return {guid for guid in rows.scalars() if guid}
+
+
 async def build_inventory_month(
     session: AsyncSession,
     month_start: date,

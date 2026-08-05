@@ -1,7 +1,8 @@
 """Синхронизация месячных фактов iiko в зеркало ОПиУ.
 
 ЧТО ТЯНЕМ. Выручку без скидок и со скидками, себестоимость продаж (фудкост) — по направлениям,
-и зарплату курьеров. Всё остальное в отчёте живёт внутри приложения.
+комиссию партнёров из «Отчёта о партнёрах» и зарплату курьеров. Всё остальное в отчёте живёт
+внутри приложения.
 
 ТОЛЬКО СОХРАНЁННЫЕ ПРЕСЕТЫ, НИКАКОГО СВОЕГО ТЕЛА ЗАПРОСА. Собрать OLAP-запрос руками легко, и
 он даже вернёт похожие числа — но БЕЗ фильтров удалённых заказов и списанных позиций, потому
@@ -22,15 +23,26 @@ iiko Server ПРИВЯЗАН К IP ПРОДА. На локали и превью
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import anyio
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.pnl import PnlIikoFact
+from app.core.config import get_settings
+from app.models.pnl import (
+    PnlIikoFact,
+    PnlIikoGoodsFact,
+    PnlIikoProductObservation,
+    PnlIikoStockFact,
+    PnlPartnerCommissionFact,
+    PnlPartnerCommissionRule,
+    PnlProductMonthlyDecision,
+    PnlProductWhitelist,
+)
 from app.services.iiko_sync import (
     _load_export_employees_module,
     _load_source_credential_env,
@@ -43,6 +55,7 @@ REVENUE_PRESET_ID = "73a25778-dafb-4065-a820-1e9c7da6fed6"
 #: Сохранённый пресет «P&L по складам» (тип TRANSACTIONS) — из него берётся строка
 #: «Зарплата курьеров».
 PNL_PRESET_ID = "8c13763a-35bf-9f27-017f-5468b1e70021"
+PARTNER_PRESET_ID = "28b87ee7-0af5-41ad-baae-de735189169c"
 
 COURIER_ACCOUNT_NAME = "Зарплата курьеров"
 COURIER_ACCOUNT_TYPE = "EXPENSES"
@@ -61,6 +74,18 @@ METRIC_REVENUE_GROSS = "revenue_gross"
 METRIC_REVENUE_NET = "revenue_net"
 METRIC_FOOD_COST = "food_cost"
 METRIC_COURIER_SALARY = "courier_salary"
+METRIC_PARTNER_COMMISSION = "partner_commission"
+
+_PARTNER_SPACES = re.compile(r"\s+")
+
+
+def normalize_partner_name(value: Any) -> str:
+    """Стабильный ключ имени из OLAP: регистр и случайные пробелы не меняют партнёра."""
+    return _PARTNER_SPACES.sub(" ", str(value or "").strip()).casefold()
+
+
+def money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def month_bounds_exclusive(month: dt.date) -> tuple[dt.date, dt.date]:
@@ -99,6 +124,20 @@ def _field(row: dict[str, Any], *names: str) -> Any:
 
 
 @dataclass(slots=True)
+class PartnerCommissionAmount:
+    """Одна строка будущего леджера «Расчёты с партнёрами»."""
+
+    rule_id: Any
+    partner_key: str
+    partner_name: str
+    revenue_amount: Decimal
+    commission_rate: Decimal
+    commission_amount: Decimal
+    rows_count: int
+    source_ref: str
+
+
+@dataclass(slots=True)
 class SyncResult:
     """Что синк сделал за месяц — для лога и для предупреждений в отчёте."""
 
@@ -107,6 +146,52 @@ class SyncResult:
     unmapped_directions: set[str] = field(default_factory=set)
     rows_seen: int = 0
     changed: list[str] = field(default_factory=list)
+    fact_rows_count: dict[tuple[str, str], int] = field(default_factory=dict)
+    fact_source_ref: dict[tuple[str, str], str] = field(default_factory=dict)
+    partner_facts: list[PartnerCommissionAmount] = field(default_factory=list)
+
+
+def aggregate_partner_rows(
+    rows: list[dict[str, Any]],
+    rules: dict[str, tuple[Any, str, Decimal, str]],
+) -> tuple[list[PartnerCommissionAmount], set[str]]:
+    """Выручка со скидкой по партнёру → договорная комиссия.
+
+    ``rules`` содержит: нормализованное имя → (id, отображаемое имя, ставка, preset id).
+    Телефон клиента из группировки OLAP намеренно не сохраняется — для расчёта он не нужен.
+    """
+    revenue: dict[str, Decimal] = {}
+    counts: dict[str, int] = {}
+    unmapped: set[str] = set()
+    for row in rows:
+        raw_name = str(_field(row, "Delivery.CustomerName") or "").strip()
+        partner_key = normalize_partner_name(raw_name)
+        if not partner_key:
+            continue
+        if partner_key not in rules:
+            unmapped.add(raw_name or partner_key)
+            continue
+        revenue[partner_key] = revenue.get(partner_key, Decimal("0.00")) + _number(
+            _field(row, "DishDiscountSumInt", "sumAfterDiscountWithoutVAT")
+        )
+        counts[partner_key] = counts.get(partner_key, 0) + 1
+
+    result: list[PartnerCommissionAmount] = []
+    for partner_key, (rule_id, partner_name, rate, preset_id) in rules.items():
+        amount = money(revenue.get(partner_key, Decimal("0.00")))
+        result.append(
+            PartnerCommissionAmount(
+                rule_id=rule_id,
+                partner_key=partner_key,
+                partner_name=partner_name,
+                revenue_amount=amount,
+                commission_rate=rate,
+                commission_amount=money(amount * rate),
+                rows_count=counts.get(partner_key, 0),
+                source_ref=preset_id,
+            )
+        )
+    return result, unmapped
 
 
 def aggregate_revenue_rows(rows: list[dict[str, Any]]) -> SyncResult:
@@ -186,6 +271,42 @@ def _parse_rows(data: bytes | str | list | dict) -> list[dict[str, Any]]:
     return []
 
 
+async def fetch_partner_commissions(
+    session: AsyncSession,
+    start: dt.date,
+    end_exclusive: dt.date,
+) -> tuple[list[PartnerCommissionAmount], set[str]]:
+    """Прочитать каждый настроенный сохранённый пресет один раз и применить ставки."""
+    rules = list(
+        (
+            await session.scalars(
+                select(PnlPartnerCommissionRule).where(PnlPartnerCommissionRule.is_active.is_(True))
+            )
+        ).all()
+    )
+    by_preset: dict[str, list[PnlPartnerCommissionRule]] = {}
+    for rule in rules:
+        by_preset.setdefault(rule.source_preset_id, []).append(rule)
+
+    facts: list[PartnerCommissionAmount] = []
+    unmapped: set[str] = set()
+    for preset_id, preset_rules in by_preset.items():
+        rows = await _fetch_preset(preset_id, start, end_exclusive)
+        mapping = {
+            normalize_partner_name(rule.partner_key): (
+                rule.id,
+                rule.partner_name,
+                Decimal(rule.commission_rate),
+                rule.source_preset_id,
+            )
+            for rule in preset_rules
+        }
+        calculated, unknown = aggregate_partner_rows(rows, mapping)
+        facts.extend(calculated)
+        unmapped.update(unknown)
+    return facts, unmapped
+
+
 async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
     """Залить месячные факты iiko в зеркало. Идемпотентно: повторный прогон обновляет."""
     await _load_source_credential_env(session)
@@ -198,12 +319,36 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
     courier_rows = await _fetch_preset(PNL_PRESET_ID, start, end_exclusive)
     result.facts[(METRIC_COURIER_SALARY, "total")] = courier_salary_from_rows(courier_rows)
 
-    goods, notes = await fetch_goods_metrics(session, start)
-    for metric, amount in goods.items():
+    partner_facts, unknown_partners = await fetch_partner_commissions(session, start, end_exclusive)
+    result.partner_facts = partner_facts
+    result.facts[(METRIC_PARTNER_COMMISSION, "total")] = sum(
+        (row.commission_amount for row in partner_facts), Decimal("0.00")
+    )
+    result.fact_rows_count[(METRIC_PARTNER_COMMISSION, "total")] = sum(
+        row.rows_count for row in partner_facts
+    )
+    result.fact_source_ref[(METRIC_PARTNER_COMMISSION, "total")] = ",".join(
+        sorted({row.source_ref for row in partner_facts})
+    )
+    if unknown_partners:
+        result.changed.append("Партнёры без ставки: " + ", ".join(sorted(unknown_partners)))
+
+    goods = await fetch_goods_metrics(session, start)
+    for metric, amount in goods.metrics.items():
         result.facts[(metric, "total")] = amount
-    result.changed.extend(notes)
+    # Провенанс товарных метрик: без него в зеркале встанет пресет выручки, и через месяц
+    # никто не поймёт, откуда взялась цифра. Одна карта на все товарные эндпоинты.
+    for metric, endpoint in GOODS_METRIC_SOURCE.items():
+        if metric in goods.metrics:
+            result.fact_source_ref[(metric, "total")] = endpoint
+    result.changed.extend(goods.notes)
 
     for (metric, direction), amount in sorted(result.facts.items()):
+        fact_key = (metric, direction)
+        rows_count = result.fact_rows_count.get(fact_key, result.rows_seen)
+        source_ref = result.fact_source_ref.get(fact_key) or (
+            PNL_PRESET_ID if metric == METRIC_COURIER_SALARY else REVENUE_PRESET_ID
+        )
         existing = await session.scalar(
             select(PnlIikoFact).where(
                 PnlIikoFact.period_month == start,
@@ -218,10 +363,8 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
                     metric_code=metric,
                     direction=direction,
                     amount=amount,
-                    rows_count=result.rows_seen,
-                    source_ref=REVENUE_PRESET_ID
-                    if metric != METRIC_COURIER_SALARY
-                    else PNL_PRESET_ID,
+                    rows_count=rows_count,
+                    source_ref=source_ref,
                 )
             )
             continue
@@ -231,61 +374,336 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
             result.changed.append(f"{metric}/{direction}: было {existing.amount}, стало {amount}")
             existing.previous_amount = existing.amount
         existing.amount = amount
-        existing.rows_count = result.rows_seen
+        existing.rows_count = rows_count
+        existing.source_ref = source_ref
+
+    await session.execute(
+        delete(PnlPartnerCommissionFact).where(PnlPartnerCommissionFact.period_month == start)
+    )
+    for item in result.partner_facts:
+        session.add(
+            PnlPartnerCommissionFact(
+                period_month=start,
+                rule_id=item.rule_id,
+                partner_key=item.partner_key,
+                partner_name=item.partner_name,
+                revenue_amount=item.revenue_amount,
+                commission_rate=item.commission_rate,
+                commission_amount=item.commission_amount,
+                rows_count=item.rows_count,
+                source_ref=item.source_ref,
+            )
+        )
+
+    # Детализация заменяется только по тем внешним источникам, которые успешно ответили.
+    # Если iiko временно недоступен, старый проверенный разрез не стирается пустотой.
+    if goods.refreshed_sources:
+        if "inventory" in goods.refreshed_sources:
+            await session.execute(
+                delete(PnlIikoStockFact).where(PnlIikoStockFact.period_month == start)
+            )
+            for stock_fact in goods.stock_facts:
+                session.add(
+                    PnlIikoStockFact(
+                        period_month=start,
+                        iiko_product_guid=stock_fact.iiko_product_guid,
+                        product_name=stock_fact.product_name,
+                        product_code=stock_fact.product_code,
+                        opening_quantity=stock_fact.opening_quantity,
+                        opening_amount=stock_fact.opening_amount,
+                        receipts_amount=stock_fact.receipts_amount,
+                        closing_quantity=stock_fact.closing_quantity,
+                        closing_amount=stock_fact.closing_amount,
+                        consumption_amount=stock_fact.consumption_amount,
+                        stores_count=stock_fact.stores_count,
+                    )
+                )
+        await session.execute(
+            delete(PnlIikoProductObservation).where(
+                PnlIikoProductObservation.period_month == start,
+                PnlIikoProductObservation.source_kind.in_(goods.refreshed_sources),
+            )
+        )
+        for observation in goods.observations:
+            session.add(
+                PnlIikoProductObservation(
+                    period_month=start,
+                    source_kind=observation.source_kind,
+                    iiko_product_guid=observation.iiko_product_guid,
+                    product_name=observation.product_name,
+                    product_code=observation.product_code,
+                    amount=observation.amount,
+                    rows_count=observation.rows_count,
+                )
+            )
+        await session.execute(
+            delete(PnlIikoGoodsFact).where(
+                PnlIikoGoodsFact.period_month == start,
+                PnlIikoGoodsFact.source_kind.in_(goods.refreshed_sources),
+            )
+        )
+        product_guids = {detail.iiko_product_guid for detail in goods.details}
+        product_names = {
+            guid: name
+            for guid, name in (
+                await session.execute(
+                    select(
+                        PnlProductWhitelist.iiko_product_guid,
+                        PnlProductWhitelist.product_name,
+                    ).where(PnlProductWhitelist.iiko_product_guid.in_(product_guids))
+                )
+            ).all()
+        }
+        observation_names = {
+            (item.source_kind, item.iiko_product_guid): item.product_name
+            for item in goods.observations
+            if item.product_name
+        }
+        line_by_metric = {metric: line for line, metric in WHITELIST_METRIC.items()}
+        for detail in goods.details:
+            line_code = line_by_metric.get(detail.metric_code)
+            if line_code is None:
+                continue
+            session.add(
+                PnlIikoGoodsFact(
+                    period_month=start,
+                    metric_code=detail.metric_code,
+                    line_code=line_code,
+                    source_kind=detail.source_kind,
+                    iiko_product_guid=detail.iiko_product_guid,
+                    product_name=(
+                        observation_names.get((detail.source_kind, detail.iiko_product_guid))
+                        or product_names.get(detail.iiko_product_guid)
+                    ),
+                    amount=detail.amount,
+                    rows_count=detail.rows_count,
+                )
+            )
+        await session.flush()
+
+        if goods.menu_snapshot_complete and goods.refreshed_sources == {
+            "inventory",
+            "incoming_invoice",
+        }:
+            # Импорты локальные намеренно: ledgers использует константы этого модуля, поэтому
+            # импорт на уровне файла создал бы цикл. К моменту вызова iiko_sync уже загружен.
+            from app.services.pnl.goods_classifier import auto_classify_new_goods
+            from app.services.pnl.ledgers import rebuild_goods_from_observations
+
+            automatic = await auto_classify_new_goods(
+                session,
+                month_start=start,
+                month_end=end_exclusive - dt.timedelta(days=1),
+                observations=goods.observations,
+                products_payload=goods.products_payload,
+                charts_payload=goods.charts_payload,
+                settings=get_settings(),
+            )
+            if automatic.changed or automatic.unresolved:
+                result.changed.append(automatic.summary())
+            result.changed.extend(automatic.model_errors)
+        # Любая свежая выгрузка должна пересобрать суммы уже по текущим правилам, даже если
+        # LLM не создала нового правила. Иначе новые остатки/накладные будут ждать ещё сутки.
+        from app.services.pnl.ledgers import rebuild_goods_from_observations
+
+        for source_kind in goods.refreshed_sources:
+            await rebuild_goods_from_observations(session, start, source_kind)
+        for metric_code in set(WHITELIST_METRIC.values()) | {
+            METRIC_STOCK_CONSUMPTION,
+            METRIC_STOCK_CLOSING,
+        }:
+            refreshed = await session.scalar(
+                select(PnlIikoFact).where(
+                    PnlIikoFact.period_month == start,
+                    PnlIikoFact.metric_code == metric_code,
+                    PnlIikoFact.direction == "total",
+                )
+            )
+            if refreshed is not None:
+                result.facts[(metric_code, "total")] = refreshed.amount
     await session.flush()
     return result
 
 
-# ── Товарные строки: списания, инвентаризация упаковки, приходные накладные ──────────
-#
-# ФОРМАТЫ ДАТ У ТРЁХ ЭНДПОИНТОВ РАЗНЫЕ, и это не придирка: ``/documents/export/incomingInvoice``
-# на формате ``01.03.2026`` отвечает ошибкой 409, а ``/reports/storeOperations`` — наоборот,
-# ждёт именно его. Поэтому каждый запрос форматирует даты сам, а не через общий хелпер.
+# ── Товарные строки: списания, складские остатки, приходные накладные ────────────────
 
 WRITEOFF_ENDPOINT = "/v2/documents/writeoff"
+STOCK_BALANCE_ENDPOINT = "/v2/reports/balance/stores"
 INVENTORY_ENDPOINT = "/reports/storeOperations"
 INCOMING_INVOICE_ENDPOINT = "/documents/export/incomingInvoice"
+PRODUCTS_ENDPOINT = "/v2/entities/products/list"
+ASSEMBLY_CHARTS_ENDPOINT = "/v2/assemblyCharts/getAll"
 
 PROCESSED_STATUS = "PROCESSED"
 
 METRIC_WRITEOFF = "writeoff_cost"
-METRIC_PACKAGING = "packaging_result"
-METRIC_PIZZA_BOX = "pizza_box_result"
+METRIC_STOCK_CONSUMPTION = "stock_consumption"
+METRIC_STOCK_CLOSING = "stock_closing_balance"
 METRIC_SHOP_MAINTENANCE = "shop_maintenance_invoices"
 METRIC_AUX_GOODS = "aux_goods_invoices"
+METRIC_PACKAGING = "packaging_result"
+METRIC_PIZZA_BOX = "pizza_box_result"
 
 #: Корзина whitelist → метрика зеркала.
 WHITELIST_METRIC = {
-    "packaging_inventory": METRIC_PACKAGING,
-    "pizza_box_inventory": METRIC_PIZZA_BOX,
     "shop_maintenance": METRIC_SHOP_MAINTENANCE,
     "aux_goods": METRIC_AUX_GOODS,
+    "packaging_inventory": METRIC_PACKAGING,
+    "pizza_box_inventory": METRIC_PIZZA_BOX,
 }
 
-
-#: Корзины, которые считаются ПО ИНВЕНТАРИЗАЦИИ (остаток на складе).
-INVENTORY_BASKETS = frozenset({METRIC_PACKAGING, METRIC_PIZZA_BOX})
 #: Корзины, которые считаются ПО ПРИХОДНЫМ НАКЛАДНЫМ (закупка).
 INVOICE_BASKETS = frozenset({METRIC_SHOP_MAINTENANCE, METRIC_AUX_GOODS})
 
+#: Метрика зеркала → эндпоинт, который её посчитал. Пишется в ``source_ref``.
+GOODS_METRIC_SOURCE = {
+    METRIC_WRITEOFF: WRITEOFF_ENDPOINT,
+    METRIC_STOCK_CONSUMPTION: STOCK_BALANCE_ENDPOINT,
+    METRIC_STOCK_CLOSING: STOCK_BALANCE_ENDPOINT,
+    METRIC_SHOP_MAINTENANCE: INCOMING_INVOICE_ENDPOINT,
+    METRIC_AUX_GOODS: INCOMING_INVOICE_ENDPOINT,
+    METRIC_PACKAGING: INVENTORY_ENDPOINT,
+    METRIC_PIZZA_BOX: INVENTORY_ENDPOINT,
+}
 
-async def load_whitelist(session: AsyncSession) -> dict[str, str]:
-    """Идентификатор товара → метрика. Берём только ``include``.
+#: Корзины, которые считаются ПО РЕЗУЛЬТАТУ ИНВЕНТАРИЗАЦИИ — расхождению книги с фактом.
+#:
+#: ЭТО НЕ ТО ЖЕ САМОЕ, ЧТО СКЛАДСКОЙ ROLL-FORWARD, и подмена одного другим уже случилась.
+#: ``stock_consumption`` = начало + приход − конец = РАСХОД ЗА ПЕРИОД, то есть ровно то, что
+#: считает фудкост; отдельной строкой ОПиУ он идти не может ни при каком раскладе. Строка
+#: эталона «Результаты инвентаризации упаковки» мерит ПОТЕРЮ: сколько должно быть по учёту
+#: против того, что пересчитали. Владелец сформулировал это 04.08.2026 одной фразой — «это по
+#: факту фудкост, это расход за весь период, а не разница между фактом и книгой».
+#:
+#: Когда обе строки выключили в пользу roll-forward, из июля молча ушёл расход 21 018,27 ₽
+#: (недостача упаковки 28 308,86 минус излишек коробок 7 290,59), а замены не появилось:
+#: потребление уже посчитано фудкостом, потери не считались нигде.
+INVENTORY_BASKETS = frozenset({METRIC_PACKAGING, METRIC_PIZZA_BOX})
+
+_CENTS = Decimal("0.01")
+
+
+@dataclass(slots=True)
+class GoodsMetricDetail:
+    metric_code: str
+    source_kind: str
+    iiko_product_guid: str
+    amount: Decimal
+    rows_count: int
+
+
+@dataclass(slots=True)
+class GoodsProductObservation:
+    source_kind: str
+    iiko_product_guid: str
+    product_name: str | None
+    product_code: str | None
+    amount: Decimal
+    rows_count: int
+
+
+@dataclass(slots=True)
+class GoodsStockFact:
+    iiko_product_guid: str
+    product_name: str | None
+    product_code: str | None
+    opening_quantity: Decimal
+    opening_amount: Decimal
+    receipts_amount: Decimal
+    closing_quantity: Decimal
+    closing_amount: Decimal
+    consumption_amount: Decimal
+    stores_count: int
+
+
+@dataclass(slots=True)
+class GoodsSyncResult:
+    metrics: dict[str, Decimal] = field(default_factory=dict)
+    details: list[GoodsMetricDetail] = field(default_factory=list)
+    observations: list[GoodsProductObservation] = field(default_factory=list)
+    stock_facts: list[GoodsStockFact] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    refreshed_sources: set[str] = field(default_factory=set)
+    products_payload: Any = None
+    charts_payload: Any = None
+    menu_snapshot_complete: bool = False
+
+
+async def load_whitelist(
+    session: AsyncSession,
+    source_kind: str,
+    month: dt.date | None = None,
+) -> dict[str, str]:
+    """Идентификатор товара → метрика. Берём размеченные строкой позиции.
 
     Позиции ``requires_owner_review`` в расчёт НЕ идут: по ним суммы iiko не сошлись с
     контрольной расшифровкой, и включить их значило бы тихо принять спорную цифру. Они
     показываются отдельно как «не отнесено» — пробел должен быть виден.
+
+    ``stocked`` берётся НАРАВНЕ с ``include``, если у позиции есть ``line_code``. Статус и
+    строка отвечают на разные вопросы: первый — участвует ли товар в складском контуре
+    (нужно балансу), вторая — в какую строку ОПиУ идёт его инвентаризационное расхождение.
+    Коробка для пиццы одновременно и лежит на складе, и имеет свою строку эталона; фильтр
+    только по ``include`` вычёркивал её из отчёта вместе со всей упаковкой.
     """
     from app.models.pnl import PnlProductWhitelist
+    from app.services.pnl.revision_products import (
+        load_revision_product_guids,
+        normalize_iiko_product_guid,
+    )
 
     rows = (
         await session.execute(
             select(PnlProductWhitelist.iiko_product_guid, PnlProductWhitelist.line_code).where(
-                PnlProductWhitelist.include_status == "include"
+                PnlProductWhitelist.include_status.in_(("include", "stocked")),
+                PnlProductWhitelist.source_kind == source_kind,
+                PnlProductWhitelist.line_code.is_not(None),
             )
         )
     ).all()
-    return {guid: WHITELIST_METRIC[line] for guid, line in rows if line in WHITELIST_METRIC}
+    temporary_guids: set[str] = set()
+    if month is not None:
+        temporary_guids = set(
+            (
+                await session.execute(
+                    select(PnlProductMonthlyDecision.iiko_product_guid).where(
+                        PnlProductMonthlyDecision.period_month == month.replace(day=1),
+                        PnlProductMonthlyDecision.decision_kind == "workup",
+                    )
+                )
+            ).scalars()
+        )
+    blocked_guids = await load_revision_product_guids(session)
+    if source_kind != "inventory":
+        # Складской товар не может быть ПРЯМЫМ расходом накладной: его потребление уже
+        # посчитано складским контуром, и взять ещё и закупку значило бы задвоить.
+        #
+        # К самой инвентаризации этот запрет неприменим и раньше отменял всю правку целиком.
+        # Упаковка одновременно ЛЕЖИТ НА СКЛАДЕ (``stocked``, нужно балансу) и ИМЕЕТ СВОЮ
+        # СТРОКУ эталона, куда идёт её инвентаризационное расхождение. Общий блок гасил
+        # ровно те 25 позиций, которым 0263 вернула ``line_code``, и следующий же синк
+        # записал бы в обе строки 0,00 ₽ — молча и правдоподобно.
+        stocked_guids = (
+            (
+                await session.execute(
+                    select(PnlProductWhitelist.iiko_product_guid).where(
+                        PnlProductWhitelist.source_kind == "inventory",
+                        PnlProductWhitelist.include_status == "stocked",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        blocked_guids.update(normalize_iiko_product_guid(guid) for guid in stocked_guids)
+    return {
+        guid: WHITELIST_METRIC[line]
+        for guid, line in rows
+        if line is not None
+        and line in WHITELIST_METRIC
+        and guid not in temporary_guids
+        and normalize_iiko_product_guid(guid) not in blocked_guids
+    }
 
 
 def writeoff_total(payload: Any) -> Decimal:
@@ -337,6 +755,187 @@ def whitelist_totals(
     return totals
 
 
+def whitelist_details(
+    rows: list[dict[str, Any]],
+    whitelist: dict[str, str],
+    amount_field: str,
+    *,
+    source_kind: str,
+) -> list[GoodsMetricDetail]:
+    """Свернуть строки iiko по номенклатуре, не теряя вклад отдельных товаров."""
+    grouped: dict[tuple[str, str], tuple[Decimal, int]] = {}
+    for row in rows:
+        guid = str(_field(row, "product", "productId", "iiko_product_guid") or "").strip()
+        metric = whitelist.get(guid)
+        if metric is None:
+            continue
+        key = (metric, guid)
+        amount, count = grouped.get(key, (Decimal("0.00"), 0))
+        grouped[key] = (amount + _number(_field(row, amount_field)), count + 1)
+    return [
+        GoodsMetricDetail(
+            metric_code=metric,
+            source_kind=source_kind,
+            iiko_product_guid=guid,
+            amount=amount.quantize(_CENTS),
+            rows_count=count,
+        )
+        for (metric, guid), (amount, count) in sorted(grouped.items())
+    ]
+
+
+def _product_records(payload: Any) -> list[dict[str, Any]]:
+    """Развернуть ответ справочника товаров iiko независимо от обёртки версии API."""
+    import json
+
+    if isinstance(payload, (bytes, str)):
+        payload = json.loads(payload)
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("rows", "data", "items", "records", "result", "products"):
+            if key in payload:
+                return _product_records(payload[key])
+    return []
+
+
+def product_catalog(payload: Any) -> dict[str, tuple[str | None, str | None]]:
+    result: dict[str, tuple[str | None, str | None]] = {}
+    for row in _product_records(payload):
+        guid = str(_field(row, "id", "product", "productId") or "").strip()
+        if not guid:
+            continue
+        name = str(_field(row, "name", "productName") or "").strip() or None
+        code = str(_field(row, "code", "num") or "").strip() or None
+        result[guid] = (name, code)
+    return result
+
+
+def product_observations(
+    rows: list[dict[str, Any]],
+    amount_field: str,
+    *,
+    source_kind: str,
+    catalog: dict[str, tuple[str | None, str | None]],
+) -> list[GoodsProductObservation]:
+    """Свернуть ВСЕ товары источника, включая ещё не размеченные."""
+    grouped: dict[str, tuple[Decimal, int, str | None, str | None]] = {}
+    for row in rows:
+        guid = str(_field(row, "product", "productId", "iiko_product_guid") or "").strip()
+        if not guid:
+            continue
+        catalog_name, catalog_code = catalog.get(guid, (None, None))
+        row_name = str(_field(row, "productName", "product.name", "name") or "").strip()
+        row_code = str(_field(row, "productCode", "product.code", "code") or "").strip()
+        amount, count, known_name, known_code = grouped.get(
+            guid,
+            (Decimal("0.00"), 0, None, None),
+        )
+        grouped[guid] = (
+            amount + _number(_field(row, amount_field)),
+            count + 1,
+            row_name or known_name or catalog_name,
+            row_code or known_code or catalog_code,
+        )
+    return [
+        GoodsProductObservation(
+            source_kind=source_kind,
+            iiko_product_guid=guid,
+            product_name=name,
+            product_code=code,
+            amount=amount.quantize(_CENTS),
+            rows_count=count,
+        )
+        for guid, (amount, count, name, code) in sorted(grouped.items())
+    ]
+
+
+def build_stock_facts(
+    opening_rows: list[dict[str, Any]],
+    closing_rows: list[dict[str, Any]],
+    receipt_observations: list[GoodsProductObservation],
+    *,
+    catalog: dict[str, tuple[str | None, str | None]],
+) -> list[GoodsStockFact]:
+    """Собрать расход ``начало + приходы − конец`` по каждому GUID.
+
+    Снимки агрегируются по всем складам, поэтому внутренние перемещения не меняют общий
+    актив. Приходы берутся из проведённых входящих накладных того же периода.
+    """
+
+    def snapshot(
+        rows: list[dict[str, Any]],
+    ) -> dict[str, tuple[Decimal, Decimal, set[str]]]:
+        grouped: dict[str, tuple[Decimal, Decimal, set[str]]] = {}
+        for row in rows:
+            guid = str(_field(row, "product", "productId", "iiko_product_guid") or "").strip()
+            if not guid:
+                continue
+            quantity, amount, stores = grouped.get(
+                guid,
+                (Decimal("0.00"), Decimal("0.00"), set()),
+            )
+            store = str(_field(row, "store", "storeId", "warehouse") or "").strip()
+            grouped[guid] = (
+                quantity + _number(_field(row, "amount", "quantity")),
+                amount + _number(_field(row, "sum", "cost")),
+                stores | ({store} if store else set()),
+            )
+        return grouped
+
+    opening = snapshot(opening_rows)
+    closing = snapshot(closing_rows)
+    receipts = {item.iiko_product_guid: item for item in receipt_observations}
+    facts: list[GoodsStockFact] = []
+    for guid in sorted(set(opening) | set(closing) | set(receipts)):
+        opening_quantity, opening_amount, opening_stores = opening.get(
+            guid,
+            (Decimal("0.00"), Decimal("0.00"), set()),
+        )
+        closing_quantity, closing_amount, closing_stores = closing.get(
+            guid,
+            (Decimal("0.00"), Decimal("0.00"), set()),
+        )
+        receipt = receipts.get(guid)
+        receipts_amount = receipt.amount if receipt is not None else Decimal("0.00")
+        catalog_name, catalog_code = catalog.get(guid, (None, None))
+        facts.append(
+            GoodsStockFact(
+                iiko_product_guid=guid,
+                product_name=(receipt.product_name if receipt is not None else None)
+                or catalog_name,
+                product_code=(receipt.product_code if receipt is not None else None)
+                or catalog_code,
+                opening_quantity=opening_quantity,
+                opening_amount=opening_amount.quantize(_CENTS),
+                receipts_amount=receipts_amount.quantize(_CENTS),
+                closing_quantity=closing_quantity,
+                closing_amount=closing_amount.quantize(_CENTS),
+                consumption_amount=(opening_amount + receipts_amount - closing_amount).quantize(
+                    _CENTS
+                ),
+                stores_count=len(opening_stores | closing_stores),
+            )
+        )
+    return facts
+
+
+def stock_observations(facts: list[GoodsStockFact]) -> list[GoodsProductObservation]:
+    """Представить roll-forward как источник выбора в единой номенклатурной строке."""
+    return [
+        GoodsProductObservation(
+            source_kind="inventory",
+            iiko_product_guid=item.iiko_product_guid,
+            product_name=item.product_name,
+            product_code=item.product_code,
+            amount=item.consumption_amount,
+            rows_count=item.stores_count,
+        )
+        for item in facts
+        if item.stores_count > 0
+    ]
+
+
 async def _fetch_raw(endpoint: str, params: dict[str, str]) -> Any:
     """Запрос к iiko Server синхронным клиентом в отдельном треде."""
 
@@ -350,8 +949,22 @@ async def _fetch_raw(endpoint: str, params: dict[str, str]) -> Any:
     return await anyio.to_thread.run_sync(_call)
 
 
+async def _fetch_stock_balance_rows(timestamp: dt.datetime) -> list[dict[str, Any]]:
+    """Стоимостные и количественные остатки всех складов на точную границу периода."""
+    data = await _fetch_raw(
+        STOCK_BALANCE_ENDPOINT,
+        {"timestamp": timestamp.strftime("%Y-%m-%dT%H:%M:%S")},
+    )
+    return _parse_rows(data)
+
+
 async def _fetch_inventory_rows(start: dt.date, last: dt.date) -> list[dict[str, Any]]:
-    """Товарные строки инвентаризаций периода. Ответ XML — парсер общий с загрузчиком ревизий."""
+    """Товарные строки инвентаризаций периода. Ответ XML — парсер общий с загрузчиком ревизий.
+
+    Запрос отфильтрован по ``documentTypes=INCOMING_INVENTORY`` внутри ``inventory_params``:
+    приходные накладные и акты списания приходят другими эндпоинтами, и складского оборота
+    в этом ответе нет — только расхождения инвентаризации.
+    """
 
     def _call() -> list[dict[str, Any]]:
         from app.services.iiko_inventory import _load_inventory_module
@@ -406,21 +1019,44 @@ async def _fetch_invoice_rows(start: dt.date, last: dt.date) -> list[dict[str, A
     return await anyio.to_thread.run_sync(_call)
 
 
-async def fetch_goods_metrics(
-    session: AsyncSession, month: dt.date
-) -> tuple[dict[str, Decimal], list[str]]:
-    """Списания, инвентаризация упаковки и товары из приходных накладных за месяц.
+async def fetch_goods_metrics(session: AsyncSession, month: dt.date) -> GoodsSyncResult:
+    """Списания, складской roll-forward и товары из приходных накладных за месяц.
 
-    Возвращает (метрики, замечания). Замечание вместо исключения: если один эндпоинт из
-    трёх не ответил, остальные метрики залить всё равно нужно — иначе одна недоступность
-    оставляет месяц вовсе без товарных строк.
+    Замечание вместо исключения: если один эндпоинт не ответил, остальные метрики
+    залить всё равно нужно — иначе одна недоступность оставляет месяц вовсе без товарных строк.
+    Складской расход обновляем только когда получены обе границы остатков И все проведённые
+    приходные накладные: без любого из трёх слагаемых формула дала бы правдоподобную ложь.
     """
     start = month.replace(day=1)
     _, following = month_bounds_exclusive(month)
     last = following - dt.timedelta(days=1)
-    whitelist = await load_whitelist(session)
-    metrics: dict[str, Decimal] = {}
-    notes: list[str] = []
+    result = GoodsSyncResult()
+    catalog: dict[str, tuple[str | None, str | None]] = {}
+
+    # Имена и коды нужны именно для очереди неизвестных товаров. Недоступность справочника
+    # не блокирует цифры: GUID всё равно сохраняется, имя подтянется на следующем прогоне.
+    try:
+        result.products_payload = await _fetch_raw(PRODUCTS_ENDPOINT, {"includeDeleted": "true"})
+        catalog = product_catalog(result.products_payload)
+    except Exception as error:  # noqa: BLE001
+        result.notes.append(f"Справочник номенклатуры не получен: {error}")
+
+    # Для автоматического выбора источника нужен не только флаг блюда
+    # defaultIncludedInMenu, но и рекурсивная цепочка его техкарты до товара. Обе части
+    # считаются одним снимком: если хоть одна не загрузилась, автоматика не угадывает.
+    try:
+        result.charts_payload = await _fetch_raw(
+            ASSEMBLY_CHARTS_ENDPOINT,
+            {
+                "dateFrom": start.isoformat(),
+                "dateTo": last.isoformat(),
+                "includeDeletedProducts": "true",
+                "includePreparedCharts": "true",
+            },
+        )
+    except Exception as error:  # noqa: BLE001
+        result.notes.append(f"Техкарты для авторазметки не получены: {error}")
+    result.menu_snapshot_complete = bool(catalog) and result.charts_payload is not None
 
     # Акты списания: даты ISO, только проведённые.
     try:
@@ -432,32 +1068,91 @@ async def fetch_goods_metrics(
                 "status": PROCESSED_STATUS,
             },
         )
-        metrics[METRIC_WRITEOFF] = writeoff_total(payload)
+        result.metrics[METRIC_WRITEOFF] = writeoff_total(payload)
     except Exception as error:  # noqa: BLE001 — недоступность одного эндпоинта не должна ронять синк
-        notes.append(f"Акты списания не получены: {error}")
-
-    # Инвентаризация: даты в формате дд.мм.гггг (на ISO эндпоинт не отвечает), а ОТВЕТ
-    # приходит XML, а не JSON — в отличие от соседних эндпоинтов. Разбор берём готовый:
-    # тот же, которым пользуется загрузчик ревизий, чтобы формат разбирался в одном месте.
-    try:
-        rows = await _fetch_inventory_rows(start, last)
-        # ТОЛЬКО упаковка и коробки. Вспомогательные товары и расходники торговых точек
-        # тоже встречаются в инвентаризации (за июль 2026 — на 9 879,78 и 5 177,36 ₽), но
-        # их строки эталона считаются по ЗАКУПКЕ из накладных, а не по остатку на складе.
-        # Взять их отсюда значило бы посчитать те же товары дважды и в двух разных смыслах.
-        inventory_wl = {g: m for g, m in whitelist.items() if m in INVENTORY_BASKETS}
-        metrics.update(whitelist_totals(rows, inventory_wl, "sum"))
-    except Exception as error:  # noqa: BLE001
-        notes.append(f"Инвентаризация не получена: {error}")
+        result.notes.append(f"Акты списания не получены: {error}")
 
     # Приходные накладные: параметры называются from/to (не dateFrom/dateTo), формат ISO —
     # на дд.мм.гггг эндпоинт отвечает 409. Ответ XML СО СВОЕЙ структурой: документы с
     # вложенными item, а не плоские строки отчёта, поэтому парсер отдельный от инвентаризации.
+    invoice_observations: list[GoodsProductObservation] | None = None
     try:
         rows = await _fetch_invoice_rows(start, last)
-        invoice_wl = {g: m for g, m in whitelist.items() if m in INVOICE_BASKETS}
-        metrics.update(whitelist_totals(rows, invoice_wl, "sum"))
+        invoice_observations = product_observations(
+            rows,
+            "sum",
+            source_kind="incoming_invoice",
+            catalog=catalog,
+        )
+        result.observations.extend(invoice_observations)
+        invoice_wl = await load_whitelist(session, "incoming_invoice", start)
+        details = whitelist_details(
+            rows,
+            invoice_wl,
+            "sum",
+            source_kind="incoming_invoice",
+        )
+        result.details.extend(details)
+        result.refreshed_sources.add("incoming_invoice")
+        for metric in INVOICE_BASKETS:
+            result.metrics[metric] = sum(
+                (detail.amount for detail in details if detail.metric_code == metric),
+                Decimal("0.00"),
+            )
     except Exception as error:  # noqa: BLE001
-        notes.append(f"Приходные накладные не получены: {error}")
+        result.notes.append(f"Приходные накладные не получены: {error}")
 
-    return metrics, notes
+    # Результат инвентаризации по двум корзинам упаковки — РАСХОЖДЕНИЕ КНИГИ С ФАКТОМ, а не
+    # оборот. Живёт отдельным запросом рядом с roll-forward, потому что отвечает на другой
+    # вопрос: не «сколько израсходовали», а «сколько потеряли». Первое уже посчитано
+    # фудкостом, второе не считается больше нигде.
+    # ТОЛЬКО ИТОГИ, БЕЗ ``result.details``, и это не экономия, а необходимость. Детализация
+    # ``PnlIikoGoodsFact`` привязана к ``source_kind``, а ``rebuild_goods_from_observations``
+    # пересобирает её из наблюдений: для источника ``inventory`` наблюдения приходят из
+    # roll-forward и несут ПОТРЕБЛЕНИЕ, а не расхождение. Записанные здесь строки удалялись
+    # бы той же транзакцией (``ledgers.GOODS_LINES_BY_SOURCE['inventory']`` пуст), а если
+    # добавить их в пересборку — в детализацию встал бы складской оборот вместо недостачи.
+    # Итог метрики от этого не страдает: его пишет цикл по ``result.metrics``.
+    try:
+        inventory_rows = await _fetch_inventory_rows(start, last)
+        inventory_wl = await load_whitelist(session, "inventory", start)
+        inventory_details = whitelist_details(
+            inventory_rows,
+            inventory_wl,
+            "sum",
+            source_kind="inventory",
+        )
+        for metric in INVENTORY_BASKETS:
+            result.metrics[metric] = sum(
+                (detail.amount for detail in inventory_details if detail.metric_code == metric),
+                Decimal("0.00"),
+            )
+    except Exception as error:  # noqa: BLE001
+        result.notes.append(f"Результаты инвентаризации упаковки не получены: {error}")
+
+    # Не складываем результаты отдельных еженедельных ревизий. Берём два точных снимка
+    # всех складов и считаем фактический расход товара за весь месяц. Так в расчёт попадают
+    # и недостачи, и излишки, а внутренние перемещения между складами взаимно уничтожаются.
+    if invoice_observations is not None:
+        try:
+            opening_rows = await _fetch_stock_balance_rows(dt.datetime.combine(start, dt.time.min))
+            closing_rows = await _fetch_stock_balance_rows(
+                dt.datetime.combine(following, dt.time.min)
+            )
+            result.stock_facts = build_stock_facts(
+                opening_rows,
+                closing_rows,
+                invoice_observations,
+                catalog=catalog,
+            )
+            result.observations.extend(stock_observations(result.stock_facts))
+            result.refreshed_sources.add("inventory")
+        except Exception as error:  # noqa: BLE001
+            result.notes.append(f"Складские остатки на границах месяца не получены: {error}")
+    else:
+        result.notes.append(
+            "Складской расход не обновлён: без приходных накладных нельзя вычислить "
+            "начало + приход − конец"
+        )
+
+    return result

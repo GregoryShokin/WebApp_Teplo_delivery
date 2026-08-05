@@ -56,6 +56,7 @@ ACCOUNTING_START = date(2026, 7, 1)
 IIKO_LINE_METRIC = {
     "revenue_gross_chernikova": "revenue_gross",
     "revenue_net_chernikova": "revenue_net",
+    "partner_commission": "partner_commission",
     "food_cost_chernikova": "food_cost",
     "courier_service": "courier_salary",
     "writeoffs": "writeoff_cost",
@@ -69,17 +70,15 @@ IIKO_LINE_METRIC = {
 #: В iiko отрицательная сумма инвентаризации — НЕДОСТАЧА (товар ушёл со склада), положительная
 #: — излишек. В отчёте соглашение обратное и общее для всех блоков: величина расходной строки
 #: положительна, отрицательной приходит только компенсирующая. Без этого шага июльская
-#: недостача упаковки 30 810 ₽ стояла в блоке общепроизводственных со знаком минус и работала
-#: как доход, завышая EBITDA; излишек коробок 7 290,59 ₽ зеркально занижал прибыль. Владелец
-#: увидел это сразу — «минус тридцать тысяч, это плюсовая ревизия?».
+#: недостача упаковки стояла в блоке общепроизводственных со знаком минус и работала как
+#: доход, завышая EBITDA; излишек коробок зеркально занижал прибыль.
 #:
 #: Инверсия сделана ЗДЕСЬ, а не в синке: зеркало обязано хранить то, что ответил iiko, иначе
-#: сверка с источником перестанет сходиться. Формулировка «знак сохраняется» в методологии
-#: относится к сложению ТОВАРНЫХ строк внутри метрики (брать модуль нельзя — излишки и
-#: недостачи схлопнутся), а не к знаку строки отчёта.
+#: сверка с источником перестанет сходиться.
 #:
-#: Соседняя строка «Результаты ревизии» инвертируется в своём источнике
-#: (``sources/inventory.py``) — три строки из одного эндпоинта ведут себя одинаково.
+#: Складских метрик (``stock_consumption``, ``stock_closing_balance``) здесь нет и быть не
+#: должно: они не строки ОПиУ вовсе. Roll-forward «начало + приход − конец» — это расход
+#: периода, то есть фудкост; подключать его к отчёту значит задваивать себестоимость.
 INVERTED_IIKO_METRICS = frozenset({"packaging_result", "pizza_box_result"})
 
 
@@ -375,12 +374,21 @@ async def _apply_inventory(
     month_end: date,
     report: PnlReport,
 ) -> None:
-    """«Результаты ревизии» = продуктовые инвентаризации минус штрафы по ревизиям.
+    """«Результаты ревизии» = недостачи проведённых ревизий минус удержанные штрафы.
 
     Штрафы приходят из зарплатного контура и вычитаются здесь, а не там: они компенсируют
-    ревизионные потери, а не уменьшают фонд оплаты труда.
+    ревизионные потери, а не уменьшают фонд оплаты труда. Складской roll-forward
+    «начало + приход − конец» здесь намеренно не используется: это фактическое потребление
+    сырья и источник будущего баланса, а не недостача, выявленная ревизией.
     """
-    month = await inventory_source.build_inventory_month(session, month_start, month_end)
+    # Фильтр упаковки ПОДКЛЮЧЁН, а не просто написан: продуктовая ревизия и инвентаризация
+    # упаковки приходят из одного эндпоинта iiko, и загрузчик документов их не разделяет.
+    # На июле 2026 пересечения нет ни одной позиции, но как только упаковку проведут обычной
+    # ревизией, её расхождение встанет и сюда, и в свою строку — в двух разных блоках отчёта.
+    packaging_guids = await inventory_source.load_packaging_guids(session)
+    month = await inventory_source.build_inventory_month(
+        session, month_start, month_end, packaging_guids=packaging_guids
+    )
     payroll_month = await payroll_source.build_payroll_month(session, month_start, month_end)
 
     if month.product_result is None:
@@ -394,8 +402,8 @@ async def _apply_inventory(
         "audit_results",
         stream="inventory",
         amount=month.product_result,
-        status=LineStatus.OK,
-        note=f"Ревизий за месяц: {month.audits_count}",
+        status=LineStatus.OK if month.product_result else LineStatus.ZERO_CONFIRMED,
+        note=f"Недостача по проведённым ревизиям; ревизий за месяц: {month.audits_count}",
     )
     if payroll_month.audit_penalties:
         _add_component(
@@ -406,9 +414,6 @@ async def _apply_inventory(
             status=LineStatus.OK,
             note="Штрафы по ревизиям — компенсируют потери",
         )
-    # Ревизии еженедельные. Если месяц накрыт двумя документами вместо четырёх, строка не
-    # ошибочна, но неполна — и молчать об этом нельзя: недостача второй половины месяца
-    # просто не обнаружена.
     if month.audits_count < 3:
         report.warnings.append(
             Warning(
@@ -462,7 +467,7 @@ async def _apply_acquiring(
 async def _apply_iiko(
     session: AsyncSession, lines: dict[str, LineValue], month_start: date
 ) -> None:
-    """Выручка, фудкост и курьеры — из зеркала, наполняемого ночной джобой."""
+    """Выручка, партнёры, фудкост и курьеры — из зеркала ночной джобы."""
     facts = await iiko_source.month_facts(session, month_start)
     for line_code, metric in IIKO_LINE_METRIC.items():
         amount = facts.get(metric)
@@ -475,6 +480,16 @@ async def _apply_iiko(
             amount=amount,
             status=LineStatus.OK if amount is not None else LineStatus.NO_DATA,
         )
+
+    workup_items = await iiko_source.month_workup_items(session, month_start)
+    _add_component(
+        lines,
+        "goods_workup",
+        stream="iiko_workup",
+        amount=sum((item.amount for item in workup_items), Decimal("0.00")),
+        status=LineStatus.OK,
+        note="Временная разметка только этого месяца",
+    )
 
     # «Содержание торговых точек» — составная строка: касса по статье ПЛЮС закупка
     # расходников из приходных накладных. Так её описывает методология, и оба компонента

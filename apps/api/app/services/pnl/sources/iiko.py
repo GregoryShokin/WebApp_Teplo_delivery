@@ -7,13 +7,136 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.pnl import PnlIikoFact
+from app.models.pnl import (
+    PnlIikoFact,
+    PnlIikoProductObservation,
+    PnlPartnerCommissionFact,
+    PnlProductMonthlyDecision,
+    PnlProductWhitelist,
+)
+from app.services.pnl.revision_products import (
+    load_revision_product_guids,
+    normalize_iiko_product_guid,
+)
+
+
+@dataclass(slots=True)
+class GoodsWorkupItem:
+    product_guid: str
+    product_name: str
+    product_code: str | None
+    source_kind: str
+    source_amount: Decimal
+    amount: Decimal
+    rows_count: int
+    synced_at: datetime
+
+
+@dataclass(slots=True)
+class PartnerCommissionItem:
+    partner_name: str
+    revenue_amount: Decimal
+    commission_rate: Decimal
+    commission_amount: Decimal
+    rows_count: int
+    source_ref: str
+    synced_at: datetime
+
+
+async def month_partner_commissions(
+    session: AsyncSession, month_start: date
+) -> list[PartnerCommissionItem]:
+    rows = (
+        await session.scalars(
+            select(PnlPartnerCommissionFact)
+            .where(PnlPartnerCommissionFact.period_month == month_start)
+            .order_by(PnlPartnerCommissionFact.commission_amount.desc())
+        )
+    ).all()
+    return [
+        PartnerCommissionItem(
+            partner_name=row.partner_name,
+            revenue_amount=row.revenue_amount,
+            commission_rate=row.commission_rate,
+            commission_amount=row.commission_amount,
+            rows_count=row.rows_count,
+            source_ref=row.source_ref,
+            synced_at=row.synced_at,
+        )
+        for row in rows
+    ]
+
+
+def workup_expense_amount(source_kind: str, amount: Decimal) -> Decimal:
+    """Привести временную сумму к соглашению расходной строки ОПиУ."""
+    return amount
+
+
+async def month_workup_items(session: AsyncSession, month_start: date) -> list[GoodsWorkupItem]:
+    """Товары, временно признанные расходом только в указанном месяце."""
+    revision_product_guids = await load_revision_product_guids(session)
+    stocked_rule_guids = set(
+        (
+            await session.execute(
+                select(PnlProductWhitelist.iiko_product_guid).where(
+                    PnlProductWhitelist.source_kind == "inventory",
+                    PnlProductWhitelist.include_status == "stocked",
+                )
+            )
+        ).scalars()
+    )
+    stocked_guids = revision_product_guids | {
+        normalize_iiko_product_guid(guid) for guid in stocked_rule_guids
+    }
+    rows = (
+        await session.execute(
+            select(
+                PnlProductMonthlyDecision.iiko_product_guid,
+                PnlIikoProductObservation.product_name,
+                PnlIikoProductObservation.product_code,
+                PnlProductMonthlyDecision.source_kind,
+                PnlIikoProductObservation.amount,
+                PnlIikoProductObservation.rows_count,
+                PnlIikoProductObservation.synced_at,
+            )
+            .join(
+                PnlIikoProductObservation,
+                and_(
+                    PnlIikoProductObservation.period_month
+                    == PnlProductMonthlyDecision.period_month,
+                    PnlIikoProductObservation.iiko_product_guid
+                    == PnlProductMonthlyDecision.iiko_product_guid,
+                    PnlIikoProductObservation.source_kind == PnlProductMonthlyDecision.source_kind,
+                ),
+            )
+            .where(
+                PnlProductMonthlyDecision.period_month == month_start,
+                PnlProductMonthlyDecision.decision_kind == "workup",
+            )
+            .order_by(PnlIikoProductObservation.product_name)
+        )
+    ).all()
+    return [
+        GoodsWorkupItem(
+            product_guid=guid,
+            product_name=name or guid,
+            product_code=code,
+            source_kind=source_kind,
+            source_amount=source_amount,
+            amount=workup_expense_amount(source_kind, source_amount),
+            rows_count=rows_count,
+            synced_at=synced_at,
+        )
+        for guid, name, code, source_kind, source_amount, rows_count, synced_at in rows
+        if normalize_iiko_product_guid(guid) not in stocked_guids
+    ]
 
 
 async def month_facts(session: AsyncSession, month_start: date) -> dict[str, Decimal]:

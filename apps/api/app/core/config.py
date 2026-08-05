@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     # детерминированный слой, неуверенные счета уходят в «требует проверки».
     anthropic_api_key: str | None = None
     invoice_recognition_model: str = "claude-sonnet-4-6"
+    # Новая номенклатура ОПиУ: источник сначала определяется по активным блюдам/техкартам
+    # iiko, а модель выбирает только из совместимых экономических статей. При отсутствии
+    # ключа или низкой уверенности источник сохраняется, статья остаётся владельцу.
+    pnl_goods_auto_classification_enabled: bool = True
+    pnl_goods_classification_model: str = "claude-sonnet-5"
+    pnl_goods_classification_min_confidence: float = Field(default=0.8, ge=0, le=1)
+    pnl_goods_auto_classification_batch_size: int = Field(default=40, ge=1, le=100)
     # Распознавание коммунальной платёжки — своя настройка, а не общая с почтой. Задача другая:
     # там PDF с текстовым слоем, здесь фотография бумажки, где сумма набрана мелким шрифтом в
     # строках 4–7 таблицы. Решает разрешение: Opus 5 читает снимок по длинной стороне до 2576 px,

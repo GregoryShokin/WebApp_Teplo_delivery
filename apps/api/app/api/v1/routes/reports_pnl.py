@@ -15,7 +15,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -23,9 +24,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, field_serializer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_permission
+from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.services.pnl import drill as drill_service
+from app.services.pnl import ledgers as ledger_service
 from app.services.pnl import projector
 from app.services.pnl.types import LineValue, PnlReport
 
@@ -114,6 +116,244 @@ class PnlReportOut(BaseModel):
     reconciliation: ReconciliationOut
     warnings: list[WarningOut]
     quality: dict[str, Any]
+
+
+class PayrollLedgerAmountsOut(BaseModel):
+    base_pay: Decimal
+    percent_pay: Decimal
+    bonuses: Decimal
+    vacation_pay: Decimal
+    fund_accrual: Decimal
+    other_penalties: Decimal
+    audit_penalties: Decimal
+    fund_forfeited: Decimal
+    deposit_written_off: Decimal
+    salary_expense: Decimal
+    fund_expense: Decimal
+
+    @field_serializer(
+        "base_pay",
+        "percent_pay",
+        "bonuses",
+        "vacation_pay",
+        "fund_accrual",
+        "other_penalties",
+        "audit_penalties",
+        "fund_forfeited",
+        "deposit_written_off",
+        "salary_expense",
+        "fund_expense",
+    )
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class PayrollLedgerEmployeeOut(PayrollLedgerAmountsOut):
+    employee_id: uuid.UUID | None
+    employee_name: str
+    roles: list[str]
+
+
+class PayrollLedgerOut(BaseModel):
+    month: date
+    totals: PayrollLedgerAmountsOut
+    employees: list[PayrollLedgerEmployeeOut]
+
+
+class PartnerCommissionLedgerRowOut(BaseModel):
+    partner_name: str
+    revenue_amount: Decimal
+    commission_rate: Decimal
+    commission_amount: Decimal
+    rows_count: int
+    source_ref: str
+    synced_at: datetime
+
+    @field_serializer("revenue_amount", "commission_amount")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+    @field_serializer("commission_rate")
+    def _rate(self, value: Decimal) -> str:
+        return f"{value:.6f}"
+
+
+class PartnerCommissionLedgerOut(BaseModel):
+    month: date
+    revenue_amount: Decimal | None
+    commission_amount: Decimal | None
+    synced_at: datetime | None
+    rows: list[PartnerCommissionLedgerRowOut]
+
+    @field_serializer("revenue_amount", "commission_amount")
+    def _money(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.2f}"
+
+
+class GoodsLedgerSummaryOut(BaseModel):
+    line_code: str
+    line_title: str
+    source_kind: str
+    amount: Decimal | None
+    details_amount: Decimal
+    details_complete: bool
+    details_expected: bool
+    synced_at: datetime | None
+    opening_amount: Decimal | None = None
+    receipts_amount: Decimal | None = None
+    closing_amount: Decimal | None = None
+    surplus_amount: Decimal | None = None
+
+    @field_serializer(
+        "amount",
+        "details_amount",
+        "opening_amount",
+        "receipts_amount",
+        "closing_amount",
+        "surplus_amount",
+    )
+    def _money(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.2f}"
+
+
+class GoodsLedgerRowOut(BaseModel):
+    line_code: str
+    line_title: str
+    source_kind: str
+    product_guid: str
+    product_name: str
+    source_amount: Decimal
+    amount: Decimal
+    rows_count: int
+    opening_quantity: Decimal | None = None
+    opening_amount: Decimal | None = None
+    receipts_amount: Decimal | None = None
+    closing_quantity: Decimal | None = None
+    closing_amount: Decimal | None = None
+    audit_date: date | None = None
+    surplus_amount: Decimal = Decimal("0.00")
+
+    @field_serializer(
+        "source_amount",
+        "amount",
+        "opening_amount",
+        "receipts_amount",
+        "closing_amount",
+        "surplus_amount",
+    )
+    def _money(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.2f}"
+
+    @field_serializer("opening_quantity", "closing_quantity")
+    def _quantity(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.6f}"
+
+
+class GoodsLedgerOut(BaseModel):
+    month: date
+    summaries: list[GoodsLedgerSummaryOut]
+    rows: list[GoodsLedgerRowOut]
+
+
+class GoodsClassificationOptionOut(BaseModel):
+    line_code: str
+    line_title: str
+    source_kind: str
+    temporary: bool
+
+
+class GoodsClassificationSourceOut(BaseModel):
+    source_kind: str
+    amount: Decimal | None
+    rows_count: int
+    observed_in_month: bool
+    last_seen_month: date | None
+
+    @field_serializer("amount")
+    def _money(self, value: Decimal | None) -> str | None:
+        return None if value is None else f"{value:.2f}"
+
+
+class GoodsClassificationRowOut(BaseModel):
+    product_guid: str
+    product_name: str
+    product_code: str | None
+    selected_source_kind: str | None
+    sources: list[GoodsClassificationSourceOut]
+    line_code: str | None
+    line_title: str | None
+    status: str
+    revision_product: bool
+    note: str | None
+    updated_at: datetime | None
+
+
+class GoodsClassificationLedgerOut(BaseModel):
+    month: date
+    attention_count: int
+    attention_amount: Decimal
+    rules_count: int
+    options: list[GoodsClassificationOptionOut]
+    rows: list[GoodsClassificationRowOut]
+
+    @field_serializer("attention_amount")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class GoodsClassificationUpdateIn(BaseModel):
+    source_kind: str
+    status: str
+    line_code: str | None = None
+    note: str | None = None
+
+
+class RecognitionLedgerTotalsOut(BaseModel):
+    recognized: Decimal
+    waiting_document: Decimal
+    missing_period: Decimal
+    without_primary: Decimal
+    unattributed: Decimal
+    unrecognized: Decimal
+
+    @field_serializer(
+        "recognized",
+        "waiting_document",
+        "missing_period",
+        "without_primary",
+        "unattributed",
+        "unrecognized",
+    )
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class RecognitionLedgerRowOut(BaseModel):
+    status: str
+    source_kind: str
+    source_id: uuid.UUID
+    counterparty_id: uuid.UUID | None
+    counterparty_name: str
+    article_id: uuid.UUID | None
+    article_name: str
+    line_code: str | None
+    line_title: str | None
+    amount: Decimal
+    event_date: date | None
+    service_period_start: date | None
+    service_period_end: date | None
+    has_primary: bool | None
+    reason: str
+
+    @field_serializer("amount")
+    def _money(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+
+class RecognitionLedgerOut(BaseModel):
+    month: date
+    totals: RecognitionLedgerTotalsOut
+    rows: list[RecognitionLedgerRowOut]
 
 
 def _line_out(line: LineValue) -> LineOut:
@@ -258,6 +498,253 @@ async def get_pnl(
     """
     report = await projector.build_report(session, _month_or_422(month))
     return _report_out(report)
+
+
+def _payroll_amounts(value) -> dict[str, Decimal]:
+    return {
+        "base_pay": value.base_pay,
+        "percent_pay": value.percent_pay,
+        "bonuses": value.bonuses,
+        "vacation_pay": value.vacation_pay,
+        "fund_accrual": value.fund_accrual,
+        "other_penalties": value.other_penalties,
+        "audit_penalties": value.audit_penalties,
+        "fund_forfeited": value.fund_forfeited,
+        "deposit_written_off": value.deposit_written_off,
+        "salary_expense": value.salary_expense,
+        "fund_expense": value.fund_expense,
+    }
+
+
+@router.get(
+    "/ledgers/payroll",
+    response_model=PayrollLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_payroll_ledger(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PayrollLedgerOut:
+    ledger = await ledger_service.build_payroll_ledger(session, _month_or_422(month))
+    return PayrollLedgerOut(
+        month=ledger.month,
+        totals=PayrollLedgerAmountsOut(**_payroll_amounts(ledger.totals)),
+        employees=[
+            PayrollLedgerEmployeeOut(
+                employee_id=row.employee_id,
+                employee_name=row.employee_name,
+                roles=row.roles,
+                **_payroll_amounts(row),
+            )
+            for row in ledger.employees
+        ],
+    )
+
+
+@router.get(
+    "/ledgers/partners",
+    response_model=PartnerCommissionLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_partner_commission_ledger(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PartnerCommissionLedgerOut:
+    ledger = await ledger_service.build_partner_commission_ledger(session, _month_or_422(month))
+    return PartnerCommissionLedgerOut(
+        month=ledger.month,
+        revenue_amount=ledger.revenue_amount,
+        commission_amount=ledger.commission_amount,
+        synced_at=ledger.synced_at,
+        rows=[
+            PartnerCommissionLedgerRowOut.model_validate(row, from_attributes=True)
+            for row in ledger.rows
+        ],
+    )
+
+
+@router.get(
+    "/ledgers/goods",
+    response_model=GoodsLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_goods_ledger(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GoodsLedgerOut:
+    ledger = await ledger_service.build_goods_ledger(session, _month_or_422(month))
+    return GoodsLedgerOut(
+        month=ledger.month,
+        summaries=[
+            GoodsLedgerSummaryOut(
+                line_code=row.line_code,
+                line_title=row.line_title,
+                source_kind=row.source_kind,
+                amount=row.amount,
+                details_amount=row.details_amount,
+                details_complete=row.details_complete,
+                details_expected=row.details_expected,
+                synced_at=row.synced_at,
+                opening_amount=row.opening_amount,
+                receipts_amount=row.receipts_amount,
+                closing_amount=row.closing_amount,
+                surplus_amount=row.surplus_amount,
+            )
+            for row in ledger.summaries
+        ],
+        rows=[
+            GoodsLedgerRowOut(
+                line_code=row.line_code,
+                line_title=row.line_title,
+                source_kind=row.source_kind,
+                product_guid=row.product_guid,
+                product_name=row.product_name,
+                source_amount=row.source_amount,
+                amount=row.amount,
+                rows_count=row.rows_count,
+                opening_quantity=row.opening_quantity,
+                opening_amount=row.opening_amount,
+                receipts_amount=row.receipts_amount,
+                closing_quantity=row.closing_quantity,
+                closing_amount=row.closing_amount,
+                audit_date=row.audit_date,
+                surplus_amount=row.surplus_amount,
+            )
+            for row in ledger.rows
+        ],
+    )
+
+
+def _goods_classification_out(
+    ledger: ledger_service.GoodsClassificationLedger,
+) -> GoodsClassificationLedgerOut:
+    return GoodsClassificationLedgerOut(
+        month=ledger.month,
+        attention_count=ledger.attention_count,
+        attention_amount=ledger.attention_amount,
+        rules_count=ledger.rules_count,
+        options=[
+            GoodsClassificationOptionOut(
+                line_code=item.line_code,
+                line_title=item.line_title,
+                source_kind=item.source_kind,
+                temporary=item.temporary,
+            )
+            for item in ledger.options
+        ],
+        rows=[
+            GoodsClassificationRowOut(
+                product_guid=item.product_guid,
+                product_name=item.product_name,
+                product_code=item.product_code,
+                selected_source_kind=item.selected_source_kind,
+                sources=[
+                    GoodsClassificationSourceOut(
+                        source_kind=source.source_kind,
+                        amount=source.amount,
+                        rows_count=source.rows_count,
+                        observed_in_month=source.observed_in_month,
+                        last_seen_month=source.last_seen_month,
+                    )
+                    for source in item.sources
+                ],
+                line_code=item.line_code,
+                line_title=item.line_title,
+                status=item.status,
+                revision_product=item.revision_product,
+                note=item.note,
+                updated_at=item.updated_at,
+            )
+            for item in ledger.rows
+        ],
+    )
+
+
+@router.get(
+    "/ledgers/goods/classifications",
+    response_model=GoodsClassificationLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_goods_classifications(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GoodsClassificationLedgerOut:
+    ledger = await ledger_service.build_goods_classifications(session, _month_or_422(month))
+    return _goods_classification_out(ledger)
+
+
+@router.patch(
+    "/ledgers/goods/classifications/{product_guid}",
+    response_model=GoodsClassificationLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.manual_input"))],
+)
+async def update_goods_classification(
+    product_guid: str,
+    payload: GoodsClassificationUpdateIn,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> GoodsClassificationLedgerOut:
+    try:
+        ledger = await ledger_service.save_goods_classification(
+            session,
+            display_month=_month_or_422(month),
+            product_guid=product_guid,
+            source_kind=payload.source_kind,
+            status=payload.status,
+            line_code=payload.line_code,
+            note=(payload.note or "").strip() or None,
+            user_id=actor.user_id,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    return _goods_classification_out(ledger)
+
+
+@router.get(
+    "/ledgers/recognition",
+    response_model=RecognitionLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.read"))],
+)
+async def get_recognition_ledger(
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RecognitionLedgerOut:
+    ledger = await ledger_service.build_recognition_ledger(session, _month_or_422(month))
+    return RecognitionLedgerOut(
+        month=ledger.month,
+        totals=RecognitionLedgerTotalsOut(
+            recognized=ledger.totals.recognized,
+            waiting_document=ledger.totals.waiting_document,
+            missing_period=ledger.totals.missing_period,
+            without_primary=ledger.totals.without_primary,
+            unattributed=ledger.totals.unattributed,
+            unrecognized=ledger.totals.unrecognized,
+        ),
+        rows=[
+            RecognitionLedgerRowOut(
+                status=row.status,
+                source_kind=row.source_kind,
+                source_id=row.source_id,
+                counterparty_id=row.counterparty_id,
+                counterparty_name=row.counterparty_name,
+                article_id=row.article_id,
+                article_name=row.article_name,
+                line_code=row.line_code,
+                line_title=row.line_title,
+                amount=row.amount,
+                event_date=row.event_date,
+                service_period_start=row.service_period_start,
+                service_period_end=row.service_period_end,
+                has_primary=row.has_primary,
+                reason=row.reason,
+            )
+            for row in ledger.rows
+        ],
+    )
 
 
 @router.get(

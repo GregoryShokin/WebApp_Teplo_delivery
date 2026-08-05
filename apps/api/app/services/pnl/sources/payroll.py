@@ -47,6 +47,31 @@ COUNTED_RUN_STATUSES = ("finalized",)
 
 
 @dataclass(slots=True)
+class PayrollBreakdown:
+    """Компоненты payroll-источника по сотруднику для отдельного леджера ОПиУ."""
+
+    roles: set[str] = field(default_factory=set)
+    base_pay: Decimal = Decimal("0.00")
+    percent_pay: Decimal = Decimal("0.00")
+    vacation_pay: Decimal = Decimal("0.00")
+    bonuses: Decimal = Decimal("0.00")
+    fund_accrual: Decimal = Decimal("0.00")
+    other_penalties: Decimal = Decimal("0.00")
+    audit_penalties: Decimal = Decimal("0.00")
+
+    @property
+    def salary_expense(self) -> Decimal:
+        """Зарплатный расход без фонда и ревизионных компенсаций."""
+        return (
+            self.base_pay
+            + self.percent_pay
+            + self.vacation_pay
+            + self.bonuses
+            - self.other_penalties
+        )
+
+
+@dataclass(slots=True)
 class PayrollMonth:
     """Начисления месяца, разложенные по строкам ОПиУ."""
 
@@ -67,6 +92,11 @@ class PayrollMonth:
     #: ровно ту сумму, которая стоит в строке.
     by_employee: dict[tuple[str, uuid.UUID], Decimal] = field(
         default_factory=lambda: defaultdict(Decimal)
+    )
+    #: Те же суммы, но по экономическим компонентам. Леджер читает это поле вместо второй
+    #: выборки «почти по тем же правилам», поэтому его итоги совпадают со сводом по построению.
+    breakdown_by_employee: dict[uuid.UUID, PayrollBreakdown] = field(
+        default_factory=lambda: defaultdict(PayrollBreakdown)
     )
     has_data: bool = False
 
@@ -161,6 +191,11 @@ async def build_payroll_month(
                 # Роль дня точнее роли строки: повар, вышедший на пиццу вместо роллов,
                 # отдаёт этот день своему цеху. Строка знает только первичную роль.
                 role = str(day.get("role") or line.role)
+                breakdown = result.breakdown_by_employee[line.employee_id]
+                breakdown.roles.add(role)
+                breakdown.base_pay += money_decimal(day.get("base_pay"))
+                breakdown.percent_pay += money_decimal(day.get("percent_pay"))
+                breakdown.vacation_pay += money_decimal(day.get("vacation_pay"))
                 result.by_role[role] += amount
                 if role in COOK_PAYROLL_ROLES:
                     result.cook_pay += amount
@@ -173,6 +208,7 @@ async def build_payroll_month(
                     result.by_employee[("admin_payroll", line.employee_id)] += amount
                 fund = money_decimal(day.get("fund_accrual"))
                 result.fund_accrual += fund
+                breakdown.fund_accrual += fund
                 if fund:
                     result.by_employee[("accumulation_fund", line.employee_id)] += fund
         else:
@@ -188,6 +224,11 @@ async def build_payroll_month(
             if amount == 0:
                 continue
             result.has_data = True
+            breakdown = result.breakdown_by_employee[line.employee_id]
+            breakdown.roles.add(str(line.role))
+            breakdown.base_pay += money_decimal(line.base_pay)
+            breakdown.percent_pay += money_decimal(line.percent_pay)
+            breakdown.vacation_pay += money_decimal(line.vacation_pay)
             result.by_role[str(line.role)] += amount
             if line.role in COOK_PAYROLL_ROLES:
                 result.cook_pay += amount
@@ -200,6 +241,7 @@ async def build_payroll_month(
                 result.by_employee[("admin_payroll", line.employee_id)] += amount
             fund = money_decimal(line.fund_accrual)
             result.fund_accrual += fund
+            breakdown.fund_accrual += fund
             if fund:
                 result.by_employee[("accumulation_fund", line.employee_id)] += fund
 
@@ -208,6 +250,9 @@ async def build_payroll_month(
             continue
         result.has_data = True
         result.admin_pay += amount
+        breakdown = result.breakdown_by_employee[employee_id]
+        breakdown.roles.add("Оклад по востребованию")
+        breakdown.base_pay += amount
         result.by_role["Оклад по востребованию"] += amount
         result.by_employee[("admin_payroll", employee_id)] += amount
 
@@ -238,14 +283,19 @@ async def _apply_adjustments(
         if amount == 0:
             continue
         result.has_data = True
+        breakdown = result.breakdown_by_employee[adjustment.employee_id]
+        breakdown.roles.add(str(adjustment.role))
         if adjustment.type == "bonus":
             result.bonuses += amount
+            breakdown.bonuses += amount
             result.by_employee[("bonuses", adjustment.employee_id)] += amount
         elif is_audit_penalty(adjustment):
             result.audit_penalties += amount
+            breakdown.audit_penalties += amount
             result.by_employee[("audit_results", adjustment.employee_id)] -= amount
         else:
             result.other_penalties += amount
+            breakdown.other_penalties += amount
             # Прочий штраф уменьшает зарплату поваров — в расшифровке он и должен стоять
             # там же, отрицательной строкой, а не прятаться внутри итога.
             result.by_employee[("cook_payroll", adjustment.employee_id)] -= amount
