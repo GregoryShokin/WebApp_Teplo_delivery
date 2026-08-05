@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -85,6 +85,26 @@ class CashLayer:
     unmapped_count: int = 0
     # Статьи, по которым касса встретилась, а правила нет. Пустой список — инвариант.
     unmapped_articles: set[uuid.UUID | None] = field(default_factory=set)
+    #: Сколько кассы исключено «под признание» по каждому контрагенту, и на какие строки она
+    #: пришлась. Нужно, чтобы сверить обещание с фактом: исключая платёж, отчёт утверждает,
+    #: что расход придёт начислением, — и обязан заметить, если начисление не пришло.
+    excluded_for_accrual: dict[uuid.UUID, Decimal] = field(
+        default_factory=lambda: defaultdict(Decimal)
+    )
+    excluded_for_accrual_lines: dict[uuid.UUID, set[str]] = field(
+        default_factory=lambda: defaultdict(set)
+    )
+    #: Имена тех, чью кассу исключили. Именно ТЕХ, а не признанных: сигнал нужен как раз про
+    #: контрагента, у которого признания нет, — в справочниках слоя признания его не будет.
+    excluded_counterparty_names: dict[uuid.UUID, str] = field(default_factory=dict)
+    #: КОНТРОЛЬНЫЙ ИТОГ, посчитанный НЕЗАВИСИМЫМ агрегатом в базе, и сколько проводок реально
+    #: прошло через разбор. Без независимой стороны сверка была тавтологией: и «сколько денег»,
+    #: и «сколько разложено» считались в одном цикле по одной выборке, поэтому дрейф равнялся
+    #: нулю алгебраически — при любой ошибке. Аудит 05.08.2026 назвал это «зелёной галочкой,
+    #: которая ничего не проверяет».
+    source_total: Decimal = Decimal("0.00")
+    source_count: int = 0
+    counted: int = 0
 
 
 async def _recognition_circuit(
@@ -228,6 +248,24 @@ async def build_cash_layer(
     recognized_articles = context.recognized_articles
 
     layer = CashLayer()
+    # Контроль считаем ДО разбора и другим способом — агрегатом на стороне базы. Смысл именно
+    # в независимости: если цикл ниже потеряет проводку (ранний continue, изменившийся фильтр,
+    # неверная выборка), расхождение станет видно. Сумма по той же выборке, посчитанная тем же
+    # циклом, доказать не может ничего.
+    control = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(CashflowTransaction.amount), 0),
+                func.count(CashflowTransaction.id),
+            ).where(
+                CashflowTransaction.operation_date >= month_start,
+                CashflowTransaction.operation_date <= month_end,
+            )
+        )
+    ).one()
+    layer.source_total = Decimal(control[0] or 0)
+    layer.source_count = int(control[1] or 0)
+
     transactions = (
         await session.execute(
             select(CashflowTransaction).where(
@@ -238,6 +276,7 @@ async def build_cash_layer(
     ).scalars()
 
     for tx in transactions:
+        layer.counted += 1
         amount = tx.amount or Decimal("0.00")
         if tx.direction == "out":
             layer.out_total += amount
@@ -270,6 +309,17 @@ async def build_cash_layer(
         else:
             bucket.excluded_amount += amount
             bucket.excluded_count += 1
+            if (
+                verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY
+                and tx.counterparty_id is not None
+                and tx.direction == "out"
+            ):
+                # Копим обещание: эти деньги ушли, но расходом здесь не считаются — их
+                # обязано заменить начисление. Сверку обещания с фактом делает проектор:
+                # тут ещё не видно, сколько признано по контрагенту в ДРУГИХ строках.
+                layer.excluded_for_accrual[tx.counterparty_id] += amount
+                if line_code is not None:
+                    layer.excluded_for_accrual_lines[tx.counterparty_id].add(line_code)
             if verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY and tx.counterparty_id is None:
                 # Проводка без контрагента, исключённая только потому, что по её СТАТЬЕ за
                 # месяц есть признание. В ДЗ/КЗ такого платежа нет вовсе — значит никто не
@@ -278,6 +328,20 @@ async def build_cash_layer(
                 # 18 600 ₽ за нейросеть и 4 000 ₽ мусорщикам — оба платежа без контрагента по
                 # статьям, где признание пришло от совсем других поставщиков.
                 bucket.unattributed_paid += amount
+
+    if layer.excluded_for_accrual:
+        # Названия одним запросом в конце: имя нужно только для предупреждения, и тянуть его
+        # внутри цикла означало бы запрос на каждую проводку.
+        from app.models import Counterparty
+
+        named = await session.execute(
+            select(Counterparty.id, Counterparty.name).where(
+                Counterparty.id.in_(layer.excluded_for_accrual)
+            )
+        )
+        for counterparty_id, name in named:
+            if name:
+                layer.excluded_counterparty_names[counterparty_id] = name
 
     return layer
 

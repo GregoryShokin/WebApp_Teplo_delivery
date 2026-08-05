@@ -969,11 +969,22 @@ async def process_attachment(
     intake.confidence = _confidence_decimal(rec.confidence)
 
     # Роль документа в контуре ДЗ/КЗ (канон 17.07): счёт → bill (очередь оплат), УПД/акт →
-    # closing (гасит дебиторку / встаёт в кредиторку). Акт сверки и всё без суммы учёт не двигают
-    # → ignored (PDF остаётся, оператор поднимет фильтром «Все»).
+    # closing (гасит дебиторку / встаёт в кредиторку).
     doc_kind = _doc_kind_from_recognition(rec.document_kind)
-    if rec.amount is None or rec.document_kind == "reconciliation":
+
+    # АКТ СВЕРКИ И СУММА, КОТОРУЮ НЕ УДАЛОСЬ ПРОЧИТАТЬ — РАЗНЫЕ НОВОСТИ, И РАНЬШЕ ОНИ ШЛИ
+    # ОДНОЙ ДОРОГОЙ. Акт сверки учёт действительно не двигает: ignored — его законный конец.
+    # А «сумму не распознали» значит только одно — МЫ не смогли прочитать документ, который
+    # контрагент прислал. Такой PDF уходил в тот же терминальный ignored и замолкал навсегда:
+    # расход по нему не признавался, в ДЗ/КЗ он не попадал, и узнать о пропаже было неоткуда.
+    # Аудит замкнутости 05.08.2026 нашёл этим путём 4 957,65 ₽ августовской коммуналки.
+    # Теперь это needs_review — та же очередь, куда попадает документ с низкой уверенностью.
+    if rec.document_kind == "reconciliation":
         intake.status = "ignored"
+        return intake.status
+    if rec.amount is None:
+        intake.status = "needs_review"
+        intake.error = "Сумма документа не распознана — проверьте вручную"
         return intake.status
 
     cp_id = await _match_or_create_counterparty(session, rec, _sender_email(att.from_addr))

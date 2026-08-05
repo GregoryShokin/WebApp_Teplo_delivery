@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import calendar
+import uuid
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -750,20 +752,32 @@ def _ordered(lines: dict[str, LineValue], catalog: list[dict[str, Any]]) -> list
 
 
 def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
-    """Уравнение замкнутости: отток обязан без остатка разложиться по вердиктам."""
+    """Уравнение замкнутости: движение денег месяца обязано без остатка разложиться по вердиктам.
+
+    СВЕРКА ДОЛЖНА ИМЕТЬ НЕЗАВИСИМУЮ СТОРОНУ, ИНАЧЕ ОНА НИЧЕГО НЕ ЗНАЧИТ. Раньше дрейф считался
+    как разность двух сумм, набранных в ОДНОМ цикле по ОДНОЙ выборке: и «сколько денег»,
+    и «сколько разложено». Такая разность равна нулю алгебраически — при любой ошибке, включая
+    потерянную проводку. Владельцу при этом показывалась зелёная карточка «каждый рубль
+    разложен», и аудит 05.08.2026 справедливо назвал её галочкой, которая ничего не проверяет.
+
+    Теперь вторая сторона — агрегат, посчитанный БАЗОЙ до разбора (``source_total``,
+    ``source_count``). Сходятся суммы и число обработанных проводок — значит цикл действительно
+    прошёл по всему, что есть в месяце. Разошлись — видно и на сколько рублей, и на сколько
+    документов.
+    """
     by_verdict = {key: value for key, value in layer.by_verdict.items()}
-    total_out = layer.out_total
-    total_in = layer.in_total
     covered = sum(by_verdict.values(), Decimal("0.00"))
-    drift = (total_out + total_in) - covered
+    drift = layer.source_total - covered
+    missed = layer.source_count - layer.counted
     return Reconciliation(
-        cash_out_total=total_out,
-        cash_in_total=total_in,
+        cash_out_total=layer.out_total,
+        cash_in_total=layer.in_total,
         by_verdict=by_verdict,
         unmapped=layer.unmapped,
         unmapped_count=layer.unmapped_count,
-        balanced=layer.unmapped == 0 and drift == 0,
+        balanced=layer.unmapped == 0 and drift == 0 and missed == 0,
         drift=drift,
+        missed_count=missed,
     )
 
 
@@ -864,4 +878,218 @@ def _warnings(
                     amount=unattributed,
                 )
             )
+    result.extend(_unfulfilled_accrual_warnings(cash, recognition))
     return result
+
+
+def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
+    """Уравнение замкнутости: движение денег месяца обязано без остатка разложиться по вердиктам.
+
+    СВЕРКА ДОЛЖНА ИМЕТЬ НЕЗАВИСИМУЮ СТОРОНУ, ИНАЧЕ ОНА НИЧЕГО НЕ ЗНАЧИТ. Раньше дрейф считался
+    как разность двух сумм, набранных в ОДНОМ цикле по ОДНОЙ выборке: и «сколько денег»,
+    и «сколько разложено». Такая разность равна нулю алгебраически — при любой ошибке, включая
+    потерянную проводку. Владельцу при этом показывалась зелёная карточка «каждый рубль
+    разложен», и аудит 05.08.2026 справедливо назвал её галочкой, которая ничего не проверяет.
+
+    Теперь вторая сторона — агрегат, посчитанный БАЗОЙ до разбора (``source_total``,
+    ``source_count``). Сходятся суммы и число обработанных проводок — значит цикл действительно
+    прошёл по всему, что есть в месяце. Разошлись — видно и на сколько рублей, и на сколько
+    документов.
+    """
+    by_verdict = {key: value for key, value in layer.by_verdict.items()}
+    covered = sum(by_verdict.values(), Decimal("0.00"))
+    drift = layer.source_total - covered
+    missed = layer.source_count - layer.counted
+    return Reconciliation(
+        cash_out_total=layer.out_total,
+        cash_in_total=layer.in_total,
+        by_verdict=by_verdict,
+        unmapped=layer.unmapped,
+        unmapped_count=layer.unmapped_count,
+        balanced=layer.unmapped == 0 and drift == 0 and missed == 0,
+        drift=drift,
+        missed_count=missed,
+    )
+
+
+def _unperiodled_warnings(
+    layer: waiting_source.UnperiodedLayer,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
+) -> list[Warning]:
+    """Документ лежит оплаченным, но без периода услуги — расход по нему не признан.
+
+    Самая тихая из всех потерь: «ждём документ» чинится временем, а это — никогда, пока
+    человек не откроет карточку и не поставит период. Строка при этом выглядит законченной.
+    Сумма в расход НЕ добавляется: месяц документа здесь догадка по его дате, а признание —
+    работа ДЗ/КЗ, и подменять её отчётом значило бы завести второй источник истины и получить
+    задвоение в тот день, когда период всё-таки заполнят.
+    """
+    result: list[Warning] = []
+    by_line: dict[str, Decimal] = {}
+    for item in layer.items:
+        line_code = article_lines.get(item.article_id)
+        if line_code is None or line_code not in lines:
+            continue
+        by_line[line_code] = by_line.get(line_code, Decimal("0.00")) + item.amount
+    for line_code, amount in by_line.items():
+        result.append(
+            Warning(
+                code="document_without_period",
+                line_code=line_code,
+                message=(
+                    f"«{lines[line_code].title}»: закрывающие документы на {rubles(amount)} ₽ "
+                    "лежат оплаченными без периода услуги — расход по ним не признан. "
+                    "Заполните период в ДЗ/КЗ, и сумма встанет в свой месяц"
+                ),
+                amount=amount,
+            )
+        )
+    return result
+
+
+def _warnings(
+    lines: dict[str, LineValue],
+    cash: cash_source.CashLayer,
+    recognition: recognition_source.RecognitionLayer,
+) -> list[Warning]:
+    result: list[Warning] = []
+    if cash.unmapped_count:
+        result.append(
+            Warning(
+                code="unmapped_cash",
+                message=(
+                    f"{cash.unmapped_count} проводок на {rubles(cash.unmapped)} ₽ не разнесены "
+                    "по статьям — отчёт неполон ровно на эту сумму"
+                ),
+                amount=cash.unmapped,
+            )
+        )
+    if recognition.unattributed:
+        result.append(
+            Warning(
+                code="recognition_unattributed",
+                message=(
+                    f"Признанный расход на {rubles(recognition.unattributed)} ₽ без статьи "
+                    "ДДС: в отчёт он не попал"
+                ),
+                amount=recognition.unattributed,
+            )
+        )
+    for line in lines.values():
+        paid = sum((component.unrecognized_paid for component in line.components), Decimal("0.00"))
+        if paid > 0:
+            result.append(
+                Warning(
+                    code="waiting_document",
+                    line_code=line.code,
+                    message=(
+                        f"«{line.title}»: за период оплачено {rubles(paid)} ₽, "
+                        "закрывающего документа ещё нет"
+                    ),
+                    amount=paid,
+                )
+            )
+        # Отдельная беда с отдельным лечением. «Ждём документ» решается временем — документ
+        # приедет сам. Здесь же ждать нечего: платёж не привязан к контрагенту, в ДЗ/КЗ его
+        # нет, и в расход он не попадёт никогда, пока человек не поставит контрагента.
+        unattributed = sum(
+            (component.unattributed_paid for component in line.components), Decimal("0.00")
+        )
+        if unattributed > 0:
+            result.append(
+                Warning(
+                    code="unattributed_paid",
+                    line_code=line.code,
+                    message=(
+                        f"«{line.title}»: {rubles(unattributed)} ₽ оплачено без контрагента — "
+                        "в ДЗ/КЗ платежа нет, в расход он не попал. Проставьте контрагента, "
+                        "чтобы сумма встала в свой месяц"
+                    ),
+                    amount=unattributed,
+                )
+            )
+    result.extend(_unfulfilled_accrual_warnings(cash, recognition))
+    return result
+
+
+def _unclassified_goods_warning(goods: iiko_source.UnclassifiedGoods) -> Warning | None:
+    """Закупка товара, который ещё не размечен, не попала ни в одну строку.
+
+    Счётчик «требует внимания» жил на вкладке разметки — надо было догадаться туда зайти.
+    В самом отчёте сигнала не было: строки считались без этих сумм, прибыль выходила
+    завышенной, и понять это по экрану было нельзя. Аудит 05.08.2026 намерил 6 072,35 ₽ за
+    июль по восьми позициям.
+    """
+    if goods.count == 0:
+        return None
+    listed = ", ".join(goods.names[:5])
+    if goods.count > 5:
+        listed = f"{listed} и ещё {goods.count - 5}"
+    return Warning(
+        code="unclassified_goods",
+        message=(
+            f"{goods.count} товаров закуплено на {rubles(goods.amount)} ₽ и не размечено: "
+            f"{listed}. Пока статья не выбрана, эта закупка не входит ни в одну строку — "
+            "прибыль завышена на эту сумму. Разметьте их во вкладке «Товары iiko»"
+        ),
+        amount=goods.amount,
+    )
+
+
+def _unfulfilled_accrual_warnings(
+    cash: cash_source.CashLayer,
+    recognition: recognition_source.RecognitionLayer,
+) -> list[Warning]:
+    """Обещание против факта: касса исключена «под начисление», а начисления столько нет.
+
+    ЧТО ЗДЕСЬ ЛОВИТСЯ. Как только контрагент попал в контур признания, ВСЯ его касса месяца
+    выбрасывается из строк: отчёт утверждает, что расход придёт документом. Утверждение это
+    ничем не проверялось — суммы признания считались (``CashContext.recognized``,
+    ``RecognitionLayer.by_pair``) и не читались ни разу. Если документ не приехал, деньги
+    ушли, расхода нет нигде, а строка показывает уверенное число. Аудит 05.08.2026 намерил
+    этим путём 82 995,59 ₽ за июль — молча.
+
+    ПОЧЕМУ СРАВНИВАЕМ ПО КОНТРАГЕНТУ, А НЕ ПО ПАРЕ «КОНТРАГЕНТ × СТАТЬЯ». У начисления статья
+    часто пуста, и признание уезжает на строку из карточки контрагента
+    (``default_dds_article_id``). Сверка по паре считала бы это расхождением и кричала бы на
+    здоровых данных — три контрагента июля (ЧОО, СПЕЦАВТО, ЭкоЦентр) дают ровно такой случай.
+
+    ПОЧЕМУ ЭТО ПРЕДУПРЕЖДЕНИЕ, А НЕ ПРАВКА СУММЫ. Разница законна ровно так же часто, как и
+    нет: заплатили в июле за август — предоплата, документ приедет в свой месяц. Отличить
+    предоплату от потерянного документа по цифрам нельзя, поэтому отчёт обязан не выбирать
+    молча, а показать разницу и назвать обе возможности.
+    """
+    if not cash.excluded_for_accrual:
+        return []
+    recognized_by_counterparty: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
+    for (counterparty_id, _article_id), amount in recognition.by_pair.items():
+        recognized_by_counterparty[counterparty_id] += amount
+
+    gaps: list[tuple[Decimal, str]] = []
+    for counterparty_id, excluded in cash.excluded_for_accrual.items():
+        gap = excluded - recognized_by_counterparty.get(counterparty_id, Decimal("0.00"))
+        if gap <= 0:
+            continue
+        name = cash.excluded_counterparty_names.get(counterparty_id) or "контрагент без названия"
+        gaps.append((gap, name))
+    if not gaps:
+        return []
+
+    gaps.sort(reverse=True)
+    total = sum((gap for gap, _name in gaps), Decimal("0.00"))
+    listed = ", ".join(f"{name} — {rubles(gap)} ₽" for gap, name in gaps[:5])
+    if len(gaps) > 5:
+        listed = f"{listed} и ещё {len(gaps) - 5}"
+    return [
+        Warning(
+            code="excluded_without_accrual",
+            message=(
+                f"Оплачено {rubles(total)} ₽, но расход по этим деньгам не признан: {listed}. "
+                "Платёж исключён из строки в пользу закрывающего документа, а документа на "
+                "эту сумму нет. Либо это предоплата будущего периода, либо документ не "
+                "приехал — во втором случае расход не попал в прибыль"
+            ),
+            amount=total,
+        )
+    ]

@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.services.pnl import formulas, iiko_sync
+from app.services.pnl import formulas, iiko_sync, projector
 from app.services.pnl.projector import IIKO_LINE_METRIC, INVERTED_IIKO_METRICS, rubles
 from app.services.pnl.sources import acquiring as acquiring_source
+from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.sources import inventory as inventory_source
 from app.services.pnl.sources import recognition as recognition_source
 from app.services.pnl.sources.acquiring import parse_commission
@@ -372,3 +374,148 @@ class TestMoscowMonthBounds:
         assert _msk_date(datetime(2026, 7, 28, 18, 38)) == date(2026, 7, 28)
         # 01.08 00:30 МСК = 31.07 21:30 UTC — наивная группировка утащила бы это в июль.
         assert _msk_date(datetime(2026, 7, 31, 21, 30)) == date(2026, 8, 1)
+
+
+class TestExcludedWithoutAccrual:
+    """Касса исключена «под начисление» — а начисления столько нет.
+
+    Как только контрагент попал в контур признания, вся его касса месяца выбрасывается из
+    строк: отчёт утверждает, что расход придёт документом. Утверждение это не проверялось
+    ничем — суммы признания считались и не читались. Аудит замкнутости 05.08.2026 намерил
+    таким путём 134 000 ₽ за июль, среди них Манго Телеком (10 000 ₽) — ровно тот случай,
+    который владелец поймал глазами: «телекоммуникации бывают только Микроэлом».
+    """
+
+    CP_A = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    CP_B = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    ARTICLE = uuid.UUID("33333333-3333-3333-3333-333333333333")
+
+    def _layers(self, excluded: dict, recognized: dict, names: dict | None = None):
+        cash = cash_source.CashLayer()
+        cash.excluded_for_accrual.update(excluded)
+        cash.excluded_counterparty_names.update(names or {})
+        recognition = recognition_source.RecognitionLayer()
+        for pair, amount in recognized.items():
+            recognition.by_pair[pair] = amount
+        return cash, recognition
+
+    def test_gap_is_reported_with_name_and_amount(self) -> None:
+        cash, recognition = self._layers(
+            excluded={self.CP_A: Decimal("10000.00")},
+            recognized={},
+            names={self.CP_A: "Манго Телеком, ООО"},
+        )
+        warnings = projector._unfulfilled_accrual_warnings(cash, recognition)
+        assert len(warnings) == 1
+        assert warnings[0].code == "excluded_without_accrual"
+        assert warnings[0].amount == Decimal("10000.00")
+        assert "Манго Телеком" in warnings[0].message
+        # Обе трактовки названы: молча выбрать одну из них отчёт не вправе.
+        assert "предоплата" in warnings[0].message
+        assert "не приехал" in warnings[0].message
+
+    def test_fully_recognised_payment_is_silent(self) -> None:
+        cash, recognition = self._layers(
+            excluded={self.CP_A: Decimal("50000.00")},
+            recognized={(self.CP_A, self.ARTICLE): Decimal("50000.00")},
+        )
+        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+
+    def test_recognition_counts_across_articles(self) -> None:
+        """Сверка идёт ПО КОНТРАГЕНТУ: у начисления статья часто пуста, и признание уезжает
+        на строку из карточки. Сверка по паре кричала бы на здоровых данных."""
+        cash, recognition = self._layers(
+            excluded={self.CP_A: Decimal("9000.00")},
+            recognized={
+                (self.CP_A, self.ARTICLE): Decimal("4000.00"),
+                (self.CP_A, None): Decimal("5000.00"),
+            },
+        )
+        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+
+    def test_overpaid_recognition_does_not_go_negative(self) -> None:
+        # Признано больше оплаченного — это не разрыв, а нормальная рассрочка.
+        cash, recognition = self._layers(
+            excluded={self.CP_A: Decimal("1000.00")},
+            recognized={(self.CP_A, self.ARTICLE): Decimal("5000.00")},
+        )
+        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+
+    def test_gaps_are_sorted_and_summed(self) -> None:
+        cash, recognition = self._layers(
+            excluded={self.CP_A: Decimal("6000.00"), self.CP_B: Decimal("68000.00")},
+            recognized={(self.CP_A, self.ARTICLE): Decimal("3000.00")},
+            names={self.CP_A: "Наумченко", self.CP_B: "О. О, ООО"},
+        )
+        warnings = projector._unfulfilled_accrual_warnings(cash, recognition)
+        assert warnings[0].amount == Decimal("71000.00")
+        # Крупнейший разрыв назван первым: с него и начинают разбираться.
+        assert warnings[0].message.index("О. О") < warnings[0].message.index("Наумченко")
+
+
+class TestReconciliationIsNotTautological:
+    """Сверка обязана уметь провалиться — иначе зелёная галочка не значит ничего.
+
+    Раньше дрейф считался как разность двух сумм, набранных ОДНИМ циклом по ОДНОЙ выборке,
+    и был нулём алгебраически: сверка не могла показать ошибку даже при потерянной проводке.
+    Аудит 05.08.2026 назвал это «галочкой, которая ничего не проверяет». Теперь вторая
+    сторона — контрольный агрегат базы, и эти тесты проверяют именно способность падать.
+    """
+
+    def _layer(self, *, source_total: str, source_count: int, counted: int, verdicts: dict):
+        layer = cash_source.CashLayer()
+        layer.source_total = Decimal(source_total)
+        layer.source_count = source_count
+        layer.counted = counted
+        for verdict, amount in verdicts.items():
+            layer.by_verdict[verdict] = Decimal(amount)
+        return layer
+
+    def test_balanced_when_everything_matches(self) -> None:
+        layer = self._layer(
+            source_total="1000.00",
+            source_count=3,
+            counted=3,
+            verdicts={"included": "600.00", "excluded_out_of_pnl": "400.00"},
+        )
+        result = projector._reconciliation(layer)
+        assert result.drift == Decimal("0.00")
+        assert result.missed_count == 0
+        assert result.balanced is True
+
+    def test_lost_money_is_caught(self) -> None:
+        """Проводка не дошла до вердикта — база знает про 1000, вердикты знают про 600."""
+        layer = self._layer(
+            source_total="1000.00",
+            source_count=3,
+            counted=3,
+            verdicts={"included": "600.00"},
+        )
+        result = projector._reconciliation(layer)
+        assert result.drift == Decimal("400.00")
+        assert result.balanced is False
+
+    def test_lost_zero_amount_transaction_is_caught_by_count(self) -> None:
+        """Потеря нулевой проводки рублями не видна — её ловит счётчик документов."""
+        layer = self._layer(
+            source_total="1000.00",
+            source_count=4,
+            counted=3,
+            verdicts={"included": "1000.00"},
+        )
+        result = projector._reconciliation(layer)
+        assert result.drift == Decimal("0.00"), "сумма сходится"
+        assert result.missed_count == 1, "а проводка потеряна"
+        assert result.balanced is False
+
+    def test_unmapped_still_breaks_the_balance(self) -> None:
+        layer = self._layer(
+            source_total="1000.00",
+            source_count=2,
+            counted=2,
+            verdicts={"included": "900.00", "unmapped": "100.00"},
+        )
+        layer.unmapped = Decimal("100.00")
+        result = projector._reconciliation(layer)
+        assert result.drift == Decimal("0.00")
+        assert result.balanced is False

@@ -88,6 +88,7 @@ class ReconciliationOut(BaseModel):
     unmapped_count: int
     balanced: bool
     drift: Decimal
+    missed_count: int = 0
 
     @field_serializer("cash_out_total", "cash_in_total", "unmapped", "drift")
     def _money(self, value: Decimal) -> str:
@@ -402,6 +403,7 @@ def _report_out(report: PnlReport) -> PnlReportOut:
             unmapped_count=report.reconciliation.unmapped_count,
             balanced=report.reconciliation.balanced,
             drift=report.reconciliation.drift,
+            missed_count=report.reconciliation.missed_count,
         ),
         warnings=[
             WarningOut(
