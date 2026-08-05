@@ -484,6 +484,10 @@ async def change_accrual_period(
             invoice.service_period_end = end
             invoice.service_period_source = "corrected"
             invoice.service_period_status = "ready"
+            # Период двигает и дату вступления документа в силу — вторая дверь правки обязана
+            # пересматривать активацию так же, как первая, иначе баланс на дату разойдётся с
+            # витринами именно там, где оператор только что навёл порядок.
+            await _resync_activation_after_period_change(session, invoice)
     if accrual.expense_draft_line_id is not None:
         line = await session.get(ExpenseDraftLine, accrual.expense_draft_line_id)
         if line is not None:
@@ -535,10 +539,38 @@ async def set_invoice_service_period(
     invoice.service_period_source = "manual"
     invoice.service_period_status = "ready"
     accrual = await sync_invoice_accrual(session, invoice)
+    await _resync_activation_after_period_change(session, invoice)
     await session.commit()
     if accrual is not None:
         await session.refresh(accrual)
     return accrual
+
+
+async def _resync_activation_after_period_change(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> None:
+    """Пересмотреть вступление документа в силу после правки периода услуги. Без коммита.
+
+    Период двигает дату вступления закрывающего в силу (правило 4 считает по поздней из даты
+    документа и конца периода), поэтому правка периода может как ОТЛОЖИТЬ уже действующий
+    документ, так и наоборот. Пока этого пересмотра не было, оператор, проставивший период
+    задним числом, получал документ, который по всем витринам действует, а по балансу на дату —
+    ещё нет: два источника правды расходились без пути назад.
+
+    Отложить — значит вернуть авансам зачёты этого документа: он больше не основание.
+    Разбудить — провести штатным ``apply_closing_document``, той же дверью, что и джоба."""
+    if invoice.doc_kind != "closing" or invoice.payment_status == "void":
+        return
+    from app.services import supplier_prepayments as prepayments
+
+    effective = prepayments._closing_effective_date(invoice)
+    today = datetime.now(MOSCOW_TZ).date()
+    should_wait = effective is not None and effective > today
+    if should_wait and invoice.activation_status == "active":
+        await prepayments.release_invoice_prepayment_allocations(session, invoice)
+        invoice.activation_status = "pending"
+    elif not should_wait and invoice.activation_status == "pending":
+        await prepayments.apply_closing_document(session, invoice)
 
 
 async def _cancel_accrual(

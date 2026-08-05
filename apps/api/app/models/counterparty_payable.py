@@ -816,6 +816,13 @@ class InvoicePaymentAllocation(Base):
     # (двойной зачёт), либо снимала бы чужую ручную оплату (счёт возвращался в очередь оплат
     # и риск заплатить дважды). Старые строки остаются NULL — для них doc_kind-правило и верно.
     origin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # НА КАКОМ ОСНОВАНИИ выбран именно этот аванс (в отличие от ``origin``, который про автора).
+    # Значения — ровно ``supplier_prepayments._MATCH_RANKS``: 'basis_invoice' (счёт назван в
+    # строке «Основание» документа), 'period_product', 'product', 'service_period', 'amount'
+    # (нетронутый аванс ровно на сумму документа), 'chronology' — признака не нашлось.
+    # Последнее означает «система угадала» и в сверке должно читаться именно так. NULL — зачёт
+    # человека или адресной двери, где аванс выбран явно.
+    match_basis: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )

@@ -147,6 +147,19 @@ type DocumentAllocationRef = {
   amount: number;
   operation_date: string | null;
   prepayment_kind: string | null;
+  match_basis: string | null;
+};
+
+// Чем система обосновала выбор аванса. Показываем только догадку: остальные основания —
+// нормальная работа, а вот «взяла по хронологии» человек должен видеть глазами. Молчаливая
+// догадка однажды уже разложила зачёты АО «АЙКО» крест-накрест, и заметить это было негде.
+const GUESSED_MATCH = "chronology";
+const MATCH_BASIS_HINT: Record<string, string> = {
+  basis_invoice: "счёт-основание назван в самом документе",
+  service_period: "совпал период услуги",
+  product: "тот же продукт поставщика",
+  amount: "совпала сумма",
+  chronology: "подобрано по хронологии денег — связь не подтверждена документом",
 };
 
 type DocumentRow = {
@@ -1556,14 +1569,22 @@ function DocumentsSection({ filters }: { filters: RegisterFilters }) {
                               key={`${row.invoice_id}:${index}`}
                               variant="outline"
                               className={
-                                alloc.source_kind === "prepayment"
-                                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                alloc.match_basis === GUESSED_MATCH
+                                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                                  : alloc.source_kind === "prepayment"
+                                    ? "border-sky-200 bg-sky-50 text-sky-700"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
                               }
-                              title={alloc.operation_date ? fmtDate(alloc.operation_date) : undefined}
+                              title={[
+                                alloc.operation_date ? fmtDate(alloc.operation_date) : null,
+                                alloc.match_basis ? MATCH_BASIS_HINT[alloc.match_basis] : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
                             >
                               {ALLOCATION_LABEL[alloc.source_kind] ?? alloc.source_kind} ·{" "}
                               {moneyExact.format(alloc.amount)}
+                              {alloc.match_basis === GUESSED_MATCH ? " · подобрано" : ""}
                             </Badge>
                           ))
                         )}

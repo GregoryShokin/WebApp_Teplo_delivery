@@ -7,7 +7,8 @@
 а 31 июля был живой кредиторкой.
 
 КАК СЧИТАЕМ. Обязательство существует на дату, если документ к ней уже вступил в силу
-(``invoice_date <= as_of`` — правило 4 канона), и гасится теми аллокациями, чьё СОБЫТИЕ
+(правило 4 канона: поздняя из даты документа и конца подтверждённого периода услуги —
+``_document_in_force``), и гасится теми аллокациями, чьё СОБЫТИЕ
 произошло не позже даты. Дебиторка — зеркально: предоплата существует с даты своего денежного
 факта и уменьшается гашениями до даты.
 
@@ -16,8 +17,8 @@
 день-два, а иногда через неделю. Поэтому дату берём из самого денежного факта:
 
 * ``source_kind='cash'``/банк → дата проводки или банковской операции;
-* ``source_kind='prepayment'`` → дата документа, который гасят: обязательство и его закрытие
-  предоплатой возникают одним событием — приходом документа;
+* ``source_kind='prepayment'`` → дата вступления в силу документа, который гасят:
+  обязательство и его закрытие предоплатой возникают одним событием;
 * ``source_kind='barter'`` → дата зачёта, а её у нас только по записи (``created_at``).
 
 Последний случай — единственный, где дата приблизительна, и врать об этом не стоит: бартерные
@@ -34,7 +35,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -101,17 +102,57 @@ _prepayment_money_date = (
 )
 
 
+def _document_in_force(fallback):
+    """Дата, с которой закрывающий документ действует: поздняя из своей и конца периода услуги.
+
+    Зеркало ``supplier_prepayments._closing_effective_date`` в SQL. Формула нужна в трёх местах
+    расчёта (обязательство, дата гашения у КЗ и та же дата у ДЗ), и держать её копиями нельзя:
+    стоит одной копии отстать — одно и то же гашение считается на разные даты у дебиторки и у
+    кредиторки, а баланс перестаёт сходиться сам с собой.
+
+    ``fallback`` — чем заменить отсутствующую дату документа (дата записи аллокации или самого
+    документа, в зависимости от места вызова).
+
+    Три ограничения повторяют питоновский оригинал слово в слово, и каждое куплено разбором:
+    правило про ЗАКРЫВАЮЩИЙ документ («услуга оказана») — у счёта период значит обратное, за
+    что платят ВПЕРЁД, и распространить на него правило значило бы прятать оплаченный аванс до
+    конца оплаченного месяца; период считается только ``ready`` — недоверенный (``ambiguous``)
+    не двигает ни обязательство, ни зачёт; без собственной даты документ не откладывается."""
+    own = func.coalesce(SupplierInvoice.invoice_date, fallback)
+    return case(
+        (
+            and_(
+                SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.invoice_date.is_not(None),
+                SupplierInvoice.service_period_status == "ready",
+                SupplierInvoice.service_period_end.is_not(None),
+            ),
+            func.greatest(SupplierInvoice.invoice_date, SupplierInvoice.service_period_end),
+        ),
+        else_=own,
+    )
+
+
 def _allocation_event_date():
     """Дата хозяйственного события аллокации — по ВИДУ гашения, а не по «что первое не NULL».
 
     Разделение по ``source_kind`` здесь принципиально. Дата документа верна только для
     гашения предоплатой: деньги ушли раньше, а обязательство и его закрытие авансом
-    возникают одним событием — приходом документа. Для бартерного зачёта она НЕВЕРНА:
+    возникают одним событием — вступлением документа в силу. Для бартерного зачёта она НЕВЕРНА:
     зачёт оформляют месяцами позже прихода товара, и общий COALESCE, подхватывая
     ``invoice_date`` погашаемой накладной, делал условие ``event_date <= as_of``
     тождественно истинным — зачтённая товаром кредиторка не показывалась открытой НИ НА
     ОДНУ историческую дату, хотя реально висела с июля по сентябрь.
+
+    ВСТУПЛЕНИЕ В СИЛУ, А НЕ ДАТА НА БУМАГЕ. Документ, выданный вперёд на месяц, начинает
+    действовать по окончании услуги — так же, как его пропускает правило 4
+    (``supplier_prepayments._closing_effective_date``). Пока здесь стояла голая
+    ``invoice_date``, акт iiko от 01.08 за август списывал аванс первым числом: плитка
+    «Остатки» держала дебиторку весь месяц (документ ждал в ``pending``), а баланс на
+    середину августа показывал ноль. Два источника правды об одном контрагенте расходились
+    на 20 690 ₽, и оба считали себя правыми.
     """
+    document_in_force = _document_in_force(func.date(InvoicePaymentAllocation.created_at))
     return case(
         (
             InvoicePaymentAllocation.source_kind == "prepayment",
@@ -121,16 +162,8 @@ def _allocation_event_date():
             # хотя предоплаты в тот день ещё не существовало. Обе стороны показывали ноль там,
             # где был живой долг.
             func.greatest(
-                func.coalesce(
-                    SupplierInvoice.invoice_date, func.date(InvoicePaymentAllocation.created_at)
-                ),
-                func.coalesce(
-                    _prepayment_money_date.c.money_date,
-                    func.coalesce(
-                        SupplierInvoice.invoice_date,
-                        func.date(InvoicePaymentAllocation.created_at),
-                    ),
-                ),
+                document_in_force,
+                func.coalesce(_prepayment_money_date.c.money_date, document_in_force),
             ),
         ),
         (
@@ -211,10 +244,14 @@ async def build_balance_as_of(
             )
             .where(
                 *_DOC_CONDITIONS,
-                # Правило 4 канона: документ становится обязательством своей датой. Документ
-                # без даты считаем действующим с момента записи — других ориентиров нет.
-                func.coalesce(SupplierInvoice.invoice_date, func.date(SupplierInvoice.created_at))
-                <= as_of,
+                # Правило 4 канона: документ становится обязательством, когда услуга по нему
+                # оказана — по поздней из двух дат, своей и конца периода услуги (то же, что
+                # ``supplier_prepayments._closing_effective_date``). Акт, выданный вперёд на
+                # месяц, до конца периода обязательством не является: иначе у поставщика,
+                # оплаченного авансом, в середине месяца одновременно висели бы кредиторка по
+                # неоказанной услуге и списанный аванс. Документ без даты считаем действующим
+                # с момента записи — других ориентиров нет.
+                _document_in_force(func.date(SupplierInvoice.created_at)) <= as_of,
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
@@ -236,16 +273,10 @@ async def build_balance_as_of(
             # Та же поздняя из двух дат, что и на стороне кредиторки: иначе одно и то же
             # гашение считалось бы на разные даты у ДЗ и у КЗ.
             func.greatest(
-                func.coalesce(
-                    SupplierInvoice.invoice_date,
-                    func.date(InvoicePaymentAllocation.created_at),
-                ),
+                _document_in_force(func.date(InvoicePaymentAllocation.created_at)),
                 func.coalesce(
                     _prepayment_money_date.c.money_date,
-                    func.coalesce(
-                        SupplierInvoice.invoice_date,
-                        func.date(InvoicePaymentAllocation.created_at),
-                    ),
+                    _document_in_force(func.date(InvoicePaymentAllocation.created_at)),
                 ),
             )
             <= as_of,
