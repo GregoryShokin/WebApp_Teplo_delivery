@@ -1619,6 +1619,58 @@ def test_classification_edit_keeps_bar_audit_details(async_session_factory) -> N
     asyncio.run(scenario())
 
 
+def test_invoice_expense_product_never_becomes_an_audit_loss(async_session_factory) -> None:
+    """Товар с расходом по факту покупки не попадает в ревизионную потерю.
+
+    Правило владельца 05.08.2026: перчатки, шпажки, полотенца, чековая лента в складском учёте
+    не участвуют, расход признаётся по закупке, в балансе их нет. Значит и недостача по ним
+    расходом быть не может — за товар заплатили бы дважды. Барную ревизию заводили в модуль
+    «Ревизии» (документ 01.06.2026), так что путь для такого задвоения открыт.
+    """
+
+    async def scenario() -> None:
+        gloves = "invoice-expense-gloves"
+        raw = "cook-raw-product"
+        async with async_session_factory() as session:
+            session.add(
+                PnlProductWhitelist(
+                    iiko_product_guid=gloves,
+                    source_kind="incoming_invoice",
+                    line_code="aux_goods",
+                    include_status="include",
+                    product_name="Перчатки винил",
+                )
+            )
+            audit = InventoryAudit(business_date=date(2026, 7, 6), status="applied")
+            session.add(audit)
+            await session.flush()
+            for guid, shortage in ((gloves, "2807.45"), (raw, "500.00")):
+                session.add(
+                    InventoryAuditItem(
+                        audit_id=audit.id,
+                        iiko_product_guid=guid,
+                        product_name_snapshot=guid,
+                        shortage_amount=Decimal(shortage),
+                        amount=Decimal(shortage),
+                    )
+                )
+            await session.commit()
+
+            excluded = await load_packaging_guids(session)
+            assert gloves in excluded
+            assert raw not in excluded
+
+            month = await build_inventory_month(
+                session,
+                date(2026, 7, 1),
+                date(2026, 7, 31),
+                packaging_guids=excluded,
+            )
+            assert month.product_result == Decimal("500.00")
+
+    asyncio.run(scenario())
+
+
 def test_rebuild_leaves_unsynced_month_untouched(async_session_factory) -> None:
     """В месяце без выгрузки iiko метрика не обнуляется: ноль там значил бы «нет данных»."""
 
