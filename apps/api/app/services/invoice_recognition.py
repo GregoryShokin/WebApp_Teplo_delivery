@@ -152,6 +152,11 @@ class RecognizedInvoice:
     # Основным остаётся счёт (он идёт в очередь оплат), спутник — закрывающий УПД/акт, который
     # ingest проводит отдельным документом (кредиторка / гашение дебиторки).
     companion: RecognizedInvoice | None = None
+    # Документ-ОСНОВАНИЕ закрывающего: «Основание Счет № 040726-40618-лсп от 04.07.2026».
+    # Это реквизиты ЧУЖОГО документа (счёта), поэтому в номер/дату самого акта они не идут —
+    # но по ним ingest находит оплаченный счёт и наследует его период услуги.
+    basis_number: str | None = None
+    basis_date: date | None = None
 
     @property
     def is_payment_invoice(self) -> bool:
@@ -201,6 +206,8 @@ class RecognizedInvoice:
             "confidence": round(self.confidence, 3),
             "engine": self.engine,
             "document_kind": self.document_kind,
+            "basis_number": self.basis_number,
+            "basis_date": self.basis_date.isoformat() if self.basis_date else None,
             "product_hint": self.product_hint,
             "requisites": self.requisites(),
             "notes": self.notes,
@@ -260,7 +267,73 @@ _BOILERPLATE_RE = re.compile(r"утвержд|постановлен|госко�
 _EARLIEST_INVOICE_YEAR = 2015
 
 
-def _pick_invoice_date(text: str) -> date | None:
+# «Основание Счет № 040726-40618-лсп от 04.07.2026» — реквизиты ЧУЖОГО документа. Акт iiko
+# собственный номер печатает без «№», поэтому поиск «Счёт №…» находил в нём только основание:
+# августовский акт вставал в реестры счётом от 4 июля, неотличимым от уже оплаченного.
+_BASIS_LINE_RE = re.compile(r"основани[ея]\s*[:\-]?\s*(?P<body>[^\n]{0,200})", re.IGNORECASE)
+
+
+def _strip_basis_lines(text: str) -> str:
+    """Текст без ссылок на документ-основание — в нём ищем реквизиты САМОГО документа."""
+    return _BASIS_LINE_RE.sub("Основание", text)
+
+
+def _pick_basis(text: str) -> tuple[str | None, date | None]:
+    """Номер и дата документа-основания («Основание Счет № X от 04.07.2026»)."""
+    match = _BASIS_LINE_RE.search(text)
+    if match is None:
+        return None, None
+    body = match.group("body")
+    number = None
+    hash_pos = body.find("№")
+    if hash_pos != -1:
+        number = _number_after_hash(body[hash_pos + 1 :])
+    basis_date = None
+    date_match = _DATE_AFTER_OT_RE.search(body)
+    if date_match is not None:
+        parsed = _parse_date(date_match.group(1))
+        if parsed is not None and parsed.year >= _EARLIEST_INVOICE_YEAR:
+            basis_date = parsed
+    return number, basis_date
+
+
+# Унифицированный бланк печатает свои реквизиты таблицей, без «№»:
+#
+#     Номер документа Дата составления
+#     Акт на передачу прав 10826-9432-лсп 01.08.2026
+#
+# Отсюда и берём номер с датой закрывающего документа — они его собственные, а не счёта.
+_FORM_NUMBER_DATE_RE = re.compile(
+    r"номер\s+документа\s+дата\s+составления\s+(?P<rest>[^\n]{0,200})", re.IGNORECASE
+)
+_FORM_VALUES_RE = re.compile(r"(?P<number>\S+)\s+(?P<date>\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})")
+
+
+def _pick_form_number_date(text: str) -> tuple[str | None, date | None]:
+    """Номер и дата из таблицы «Номер документа / Дата составления» унифицированного бланка."""
+    header = _FORM_NUMBER_DATE_RE.search(text)
+    if header is None:
+        return None, None
+    values = _FORM_VALUES_RE.search(header.group("rest"))
+    if values is None:
+        return None, None
+    number = values.group("number").strip("-/,;")
+    # Без цифры это не номер, а хвост названия документа («Акт приёма-передачи 01.08.2026»).
+    if not any(ch.isdigit() for ch in number):
+        number = None
+    parsed = _parse_date(values.group("date"))
+    if parsed is not None and parsed.year < _EARLIEST_INVOICE_YEAR:
+        parsed = None
+    return number, parsed
+
+
+def _pick_invoice_date(raw_text: str) -> date | None:
+    # Дата бланка («Номер документа / Дата составления») — собственная дата документа, поэтому
+    # она сильнее любого «от <дата>» в теле; строку основания при поиске не рассматриваем вовсе.
+    _, form_date = _pick_form_number_date(raw_text)
+    if form_date is not None:
+        return form_date
+    text = _strip_basis_lines(raw_text)
     for m in _DATE_AFTER_OT_RE.finditer(text):
         context = text[max(0, m.start() - 80) : m.start()]
         if _BOILERPLATE_RE.search(context):
@@ -274,6 +347,23 @@ def _pick_invoice_date(text: str) -> date | None:
 
 def _month_period(year: int, month: int) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
+# Место подписи в унифицированном бланке: день печатается в кавычках («"01" августа 2026
+# года», «"     " ___ 20    года»), поэтому обычная защита «перед месяцем не должно быть
+# цифры» его пропускает. Ловим сам оттиск кавычек слева от месяца и строку с «М.П.».
+_SIGNATURE_DAY_RE = re.compile(r"[\"«»']\s*\d{0,2}\s*[\"«»']\s*$")
+_SIGNATURE_MARK_RE = re.compile(r"м\.\s*п\.", re.IGNORECASE)
+
+
+def _is_signature_date(text: str, month_pos: int) -> bool:
+    """Месяц на позиции ``month_pos`` — часть подписной строки бланка, а не период услуги."""
+    if _SIGNATURE_DAY_RE.search(text[max(0, month_pos - 14) : month_pos]):
+        return True
+    line_start = text.rfind("\n", 0, month_pos) + 1
+    line_end = text.find("\n", month_pos)
+    line = text[line_start : line_end if line_end != -1 else len(text)]
+    return bool(_SIGNATURE_MARK_RE.search(line))
 
 
 def _extract_service_periods(text: str) -> list[tuple[date, date, str, float]]:
@@ -358,6 +448,13 @@ def _extract_service_periods(text: str) -> list[tuple[date, date, str, float]]:
         key = month_name.casefold()
         month = _RU_MONTHS.get(key) or _RU_MONTH_ABBR.get(key)
         if month is None:
+            continue
+        # Подписная строка бланка — это дата ПОДПИСАНИЯ, а не период услуги: «М.П. "01"
+        # августа 2026 года». Запрет «дня перед месяцем» её не ловил, потому что день стоит
+        # в кавычках, и акты iiko получали период по дате подписи. Совпадало это с правдой
+        # только пока iiko подписывает акт первым числом оплаченного месяца: подпиши он тот
+        # же акт 1 сентября — расход августа уехал бы в сентябрь.
+        if _is_signature_date(text, match.start(1)):
             continue
         year = int(year_raw)
         # Год-ориентир: счета живут годами, а «Мар. 2021» из номера договора — мусор.
@@ -657,7 +754,17 @@ def _number_after_hash(tail: str) -> str | None:
     return None
 
 
-def _pick_number(text: str) -> str | None:
+def _pick_number(raw_text: str) -> str | None:
+    # 0) Унифицированный бланк: собственный номер документа стоит в таблице без «№». Пробуем
+    #    его ПЕРВЫМ — иначе в закрывающем документе находится номер счёта-основания, а «свой»
+    #    остаётся ненайденным (у актов iiko знака «№» при номере нет вовсе).
+    form_number, _ = _pick_form_number_date(raw_text)
+    if form_number:
+        return form_number
+    # Дальше ищем по тексту БЕЗ строки «Основание …»: там реквизиты чужого документа, и они
+    # выигрывают у собственных как более раннее совпадение. Срезаем здесь, а не у вызывающего,
+    # чтобы защита действовала на любом пути — в том числе у прямых вызовов из тестов.
+    text = _strip_basis_lines(raw_text)
     # 1) «Счёт [на оплату|-фактура|-договор|-оферта] № <номер>» (iiko, ЛЕММА, СДЭК, ДоксИнБокс).
     #    Форма «Счет-оферта на оказание услуг №…» номера не отдавала: между «счёт» и «№» стоят
     #    посторонние слова, и шаблон рвался. Номер счёта уходит в назначение платежа — без него
@@ -750,6 +857,10 @@ def deterministic_recognize(text: str, *, context_text: str | None = None) -> Re
     rec.corr_account = ks or _labelled_20(text, r"к[\s/.]*с", r"корр[\w.\s]*сч[её]т")
     kpp = re.search(r"КПП[\s:№]*?(\d{9})", text, re.IGNORECASE)
     rec.kpp = kpp.group(1) if kpp else None
+    # Реквизиты документа-основания забираем отдельно: номером и датой САМОГО документа они не
+    # становятся (иначе акт неотличим от счёта, по которому уже прошла оплата), но по ним ingest
+    # находит счёт и наследует его период услуги.
+    rec.basis_number, rec.basis_date = _pick_basis(text)
     rec.invoice_number = _pick_number(text)
     rec.invoice_date = _pick_invoice_date(text)
     _apply_service_period(rec, text, context_text)
