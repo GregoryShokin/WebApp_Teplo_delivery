@@ -10,10 +10,15 @@
 человеку остаётся подтвердить или отклонить. Отклонение — не ошибка, а нормальный ответ:
 товар вернётся в обычную разметку и получит постоянную статью.
 
-ПОЧЕМУ АКТ СОЗДАЁТСЯ, НО НЕ ПРОВОДИТСЯ. ``create`` рождает документ в состоянии NEW, а строка
-ОПиУ «Списание продукции и сырья» берёт только проведённые. Проведение — отдельный шаг
-(``post``), и он намеренно оставлен человеку: провести документ значит изменить складские
-остатки боевой iiko, а это не то, что стоит делать молча по итогам одной галочки.
+АКТ СРАЗУ ПРОВОДИТСЯ — решение владельца 05.08.2026. ``create`` рождает документ в состоянии
+NEW, а строка ОПиУ «Списание продукции и сырья» берёт только проведённые: непроведённый акт
+не даёт расхода, то есть подтверждение проработки не доводило бы дело до прибыли. Поэтому за
+созданием идёт ``post``, и подтверждение — действительно один клик.
+
+ДВА ВЫЗОВА — ДВА ГЕЙТА. Между «создан» и «проведён» отдельный сетевой поход, и упасть может
+именно он. Поэтому состояние хранится двумя признаками: ``writeoff_document_id`` и
+``writeoff_posted``. Повтор после сбоя проводит СУЩЕСТВУЮЩИЙ документ, а не создаёт второй, —
+иначе на складе iiko оказалось бы два списания одного товара.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ _MSK = ZoneInfo("Europe/Moscow")
 ZERO_GUID = "00000000-0000-0000-0000-000000000000"
 
 CREATE_PATH = "/api/inventory/v1/writeoff_document/create"
+POST_PATH = "/api/inventory/v1/writeoff_document/post"
 
 #: Реквизиты списания на проде — подсмотрены у реальных актов (проба 05.08.2026).
 #: В настройки не выносим, пока склад один: лишний экран настроек без второго склада только
@@ -97,6 +103,7 @@ class WorkupReviewRow:
     supplier_name: str | None
     writeoff_document_id: str | None
     writeoff_number: str | None
+    writeoff_posted: bool
     writeoff_error: str | None
     decided_at: datetime | None
 
@@ -213,6 +220,7 @@ async def list_reviews(
             supplier_name=(supplier.name if supplier is not None else None),
             writeoff_document_id=review.writeoff_document_id,
             writeoff_number=review.writeoff_number,
+            writeoff_posted=review.writeoff_posted,
             writeoff_error=review.writeoff_error,
             decided_at=review.decided_at,
         )
@@ -268,15 +276,20 @@ async def confirm_workup(
     user_id: uuid.UUID | None,
     create_act: bool = True,
 ) -> WorkupReviewRow:
-    """«Да, проработка»: пометить решение и списать товар актом в iiko.
+    """«Да, проработка»: пометить решение, списать товар актом и провести акт.
 
-    ПОВТОР НЕ СОЗДАЁТ ВТОРОЙ АКТ. Cloud ``create`` не идемпотентен, поэтому гейт — заполненный
-    ``writeoff_document_id``. Двойной клик, ретрай после таймаута, повторный вызов из очереди —
-    всё это находит уже созданный документ и выходит.
+    ПОВТОР НЕ СОЗДАЁТ ВТОРОЙ АКТ И НЕ ПРОВОДИТ ДВАЖДЫ. Cloud ``create`` не идемпотентен, поэтому
+    гейтов два: ``writeoff_document_id`` не даёт создать документ заново, ``writeoff_posted`` —
+    провести уже проведённый. Двойной клик и ретрай после сбоя доводят до конца ту же работу,
+    а не начинают новую.
+
+    ДОВЕДЕНИЕ ДО КОНЦА ВАЖНЕЕ КРАСОТЫ. Если в прошлый раз документ создался, но не провёлся,
+    повтор проведёт именно его: непроведённый акт расхода не даёт, и подтверждение проработки
+    осталось бы без последствий для прибыли.
 
     ОШИБКА iiko НЕ ОТМЕНЯЕТ РЕШЕНИЕ ЧЕЛОВЕКА. Ответ сохраняется в любом случае, а отказ внешней
     системы ложится в ``writeoff_error`` — иначе пришлось бы спрашивать заново, а расход так и
-    остался бы непосчитанным. Повторить создание акта можно тем же вызовом.
+    остался бы непосчитанным.
     """
     review = await session.get(PnlWorkupReview, review_id)
     if review is None:
@@ -288,12 +301,44 @@ async def confirm_workup(
     review.decided_by_user_id = user_id
     review.decided_at = datetime.now(UTC)
 
-    if create_act and review.writeoff_document_id is None:
-        await _create_act(session, review)
+    if create_act:
+        if review.writeoff_document_id is None:
+            await _create_act(session, review)
+        if review.writeoff_document_id and not review.writeoff_posted:
+            await _post_act(session, review)
 
     await session.commit()
     rows = await list_reviews(session, review.period_month)
     return next(row for row in rows if row.id == review_id)
+
+
+async def _post_act(session: AsyncSession, review: PnlWorkupReview) -> None:
+    """Провести созданный акт: только проведённый документ даёт расход в ОПиУ.
+
+    Проведение меняет складские остатки боевой iiko, поэтому вызывается ровно один раз на
+    документ — гейт ``writeoff_posted``. Отказ не откатывает создание: документ остаётся, и
+    повторное подтверждение проведёт его же.
+    """
+    body = {
+        "organizationId": get_organization_id(),
+        "documentId": review.writeoff_document_id,
+    }
+    try:
+        status, response = await anyio.to_thread.run_sync(lambda: iiko_cloud_call(POST_PATH, body))
+    except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError) as error:
+        review.writeoff_error = (
+            f"Акт {review.writeoff_number or review.writeoff_document_id} создан, но не проведён "
+            f"— iiko недоступен: {error}. Расход появится после повторного подтверждения"
+        )
+        return
+    if status not in (200, 201):
+        review.writeoff_error = (
+            f"Акт {review.writeoff_number or review.writeoff_document_id} создан, но не проведён "
+            f"(HTTP {status}): {str(response)[:300]}. В расход он попадёт только проведённым"
+        )
+        return
+    review.writeoff_posted = True
+    review.writeoff_error = None
 
 
 async def _create_act(session: AsyncSession, review: PnlWorkupReview) -> None:
@@ -355,8 +400,12 @@ async def reject_workup(
     if review is None:
         raise WorkupReviewError("Вопрос не найден")
     if review.writeoff_document_id:
+        # Отменить документ за человека нельзя: проведённый акт уже изменил складские остатки,
+        # непроведённый всё равно висит в iiko. Решение об отмене принимает тот, кто видит склад.
+        state = "проведён" if review.writeoff_posted else "создан"
         raise WorkupReviewError(
-            f"Акт списания уже создан ({review.writeoff_number or review.writeoff_document_id}). "
+            f"Акт списания уже {state} "
+            f"({review.writeoff_number or review.writeoff_document_id}). "
             "Отмените его в iiko, прежде чем менять ответ"
         )
 

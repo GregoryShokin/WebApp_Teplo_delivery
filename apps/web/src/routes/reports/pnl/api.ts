@@ -379,6 +379,8 @@ export type WorkupReviewRow = {
   supplier_name: string | null;
   writeoff_document_id: string | null;
   writeoff_number: string | null;
+  /** Проведён ли акт. Только проведённый даёт расход в ОПиУ. */
+  writeoff_posted: boolean;
   writeoff_error: string | null;
   decided_at: string | null;
 };

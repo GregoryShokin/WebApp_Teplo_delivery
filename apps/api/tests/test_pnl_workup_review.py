@@ -109,9 +109,19 @@ def test_queue_is_built_once_and_keeps_the_answer(async_session_factory) -> None
     asyncio.run(scenario())
 
 
-def _fake_cloud(calls: list, *, status: int = 201, response: dict | None = None):
+def _fake_cloud(
+    calls: list,
+    *,
+    status: int = 201,
+    response: dict | None = None,
+    post_status: int = 200,
+):
+    """Заглушка Cloud: create и post — РАЗНЫЕ вызовы, и падать они умеют по отдельности."""
+
     def call(path: str, body: dict, **_kwargs):
         calls.append((path, body))
+        if path == workup_review.POST_PATH:
+            return post_status, {"message": "posted"}
         return status, (
             response
             if response is not None
@@ -151,17 +161,24 @@ def test_confirm_creates_the_act_once(async_session_factory, monkeypatch) -> Non
             assert row.status == "confirmed"
             assert row.writeoff_document_id == "doc-1"
             assert row.writeoff_number == "0459"
+            assert row.writeoff_posted is True, "акт проводится сразу — иначе расхода нет"
             assert row.writeoff_error is None
-            assert len(calls) == 1
-            path, body = calls[0]
-            assert path == workup_review.CREATE_PATH
-            assert body["items"][0]["amount"] == 50.0
-            assert body["date"].startswith("2026-07-01T12:00:00")
+            assert [path for path, _ in calls] == [
+                workup_review.CREATE_PATH,
+                workup_review.POST_PATH,
+            ]
+            _, create_body = calls[0]
+            assert create_body["items"][0]["amount"] == 50.0
+            assert create_body["date"].startswith("2026-07-01T12:00:00")
+            _, post_body = calls[1]
+            assert post_body["documentId"] == "doc-1"
 
             # Второй клик по той же строке.
             row = await workup_review.confirm_workup(session, review.id, user_id=None)
             assert row.writeoff_document_id == "doc-1"
-            assert len(calls) == 1, "повторное подтверждение не должно создавать второй акт"
+            assert len(calls) == 2, (
+                "повтор не должен ни создавать второй акт, ни проводить уже проведённый"
+            )
 
     asyncio.run(scenario())
 
@@ -198,12 +215,14 @@ def test_iiko_failure_keeps_the_answer_and_reports_it(async_session_factory, mon
             row = await workup_review.confirm_workup(session, review.id, user_id=None)
             assert row.status == "confirmed", "ответ человека сохраняется даже при отказе iiko"
             assert row.writeoff_document_id is None
+            assert row.writeoff_posted is False
             assert "HTTP 500" in (row.writeoff_error or "")
 
             # Повтор — новая попытка, потому что акта всё ещё нет.
             monkeypatch.setattr(workup_review, "iiko_cloud_call", _fake_cloud(calls))
             row = await workup_review.confirm_workup(session, review.id, user_id=None)
             assert row.writeoff_document_id == "doc-1"
+            assert row.writeoff_posted is True
             assert row.writeoff_error is None
 
     asyncio.run(scenario())
@@ -289,5 +308,46 @@ def test_reject_is_refused_when_the_act_already_exists(async_session_factory) ->
             with pytest.raises(workup_review.WorkupReviewError) as error:
                 await workup_review.reject_workup(session, review.id, user_id=owner.id)
             assert "0460" in str(error.value)
+
+    asyncio.run(scenario())
+
+
+def test_created_but_unposted_act_is_finished_not_duplicated(
+    async_session_factory, monkeypatch
+) -> None:
+    """Сбой ПРОВЕДЕНИЯ — самый коварный случай: документ уже есть, а расхода ещё нет.
+
+    Повтор обязан довести до конца именно этот акт. Создать второй значило бы списать товар
+    со склада дважды; счесть дело сделанным — оставить проработку без расхода в прибыли.
+    """
+
+    async def scenario() -> None:
+        calls: list = []
+        monkeypatch.setattr(workup_review, "iiko_cloud_call", _fake_cloud(calls, post_status=429))
+        monkeypatch.setattr(workup_review, "_product_unit_guid", _unit("unit-guid"))
+
+        async with async_session_factory() as session:
+            await _seed_workup(session, "unposted-guid", "Контейнер", "656.00")
+            await session.commit()
+            await workup_review.build_review_queue(session, JULY)
+            review = await session.scalar(
+                select(PnlWorkupReview).where(PnlWorkupReview.iiko_product_guid == "unposted-guid")
+            )
+            review.quantity = Decimal("5.000")
+            await session.commit()
+
+            row = await workup_review.confirm_workup(session, review.id, user_id=None)
+            assert row.writeoff_document_id == "doc-1", "документ создан"
+            assert row.writeoff_posted is False, "но не проведён"
+            assert "не проведён" in (row.writeoff_error or "")
+            assert row.writeoff_number in (row.writeoff_error or "")
+
+            # Повтор: iiko снова отвечает, проведение доходит до конца.
+            monkeypatch.setattr(workup_review, "iiko_cloud_call", _fake_cloud(calls))
+            row = await workup_review.confirm_workup(session, review.id, user_id=None)
+            assert row.writeoff_posted is True
+            assert row.writeoff_error is None
+            created = [path for path, _ in calls if path == workup_review.CREATE_PATH]
+            assert len(created) == 1, "второй документ создавать нельзя — товар спишется дважды"
 
     asyncio.run(scenario())

@@ -588,9 +588,15 @@ class PnlWorkupReview(Base):
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    #: GUID акта списания в iiko. Заполнен — акт уже создан, повторять нельзя.
+    #: GUID акта списания в iiko. Заполнен — акт уже создан, создавать заново нельзя.
     writeoff_document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     writeoff_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Проведён ли акт. Создание и проведение — два разных вызова, и упасть может второй:
+    #: документ уже существует, но лежит в NEW и в расход не идёт. Один ``document_id`` не
+    #: различает «готово» и «сделана половина», поэтому признак отдельный.
+    writeoff_posted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     writeoff_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

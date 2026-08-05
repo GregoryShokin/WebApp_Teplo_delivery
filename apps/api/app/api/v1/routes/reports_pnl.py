@@ -819,6 +819,7 @@ class WorkupReviewRowOut(BaseModel):
     supplier_name: str | None
     writeoff_document_id: str | None
     writeoff_number: str | None
+    writeoff_posted: bool
     writeoff_error: str | None
     decided_at: datetime | None
 
@@ -850,6 +851,7 @@ def _workup_review_out(month: date, rows: list) -> WorkupReviewLedgerOut:
                 supplier_name=row.supplier_name,
                 writeoff_document_id=row.writeoff_document_id,
                 writeoff_number=row.writeoff_number,
+                writeoff_posted=row.writeoff_posted,
                 writeoff_error=row.writeoff_error,
                 decided_at=row.decided_at,
             )

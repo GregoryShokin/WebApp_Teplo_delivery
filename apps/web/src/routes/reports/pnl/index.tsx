@@ -684,7 +684,8 @@ function WorkupReviewView({
                   ) : null}
                   {row.writeoff_number ? (
                     <div className="text-xs text-muted-foreground">
-                      Акт списания {row.writeoff_number} создан в iiko
+                      Акт списания {row.writeoff_number}{" "}
+                      {row.writeoff_posted ? "проведён в iiko" : "создан, но НЕ проведён"}
                     </div>
                   ) : null}
                 </td>
@@ -1296,7 +1297,7 @@ export function PnlRoute() {
         } else if (confirmed) {
           toast.success(
             answered?.writeoff_number
-              ? `Акт списания ${answered.writeoff_number} создан в iiko`
+              ? `Акт списания ${answered.writeoff_number} проведён в iiko`
               : "Проработка подтверждена",
           );
         } else {
