@@ -361,6 +361,7 @@ async def list_supplier_accounting(
                 DdsArticle.name,
                 SupplierInvoice.doc_kind,
                 SupplierInvoice.activation_status,
+                SupplierInvoice.invoice_date,
             )
             .join(Counterparty, Counterparty.id == SupplierExpenseAccrual.counterparty_id)
             .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
@@ -390,6 +391,7 @@ async def list_supplier_accounting(
         article_name,
         doc_kind,
         activation_status,
+        invoice_date,
     ) in rows:
         # Прогноз, а не факт: начисление ещё scheduled, а его документ ждёт своей даты
         # (pending) — так живёт аренда, чей «Аренда 08.2026» заводится заранее. В очереди
@@ -397,7 +399,17 @@ async def list_supplier_accounting(
         # складывала одну аренду дважды — 100 000 на арендодателя вместо 50 000 (владелец,
         # 02.08.2026). Всё, что человек должен знать, уже несёт строка платежа: период и
         # «начислится 01.09». Документ активируется в свою дату — тогда и появится, уже фактом.
-        if accrual.status == "scheduled" and activation_status == "pending":
+        #
+        # СКРЫВАЕМ ТОЛЬКО ДОКУМЕНТ ИЗ БУДУЩЕГО. С тех пор как правило 4 держит и документ,
+        # чья дата уже прошла, а услуга ещё оказывается (акт iiko от 01.08 за август),
+        # безусловное скрытие уносило бы с экрана существующую бумагу на весь месяц — а это
+        # единственное место, где видно «признаем после 31.08». Аренду это по-прежнему
+        # скрывает: её будущий документ датирован концом своего месяца.
+        if (
+            accrual.status == "scheduled"
+            and activation_status == "pending"
+            and (invoice_date is None or invoice_date > today)
+        ):
             continue
         if accrual.invoice_id is not None:
             paid = min(periods.money(allocated_amount), periods.money(accrual.amount))
@@ -1093,6 +1105,11 @@ class DocumentAllocationRef(BaseModel):
     amount: float
     operation_date: date | None = None
     prepayment_kind: str | None = None
+    # ЧЕМ обоснован выбор именно этого аванса: 'basis_invoice' (счёт назван в самом документе),
+    # 'service_period', 'product', 'amount' — система ЗНАЛА связь; 'chronology' — не нашла
+    # признаков и взяла по хронологии денег, то есть УГАДАЛА. NULL — зачёт сделал человек.
+    # Показываем, потому что молчаливая догадка однажды уже разложила зачёты крест-накрест.
+    match_basis: str | None = None
 
 
 class DocumentRegisterRow(BaseModel):
@@ -1658,6 +1675,7 @@ async def list_document_register(
                 amount=_float(alloc.amount),
                 operation_date=tx_date or alloc.created_at.date(),
                 prepayment_kind=prepayment_kind,
+                match_basis=alloc.match_basis,
             )
         )
         paid_by_invoice[alloc.invoice_id] = paid_by_invoice.get(

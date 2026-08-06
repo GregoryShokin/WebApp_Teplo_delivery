@@ -607,9 +607,17 @@ async def test_future_act_from_contract_counterparty_is_informational_after_acti
         assert act.activation_status == "pending"
         assert act.informational is False, "до своей даты документ ещё ничей"
 
-        # Наступила дата документа — джоба проводит его полным путём.
+        # 30 июня услуга ещё оказывается — акт с периодом ждёт вместе с признанием расхода.
         await supplier_prepayments.activate_due_closing_invoices(
             session, as_of=date(2026, 6, 30), commit=True
+        )
+        await session.refresh(act)
+        assert act.activation_status == "pending"
+
+        # 1 июля — тем же прогоном, что признаёт июньский расход: джоба проводит акт
+        # полным путём (см. ``_closing_effective_date``).
+        await supplier_prepayments.activate_due_closing_invoices(
+            session, as_of=date(2026, 7, 1), commit=True
         )
         await session.refresh(act)
         assert act.activation_status == "active"

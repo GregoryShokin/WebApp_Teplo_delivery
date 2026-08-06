@@ -8,13 +8,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,6 +106,28 @@ FOREIGN_PREPAYMENT_KINDS = EARMARKED_PREPAYMENT_KINDS | {BILL_PREPAYMENT_KIND}
 # вернуло бы оплаченный документ в очередь оплат.
 RULE1_ALLOCATION_ORIGIN = "rule1"
 
+# ЧЕМ обоснован выбор аванса (``InvoicePaymentAllocation.match_basis``). Порядок = приоритет:
+# первое сработавшее основание и решает, а не порядок платежей.
+MATCH_BASIS_INVOICE = "basis_invoice"  # аванс за счёт, названный в «Основание» документа
+MATCH_PERIOD_PRODUCT = "period_product"  # совпали и период услуги, и продукт поставщика
+MATCH_PRODUCT = "product"  # тот же продукт поставщика (product_hint счёта и документа)
+MATCH_SERVICE_PERIOD = "service_period"  # период услуги аванса пересёкся с периодом документа
+MATCH_AMOUNT = "amount"  # нетронутый аванс ровно на сумму документа (и не позже него)
+MATCH_CHRONOLOGY = "chronology"  # адресного признака нет — хронология денег, «система угадала»
+
+# Продукт СИЛЬНЕЕ голого периода намеренно. Период не различает линии одного поставщика: iiko
+# выставляет Курьерику и лицензию за ОДИН месяц, у обоих авансов период совпадает с документом,
+# и приоритет периода отправил бы выбор обратно в хронологию — ровно к тому перекрёстному
+# зачёту, ради которого лестница и написана. Продукт разводит их однозначно.
+_MATCH_RANKS: tuple[str, ...] = (
+    MATCH_BASIS_INVOICE,
+    MATCH_PERIOD_PRODUCT,
+    MATCH_PRODUCT,
+    MATCH_SERVICE_PERIOD,
+    MATCH_AMOUNT,
+    MATCH_CHRONOLOGY,
+)
+
 
 def _prepayment_untouched(prepayment: SupplierPrepayment) -> bool:
     """Предоплата ещё не начала гаситься: можно безопасно чинить/сносить реквизиты."""
@@ -134,8 +157,13 @@ async def _allocate_invoice_from_prepayment(
     prepayment: SupplierPrepayment,
     amount: Decimal,
     actor_user_id: uuid.UUID | None,
+    match_basis: str | None = None,
 ) -> None:
-    """Аллокация «накладная ← предоплата» (денег не двигает) + списание остатка."""
+    """Аллокация «накладная ← предоплата» (денег не двигает) + списание остатка.
+
+    ``match_basis`` заполняет только авто-гашение: там аванс ВЫБИРАЕТ система, и в сверке надо
+    отличать «знала» от «угадала». Ручное гашение (``settle_invoice_from_prepayment``) оставляет
+    NULL — аванс там назвал человек, обосновывать нечего."""
     session.add(
         InvoicePaymentAllocation(
             invoice_id=invoice.id,
@@ -143,6 +171,7 @@ async def _allocate_invoice_from_prepayment(
             prepayment_id=prepayment.id,
             amount=amount,
             created_by_user_id=actor_user_id,
+            match_basis=match_basis,
         )
     )
     _consume_prepayment(prepayment, amount, full_status="settled")
@@ -786,7 +815,9 @@ async def _unwind_transaction_kz_settlements(
             and inv.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE
         }
         allocs = [
-            a for a in allocs if a.invoice_id in closing_ids or a.origin == RULE1_ALLOCATION_ORIGIN
+            a
+            for a in allocs
+            if a.invoice_id in closing_ids or a.origin == RULE1_ALLOCATION_ORIGIN
         ]
         if not allocs:
             return True
@@ -1474,7 +1505,7 @@ async def settle_invoice_from_prepayment(
 
 async def _settlement_order(
     session: AsyncSession, invoice: SupplierInvoice
-) -> list[SupplierPrepayment]:
+) -> list[tuple[SupplierPrepayment, date]]:
     """Открытые авансы контрагента в том порядке, в каком их съедает закрывающий документ.
 
     ДВА ПРАВИЛА, И ОБА — ХРОНОЛОГИЯ ДЕНЕГ, А НЕ ПОРЯДОК ЗАПИСЕЙ В БАЗЕ.
@@ -1511,117 +1542,239 @@ async def _settlement_order(
     ).all()
     doc_date = invoice.invoice_date
 
-    def sort_key(row: tuple[SupplierPrepayment, date | None, date | None]) -> tuple:
+    def money_date(row: tuple[SupplierPrepayment, date | None, date | None]) -> date:
         prepayment, operation_date, bill_date = row
         # День, когда деньги реально ушли: своя проводка → оплата счёта → дата записи.
-        money_on = operation_date or bill_date or prepayment.created_at.date()
+        return operation_date or bill_date or prepayment.created_at.date()
+
+    def sort_key(row: tuple[SupplierPrepayment, date | None, date | None]) -> tuple:
+        prepayment = row[0]
+        money_on = money_date(row)
         later_than_doc = doc_date is not None and money_on > doc_date
         return (later_than_doc, money_on, prepayment.created_at, str(prepayment.id))
 
-    return [row[0] for row in sorted(rows, key=sort_key)]
+    # Дату денег отдаём вместе с авансом: она нужна лестнице адресности, чтобы слабейший ранг
+    # (равенство суммы) не мог перетащить в документ платёж, ушедший ПОЗЖЕ него.
+    return [(row[0], money_date(row)) for row in sorted(rows, key=sort_key)]
 
 
-def _prefer_matching_period(
-    prepayments: Sequence[SupplierPrepayment],
-    invoice: SupplierInvoice,
-    *,
-    invoice_remaining: Decimal,
-) -> list[SupplierPrepayment]:
-    """Порядок зачёта: период → точная сумма → хронология.
+def _closing_effective_date(invoice: SupplierInvoice) -> date | None:
+    """День, с которого закрывающий документ вступает в силу: услуга к нему уже оказана.
 
-    Если документ уже знает период, он сильнее суммы: сначала берём предоплаты этого периода.
-    Если периода в акте/УПД нет, точная сумма — единственная надёжная связь со счётом. Иначе
-    FIFO перепутывает соседние услуги одного контрагента: у АЙКО акт 4 260 ₽ погасился старым
-    платежом 16 430 ₽, а акт 16 430 ₽ забрал дебиторку счёта 4 260 ₽ с готовым июльским
-    периодом. В результате правильный период оставался рядом, но не попадал в нужный документ.
+    Правило 4 держало документ до его СОБСТВЕННОЙ ДАТЫ, и для ЭкоЦентра этого хватало: он
+    датирует УПД последним числом месяца обслуживания. Но дата документа — лишь прокси факта
+    «услуга оказана», и у iiko прокси врёт: «Акт на передачу прав» датирован ПЕРВЫМ числом
+    оплаченного месяца, права переданы на месяц вперёд. Такой акт проскакивал правило 4 в день
+    прихода и гасил аванс за услугу, которая ещё только начиналась.
 
-    Оба правила задают только приоритет. Если точного источника не хватает, остаток по-прежнему
-    гасится хронологически — штатный частичный зачёт не должен останавливаться.
-    """
-    exact = [
-        item
-        for item in prepayments
-        if _money(item.amount) - _money(item.amount_settled) == _money(invoice_remaining)
-    ]
-    not_exact = [item for item in prepayments if item not in exact]
+    Что это давало на проде 04.08.2026: акты iiko за август погасили дебиторку 20 690 ₽ первым
+    августа, а расход по ним признаётся только после 31.08 — весь месяц деньги не значились ни
+    активом, ни расходом. На КОНЦАХ месяцев баланс сходился (31.07 дебиторка ещё была, 31.08
+    расход уже признан), поэтому дыра жила незамеченной в срезах внутри месяца.
 
+    Поэтому в силу документ вступает по ПОЗДНЕЙШЕЙ из двух дат — своей и дня ПОСЛЕ окончания
+    периода услуги. Где периода нет (на проде это большинство документов), поведение прежнее —
+    по дате документа.
+
+    ПОЧЕМУ ДЕНЬ ПОСЛЕ, А НЕ ПОСЛЕДНИЙ ДЕНЬ ПЕРИОДА. Ровно тем же неравенством пользуется
+    признание расхода: ``recognize_due_expenses`` требует ``service_period_end < cutoff`` —
+    весь последний день услуга ещё оказывается. Пока документ вступал в силу 31-го, а расход
+    признавался 1-го, между ними стояла ночь, в которую аванс уже списан, а расхода ещё нет.
+    Теперь оба события происходят одним прогоном 1-го числа, и промежуточного состояния нет
+    вовсе. На отчётность это не влияло и раньше (расход всё равно относится к своему месяцу),
+    но остатки, снятые вечером последнего дня, показывали дыру на сумму документа.
+
+    Учётной ДАТОЙ гашения при этом остаётся конец периода — так же, как признание, сделанное
+    1 сентября, относится к августу (``recognition_month``). Отсюда и разница между этой
+    функцией и её SQL-зеркалом ``counterparty_balance_as_of._document_in_force``: здесь «когда
+    система проводит», там «каким днём это ложится в учёт».
+
+    ДВА ОГРАНИЧЕНИЯ, БЕЗ КОТОРЫХ ПРАВИЛО ЛОМАЕТ БОЛЬШЕ, ЧЕМ ЧИНИТ.
+
+    1. Период учитывается только со статусом ``ready``. При нескольких периодах в тексте
+       ``materialize_from_intake`` записывает один и ставит ``ambiguous`` — именно чтобы им не
+       пользовались до решения оператора (``sync_invoice_accrual`` такой период игнорирует).
+       Недоверенный период не вправе решать, когда документ станет долгом.
+    2. Без собственной даты документ не откладывается вовсе. Дата у ``SupplierInvoice``
+       nullable, и почта регулярно её не распознаёт. А джоба активации умеет искать только
+       документы С датой — отложенный без даты не проснулся бы НИКОГДА: обязательство и расход
+       пропали бы молча. Пусть лучше действует сразу, как было до правила."""
+    if invoice.invoice_date is None:
+        return None
+    if invoice.service_period_status != "ready" or invoice.service_period_end is None:
+        return invoice.invoice_date
+    return max(invoice.invoice_date, invoice.service_period_end + timedelta(days=1))
+
+
+def _periods_overlap(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -> bool:
+    """Период услуги аванса пересекается с периодом документа."""
     if invoice.service_period_start is None or invoice.service_period_end is None:
-        return exact + not_exact
-
-    def overlaps(prepayment: SupplierPrepayment) -> bool:
-        start = prepayment.service_period_start
-        end = prepayment.service_period_end
-        if start is None or end is None:
-            return False
-        return start <= invoice.service_period_end and end >= invoice.service_period_start
-
-    matching = [item for item in prepayments if overlaps(item)]
-    rest = [item for item in prepayments if not overlaps(item)]
-    matching_exact = [item for item in matching if item in exact]
-    matching_other = [item for item in matching if item not in exact]
-    rest_exact = [item for item in rest if item in exact]
-    rest_other = [item for item in rest if item not in exact]
-    return matching_exact + matching_other + rest_exact + rest_other
-
-
-async def _inherit_period_from_prepayment_allocations(
-    session: AsyncSession, invoice: SupplierInvoice
-) -> bool:
-    """Перенести период в closing, если его однозначно подтверждают погасившие авансы.
-
-    Период счёта живёт в ``prepaid_bill`` и не должен теряться после приезда УПД. Наследуем
-    только при строгом условии: предоплатные зачёты покрывают документ целиком, у КАЖДОГО
-    источника период готов и все периоды совпадают. Смесь «известно + неизвестно» не угадываем:
-    именно так АЙКО 16 430 ₽ остаётся на ручном разборе, пока 4 260 ₽ определяется автоматически.
-    """
-    if (
-        invoice.doc_kind != "closing"
-        or invoice.service_period_status == "ready"
-        or invoice.service_period_start is not None
-        or invoice.service_period_end is not None
-    ):
         return False
+    start = prepayment.service_period_start
+    end = prepayment.service_period_end
+    if start is None or end is None:
+        return False
+    return start <= invoice.service_period_end and end >= invoice.service_period_start
 
-    rows = (
-        await session.execute(
-            select(InvoicePaymentAllocation, SupplierPrepayment)
-            .join(
-                SupplierPrepayment,
-                SupplierPrepayment.id == InvoicePaymentAllocation.prepayment_id,
-            )
-            .where(
-                InvoicePaymentAllocation.invoice_id == invoice.id,
-                InvoicePaymentAllocation.source_kind == "prepayment",
+
+def _recognition(invoice: SupplierInvoice) -> dict[str, object]:
+    """Распознанное содержимое документа (у почты и ЭДО лежит в ``raw_payload``)."""
+    payload = invoice.raw_payload or {}
+    recognition = payload.get("recognition")
+    return recognition if isinstance(recognition, dict) else {}
+
+
+async def _basis_bill_id(session: AsyncSession, invoice: SupplierInvoice) -> uuid.UUID | None:
+    """Счёт, НАЗВАННЫЙ В САМОМ документе строкой «Основание Счет № … от …».
+
+    Самый сильный признак адресности из существующих: поставщик прямо говорит, какой счёт
+    закрывает этот акт, а у аванса есть обратная ссылка на оплаченный счёт (``bill_invoice_id``).
+    У актов iiko это единственный доступный ключ — периода услуги в их тексте нет вовсе.
+
+    Номер счёта у одного поставщика уникален, но при нескольких совпадениях не угадываем:
+    уточняем датой основания, а если и она не развела — признак не сработал."""
+    recognition = _recognition(invoice)
+    number = str(recognition.get("basis_number") or "").strip()
+    if not number:
+        return None
+    candidates = (
+        await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.counterparty_id == invoice.counterparty_id,
+                SupplierInvoice.doc_kind == "bill",
+                SupplierInvoice.number == number,
+                SupplierInvoice.payment_status != "void",
             )
         )
     ).all()
-    if not rows:
-        return False
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0].id
+    raw_date = recognition.get("basis_date")
+    basis_date: date | None = None
+    if raw_date:
+        with contextlib.suppress(ValueError, TypeError):
+            basis_date = date.fromisoformat(str(raw_date))
+    exact = [c for c in candidates if basis_date is not None and c.invoice_date == basis_date]
+    return exact[0].id if len(exact) == 1 else None
 
-    allocated = sum((_money(allocation.amount) for allocation, _ in rows), Decimal("0.00"))
-    if allocated < _money(invoice.amount):
-        return False
 
-    periods: set[tuple[date, date]] = set()
-    for _allocation, prepayment in rows:
-        if (
-            prepayment.service_period_status != "ready"
-            or prepayment.service_period_start is None
-            or prepayment.service_period_end is None
-        ):
-            return False
-        periods.add((prepayment.service_period_start, prepayment.service_period_end))
-    if len(periods) != 1:
-        return False
+async def _prepayment_products(
+    session: AsyncSession, prepayments: Sequence[SupplierPrepayment], *, counterparty_id: uuid.UUID
+) -> dict[uuid.UUID, str | None]:
+    """Продукт поставщика по каждому авансу — из счёта, который им оплачен.
 
-    start, end = periods.pop()
-    invoice.service_period_start = start
-    invoice.service_period_end = end
-    invoice.service_period_status = "ready"
-    invoice.service_period_source = "settled_prepayment"
-    invoice.service_period_confidence = Decimal("1.000")
-    await session.flush()
-    return True
+    У iiko две регулярные линии под одним ИНН (Курьерика и лицензия iikoCloud), и без продукта
+    они различимы только суммой. ``product_hint`` проставляет распознавание счёта.
+
+    Фильтр по контрагенту обязателен: ``bill_invoice_id`` мог остаться от счёта ЧУЖОГО
+    контрагента (перепривязка платежа при разборе ДДС, слияние дублей карточек), а хинтов всего
+    два — чужой ``courierica`` совпал бы с нашим и дал ложную адресность."""
+    bill_ids = {p.bill_invoice_id for p in prepayments if p.bill_invoice_id is not None}
+    if not bill_ids:
+        return {}
+    bills = (
+        await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.id.in_(bill_ids),
+                SupplierInvoice.counterparty_id == counterparty_id,
+            )
+        )
+    ).all()
+    by_bill = {bill.id: str(_recognition(bill).get("product_hint") or "") or None for bill in bills}
+    return {
+        p.id: by_bill.get(p.bill_invoice_id)
+        for p in prepayments
+        if p.bill_invoice_id is not None
+    }
+
+
+def _match_basis(
+    prepayment: SupplierPrepayment,
+    invoice: SupplierInvoice,
+    *,
+    basis_bill_id: uuid.UUID | None,
+    doc_product: str | None,
+    prepayment_product: str | None,
+    doc_amount: Decimal,
+    money_on: date | None,
+) -> str:
+    """На каком основании этот аванс годится документу. Первое сработавшее и есть ответ."""
+    if basis_bill_id is not None and prepayment.bill_invoice_id == basis_bill_id:
+        return MATCH_BASIS_INVOICE
+    same_period = _periods_overlap(prepayment, invoice)
+    same_product = bool(doc_product and prepayment_product and doc_product == prepayment_product)
+    if same_period and same_product:
+        return MATCH_PERIOD_PRODUCT
+    if same_product:
+        return MATCH_PRODUCT
+    if same_period:
+        return MATCH_SERVICE_PERIOD
+    # Равенство суммы — САМЫЙ слабый признак, и он опасен: у подписочного поставщика с ровной
+    # абонентской платой ему совпадает любой месяц. Поэтому два ограничения. Аванс должен быть
+    # НЕТРОНУТ — совпадение хвоста частично погашенного это совпадение остатка, а не «платёж за
+    # этот документ»; и он не может быть ПОЗЖЕ документа — иначе ранг перебил бы правило
+    # хронологии (инцидент Манго: УПД за июнь съел бы июльский платёж, потому что суммы равны,
+    # оставив июньские деньги висеть непогашенными).
+    untouched = _money(prepayment.amount_settled) == 0
+    not_after_document = (
+        invoice.invoice_date is None or money_on is None or money_on <= invoice.invoice_date
+    )
+    if untouched and not_after_document and _money(prepayment.amount) == doc_amount:
+        return MATCH_AMOUNT
+    return MATCH_CHRONOLOGY
+
+
+async def _settlement_candidates(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> list[tuple[SupplierPrepayment, str]]:
+    """Авансы в порядке АДРЕСНОСТИ, а внутри одинаковой адресности — по хронологии денег.
+
+    Порядок, а не фильтр: если адресных не нашлось, документ по-прежнему гасится любым открытым
+    авансом — иначе зачёт перестал бы работать там, где ни периодов, ни оснований нет (на проде
+    это почти все платежи). Меняются не суммы, а то, ЧЬЮ дебиторку закроет документ.
+
+    Зачем лестница. Одной хронологии мало, и цена этому известна по проду: 02.08.2026 у АО
+    «АЙКО» акт на лицензию iikoCloud (16 430 ₽) закрылся авансом за Курьерику (4 260 ₽) плюс
+    остатком безадресного пула, а акт на Курьерику — куском того же пула. Нетто по контрагенту
+    сошлось, адресность — нет. Пока суммы у поставщика месяц к месяцу равны, такая каша
+    сходится в нетто; в первый же месяц с изменением цены чужой аванс закроет акт частично, и
+    в отчётах появятся фантомы: акт «частично не оплачен» в кредиторке и чужой открытый аванс
+    в дебиторке одновременно, при верном нетто.
+
+    Совпадение периода как признак существовало и раньше и здесь сохранено (ранг 2). Его одного
+    не хватило ровно потому, что у ручных документов периода не было вовсе.
+
+    Сортировка СТАБИЛЬНАЯ: внутри одного основания сохраняется порядок ``_settlement_order``,
+    то есть хронология денег со всеми её правилами."""
+    order = await _settlement_order(session, invoice)
+    if not order:
+        return []
+    basis_bill_id = await _basis_bill_id(session, invoice)
+    prepayments = [prepayment for prepayment, _ in order]
+    products = await _prepayment_products(
+        session, prepayments, counterparty_id=invoice.counterparty_id
+    )
+    doc_product = str(_recognition(invoice).get("product_hint") or "") or None
+    doc_amount = _money(invoice.amount)
+    ranked = [
+        (
+            prepayment,
+            _match_basis(
+                prepayment,
+                invoice,
+                basis_bill_id=basis_bill_id,
+                doc_product=doc_product,
+                prepayment_product=products.get(prepayment.id),
+                doc_amount=doc_amount,
+                money_on=money_on,
+            ),
+        )
+        for prepayment, money_on in order
+    ]
+    ranked.sort(key=lambda item: _MATCH_RANKS.index(item[1]))
+    return ranked
 
 
 async def auto_settle_invoice_from_open_prepayments(
@@ -1647,19 +1800,7 @@ async def auto_settle_invoice_from_open_prepayments(
         # уйдут лишние деньги). Зачёт возможен только для документов вне банковских черновиков.
         return Decimal("0.00")
     total = Decimal("0.00")
-    prepayments = await _settlement_order(session, invoice)
-    initial_remaining = await _invoice_remaining(session, invoice)
-    exact_matches = [
-        item
-        for item in prepayments
-        if _money(item.amount) - _money(item.amount_settled) == _money(initial_remaining)
-    ]
-    period_was_missing = invoice.service_period_start is None and invoice.service_period_end is None
-    for prepayment in _prefer_matching_period(
-        prepayments,
-        invoice,
-        invoice_remaining=initial_remaining,
-    ):
+    for prepayment, match_basis in await _settlement_candidates(session, invoice):
         inv_remaining = await _invoice_remaining(session, invoice)
         if inv_remaining <= 0:
             break
@@ -1673,73 +1814,12 @@ async def auto_settle_invoice_from_open_prepayments(
             prepayment=prepayment,
             amount=alloc,
             actor_user_id=actor_user_id,
+            match_basis=match_basis,
         )
         total += alloc
     if total > 0:
         await _recompute_status(session, invoice)
-        # Для документа без периода одна точная сумма должна вести ровно к одному открытому
-        # источнику. Два одинаковых ежемесячных счёта разных периодов — неоднозначность, а не
-        # повод выбрать старший по FIFO и молча признать расход не в том месяце.
-        if not period_was_missing or len(exact_matches) == 1:
-            await _inherit_period_from_prepayment_allocations(session, invoice)
     return total
-
-
-async def repair_unperioded_closing_settlements(
-    session: AsyncSession,
-    *,
-    invoice_ids: Sequence[uuid.UUID] | None = None,
-    commit: bool = True,
-) -> dict[str, int]:
-    """Пересобрать старые FIFO-зачёты и восстановить периоды оплаченных closing-документов.
-
-    Это явная ремонтная операция, а не побочный эффект чтения ОПиУ. Сначала возвращаем ВСЕ
-    предоплатные зачёты выбранной группы, затем проводим документы заново уже с приоритетом
-    точной суммы. Групповое освобождение принципиально: иначе дебиторка нужного счёта может
-    оставаться занятой соседним актом и новый алгоритм просто не увидит её открытой.
-    """
-    query = select(SupplierInvoice).where(
-        SupplierInvoice.doc_kind == "closing",
-        SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
-        SupplierInvoice.payment_status == "paid",
-        SupplierInvoice.service_period_start.is_(None),
-        SupplierInvoice.service_period_end.is_(None),
-        SupplierInvoice.draft_id.is_(None),
-    )
-    if invoice_ids is not None:
-        ids = list(invoice_ids)
-        if not ids:
-            return {"documents": 0, "periods_restored": 0}
-        query = query.where(SupplierInvoice.id.in_(ids))
-    invoices = list((await session.scalars(query.with_for_update())).all())
-    if not invoices:
-        return {"documents": 0, "periods_restored": 0}
-
-    for invoice in invoices:
-        await release_invoice_prepayment_allocations(session, invoice)
-    await session.flush()
-    for invoice in invoices:
-        await _recompute_status(session, invoice)
-
-    # Большие документы первыми: при отсутствии точного совпадения они не должны съесть
-    # маленькую точную дебиторку до того, как до неё дойдёт соответствующий акт.
-    invoices.sort(
-        key=lambda item: (-_money(item.amount), item.invoice_date or date.min, str(item.id))
-    )
-    restored = 0
-    from app.services import supplier_service_periods
-
-    for invoice in invoices:
-        await auto_settle_invoice_from_open_prepayments(session, invoice)
-        if invoice.service_period_status == "ready":
-            restored += 1
-            await supplier_service_periods.sync_invoice_accrual(session, invoice)
-
-    if commit:
-        await session.commit()
-    else:
-        await session.flush()
-    return {"documents": len(invoices), "periods_restored": restored}
 
 
 async def apply_closing_document(
@@ -1755,18 +1835,19 @@ async def apply_closing_document(
     activation_status='active', в контуре он не участвует).
 
     Для закрывающего (doc_kind='closing') — «факт выполненных работ»:
-      • дата документа В БУДУЩЕМ (правило 4: ЭкоЦентр шлёт УПД июля датой 31.07) →
-        activation_status='pending', обязательство пока НЕ создаём, дебиторку не гасим;
-        ночная джоба ``activate_due_closing_invoices`` проведёт его в свою дату;
-      • иначе активируем сразу; финансовый УПД/акт FIFO-гасит открытую дебиторку, а товарная
-        накладная остаётся отдельной КЗ до ручного зачёта конкретного аванса.
+      • услуга ЕЩЁ НЕ ОКАЗАНА (правило 4) → activation_status='pending', обязательство пока НЕ
+        создаём, дебиторку не гасим; ночная джоба ``activate_due_closing_invoices`` проведёт его
+        в свой день. «Ещё не оказана» — это ``_closing_effective_date`` в будущем;
+      • иначе активируем сразу; финансовый УПД/акт гасит открытую дебиторку по лестнице
+        адресности, а товарная накладная остаётся отдельной КЗ до ручного зачёта аванса.
     Денег не двигает (они ушли при создании предоплаты). Возвращает погашенное авансами. Без
     коммита."""
     if invoice.doc_kind != "closing":
         invoice.activation_status = "active"
         return Decimal("0.00")
     today = as_of or datetime.now(MOSCOW_TZ).date()
-    if invoice.invoice_date is not None and invoice.invoice_date > today:
+    effective = _closing_effective_date(invoice)
+    if effective is not None and effective > today:
         invoice.activation_status = "pending"
         return Decimal("0.00")
     invoice.activation_status = "active"
@@ -1805,12 +1886,13 @@ async def apply_closing_document(
 async def activate_due_closing_invoices(
     session: AsyncSession, *, as_of: date | None = None, commit: bool = True
 ) -> dict[str, int]:
-    """Правило 4: закрывающие документы с наступившей ДАТОЙ ДОКУМЕНТА вступают в силу.
+    """Правило 4: закрывающие документы, чья услуга уже оказана, вступают в силу.
 
-    Будущий УПД (activation_status='pending') в свою дату активируется: гасит открытую
-    дебиторку контрагента FIFO, остаток становится кредиторкой. ``invoice_date <= today``
-    (в свою дату уже действует). Идемпотентно: после активации статус 'active', повторно
-    джоба его не берёт. Возвращает счётчики для лога.
+    Отложенный УПД (activation_status='pending') активируется в свой день: гасит открытую
+    дебиторку контрагента по лестнице адресности, остаток становится кредиторкой. День —
+    поздний из даты документа и конца подтверждённого периода услуги (зеркало
+    ``_closing_effective_date``); в свой день документ уже действует. Идемпотентно: после
+    активации статус 'active', повторно джоба его не берёт. Возвращает счётчики для лога.
 
     Проводит документ ТЕМ ЖЕ ``apply_closing_document``, что и все двери приёма. Пока джоба
     сама ставила ``active`` и звала только гашение авансов, будущий документ навсегда минул
@@ -1821,7 +1903,6 @@ async def activate_due_closing_invoices(
     признанными дважды — 6 000 ₽ лишнего расхода."""
     today = as_of or datetime.now(MOSCOW_TZ).date()
     from app.services import supplier_service_periods
-
     rows = list(
         (
             await session.scalars(
@@ -1832,6 +1913,18 @@ async def activate_due_closing_invoices(
                     SupplierInvoice.payment_status != "void",
                     SupplierInvoice.invoice_date.is_not(None),
                     SupplierInvoice.invoice_date <= today,
+                    # Зеркало ``_closing_effective_date``: документ с ещё идущим периодом услуги
+                    # ждёт его окончания, даже когда собственная дата давно прошла. Неравенство
+                    # СТРОГОЕ — то же, что у ``recognize_due_expenses``: весь последний день
+                    # услуга ещё оказывается, и оба события (гашение аванса и признание расхода)
+                    # приходятся на один прогон 1-го числа. Период считается только ``ready``:
+                    # недоверенный (ambiguous) не вправе назначать дату, которую оператор ещё
+                    # не подтвердил.
+                    or_(
+                        SupplierInvoice.service_period_end.is_(None),
+                        SupplierInvoice.service_period_status != "ready",
+                        SupplierInvoice.service_period_end < today,
+                    ),
                 )
                 .with_for_update(skip_locked=True)
             )

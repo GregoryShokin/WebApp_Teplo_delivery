@@ -211,6 +211,100 @@ def test_journal_internal_transfer_visible(
     assert "needs_review" in all_rows
 
 
+def _seed_unmarked_cashflow(factory: async_sessionmaker[AsyncSession]) -> dict[str, str]:
+    """Проводки-cashflow трёх видов: без статьи, исключённая и обычная размеченная."""
+
+    async def go() -> dict[str, str]:
+        async with factory() as session:
+            wallet = Wallet(code="jr_unmarked_safe", name="Сейф журнал", type="cash")
+            article = DdsArticle(
+                code="jr_unmarked_food",
+                name="Журнал продукты",
+                movement_type="outflow",
+                activity_type="operating",
+            )
+            session.add_all([wallet, article])
+            await session.flush()
+
+            # Заливка истории Сейфа: статью проставить было нечем — строка ждёт разметки.
+            no_article = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("10000.00"),
+                operation_date=date(2026, 6, 20),
+                source_kind="template_import",
+                payment_purpose="Внутренний перевод на договор — требует разметки",
+            )
+            # Исключённая из ДДС проводка «размечена» ровно настолько, чтобы не мозолить
+            # глаза во вкладке «Требуют проверки», даже если статьи у неё нет.
+            excluded = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("500.00"),
+                operation_date=date(2026, 6, 21),
+                source_kind="manual",
+                quality_status="excluded",
+                payment_purpose="Корректировка кассы",
+            )
+            classified = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("300.00"),
+                operation_date=date(2026, 6, 22),
+                article_id=article.id,
+                source_kind="manual",
+                payment_purpose="Обычная размеченная проводка",
+            )
+            session.add_all([no_article, excluded, classified])
+            await session.commit()
+            return {
+                "no_article_id": str(no_article.id),
+                "excluded_id": str(excluded.id),
+                "classified_id": str(classified.id),
+            }
+
+    return _run(go())
+
+
+def test_journal_cashflow_without_article_counts_as_unmarked(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Регресс: проводка без статьи горела «Требует разбора», а счётчик показывал 0.
+
+    Счётчики делили журнал по происхождению строки (cashflow — размечено, банковская
+    операция — нет), поэтому неразмеченные проводки попадали в «Размеченные» и на вкладке
+    «Требуют проверки» их было не открыть.
+    """
+    _seed(async_session_factory)  # даёт одну банковскую операцию needs_review
+    ids = _seed_unmarked_cashflow(async_session_factory)
+
+    r = client.get("/api/v1/dds/journal", params={"status": "all", **WINDOW}, headers=HEADERS)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    # Банковская операция + проводка без статьи; excluded и classified — в «Размеченных».
+    assert data["unmarked_total"] == 2
+    assert data["marked_total"] == 2
+    # Сумма счётчиков сходится с числом строк вкладки «Все».
+    assert data["marked_total"] + data["unmarked_total"] + data["transfer_total"] == data["total"]
+
+    unmarked = client.get(
+        "/api/v1/dds/journal", params={"status": "unmarked", **WINDOW}, headers=HEADERS
+    )
+    assert unmarked.status_code == 200, unmarked.text
+    unmarked_data = unmarked.json()
+    assert ids["no_article_id"] in {item["id"] for item in unmarked_data["items"]}
+    assert unmarked_data["total"] == unmarked_data["unmarked_total"]
+    assert set(item["status"] for item in unmarked_data["items"]) == {"needs_review"}
+
+    marked = client.get(
+        "/api/v1/dds/journal", params={"status": "marked", **WINDOW}, headers=HEADERS
+    )
+    assert marked.status_code == 200, marked.text
+    marked_ids = {item["id"] for item in marked.json()["items"]}
+    assert ids["no_article_id"] not in marked_ids
+    assert marked_ids == {ids["excluded_id"], ids["classified_id"]}
+
+
 def test_journal_filters_across_cashflow_and_bank_operations(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

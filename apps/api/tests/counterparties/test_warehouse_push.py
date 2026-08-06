@@ -20,6 +20,7 @@ from app.services import warehouse_invoice_push as wip
 from app.services.iiko_invoice_cloud import build_invoice_body
 from app.services.warehouse_invoice_push import (
     _CloudPushOutcome,
+    _line_amounts_for_iiko,
     delete_invoice_in_iiko,
     prepare_push,
     propagate_invoice_edit_to_iiko,
@@ -150,6 +151,102 @@ async def test_prepare_push_skips_all_staff(
         prepared = await prepare_push(session, invoice)
         assert prepared.doc is None
         assert prepared.skip_reason is not None
+
+
+# ── цена строки под инвариант iiko «sum == price * amount» ───────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("quantity", "price", "line_sum", "expected_price", "expected_sum"),
+    [
+        # Ввод через СУММУ: 840 ÷ 2,9 = 289,655172…, в базе цена округлена до 289,66 —
+        # реальная строка «Шампиньоны» накладной №515256.
+        ("2.9", "289.66", "840.00", "289.655172", "839.9999988"),
+        ("3", "33.33", "100.00", "33.333333", "99.999999"),
+        ("20", "88.46", "1769.28", "88.464000", "1769.280000"),
+        # Округляется в ту же копейку, но точного равенства нет — iiko отвергнет, правим.
+        ("2.9", "289.66", "840.01", "289.658621", "840.0100009"),
+        # Равенство строгое — строка уходит нетронутой (подавляющее большинство).
+        ("10", "120.00", "1200.00", "120.00", "1200.00"),
+        ("0.7", "400.00", "280.00", "400.00", "280.00"),
+        # Делить не на что — отдаём как есть.
+        ("0", "120.00", "0.00", "120.00", "0.00"),
+    ],
+)
+def test_line_amounts_for_iiko(
+    quantity: str, price: str, line_sum: str, expected_price: str, expected_sum: str
+) -> None:
+    got_price, got_sum = _line_amounts_for_iiko(
+        Decimal(quantity), Decimal(price), Decimal(line_sum)
+    )
+    assert got_price == Decimal(expected_price)
+    assert got_sum == Decimal(expected_sum)
+    if Decimal(quantity) > 0:
+        # Инвариант, который сверяет сама iiko, — строгий, не «до копеек».
+        assert got_price * Decimal(quantity) == got_sum
+        # От эталона кассира уходим меньше чем на полкопейки.
+        assert abs(got_sum - Decimal(line_sum)) < Decimal("0.005")
+
+
+def test_line_amounts_for_iiko_keeps_line_without_sum() -> None:
+    """Строка без эталонной суммы (старые данные) — прежнее поведение, цена из базы."""
+    assert _line_amounts_for_iiko(Decimal("2.9"), Decimal("289.66"), None) == (
+        Decimal("289.66"),
+        None,
+    )
+
+
+async def test_prepare_push_price_matches_line_sum(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Каждая строка тела удовлетворяет ``sum == price * amount`` СТРОГО.
+
+    Без этого iiko отвергает ВЕСЬ документ («sum must be equal to price * amount in item» —
+    прод 06.08.2026, накладная №515256).
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставка овощей", inn="7710000054", iiko_guid="SUP-GUID-4"
+        )
+        invoice = SupplierInvoice(
+            counterparty_id=cp.id, source="manual", direction="payable", number="515256",
+            amount=Decimal("2040.00"), payment_status="unpaid", issued_at=ISSUED, store_guid="ST-1",
+        )
+        session.add(invoice)
+        await session.flush()
+        session.add(
+            InvoiceLineItem(
+                invoice_id=invoice.id, product_guid="PROD-CHAMP", name="Шампиньоны",
+                quantity=Decimal("2.9"), price=Decimal("289.66"), sum=Decimal("840.00"),
+                is_staff=False, sort_order=0,
+            )
+        )
+        session.add(
+            InvoiceLineItem(
+                invoice_id=invoice.id, product_guid="PROD-CUC", name="Огурцы",
+                quantity=Decimal("10"), price=Decimal("120.00"), sum=Decimal("1200.00"),
+                is_staff=False, sort_order=1,
+            )
+        )
+        await session.commit()
+
+        prepared = await prepare_push(session, invoice)
+        assert prepared.doc is not None
+        champignons, cucumbers = prepared.doc.lines
+        # цена восстановлена из эталонной суммы, сумма — точное произведение
+        assert champignons.price == 289.655172 and champignons.sum == 839.9999988
+        # обычная строка уходит как была
+        assert cucumbers.price == 120.0 and cucumbers.sum == 1200.0
+
+        items = build_invoice_body(prepared.doc)["items"]
+        for item in items:
+            assert Decimal(str(item["price"])) * Decimal(str(item["amount"])) == Decimal(
+                str(item["sum"])
+            )
+        # итог документа отходит от нашего меньше чем на копейку
+        assert abs(sum(Decimal(str(it["sum"])) for it in items) - Decimal("2040.00")) < Decimal(
+            "0.01"
+        )
 
 
 # ── push_invoice_to_iiko: оркестрация (сетевой слой замокан) ─────────────────────────────────────

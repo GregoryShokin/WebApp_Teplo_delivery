@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import false, func, or_, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -355,14 +355,39 @@ async def list_journal(
             op_conditions.append(raw_counterparty_match)
             transfer_conditions.append(raw_counterparty_match)
 
+    # Проводка без статьи «требует проверки» ровно так же, как неразобранная банковская
+    # операция, — и счётчик обязан считать её тем же приоритетом, каким ниже считается
+    # статус строки (awaiting_bank и excluded идут ПЕРЕД пустой статьёй). Пока счётчики
+    # делили журнал по происхождению (cashflow = размечено, операция = нет), заливка
+    # истории Сейфа за 01–02.07.2026 положила в базу две проводки с пустой статьёй:
+    # строки честно горели «Требует разбора», а вкладка показывала 0 и не открывалась —
+    # найти их можно было только глазами на «Все».
+    cf_needs_review = and_(
+        CashflowTransaction.article_id.is_(None),
+        CashflowTransaction.quality_status.not_in((AWAITING_BANK_QUALITY, EXCLUDED_QUALITY)),
+    )
+    # Excluded и awaiting_bank остаются в «Размеченных» — у них свой статус строки, и
+    # сумма трёх счётчиков должна сходиться с числом строк на вкладке «Все».
+    cf_marked = or_(
+        CashflowTransaction.article_id.is_not(None),
+        CashflowTransaction.quality_status.in_((AWAITING_BANK_QUALITY, EXCLUDED_QUALITY)),
+    )
+
     marked_total = int(
         await session.scalar(
-            select(func.count()).select_from(CashflowTransaction).where(*cf_conditions)
+            select(func.count()).select_from(CashflowTransaction).where(*cf_conditions, cf_marked)
         )
         or 0
     )
     unmarked_total = int(
         await session.scalar(select(func.count()).select_from(BankOperation).where(*op_conditions))
+        or 0
+    ) + int(
+        await session.scalar(
+            select(func.count())
+            .select_from(CashflowTransaction)
+            .where(*cf_conditions, cf_needs_review)
+        )
         or 0
     )
     transfer_total = int(
@@ -384,9 +409,16 @@ async def list_journal(
             ).all()
             if account_id is not None
         }
-    if status in ("all", "marked"):
+    if status in ("all", "marked", "unmarked"):
+        # «Требуют проверки» отдаёт и проводки с пустой статьёй — иначе вкладка не может
+        # показать то, что сама же посчитала.
+        cf_status_conditions = list(cf_conditions)
+        if status == "marked":
+            cf_status_conditions.append(cf_marked)
+        elif status == "unmarked":
+            cf_status_conditions.append(cf_needs_review)
         cashflow_list = (
-            await session.scalars(select(CashflowTransaction).where(*cf_conditions))
+            await session.scalars(select(CashflowTransaction).where(*cf_status_conditions))
         ).all()
         # Cashflow classified out of a bank operation inherits that operation's
         # exact ``posted_at`` so it sorts by real banking time, not by the moment
