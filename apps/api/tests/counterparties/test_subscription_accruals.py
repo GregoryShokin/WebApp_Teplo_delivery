@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from cp_helpers import (
@@ -560,6 +560,9 @@ async def test_unperioded_closing_prefers_exact_bill_and_inherits_its_period(
 
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="АЙКО-точная-сумма", inn="1655166016")
+        # Дата денег обязательна обоим: равенство суммы работает только для аванса, ушедшего
+        # НЕ ПОЗЖЕ документа (правило хронологии, инцидент Манго). У счёта её даёт сам счёт,
+        # у абонентского платежа без проводки — дата записи.
         legacy = SupplierPrepayment(
             counterparty_id=cp.id,
             kind="subscription",
@@ -567,10 +570,21 @@ async def test_unperioded_closing_prefers_exact_bill_and_inherits_its_period(
             amount_settled=Decimal("0.00"),
             status="open",
             service_period_status="missing",
+            created_at=datetime(2026, 6, 5, tzinfo=UTC),
+        )
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            number="СЧЁТ-4260",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         july_bill = SupplierPrepayment(
             counterparty_id=cp.id,
             kind="prepaid_bill",
+            bill_invoice_id=bill.id,
             amount=Decimal("4260.00"),
             amount_settled=Decimal("0.00"),
             status="open",
@@ -621,10 +635,21 @@ async def test_repair_unperioded_closings_rebuilds_old_fifo_cross_match(
             amount_settled=Decimal("16430.00"),
             status="settled",
             service_period_status="missing",
+            created_at=datetime(2026, 6, 5, tzinfo=UTC),
+        )
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            number="СЧЁТ-РЕМОНТ-4260",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
         )
         july_bill = SupplierPrepayment(
             counterparty_id=cp.id,
             kind="prepaid_bill",
+            bill_invoice_id=bill.id,
             amount=Decimal("4260.00"),
             amount_settled=Decimal("4260.00"),
             status="settled",

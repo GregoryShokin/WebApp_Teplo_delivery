@@ -406,7 +406,14 @@ def test_cash_payment_to_pending_obligation_becomes_receivable(async_session_fac
 
 
 def test_activation_settles_receivable_left_by_cash_prepayment(async_session_factory) -> None:
-    """Сквозной сценарий владельца: два аванса → ДЗ 100 000, документ 31.07 съедает один."""
+    """Сквозной сценарий владельца: два аванса → ДЗ 100 000, документ за июль съедает один.
+
+    Активация — 1 августа, а не 31 июля: закрывающий вступает в силу днём ПОСЛЕ окончания
+    периода услуги (весь последний день аренда ещё оказывается). Тем же неравенством живёт
+    признание расхода, поэтому гашение аванса и признание идут одним прогоном, без ночи
+    между ними. Предмет теста от этого не меняется: проверяем, что активация гасит дебиторку,
+    оставленную наличными авансами, а не сам день.
+    """
 
     async def run() -> None:
         async with async_session_factory() as session:
@@ -428,7 +435,7 @@ def test_activation_settles_receivable_left_by_cash_prepayment(async_session_fac
             ) == Decimal("100000.00")
 
             await activate_due_closing_invoices(
-                session, as_of=date(2026, 7, 31), commit=False
+                session, as_of=date(2026, 8, 1), commit=False
             )
             await session.refresh(invoice)
             assert invoice.activation_status == "active"

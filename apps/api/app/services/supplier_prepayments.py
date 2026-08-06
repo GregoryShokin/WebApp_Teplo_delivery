@@ -1852,6 +1852,96 @@ async def _settlement_candidates(
     return ranked
 
 
+def _period_may_be_inherited(
+    used: Sequence[tuple[SupplierPrepayment, str]],
+    candidates: Sequence[tuple[SupplierPrepayment, str]],
+) -> bool:
+    """Достаточно ли надёжен подбор, чтобы документ перенял период услуги своих источников.
+
+    Наследование переносит в документ ЧУЖОЙ период, а через него — месяц признания расхода.
+    Право на это даёт только адресность: аванс, выбранный лишь потому, что подошёл по очереди
+    (``chronology``), знает свой период, но не знает, что он относится к ЭТОМУ документу.
+
+    ВТОРОЕ УСЛОВИЕ — НЕ ОСТАЛОСЬ РАВНОПРАВНОГО НЕВЗЯТОГО. Адресный признак бывает
+    неоднозначным: у подписочного поставщика с ровной абонентской платой равенству суммы
+    совпадает любой месяц. Два одинаковых счёта — за июль и за август — дают акту без периода
+    двух кандидатов одного ранга; лестница возьмёт более ранний по хронологии денег, и это
+    разумный порядок ЗАЧЁТА, но не основание молча признать расход июлем. Поэтому если рядом
+    лежал невзятый кандидат того же ранга, период не наследуем — пусть решает оператор.
+
+    Счёт-основание из этой проверки исключён: там неоднозначности нет по построению —
+    ``_basis_bill_id`` сам отказывается отвечать, когда под номер подходит несколько счетов.
+    """
+    used_bases = [basis for _, basis in used]
+    if MATCH_CHRONOLOGY in used_bases:
+        return False
+    return all(
+        basis == MATCH_BASIS_INVOICE
+        or used_bases.count(basis) == sum(1 for _, other in candidates if other == basis)
+        for basis in set(used_bases)
+    )
+
+
+async def _inherit_period_from_prepayment_allocations(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> bool:
+    """Перенести период в closing, если его однозначно подтверждают погасившие авансы.
+
+    Период счёта живёт в ``prepaid_bill`` и не должен теряться после приезда УПД. Наследуем
+    только при строгом условии: предоплатные зачёты покрывают документ целиком, у КАЖДОГО
+    источника период готов и все периоды совпадают. Смесь «известно + неизвестно» не угадываем:
+    именно так АЙКО 16 430 ₽ остаётся на ручном разборе, пока 4 260 ₽ определяется автоматически.
+    """
+    if (
+        invoice.doc_kind != "closing"
+        or invoice.service_period_status == "ready"
+        or invoice.service_period_start is not None
+        or invoice.service_period_end is not None
+    ):
+        return False
+
+    rows = (
+        await session.execute(
+            select(InvoicePaymentAllocation, SupplierPrepayment)
+            .join(
+                SupplierPrepayment,
+                SupplierPrepayment.id == InvoicePaymentAllocation.prepayment_id,
+            )
+            .where(
+                InvoicePaymentAllocation.invoice_id == invoice.id,
+                InvoicePaymentAllocation.source_kind == "prepayment",
+            )
+        )
+    ).all()
+    if not rows:
+        return False
+
+    allocated = sum((_money(allocation.amount) for allocation, _ in rows), Decimal("0.00"))
+    if allocated < _money(invoice.amount):
+        return False
+
+    periods: set[tuple[date, date]] = set()
+    for _allocation, prepayment in rows:
+        if (
+            prepayment.service_period_status != "ready"
+            or prepayment.service_period_start is None
+            or prepayment.service_period_end is None
+        ):
+            return False
+        periods.add((prepayment.service_period_start, prepayment.service_period_end))
+    if len(periods) != 1:
+        return False
+
+    start, end = periods.pop()
+    invoice.service_period_start = start
+    invoice.service_period_end = end
+    invoice.service_period_status = "ready"
+    invoice.service_period_source = "settled_prepayment"
+    invoice.service_period_confidence = Decimal("1.000")
+    await session.flush()
+    return True
+
+
 async def auto_settle_invoice_from_open_prepayments(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -1875,7 +1965,9 @@ async def auto_settle_invoice_from_open_prepayments(
         # уйдут лишние деньги). Зачёт возможен только для документов вне банковских черновиков.
         return Decimal("0.00")
     total = Decimal("0.00")
-    for prepayment, match_basis in await _settlement_candidates(session, invoice):
+    candidates = await _settlement_candidates(session, invoice)
+    used: list[tuple[SupplierPrepayment, str]] = []
+    for prepayment, match_basis in candidates:
         inv_remaining = await _invoice_remaining(session, invoice)
         if inv_remaining <= 0:
             break
@@ -1891,10 +1983,74 @@ async def auto_settle_invoice_from_open_prepayments(
             actor_user_id=actor_user_id,
             match_basis=match_basis,
         )
+        used.append((prepayment, match_basis))
         total += alloc
     if total > 0:
         await _recompute_status(session, invoice)
+        # Период счёта не должен теряться после приезда УПД: сам документ его чаще всего не
+        # называет, а погасившая его дебиторка — знает. Право на перенос даёт адресность
+        # подбора, поэтому смотрим на основания ФАКТИЧЕСКИ использованных авансов, а не на
+        # весь список кандидатов.
+        if _period_may_be_inherited(used, candidates):
+            await _inherit_period_from_prepayment_allocations(session, invoice)
     return total
+
+
+async def repair_unperioded_closing_settlements(
+    session: AsyncSession,
+    *,
+    invoice_ids: Sequence[uuid.UUID] | None = None,
+    commit: bool = True,
+) -> dict[str, int]:
+    """Пересобрать старые FIFO-зачёты и восстановить периоды оплаченных closing-документов.
+
+    Это явная ремонтная операция, а не побочный эффект чтения ОПиУ. Сначала возвращаем ВСЕ
+    предоплатные зачёты выбранной группы, затем проводим документы заново уже по лестнице
+    адресности. Групповое освобождение принципиально: иначе дебиторка нужного счёта может
+    оставаться занятой соседним актом и новый алгоритм просто не увидит её открытой.
+    """
+    query = select(SupplierInvoice).where(
+        SupplierInvoice.doc_kind == "closing",
+        SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
+        SupplierInvoice.payment_status == "paid",
+        SupplierInvoice.service_period_start.is_(None),
+        SupplierInvoice.service_period_end.is_(None),
+        SupplierInvoice.draft_id.is_(None),
+    )
+    if invoice_ids is not None:
+        ids = list(invoice_ids)
+        if not ids:
+            return {"documents": 0, "periods_restored": 0}
+        query = query.where(SupplierInvoice.id.in_(ids))
+    invoices = list((await session.scalars(query.with_for_update())).all())
+    if not invoices:
+        return {"documents": 0, "periods_restored": 0}
+
+    for invoice in invoices:
+        await release_invoice_prepayment_allocations(session, invoice)
+    await session.flush()
+    for invoice in invoices:
+        await _recompute_status(session, invoice)
+
+    # Большие документы первыми: при отсутствии точного совпадения они не должны съесть
+    # маленькую точную дебиторку до того, как до неё дойдёт соответствующий акт.
+    invoices.sort(
+        key=lambda item: (-_money(item.amount), item.invoice_date or date.min, str(item.id))
+    )
+    restored = 0
+    from app.services import supplier_service_periods
+
+    for invoice in invoices:
+        await auto_settle_invoice_from_open_prepayments(session, invoice)
+        if invoice.service_period_status == "ready":
+            restored += 1
+            await supplier_service_periods.sync_invoice_accrual(session, invoice)
+
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
+    return {"documents": len(invoices), "periods_restored": restored}
 
 
 async def apply_closing_document(
