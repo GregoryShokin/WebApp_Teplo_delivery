@@ -157,7 +157,10 @@ def test_ledger_known_payments_do_not_raise_the_alarm(async_session_factory) -> 
             assert layer.by_verdict_count[Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY.value] == 3
 
             # А вот тревога — только по платежу без следа: у двух остальных носитель
-            # будущего расхода уже есть (предоплата и оплаченный счёт).
-            assert layer.excluded_for_accrual == {counterparty.id: Decimal("1000.00")}
+            # будущего расхода уже есть (предоплата и оплаченный счёт). Ключ включает строку
+            # ОПиУ: признание сверяется со своей строкой, а не со всей кассой контрагента.
+            assert layer.excluded_for_accrual == {
+                (counterparty.id, "telecom"): Decimal("1000.00")
+            }
 
     asyncio.run(scenario())

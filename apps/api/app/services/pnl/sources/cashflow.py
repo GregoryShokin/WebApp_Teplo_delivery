@@ -100,14 +100,29 @@ class CashLayer:
     unmapped_count: int = 0
     # Статьи, по которым касса встретилась, а правила нет. Пустой список — инвариант.
     unmapped_articles: set[uuid.UUID | None] = field(default_factory=set)
-    #: Сколько кассы исключено «под признание» по каждому контрагенту, и на какие строки она
-    #: пришлась. Нужно, чтобы сверить обещание с фактом: исключая платёж, отчёт утверждает,
-    #: что расход придёт начислением, — и обязан заметить, если начисление не пришло.
-    excluded_for_accrual: dict[uuid.UUID, Decimal] = field(
+    #: Сколько кассы исключено «под признание» — по паре КОНТРАГЕНТ × СТРОКА ОПиУ. Нужно,
+    #: чтобы сверить обещание с фактом: исключая платёж, отчёт утверждает, что расход придёт
+    #: начислением, — и обязан заметить, если начисление не пришло.
+    #:
+    #: КЛЮЧ ВКЛЮЧАЕТ СТРОКУ, И ЭТО НЕ ДЕТАЛЬ. Пока ключом был один контрагент, признание
+    #: складывалось по всем его статьям сразу и гасило тревогу на чужой строке: у арендодателя
+    #: Виталия признанная АРЕНДА за июль 2026 (50 000 ₽) погасила 50 000 ₽ тревоги по
+    #: КОММУНАЛКЕ, где признано ноль, и отчёт показал 45 402 ₽ вместо 95 402 ₽. У Станислава
+    #: Юрьевича тот же щит заглушил сигнал целиком. Хуже того, стороны вычитания были
+    #: несопоставимы: касса арендных платежей в тревогу не входит вовсе (она в ``ledger_known``),
+    #: то есть признание тратилось дважды — у числа 45 402 не было учётного смысла ни в одной
+    #: рамке. Решение об исключении принимается по строке — сверяться оно обязано тоже по строке.
+    excluded_for_accrual: dict[tuple[uuid.UUID, str], Decimal] = field(
         default_factory=lambda: defaultdict(Decimal)
     )
-    excluded_for_accrual_lines: dict[uuid.UUID, set[str]] = field(
-        default_factory=lambda: defaultdict(set)
+    #: ВСЯ касса, исключённая под признание, включая платежи со следом в ДЗ/КЗ. Нужна, чтобы
+    #: отличить две очень разные новости при одинаковом разрыве. Признание контрагента на
+    #: ЧУЖОЙ строке значит «у платежа не та статья» только если та строка своей кассы не имеет:
+    #: у ЧОО охрана оплачена по арендной статье, а признана на содержании точек — там кассы
+    #: нет вовсе. А у арендодателя Виталия признанная аренда обеспечена своими арендными
+    #: платежами, и к непризнанной коммуналке отношения не имеет — там документа нет вовсе.
+    excluded_all_lines: dict[tuple[uuid.UUID, str], Decimal] = field(
+        default_factory=lambda: defaultdict(Decimal)
     )
     #: Имена тех, чью кассу исключили. Именно ТЕХ, а не признанных: сигнал нужен как раз про
     #: контрагента, у которого признания нет, — в справочниках слоя признания его не будет.
@@ -385,16 +400,22 @@ async def build_cash_layer(
                 verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY
                 and tx.counterparty_id is not None
                 and tx.direction == "out"
+            ):
+                # Полная картина кассы по строкам — до отсева ledger_known. По ней проектор
+                # понимает, обеспечено ли признание на соседней строке своими деньгами.
+                layer.excluded_all_lines[(tx.counterparty_id, line_code)] += amount
+            if (
+                verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY
+                and tx.counterparty_id is not None
+                and tx.direction == "out"
                 and tx.id not in context.ledger_known
             ):
                 # Копим обещание: эти деньги ушли, но расходом здесь не считаются — их
-                # обязано заменить начисление. Сверку обещания с фактом делает проектор:
-                # тут ещё не видно, сколько признано по контрагенту в ДРУГИХ строках.
+                # обязано заменить начисление по ЭТОЙ строке. Сверку обещания с фактом делает
+                # проектор: тут ещё не видно, сколько признано по строке.
                 # Проводки со следом в ДЗ/КЗ (``ledger_known``) сюда не попадают: их
                 # будущий расход уже имеет носителя — предоплату или оплаченный счёт.
-                layer.excluded_for_accrual[tx.counterparty_id] += amount
-                if line_code is not None:
-                    layer.excluded_for_accrual_lines[tx.counterparty_id].add(line_code)
+                layer.excluded_for_accrual[(tx.counterparty_id, line_code)] += amount
 
     await _apply_moved_in(
         session,
@@ -412,7 +433,7 @@ async def build_cash_layer(
 
         named = await session.execute(
             select(Counterparty.id, Counterparty.name).where(
-                Counterparty.id.in_(layer.excluded_for_accrual)
+                Counterparty.id.in_({counterparty_id for counterparty_id, _ in layer.excluded_for_accrual})
             )
         )
         for counterparty_id, name in named:

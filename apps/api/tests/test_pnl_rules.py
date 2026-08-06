@@ -382,73 +382,194 @@ class TestExcludedWithoutAccrual:
     Как только контрагент попал в контур признания, вся его касса месяца выбрасывается из
     строк: отчёт утверждает, что расход придёт документом. Утверждение это не проверялось
     ничем — суммы признания считались и не читались. Аудит замкнутости 05.08.2026 намерил
-    таким путём 134 000 ₽ за июль, среди них Манго Телеком (10 000 ₽) — ровно тот случай,
-    который владелец поймал глазами: «телекоммуникации бывают только Микроэлом».
+    таким путём 134 000 ₽ за июль.
+
+    СВЕРКА ИДЁТ ПО ПАРЕ «КОНТРАГЕНТ × СТРОКА», и эти тесты защищают именно пару. Прежняя
+    версия складывала признание контрагента по всем статьям: у арендодателя Виталия
+    признанная АРЕНДА июля 2026 гасила тревогу по КОММУНАЛКЕ, где признано ноль (95 402 ₽
+    превращались в 45 402 ₽), а у Станислава Юрьевича арендный щит глушил сигнал целиком.
     """
 
     CP_A = uuid.UUID("11111111-1111-1111-1111-111111111111")
     CP_B = uuid.UUID("22222222-2222-2222-2222-222222222222")
-    ARTICLE = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    RENT_ARTICLE = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    UTILITY_ARTICLE = uuid.UUID("44444444-4444-4444-4444-444444444444")
+    SHOP_ARTICLE = uuid.UUID("55555555-5555-5555-5555-555555555555")
+    #: Начисление без своей статьи: строка берётся из карточки контрагента. Ради этого случая
+    #: сверку когда-то держали по контрагенту целиком — здесь она справляется парой.
+    NO_ARTICLE = None
 
-    def _layers(self, excluded: dict, recognized: dict, names: dict | None = None):
+    ARTICLE_LINES = {
+        RENT_ARTICLE: "rent_chernikova",
+        UTILITY_ARTICLE: "utilities_chernikova",
+        SHOP_ARTICLE: "shop_maintenance",
+    }
+
+    def _lines(self) -> dict:
+        return {
+            code: LineValue(
+                code=code,
+                title=title,
+                block="expenses",
+                kind="line",
+                level=1,
+                sort_order=1,
+                sign_role=-1,
+                month_basis="cash",
+                amount=Decimal("0.00"),
+                status=LineStatus.OK,
+            )
+            for code, title in (
+                ("rent_chernikova", "Аренда торговой точки Черникова"),
+                ("utilities_chernikova", "Коммунальные платежи Черникова"),
+                ("shop_maintenance", "Содержание торговых точек"),
+            )
+        }
+
+    def _warn(
+        self,
+        excluded: dict,
+        recognized: list,
+        names: dict | None = None,
+        backed: dict | None = None,
+    ):
+        """``excluded``: {(контрагент, строка): сумма}; ``recognized``: [(контрагент, статья, сумма)].
+
+        ``backed`` — вся касса контрагента по строкам, включая платежи со следом в ДЗ/КЗ.
+        По умолчанию равна ``excluded``: признание на чужой строке без своей кассы читается
+        как «у платежа не та статья».
+        """
         cash = cash_source.CashLayer()
         cash.excluded_for_accrual.update(excluded)
+        cash.excluded_all_lines.update(backed if backed is not None else excluded)
         cash.excluded_counterparty_names.update(names or {})
         recognition = recognition_source.RecognitionLayer()
-        for pair, amount in recognized.items():
-            recognition.by_pair[pair] = amount
-        return cash, recognition
-
-    def test_gap_is_reported_with_name_and_amount(self) -> None:
-        cash, recognition = self._layers(
-            excluded={self.CP_A: Decimal("10000.00")},
-            recognized={},
-            names={self.CP_A: "Манго Телеком, ООО"},
+        for counterparty_id, article_id, amount in recognized:
+            recognition.details.append(
+                recognition_source.RecognitionDetail(
+                    accrual_id=uuid.uuid4(),
+                    counterparty_id=counterparty_id,
+                    article_id=article_id,
+                    amount=amount,
+                    service_period_start=None,
+                    service_period_end=None,
+                    has_primary=True,
+                    origin=recognition_source.ORIGIN_DOCUMENT,
+                )
+            )
+        return projector._unfulfilled_accrual_warnings(
+            cash, recognition, self.ARTICLE_LINES, self._lines()
         )
-        warnings = projector._unfulfilled_accrual_warnings(cash, recognition)
-        assert len(warnings) == 1
-        assert warnings[0].code == "excluded_without_accrual"
-        assert warnings[0].amount == Decimal("10000.00")
-        assert "Манго Телеком" in warnings[0].message
-        # Обе трактовки названы: молча выбрать одну из них отчёт не вправе.
-        assert "предоплата" in warnings[0].message
-        assert "не приехал" in warnings[0].message
 
-    def test_fully_recognised_payment_is_silent(self) -> None:
-        cash, recognition = self._layers(
-            excluded={self.CP_A: Decimal("50000.00")},
-            recognized={(self.CP_A, self.ARTICLE): Decimal("50000.00")},
-        )
-        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+    def test_recognition_on_another_line_does_not_shield_the_gap(self) -> None:
+        """Случай Виталия: аренда признана и оплачена, коммуналка не признана вовсе.
 
-    def test_recognition_counts_across_articles(self) -> None:
-        """Сверка идёт ПО КОНТРАГЕНТУ: у начисления статья часто пуста, и признание уезжает
-        на строку из карточки. Сверка по паре кричала бы на здоровых данных."""
-        cash, recognition = self._layers(
-            excluded={self.CP_A: Decimal("9000.00")},
-            recognized={
-                (self.CP_A, self.ARTICLE): Decimal("4000.00"),
-                (self.CP_A, None): Decimal("5000.00"),
+        Признание аренды обеспечено своими арендными платежами (они в ``ledger_known``, потому
+        и не попали в разрыв), значит к коммунальной дыре отношения не имеет: это «документа
+        нет вовсе», а не «расход уехал на другую строку».
+        """
+        warnings = self._warn(
+            excluded={(self.CP_A, "utilities_chernikova"): Decimal("95402.00")},
+            recognized=[(self.CP_A, self.RENT_ARTICLE, Decimal("50000.00"))],
+            names={self.CP_A: "Виталий"},
+            backed={
+                (self.CP_A, "utilities_chernikova"): Decimal("95402.00"),
+                (self.CP_A, "rent_chernikova"): Decimal("100000.00"),
             },
         )
-        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+        assert len(warnings) == 1
+        # Признание аренды не вычитается из коммунальной кассы: 95 402, а не 45 402.
+        assert warnings[0].amount == Decimal("95402.00")
+        assert "Виталий" in warnings[0].message
+        assert warnings[0].code == "excluded_without_accrual"
+
+    def test_recognition_without_its_own_cash_reads_as_wrong_article(self) -> None:
+        """Случай ЧОО: охрана оплачена по арендной статье, признана на содержании точек.
+
+        На строке признания собственной кассы нет — значит деньги прошли по чужой статье,
+        и владельцу надо чинить разметку, а не искать документ.
+        """
+        warnings = self._warn(
+            excluded={(self.CP_A, "rent_chernikova"): Decimal("2300.00")},
+            recognized=[(self.CP_A, self.SHOP_ARTICLE, Decimal("2300.00"))],
+            names={self.CP_A: "ООО ЧОО"},
+        )
+        assert len(warnings) == 1
+        assert warnings[0].code == "accrual_on_other_line"
+        assert warnings[0].amount == Decimal("2300.00")
+
+    def test_no_recognition_anywhere_is_a_lost_document(self) -> None:
+        """Признания у контрагента нет ни на одной строке — расход потерян, документ не приехал."""
+        warnings = self._warn(
+            excluded={(self.CP_A, "utilities_chernikova"): Decimal("95402.00")},
+            recognized=[],
+            names={self.CP_A: "Виталий"},
+        )
+        assert len(warnings) == 1
+        assert warnings[0].code == "excluded_without_accrual"
+        assert warnings[0].amount == Decimal("95402.00")
+        assert "Коммунальные платежи Черникова" in warnings[0].message
+
+    def test_recognition_on_the_same_line_is_silent(self) -> None:
+        cash_and_docs_agree = self._warn(
+            excluded={(self.CP_A, "utilities_chernikova"): Decimal("50000.00")},
+            recognized=[(self.CP_A, self.UTILITY_ARTICLE, Decimal("50000.00"))],
+        )
+        assert cash_and_docs_agree == []
+
+    def test_accrual_without_article_lands_on_the_line_from_the_card(self) -> None:
+        """Начисление без своей статьи разрешается карточкой — сверка обязана это учесть.
+
+        Ради этого случая сверку когда-то держали по контрагенту целиком. Строка берётся из
+        ``details``, где статья уже разрешена, поэтому пара работает и здесь.
+        """
+        resolved = self._warn(
+            excluded={(self.CP_A, "utilities_chernikova"): Decimal("4120.59")},
+            recognized=[(self.CP_A, self.UTILITY_ARTICLE, Decimal("4120.59"))],
+        )
+        assert resolved == []
+
+    def test_shield_no_longer_silences_a_second_counterparty(self) -> None:
+        """Случай Станислава: арендное признание больше не глушит коммунальный разрыв."""
+        warnings = self._warn(
+            excluded={(self.CP_B, "utilities_chernikova"): Decimal("9879.00")},
+            recognized=[
+                (self.CP_B, self.RENT_ARTICLE, Decimal("50000.00")),
+                (self.CP_B, self.UTILITY_ARTICLE, Decimal("7000.00")),
+            ],
+            names={self.CP_B: "Станислав Юрьевич"},
+        )
+        assert len(warnings) == 1
+        # 9 879 − 7 000 = 2 879 по СВОЕЙ строке; аренда в вычитание не входит.
+        assert warnings[0].amount == Decimal("2879.00")
+
+    def test_small_tails_stay_below_the_threshold(self) -> None:
+        """Хвост коммунального перерасчёта (224,75 ₽) не делает предупреждение вечно красным."""
+        warnings = self._warn(
+            excluded={(self.CP_B, "utilities_chernikova"): Decimal("9879.00")},
+            recognized=[(self.CP_B, self.UTILITY_ARTICLE, Decimal("9654.25"))],
+        )
+        assert warnings == []
 
     def test_overpaid_recognition_does_not_go_negative(self) -> None:
         # Признано больше оплаченного — это не разрыв, а нормальная рассрочка.
-        cash, recognition = self._layers(
-            excluded={self.CP_A: Decimal("1000.00")},
-            recognized={(self.CP_A, self.ARTICLE): Decimal("5000.00")},
+        warnings = self._warn(
+            excluded={(self.CP_A, "utilities_chernikova"): Decimal("1000.00")},
+            recognized=[(self.CP_A, self.UTILITY_ARTICLE, Decimal("5000.00"))],
         )
-        assert projector._unfulfilled_accrual_warnings(cash, recognition) == []
+        assert warnings == []
 
-    def test_gaps_are_sorted_and_summed(self) -> None:
-        cash, recognition = self._layers(
-            excluded={self.CP_A: Decimal("6000.00"), self.CP_B: Decimal("68000.00")},
-            recognized={(self.CP_A, self.ARTICLE): Decimal("3000.00")},
+    def test_gaps_are_sorted_and_summed_within_one_warning(self) -> None:
+        warnings = self._warn(
+            excluded={
+                (self.CP_A, "utilities_chernikova"): Decimal("6000.00"),
+                (self.CP_B, "utilities_chernikova"): Decimal("68000.00"),
+            },
+            recognized=[],
             names={self.CP_A: "Наумченко", self.CP_B: "О. О, ООО"},
         )
-        warnings = projector._unfulfilled_accrual_warnings(cash, recognition)
-        assert warnings[0].amount == Decimal("71000.00")
+        assert len(warnings) == 1
+        assert warnings[0].amount == Decimal("74000.00")
         # Крупнейший разрыв назван первым: с него и начинают разбираться.
         assert warnings[0].message.index("О. О") < warnings[0].message.index("Наумченко")
 

@@ -220,7 +220,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
 
     report.lines = _ordered(lines, catalog)
     report.reconciliation = _reconciliation(cash)
-    report.warnings.extend(_warnings(lines, cash, recognition))
+    report.warnings.extend(_warnings(lines, cash, recognition, article_lines))
     report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
@@ -821,6 +821,7 @@ def _warnings(
     lines: dict[str, LineValue],
     cash: cash_source.CashLayer,
     recognition: recognition_source.RecognitionLayer,
+    article_lines: dict[Any, str],
 ) -> list[Warning]:
     result: list[Warning] = []
     if cash.unmapped_count:
@@ -881,7 +882,7 @@ def _warnings(
                     amount=alongside,
                 )
             )
-    result.extend(_unfulfilled_accrual_warnings(cash, recognition))
+    result.extend(_unfulfilled_accrual_warnings(cash, recognition, article_lines, lines))
     return result
 
 
@@ -909,9 +910,18 @@ def _unclassified_goods_warning(goods: iiko_source.UnclassifiedGoods) -> Warning
     )
 
 
+#: Порог существенности тревоги о непризнанном расходе. Коммунальный перерасчёт вечно даёт
+#: хвосты в десятки рублей (у Станислава Юрьевича за июль 2026 — 224,75 ₽ между наличной
+#: оплатой и актом), и показывать их значило бы держать предупреждение вечно красным. Красное
+#: всегда перестают читать, и настоящая пропажа тонет вместе с хвостами.
+ACCRUAL_GAP_THRESHOLD = Decimal("1000.00")
+
+
 def _unfulfilled_accrual_warnings(
     cash: cash_source.CashLayer,
     recognition: recognition_source.RecognitionLayer,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
 ) -> list[Warning]:
     """Обещание против факта: касса исключена «под начисление», а начисления столько нет.
 
@@ -922,10 +932,24 @@ def _unfulfilled_accrual_warnings(
     ушли, расхода нет нигде, а строка показывает уверенное число. Аудит 05.08.2026 намерил
     этим путём 82 995,59 ₽ за июль — молча.
 
-    ПОЧЕМУ СРАВНИВАЕМ ПО КОНТРАГЕНТУ, А НЕ ПО ПАРЕ «КОНТРАГЕНТ × СТАТЬЯ». У начисления статья
-    часто пуста, и признание уезжает на строку из карточки контрагента
-    (``default_dds_article_id``). Сверка по паре считала бы это расхождением и кричала бы на
-    здоровых данных — три контрагента июля (ЧОО, СПЕЦАВТО, ЭкоЦентр) дают ровно такой случай.
+    СВЕРКА ИДЁТ ПО ПАРЕ «КОНТРАГЕНТ × СТРОКА ОПиУ», И ЭТО ИСПРАВЛЕНИЕ, А НЕ ВКУСОВЩИНА.
+    Прежняя версия складывала признание контрагента по всем статьям сразу: у арендодателя
+    Виталия признанная АРЕНДА июля 2026 гасила тревогу по КОММУНАЛКЕ, где признано ноль, и
+    вместо 95 402 ₽ отчёт показывал 45 402 ₽; у Станислава Юрьевича арендный щит глушил
+    сигнал целиком. Стороны вычитания при этом были несопоставимы — арендная касса в тревогу
+    не входит вовсе (``ledger_known``), то есть одно признание тратилось дважды.
+
+    ПРЕЖНЕЕ ОБОСНОВАНИЕ («сверка по паре кричала бы на ЧОО, СПЕЦАВТО, ЭкоЦентре») УСТАРЕЛО.
+    Оно было верным до появления ``ledger_known``: теперь у всех троих платежи имеют
+    аллокацию на счёт и до сравнения не доходят. Прогон обоих вариантов на данных мая–августа
+    2026 дал ноль ложных тревог. А пустая статья начисления лечится не сальдированием, а тем,
+    что строка берётся из ``details`` — там ``article_id`` уже разрешён через карточку
+    контрагента, ровно как в самом отчёте.
+
+    ДВА РАЗНЫХ ТЕКСТА, ПОТОМУ ЧТО ЭТО ДВЕ РАЗНЫЕ НОВОСТИ. «Документа нет вовсе» — расход
+    потерян и сам не появится. «Документ есть, но признан на другой строке» — деньги в
+    прибыли, ошибка в разметке статьи платежа: так ходят охрана и вывоз мусора, проведённые
+    по арендной статье. Первое чинит поставщик, второе — оператор за минуту.
 
     ПОЧЕМУ ЭТО ПРЕДУПРЕЖДЕНИЕ, А НЕ ПРАВКА СУММЫ. Разница законна ровно так же часто, как и
     нет: заплатили в июле за август — предоплата, документ приедет в свой месяц. Отличить
@@ -934,34 +958,77 @@ def _unfulfilled_accrual_warnings(
     """
     if not cash.excluded_for_accrual:
         return []
-    recognized_by_counterparty: dict[uuid.UUID, Decimal] = defaultdict(Decimal)
-    for (counterparty_id, _article_id), amount in recognition.by_pair.items():
-        recognized_by_counterparty[counterparty_id] += amount
 
-    gaps: list[tuple[Decimal, str]] = []
-    for counterparty_id, excluded in cash.excluded_for_accrual.items():
-        gap = excluded - recognized_by_counterparty.get(counterparty_id, Decimal("0.00"))
-        if gap <= 0:
+    # Признание в разрезе «контрагент × строка». Берём из ``details``, а не из ``by_pair``:
+    # там статья уже разрешена через ``default_dds_article_id``, и 109 170,99 ₽ июльских
+    # начислений без своей статьи попадают на свои строки, а не в никуда.
+    recognized: dict[tuple[uuid.UUID, str], Decimal] = defaultdict(Decimal)
+    for detail in recognition.details:
+        if detail.counterparty_id is None:
+            continue
+        line_code = article_lines.get(detail.article_id)
+        if line_code is None:
+            continue
+        recognized[(detail.counterparty_id, line_code)] += detail.amount
+
+    # Признание, не обеспеченное кассой СВОЕЙ строки: похоже, что деньги за эту услугу прошли
+    # по чужой статье. Именно так выглядит охрана ЧОО, оплаченная по арендной статье. А вот
+    # признанная аренда арендодателя своей кассой обеспечена — и на соседний разрыв по
+    # коммуналке не намекает ничем.
+    unbacked: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for (counterparty_id, line_code), amount in recognized.items():
+        if amount > cash.excluded_all_lines.get((counterparty_id, line_code), Decimal("0.00")):
+            unbacked[counterparty_id].add(line_code)
+
+    missing: list[tuple[Decimal, str, str]] = []
+    misplaced: list[tuple[Decimal, str, str]] = []
+    for (counterparty_id, line_code), excluded in cash.excluded_for_accrual.items():
+        gap = excluded - recognized.get((counterparty_id, line_code), Decimal("0.00"))
+        if gap < ACCRUAL_GAP_THRESHOLD:
             continue
         name = cash.excluded_counterparty_names.get(counterparty_id) or "контрагент без названия"
-        gaps.append((gap, name))
-    if not gaps:
-        return []
+        title = lines[line_code].title if line_code in lines else line_code
+        other = unbacked.get(counterparty_id, set()) - {line_code}
+        (misplaced if other else missing).append((gap, name, title))
 
-    gaps.sort(reverse=True)
-    total = sum((gap for gap, _name in gaps), Decimal("0.00"))
-    listed = ", ".join(f"{name} — {rubles(gap)} ₽" for gap, name in gaps[:5])
-    if len(gaps) > 5:
-        listed = f"{listed} и ещё {len(gaps) - 5}"
-    return [
-        Warning(
-            code="excluded_without_accrual",
-            message=(
-                f"Оплачено {rubles(total)} ₽, но расход по этим деньгам не признан: {listed}. "
-                "Платёж исключён из строки в пользу закрывающего документа, а документа на "
-                "эту сумму нет. Либо это предоплата будущего периода, либо документ не "
-                "приехал — во втором случае расход не попал в прибыль"
-            ),
-            amount=total,
+    result: list[Warning] = []
+    if missing:
+        missing.sort(reverse=True)
+        total = sum((gap for gap, _name, _title in missing), Decimal("0.00"))
+        listed = ", ".join(
+            f"{name} ({title}) — {rubles(gap)} ₽" for gap, name, title in missing[:5]
         )
-    ]
+        if len(missing) > 5:
+            listed = f"{listed} и ещё {len(missing) - 5}"
+        result.append(
+            Warning(
+                code="excluded_without_accrual",
+                message=(
+                    f"Оплачено {rubles(total)} ₽, но расход по этим деньгам не признан: "
+                    f"{listed}. Платёж исключён из строки в пользу закрывающего документа, а "
+                    "документа на эту сумму нет. Либо это предоплата будущего периода, либо "
+                    "документ не приехал — во втором случае расход не попал в прибыль"
+                ),
+                amount=total,
+            )
+        )
+    if misplaced:
+        misplaced.sort(reverse=True)
+        total = sum((gap for gap, _name, _title in misplaced), Decimal("0.00"))
+        listed = ", ".join(
+            f"{name} ({title}) — {rubles(gap)} ₽" for gap, name, title in misplaced[:5]
+        )
+        if len(misplaced) > 5:
+            listed = f"{listed} и ещё {len(misplaced) - 5}"
+        result.append(
+            Warning(
+                code="accrual_on_other_line",
+                message=(
+                    f"Оплачено {rubles(total)} ₽ по одной строке, а расход признан по другой: "
+                    f"{listed}. Скорее всего у платежа не та статья ДДС — деньги в прибыли "
+                    "есть, но строка отчёта показывает их не там"
+                ),
+                amount=total,
+            )
+        )
+    return result
