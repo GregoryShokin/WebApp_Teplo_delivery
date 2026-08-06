@@ -135,10 +135,21 @@ def test_recognition_backed_by_its_own_money_does_not_silence_another_payment(
                     amount=Decimal("9654.25"),
                 )
             )
+            # Акт по июльской воде: расход признан, документ ОПЛАЧЕН — деньги за ним свои.
+            act = await make_invoice(
+                session,
+                counterparty_id=landlord.id,
+                amount="9654.25",
+                doc_kind="closing",
+                number="ВОДА-07-АКТ",
+                payment_status="paid",
+                invoice_date=date(2026, 7, 31),
+            )
             session.add(
                 SupplierExpenseAccrual(
                     counterparty_id=landlord.id,
                     article_id=article.id,
+                    invoice_id=act.id,
                     amount=Decimal("9654.25"),
                     status="recognized",
                     service_period_start=date(2026, 7, 1),

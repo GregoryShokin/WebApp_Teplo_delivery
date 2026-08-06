@@ -94,6 +94,11 @@ class RecognitionDetail:
     #: Чем подтверждён расход — см. ``ORIGIN_*``. Отдельно от ``has_primary``, потому что
     #: «документа нет» и «документа не ждут» это разные новости для владельца.
     origin: str
+    #: Документ этого начисления уже оплачен, то есть за расходом стоят СВОИ деньги. Нужно
+    #: сверке «оплачено, но не признано»: такое признание не вправе гасить тревогу по другому
+    #: платежу. Месяц денег при этом не важен и знать его не нужно — акт за июль оплачивают
+    #: и четвёртого августа.
+    settled: bool = False
 
 
 @dataclass(slots=True)
@@ -144,14 +149,18 @@ async def build_recognition_layer(
 
     rows = (
         await session.execute(
-            select(SupplierExpenseAccrual, SupplierInvoice.source)
+            select(
+                SupplierExpenseAccrual,
+                SupplierInvoice.source,
+                SupplierInvoice.payment_status,
+            )
             .outerjoin(SupplierInvoice, SupplierInvoice.id == SupplierExpenseAccrual.invoice_id)
             .where(SupplierExpenseAccrual.status == "recognized")
         )
     ).all()
 
     layer = RecognitionLayer()
-    for accrual, invoice_source in rows:
+    for accrual, invoice_source, invoice_payment_status in rows:
         article_id = accrual.article_id
         if article_id is None:
             article_id = default_articles.get(accrual.counterparty_id)
@@ -191,6 +200,9 @@ async def build_recognition_layer(
                     service_period_end=period_end,
                     has_primary=not no_primary,
                     origin=origin,
+                    # Только полностью оплаченный: у частично оплаченного документа часть
+                    # расхода деньгами и правда не обеспечена.
+                    settled=invoice_payment_status == "paid",
                 )
             )
             if article_id is None:

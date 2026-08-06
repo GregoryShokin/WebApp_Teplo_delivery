@@ -962,19 +962,6 @@ def _unclassified_goods_warning(goods: iiko_source.UnclassifiedGoods) -> Warning
 ACCRUAL_GAP_THRESHOLD = Decimal("1000.00")
 
 
-def excluded_with_ledger_trace(
-    cash: cash_source.CashLayer, counterparty_id: uuid.UUID, line_code: str
-) -> Decimal:
-    """Касса пары, ушедшая в ДЗ/КЗ СО СЛЕДОМ — предоплатой или зачётом на счёт.
-
-    Слой кассы копит два числа: всю исключённую под признание кассу и её часть без следа.
-    Разница между ними и есть деньги, чей будущий расход уже имеет носителя.
-    """
-    return cash.excluded_all_lines.get(
-        (counterparty_id, line_code), Decimal("0.00")
-    ) - cash.excluded_for_accrual.get((counterparty_id, line_code), Decimal("0.00"))
-
-
 def _unfulfilled_accrual_warnings(
     cash: cash_source.CashLayer,
     recognition: recognition_source.RecognitionLayer,
@@ -1021,42 +1008,46 @@ def _unfulfilled_accrual_warnings(
     # там статья уже разрешена через ``default_dds_article_id``, и 109 170,99 ₽ июльских
     # начислений без своей статьи попадают на свои строки, а не в никуда.
     recognized: dict[tuple[uuid.UUID, str], Decimal] = defaultdict(Decimal)
+    # Полная сумма — отдельно: она нужна признаку «признание не обеспечено своей кассой»
+    # (ниже), где вопрос стоит про строку ОПиУ, а не про происхождение денег.
+    recognized_all: dict[tuple[uuid.UUID, str], Decimal] = defaultdict(Decimal)
     for detail in recognition.details:
         if detail.counterparty_id is None:
             continue
         line_code = article_lines.get(detail.article_id)
         if line_code is None:
             continue
-        recognized[(detail.counterparty_id, line_code)] += detail.amount
+        recognized_all[(detail.counterparty_id, line_code)] += detail.amount
+        # ГАСИТЬ ТРЕВОГУ ВПРАВЕ ТОЛЬКО ПРИЗНАНИЕ БЕЗ СВОИХ ДЕНЕГ. Признание с оплаченным
+        # документом уже обеспечено — вычитать его из ЧУЖОГО непокрытого платежа значит
+        # тратить одно признание дважды. Та же ошибка, что была со щитом по контрагенту,
+        # только на шаг глубже.
+        #
+        # У Станислава Юрьевича за июль так пряталась целая оплата: вода за ИЮНЬ (9 879 ₽
+        # наличными, документа нет) гасилась актом за ИЮЛЬ на 9 654,25 ₽, оплаченным
+        # четвёртого августа. Разрыв выходил 224,75 ₽ — ниже порога существенности, и отчёт
+        # молчал. Хуже того, он сам советовал привязать этот платёж к контрагенту: владелец
+        # выполнял совет, строка коммуналки падала на 9 879 ₽, а список предупреждений не
+        # менялся ни на букву.
+        #
+        # Признак смотрит на ДОКУМЕНТ, а не на месяц денег, и потому работает через границу
+        # месяца — где сверка кассы одного месяца бессильна по построению.
+        if not detail.settled:
+            recognized[(detail.counterparty_id, line_code)] += detail.amount
 
     # Признание, не обеспеченное кассой СВОЕЙ строки: похоже, что деньги за эту услугу прошли
     # по чужой статье. Именно так выглядит охрана ЧОО, оплаченная по арендной статье. А вот
     # признанная аренда арендодателя своей кассой обеспечена — и на соседний разрыв по
     # коммуналке не намекает ничем.
     unbacked: dict[uuid.UUID, set[str]] = defaultdict(set)
-    for (counterparty_id, line_code), amount in recognized.items():
+    for (counterparty_id, line_code), amount in recognized_all.items():
         if amount > cash.excluded_all_lines.get((counterparty_id, line_code), Decimal("0.00")):
             unbacked[counterparty_id].add(line_code)
 
     missing: list[tuple[Decimal, str, str]] = []
     misplaced: list[tuple[Decimal, str, str]] = []
     for (counterparty_id, line_code), excluded in cash.excluded_for_accrual.items():
-        # ГАСИТЬ ТРЕВОГУ ВПРАВЕ ТОЛЬКО ПРИЗНАНИЕ, ЗА КОТОРЫМ НЕ СТОЯТ СВОИ ДЕНЬГИ. Деньги со
-        # следом в ДЗ/КЗ (``ledger_known``) в тревогу не входят — их будущий расход уже имеет
-        # носителя. Но признание, которое эти же деньги и породили, из общей суммы вычиталось,
-        # и одно признание тратилось дважды.
-        #
-        # У Станислава Юрьевича за июль так пряталась целая оплата: вода за июнь (9 879 ₽
-        # наличными, без документа) гасилась актом за ИЮЛЬ на 9 654,25 ₽, у которого есть свой
-        # платёж. Разрыв выходил 224,75 ₽ — ниже порога существенности, и отчёт молчал. Хуже
-        # того, он сам советовал привязать этот платёж к контрагенту: владелец выполнял совет,
-        # строка падала на 9 879 ₽, а список предупреждений не менялся ни на букву.
-        known = excluded_with_ledger_trace(cash, counterparty_id, line_code)
-        free_recognition = max(
-            Decimal("0.00"),
-            recognized.get((counterparty_id, line_code), Decimal("0.00")) - known,
-        )
-        gap = excluded - free_recognition
+        gap = excluded - recognized.get((counterparty_id, line_code), Decimal("0.00"))
         if gap < ACCRUAL_GAP_THRESHOLD:
             continue
         name = cash.excluded_counterparty_names.get(counterparty_id) or "контрагент без названия"
