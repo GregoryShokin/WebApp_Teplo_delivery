@@ -53,6 +53,7 @@ from app.models import (
     Wallet,
 )
 from app.models.enums import UTILITY_INVOICE_SOURCE
+from app.services import accounting_periods
 
 # Статусы предоплат, которые ещё держат дебиторку (те же, что в плитке «Остатки»).
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
@@ -155,10 +156,16 @@ class LedgerRow:
     prepayment_id: uuid.UUID | None = None
     # Документ создан нами (source='self_billed'), а не прислан контрагентом.
     self_billed: bool = False
-    # Двигает ли строка бегущий остаток. Платёж — всегда. Документ — только если он в силе
-    # (не будущий) и не информационный: у обоих обязательства ещё/уже нет. Пока остаток
-    # считался по всем документам подряд, два арендных УПД от 31.08 по 50 000 ₽ уводили
-    # сверку на 100 000 ₽ от плитки «Остатки», которая их честно не видела.
+    # Двигает ли строка бегущий остаток. Документ — только если он в силе (не будущий) и не
+    # информационный: у обоих обязательства ещё/уже нет. Пока остаток считался по всем
+    # документам подряд, два арендных УПД от 31.08 по 50 000 ₽ уводили сверку на 100 000 ₽
+    # от плитки «Остатки», которая их честно не видела.
+    #
+    # Платёж — почти всегда, кроме одного случая: он закрывает период ДО НАЧАЛА УЧЁТА.
+    # Такой платёж гасит обязательство, которого в системе нет и не будет (документов того
+    # периода не заводят), поэтому дебиторкой он не становится. Доплата 30 402 ₽ Виталию за
+    # июньское электричество иначе висела бы переплатой: карточка показывала по нему 145 402 ₽
+    # против 115 000 ₽ в реестре остатков — расхождение ровно на эту сумму.
     binds: bool = True
 
 
@@ -258,7 +265,9 @@ async def resolve_contour(session: AsyncSession, counterparty_id: uuid.UUID) -> 
 
 async def _payment_rows(
     session: AsyncSession, counterparty_id: uuid.UUID
-) -> list[tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal]]:
+) -> list[
+    tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool]
+]:
     """Денежные строки: ДДС-проводки контрагенту + входящие остатки без движения денег.
 
     Возвращает кортежи (дата, id, сумма, заголовок, подпись, предоплата, прямые гашения),
@@ -315,7 +324,7 @@ async def _payment_rows(
     }
 
     out: list[
-        tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal]
+        tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool]
     ] = []
     for tx, wallet_name, article_name in tx_rows:
         allocs = [
@@ -338,6 +347,10 @@ async def _payment_rows(
                 article_name or (tx.payment_purpose or tx.comment),
                 prepayment_by_tx.get(tx.id),
                 direct_total,
+                # Платёж за период до начала учёта гасит обязательство, которого в системе
+                # нет: дебиторкой он не становится и бегущий остаток не двигает.
+                tx.expense_month is not None
+                and tx.expense_month < accounting_periods.ACCOUNTING_START,
             )
         )
 
@@ -358,6 +371,7 @@ async def _payment_rows(
                     sp.note,
                     sp,
                     Decimal("0"),
+                    False,
                 )
             )
     return out
@@ -460,7 +474,16 @@ async def build_ledger(
             )
 
     rows: list[LedgerRow] = []
-    for row_date, row_id, amount, title, subtitle, prepayment, direct_total in payments:
+    for (
+        row_date,
+        row_id,
+        amount,
+        title,
+        subtitle,
+        prepayment,
+        direct_total,
+        before_start,
+    ) in payments:
         start, end = period_of(
             prepayment.service_period_start if prepayment else None,
             prepayment.service_period_end if prepayment else None,
@@ -490,6 +513,7 @@ async def build_ledger(
                 expected_by=deadline,
                 days_overdue=(today - deadline).days if status == "overdue" else 0,
                 prepayment_id=prepayment.id if prepayment else None,
+                binds=not before_start,
             )
         )
 
@@ -574,7 +598,7 @@ async def build_ledger(
     visible: list[LedgerRow] = []
     for row in rows:
         if row.kind == "payment":
-            delta = row.amount
+            delta = row.amount if row.binds else Decimal("0")
         elif row.binds:
             delta = -row.amount
         else:
