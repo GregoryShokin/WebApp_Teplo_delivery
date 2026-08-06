@@ -222,27 +222,49 @@ async def apply_cashflow_split(
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
 
     # Месяц расхода — атрибут платежа БЕЗ контрагента: у привязанного платежа месяц
-    # определяет документ в ДЗ/КЗ, и второй руль был бы вторым источником истины. Целевой
-    # месяц обязан быть открыт — иначе разметка тихо переписала бы закрытый отчёт.
+    # определяет документ в ДЗ/КЗ, и второй руль был бы вторым источником истины.
+    #
+    # ИСКЛЮЧЕНИЕ — период ДО НАЧАЛА УЧЁТА, и оно не поблажка, а единственный способ ответить.
+    # Туда ДЗ/КЗ не заглядывает вовсе: документов того периода в системе нет и не будет.
+    # Доплата за июнь 2026 по акту электричества (30 402 ₽ Виталию) без этой ветки вечно
+    # висела бы «ждём документ», которого никто не выставит.
     from app.services import accounting_periods
 
-    for line in splits:
-        if line.expense_month is None:
-            continue
-        if (line.counterparty_id or counterparty_id) is not None:
-            raise ValueError(
-                "Месяц расхода можно указать только у платежа без контрагента — "
-                "с контрагентом месяц определяет документ в ДЗ/КЗ"
-            )
-        if line.employee_id is not None:
-            raise ValueError("У выплаты сотруднику месяц расхода определяет ведомость")
-        if line.transfer_wallet_id is not None:
-            raise ValueError("У перевода между счетами не бывает месяца расхода")
-        await accounting_periods.assert_month_open(
-            session,
-            accounting_periods.month_start(line.expense_month),
-            action="отнести расход в этот месяц",
+    for index, line in enumerate(splits):
+        month = (
+            accounting_periods.month_start(line.expense_month)
+            if line.expense_month is not None
+            else None
         )
+        before_start = month is not None and month < accounting_periods.ACCOUNTING_START
+        if month is not None:
+            if (line.counterparty_id or counterparty_id) is not None and not before_start:
+                raise ValueError(
+                    "Месяц расхода можно указать только у платежа без контрагента — "
+                    "с контрагентом месяц определяет документ в ДЗ/КЗ. Исключение — период "
+                    f"до начала учёта ({accounting_periods.ACCOUNTING_START:%d.%m.%Y})"
+                )
+            if line.employee_id is not None:
+                raise ValueError("У выплаты сотруднику месяц расхода определяет ведомость")
+            if line.transfer_wallet_id is not None:
+                raise ValueError("У перевода между счетами не бывает месяца расхода")
+            # Месяц до начала учёта закрывать нечем — периодов там нет; замок применим только
+            # к месяцам, которые отчёт действительно считает.
+            if not before_start:
+                await accounting_periods.assert_month_open(
+                    session, month, action="отнести расход в этот месяц"
+                )
+        # ЗАМОК ДВУСТОРОННИЙ. Гейт выше проверял только НОВОЕ значение, поэтому переразбор,
+        # снимающий разметку, молча менял цифры закрытого месяца: расход уезжал обратно в
+        # месяц денег, и закрытый отчёт переставал совпадать сам с собой. Снятие и перенос —
+        # такое же изменение закрытого месяца, как и постановка.
+        previous = txn.expense_month if index == 0 else None
+        if previous is not None and previous != month:
+            previous_month = accounting_periods.month_start(previous)
+            if previous_month >= accounting_periods.ACCOUNTING_START:
+                await accounting_periods.assert_month_open(
+                    session, previous_month, action="снять расход с этого месяца"
+                )
 
     # Аналитика по помещению — то же правило, что у разбора банк-операции.
     location_context: dict[int, LocationContext] = {}

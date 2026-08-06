@@ -62,6 +62,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services.accounting_periods import ACCOUNTING_START
 from app.services.pnl.types import Verdict
 
 #: Проводка, помеченная как исключённая при разборе выписки, не расход и не доход.
@@ -632,6 +633,15 @@ def _classify(
         (tx.source_kind, tx.article_id) in origins or (tx.source_kind, None) in origins
     ):
         return Verdict.EXCLUDED_OWNED_BY_LAYER, rule.line_code
+
+    # Месяц расхода раньше начала учёта — самый первый вопрос после разметки, и он не зависит
+    # от контрагента. У платежа С контрагентом период обычно определяет документ в ДЗ/КЗ, но
+    # до 01.07.2026 ДЗ/КЗ не заглядывает вовсе: документов того периода в системе нет и не
+    # будет. Поэтому здесь поле работает и с контрагентом — иначе доплата за июнь по акту
+    # электричества (30 402 ₽ Виталию) вечно висела бы «ждём документ», которого никто не
+    # выставит. Расход не появится нигде, и это правильный ответ, а не потеря.
+    if tx.expense_month is not None and tx.expense_month < ACCOUNTING_START:
+        return Verdict.EXCLUDED_BEFORE_ACCOUNTING_START, rule.line_code
 
     if tx.id in settled:
         return Verdict.EXCLUDED_ACCRUAL_SETTLEMENT, rule.line_code

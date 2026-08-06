@@ -93,7 +93,7 @@ from app.schemas.dds import (
     TransactionClassifyRequest,
 )
 from app.schemas.kassa import KassaPendingRead
-from app.services import counterparty_registry
+from app.services import accounting_periods, counterparty_registry
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.asset_analytics import (
     AssetLinkError,
@@ -2235,6 +2235,16 @@ async def classify_transaction(
     txn.location_id = context.location_id
     txn.lease_id = context.lease_id
     txn.quality_status = "manual_override"
+    # Месяц расхода и контрагент — взаимоисключающие рули (кроме периода до начала учёта, где
+    # ДЗ/КЗ не работает вовсе). Гейт на это стоял только в полном разборе, а контрагента
+    # привязывают именно здесь: поле переживало привязку и МОЛЧА ОЖИВАЛО при отвязке, уводя
+    # расход в другой месяц спустя недели после того, как человек об этом поле забыл.
+    if (
+        txn.counterparty_id is not None
+        and txn.expense_month is not None
+        and accounting_periods.month_start(txn.expense_month) >= accounting_periods.ACCOUNTING_START
+    ):
+        txn.expense_month = None
     await link_transaction_to_asset(
         session, context=asset_context, transaction_id=txn.id, amount=txn.amount
     )

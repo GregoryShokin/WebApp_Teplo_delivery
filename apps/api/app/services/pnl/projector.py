@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import PnlLine
+from app.services import accounting_periods
 from app.services.pnl import formulas
 from app.services.pnl.sources import acquiring as acquiring_source
 from app.services.pnl.sources import cashflow as cash_source
@@ -51,7 +52,12 @@ from app.services.pnl.types import (
 #: Управленческий учёт ведётся с этой даты. Месяцы раньше показываются пустыми со своим
 #: статусом, а не нулями: до неё данные в приложении неполны, и рисовать по ним прибыль —
 #: значит выдавать пробел за факт.
-ACCOUNTING_START = date(2026, 7, 1)
+#:
+#: ОДНА КОНСТАНТА НА ВСЁ ПРИЛОЖЕНИЕ, а не своя копия у отчёта. Здесь лежала вторая с тем же
+#: значением, и это ждало своего часа: сдвинуть начало учёта пришлось бы в двух местах, а
+#: забытая копия развела бы отчёт с отсечкой в ДЗ/КЗ молча — расход появлялся бы там, где
+#: другой модуль его уже отбросил.
+ACCOUNTING_START = accounting_periods.ACCOUNTING_START
 
 #: Строка ОПиУ ← метрика зеркала iiko. Живёт на уровне модуля, потому что ту же карту читает
 #: расшифровка строки: собери она свою копию — разошлись бы молча.
@@ -591,6 +597,7 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
             excluded_amount=bucket.excluded_amount,
             excluded_reason="accrual" if bucket.excluded_count else None,
             cash_alongside_accrual=bucket.cash_alongside_accrual,
+            moved_in_amount=bucket.moved_in_amount,
             cash_proxy_amount=(
                 bucket.amount if has_amount and line.month_basis == "document" else Decimal("0.00")
             ),
@@ -858,6 +865,25 @@ def _warnings(
                         "закрывающего документа ещё нет"
                     ),
                     amount=paid,
+                )
+            )
+        # Часть суммы строки — деньги ДРУГОГО месяца, приведённые сюда разметкой. Без этой
+        # пометки строка молчала бы о том, что её число собрано из двух месяцев: поля
+        # ``moved_in`` копились и не читались нигде, а увидеть перенос можно было только
+        # открыв расшифровку конкретной проводки.
+        moved_in = sum(
+            (component.moved_in_amount for component in line.components), Decimal("0.00")
+        )
+        if moved_in > 0:
+            result.append(
+                Warning(
+                    code="expense_moved_in",
+                    line_code=line.code,
+                    message=(
+                        f"«{line.title}»: {rubles(moved_in)} ₽ — расход этого месяца по деньгам "
+                        "другого месяца, так размечено вручную. Проверьте, что месяц выбран верно"
+                    ),
+                    amount=moved_in,
                 )
             )
         # Пересечение двух источников в одной строке — пометка, не тревога. Наличная касса

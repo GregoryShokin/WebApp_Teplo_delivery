@@ -35,6 +35,9 @@ from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.types import Verdict
 
 JULY = (date(2026, 7, 1), date(2026, 7, 31))
+AUGUST = (date(2026, 8, 1), date(2026, 8, 31))
+#: Июнь 2026 — период ДО начала учёта (ACCOUNTING_START = 01.07.2026). Отчёта за него нет,
+#: и расход туда не «переезжает», а выбывает из периметра вовсе.
 JUNE = (date(2026, 6, 1), date(2026, 6, 30))
 
 
@@ -113,7 +116,7 @@ def test_orphan_cash_is_expense_even_when_article_has_accruals(async_session_fac
 
 
 def test_expense_month_moves_the_expense_but_not_the_money(async_session_factory) -> None:
-    """«Оплата за Июнь» деньгами июля: расход в июне, деньги и сверка — в июле."""
+    """Деньги июля, расход августа: расход в августе, деньги и сверка — в июле."""
     from cp_helpers import make_wallet
 
     async def scenario() -> None:
@@ -126,33 +129,92 @@ def test_expense_month_moves_the_expense_but_not_the_money(async_session_factory
                     article.id,
                     "30402.00",
                     date(2026, 7, 19),
-                    expense_month=date(2026, 6, 1),
+                    expense_month=date(2026, 8, 1),
                 )
             )
             await session.commit()
 
             july = await cash_source.build_cash_layer(session, *JULY)
-            june = await cash_source.build_cash_layer(session, *JUNE)
+            august = await cash_source.build_cash_layer(session, *AUGUST)
 
             # Июль: деньги видны и разложены (сверка замкнута), расхода в строке нет.
             assert july.by_verdict[Verdict.INCLUDED_OTHER_MONTH.value] == Decimal("30402.00")
             assert "utilities_chernikova" not in july.buckets
             assert july.counted == 1
 
-            # Июнь: расход в строке с пометкой «приехал из другого месяца денег», но в
-            # денежную сверку июня проводка не входит — деньги не июньские.
-            bucket = june.buckets["utilities_chernikova"]
+            # Август: расход в строке с пометкой «приехал из другого месяца денег», но в
+            # денежную сверку августа проводка не входит — деньги не августовские.
+            bucket = august.buckets["utilities_chernikova"]
             assert bucket.amount == Decimal("30402.00")
             assert bucket.moved_in_amount == Decimal("30402.00")
             assert bucket.moved_in_count == 1
-            assert june.counted == 0
-            assert june.source_count == 0
+            assert august.counted == 0
+            assert august.source_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_month_before_accounting_start_leaves_the_perimeter(async_session_factory) -> None:
+    """Доплата за период до начала учёта: деньги в сверке, расхода нет НИГДЕ — и это верно.
+
+    Кейс владельца 06.08.2026: 30 402 ₽ Виталию 19.07 — доплата по акту электричества за
+    ИЮНЬ. Учёт ведётся с 01.07.2026, отчёта за июнь не существует, документа никто не
+    выставит. Без отдельного вердикта такой платёж вечно висел бы «ждём документ».
+    """
+    from cp_helpers import make_counterparty, make_wallet
+    from app.models import CounterpartyPayableProfile
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            article = await _expense_article(session, code="test_exp_month_before_start")
+            wallet = await make_wallet(session, code="exp-month-w5", name="Сейф")
+            landlord = await make_counterparty(session, name="Арендодатель-июнь", inn="6155032004")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == landlord.id
+                )
+            )
+            profile.service_billing_mode = "agreement"
+            session.add(
+                _cash_out(
+                    wallet.id,
+                    article.id,
+                    "30402.00",
+                    date(2026, 7, 19),
+                    counterparty_id=landlord.id,
+                    expense_month=date(2026, 6, 1),
+                )
+            )
+            await session.commit()
+
+            july = await cash_source.build_cash_layer(session, *JULY)
+
+            # Деньги июля разложены — сверка замкнута.
+            assert (
+                july.by_verdict[Verdict.EXCLUDED_BEFORE_ACCOUNTING_START.value]
+                == Decimal("30402.00")
+            )
+            assert july.counted == 1
+            # Расхода в строке июля нет, но деньги в ней ВИДНЫ как исключённые: расшифровка
+            # обязана объяснить, куда делись 30 402 ₽, иначе они выглядят пропавшими.
+            bucket = july.buckets["utilities_chernikova"]
+            assert bucket.amount == Decimal("0.00")
+            assert bucket.excluded_amount == Decimal("30402.00")
+            # И никакой тревоги «оплачено, но не признано»: ждать документ за период до
+            # начала учёта не от кого.
+            assert july.excluded_for_accrual == {}
+
+            june = await cash_source.build_cash_layer(session, *JUNE)
+            assert june.buckets == {}
 
     asyncio.run(scenario())
 
 
 def test_expense_month_is_inert_on_payments_with_counterparty(async_session_factory) -> None:
-    """У платежа с контрагентом месяц определяет документ — поле не действует."""
+    """У платежа с контрагентом месяц определяет документ — поле не действует.
+
+    Исключение (период до начала учёта) проверяет соседний тест: там ДЗ/КЗ не работает вовсе.
+    """
     from cp_helpers import make_counterparty, make_wallet
     from app.models import CounterpartyPayableProfile
 
@@ -174,19 +236,19 @@ def test_expense_month_is_inert_on_payments_with_counterparty(async_session_fact
                     "5000.00",
                     date(2026, 7, 10),
                     counterparty_id=supplier.id,
-                    expense_month=date(2026, 6, 1),
+                    expense_month=date(2026, 8, 1),
                 )
             )
             await session.commit()
 
             july = await cash_source.build_cash_layer(session, *JULY)
-            june = await cash_source.build_cash_layer(session, *JUNE)
+            august = await cash_source.build_cash_layer(session, *AUGUST)
 
             assert (
                 july.by_verdict[Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY.value]
                 == Decimal("5000.00")
             )
-            assert "utilities_chernikova" not in june.buckets
+            assert "utilities_chernikova" not in august.buckets
 
     asyncio.run(scenario())
 
@@ -211,12 +273,12 @@ def test_split_writes_and_guards_expense_month(async_session_factory) -> None:
                     CashflowSplitLine(
                         article_id=article.id,
                         amount=Decimal("1000.00"),
-                        expense_month=date(2026, 6, 15),
+                        expense_month=date(2026, 8, 15),
                     )
                 ],
             )
             await session.commit()
-            assert txn.expense_month == date(2026, 6, 1), "месяц нормализуется к первому числу"
+            assert txn.expense_month == date(2026, 8, 1), "месяц нормализуется к первому числу"
 
             supplier = await make_counterparty(session, name="Гейт-месяца", inn="6155032003")
             try:
@@ -228,7 +290,7 @@ def test_split_writes_and_guards_expense_month(async_session_factory) -> None:
                             article_id=article.id,
                             amount=Decimal("1000.00"),
                             counterparty_id=supplier.id,
-                            expense_month=date(2026, 6, 1),
+                            expense_month=date(2026, 8, 1),
                         )
                     ],
                 )
