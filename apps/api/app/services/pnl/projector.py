@@ -962,6 +962,19 @@ def _unclassified_goods_warning(goods: iiko_source.UnclassifiedGoods) -> Warning
 ACCRUAL_GAP_THRESHOLD = Decimal("1000.00")
 
 
+def excluded_with_ledger_trace(
+    cash: cash_source.CashLayer, counterparty_id: uuid.UUID, line_code: str
+) -> Decimal:
+    """Касса пары, ушедшая в ДЗ/КЗ СО СЛЕДОМ — предоплатой или зачётом на счёт.
+
+    Слой кассы копит два числа: всю исключённую под признание кассу и её часть без следа.
+    Разница между ними и есть деньги, чей будущий расход уже имеет носителя.
+    """
+    return cash.excluded_all_lines.get(
+        (counterparty_id, line_code), Decimal("0.00")
+    ) - cash.excluded_for_accrual.get((counterparty_id, line_code), Decimal("0.00"))
+
+
 def _unfulfilled_accrual_warnings(
     cash: cash_source.CashLayer,
     recognition: recognition_source.RecognitionLayer,
@@ -1028,7 +1041,22 @@ def _unfulfilled_accrual_warnings(
     missing: list[tuple[Decimal, str, str]] = []
     misplaced: list[tuple[Decimal, str, str]] = []
     for (counterparty_id, line_code), excluded in cash.excluded_for_accrual.items():
-        gap = excluded - recognized.get((counterparty_id, line_code), Decimal("0.00"))
+        # ГАСИТЬ ТРЕВОГУ ВПРАВЕ ТОЛЬКО ПРИЗНАНИЕ, ЗА КОТОРЫМ НЕ СТОЯТ СВОИ ДЕНЬГИ. Деньги со
+        # следом в ДЗ/КЗ (``ledger_known``) в тревогу не входят — их будущий расход уже имеет
+        # носителя. Но признание, которое эти же деньги и породили, из общей суммы вычиталось,
+        # и одно признание тратилось дважды.
+        #
+        # У Станислава Юрьевича за июль так пряталась целая оплата: вода за июнь (9 879 ₽
+        # наличными, без документа) гасилась актом за ИЮЛЬ на 9 654,25 ₽, у которого есть свой
+        # платёж. Разрыв выходил 224,75 ₽ — ниже порога существенности, и отчёт молчал. Хуже
+        # того, он сам советовал привязать этот платёж к контрагенту: владелец выполнял совет,
+        # строка падала на 9 879 ₽, а список предупреждений не менялся ни на букву.
+        known = excluded_with_ledger_trace(cash, counterparty_id, line_code)
+        free_recognition = max(
+            Decimal("0.00"),
+            recognized.get((counterparty_id, line_code), Decimal("0.00")) - known,
+        )
+        gap = excluded - free_recognition
         if gap < ACCRUAL_GAP_THRESHOLD:
             continue
         name = cash.excluded_counterparty_names.get(counterparty_id) or "контрагент без названия"
