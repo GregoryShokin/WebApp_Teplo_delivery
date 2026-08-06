@@ -161,39 +161,38 @@ async def test_prepare_push_skips_all_staff(
     [
         # Ввод через СУММУ: 840 ÷ 2,9 = 289,655172…, в базе цена округлена до 289,66 —
         # реальная строка «Шампиньоны» накладной №515256.
-        ("2.9", "289.66", "840.00", "289.655172", "839.9999988"),
-        ("3", "33.33", "100.00", "33.333333", "99.999999"),
-        ("20", "88.46", "1769.28", "88.464000", "1769.280000"),
+        ("2.9", "289.66", "840.00", 289.655172, 839.9999988),
+        ("3", "33.33", "100.00", 33.333333, 99.999999),
+        ("20", "88.46", "1769.28", 88.464, 1769.28),
+        # Хвост двоичного умножения — его и ждёт iiko (строка «Ванилин» чека Ч-72).
+        ("0.051", "4393.33", "224.06", 4393.333333, 224.05999998299995),
         # Округляется в ту же копейку, но точного равенства нет — iiko отвергнет, правим.
-        ("2.9", "289.66", "840.01", "289.658621", "840.0100009"),
+        ("2.9", "289.66", "840.01", 289.658621, 840.0100008999999),
         # Равенство строгое — строка уходит нетронутой (подавляющее большинство).
-        ("10", "120.00", "1200.00", "120.00", "1200.00"),
-        ("0.7", "400.00", "280.00", "400.00", "280.00"),
+        ("10", "120.00", "1200.00", 120.0, 1200.0),
+        ("0.7", "400.00", "280.00", 400.0, 280.0),
         # Делить не на что — отдаём как есть.
-        ("0", "120.00", "0.00", "120.00", "0.00"),
+        ("0", "120.00", "0.00", 120.0, 0.0),
     ],
 )
 def test_line_amounts_for_iiko(
-    quantity: str, price: str, line_sum: str, expected_price: str, expected_sum: str
+    quantity: str, price: str, line_sum: str, expected_price: float, expected_sum: float
 ) -> None:
     got_price, got_sum = _line_amounts_for_iiko(
         Decimal(quantity), Decimal(price), Decimal(line_sum)
     )
-    assert got_price == Decimal(expected_price)
-    assert got_sum == Decimal(expected_sum)
-    if Decimal(quantity) > 0:
-        # Инвариант, который сверяет сама iiko, — строгий, не «до копеек».
-        assert got_price * Decimal(quantity) == got_sum
+    assert got_price == expected_price
+    assert got_sum == expected_sum
+    if got_price != float(Decimal(price)):
+        # Пересчитанная строка: равенство должно держаться в ТОЙ ЖЕ арифметике, что у iiko.
+        assert got_price * float(Decimal(quantity)) == got_sum
         # От эталона кассира уходим меньше чем на полкопейки.
-        assert abs(got_sum - Decimal(line_sum)) < Decimal("0.005")
+        assert abs(Decimal(str(got_sum)) - Decimal(line_sum)) < Decimal("0.005")
 
 
 def test_line_amounts_for_iiko_keeps_line_without_sum() -> None:
     """Строка без эталонной суммы (старые данные) — прежнее поведение, цена из базы."""
-    assert _line_amounts_for_iiko(Decimal("2.9"), Decimal("289.66"), None) == (
-        Decimal("289.66"),
-        None,
-    )
+    assert _line_amounts_for_iiko(Decimal("2.9"), Decimal("289.66"), None) == (289.66, None)
 
 
 async def test_prepare_push_price_matches_line_sum(
@@ -240,9 +239,7 @@ async def test_prepare_push_price_matches_line_sum(
 
         items = build_invoice_body(prepared.doc)["items"]
         for item in items:
-            assert Decimal(str(item["price"])) * Decimal(str(item["amount"])) == Decimal(
-                str(item["sum"])
-            )
+            assert item["price"] * item["amount"] == item["sum"]
         # итог документа отходит от нашего меньше чем на копейку
         assert abs(sum(Decimal(str(it["sum"])) for it in items) - Decimal("2040.00")) < Decimal(
             "0.01"
