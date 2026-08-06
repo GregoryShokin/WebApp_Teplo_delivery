@@ -89,6 +89,29 @@ async def assert_month_open(session: AsyncSession, month: date | None, *, action
         )
 
 
+async def assert_cashflow_month_open(
+    session: AsyncSession,
+    *,
+    expense_month: date | None,
+    operation_date: date,
+    action: str,
+) -> None:
+    """Замок для проводки ДДС: расход стоит в размеченном месяце, иначе в месяце денег.
+
+    Отдельная функция, потому что каждая дверь считала этот месяц заново и одна за другой
+    считала неверно. Проверка перед выкаткой 06.08.2026 нашла четыре двери, меняющие цифры
+    закрытого месяца молча: исключение банковской операции (за июль под ним ходят 239
+    проводок на 3 556 683,75 ₽), снятие исключения, переразметка операции с новым
+    контрагентом и вторая строка ручного разбора.
+
+    Период до начала учёта пропускаем: закрывать там нечего, отчётов за те месяцы нет.
+    """
+    month = month_start(expense_month or operation_date)
+    if month < ACCOUNTING_START:
+        return
+    await assert_month_open(session, month, action=action)
+
+
 def months_between(start: date, end: date) -> list[date]:
     """Все календарные месяцы периода — единица, которой мыслит и отчёт, и замок."""
     month = month_start(start)

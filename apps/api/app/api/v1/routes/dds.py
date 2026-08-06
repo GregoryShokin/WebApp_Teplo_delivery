@@ -1693,14 +1693,18 @@ async def classify_owner_review_case(
                 ),
             )
 
-    await apply_operation_action(
-        session,
-        operation,
-        action=payload.action,
-        article_id=payload.article_id,
-        counterparty_id=payload.counterparty_id,
-        quality_status="owner_review",
-    )
+    try:
+        await apply_operation_action(
+            session,
+            operation,
+            action=payload.action,
+            article_id=payload.article_id,
+            counterparty_id=payload.counterparty_id,
+            quality_status="owner_review",
+        )
+    except accounting_periods.PeriodClosed as error:
+        # Замок обязан объяснять, а не падать: без этого отказ выходил бы к владельцу как 500.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if payload.action == "mark_internal_transfer":
         await find_and_link_transfer_pairs(session)
 
@@ -2140,13 +2144,18 @@ async def classify_operation(
         except (ValueError, PayrollConflictError, PayrollNotFoundError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     else:
-        await apply_operation_action(
-            session,
-            operation,
-            action=payload.action,
-            counterparty_id=payload.counterparty_id,
-            quality_status="owner_review",
-        )
+        try:
+            await apply_operation_action(
+                session,
+                operation,
+                action=payload.action,
+                counterparty_id=payload.counterparty_id,
+                quality_status="owner_review",
+            )
+        except accounting_periods.PeriodClosed as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(error)
+            ) from error
         if payload.action == "mark_internal_transfer":
             await find_and_link_transfer_pairs(session)
 
@@ -2386,7 +2395,13 @@ async def classify_transaction_full(
             )
         else:
             created_ids = await apply_cashflow_exclude(session, txn)
-    except (CashflowClassificationConflictError, CounterpartyPaymentError) as error:
+    except (
+        CashflowClassificationConflictError,
+        CounterpartyPaymentError,
+        # Закрытый месяц — тоже конфликт состояния, а не негодный ввод: сама правка корректна,
+        # её отвергает период. Ловим ДО ValueError — PeriodClosed его подкласс.
+        accounting_periods.PeriodClosed,
+    ) as error:
         # Второй случай — правило 1: снять зачёт кредиторки, замороженный в банк-черновике,
         # нельзя, пока черновик не откачен.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

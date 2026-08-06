@@ -165,6 +165,42 @@ def test_exclude_cannot_empty_a_closed_month(async_session_factory) -> None:
     asyncio.run(scenario())
 
 
+def test_second_split_line_cannot_take_expense_out_of_a_closed_month(
+    async_session_factory,
+) -> None:
+    """Месяц уносит ВТОРАЯ доля разбора — замок обязан сработать так же, как на первой.
+
+    Прежняя проверка считала раскладку только для ``index == 0``: первая доля оставалась в
+    месяце денег, вторая забирала свою часть в другой месяц, и закрытый месяц худел молча.
+    """
+    from cp_helpers import make_wallet
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            article = await _article(session, code="test_lock_second_line")
+            wallet = await make_wallet(session, code="lock-w5", name="Сейф")
+            txn = _payment(wallet.id, article.id, day=date(2026, 7, 20), amount="100000.00")
+            session.add(txn)
+            await _close_july(session)
+            await session.commit()
+
+            with pytest.raises(accounting_periods.PeriodClosed):
+                await apply_cashflow_split(
+                    session,
+                    txn,
+                    splits=[
+                        CashflowSplitLine(article_id=article.id, amount=Decimal("40000.00")),
+                        CashflowSplitLine(
+                            article_id=article.id,
+                            amount=Decimal("60000.00"),
+                            expense_month=AUGUST,
+                        ),
+                    ],
+                )
+
+    asyncio.run(scenario())
+
+
 def test_open_months_are_not_blocked(async_session_factory) -> None:
     """Замок держит только закрытое: в открытых месяцах разметка работает как прежде."""
     from cp_helpers import make_wallet

@@ -237,7 +237,7 @@ async def apply_cashflow_split(
     # висела бы «ждём документ», которого никто не выставит.
     from app.services import accounting_periods
 
-    for index, line in enumerate(splits):
+    for line in splits:
         month = (
             accounting_periods.month_start(line.expense_month)
             if line.expense_month is not None
@@ -261,25 +261,37 @@ async def apply_cashflow_split(
                 await accounting_periods.assert_month_open(
                     session, month, action="отнести расход в этот месяц"
                 )
-        # ЗАМОК ТРЁХСТОРОННИЙ, И ТРЕТЬЯ СТОРОНА — МЕСЯЦ ДЕНЕГ. Проверять только значения
-        # поля мало: пока оно пусто, расход стоит в месяце ПЛАТЕЖА, и любая разметка вынимает
-        # его оттуда. Если тот месяц закрыт, закрытый отчёт меняется без единого возражения —
-        # проверка перед выкаткой воспроизвела это на 100 000 ₽. Симметрично снятие разметки
-        # возвращает расход в месяц денег, и это тоже его изменение.
-        previous = txn.expense_month if index == 0 else None
-        previous_month = (
-            accounting_periods.month_start(previous) if previous is not None else None
-        )
-        if index == 0 and previous_month != month:
-            money_month = accounting_periods.month_start(txn.operation_date)
-            for touched, action in (
-                (previous_month, "снять расход с этого месяца"),
-                (month, "отнести расход в этот месяц"),
-                (money_month, "перенести расход из этого месяца"),
-            ):
-                if touched is None or touched < accounting_periods.ACCOUNTING_START:
-                    continue
-                await accounting_periods.assert_month_open(session, touched, action=action)
+    # ЗАМОК СМОТРИТ НА РАСКЛАДКУ ЦЕЛИКОМ, А НЕ НА ОДНУ СТРОКУ. Пока поле пусто, расход стоит
+    # в месяце ПЛАТЕЖА, и любая разметка вынимает его оттуда; снятие разметки возвращает
+    # обратно. Прежняя версия считала это только для ПЕРВОЙ доли (``index == 0``), и разбор,
+    # где месяц уносит вторая строка, проходил мимо замка — проверка перед выкаткой
+    # воспроизвела это на 60 000 ₽. Раскладка — свойство всего разбора, поэтому и считается
+    # один раз по всем долям.
+    money_month = accounting_periods.month_start(txn.operation_date)
+    previous_month = (
+        accounting_periods.month_start(txn.expense_month) if txn.expense_month is not None else None
+    )
+    was = {previous_month or money_month}
+    becomes = {
+        accounting_periods.month_start(line.expense_month)
+        for line in splits
+        if line.expense_month is not None
+    }
+    # Доля без разметки остаётся в месяце денег — она тоже часть раскладки.
+    if any(line.expense_month is None for line in splits):
+        becomes.add(money_month)
+    if was != becomes:
+        for touched in sorted(was | becomes):
+            if touched < accounting_periods.ACCOUNTING_START:
+                continue
+            action = (
+                "снять расход с этого месяца"
+                if touched not in becomes
+                else "отнести расход в этот месяц"
+                if touched not in was
+                else "перераспределить расход этого месяца"
+            )
+            await accounting_periods.assert_month_open(session, touched, action=action)
 
     # Аналитика по помещению — то же правило, что у разбора банк-операции.
     location_context: dict[int, LocationContext] = {}

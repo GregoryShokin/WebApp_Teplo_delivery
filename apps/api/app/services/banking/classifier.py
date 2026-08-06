@@ -416,6 +416,19 @@ async def apply_operation_action(
             await session.flush()
             operation.cashflow_transaction_id = transaction.id
         else:
+            # Переразметка УЖЕ УЧТЁННОЙ операции: меняются статья и контрагент, а с ними —
+            # строка отчёта и весь контур ДЗ/КЗ ниже по коду. В закрытом месяце это правка
+            # закрытых цифр; замка здесь не было, и под ним ходила привязка поставщика к
+            # платежу на 88 000 ₽. Новую проводку (ветка выше) не трогаем: выписка вправе
+            # приезжать задним числом, и запретить её импорт было бы хуже, чем разрешить.
+            from app.services import accounting_periods
+
+            await accounting_periods.assert_cashflow_month_open(
+                session,
+                expense_month=transaction.expense_month,
+                operation_date=transaction.operation_date,
+                action="переразметить операцию",
+            )
             transaction.wallet_id = wallet.id
             transaction.direction = operation.direction
             transaction.amount = operation.amount
@@ -892,6 +905,7 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
     (``cancel_payouts_of_excluded_transactions``) — иначе расчёт ЗП продолжал бы вычитать из
     «к выдаче» выплату, которой в учёте больше нет.
     """
+    from app.services import accounting_periods
     from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 
     rows = (
@@ -904,6 +918,17 @@ async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: Ban
     ).all()
     if not rows:
         return
+    # Исключение вынимает расход из месяца целиком и мгновенно: фильтр по качеству стоит в
+    # разборе отчёта первым. Замка здесь не было вовсе — за июль под этой дверью ходят 239
+    # проводок на 3 556 683,75 ₽. Проверяем ВСЕ строки до первой записи, чтобы отказ не
+    # оставил операцию исключённой наполовину — тем же порядком, что и гард основных средств.
+    for transaction in rows:
+        await accounting_periods.assert_cashflow_month_open(
+            session,
+            expense_month=transaction.expense_month,
+            operation_date=transaction.operation_date,
+            action="исключить операцию из учёта",
+        )
     for transaction in rows:
         await ensure_asset_link_survives(session, transaction_id=transaction.id, next_article=None)
     await cancel_payouts_of_excluded_transactions(session, {row.id for row in rows})
@@ -931,6 +956,7 @@ async def _revive_excluded_operation_cashflow(
     проводки. Досюда такая доля дойти не должна (её исключение уже отклонил
     ``_soft_exclude_operation_cashflow``), но удаление слишком дорого, чтобы полагаться на это.
     """
+    from app.services import accounting_periods
     from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 
     rows = list(
@@ -948,6 +974,14 @@ async def _revive_excluded_operation_cashflow(
     )
     if not rows:
         return None
+    # Симметрично исключению: снятие возвращает расход в месяц и меняет его цифры.
+    for transaction in rows:
+        await accounting_periods.assert_cashflow_month_open(
+            session,
+            expense_month=transaction.expense_month,
+            operation_date=transaction.operation_date,
+            action="вернуть исключённую операцию в учёт",
+        )
     for extra in rows[1:]:
         await ensure_asset_link_survives(session, transaction_id=extra.id, next_article=None)
     await _drop_untouched_bank_prepayments(session, {row.id for row in rows})
