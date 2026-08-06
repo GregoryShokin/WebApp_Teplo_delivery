@@ -78,9 +78,10 @@ IIKO_SOURCE = "iiko"
 _RATE_LIMIT_RETRY_DELAYS = (1.0, 3.0, 7.0)
 _RATE_LIMIT_MESSAGE = "iiko ограничил частоту запросов (429) — попробуйте отправить ещё раз"
 
-# Предел точности цены, восстановленной из суммы строки (см. _price_for_iiko). Шести знаков
-# хватает с запасом: реальные строки сходятся на трёх.
-_IIKO_PRICE_MAX_SCALE = 6
+# Знаков в цене, восстановленной из суммы строки (см. _line_amounts_for_iiko). Ровно шесть:
+# на трёх iiko отказывает («sum must be equal…»), на шести принимает — проверено живой пробой
+# на Cloud API 06.08.2026.
+_IIKO_PRICE_SCALE = 6
 
 
 def _is_rate_limited(status: int, response: dict | list | None) -> bool:
@@ -160,40 +161,37 @@ async def _store_guid(session: AsyncSession, invoice: SupplierInvoice) -> str | 
     return str(value) if value else None
 
 
-def _cents(value: Decimal) -> Decimal:
-    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _price_for_iiko(
+def _line_amounts_for_iiko(
     quantity: Decimal | None, price: Decimal, line_sum: Decimal | None
-) -> Decimal:
-    """Цена строки для документа iiko — такая, при которой ``sum == price * amount`` сходится.
+) -> tuple[Decimal, Decimal | None]:
+    """``(цена, сумма)`` строки для документа iiko: строго ``sum == price * amount``.
 
-    Эталон строки у нас — СУММА, как её ввёл кассир (см. project_invoice_line_sum_rounding), а
+    iiko сверяет каждую позицию и отвергает ВЕСЬ документ при малейшем расхождении — «sum must
+    be equal to price * amount in item» (прод 06.08.2026, накладная №515256). Сверка строгая, не
+    до копеек: живой пробой на Cloud API подтверждено, что сумма 839,9995 при цене 289,655
+    отвергается, а 839,9999988 при цене 289,655172 — принимается.
+
+    У нас эталон строки — СУММА, как её ввёл кассир (см. project_invoice_line_sum_rounding), а
     цена хранится 2-знаковой (``InvoiceLineItem.price`` = ``Numeric(14,2)``) и потому справочна:
     при вводе через сумму ``сумма ÷ кол-во`` в целые копейки не делится (2,9 кг за 840 ₽ →
-    289,655172… → 289,66), и ``кол-во × цена`` расходится с суммой на копейку. Такую строку iiko
-    не принимает вовсе — «sum must be equal to price * amount in item», причём отвергается ВЕСЬ
-    документ (прод 06.08.2026, накладная №515256, строка «Шампиньоны»).
+    289,655172…), и точного равенства с 2-знаковой ценой не существует в принципе.
 
-    Поэтому в iiko уходит цена, восстановленная из эталонной суммы: сумма документа совпадает с
-    нашей копейка в копейку, а в базе цена остаётся прежней (расхождение «кол-во × цена ≠ сумма»
-    в карточке — сознательная плата за 2-знаковую цену, решение владельца от 16.07.2026).
-    Знаков берём МИНИМУМ из достаточных: чем короче дробь, тем меньше риск, что iiko округлит
-    цену у себя и вернёт ту же ошибку. Строки, где цена и так сходится с суммой (подавляющее
-    большинство), уходят нетронутыми.
+    Поэтому такой строке восстанавливаем цену из эталонной суммы с максимальной точностью, а
+    сумму шлём ТОЧНЫМ произведением: правило iiko выполнено, а от эталона сумма отходит на доли
+    копейки (839,9999988 вместо 840,00 — в рублях и копейках та же 840,00). В базе не меняется
+    ничего. Строки, где равенство и так строгое (подавляющее большинство), уходят нетронутыми.
+
+    Критерий именно строгий: «сходится до копеек» мало. Строка 2,9 × 289,66 при сумме 840,01
+    округляется в ту же копейку, но точное произведение 840,014 — и iiko её отвергнет.
     """
     if line_sum is None or quantity is None or quantity <= 0:
-        return price
-    if _cents(quantity * price) == _cents(line_sum):
-        return price
-    exact = Decimal(line_sum) / Decimal(quantity)
-    for scale in range(2, _IIKO_PRICE_MAX_SCALE + 1):
-        candidate = exact.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
-        if _cents(candidate * quantity) == _cents(line_sum):
-            return candidate
-    # Не сошлось и на шести знаках — шлём максимально точную цену: ближе к сумме не подобрать.
-    return exact.quantize(Decimal(1).scaleb(-_IIKO_PRICE_MAX_SCALE), rounding=ROUND_HALF_UP)
+        return price, line_sum
+    if quantity * price == line_sum:
+        return price, line_sum
+    exact = (Decimal(line_sum) / Decimal(quantity)).quantize(
+        Decimal(1).scaleb(-_IIKO_PRICE_SCALE), rounding=ROUND_HALF_UP
+    )
+    return exact, exact * quantity
 
 
 async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> PreparedPush:
@@ -247,13 +245,12 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
     for index, line in enumerate(rows, start=1):
         if not line.product_guid:
             continue
-        # Цена в документ идёт не из базы, а восстановленная из эталонной суммы строки: иначе
-        # iiko отвергает ВЕСЬ документ на копеечном расхождении (см. _price_for_iiko).
-        push_price = (
-            _price_for_iiko(line.quantity, line.price, line.sum)
-            if line.price is not None
-            else None
-        )
+        # Цена и сумма идут в документ не как в базе, а приведёнными к строгому равенству
+        # sum == price * amount — иначе iiko отвергает ВЕСЬ документ (см. _line_amounts_for_iiko).
+        if line.price is not None:
+            push_price, push_sum = _line_amounts_for_iiko(line.quantity, line.price, line.sum)
+        else:
+            push_price, push_sum = None, line.sum
         lines.append(
             CloudInvoiceLine(
                 num=index,
@@ -261,7 +258,7 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
                 store=store_guid,
                 amount=float(line.quantity),
                 price=float(push_price) if push_price is not None else None,
-                sum=float(line.sum) if line.sum is not None else None,
+                sum=float(push_sum) if push_sum is not None else None,
                 amount_unit=unit_by_product.get(line.iiko_product_id),
                 vat_percent=float(line.vat_percent) if line.vat_percent is not None else None,
             )
