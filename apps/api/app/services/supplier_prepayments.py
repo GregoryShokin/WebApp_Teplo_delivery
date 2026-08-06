@@ -1232,14 +1232,27 @@ async def _service_cash_needs_receivable(
 ) -> bool:
     """Наличная выплата услуговому контрагенту, которой некуда адресоваться, — она дебиторка.
 
-    Три условия, и каждое отсекает свой способ ошибиться:
+    Условия отсекают каждое свой способ ошибиться:
 
     * есть контрагент и у него размечен ``service_billing_mode`` — расход закрывается
       признанием, накладных не бывает, значит деньги вперёд некуда деть, кроме дебиторки;
     * статья не из ``SERVICE_CASH_EXCLUDED_ARTICLE_CODES`` — аванс поставщику заводит свою
       целевую предоплату, и вторая была бы двойным долгом;
-    * платёж не занят чужой адресной привязкой — ни аллокации на документ, ни закупа через
-      черновик неофициала. Такими деньгами уже распорядились, и трогать их правило 1 не вправе.
+    * на проводке нет аллокаций — этими деньгами уже закрыли конкретный документ;
+    * резерв Сейфа не привязан к договору аренды — арендные деньги ведёт свой контур
+      (``lease_accruals``), и он заводит дебиторку САМ, с тем же видом записи. Пустить сюда
+      аренду — значит отдать правилу 1 право пересобирать чужие адресные зачёты по FIFO;
+    * черновик, из которого выплата родилась, не гасит накладные.
+
+    ПРО ПОСЛЕДНЕЕ УСЛОВИЕ. Раньше здесь стоял вопрос «а есть ли у резерва черновик вообще»,
+    и это была подмена: черновик — универсальная бумага. Через него идёт и закуп у неофициала
+    (там деньги адресны — они гасят накладные), и обычный расход из окна «Новый платёж», где
+    накладных нет вовсе и дебиторка как раз нужна. Проверка перед выкаткой 06.08.2026 нашла,
+    что под прежнее условие попадают 12 наличных выплат на 312 135 ₽ — почти всё, что вообще
+    выходит из Сейфа. Дебиторка на них сегодня не терялась только потому, что это либо аренда
+    (её ведёт свой контур), либо контрагенты без режима услуг. Первый же услуговый
+    неарендный платёж из «Нового платежа» ушёл бы в никуда — ровно так, как это случилось с
+    водой 08.07.2026.
     """
     if transaction.counterparty_id is None or transaction.direction != "out":
         return False
@@ -1267,18 +1280,29 @@ async def _service_cash_needs_receivable(
     if allocated:
         return False
 
-    # Закуп у неофициала через черновик: выплата гасит его накладные, деньги адресны.
     if transaction.source_id is not None:
         from app.models import SafeAllocation
 
-        draft_backed = await session.scalar(
-            select(SafeAllocation.source_draft_id).where(
-                SafeAllocation.id == transaction.source_id,
-                SafeAllocation.source_draft_id.is_not(None),
+        reserve = await session.execute(
+            select(SafeAllocation.lease_id, SafeAllocation.source_draft_id).where(
+                SafeAllocation.id == transaction.source_id
             )
         )
-        if draft_backed is not None:
-            return False
+        row = reserve.first()
+        if row is not None:
+            lease_id, draft_id = row
+            # Аренда: обязательства и дебиторку по договору ведёт lease_accruals.
+            if lease_id is not None:
+                return False
+            # Закуп у неофициала: черновик выписан под накладные, выплата их и гасит.
+            if draft_id is not None:
+                pays_invoices = await session.scalar(
+                    select(func.count(SupplierInvoice.id)).where(
+                        SupplierInvoice.draft_id == draft_id
+                    )
+                )
+                if pays_invoices:
+                    return False
     return True
 
 
