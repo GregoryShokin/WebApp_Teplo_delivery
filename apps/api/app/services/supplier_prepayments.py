@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -1572,8 +1572,22 @@ def _closing_effective_date(invoice: SupplierInvoice) -> date | None:
     активом, ни расходом. На КОНЦАХ месяцев баланс сходился (31.07 дебиторка ещё была, 31.08
     расход уже признан), поэтому дыра жила незамеченной в срезах внутри месяца.
 
-    Поэтому в силу документ вступает по ПОЗДНЕЙШЕЙ из двух дат — своей и конца периода услуги.
-    Где периода нет (на проде это большинство документов), поведение прежнее — по дате.
+    Поэтому в силу документ вступает по ПОЗДНЕЙШЕЙ из двух дат — своей и дня ПОСЛЕ окончания
+    периода услуги. Где периода нет (на проде это большинство документов), поведение прежнее —
+    по дате документа.
+
+    ПОЧЕМУ ДЕНЬ ПОСЛЕ, А НЕ ПОСЛЕДНИЙ ДЕНЬ ПЕРИОДА. Ровно тем же неравенством пользуется
+    признание расхода: ``recognize_due_expenses`` требует ``service_period_end < cutoff`` —
+    весь последний день услуга ещё оказывается. Пока документ вступал в силу 31-го, а расход
+    признавался 1-го, между ними стояла ночь, в которую аванс уже списан, а расхода ещё нет.
+    Теперь оба события происходят одним прогоном 1-го числа, и промежуточного состояния нет
+    вовсе. На отчётность это не влияло и раньше (расход всё равно относится к своему месяцу),
+    но остатки, снятые вечером последнего дня, показывали дыру на сумму документа.
+
+    Учётной ДАТОЙ гашения при этом остаётся конец периода — так же, как признание, сделанное
+    1 сентября, относится к августу (``recognition_month``). Отсюда и разница между этой
+    функцией и её SQL-зеркалом ``counterparty_balance_as_of._document_in_force``: здесь «когда
+    система проводит», там «каким днём это ложится в учёт».
 
     ДВА ОГРАНИЧЕНИЯ, БЕЗ КОТОРЫХ ПРАВИЛО ЛОМАЕТ БОЛЬШЕ, ЧЕМ ЧИНИТ.
 
@@ -1589,7 +1603,7 @@ def _closing_effective_date(invoice: SupplierInvoice) -> date | None:
         return None
     if invoice.service_period_status != "ready" or invoice.service_period_end is None:
         return invoice.invoice_date
-    return max(invoice.invoice_date, invoice.service_period_end)
+    return max(invoice.invoice_date, invoice.service_period_end + timedelta(days=1))
 
 
 def _periods_overlap(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -> bool:
@@ -1900,13 +1914,16 @@ async def activate_due_closing_invoices(
                     SupplierInvoice.invoice_date.is_not(None),
                     SupplierInvoice.invoice_date <= today,
                     # Зеркало ``_closing_effective_date``: документ с ещё идущим периодом услуги
-                    # ждёт его окончания, даже когда собственная дата давно прошла. Период
-                    # считается только ``ready`` — недоверенный (ambiguous) деньгами не двигает,
-                    # иначе документ ждал бы даты, которой оператор ещё не подтвердил.
+                    # ждёт его окончания, даже когда собственная дата давно прошла. Неравенство
+                    # СТРОГОЕ — то же, что у ``recognize_due_expenses``: весь последний день
+                    # услуга ещё оказывается, и оба события (гашение аванса и признание расхода)
+                    # приходятся на один прогон 1-го числа. Период считается только ``ready``:
+                    # недоверенный (ambiguous) не вправе назначать дату, которую оператор ещё
+                    # не подтвердил.
                     or_(
                         SupplierInvoice.service_period_end.is_(None),
                         SupplierInvoice.service_period_status != "ready",
-                        SupplierInvoice.service_period_end <= today,
+                        SupplierInvoice.service_period_end < today,
                     ),
                 )
                 .with_for_update(skip_locked=True)

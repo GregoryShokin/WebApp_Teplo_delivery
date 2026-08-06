@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import (
     CashflowTransaction,
     InvoicePaymentAllocation,
+    SupplierExpenseAccrual,
     SupplierInvoice,
     SupplierPrepayment,
 )
@@ -452,8 +453,16 @@ async def test_closing_waits_for_the_end_of_its_service_period(
         assert prepaid.status == "open"
         assert await _allocations(session, act.id) == []
 
-        # 31 августа услуга оказана — джоба проводит документ, и он гасит СВОЙ аванс.
-        result = await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31))
+        # Вечером 31 августа услуга ещё оказывается — документ по-прежнему ждёт.
+        assert (
+            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31))
+        )["activated"] == 0
+        await session.refresh(prepaid)
+        assert prepaid.status == "open"
+
+        # 1 сентября — тем же прогоном, что признаёт расход: документ проводится и гасит
+        # СВОЙ аванс. Промежуточного состояния «аванса уже нет, расхода ещё нет» не бывает.
+        result = await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 9, 1))
         await session.commit()
         assert result["activated"] == 1
         await session.refresh(act)
@@ -494,7 +503,7 @@ async def test_closing_for_finished_period_activates_immediately(
         settled = await prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 1))
         await session.commit()
 
-        assert settled == Decimal("3348.22")
+        assert settled == Decimal("3348.22")  # период июля закончился — документ в силе
         assert act.activation_status == "active"
         await session.refresh(pool)
         assert pool.status == "settled"
@@ -541,7 +550,7 @@ async def test_balance_as_of_keeps_advance_while_service_runs(
         )
         await session.commit()
 
-        await prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 31))
+        await prepayments.apply_closing_document(session, act, as_of=date(2026, 9, 1))
         await session.commit()
 
         def mine(rows) -> Decimal:
@@ -741,7 +750,7 @@ async def test_product_beats_bare_period_for_two_lines_of_one_month(
         await session.commit()
 
         await prepayments.apply_closing_document(
-            session, license_act, as_of=date(2026, 9, 30)
+            session, license_act, as_of=date(2026, 10, 1)
         )
         await session.commit()
 
@@ -801,3 +810,88 @@ async def test_period_edit_reopens_the_settlement(
         assert act.activation_status == "pending"
         assert prepaid.status == "open"
         assert await _allocations(session, act.id) == []
+
+
+async def test_settlement_and_recognition_happen_in_one_run(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Гашение аванса и признание расхода происходят одним прогоном — дыры в ночь нет.
+
+    Пока документ вступал в силу 31-го, а расход признавался 1-го, между ними стояла ночь: в
+    остатках аванс уже списан, а расхода ещё нет — на сумму документа не сходилось ничего, если
+    смотреть вечером последнего дня месяца. Теперь у обоих событий одно и то же условие
+    «период закончился», и промежуточного состояния не существует.
+    """
+    from app.services import supplier_service_periods as periods
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Один прогон", inn="1655160014")
+        bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-ОДИН-ПРОГОН",
+            amount="16430.00",
+            invoice_date=date(2026, 7, 4),
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        prepaid = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="16430.00",
+            paid_on=date(2026, 7, 8),
+            wallet_code="one-run",
+            bill=bill,
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="АКТ-ОДИН-ПРОГОН",
+            amount="16430.00",
+            invoice_date=date(2026, 8, 1),
+            basis_number="СЧЁТ-ОДИН-ПРОГОН",
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        await session.commit()
+        # Тот же порядок, что у почтового приёма: провести документ, затем завести начисление.
+        await prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 4))
+        await periods.sync_invoice_accrual(session, act)
+        await session.commit()
+
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == act.id)
+        )
+        assert accrual is not None
+
+        # Вечер 31 августа: аванс на месте, расход не признан. Обе стороны говорят одно.
+        assert (
+            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31))
+        )["activated"] == 0
+        assert (
+            await periods.recognize_due_expenses(
+                session, as_of=date(2026, 8, 31), invoice_ids=[act.id]
+            )
+            == 0
+        )
+        await session.commit()
+        await session.refresh(prepaid)
+        await session.refresh(accrual)
+        assert prepaid.status == "open"
+        assert accrual.status == "scheduled"
+
+        # 1 сентября: тот же день гасит аванс и признаёт расход августа.
+        assert (
+            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 9, 1))
+        )["activated"] == 1
+        assert (
+            await periods.recognize_due_expenses(
+                session, as_of=date(2026, 9, 1), invoice_ids=[act.id]
+            )
+            == 1
+        )
+        await session.commit()
+        await session.refresh(prepaid)
+        await session.refresh(accrual)
+        assert prepaid.status == "settled"
+        assert accrual.status == "recognized"
+        assert accrual.recognition_month == date(2026, 8, 1)
