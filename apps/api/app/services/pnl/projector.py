@@ -590,7 +590,7 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
             status=LineStatus.OK if has_amount else LineStatus.ZERO_CONFIRMED,
             excluded_amount=bucket.excluded_amount,
             excluded_reason="accrual" if bucket.excluded_count else None,
-            unattributed_paid=bucket.unattributed_paid,
+            cash_alongside_accrual=bucket.cash_alongside_accrual,
             cash_proxy_amount=(
                 bucket.amount if has_amount and line.month_basis == "document" else Decimal("0.00")
             ),
@@ -859,154 +859,26 @@ def _warnings(
                     amount=paid,
                 )
             )
-        # Отдельная беда с отдельным лечением. «Ждём документ» решается временем — документ
-        # приедет сам. Здесь же ждать нечего: платёж не привязан к контрагенту, в ДЗ/КЗ его
-        # нет, и в расход он не попадёт никогда, пока человек не поставит контрагента.
-        unattributed = sum(
-            (component.unattributed_paid for component in line.components), Decimal("0.00")
+        # Пересечение двух источников в одной строке — пометка, не тревога. Наличная касса
+        # без контрагента признана расходом, и по той же статье есть признание документом.
+        # Обычно это разные расходы (наличное электричество и перевыставленная доля
+        # коммуналки), но проверить может только человек — отчёт называет обе суммы и не
+        # решает за него.
+        alongside = sum(
+            (component.cash_alongside_accrual for component in line.components), Decimal("0.00")
         )
-        if unattributed > 0:
+        if alongside > 0:
             result.append(
                 Warning(
-                    code="unattributed_paid",
+                    code="cash_alongside_accrual",
                     line_code=line.code,
                     message=(
-                        f"«{line.title}»: {rubles(unattributed)} ₽ оплачено без контрагента — "
-                        "в ДЗ/КЗ платежа нет, в расход он не попал. Проставьте контрагента, "
-                        "чтобы сумма встала в свой месяц"
+                        f"«{line.title}»: {rubles(alongside)} ₽ наличных без контрагента "
+                        "посчитаны расходом рядом с признанием по документам. Если это один "
+                        "и тот же расход — привяжите платежи к контрагенту, и кассу заменит "
+                        "документ"
                     ),
-                    amount=unattributed,
-                )
-            )
-    result.extend(_unfulfilled_accrual_warnings(cash, recognition))
-    return result
-
-
-def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
-    """Уравнение замкнутости: движение денег месяца обязано без остатка разложиться по вердиктам.
-
-    СВЕРКА ДОЛЖНА ИМЕТЬ НЕЗАВИСИМУЮ СТОРОНУ, ИНАЧЕ ОНА НИЧЕГО НЕ ЗНАЧИТ. Раньше дрейф считался
-    как разность двух сумм, набранных в ОДНОМ цикле по ОДНОЙ выборке: и «сколько денег»,
-    и «сколько разложено». Такая разность равна нулю алгебраически — при любой ошибке, включая
-    потерянную проводку. Владельцу при этом показывалась зелёная карточка «каждый рубль
-    разложен», и аудит 05.08.2026 справедливо назвал её галочкой, которая ничего не проверяет.
-
-    Теперь вторая сторона — агрегат, посчитанный БАЗОЙ до разбора (``source_total``,
-    ``source_count``). Сходятся суммы и число обработанных проводок — значит цикл действительно
-    прошёл по всему, что есть в месяце. Разошлись — видно и на сколько рублей, и на сколько
-    документов.
-    """
-    by_verdict = {key: value for key, value in layer.by_verdict.items()}
-    covered = sum(by_verdict.values(), Decimal("0.00"))
-    drift = layer.source_total - covered
-    missed = layer.source_count - layer.counted
-    return Reconciliation(
-        cash_out_total=layer.out_total,
-        cash_in_total=layer.in_total,
-        by_verdict=by_verdict,
-        unmapped=layer.unmapped,
-        unmapped_count=layer.unmapped_count,
-        balanced=layer.unmapped == 0 and drift == 0 and missed == 0,
-        drift=drift,
-        missed_count=missed,
-    )
-
-
-def _unperiodled_warnings(
-    layer: waiting_source.UnperiodedLayer,
-    article_lines: dict[Any, str],
-    lines: dict[str, LineValue],
-) -> list[Warning]:
-    """Документ лежит оплаченным, но без периода услуги — расход по нему не признан.
-
-    Самая тихая из всех потерь: «ждём документ» чинится временем, а это — никогда, пока
-    человек не откроет карточку и не поставит период. Строка при этом выглядит законченной.
-    Сумма в расход НЕ добавляется: месяц документа здесь догадка по его дате, а признание —
-    работа ДЗ/КЗ, и подменять её отчётом значило бы завести второй источник истины и получить
-    задвоение в тот день, когда период всё-таки заполнят.
-    """
-    result: list[Warning] = []
-    by_line: dict[str, Decimal] = {}
-    for item in layer.items:
-        line_code = article_lines.get(item.article_id)
-        if line_code is None or line_code not in lines:
-            continue
-        by_line[line_code] = by_line.get(line_code, Decimal("0.00")) + item.amount
-    for line_code, amount in by_line.items():
-        result.append(
-            Warning(
-                code="document_without_period",
-                line_code=line_code,
-                message=(
-                    f"«{lines[line_code].title}»: закрывающие документы на {rubles(amount)} ₽ "
-                    "лежат оплаченными без периода услуги — расход по ним не признан. "
-                    "Заполните период в ДЗ/КЗ, и сумма встанет в свой месяц"
-                ),
-                amount=amount,
-            )
-        )
-    return result
-
-
-def _warnings(
-    lines: dict[str, LineValue],
-    cash: cash_source.CashLayer,
-    recognition: recognition_source.RecognitionLayer,
-) -> list[Warning]:
-    result: list[Warning] = []
-    if cash.unmapped_count:
-        result.append(
-            Warning(
-                code="unmapped_cash",
-                message=(
-                    f"{cash.unmapped_count} проводок на {rubles(cash.unmapped)} ₽ не разнесены "
-                    "по статьям — отчёт неполон ровно на эту сумму"
-                ),
-                amount=cash.unmapped,
-            )
-        )
-    if recognition.unattributed:
-        result.append(
-            Warning(
-                code="recognition_unattributed",
-                message=(
-                    f"Признанный расход на {rubles(recognition.unattributed)} ₽ без статьи "
-                    "ДДС: в отчёт он не попал"
-                ),
-                amount=recognition.unattributed,
-            )
-        )
-    for line in lines.values():
-        paid = sum((component.unrecognized_paid for component in line.components), Decimal("0.00"))
-        if paid > 0:
-            result.append(
-                Warning(
-                    code="waiting_document",
-                    line_code=line.code,
-                    message=(
-                        f"«{line.title}»: за период оплачено {rubles(paid)} ₽, "
-                        "закрывающего документа ещё нет"
-                    ),
-                    amount=paid,
-                )
-            )
-        # Отдельная беда с отдельным лечением. «Ждём документ» решается временем — документ
-        # приедет сам. Здесь же ждать нечего: платёж не привязан к контрагенту, в ДЗ/КЗ его
-        # нет, и в расход он не попадёт никогда, пока человек не поставит контрагента.
-        unattributed = sum(
-            (component.unattributed_paid for component in line.components), Decimal("0.00")
-        )
-        if unattributed > 0:
-            result.append(
-                Warning(
-                    code="unattributed_paid",
-                    line_code=line.code,
-                    message=(
-                        f"«{line.title}»: {rubles(unattributed)} ₽ оплачено без контрагента — "
-                        "в ДЗ/КЗ платежа нет, в расход он не попал. Проставьте контрагента, "
-                        "чтобы сумма встала в свой месяц"
-                    ),
-                    amount=unattributed,
+                    amount=alongside,
                 )
             )
     result.extend(_unfulfilled_accrual_warnings(cash, recognition))

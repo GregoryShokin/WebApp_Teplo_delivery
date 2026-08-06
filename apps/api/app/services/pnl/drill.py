@@ -307,7 +307,8 @@ async def _cash_group(
                 count=len(aside),
                 reason=(
                     "прошло по этим статьям в этом месяце, но к строке не относится: оплата "
-                    "документов других периодов, переводы, суммы, посчитанные другими модулями"
+                    "документов других периодов, переводы, суммы, посчитанные другими "
+                    "модулями, расходы, отнесённые разметкой к другому месяцу"
                 ),
             )
         )
@@ -440,7 +441,15 @@ def _cash_row(
     purpose = (detail.payment_purpose or "").strip()
     if len(purpose) > 90:
         purpose = purpose[:90].rstrip() + "…"
-    subtitle = " · ".join(part for part in (article, purpose) if part) or None
+    moved = None
+    if detail.expense_month is not None and (
+        (detail.expense_month.year, detail.expense_month.month)
+        != (detail.operation_date.year, detail.operation_date.month)
+    ):
+        # Расход приехал по указанному месяцу, деньги остались в своём — читатель обязан
+        # видеть, почему дата строки не из этого месяца.
+        moved = f"деньги {detail.operation_date:%d.%m}, расход этого месяца по разметке"
+    subtitle = " · ".join(part for part in (article, purpose, moved) if part) or None
     return DrillRow(
         title=names.get(detail.counterparty_id) or "Без контрагента",
         subtitle=subtitle,

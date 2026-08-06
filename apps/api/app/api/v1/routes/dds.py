@@ -460,6 +460,7 @@ async def list_journal(
                     "counterparty_name_raw": None,
                     "counterparty_inn_raw": None,
                     "asset_id": asset_by_cf.get(cf.id),
+                    "expense_month": cf.expense_month,
                 }
             )
     if status in ("all", "unmarked"):
@@ -2314,6 +2315,7 @@ async def classify_transaction_full(
                         location_id=item.location_id,
                         lease_id=item.lease_id,
                         asset_id=item.asset_id,
+                        expense_month=item.expense_month,
                     )
                     for item in payload.splits
                 ],

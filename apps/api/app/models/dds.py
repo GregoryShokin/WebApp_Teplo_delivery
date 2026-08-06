@@ -226,6 +226,11 @@ class CashflowTransaction(Base):
     )
     source_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # Месяц ПРИЗНАНИЯ расхода для платежа без контрагента (первое число месяца). Обычно
+    # NULL — расход в месяце денег. Заполняется в разборе, когда комментарий выписки говорит
+    # «оплата за прошлый месяц»: у платежа с контрагентом месяц определяет документ в ДЗ/КЗ,
+    # а без контрагента другого носителя периода не существует.
+    expense_month: Mapped[date | None] = mapped_column(Date, nullable=True)
     payment_purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     quality_status: Mapped[str] = mapped_column(

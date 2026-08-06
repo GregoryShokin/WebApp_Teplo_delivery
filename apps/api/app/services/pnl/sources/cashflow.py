@@ -29,6 +29,13 @@
    пришла только вода.
 3. Контрагент вне контура → касса и есть расход. Для строк, которые ждут документа по своей
    природе, сумма помечается ``cash_proxy``: месяц взят по деньгам за неимением документа.
+4. Контрагента НЕТ → касса и есть расход, месяц берётся из ``expense_month`` проводки
+   (а без него — из даты денег). Документа по такому платежу не ждёт никто: в ДЗ/КЗ его не
+   существует. Правило «по статье есть чьё-то признание → выбросить и безконтрагентную
+   кассу» здесь действовало до 06.08.2026 и потеряло 129 180 ₽ июля молча: признание доли
+   коммуналки на 9 654 ₽ выбрасывало 106 281 ₽ наличных платежей за электричество. Владелец
+   закрыл вопрос: «делай механизм признания расходов» для выбытий без контрагента, а
+   пересечение с признанием отчёт называет пометкой, не решает молча.
 
 Цена правила честная и односторонняя: занижение с ярлыком, никогда не задвоение. Задвоение
 шумит — расходятся итоги; занижение молчит, поэтому оно обязано быть подписано.
@@ -69,9 +76,15 @@ class CashBucket:
     count: int = 0
     excluded_amount: Decimal = Decimal("0.00")
     excluded_count: int = 0
-    #: Исключено, но в ДЗ/КЗ этого платежа нет: проводка без контрагента по статье, где
-    #: признание пришло от другого поставщика. Не «ждём документ» — ждать некому.
-    unattributed_paid: Decimal = Decimal("0.00")
+    #: Включённая касса БЕЗ контрагента по статье, где за месяц есть и признание. Обе суммы
+    #: в строке законно: наличное электричество и перевыставленная доля коммуналки — разные
+    #: расходы по одной статье. Но различить «разные» и «один и тот же» может только человек,
+    #: поэтому пересечение подписывается пометкой, а не решается молча.
+    cash_alongside_accrual: Decimal = Decimal("0.00")
+    #: Расход, приехавший из ДРУГОГО месяца денег: у проводки указан ``expense_month`` этого
+    #: месяца. В сверку денег текущего месяца не входит — деньги остались в своём.
+    moved_in_amount: Decimal = Decimal("0.00")
+    moved_in_count: int = 0
 
 
 @dataclass(slots=True)
@@ -263,11 +276,11 @@ async def build_context(session: AsyncSession, month_start: date, month_end: dat
         recognized=recognized,
         settled=settled,
         ledger_known=ledger_known,
-        # Статьи, по которым за месяц есть хоть одно признание. Нужны для проводок БЕЗ
-        # контрагента: у коммуналки за июль 2026 таких четыре на 106 281 ₽, и сопоставить их
-        # с начислением по контрагенту невозможно. Оставить их в расходе значит задвоить
-        # месяц (признание по той же статье уже есть), поэтому касса исключается, а сумма
-        # уходит в «оплачено, документа нет». Занижение с ярлыком лучше задвоения молча.
+        # Статьи, по которым за месяц есть хоть одно признание. Касса без контрагента по
+        # такой статье всё равно расход (владелец 06.08.2026: наличное электричество и
+        # перевыставленная доля коммуналки — разные деньги по одной статье), но пересечение
+        # двух источников в одной строке подписывается пометкой — проверить, что расход
+        # действительно разный, может только человек.
         recognized_articles={article_id for _, article_id in recognized},
     )
 
@@ -291,7 +304,6 @@ async def build_cash_layer(
     origins = context.origins
     circuit = context.circuit
     settled = context.settled
-    recognized_articles = context.recognized_articles
 
     layer = CashLayer()
     # Контроль считаем ДО разбора и другим способом — агрегатом на стороне базы. Смысл именно
@@ -329,7 +341,9 @@ async def build_cash_layer(
         else:
             layer.in_total += amount
 
-        verdict, line_code = _classify(tx, rules, origins, circuit, recognized_articles, settled)
+        verdict, line_code = _classify(
+            tx, rules, origins, circuit, settled, month_start=month_start, month_end=month_end
+        )
         layer.by_verdict[verdict.value] += amount
         layer.by_verdict_count[verdict.value] += 1
 
@@ -339,6 +353,12 @@ async def build_cash_layer(
             layer.unmapped_articles.add(tx.article_id)
             continue
         if line_code is None:
+            continue
+        if verdict is Verdict.INCLUDED_OTHER_MONTH:
+            # Деньги этого месяца, расход другого: в строку не кладём — её получит месяц из
+            # ``expense_month``. Вердикт уже в ``by_verdict``, сверка денег замкнута. Бакет
+            # не создаём даже пустым: пустой бакет стал бы «подтверждённым нулём» строки,
+            # а у строки этого месяца данных по такой проводке нет вовсе.
             continue
 
         bucket = layer.buckets.setdefault(line_code, CashBucket())
@@ -352,6 +372,12 @@ async def build_cash_layer(
             natural = (tx.direction == "out") == expense_line
             bucket.amount += amount * rule.sign * (1 if natural else -1)
             bucket.count += 1
+            if tx.counterparty_id is None and tx.article_id in context.recognized_articles:
+                # По этой статье за месяц есть и признание документом, и наличная касса без
+                # контрагента. Обычно это РАЗНЫЕ расходы (наличное электричество и
+                # перевыставленная доля коммуналки), но проверить может только человек —
+                # проектор превратит сумму в пометку на строке.
+                bucket.cash_alongside_accrual += amount
         else:
             bucket.excluded_amount += amount
             bucket.excluded_count += 1
@@ -369,14 +395,15 @@ async def build_cash_layer(
                 layer.excluded_for_accrual[tx.counterparty_id] += amount
                 if line_code is not None:
                     layer.excluded_for_accrual_lines[tx.counterparty_id].add(line_code)
-            if verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY and tx.counterparty_id is None:
-                # Проводка без контрагента, исключённая только потому, что по её СТАТЬЕ за
-                # месяц есть признание. В ДЗ/КЗ такого платежа нет вовсе — значит никто не
-                # ждёт по нему документа, и называть это «ждём документ» было бы выдумкой.
-                # Но и молчать нельзя: расход реален, а в отчёт он не попал. За июль 2026 это
-                # 18 600 ₽ за нейросеть и 4 000 ₽ мусорщикам — оба платежа без контрагента по
-                # статьям, где признание пришло от совсем других поставщиков.
-                bucket.unattributed_paid += amount
+
+    await _apply_moved_in(
+        session,
+        layer,
+        context,
+        sign_roles,
+        month_start=month_start,
+        month_end=month_end,
+    )
 
     if layer.excluded_for_accrual:
         # Названия одним запросом в конце: имя нужно только для предупреждения, и тянуть его
@@ -395,6 +422,61 @@ async def build_cash_layer(
     return layer
 
 
+async def _apply_moved_in(
+    session: AsyncSession,
+    layer: CashLayer,
+    context: CashContext,
+    sign_roles: dict[str, int],
+    *,
+    month_start: date,
+    month_end: date,
+) -> None:
+    """Добавить в строки расходы, чьи деньги ушли в ДРУГОМ месяце (``expense_month`` здесь).
+
+    Зеркало вердикта ``INCLUDED_OTHER_MONTH``: там месяц денег отдаёт расход, тут месяц
+    расхода его забирает. В контрольный агрегат и в сверку денег эти проводки НЕ входят —
+    они деньги чужого месяца, и их учитывает чужая сверка. Проводка проходит тот же
+    ``_classify``, что и все: если её успели привязать к контрагенту или пометить переводом,
+    сюда она не попадёт — расход возьмёт документ, а не касса.
+    """
+    moved = (
+        await session.execute(
+            select(CashflowTransaction).where(
+                CashflowTransaction.expense_month >= month_start,
+                CashflowTransaction.expense_month <= month_end,
+                (CashflowTransaction.operation_date < month_start)
+                | (CashflowTransaction.operation_date > month_end),
+            )
+        )
+    ).scalars()
+    for tx in moved:
+        # Классифицируем в координатах МЕСЯЦА РАСХОДА: expense_month внутри окна, поэтому
+        # ветка INCLUDED_OTHER_MONTH не сработает и проводка получит честный INCLUDED.
+        verdict, line_code = _classify(
+            tx,
+            context.rules,
+            context.origins,
+            context.circuit,
+            context.settled,
+            month_start=month_start,
+            month_end=month_end,
+        )
+        if verdict is not Verdict.INCLUDED or line_code is None or tx.counterparty_id is not None:
+            continue
+        amount = tx.amount or Decimal("0.00")
+        rule = context.rules[tx.article_id]
+        expense_line = sign_roles.get(line_code, -1) == -1
+        natural = (tx.direction == "out") == expense_line
+        bucket = layer.buckets.setdefault(line_code, CashBucket())
+        contribution = amount * rule.sign * (1 if natural else -1)
+        bucket.amount += contribution
+        bucket.count += 1
+        bucket.moved_in_amount += contribution
+        bucket.moved_in_count += 1
+        if tx.article_id in context.recognized_articles:
+            bucket.cash_alongside_accrual += amount
+
+
 @dataclass(slots=True)
 class CashDetail:
     """Одна проводка в расшифровке строки — с вердиктом, который она получила в отчёте."""
@@ -409,6 +491,9 @@ class CashDetail:
     counterparty_id: uuid.UUID | None
     article_id: uuid.UUID | None
     payment_purpose: str | None
+    #: Явно указанный месяц признания расхода — если он есть и отличается от месяца денег,
+    #: расшифровка обязана это показать: «деньги июля, расход июня».
+    expense_month: date | None = None
 
 
 async def explain_line(
@@ -433,8 +518,17 @@ async def explain_line(
     transactions = (
         await session.execute(
             select(CashflowTransaction).where(
-                CashflowTransaction.operation_date >= month_start,
-                CashflowTransaction.operation_date <= month_end,
+                # Проводки месяца по деньгам ПЛЮС расходы, переехавшие сюда по
+                # ``expense_month``: строка обязана объяснять то же число, что показывает
+                # отчёт, а в него входят обе группы.
+                (
+                    (CashflowTransaction.operation_date >= month_start)
+                    & (CashflowTransaction.operation_date <= month_end)
+                )
+                | (
+                    (CashflowTransaction.expense_month >= month_start)
+                    & (CashflowTransaction.expense_month <= month_end)
+                )
             )
         )
     ).scalars()
@@ -446,10 +540,16 @@ async def explain_line(
             context.rules,
             context.origins,
             context.circuit,
-            context.recognized_articles,
             context.settled,
+            month_start=month_start,
+            month_end=month_end,
         )
         if code != line_code:
+            continue
+        moved_in = not (month_start <= tx.operation_date <= month_end)
+        if moved_in and (verdict is not Verdict.INCLUDED or tx.counterparty_id is not None):
+            # Чужой месяц денег интересен строке только если расход действительно приехал
+            # сюда; исключённые проводки чужих месяцев объясняет их собственный месяц.
             continue
         amount = tx.amount or Decimal("0.00")
         contribution = Decimal("0.00")
@@ -468,6 +568,7 @@ async def explain_line(
                 counterparty_id=tx.counterparty_id,
                 article_id=tx.article_id,
                 payment_purpose=tx.payment_purpose,
+                expense_month=tx.expense_month,
             )
         )
     details.sort(key=lambda item: (item.operation_date, item.amount))
@@ -479,8 +580,10 @@ def _classify(
     rules: dict[uuid.UUID, PnlArticleRule],
     origins: dict[tuple[str, uuid.UUID | None], PnlCashOrigin],
     circuit: set[uuid.UUID],
-    recognized_articles: set[uuid.UUID | None],
     settled: set[uuid.UUID],
+    *,
+    month_start: date,
+    month_end: date,
 ) -> tuple[Verdict, str | None]:
     """Вердикт проводки. Ровно один исход — это и замыкает уравнение сходимости.
 
@@ -514,10 +617,13 @@ def _classify(
     if tx.counterparty_id is not None:
         if tx.counterparty_id in circuit:
             return Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY, rule.line_code
-    elif tx.article_id in recognized_articles:
-        # Контрагента у проводки нет, а по её статье за месяц признание есть. Различить
-        # «это тот же расход» и «это другой поставщик» нечем, поэтому выбираем сторону
-        # занижения: расход берём из признания, кассу помечаем ожиданием документа.
-        return Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY, rule.line_code
+    elif tx.expense_month is not None and not (month_start <= tx.expense_month <= month_end):
+        # Платёж без контрагента с явно указанным ЧУЖИМ месяцем расхода: «Оплата за Июнь»,
+        # ушедшая в июле. Деньги остаются в своём месяце — вердикт входит в сверку, — а
+        # расход строка этого месяца не получает: его заберёт месяц из ``expense_month``.
+        # Указать месяц может только человек в разборе; у платежа С контрагентом месяц
+        # определяет документ в ДЗ/КЗ, поэтому ветка живёт строго под ``counterparty_id is
+        # None`` — на привязанном платеже поле не действует.
+        return Verdict.INCLUDED_OTHER_MONTH, rule.line_code
 
     return Verdict.INCLUDED, rule.line_code

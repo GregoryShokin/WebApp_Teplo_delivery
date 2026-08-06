@@ -84,6 +84,9 @@ type SplitRow = {
   // Основное средство ЭТОЙ строки. Объект живёт в строке, а не в разборе: один платёж покупает
   // три стеллажа — это три карточки, и раскидать их можно только по строкам.
   assetId: string;
+  // Месяц признания расхода в ОПиУ (ГГГГ-ММ) — только у РУЧНОЙ проводки без контрагента:
+  // «Оплата за Июнь» наличными в июле. Пусто = месяц платежа.
+  expenseMonth: string;
 };
 
 const ACTION_TOAST: Record<string, string> = {
@@ -169,6 +172,8 @@ export function OperationClassifyDialog({
           // источника нет — берём его прямо из строки журнала. Иначе переоткрытие разбора
           // отдало бы пустое поле, и «Разнести» сняло бы привязку к объекту.
           assetId: isOperation ? "" : row.asset_id ?? "",
+          // Тот же мотив: без чтения из строки переоткрытие сняло бы разметку месяца.
+          expenseMonth: isOperation ? "" : (row.expense_month ?? "").slice(0, 7),
         },
       ]);
       setRememberAsRule(false);
@@ -200,6 +205,7 @@ export function OperationClassifyDialog({
         locationId: line.location_id ?? "",
         leaseId: line.lease_id ?? "",
         assetId: line.asset_id ?? "",
+        expenseMonth: "",
       })),
     );
   }, [splitQuery.data]);
@@ -359,6 +365,17 @@ export function OperationClassifyDialog({
 
   const isTransferRow = (articleId: string) => transferArticleIds.has(articleId);
 
+  // Месяц признания расхода применим ТОЛЬКО к ручной проводке без контрагента с обычной
+  // расходной статьёй: у платежа с контрагентом месяц определяет документ в ДЗ/КЗ, у
+  // перевода расхода нет, у зарплаты и авансов месяц ведёт свой модуль.
+  const allowsExpenseMonth = (item: SplitRow) =>
+    !isOperation &&
+    !item.counterpartyId &&
+    item.articleId !== "none" &&
+    !isTransferRow(item.articleId) &&
+    !salaryArticleIds.has(item.articleId) &&
+    !employeeAdvanceArticleIds.has(item.articleId);
+
   function updateRow(key: string, patch: Partial<SplitRow>) {
     setRows((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
   }
@@ -383,6 +400,7 @@ export function OperationClassifyDialog({
         // вторая строка почти всегда — второй объект, а унаследованный молча повесил бы на
         // одну карточку деньги за два предмета.
         assetId: "",
+        expenseMonth: "",
       },
     ]);
   }
@@ -462,6 +480,10 @@ export function OperationClassifyDialog({
           location_id: item.locationId || null,
           lease_id: item.leaseId || null,
           asset_id: requiresAsset(item) ? item.assetId || null : null,
+          // Месяц уходит только со строки, где он действительно применим (без контрагента,
+          // не перевод, не зарплата) — бэк повторяет тот же гейт жёсткой ошибкой.
+          expense_month:
+            allowsExpenseMonth(item) && item.expenseMonth ? `${item.expenseMonth}-01` : null,
         })),
         counterparty_id: null,
       });
@@ -755,6 +777,32 @@ export function OperationClassifyDialog({
                       >
                         {rowDetailSummary(item).text}
                       </button>
+                    ) : null}
+                    {allowsExpenseMonth(item) ? (
+                      <label
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                        title="Пусто — расход в месяце платежа. Заполняется, когда платёж закрывает другой месяц («Оплата за Июнь» наличными в июле)."
+                      >
+                        Месяц расхода
+                        <input
+                          className="h-6 rounded border border-input bg-transparent px-1 text-xs"
+                          onChange={(event) =>
+                            updateRow(item.key, { expenseMonth: event.target.value })
+                          }
+                          type="month"
+                          value={item.expenseMonth}
+                        />
+                        {item.expenseMonth ? (
+                          <button
+                            className="underline-offset-2 hover:underline"
+                            onClick={() => updateRow(item.key, { expenseMonth: "" })}
+                            title="Вернуть месяц платежа"
+                            type="button"
+                          >
+                            сбросить
+                          </button>
+                        ) : null}
+                      </label>
                     ) : null}
                   </div>
                 </div>

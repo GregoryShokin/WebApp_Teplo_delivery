@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
@@ -170,6 +171,10 @@ class CashflowSplitLine(NamedTuple):
     lease_id: UUID | None = None
     # Основное средство ЭТОЙ доли. Тоже строго последним по той же причине.
     asset_id: UUID | None = None
+    # Месяц признания расхода в ОПиУ — только для доли БЕЗ контрагента («Оплата за Июнь»
+    # наличными в июле). У платежа с контрагентом месяц определяет документ в ДЗ/КЗ.
+    # Строго последним — по той же причине, что и выше.
+    expense_month: date | None = None
 
 
 async def apply_cashflow_split(
@@ -215,6 +220,29 @@ async def apply_cashflow_split(
     for line in splits:
         if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
+
+    # Месяц расхода — атрибут платежа БЕЗ контрагента: у привязанного платежа месяц
+    # определяет документ в ДЗ/КЗ, и второй руль был бы вторым источником истины. Целевой
+    # месяц обязан быть открыт — иначе разметка тихо переписала бы закрытый отчёт.
+    from app.services import accounting_periods
+
+    for line in splits:
+        if line.expense_month is None:
+            continue
+        if (line.counterparty_id or counterparty_id) is not None:
+            raise ValueError(
+                "Месяц расхода можно указать только у платежа без контрагента — "
+                "с контрагентом месяц определяет документ в ДЗ/КЗ"
+            )
+        if line.employee_id is not None:
+            raise ValueError("У выплаты сотруднику месяц расхода определяет ведомость")
+        if line.transfer_wallet_id is not None:
+            raise ValueError("У перевода между счетами не бывает месяца расхода")
+        await accounting_periods.assert_month_open(
+            session,
+            accounting_periods.month_start(line.expense_month),
+            action="отнести расход в этот месяц",
+        )
 
     # Аналитика по помещению — то же правило, что у разбора банк-операции.
     location_context: dict[int, LocationContext] = {}
@@ -332,6 +360,11 @@ async def apply_cashflow_split(
         line_counterparty_id = line.counterparty_id or counterparty_id
         if context is not None and context.counterparty_id is not None:
             line_counterparty_id = context.counterparty_id
+        # Нормализация к первому числу: месяц — это месяц, а не конкретный день. Переразбор
+        # без месяца обязан снять прежний (первая доля мутирует существующую строку).
+        line_expense_month = (
+            line.expense_month.replace(day=1) if line.expense_month is not None else None
+        )
         if index == 0:
             txn.article_id = article_id
             txn.amount = amount
@@ -339,6 +372,7 @@ async def apply_cashflow_split(
             txn.counterparty_id = line_counterparty_id
             txn.location_id = context.location_id if context else None
             txn.lease_id = context.lease_id if context else None
+            txn.expense_month = line_expense_month
             txn.quality_status = MANUAL_QUALITY
             leg = txn
         else:
@@ -351,6 +385,7 @@ async def apply_cashflow_split(
                 counterparty_id=line_counterparty_id,
                 location_id=context.location_id if context else None,
                 lease_id=context.lease_id if context else None,
+                expense_month=line_expense_month,
                 source_kind=SPLIT_SOURCE_KIND,
                 source_id=txn.id,
                 payment_purpose=txn.payment_purpose,
