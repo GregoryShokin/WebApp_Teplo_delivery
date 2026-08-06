@@ -293,10 +293,11 @@ async def pay_allocation(
     # Коммуналка: наличная выдача арендодателю гасит долг его потока (вода/газ/свет) и, если
     # заплатили вперёд, оставляет остаток дебиторкой. Без этой ветки основной канал расчётов с
     # арендодателем — наличные из Сейфа — кредиторку не трогал вовсе.
+    utility_handled = False
     if allocation.lease_id is None and allocation.counterparty_id is not None:
         from app.services.utility_charges import settle_utility_invoices_from_cash
 
-        await settle_utility_invoices_from_cash(
+        utility_handled = await settle_utility_invoices_from_cash(
             session,
             counterparty_id=allocation.counterparty_id,
             article_id=allocation.article_id,
@@ -306,6 +307,36 @@ async def pay_allocation(
             wallet_id=allocation.wallet_id,
             created_by_user_id=created_by_user_id,
         )
+
+    # СТРАХОВКА: наличная выплата УСЛУГОВОМУ контрагенту обязана оставить след в ДЗ/КЗ, даже
+    # когда ни один адресный механизм её не подхватил. Между ветками выше есть щель, и деньги
+    # в неё проваливаются молча: 08.07.2026 из Сейфа ушло 9 879 ₽ «За воду» Станиславу
+    # Юрьевичу, но лицевой счёт «Вода» завели 03.08 — позже платежа. Коммунальная ветка не
+    # нашла потока, вышла ни с чем, и деньги остались вне расчётов вовсе. Дальше пришедшая
+    # платёжка закрылась чужим авансом — АРЕНДОЙ за август, — и 31.08 закрывающий по аренде
+    # выставил бы к оплате 9 654,25 ₽ за уже оплаченный месяц.
+    #
+    # Гейт — ``service_billing_mode``: расход такого контрагента закрывается признанием, а не
+    # платежом, значит деньги вперёд это дебиторка по построению. У поставщика ТОВАРА режим
+    # пуст, его платёж закрывает накладную, и правилу 1 здесь делать нечего.
+    if (
+        allocation.lease_id is None
+        and allocation.counterparty_id is not None
+        and not utility_handled
+    ):
+        from app.models import CounterpartyPayableProfile
+        from app.services.supplier_prepayments import sync_manual_payment_receivable
+
+        billing_mode = await session.scalar(
+            select(CounterpartyPayableProfile.service_billing_mode).where(
+                CounterpartyPayableProfile.counterparty_id == allocation.counterparty_id
+            )
+        )
+        if billing_mode is not None:
+            # ``money_is_free=True`` осознанно: адресные механизмы выше уже отработали и
+            # деньгами не распорядились — считать свободу заново значило бы упереться в гейт
+            # ``safe_payout``, который и создал эту щель.
+            await sync_manual_payment_receivable(session, leg, money_is_free=True)
 
     # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
     # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
