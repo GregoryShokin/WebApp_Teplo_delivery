@@ -91,6 +91,11 @@ class CashBucket:
     #: месяца. В сверку денег текущего месяца не входит — деньги остались в своём.
     moved_in_amount: Decimal = Decimal("0.00")
     moved_in_count: int = 0
+    #: Зеркало: деньги ЭТОГО месяца, чей расход разметка увела в другой. Без этого поля
+    #: отдающая строка не получала ни бакета, ни пометки — и, если других движений по ней не
+    #: было, отчёт печатал «движения по статье за месяц не было». Движение было.
+    moved_out_amount: Decimal = Decimal("0.00")
+    moved_out_count: int = 0
 
 
 @dataclass(slots=True)
@@ -471,10 +476,13 @@ async def build_cash_layer(
         if line_code is None:
             continue
         if verdict is Verdict.INCLUDED_OTHER_MONTH:
-            # Деньги этого месяца, расход другого: в строку не кладём — её получит месяц из
-            # ``expense_month``. Вердикт уже в ``by_verdict``, сверка денег замкнута. Бакет
-            # не создаём даже пустым: пустой бакет стал бы «подтверждённым нулём» строки,
-            # а у строки этого месяца данных по такой проводке нет вовсе.
+            # Деньги этого месяца, расход другого: в сумму строки не кладём — её получит
+            # месяц из ``expense_month``. Но бакет заводим и сумму запоминаем: без неё строка
+            # молчала о том, что деньги по ней прошли, а при отсутствии других движений отчёт
+            # печатал «движения по статье не было» — прямая неправда.
+            bucket = layer.buckets.setdefault(line_code, CashBucket())
+            bucket.moved_out_amount += amount
+            bucket.moved_out_count += 1
             continue
 
         bucket = layer.buckets.setdefault(line_code, CashBucket())

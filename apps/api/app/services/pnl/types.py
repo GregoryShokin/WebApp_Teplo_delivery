@@ -110,6 +110,8 @@ class Component:
     cash_alongside_accrual: Decimal = Decimal("0.00")
     # Часть суммы — деньги ЧУЖОГО месяца, приведённые сюда разметкой «месяц расхода».
     moved_in_amount: Decimal = Decimal("0.00")
+    # Зеркало: деньги ЭТОГО месяца, чей расход разметка увела в другой.
+    moved_out_amount: Decimal = Decimal("0.00")
     # Месяц взят по дате денег, потому что документа не будет вовсе.
     cash_proxy_amount: Decimal = Decimal("0.00")
     note: str | None = None

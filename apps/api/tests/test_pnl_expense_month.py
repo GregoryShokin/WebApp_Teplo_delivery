@@ -137,9 +137,13 @@ def test_expense_month_moves_the_expense_but_not_the_money(async_session_factory
             july = await cash_source.build_cash_layer(session, *JULY)
             august = await cash_source.build_cash_layer(session, *AUGUST)
 
-            # Июль: деньги видны и разложены (сверка замкнута), расхода в строке нет.
+            # Июль: деньги видны и разложены (сверка замкнута), расхода в строке нет — но
+            # сама строка о движении ЗНАЕТ. Без этого отчёт печатал бы «движения по статье не
+            # было», хотя деньги прошли: молчание отдающего месяца было отдельной находкой
+            # проверки перед выкаткой.
             assert july.by_verdict[Verdict.INCLUDED_OTHER_MONTH.value] == Decimal("30402.00")
-            assert "utilities_chernikova" not in july.buckets
+            assert july.buckets["utilities_chernikova"].amount == Decimal("0.00")
+            assert july.buckets["utilities_chernikova"].moved_out_amount == Decimal("30402.00")
             assert july.counted == 1
 
             # Август: расход в строке с пометкой «приехал из другого месяца денег», но в

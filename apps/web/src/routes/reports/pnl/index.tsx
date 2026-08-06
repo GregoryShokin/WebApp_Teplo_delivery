@@ -401,8 +401,14 @@ function Reconciliation({ report }: { report: PnlReport }) {
   );
 }
 
+// Подпись каждого вердикта сходимости. Карточка «Сходимость денежного слоя» — единственное
+// место, где названа сумма, ушедшая из отчёта, поэтому пропущенный ключ печатается сырым:
+// владелец видел строку «excluded_before_accounting_start — 30 402,00». Новый вердикт без
+// метки — это подпись занижения на языке, которого читатель не знает.
 const VERDICT_LABEL: Record<string, string> = {
   included: "в отчёте",
+  included_other_month: "расход отнесён к другому месяцу",
+  excluded_before_accounting_start: "период до начала учёта — расхода в отчётах нет",
   excluded_out_of_pnl: "вне ОПиУ (переводы, займы, чужой слой)",
   excluded_accrual_counterparty: "заменено начислением",
   excluded_accrual_settlement: "оплата признанного расхода",

@@ -601,6 +601,7 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
             excluded_reason="accrual" if bucket.excluded_count else None,
             cash_alongside_accrual=bucket.cash_alongside_accrual,
             moved_in_amount=bucket.moved_in_amount,
+            moved_out_amount=bucket.moved_out_amount,
             cash_proxy_amount=(
                 bucket.amount if has_amount and line.month_basis == "document" else Decimal("0.00")
             ),
@@ -868,6 +869,21 @@ def _warnings(
                         "закрывающего документа ещё нет"
                     ),
                     amount=paid,
+                )
+            )
+        moved_out = sum(
+            (component.moved_out_amount for component in line.components), Decimal("0.00")
+        )
+        if moved_out > 0:
+            result.append(
+                Warning(
+                    code="expense_moved_out",
+                    line_code=line.code,
+                    message=(
+                        f"«{line.title}»: {rubles(moved_out)} ₽ прошли деньгами в этом месяце, "
+                        "а расходом отнесены к другому — так размечено вручную"
+                    ),
+                    amount=moved_out,
                 )
             )
         # Часть суммы строки — деньги ДРУГОГО месяца, приведённые сюда разметкой. Без этой

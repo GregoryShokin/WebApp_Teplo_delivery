@@ -2271,11 +2271,32 @@ async def classify_transaction(
     # ДЗ/КЗ не работает вовсе). Гейт на это стоял только в полном разборе, а контрагента
     # привязывают именно здесь: поле переживало привязку и МОЛЧА ОЖИВАЛО при отвязке, уводя
     # расход в другой месяц спустя недели после того, как человек об этом поле забыл.
+    #
+    # СНЯТИЕ РАЗМЕТКИ — ТАКОЕ ЖЕ ИЗМЕНЕНИЕ ЗАКРЫТОГО МЕСЯЦА, как и её постановка: расход
+    # уезжает обратно в месяц денег. Здесь замка не было вовсе, и закрытый июль менялся
+    # молча — проверка перед выкаткой воспроизвела это на 77 000 ₽.
     if (
         txn.counterparty_id is not None
         and txn.expense_month is not None
         and accounting_periods.month_start(txn.expense_month) >= accounting_periods.ACCOUNTING_START
     ):
+        try:
+            for touched, action in (
+                (
+                    accounting_periods.month_start(txn.expense_month),
+                    "снять расход с этого месяца",
+                ),
+                (
+                    accounting_periods.month_start(txn.operation_date),
+                    "вернуть расход в этот месяц",
+                ),
+            ):
+                if touched >= accounting_periods.ACCOUNTING_START:
+                    await accounting_periods.assert_month_open(session, touched, action=action)
+        except accounting_periods.PeriodClosed as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(error)
+            ) from error
         txn.expense_month = None
     await link_transaction_to_asset(
         session, context=asset_context, transaction_id=txn.id, amount=txn.amount

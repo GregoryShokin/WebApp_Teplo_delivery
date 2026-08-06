@@ -261,17 +261,25 @@ async def apply_cashflow_split(
                 await accounting_periods.assert_month_open(
                     session, month, action="отнести расход в этот месяц"
                 )
-        # ЗАМОК ДВУСТОРОННИЙ. Гейт выше проверял только НОВОЕ значение, поэтому переразбор,
-        # снимающий разметку, молча менял цифры закрытого месяца: расход уезжал обратно в
-        # месяц денег, и закрытый отчёт переставал совпадать сам с собой. Снятие и перенос —
-        # такое же изменение закрытого месяца, как и постановка.
+        # ЗАМОК ТРЁХСТОРОННИЙ, И ТРЕТЬЯ СТОРОНА — МЕСЯЦ ДЕНЕГ. Проверять только значения
+        # поля мало: пока оно пусто, расход стоит в месяце ПЛАТЕЖА, и любая разметка вынимает
+        # его оттуда. Если тот месяц закрыт, закрытый отчёт меняется без единого возражения —
+        # проверка перед выкаткой воспроизвела это на 100 000 ₽. Симметрично снятие разметки
+        # возвращает расход в месяц денег, и это тоже его изменение.
         previous = txn.expense_month if index == 0 else None
-        if previous is not None and previous != month:
-            previous_month = accounting_periods.month_start(previous)
-            if previous_month >= accounting_periods.ACCOUNTING_START:
-                await accounting_periods.assert_month_open(
-                    session, previous_month, action="снять расход с этого месяца"
-                )
+        previous_month = (
+            accounting_periods.month_start(previous) if previous is not None else None
+        )
+        if index == 0 and previous_month != month:
+            money_month = accounting_periods.month_start(txn.operation_date)
+            for touched, action in (
+                (previous_month, "снять расход с этого месяца"),
+                (month, "отнести расход в этот месяц"),
+                (money_month, "перенести расход из этого месяца"),
+            ):
+                if touched is None or touched < accounting_periods.ACCOUNTING_START:
+                    continue
+                await accounting_periods.assert_month_open(session, touched, action=action)
 
     # Аналитика по помещению — то же правило, что у разбора банк-операции.
     location_context: dict[int, LocationContext] = {}
@@ -508,6 +516,23 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     отдельно, поэтому здесь трогаем только выплаты ЭТОЙ строки.
     """
     ensure_cashflow_reclassifiable(txn)
+
+    # ИСКЛЮЧЕНИЕ ВЫНИМАЕТ РАСХОД ИЗ МЕСЯЦА, И ЭТОТ МЕСЯЦ МОЖЕТ БЫТЬ ЗАКРЫТ. Проверка качества
+    # стоит в разборе отчёта первой, раньше всех прочих, поэтому исключённая проводка исчезает
+    # из строки мгновенно — вместе с суммой закрытого периода. Замка здесь не было вовсе.
+    #
+    # Эффективный месяц расхода — размеченный, а без разметки месяц денег. Заодно снимаем само
+    # поле: исключение объявлено обратимым, и разметка, пережившая его, вернула бы расход в
+    # чужой месяц при повторном разборе — молча и спустя недели.
+    from app.services import accounting_periods
+
+    effective_month = accounting_periods.month_start(txn.expense_month or txn.operation_date)
+    if effective_month >= accounting_periods.ACCOUNTING_START:
+        await accounting_periods.assert_month_open(
+            session, effective_month, action="исключить проводку из этого месяца"
+        )
+    txn.expense_month = None
+
     await _clear_transfer_counter_leg(session, txn)
     from app.services.banking.classifier import cancel_payouts_of_excluded_transactions
 
