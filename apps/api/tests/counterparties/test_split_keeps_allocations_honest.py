@@ -34,8 +34,8 @@ from app.models import (
     InvoicePaymentAllocation,
     PnlArticleRule,
     PnlCashOrigin,
+    SupplierExpenseAccrual,
 )
-from app.services.banking.cashflow_classify import CashflowSplitLine, apply_cashflow_split
 from app.services.pnl.sources import cashflow as cash_source
 from app.services.pnl.types import Verdict
 from cp_helpers import make_counterparty, make_invoice, make_wallet
@@ -82,10 +82,15 @@ def _manual_payment(wallet_id, article_id, amount: str, **extra) -> CashflowTran
 
 
 @pytest.mark.asyncio
-async def test_split_below_allocated_amount_is_rejected(
+async def test_split_of_fully_spent_payment_does_not_double_the_expense(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Первая доля меньше уже оплаченного документами — отказ, а не тихое задвоение."""
+    """Платёж целиком ушёл на документ — обе доли остаются потраченными, а не расходом.
+
+    Разбить платёж по статьям для аналитики законно, и запрещать это нельзя. Но доля-новичок
+    выглядит свободными деньгами, хотя тех же денег давно нет: без наследования оплаченности
+    8 000 ₽ легли бы расходом второй раз, поверх начисления по накладной.
+    """
     async with async_session_factory() as session:
         counterparty = await make_counterparty(session, name="Поставщик-сплит", inn="6155034001")
         article = await _article(
@@ -101,41 +106,66 @@ async def test_split_below_allocated_amount_is_rejected(
             payment_status="paid",
             invoice_date=date(2026, 7, 8),
         )
-        txn = _manual_payment(wallet.id, article.id, "80455.00", counterparty_id=counterparty.id)
-        session.add(txn)
+        session.add(
+            SupplierExpenseAccrual(
+                counterparty_id=counterparty.id,
+                invoice_id=invoice.id,
+                article_id=article.id,
+                amount=Decimal("80455.00"),
+                status="recognized",
+                service_period_start=date(2026, 7, 1),
+                service_period_end=date(2026, 7, 31),
+                recognition_month=date(2026, 7, 1),
+            )
+        )
+        parent = _manual_payment(
+            wallet.id, article.id, "80455.00", counterparty_id=counterparty.id
+        )
+        session.add(parent)
         await session.flush()
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
                 source_kind="cash",
-                cashflow_transaction_id=txn.id,
+                cashflow_transaction_id=parent.id,
                 amount=Decimal("80455.00"),
             )
         )
+        await session.flush()
+
+        # Разбор: первая доля мутирует родителя и его аллокации сохраняет, вторая — чистая.
+        child = _manual_payment(
+            wallet.id,
+            article.id,
+            "8000.00",
+            counterparty_id=counterparty.id,
+            source_kind="manual_split",
+        )
+        child.source_id = parent.id
+        parent.amount = Decimal("72455.00")
+        session.add(child)
         await session.commit()
 
-        with pytest.raises(ValueError, match="уже разложен по документам"):
-            await apply_cashflow_split(
-                session,
-                txn,
-                splits=[
-                    CashflowSplitLine(article_id=article.id, amount=Decimal("72455.00")),
-                    CashflowSplitLine(article_id=article.id, amount=Decimal("8000.00")),
-                ],
-                counterparty_id=counterparty.id,
-            )
+        layer = await cash_source.build_cash_layer(session, *JULY)
+
+        assert layer.by_verdict[Verdict.EXCLUDED_ACCRUAL_SETTLEMENT.value] == Decimal(
+            "80455.00"
+        ), "доля разбора легла расходом поверх уже признанного документа"
+        assert layer.buckets.get("shop_maintenance", cash_source.CashBucket()).amount == Decimal(
+            "0.00"
+        )
 
 
 @pytest.mark.asyncio
-async def test_split_above_allocated_amount_is_allowed(
+async def test_partially_spent_payment_keeps_its_free_part(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Аллокации помещаются в первую долю — разбор законен, документ остаётся оплаченным."""
+    """Аллокаций меньше суммы платежа — свободная часть остаётся расходом, а не пропадает."""
     async with async_session_factory() as session:
-        counterparty = await make_counterparty(session, name="Поставщик-сплит-ок", inn="6155034002")
-        article = await _article(
-            session, code="test_split_alloc_ok", line_code="shop_maintenance"
+        counterparty = await make_counterparty(
+            session, name="Поставщик-частично", inn="6155034002"
         )
+        article = await _article(session, code="test_split_alloc_ok", line_code="shop_maintenance")
         wallet = await make_wallet(session, code="split-guard-w2", name="Банк")
         invoice = await make_invoice(
             session,
@@ -146,30 +176,40 @@ async def test_split_above_allocated_amount_is_allowed(
             payment_status="paid",
             invoice_date=date(2026, 7, 8),
         )
-        txn = _manual_payment(wallet.id, article.id, "10000.00", counterparty_id=counterparty.id)
-        session.add(txn)
+        # Начисление обязательно: «оплаченность» считается по документам, которые НЕСУТ
+        # расход. Без него родитель и сам не был бы settled, и тест проверял бы не то.
+        session.add(
+            SupplierExpenseAccrual(
+                counterparty_id=counterparty.id,
+                invoice_id=invoice.id,
+                article_id=article.id,
+                amount=Decimal("5000.00"),
+                status="recognized",
+                service_period_start=date(2026, 7, 1),
+                service_period_end=date(2026, 7, 31),
+                recognition_month=date(2026, 7, 1),
+            )
+        )
+        parent = _manual_payment(wallet.id, article.id, "6000.00")
+        session.add(parent)
         await session.flush()
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
                 source_kind="cash",
-                cashflow_transaction_id=txn.id,
+                cashflow_transaction_id=parent.id,
                 amount=Decimal("5000.00"),
             )
         )
+        child = _manual_payment(wallet.id, article.id, "4000.00", source_kind="manual_split")
+        child.source_id = parent.id
+        session.add(child)
         await session.commit()
 
-        created = await apply_cashflow_split(
-            session,
-            txn,
-            splits=[
-                CashflowSplitLine(article_id=article.id, amount=Decimal("6000.00")),
-                CashflowSplitLine(article_id=article.id, amount=Decimal("4000.00")),
-            ],
-            counterparty_id=counterparty.id,
-        )
-        await session.commit()
-        assert len(created) == 2
+        layer = await cash_source.build_cash_layer(session, *JULY)
+
+        # Родитель покрыт не полностью → доля наследования не получает и остаётся расходом.
+        assert layer.buckets["shop_maintenance"].amount == Decimal("4000.00")
 
 
 @pytest.mark.asyncio

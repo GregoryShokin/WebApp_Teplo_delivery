@@ -214,7 +214,40 @@ async def _settled_transactions(session: AsyncSession) -> set[uuid.UUID]:
             InvoicePaymentAllocation.cashflow_transaction_id.is_not(None),
         )
     )
-    return {row for row in rows.scalars() if row is not None}
+    settled = {row for row in rows.scalars() if row is not None}
+
+    # ДОЛИ РАЗБОРА НАСЛЕДУЮТ ОПЛАЧЕННОСТЬ ОТ РОДИТЕЛЯ, ИНАЧЕ РАСХОД УДВАИВАЕТСЯ. Первая доля
+    # мутирует исходную строку и её аллокации сохраняет, остальные рождаются чистыми — и
+    # выглядят свободными деньгами, хотя тех же денег давно нет: платёж 80 455 ₽, целиком
+    # ушедший на накладную и разнесённый на 72 455 + 8 000, дал бы 8 000 ₽ расходом второй
+    # раз, поверх начисления по документу.
+    #
+    # Наследуем только при ПОЛНОМ покрытии родителя: если аллокаций меньше его суммы, часть
+    # денег действительно свободна, и объявлять её потраченной значило бы потерять расход.
+    covered = await session.execute(
+        select(
+            InvoicePaymentAllocation.cashflow_transaction_id,
+            func.sum(InvoicePaymentAllocation.amount),
+        )
+        .where(InvoicePaymentAllocation.cashflow_transaction_id.is_not(None))
+        .group_by(InvoicePaymentAllocation.cashflow_transaction_id)
+    )
+    fully_spent = {parent_id: total for parent_id, total in covered}
+    if fully_spent:
+        child = aliased(CashflowTransaction)
+        parent = aliased(CashflowTransaction)
+        children = await session.execute(
+            select(child.id, parent.id, parent.amount)
+            .join(parent, parent.id == child.source_id)
+            .where(
+                child.source_kind == SPLIT_SOURCE_KIND,
+                parent.id.in_(fully_spent),
+            )
+        )
+        for child_id, parent_id, parent_amount in children:
+            if fully_spent[parent_id] >= (parent_amount or Decimal("0.00")):
+                settled.add(child_id)
+    return settled
 
 
 async def _ledger_known_transactions(session: AsyncSession) -> set[uuid.UUID]:
