@@ -193,8 +193,11 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
         session,
         month_start,
         month_end,
-        recognized_counterparties={
-            detail.counterparty_id
+        # Пара «контрагент × статья» — та же гранулярность, что у сверки непризнанного
+        # расхода. Статья в ``details`` уже разрешена через карточку контрагента, поэтому
+        # начисление без своей статьи щитом не теряется.
+        recognized_pairs={
+            (detail.counterparty_id, detail.article_id)
             for detail in recognition.details
             if detail.counterparty_id is not None
         },

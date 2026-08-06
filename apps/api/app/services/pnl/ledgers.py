@@ -1371,8 +1371,10 @@ async def build_recognition_ledger(session: AsyncSession, month: date) -> Recogn
         session,
         month_start,
         month_end,
-        recognized_counterparties={
-            detail.counterparty_id
+        # Пара «контрагент × статья», как и в проекторе: признанная аренда арендодателя не
+        # отвечает за то, приехал ли документ по его коммуналке.
+        recognized_pairs={
+            (detail.counterparty_id, detail.article_id)
             for detail in recognized.details
             if detail.counterparty_id is not None
         },

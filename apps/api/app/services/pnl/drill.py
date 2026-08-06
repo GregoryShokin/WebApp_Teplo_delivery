@@ -382,8 +382,10 @@ async def _waiting_group(
         session,
         month_start,
         month_end,
-        recognized_counterparties={
-            detail.counterparty_id
+        # Пара «контрагент × статья» — расшифровка обязана объяснять ровно то число, что
+        # стоит в отчёте, поэтому щит здесь тот же, что у проектора.
+        recognized_pairs={
+            (detail.counterparty_id, detail.article_id)
             for detail in recognition.details
             if detail.counterparty_id is not None
         },

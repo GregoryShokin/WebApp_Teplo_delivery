@@ -119,7 +119,15 @@ def month_share(
     # всплывать в каждом отчёте до скончания времён.
     if paid_on is None or not (month_start <= paid_on <= month_end):
         return None
-    # Месяц по этому контрагенту уже признан — догадка по дате платежа опровергнута.
+    # Месяц по этой УСЛУГЕ уже признан — догадка по дате платежа опровергнута.
+    #
+    # ЩИТ РАБОТАЕТ ПО ПАРЕ «КОНТРАГЕНТ × СТРОКА», А НЕ ПО КОНТРАГЕНТУ ЦЕЛИКОМ, и это та же
+    # ошибка, что жила в сверке непризнанного расхода. У арендодателя две разные услуги:
+    # аренда начисляется по договору сама, коммуналку приносят бумагой. Признанная аренда
+    # за июль 2026 глушила ожидание по коммуналке того же человека — 65 000 ₽ ушли 19.07,
+    # документа нет, а отчёт показывал строку со статусом «всё в порядке». Сверка в соседнем
+    # слое эти деньги тоже не видит: у платежа есть дебиторка, и он считается известным ДЗ/КЗ.
+    # То есть щит по контрагенту был последним, что отделяло владельца от молчаливой потери.
     if counterparty_recognized:
         return None
     return outstanding
@@ -224,14 +232,17 @@ async def build_waiting_layer(
     month_start: date,
     month_end: date,
     *,
-    recognized_counterparties: set[uuid.UUID] | None = None,
+    recognized_pairs: set[tuple[uuid.UUID, uuid.UUID | None]] | None = None,
 ) -> WaitingLayer:
     """Незакрытые обязательства, относящиеся к месяцу.
 
-    ``recognized_counterparties`` — у кого месяц уже закрыт признанием. Для них платёж без
-    периода ожиданием не считается: сколько бы ни ушло денег, строка от них не вырастет.
+    ``recognized_pairs`` — пары «контрагент × статья», чей месяц уже закрыт признанием. Для
+    них платёж без периода ожиданием не считается: сколько бы ни ушло денег, СВОЯ строка от
+    них не вырастет. Ключ — пара, а не контрагент: у арендодателя аренда начисляется по
+    договору сама, а коммуналку приносят бумагой, и признанная аренда не отвечает за то,
+    приехал ли документ по коммуналке.
     """
-    recognized_counterparties = recognized_counterparties or set()
+    recognized_pairs = recognized_pairs or set()
     default_articles = {
         counterparty_id: article_id
         for counterparty_id, article_id in (
@@ -280,7 +291,7 @@ async def build_waiting_layer(
             period_start=prepayment.service_period_start if period_known else None,
             period_end=prepayment.service_period_end if period_known else None,
             paid_on=paid_on,
-            counterparty_recognized=prepayment.counterparty_id in recognized_counterparties,
+            counterparty_recognized=(prepayment.counterparty_id, article_id) in recognized_pairs,
         )
         if amount is None:
             continue
