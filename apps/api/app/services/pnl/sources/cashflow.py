@@ -52,6 +52,8 @@ from app.models import (
     PnlArticleRule,
     PnlCashOrigin,
     SupplierExpenseAccrual,
+    SupplierInvoice,
+    SupplierPrepayment,
 )
 from app.services.pnl.types import Verdict
 
@@ -181,6 +183,45 @@ async def _settled_transactions(session: AsyncSession) -> set[uuid.UUID]:
     return {row for row in rows.scalars() if row is not None}
 
 
+async def _ledger_known_transactions(session: AsyncSession) -> set[uuid.UUID]:
+    """Проводки, чей след уже есть в ДЗ/КЗ, — их судьбу отслеживает контур предоплат.
+
+    Предупреждение «оплачено, но расход не признан» существует для денег, о которых ДЗ/КЗ
+    НЕ ЗНАЕТ: платёж исключён «под документ», а никакого носителя будущего расхода нет.
+    Первая версия сверяла кассу только с признанием ТЕКУЩЕГО месяца и кричала на здоровых
+    данных июля 2026 все 134 000 ₽: предоплату августа (О.О 68 000), закрытую предоплату
+    прошлых месяцев (Наумченко 9 000 за апрель–июнь), предоплату без периода с уже
+    запланированным начислением (Виталий 50 000) и депозит Манго, который уже показан
+    строкой «ждём документ». Владелец назвал все четыре с первого взгляда.
+
+    След бывает двумя путями, и оба нужны:
+
+    * предоплата правила 1 привязана к проводке напрямую (``cashflow_transaction_id``);
+    * оплата счёта: аллокация платежа на документ ``doc_kind='bill'``. ДЗ по оплаченному
+      счёту (``kind='prepaid_bill'``) держит ``cashflow_transaction_id=None`` ПО ЗАМЫСЛУ —
+      деньги несёт аллокация, — поэтому по прямой ссылке такой платёж не найти никогда.
+
+    Незакрытость этих предоплат — забота слоя ожиданий: он относит остаток к месяцу ПЕРИОДА
+    услуги, а не к месяцу денег, и не дублирует сигнал.
+    """
+    prepaid = await session.execute(
+        select(SupplierPrepayment.cashflow_transaction_id).where(
+            SupplierPrepayment.cashflow_transaction_id.is_not(None)
+        )
+    )
+    billed = await session.execute(
+        select(InvoicePaymentAllocation.cashflow_transaction_id)
+        .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+        .where(
+            SupplierInvoice.doc_kind == "bill",
+            InvoicePaymentAllocation.cashflow_transaction_id.is_not(None),
+        )
+    )
+    return {row for row in prepaid.scalars() if row is not None} | {
+        row for row in billed.scalars() if row is not None
+    }
+
+
 @dataclass(slots=True)
 class CashContext:
     """Подготовленные справочники разбора. Один и тот же набор — у отчёта и у расшифровки.
@@ -196,6 +237,9 @@ class CashContext:
     recognized: dict[tuple[uuid.UUID, uuid.UUID | None], Decimal]
     settled: set[uuid.UUID]
     recognized_articles: set[uuid.UUID | None]
+    #: Проводки со следом в ДЗ/КЗ (предоплата или оплата счёта) — не повод для тревоги
+    #: «расход не признан»: носитель будущего расхода существует, его ведёт слой ожиданий.
+    ledger_known: set[uuid.UUID] = field(default_factory=set)
 
 
 async def build_context(session: AsyncSession, month_start: date, month_end: date) -> CashContext:
@@ -211,12 +255,14 @@ async def build_context(session: AsyncSession, month_start: date, month_end: dat
     }
     circuit, recognized = await _recognition_circuit(session, month_start, month_end)
     settled = await _settled_transactions(session)
+    ledger_known = await _ledger_known_transactions(session)
     return CashContext(
         rules=rules,
         origins=origins,
         circuit=circuit,
         recognized=recognized,
         settled=settled,
+        ledger_known=ledger_known,
         # Статьи, по которым за месяц есть хоть одно признание. Нужны для проводок БЕЗ
         # контрагента: у коммуналки за июль 2026 таких четыре на 106 281 ₽, и сопоставить их
         # с начислением по контрагенту невозможно. Оставить их в расходе значит задвоить
@@ -313,10 +359,13 @@ async def build_cash_layer(
                 verdict is Verdict.EXCLUDED_ACCRUAL_COUNTERPARTY
                 and tx.counterparty_id is not None
                 and tx.direction == "out"
+                and tx.id not in context.ledger_known
             ):
                 # Копим обещание: эти деньги ушли, но расходом здесь не считаются — их
                 # обязано заменить начисление. Сверку обещания с фактом делает проектор:
                 # тут ещё не видно, сколько признано по контрагенту в ДРУГИХ строках.
+                # Проводки со следом в ДЗ/КЗ (``ledger_known``) сюда не попадают: их
+                # будущий расход уже имеет носителя — предоплату или оплаченный счёт.
                 layer.excluded_for_accrual[tx.counterparty_id] += amount
                 if line_code is not None:
                     layer.excluded_for_accrual_lines[tx.counterparty_id].add(line_code)
