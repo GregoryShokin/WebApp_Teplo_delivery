@@ -213,6 +213,118 @@ async def test_partially_spent_payment_keeps_its_free_part(
 
 
 @pytest.mark.asyncio
+async def test_coverage_is_measured_against_the_original_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Покрытие меряется от ИСХОДНОЙ суммы платежа, а не от усохшего остатка родителя.
+
+    Первая доля мутирует родителя, и его сумма падает. Сравнение с ней объявляло потраченным
+    почти любой разобранный платёж: покрытый документами на 50 000 из 80 455 и разнесённый на
+    10 000 + 70 455 отдавал бы «оплачено» все 70 455 при реально свободных 30 455.
+    """
+    async with async_session_factory() as session:
+        counterparty = await make_counterparty(session, name="Частичное-покрытие", inn="6155034003")
+        article = await _article(
+            session, code="test_split_partial_cover", line_code="shop_maintenance"
+        )
+        wallet = await make_wallet(session, code="split-guard-w4", name="Банк")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=counterparty.id,
+            amount="50000.00",
+            doc_kind="closing",
+            number="УПД-802",
+            payment_status="paid",
+            invoice_date=date(2026, 7, 8),
+        )
+        session.add(
+            SupplierExpenseAccrual(
+                counterparty_id=counterparty.id,
+                invoice_id=invoice.id,
+                article_id=article.id,
+                amount=Decimal("50000.00"),
+                status="recognized",
+                service_period_start=date(2026, 7, 1),
+                service_period_end=date(2026, 7, 31),
+                recognition_month=date(2026, 7, 1),
+            )
+        )
+        parent = _manual_payment(wallet.id, article.id, "80455.00")
+        session.add(parent)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=parent.id,
+                amount=Decimal("50000.00"),
+            )
+        )
+        # Разбор 10 000 + 70 455: родитель усыхает до 10 000, доля рождается на 70 455.
+        child = _manual_payment(wallet.id, article.id, "70455.00", source_kind="manual_split")
+        child.source_id = parent.id
+        parent.amount = Decimal("10000.00")
+        session.add(child)
+        await session.commit()
+
+        layer = await cash_source.build_cash_layer(session, *JULY)
+
+        # Покрыто 50 000 из 80 455 — свободные 30 455 обязаны остаться расходом.
+        # Наследования нет: доля 70 455 идёт в строку целиком, родитель 10 000 закрыт
+        # документом. Итог строки — 70 455, а не ноль.
+        assert layer.buckets["shop_maintenance"].amount == Decimal("70455.00")
+
+
+@pytest.mark.asyncio
+async def test_documents_without_accrual_do_not_count_as_coverage(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплата складской накладной расхода ОПиУ не несёт и покрытием не считается.
+
+    Товар приходит фудкостом из iiko, поэтому такая аллокация в отчёте ничего не закрывает.
+    На данных прода 93 привязки из 95 — именно такие: засчитывая их, доля теряла расход молча.
+    """
+    async with async_session_factory() as session:
+        counterparty = await make_counterparty(session, name="Склад-накладная", inn="6155034004")
+        article = await _article(
+            session, code="test_split_no_accrual", line_code="shop_maintenance"
+        )
+        wallet = await make_wallet(session, code="split-guard-w5", name="Банк")
+        # Накладная БЕЗ начисления — её расход придёт фудкостом, а не через ДЗ/КЗ.
+        invoice = await make_invoice(
+            session,
+            counterparty_id=counterparty.id,
+            amount="10000.00",
+            doc_kind="closing",
+            number="НАКЛ-900",
+            payment_status="paid",
+            operational_scope="warehouse",
+            invoice_date=date(2026, 7, 8),
+        )
+        parent = _manual_payment(wallet.id, article.id, "10000.00")
+        session.add(parent)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=parent.id,
+                amount=Decimal("10000.00"),
+            )
+        )
+        child = _manual_payment(wallet.id, article.id, "4000.00", source_kind="manual_split")
+        child.source_id = parent.id
+        parent.amount = Decimal("6000.00")
+        session.add(child)
+        await session.commit()
+
+        layer = await cash_source.build_cash_layer(session, *JULY)
+
+        # Ни родитель, ни доля не считаются оплаченными «под документ»: начисления нет вовсе.
+        assert layer.buckets["shop_maintenance"].amount == Decimal("10000.00")
+
+
+@pytest.mark.asyncio
 async def test_split_stays_inside_its_owner_layer(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

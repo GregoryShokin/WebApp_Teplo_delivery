@@ -222,31 +222,59 @@ async def _settled_transactions(session: AsyncSession) -> set[uuid.UUID]:
     # ушедший на накладную и разнесённый на 72 455 + 8 000, дал бы 8 000 ₽ расходом второй
     # раз, поверх начисления по документу.
     #
-    # Наследуем только при ПОЛНОМ покрытии родителя: если аллокаций меньше его суммы, часть
-    # денег действительно свободна, и объявлять её потраченной значило бы потерять расход.
+    # ДВЕ МЕРКИ, И ОБЕ БЫЛИ ВЗЯТЫ НЕВЕРНО — проверка перед выкаткой 06.08.2026 нашла обе.
+    #
+    # 1. СРАВНИВАТЬ НАДО С ИСХОДНОЙ СУММОЙ ПЛАТЕЖА, а не с остатком родителя после разбора.
+    #    Первая доля мутирует родителя, и его ``amount`` усыхает — при сравнении с ним почти
+    #    любой платёж выглядел «покрытым целиком». Платёж 80 455 ₽, покрытый документами лишь
+    #    на 50 000 и разнесённый на 10 000 + 70 455, объявлял бы потраченными все 70 455,
+    #    хотя свободны 30 455. Исходная сумма = остаток родителя + сумма всех его долей.
+    #
+    # 2. СЧИТАТЬ ПОКРЫТИЕ НАДО ТОЛЬКО ПО ДОКУМЕНТАМ С НАЧИСЛЕНИЕМ. Оплата складской накладной
+    #    расхода ОПиУ не несёт вовсе (товар приходит фудкостом из iiko), но раньше засчитывалась
+    #    в покрытие наравне с остальными: из 95 привязок на данных прода 93 такие. Доля,
+    #    «погашенная» ими, теряла расход молча — ровно то занижение, от которого модуль ушёл.
     covered = await session.execute(
         select(
             InvoicePaymentAllocation.cashflow_transaction_id,
             func.sum(InvoicePaymentAllocation.amount),
         )
-        .where(InvoicePaymentAllocation.cashflow_transaction_id.is_not(None))
+        .join(
+            SupplierExpenseAccrual,
+            SupplierExpenseAccrual.invoice_id == InvoicePaymentAllocation.invoice_id,
+        )
+        .where(
+            SupplierExpenseAccrual.status.in_(("recognized", "scheduled")),
+            InvoicePaymentAllocation.cashflow_transaction_id.is_not(None),
+        )
         .group_by(InvoicePaymentAllocation.cashflow_transaction_id)
     )
-    fully_spent = {parent_id: total for parent_id, total in covered}
-    if fully_spent:
-        child = aliased(CashflowTransaction)
-        parent = aliased(CashflowTransaction)
-        children = await session.execute(
-            select(child.id, parent.id, parent.amount)
-            .join(parent, parent.id == child.source_id)
-            .where(
-                child.source_kind == SPLIT_SOURCE_KIND,
-                parent.id.in_(fully_spent),
-            )
+    covered_by_accrual = {parent_id: total or Decimal("0.00") for parent_id, total in covered}
+    if not covered_by_accrual:
+        return settled
+
+    child = aliased(CashflowTransaction)
+    parent = aliased(CashflowTransaction)
+    rows = await session.execute(
+        select(child.id, child.amount, parent.id, parent.amount)
+        .join(parent, parent.id == child.source_id)
+        .where(
+            child.source_kind == SPLIT_SOURCE_KIND,
+            parent.id.in_(covered_by_accrual),
         )
-        for child_id, parent_id, parent_amount in children:
-            if fully_spent[parent_id] >= (parent_amount or Decimal("0.00")):
-                settled.add(child_id)
+    )
+    children_of: dict[uuid.UUID, list[tuple[uuid.UUID, Decimal]]] = defaultdict(list)
+    parent_amount: dict[uuid.UUID, Decimal] = {}
+    for child_id, child_amount, parent_id, amount in rows:
+        children_of[parent_id].append((child_id, child_amount or Decimal("0.00")))
+        parent_amount[parent_id] = amount or Decimal("0.00")
+
+    for parent_id, children in children_of.items():
+        original = parent_amount[parent_id] + sum(
+            (amount for _child_id, amount in children), Decimal("0.00")
+        )
+        if covered_by_accrual[parent_id] >= original:
+            settled.update(child_id for child_id, _amount in children)
     return settled
 
 
