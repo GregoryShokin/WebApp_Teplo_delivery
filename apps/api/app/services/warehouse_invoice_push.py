@@ -31,6 +31,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
+from decimal import ROUND_HALF_UP, Decimal
 
 import anyio
 from sqlalchemy import or_, select
@@ -76,6 +77,10 @@ IIKO_SOURCE = "iiko"
 # (2/5/10/20/40 ≈ 77 с): пуш интерактивный — пользователь ждёт ответа на «Отправить в iiko».
 _RATE_LIMIT_RETRY_DELAYS = (1.0, 3.0, 7.0)
 _RATE_LIMIT_MESSAGE = "iiko ограничил частоту запросов (429) — попробуйте отправить ещё раз"
+
+# Предел точности цены, восстановленной из суммы строки (см. _price_for_iiko). Шести знаков
+# хватает с запасом: реальные строки сходятся на трёх.
+_IIKO_PRICE_MAX_SCALE = 6
 
 
 def _is_rate_limited(status: int, response: dict | list | None) -> bool:
@@ -155,6 +160,42 @@ async def _store_guid(session: AsyncSession, invoice: SupplierInvoice) -> str | 
     return str(value) if value else None
 
 
+def _cents(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _price_for_iiko(
+    quantity: Decimal | None, price: Decimal, line_sum: Decimal | None
+) -> Decimal:
+    """Цена строки для документа iiko — такая, при которой ``sum == price * amount`` сходится.
+
+    Эталон строки у нас — СУММА, как её ввёл кассир (см. project_invoice_line_sum_rounding), а
+    цена хранится 2-знаковой (``InvoiceLineItem.price`` = ``Numeric(14,2)``) и потому справочна:
+    при вводе через сумму ``сумма ÷ кол-во`` в целые копейки не делится (2,9 кг за 840 ₽ →
+    289,655172… → 289,66), и ``кол-во × цена`` расходится с суммой на копейку. Такую строку iiko
+    не принимает вовсе — «sum must be equal to price * amount in item», причём отвергается ВЕСЬ
+    документ (прод 06.08.2026, накладная №515256, строка «Шампиньоны»).
+
+    Поэтому в iiko уходит цена, восстановленная из эталонной суммы: сумма документа совпадает с
+    нашей копейка в копейку, а в базе цена остаётся прежней (расхождение «кол-во × цена ≠ сумма»
+    в карточке — сознательная плата за 2-знаковую цену, решение владельца от 16.07.2026).
+    Знаков берём МИНИМУМ из достаточных: чем короче дробь, тем меньше риск, что iiko округлит
+    цену у себя и вернёт ту же ошибку. Строки, где цена и так сходится с суммой (подавляющее
+    большинство), уходят нетронутыми.
+    """
+    if line_sum is None or quantity is None or quantity <= 0:
+        return price
+    if _cents(quantity * price) == _cents(line_sum):
+        return price
+    exact = Decimal(line_sum) / Decimal(quantity)
+    for scale in range(2, _IIKO_PRICE_MAX_SCALE + 1):
+        candidate = exact.quantize(Decimal(1).scaleb(-scale), rounding=ROUND_HALF_UP)
+        if _cents(candidate * quantity) == _cents(line_sum):
+            return candidate
+    # Не сошлось и на шести знаках — шлём максимально точную цену: ближе к сумме не подобрать.
+    return exact.quantize(Decimal(1).scaleb(-_IIKO_PRICE_MAX_SCALE), rounding=ROUND_HALF_UP)
+
+
 async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> PreparedPush:
     """Резолвинг GUID + сборка ``CloudInvoiceDoc``, либо причина пропуска. Сеть не трогает.
 
@@ -206,13 +247,20 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
     for index, line in enumerate(rows, start=1):
         if not line.product_guid:
             continue
+        # Цена в документ идёт не из базы, а восстановленная из эталонной суммы строки: иначе
+        # iiko отвергает ВЕСЬ документ на копеечном расхождении (см. _price_for_iiko).
+        push_price = (
+            _price_for_iiko(line.quantity, line.price, line.sum)
+            if line.price is not None
+            else None
+        )
         lines.append(
             CloudInvoiceLine(
                 num=index,
                 product=line.product_guid,
                 store=store_guid,
                 amount=float(line.quantity),
-                price=float(line.price) if line.price is not None else None,
+                price=float(push_price) if push_price is not None else None,
                 sum=float(line.sum) if line.sum is not None else None,
                 amount_unit=unit_by_product.get(line.iiko_product_id),
                 vat_percent=float(line.vat_percent) if line.vat_percent is not None else None,
