@@ -76,6 +76,22 @@ DEDICATED_MONEY_SOURCE_KINDS = frozenset(
     }
 )
 
+#: Исключение из защиты выше: наличная выплата УСЛУГОВОМУ контрагенту. Его расход закрывается
+#: признанием, а не платежом, поэтому деньги вперёд — дебиторка по построению, и адресовать их
+#: некуда: накладных у него не бывает. Без этого исключения выдача из Сейфа не оставляла следа
+#: в расчётах вовсе — 08.07.2026 так потерялись 9 879 ₽ «За воду» Станиславу Юрьевичу, а
+#: пришедшая позже платёжка закрылась чужим авансом, арендой за август.
+#:
+#: ГЕЙТ ЖИВЁТ ЗДЕСЬ, А НЕ В КОНТУРЕ ВЫПЛАТЫ, И ЭТО ГЛАВНОЕ. Через эту же функцию проходят ВСЕ
+#: двери: создание дебиторки, пересборка при смене контрагента, снятие при исключении проводки,
+#: разбор платежа по статьям. Страховка, поставленная только на выплату, заводила долг, который
+#: потом не снимала ни одна из них, — фантом на 175 224,75 ₽ в проверке 06.08.2026.
+#:
+#: Статьи, у которых деньгами распорядились АДРЕСНО, исключение не получают: аванс поставщику
+#: заводит свою целевую предоплату (``kind='goods'``), а закуп через черновик гасит накладные
+#: неофициала. Вторая дебиторка на тот же платёж — это двойной долг.
+SERVICE_CASH_EXCLUDED_ARTICLE_CODES = frozenset({"advance_to_supplier"})
+
 # Целевые авансы под конкретную поставку (kind='goods') гасятся ЯВНО — когда придёт накладная
 # именно этой поставки (settle_invoice_from_prepayment). Их НЕЛЬЗЯ авто-гасить FIFO любой
 # приходящей накладной: иначе аванс под недопоставленный заказ молча «съест» посторонний
@@ -1211,6 +1227,61 @@ async def ensure_prepayment_from_bank_transaction(
     return existing
 
 
+async def _service_cash_needs_receivable(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> bool:
+    """Наличная выплата услуговому контрагенту, которой некуда адресоваться, — она дебиторка.
+
+    Три условия, и каждое отсекает свой способ ошибиться:
+
+    * есть контрагент и у него размечен ``service_billing_mode`` — расход закрывается
+      признанием, накладных не бывает, значит деньги вперёд некуда деть, кроме дебиторки;
+    * статья не из ``SERVICE_CASH_EXCLUDED_ARTICLE_CODES`` — аванс поставщику заводит свою
+      целевую предоплату, и вторая была бы двойным долгом;
+    * платёж не занят чужой адресной привязкой — ни аллокации на документ, ни закупа через
+      черновик неофициала. Такими деньгами уже распорядились, и трогать их правило 1 не вправе.
+    """
+    if transaction.counterparty_id is None or transaction.direction != "out":
+        return False
+
+    billing_mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == transaction.counterparty_id
+        )
+    )
+    if billing_mode is None:
+        return False
+
+    if transaction.article_id is not None:
+        article_code = await session.scalar(
+            select(DdsArticle.code).where(DdsArticle.id == transaction.article_id)
+        )
+        if article_code in SERVICE_CASH_EXCLUDED_ARTICLE_CODES:
+            return False
+
+    allocated = await session.scalar(
+        select(func.count(InvoicePaymentAllocation.id)).where(
+            InvoicePaymentAllocation.cashflow_transaction_id == transaction.id
+        )
+    )
+    if allocated:
+        return False
+
+    # Закуп у неофициала через черновик: выплата гасит его накладные, деньги адресны.
+    if transaction.source_id is not None:
+        from app.models import SafeAllocation
+
+        draft_backed = await session.scalar(
+            select(SafeAllocation.source_draft_id).where(
+                SafeAllocation.id == transaction.source_id,
+                SafeAllocation.source_draft_id.is_not(None),
+            )
+        )
+        if draft_backed is not None:
+            return False
+    return True
+
+
 async def manual_payment_money_is_free(
     session: AsyncSession,
     transaction: CashflowTransaction,
@@ -1225,9 +1296,13 @@ async def manual_payment_money_is_free(
     ``sync_manual_payment_receivable``.
     """
     origin = origin_source_kind or transaction.source_kind
-    if origin in SELF_SETTLING_SOURCE_KINDS or origin in DEDICATED_MONEY_SOURCE_KINDS:
-        return False
     if transaction.source_kind in SELF_SETTLING_SOURCE_KINDS:
+        return False
+    if origin in SELF_SETTLING_SOURCE_KINDS:
+        return False
+    if origin in DEDICATED_MONEY_SOURCE_KINDS and not await _service_cash_needs_receivable(
+        session, transaction
+    ):
         return False
 
     own_kind = await session.scalar(

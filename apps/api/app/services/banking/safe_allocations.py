@@ -308,35 +308,15 @@ async def pay_allocation(
             created_by_user_id=created_by_user_id,
         )
 
-    # СТРАХОВКА: наличная выплата УСЛУГОВОМУ контрагенту обязана оставить след в ДЗ/КЗ, даже
-    # когда ни один адресный механизм её не подхватил. Между ветками выше есть щель, и деньги
-    # в неё проваливаются молча: 08.07.2026 из Сейфа ушло 9 879 ₽ «За воду» Станиславу
-    # Юрьевичу, но лицевой счёт «Вода» завели 03.08 — позже платежа. Коммунальная ветка не
-    # нашла потока, вышла ни с чем, и деньги остались вне расчётов вовсе. Дальше пришедшая
-    # платёжка закрылась чужим авансом — АРЕНДОЙ за август, — и 31.08 закрывающий по аренде
-    # выставил бы к оплате 9 654,25 ₽ за уже оплаченный месяц.
-    #
-    # Гейт — ``service_billing_mode``: расход такого контрагента закрывается признанием, а не
-    # платежом, значит деньги вперёд это дебиторка по построению. У поставщика ТОВАРА режим
-    # пуст, его платёж закрывает накладную, и правилу 1 здесь делать нечего.
-    if (
-        allocation.lease_id is None
-        and allocation.counterparty_id is not None
-        and not utility_handled
-    ):
-        from app.models import CounterpartyPayableProfile
+    # Правило 1 канона для наличной выплаты УСЛУГОВОМУ контрагенту живёт не здесь, а в
+    # ``manual_payment_money_is_free``: гейт обязан быть один на все двери — создание,
+    # пересборку при смене контрагента, снятие при исключении, разбор по статьям. Страховка,
+    # поставленная только на выплату, заводила долг, который потом не снимала ни одна из них.
+    # Здесь остаётся лишь общий вызов правила 1 после адресных механизмов выше.
+    if allocation.lease_id is None and allocation.counterparty_id is not None and not utility_handled:
         from app.services.supplier_prepayments import sync_manual_payment_receivable
 
-        billing_mode = await session.scalar(
-            select(CounterpartyPayableProfile.service_billing_mode).where(
-                CounterpartyPayableProfile.counterparty_id == allocation.counterparty_id
-            )
-        )
-        if billing_mode is not None:
-            # ``money_is_free=True`` осознанно: адресные механизмы выше уже отработали и
-            # деньгами не распорядились — считать свободу заново значило бы упереться в гейт
-            # ``safe_payout``, который и создал эту щель.
-            await sync_manual_payment_receivable(session, leg, money_is_free=True)
+        await sync_manual_payment_receivable(session, leg)
 
     # Резерв предоплаты поставщику (статья «Авансы поставщикам» + контрагент):
     # выплата резерва — момент возникновения дебиторки, заводим SupplierPrepayment.
