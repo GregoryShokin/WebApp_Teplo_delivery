@@ -51,6 +51,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import (
     CashflowTransaction,
@@ -67,6 +68,10 @@ from app.services.pnl.types import Verdict
 
 #: Проводка, помеченная как исключённая при разборе выписки, не расход и не доход.
 EXCLUDED_QUALITY_STATUS = "excluded"
+
+#: Механизм доли разбора. Держим локально, а не импортом из ``banking.cashflow_classify``:
+#: тот тянет пол-банка, и отчёт получил бы кольцо импортов ради одной строки.
+SPLIT_SOURCE_KIND = "manual_split"
 
 
 @dataclass(slots=True)
@@ -251,6 +256,25 @@ async def _ledger_known_transactions(session: AsyncSession) -> set[uuid.UUID]:
     }
 
 
+async def _split_parent_kinds(session: AsyncSession) -> dict[uuid.UUID, str]:
+    """Механизм исходной проводки для каждой доли разбора.
+
+    Доля разбора несёт ``source_kind='manual_split'`` и ссылку на родителя в ``source_id``.
+    Принадлежность чужому слою (``pnl_cash_origin``) ключуется механизмом, поэтому доля своей
+    принадлежности лишена: аванс сотруднику, разложенный по статьям, вышел бы из зарплатного
+    контура и лёг в расход поверх начисления. Первая доля мутирует саму исходную строку и
+    механизм сохраняет — теряют его только остальные.
+    """
+    child = aliased(CashflowTransaction)
+    parent = aliased(CashflowTransaction)
+    rows = await session.execute(
+        select(child.id, parent.source_kind)
+        .join(parent, parent.id == child.source_id)
+        .where(child.source_kind == SPLIT_SOURCE_KIND)
+    )
+    return {child_id: parent_kind for child_id, parent_kind in rows if parent_kind}
+
+
 @dataclass(slots=True)
 class CashContext:
     """Подготовленные справочники разбора. Один и тот же набор — у отчёта и у расшифровки.
@@ -269,6 +293,12 @@ class CashContext:
     #: Проводки со следом в ДЗ/КЗ (предоплата или оплата счёта) — не повод для тревоги
     #: «расход не признан»: носитель будущего расхода существует, его ведёт слой ожиданий.
     ledger_known: set[uuid.UUID] = field(default_factory=set)
+    #: Механизм-РОДИТЕЛЬ доли разбора: ``id доли → source_kind исходной проводки``.
+    #: Принадлежность чужому слою (зарплата, депозит, аванс) ключуется механизмом, а доля
+    #: рождается с ``manual_split``, которого в справочнике нет никогда, — и выходит из-под
+    #: своего слоя в общий расход. Аванс 10 000 ₽, разнесённый на 6 000 + 4 000, дал бы 4 000
+    #: расходом поверх зарплатного начисления.
+    split_parent_kind: dict[uuid.UUID, str] = field(default_factory=dict)
 
 
 async def build_context(session: AsyncSession, month_start: date, month_end: date) -> CashContext:
@@ -285,6 +315,7 @@ async def build_context(session: AsyncSession, month_start: date, month_end: dat
     circuit, recognized = await _recognition_circuit(session, month_start, month_end)
     settled = await _settled_transactions(session)
     ledger_known = await _ledger_known_transactions(session)
+    split_parent_kind = await _split_parent_kinds(session)
     return CashContext(
         rules=rules,
         origins=origins,
@@ -292,6 +323,7 @@ async def build_context(session: AsyncSession, month_start: date, month_end: dat
         recognized=recognized,
         settled=settled,
         ledger_known=ledger_known,
+        split_parent_kind=split_parent_kind,
         # Статьи, по которым за месяц есть хоть одно признание. Касса без контрагента по
         # такой статье всё равно расход (владелец 06.08.2026: наличное электричество и
         # перевыставленная доля коммуналки — разные деньги по одной статье), но пересечение
@@ -358,7 +390,14 @@ async def build_cash_layer(
             layer.in_total += amount
 
         verdict, line_code = _classify(
-            tx, rules, origins, circuit, settled, month_start=month_start, month_end=month_end
+            tx,
+            rules,
+            origins,
+            circuit,
+            settled,
+            month_start=month_start,
+            month_end=month_end,
+            split_parent_kind=context.split_parent_kind,
         )
         layer.by_verdict[verdict.value] += amount
         layer.by_verdict_count[verdict.value] += 1
@@ -482,6 +521,7 @@ async def _apply_moved_in(
             context.settled,
             month_start=month_start,
             month_end=month_end,
+            split_parent_kind=context.split_parent_kind,
         )
         if verdict is not Verdict.INCLUDED or line_code is None or tx.counterparty_id is not None:
             continue
@@ -565,6 +605,7 @@ async def explain_line(
             context.settled,
             month_start=month_start,
             month_end=month_end,
+            split_parent_kind=context.split_parent_kind,
         )
         if code != line_code:
             continue
@@ -606,6 +647,7 @@ def _classify(
     *,
     month_start: date,
     month_end: date,
+    split_parent_kind: dict[uuid.UUID, str] | None = None,
 ) -> tuple[Verdict, str | None]:
     """Вердикт проводки. Ровно один исход — это и замыкает уравнение сходимости.
 
@@ -629,8 +671,13 @@ def _classify(
     # Исключение выдач ПАРОЙ «механизм + статья», а не механизмом: через выплату из Сейфа
     # идут и зарплата, и наличные траты администраторов на содержание точек и питание
     # персонала. Исключить механизм целиком — выбросить реальный операционный расход.
-    if tx.source_kind is not None and (
-        (tx.source_kind, tx.article_id) in origins or (tx.source_kind, None) in origins
+    #
+    # У доли разбора механизм свой (``manual_split``), и в справочнике его нет никогда —
+    # поэтому принадлежность слою берётся у РОДИТЕЛЯ. Без этого аванс сотруднику, разложенный
+    # по статьям, выходил бы из зарплатного контура и ложился в расход поверх начисления.
+    owner_kind = (split_parent_kind or {}).get(tx.id, tx.source_kind)
+    if owner_kind is not None and (
+        (owner_kind, tx.article_id) in origins or (owner_kind, None) in origins
     ):
         return Verdict.EXCLUDED_OWNED_BY_LAYER, rule.line_code
 

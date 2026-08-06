@@ -24,10 +24,17 @@ from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import CashflowTransaction, DdsArticle, EmployeePayout, TransferGroup, Wallet
+from app.models import (
+    CashflowTransaction,
+    DdsArticle,
+    EmployeePayout,
+    InvoicePaymentAllocation,
+    TransferGroup,
+    Wallet,
+)
 from app.services.asset_analytics import (
     AssetContext,
     AssetLinkError,
@@ -314,6 +321,30 @@ async def apply_cashflow_split(
     total = sum((line.amount for line in splits), Decimal("0"))
     if total != original_amount:
         raise ValueError(f"Сумма по статьям ({total}) не равна сумме проводки ({original_amount})")
+
+    # ОПЛАЧЕННЫЕ ДОКУМЕНТЫ ПЕРЕЖИВАЮТ РАЗБИЕНИЕ, А ДЕНЬГИ ПОД НИМИ — НЕТ. Первая доля мутирует
+    # исходную строку и наследует её аллокации целиком, остальные рождаются чистыми. Если
+    # первая доля меньше того, что уже разложено по документам, документ остаётся «оплаченным»
+    # суммой, которой в проводке больше нет: платёж 80 455 ₽, разнесённый на 72 455 + 8 000,
+    # оставлял накладную закрытой на все 80 455, а высвободившиеся 8 000 второй раз уходили в
+    # расход кассой. Задвоение тихое — сходятся и баланс, и сумма долей.
+    #
+    # Распределить аллокации между долями автоматически нельзя: какая доля какой документ
+    # оплачивает, знает только человек. Поэтому отказ с указанием, что развязать вручную.
+    allocated_total = Decimal(
+        await session.scalar(
+            select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+                InvoicePaymentAllocation.cashflow_transaction_id == txn.id
+            )
+        )
+        or 0
+    )
+    if allocated_total > splits[0].amount:
+        raise ValueError(
+            f"Платёж уже разложен по документам на {allocated_total} ₽, а первая статья "
+            f"разбора — только на {splits[0].amount} ₽. Сначала отвяжите оплату от документов "
+            "или отдайте первой статье не меньше уже оплаченного"
+        )
 
     out_article, in_article = await _transfer_article_ids(session)
     transfer_article_ids = {a for a in (out_article, in_article) if a is not None}
