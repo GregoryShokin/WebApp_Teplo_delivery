@@ -95,12 +95,40 @@ async def _orphan_payments(session: AsyncSession) -> list[tuple[CashflowTransact
     return orphans
 
 
+async def _own_prepayment(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> SupplierPrepayment | None:
+    """Свободная дебиторка, предназначенная ИМЕННО этому документу.
+
+    Пара «счёт + закрывающий» рождается из одной бумаги, и оплата счёта заводит по канону
+    дебиторку ``kind='prepaid_bill'``, привязанную к счёту. Она и есть законный источник
+    гашения закрывающего — вместо чужого аванса, взятого лишь потому, что своих денег в тот
+    момент ещё не было.
+    """
+    twin_ids = select(SupplierInvoice.id).where(
+        SupplierInvoice.counterparty_id == invoice.counterparty_id,
+        SupplierInvoice.number == invoice.number,
+        SupplierInvoice.source == invoice.source,
+    )
+    return await session.scalar(
+        select(SupplierPrepayment)
+        .where(
+            SupplierPrepayment.bill_invoice_id.in_(twin_ids),
+            SupplierPrepayment.status.in_(("open", "partially_settled")),
+            SupplierPrepayment.amount > SupplierPrepayment.amount_settled,
+        )
+        .limit(1)
+    )
+
+
 async def _foreign_settlements(session: AsyncSession) -> list[dict]:
     """Зачёты, где документ закрыт авансом ЧУЖОГО назначения.
 
     Признак: статья аванса не совпадает со статьёй документа-получателя. Так вода закрылась
-    арендными деньгами. Откатываем только те, чей плательщик найдётся среди «сирот» — иначе
-    сняли бы зачёт, заменить который нечем.
+    арендными деньгами: адресный подбор выбирает аванс в момент прихода документа, и если
+    своих денег ещё нет, берёт любые свободные того же контрагента — назначение платежа он
+    не читает. Деньги при этом не двигаются, но арендный аванс худеет, и в свою дату аренда
+    выставляет к оплате то, что уже оплачено.
     """
     rows = (
         await session.execute(
@@ -197,6 +225,8 @@ async def main(apply: bool) -> None:
 
         # Порядок значим: сперва отпускаем чужие деньги, потом заводим свои. Иначе новая
         # дебиторка не найдёт документа, который уже числится закрытым, и повиснет авансом.
+        from app.services.supplier_prepayments import settle_invoice_from_prepayment
+
         for item in foreign:
             allocation, prepayment = item["allocation"], item["prepayment"]
             prepayment.amount_settled = _money(prepayment.amount_settled) - _money(
@@ -212,6 +242,22 @@ async def main(apply: bool) -> None:
             from app.services import counterparty_matching
 
             await counterparty_matching._recompute_status(session, item["invoice"])
+
+            # Освободившийся документ закрываем ЕГО СОБСТВЕННОЙ дебиторкой, если она есть.
+            # Без этого шага ремонт только отпускал чужие деньги, а документ оставался
+            # неоплаченным — и следующий же прогон подбора занял бы их снова.
+            own = await _own_prepayment(session, item["invoice"])
+            if own is not None:
+                await settle_invoice_from_prepayment(
+                    session,
+                    invoice_id=item["invoice"].id,
+                    prepayment_id=own.id,
+                    amount=_money(allocation.amount),
+                )
+                print(
+                    f"  → «{item['invoice'].number}» закрыт своей дебиторкой "
+                    f"{_money(allocation.amount)} ₽"
+                )
 
         for txn, _name in orphans:
             await sync_manual_payment_receivable(session, txn, money_is_free=True)
