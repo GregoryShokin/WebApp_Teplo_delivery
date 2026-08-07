@@ -25,6 +25,28 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-balance — ветка `agent/balance-as-of-foundation`
+- worktree: `../Teplo-agent-balance`
+- compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
+- задача: фундамент модуля «Баланс» — научить контуры отдавать остаток НА ДАТУ (сегодня почти всё
+  считает «на сейчас») + гигиена данных до первого снимка. Сам модуль баланса в этой ветке НЕ строю.
+- трогает:
+  - деньги: `app/api/v1/routes/dds.py` (`_wallet_movement_deltas` уезжает в сервис с `as_of`),
+    новый `app/services/wallet_balances.py`, копии логики в `app/services/kassa/payouts.py` и
+    `app/services/payroll_payouts.py`
+  - ОС: `app/services/asset_balance.py` (фильтр «карточка существовала на дату»),
+    `app/api/v1/routes/fixed_assets.py` (чтение снимка для закрытых месяцев)
+  - люди: `app/api/v1/routes/accounting_suppliers.py` (staff-payable — исторический срез),
+    даты у транзакций депозита/накопительного фонда
+  - контрагенты: `app/services/counterparty_balance_as_of.py` (бартер, `receivable`, единый предикат)
+  - гигиена: `app/services/banking/classifier.py` (prebooked в `apply_operation_split`),
+    `app/services/counterparty_registry.py` (замок в `void_invoice`),
+    `app/scripts/writeoff_pre_accounting.py`
+- НЕ трогать другим: `_wallet_movement_deltas` и его вызовы, `asset_balance.balance_lines`,
+  `build_balance_as_of`, `apply_operation_split`
+- смежники, с кем сверяюсь: `agent/hourcap-*` (payroll_calculator.py — рядом с моим staff-payable)
+- статус: проектирование
+
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
 - compose: agent-c (web 5203 / api 8030 / pg 5462, БД `teplo`, тест `teplo_test_c`)
