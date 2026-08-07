@@ -45,7 +45,14 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - НЕ трогать другим: `_wallet_movement_deltas` и его вызовы, `asset_balance.balance_lines`,
   `build_balance_as_of`, `apply_operation_split`
 - смежники, с кем сверяюсь: `agent/hourcap-*` (payroll_calculator.py — рядом с моим staff-payable)
-- статус: проектирование
+- статус: ОС, деньги и гард prebooked сделаны (3 коммита, 2993 зелёных); в работе — люди на дату
+- **ВНИМАНИЕ соседям:** формула остатка кошелька уехала из `routes/dds.py` в
+  `services/wallet_balance_as_of.py`. Своих копий больше не заводить — их было четыре, и одна
+  успела разойтись по смыслу. Нужен остаток на дату — зовите `wallet_balance_as_of(session,
+  wallet, as_of=...)`, нужен итог — `build_money_balance_as_of`.
+- полный прогон гоняю на своём Postgres: контейнер `teplo-pg-balance`, порт **5512**,
+  `max_connections=800` + `fsync=off`. На общем `teplo-postgres` (5432) полный набор даёт
+  ~1100 фальшивых падений на исчерпании соединений и идёт 23 минуты вместо 12.
 
 ### agent-c — ветка `agent/c-couriers`
 - worktree: `../Teplo-agent-c`
