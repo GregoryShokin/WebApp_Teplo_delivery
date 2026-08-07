@@ -117,7 +117,9 @@ def test_summary_excludes_disposed_and_groups_by_category(
     headers = _admin(async_session_factory)
     _create(client, headers, name="Живая печь")
     sold = _create(client, headers, name="Проданная печь")
-    patched = client.patch(f"{BASE}/{sold['id']}", headers=headers, json={"status": "sold"})
+    # Через маршрут продажи, а не правкой статуса: правка не пишет движения, и без него баланс
+    # не знает месяца выбытия — объект исчезает разом из всех прошлых месяцев.
+    patched = client.post(f"{BASE}/{sold['id']}/sale", headers=headers, json={})
     assert patched.status_code == 200, patched.text
 
     summary = client.get(f"{BASE}/summary", headers=headers).json()
@@ -253,10 +255,7 @@ def test_options_hide_assets_that_can_no_longer_take_money(
     _create(client, headers, name="Живая печь")
     sold = _create(client, headers, name="Проданная печь")
     broken = _create(client, headers, name="Сломанная печь")
-    assert (
-        client.patch(f"{BASE}/{sold['id']}", headers=headers, json={"status": "sold"}).status_code
-        == 200
-    )
+    assert client.post(f"{BASE}/{sold['id']}/sale", headers=headers, json={}).status_code == 200
     assert (
         client.patch(
             f"{BASE}/{broken['id']}", headers=headers, json={"status": "not_working"}

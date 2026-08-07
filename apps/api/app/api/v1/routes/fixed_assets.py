@@ -33,7 +33,6 @@ from app.api.deps import (
 )
 from app.db.session import get_session
 from app.models import (
-    AssetBalanceSnapshot,
     AssetCategory,
     AssetConditionReport,
     DepreciationEntry,
@@ -240,6 +239,18 @@ class DisposalRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
     # Дата выбытия. По умолчанию сегодня; будущим числом списать нельзя.
     disposed_on: date | None = None
+
+
+class SaleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Дата продажи. По умолчанию сегодня; будущим числом продать нельзя.
+    sold_on: date | None = None
+    # Цена продажи — справочная: деньги приходят своим путём, через ДДС. Причина здесь не
+    # обязательна, в отличие от списания: «продали» — уже исчерпывающее объяснение, а вот
+    # «объект исчез» требует акта.
+    amount: Decimal | None = Field(default=None, ge=0)
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class FixedAssetDetailRead(FixedAssetRead):
@@ -928,6 +939,14 @@ async def get_reporting(
     месяца и помесячный ряд амортизации для строки «УчОС Амортизация».
 
     Без ``period_month`` берётся последний закрытый месяц: именно его цифры окончательны.
+    Следствие, важное для описи: 31 августа эта ручка без параметра отдаёт ИЮЛЬ — август
+    закроет ночная джоба только 1 сентября в 01:00. Снимок баланса на конец августа раньше
+    этого момента получить нельзя.
+
+    ЗА ЗАКРЫТЫЙ МЕСЯЦ ЧИСЛА ПРИХОДЯТ ИЗ СНИМКА, а не из живого пересчёта: месяц уже перенесён
+    в отчётность, и его цифра не должна меняться от сентябрьских правок. Если пересчёт со
+    снимком разошёлся, это видно в ``drift`` — расхождение показывается, а не подменяет
+    замороженное число. За незакрытый месяц идёт живой расчёт, и он не окончателен.
     """
     # Убыток от выбытия считаем ДО ветки «ни один месяц не закрыт»: он не зависит от закрытия
     # месяца. Списанный объект — уже расход, и молчать о нём, пока не прошло первое начисление
@@ -956,12 +975,7 @@ async def get_reporting(
         )
 
     period = service.month_start(period)
-    frozen = await session.scalar(
-        select(func.count())
-        .select_from(AssetBalanceSnapshot)
-        .where(AssetBalanceSnapshot.period_month == period)
-    )
-    lines = await asset_balance.balance_lines(session, as_of=period)
+    lines, frozen = await asset_balance.report_lines(session, period_month=period)
     drift = await asset_balance.compare_with_snapshot(session, period_month=period)
     series = await asset_balance.depreciation_series(session)
 
@@ -980,7 +994,7 @@ async def get_reporting(
         ],
         residual_total=sum((line.residual for line in lines), Decimal("0.00")),
         depreciation_total=sum((line.depreciation for line in lines), Decimal("0.00")),
-        is_frozen=bool(frozen),
+        is_frozen=frozen,
         drift=[
             LineDriftRead(
                 line_name=item.line_name,
@@ -1169,6 +1183,22 @@ async def update_asset(
                     f"отмените выбытие"
                 ),
             )
+
+    # ...и завести объект в выбытие правкой статуса тоже нельзя. Такой путь обходил СРАЗУ ТРИ
+    # защиты: строку движения (по ней баланс узнаёт МЕСЯЦ выбытия), проверку закрытого месяца
+    # и расчёт убытка. Без строки движения объект исчезал из ВСЕХ прошлых месяцев разом —
+    # включая замороженные и уже перенесённые в отчётность, — а его остаточная стоимость не
+    # попадала в строку ОПиУ «УчОС Убыток от выбытия» никогда: расход просто пропадал.
+    if new_status is not None and new_status in asset_disposal.GONE_STATUSES:
+        route = "sale" if new_status == "sold" else "disposal"
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Статус выбытия не ставится правкой карточки: используйте "
+                f"POST /fixed-assets/{{id}}/{route} — там указывается дата, проверяется "
+                f"закрытый месяц и пишется движение, по которому баланс узнаёт месяц выбытия"
+            ),
+        )
 
     for field, value in fields.items():
         setattr(asset, field, value)
@@ -1392,6 +1422,52 @@ async def dispose_asset_endpoint(
         previous_status=movement.previous_status,  # type: ignore[arg-type]
         # Замороженным месяц выбытия быть не может: списать в закрытый месяц контур не даёт.
         period_frozen=False,
+    )
+
+
+@router.post("/{asset_id}/sale", response_model=FixedAssetRead, dependencies=ASSETS_EDIT_ACCESS)
+async def sell_asset_endpoint(
+    asset_id: uuid.UUID,
+    payload: SaleRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> FixedAssetRead:
+    """Продать объект: он уходит из внеоборотных активов, убытка при этом нет.
+
+    Отличие от списания — в смысле, а не в оформлении. Списание признаёт расход: объекта нет,
+    его остаточная стоимость уходит в убыток. Продажа расхода не даёт — по методологии
+    владельца это перевод актива в деньги, и деньги придут своим путём, через ДДС.
+
+    Дата обязательна по существу, хоть и необязательна в запросе: по ней баланс узнаёт МЕСЯЦ,
+    с которого объекта в активах больше нет. Раньше продажа оформлялась правкой статуса в
+    карточке, без всякой даты, — и объект исчезал сразу из ВСЕХ прошлых месяцев, включая
+    закрытые и уже перенесённые в отчётность.
+    """
+    asset = await _asset_or_404(session, asset_id)
+    try:
+        await asset_disposal.sell_asset(
+            session,
+            asset=asset,
+            sold_on=payload.sold_on,
+            amount=payload.amount,
+            note=payload.note,
+            user_id=actor.user_id,
+        )
+    except service.FixedAssetError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    await session.commit()
+    await session.refresh(asset)
+
+    category = await session.get(AssetCategory, asset.category_id) if asset.category_id else None
+    location = await session.get(Location, asset.location_id) if asset.location_id else None
+    accrued = await service.accumulated_depreciation(session, asset.id)
+    return _payload(
+        asset,
+        category=category,
+        location_name=location.name if location else None,
+        accrued=accrued,
     )
 
 

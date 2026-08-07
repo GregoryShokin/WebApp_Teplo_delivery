@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -18,6 +18,7 @@ from app.services.asset_balance import (
     balance_lines,
     compare_with_snapshot,
     depreciation_series,
+    report_lines,
     snapshot_month,
 )
 from app.services.fixed_assets import accrue_depreciation, close_month, correct_depreciation
@@ -41,15 +42,21 @@ async def _asset(
     category: AssetCategory,
     cost: str,
     status: str = "in_use",
+    commissioned_on: date | None = date(2026, 1, 1),
+    valued_on: date | None = None,
+    created_at: datetime | None = None,
 ) -> FixedAsset:
     asset = FixedAsset(
         name=f"Объект {cost}",
         initial_cost=Decimal(cost),
         category_id=category.id,
-        commissioned_on=date(2026, 1, 1),
+        commissioned_on=commissioned_on,
+        valued_on=valued_on,
         status=status,
         valuation_basis="market",
     )
+    if created_at is not None:
+        asset.created_at = created_at
     session.add(asset)
     await session.flush()
     return asset
@@ -220,3 +227,153 @@ async def test_snapshot_drops_a_line_that_no_longer_exists(
 
         rows = (await session.scalars(select(AssetBalanceSnapshot))).all()
         assert [row.line_name for row in rows] == ["Тепловое оборудование"]
+
+
+async def test_asset_bought_later_does_not_stand_in_an_earlier_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Августовская покупка не должна расти в июльской строке — и растёт она ПОЛНОЙ стоимостью.
+
+    Выбытие в этом расчёте всегда учитывалось по своему месяцу, а появление — нет. Из-за этого
+    карточка, заведённая после снятия снимка, вставала во ВСЕ прошлые месяцы, причём без износа
+    (начислений за те месяцы у неё нет), то есть по первоначальной стоимости целиком.
+    """
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        await _asset(session, category=category, cost="100000.00", commissioned_on=date(2026, 7, 1))
+        await _asset(session, category=category, cost="30000.00", commissioned_on=date(2026, 8, 5))
+        await session.commit()
+
+        july = (await balance_lines(session, as_of=date(2026, 7, 31)))[0]
+        august = (await balance_lines(session, as_of=date(2026, 8, 31)))[0]
+
+        assert july.asset_count == 1
+        assert july.initial_cost == Decimal("100000.00")
+        assert august.asset_count == 2
+        assert august.initial_cost == Decimal("130000.00")
+
+
+async def test_asset_in_reserve_enters_the_balance_by_its_valuation_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Купленный в резерв объект — уже актив, хотя амортизация ещё не идёт.
+
+    ``commissioned_on`` у него пуст по методологии («куплен в резерв и не введён»), поэтому
+    появление считается по минимуму из непустых дат: по одному только вводу такой объект
+    выпал бы из баланса совсем.
+    """
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        await _asset(
+            session,
+            category=category,
+            cost="60000.00",
+            commissioned_on=None,
+            valued_on=date(2026, 3, 10),
+        )
+        await session.commit()
+
+        february = await balance_lines(session, as_of=date(2026, 2, 28))
+        march = await balance_lines(session, as_of=date(2026, 3, 31))
+
+        assert february == []
+        assert march[0].initial_cost == Decimal("60000.00")
+        # Не введён — износа нет, стоит по полной. Это правильно: актив есть, амортизации нет.
+        assert march[0].residual == Decimal("60000.00")
+        assert march[0].depreciation == Decimal("0.00")
+
+
+async def test_asset_without_dates_falls_back_to_the_moscow_day_of_its_creation(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Обе даты пусты — берём день создания карточки ПО МОСКВЕ, а не по UTC.
+
+    Карточка, заведённая 1 сентября в 00:30 МСК, в UTC ещё 31 августа. По UTC-дате она попала бы
+    в августовскую опись, которой не принадлежит: разница в три часа сдвигает месяц.
+    """
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        await _asset(
+            session,
+            category=category,
+            cost="15000.00",
+            commissioned_on=None,
+            valued_on=None,
+            created_at=datetime(2026, 8, 31, 21, 30, tzinfo=UTC),
+        )
+        await session.commit()
+
+        assert await balance_lines(session, as_of=date(2026, 8, 31)) == []
+        assert (await balance_lines(session, as_of=date(2026, 9, 30)))[0].asset_count == 1
+
+
+async def test_report_lines_serve_the_frozen_month_not_the_recount(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Закрытый месяц отдаёт снимок: отчёт, уже ушедший владельцу, не должен меняться.
+
+    И расхождение при этом не прячется — оно уходит в ``compare_with_snapshot``.
+    """
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        asset = await _asset(session, category=category, cost="100000.00")
+        await close_month(session, period_month=date(2026, 1, 1))
+        await session.commit()
+
+        asset.initial_cost = Decimal("150000.00")
+        await session.commit()
+
+        lines, frozen = await report_lines(session, period_month=date(2026, 1, 1))
+        assert frozen is True
+        assert lines[0].initial_cost == Decimal("100000.00")
+        assert lines[0].residual == Decimal("99000.00")
+
+        # Живой расчёт видит правку — на нём и держится детектор дрейфа.
+        live = await balance_lines(session, as_of=date(2026, 1, 1))
+        assert live[0].initial_cost == Decimal("150000.00")
+        drift = await compare_with_snapshot(session, period_month=date(2026, 1, 1))
+        assert "первоначальная" in {item.field for item in drift}
+
+
+async def test_report_lines_compute_live_while_the_month_is_open(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Незакрытый месяц считается вживую и честно помечен незамороженным."""
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        await _asset(session, category=category, cost="100000.00")
+        await session.commit()
+
+        lines, frozen = await report_lines(session, period_month=date(2026, 1, 1))
+        assert frozen is False
+        assert lines[0].initial_cost == Decimal("100000.00")
+
+
+async def test_drift_catches_a_swap_that_keeps_the_residual(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Состав строки подменили, остаточная сошлась — это тоже дрейф.
+
+    Детектор смотрел только на остаточную и амортизацию за месяц. Замена одной карточки на
+    другую с той же стоимостью такую проверку проходит молча, а строка баланса при этом стоит
+    на других объектах — сверить её с реестром уже нельзя.
+    """
+    async with async_session_factory() as session:
+        category = await _category(session, "Тепловое оборудование", life=100)
+        first = await _asset(session, category=category, cost="100000.00")
+        await close_month(session, period_month=date(2026, 1, 1))
+        await session.commit()
+
+        assert await compare_with_snapshot(session, period_month=date(2026, 1, 1)) == []
+
+        # Ту же стоимость разложили на два объекта: остаточная и износ не изменились.
+        first.initial_cost = Decimal("60000.00")
+        await _asset(session, category=category, cost="40000.00")
+        await session.commit()
+
+        await accrue_depreciation(session, period_month=date(2026, 1, 1))
+        await session.commit()
+
+        drift = await compare_with_snapshot(session, period_month=date(2026, 1, 1))
+        fields = {item.field for item in drift}
+        assert "объектов в строке" in fields

@@ -40,6 +40,14 @@ from app.services.fixed_assets import FixedAssetError, month_start, residual_val
 # уникальным индексом ``uq_asset_movement_writeoff``.
 WRITEOFF = "writeoff"
 
+# Продажа. Второй способ покинуть внеоборотные активы, и от списания он отличается смыслом:
+# убытка нет, есть обмен актива на деньги. Уникального индекса у него нет (он стоит только на
+# ``writeoff``), поэтому вторую строку продажи ловит проверка в ``sell_asset``.
+SALE = "sale"
+
+# Оба вида движения, после которых объекта в балансе больше нет.
+GONE_MOVEMENTS = (WRITEOFF, SALE)
+
 # Статусы, из которых списывать нечего: объект уже выбыл.
 GONE_STATUSES = ("disposed", "sold")
 
@@ -136,6 +144,84 @@ async def dispose_asset(
     asset.status = "disposed"
     await session.flush()
     return movement
+
+
+async def sell_asset(
+    session: AsyncSession,
+    *,
+    asset: FixedAsset,
+    sold_on: date | None = None,
+    amount: Decimal | None = None,
+    note: str | None = None,
+    user_id: uuid.UUID | None = None,
+) -> AssetMovement:
+    """Продать объект: актив уходит из внеоборотных, убытка нет.
+
+    ПОЧЕМУ ОТДЕЛЬНО ОТ СПИСАНИЯ. По методологии владельца продажа ОС финрезультата в P&L не
+    даёт — это перевод внеоборотного актива в деньги. Поэтому здесь не считается остаточная
+    стоимость как убыток и строка ОПиУ «УчОС Убыток от выбытия» не растёт. ``amount`` — цена
+    продажи, справочная: деньги придут своим путём, через ДДС.
+
+    ПОЧЕМУ ВООБЩЕ ПОЯВИЛСЯ МАРШРУТ. Раньше продажа оформлялась правкой статуса в карточке, и
+    это был единственный путь. Он обходил строку движения, а без неё баланс не знает МЕСЯЦА
+    выбытия: объект исчезал сразу из всех прошлых месяцев, включая замороженные и уже
+    перенесённые в отчётность. Запретить правку статуса, не дав взамен маршрут, значило бы
+    сделать продажу неоформляемой вовсе.
+    """
+    today = datetime.now(UTC).date()
+    when = sold_on or today
+
+    existing = await gone_movement_for_asset(session, asset.id)
+    if existing is not None:
+        raise FixedAssetError(
+            f"Объект уже выбыл из учёта {existing.occurred_on:%d.%m.%Y} — повторно продать нельзя"
+        )
+    if asset.status in GONE_STATUSES:
+        raise FixedAssetError("Объект уже выбыл из учёта — продавать нечего")
+
+    if when > today:
+        raise FixedAssetError("Дата продажи не может быть в будущем")
+
+    if asset.commissioned_on is not None and when < asset.commissioned_on:
+        raise FixedAssetError(
+            f"Объект введён в эксплуатацию {asset.commissioned_on:%d.%m.%Y} — "
+            f"продан раньше он быть не мог"
+        )
+
+    period = month_start(when)
+    if await month_is_frozen(session, period):
+        raise FixedAssetError(
+            f"{period:%m.%Y} уже закрыт и перенесён в отчётность — оформите продажу месяцем, "
+            f"в котором о ней узнали"
+        )
+
+    movement = AssetMovement(
+        asset_id=asset.id,
+        movement_type=SALE,
+        occurred_on=when,
+        amount=_money(amount) if amount is not None else None,
+        note=(note or "").strip() or None,
+        previous_status=asset.status,
+        created_by_user_id=user_id,
+    )
+    session.add(movement)
+    asset.status = "sold"
+    await session.flush()
+    return movement
+
+
+async def gone_movement_for_asset(
+    session: AsyncSession, asset_id: uuid.UUID
+) -> AssetMovement | None:
+    """Строка, которой объект покинул баланс, — списание или продажа."""
+    return await session.scalar(
+        select(AssetMovement)
+        .where(
+            AssetMovement.asset_id == asset_id,
+            AssetMovement.movement_type.in_(GONE_MOVEMENTS),
+        )
+        .order_by(AssetMovement.occurred_on)
+    )
 
 
 async def cancel_disposal(session: AsyncSession, *, asset: FixedAsset) -> None:

@@ -32,6 +32,7 @@ from app.services.asset_disposal import (  # noqa: E402
     cancel_disposal,
     disposal_series,
     dispose_asset,
+    sell_asset,
 )
 from app.services.asset_revaluation import (  # noqa: E402
     decide_report,
@@ -389,3 +390,101 @@ def test_reporting_carries_the_disposal_loss(
     assert len(series) == 1
     assert series[0]["amount"] == "24000.00"
     assert series[0]["asset_count"] == 1
+
+
+async def test_sale_leaves_the_asset_in_the_months_before_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Продажа — второй способ покинуть баланс, и месяц у неё считается так же, как у списания.
+
+    Пока продажа оформлялась правкой статуса, движения не возникало вовсе: объект исчезал из
+    ВСЕХ прошлых месяцев разом, потому что ``_has_left`` без строки движения не знает даты.
+    """
+    async with async_session_factory() as session:
+        category = await session.scalar(select(AssetCategory).where(AssetCategory.name == "Мебель"))
+        if category is None:
+            category = AssetCategory(name="Мебель", useful_life_months=60)
+            session.add(category)
+            await session.flush()
+
+        past = _month_start(_today() - timedelta(days=60))
+        asset = await _asset(session, cost="24000.00", commissioned_on=past)
+        asset.category_id = category.id
+        await session.flush()
+        await accrue_depreciation(session, period_month=past)
+        await session.commit()
+
+        before = {
+            line.line_name: line.residual for line in await balance_lines(session, as_of=past)
+        }
+        assert before.get(category.name) is not None
+
+        await sell_asset(session, asset=asset, amount=Decimal("5000.00"), note="продали соседям")
+        await session.commit()
+
+        after_past = {
+            line.line_name: line.residual for line in await balance_lines(session, as_of=past)
+        }
+        after_now = {
+            line.line_name: line.residual for line in await balance_lines(session, as_of=_today())
+        }
+        assert after_past.get(category.name) == before[category.name]
+        assert category.name not in after_now
+
+        movement = await session.scalar(
+            select(AssetMovement).where(AssetMovement.movement_type == "sale")
+        )
+        assert movement is not None
+        assert movement.occurred_on == _today()
+        # Убытка у продажи нет: в ОПиУ она не идёт, а сумма — справочная цена сделки.
+        assert Decimal(str(movement.amount)) == Decimal("5000.00")
+        assert (await disposal_series(session)) == []
+
+
+async def test_sale_in_a_frozen_month_and_a_second_sale_are_refused(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Замороженный месяц продажа не переписывает, а дважды продать один объект нельзя."""
+    async with async_session_factory() as session:
+        past = _month_start(_today() - timedelta(days=60))
+        asset = await _asset(session, commissioned_on=past)
+        await accrue_depreciation(session, period_month=past)
+        await snapshot_month(session, period_month=past)
+        await session.commit()
+
+        with pytest.raises(FixedAssetError, match="закрыт"):
+            await sell_asset(session, asset=asset, sold_on=past)
+
+        await sell_asset(session, asset=asset)
+        await session.commit()
+
+        with pytest.raises(FixedAssetError, match="уже выбыл"):
+            await sell_asset(session, asset=asset)
+
+
+def test_status_patch_cannot_smuggle_an_asset_out_of_the_balance(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Правка статуса на выбывший отклоняется и подсказывает законный маршрут.
+
+    Обходной путь снимал сразу три защиты: строку движения (по ней баланс узнаёт месяц),
+    проверку закрытого месяца и расчёт убытка.
+    """
+    headers = _admin(async_session_factory)
+    created = client.post(
+        BASE,
+        headers=headers,
+        json={"name": "Печь на продажу", "initial_cost": "120000.00", "useful_life_months": 120},
+    )
+    assert created.status_code == 201, created.text
+    asset_id = created.json()["id"]
+
+    for bad_status, hint in (("sold", "/sale"), ("disposed", "/disposal")):
+        refused = client.patch(f"{BASE}/{asset_id}", headers=headers, json={"status": bad_status})
+        assert refused.status_code == 422, refused.text
+        assert hint in refused.json()["detail"]
+
+    # Законная дверь работает и ставит статус сама.
+    sold = client.post(f"{BASE}/{asset_id}/sale", headers=headers, json={"amount": "50000.00"})
+    assert sold.status_code == 200, sold.text
+    assert sold.json()["status"] == "sold"

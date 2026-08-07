@@ -37,7 +37,8 @@ from app.models import (
     DepreciationEntry,
     FixedAsset,
 )
-from app.services.asset_disposal import WRITEOFF
+from app.services.asset_disposal import GONE_MOVEMENTS
+from app.services.clock import MOSCOW_TZ
 
 # Строка для объектов, которые не работают. Собирается по СТАТУСУ и категории не имеет —
 # отсюда текстовый ключ строки вместо ссылки на справочник.
@@ -62,6 +63,16 @@ def _money(value: object) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _created_date(asset: FixedAsset) -> date:
+    """Дата создания карточки по Москве — фолбэк, когда обеих дат объекта нет.
+
+    Именно по Москве, а не ``.date()`` от UTC: карточка, заведённая 1 сентября в 00:30 МСК,
+    в UTC ещё 31 августа — и по UTC-дате объект попал бы в августовскую опись, которой он не
+    принадлежит.
+    """
+    return asset.created_at.astimezone(MOSCOW_TZ).date()
+
+
 def month_start(value: date) -> date:
     return value.replace(day=1)
 
@@ -72,7 +83,29 @@ def _has_left(asset: FixedAsset, period: date, disposed_on: dict[object, date]) 
         return False
     left = disposed_on.get(asset.id)
     # Строки выбытия нет — про дату не известно ничего; исключаем всегда, как делали раньше.
+    # Это ПУТЬ ЛЕГАСИ: карточки, выбывшие до появления контура выбытия. Новые так появиться
+    # не могут — статус выбытия ставится только через ``dispose_asset``, а он пишет движение.
+    # Фолбэк сознательно НЕ меняется на «оставлять в прошлом»: гадать про дату выбытия хуже,
+    # чем про дату появления, потому что стоимость выбывшего объекта могла уже уйти в расход
+    # другим путём, и мы вернули бы в баланс то, чего физически нет.
     return True if left is None else left <= period
+
+
+def _appeared_on(asset: FixedAsset, *, created_fallback: date) -> date:
+    """Дата, с которой объект стоит во внеоборотных активах.
+
+    МИНИМУМ из непустых ``valued_on`` и ``commissioned_on``, а не одно из них. Причина в том,
+    что это разные события: оценка говорит «объект наш и вот его стоимость», ввод — «с этого
+    месяца пошла амортизация». Объект, купленный в резерв, ещё не введён (``commissioned_on``
+    пуст), но активом уже является и стоит в балансе по полной стоимости — по одному
+    ``commissioned_on`` он бы из баланса выпал. Обратный случай — карточка, заведённая с датой
+    ввода раньше оценки: брать позднюю значило бы потерять месяц, в котором объект уже работал.
+
+    Обе даты пусты — берём дату создания карточки. Гадание, но безопасное: раньше появления
+    записи в базе объекта в учёте не было точно.
+    """
+    known = [value for value in (asset.valued_on, asset.commissioned_on) if value is not None]
+    return min(known) if known else created_fallback
 
 
 async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLine]:
@@ -88,6 +121,12 @@ async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLi
     строкой выбытия покидает баланс начиная С МЕСЯЦА ВЫБЫТИЯ и стоит в предыдущих как живой.
     Карточки, выбывшие без строки (продажа и всё, что списали до появления этого контура),
     исключаются как раньше — про них не известно когда, и гадать хуже, чем оставить как было.
+
+    ПОЯВЛЕНИЕ — СИММЕТРИЧНО ВЫБЫТИЮ, И ЭТО НЕ БЫЛО СДЕЛАНО СРАЗУ. Объект входит в баланс с
+    месяца, в котором стал нашим (``_appeared_on``). Без этого фильтра карточка, заведённая
+    в августе, вставала во ВСЕ прошлые месяцы — причём по ПОЛНОЙ первоначальной стоимости:
+    начислений за те месяцы у неё нет, значит остаток равен первоначальной. Июльская строка
+    росла от каждой сентябрьской покупки, и чем дальше в прошлое, тем сильнее.
     """
     period = month_start(as_of)
 
@@ -97,12 +136,17 @@ async def balance_lines(session: AsyncSession, *, as_of: date) -> list[BalanceLi
         for asset_id, occurred_on in (
             await session.execute(
                 select(AssetMovement.asset_id, AssetMovement.occurred_on).where(
-                    AssetMovement.movement_type == WRITEOFF
+                    AssetMovement.movement_type.in_(GONE_MOVEMENTS)
                 )
             )
         ).all()
     }
-    assets = [asset for asset in assets if not _has_left(asset, period, disposed_on)]
+    assets = [
+        asset
+        for asset in assets
+        if month_start(_appeared_on(asset, created_fallback=_created_date(asset))) <= period
+        and not _has_left(asset, period, disposed_on)
+    ]
     categories = {row.id: row for row in (await session.scalars(select(AssetCategory))).all()}
 
     accrued_rows = (
@@ -256,6 +300,11 @@ async def compare_with_snapshot(session: AsyncSession, *, period_month: date) ->
         for field, was, now in (
             ("остаточная", _money(row.residual), live.residual),
             ("амортизация за месяц", _money(row.depreciation), live.depreciation),
+            # Состав строки — тоже дрейф. Остаточная сходится и при подмене состава: одну
+            # карточку убрали, другую на ту же сумму добавили. По двум полям выше это
+            # выглядит как «ничего не изменилось».
+            ("первоначальная", _money(row.initial_cost), live.initial_cost),
+            ("объектов в строке", Decimal(row.asset_count), Decimal(live.asset_count)),
         ):
             if was != now:
                 drift.append(LineDrift(name, field, was, now))
@@ -263,6 +312,51 @@ async def compare_with_snapshot(session: AsyncSession, *, period_month: date) ->
     for name in current.keys() - snapshot.keys():
         drift.append(LineDrift(name, "строка появилась", Decimal("0.00"), current[name].residual))
     return drift
+
+
+async def report_lines(
+    session: AsyncSession, *, period_month: date
+) -> tuple[list[BalanceLine], bool]:
+    """Строки для отчётности за месяц: из снимка, если месяц закрыт, иначе живой расчёт.
+
+    Возвращает ``(строки, заморожено)``.
+
+    ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ, А НЕ ФЛАГ ВНУТРИ ``balance_lines``. Живой пересчёт нужен и после
+    заморозки — им пользуются ``snapshot_month`` (пересчитать при повторном закрытии) и
+    ``compare_with_snapshot`` (сравнить снимок с текущим состоянием). Переключи сам
+    ``balance_lines`` на чтение снимка — и детектор дрейфа начнёт сравнивать снимок сам с
+    собой: расхождение станет тождественным нулём, а смысл заморозки исчезнет.
+
+    Отчётность же обязана показывать именно замороженное: закрытый месяц уже перенесён в
+    отчёт владельцу, и его цифра не должна меняться от того, что в сентябре завели новую
+    карточку или поправили стоимость старой. Расхождение при этом не прячется — его показывает
+    ``compare_with_snapshot`` отдельным блоком.
+    """
+    period = month_start(period_month)
+    frozen = (
+        await session.scalars(
+            select(AssetBalanceSnapshot).where(AssetBalanceSnapshot.period_month == period)
+        )
+    ).all()
+    if not frozen:
+        return await balance_lines(session, as_of=period), False
+
+    lines = [
+        BalanceLine(
+            line_name=row.line_name,
+            category_id=row.category_id,
+            asset_count=row.asset_count,
+            initial_cost=_money(row.initial_cost),
+            accumulated=_money(row.accumulated),
+            residual=_money(row.residual),
+            depreciation=_money(row.depreciation),
+        )
+        for row in frozen
+    ]
+    return (
+        sorted(lines, key=lambda item: (item.line_name == NOT_WORKING_LINE, item.line_name)),
+        True,
+    )
 
 
 async def depreciation_series(
