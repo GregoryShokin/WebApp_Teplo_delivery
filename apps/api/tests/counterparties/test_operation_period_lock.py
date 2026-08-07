@@ -148,6 +148,71 @@ async def test_reclassifying_a_counted_operation_cannot_change_a_closed_month(
         assert rows[0].article_id == article_id, "статья в закрытом месяце всё-таки сменилась"
 
 
+async def test_splitting_a_counted_operation_cannot_change_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разбор операции по строкам — основной поток, и замка на нём не было вовсе.
+
+    Проверка перед выкаткой намерила под этой дверью 144 исходящих операции на 2,77 млн ₽ и
+    206 входящих на 2,85 млн ₽ за один июль. Первый разбор (проводок ещё нет) не блокируем:
+    выписка вправе приезжать задним числом.
+    """
+    from app.services.banking.classifier import OperationSplitLine, apply_operation_split
+
+    async with async_session_factory() as session:
+        _wallet, article, operation = await _fixture(session, code="lock-op-5")
+        other = await make_expense_article(session, code="lock_op_5_other", name="Аренда")
+        await session.commit()
+        operation_id, article_id = operation.id, article.id
+
+        await apply_operation_action(
+            session, operation, action="set_article", article_id=article.id
+        )
+        await session.commit()
+
+        await _close_july(session)
+        await session.commit()
+
+        with pytest.raises(accounting_periods.PeriodClosed):
+            await apply_operation_split(
+                session,
+                operation,
+                splits=[
+                    OperationSplitLine(article_id=other.id, amount=Decimal("88000.00")),
+                ],
+            )
+        await session.rollback()
+
+        rows = await _rows(session, operation_id)
+        assert len(rows) == 1
+        assert rows[0].article_id == article_id, "разбор всё-таки переписал закрытый месяц"
+
+
+async def test_first_split_of_a_fresh_operation_is_allowed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выписка задним числом в закрытый месяц: разбирать НОВУЮ операцию замок не мешает."""
+    from app.services.banking.classifier import OperationSplitLine, apply_operation_split
+
+    async with async_session_factory() as session:
+        _wallet, article, operation = await _fixture(session, code="lock-op-6")
+        await session.commit()
+        operation_id = operation.id
+
+        await _close_july(session)
+        await session.commit()
+
+        await apply_operation_split(
+            session,
+            operation,
+            splits=[OperationSplitLine(article_id=article.id, amount=Decimal("88000.00"))],
+        )
+        await session.commit()
+
+        rows = await _rows(session, operation_id)
+        assert len(rows) == 1, "первый разбор новой операции обязан проходить"
+
+
 async def test_open_month_operations_are_not_blocked(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

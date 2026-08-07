@@ -2015,8 +2015,22 @@ async def auto_settle_invoice_from_open_prepayments(
         # называет, а погасившая его дебиторка — знает. Право на перенос даёт адресность
         # подбора, поэтому смотрим на основания ФАКТИЧЕСКИ использованных авансов, а не на
         # весь список кандидатов.
-        if _period_may_be_inherited(used, candidates):
-            await _inherit_period_from_prepayment_allocations(session, invoice)
+        if _period_may_be_inherited(used, candidates) and await (
+            _inherit_period_from_prepayment_allocations(session, invoice)
+        ):
+            # ПЕРИОД БЕЗ НАЧИСЛЕНИЯ — ЭТО ИСЧЕЗНУВШИЙ РАСХОД. Заводит начисление
+            # ``sync_invoice_accrual``, и зовут его СНАРУЖИ, причём не все двери: складские
+            # накладные, синхронизация карточек, коммуналка, реестр контрагентов и ремонтные
+            # скрипты этого не делают. Пока период не наследовался, документ без периода
+            # честно висел в предупреждении «оплачено, а расход не признан». Как только период
+            # стал появляться сам, предупреждение замолчало — а расхода по-прежнему нет.
+            #
+            # Поэтому признание идёт следом за периодом здесь, а не в четырёх дверях снаружи:
+            # проставили — значит признали. Повторный вызов снаружи безвреден, функция
+            # идемпотентна.
+            from app.services import supplier_service_periods
+
+            await supplier_service_periods.sync_invoice_accrual(session, invoice)
     return total
 
 

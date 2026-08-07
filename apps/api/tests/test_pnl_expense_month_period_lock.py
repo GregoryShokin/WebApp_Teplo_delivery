@@ -201,6 +201,37 @@ def test_second_split_line_cannot_take_expense_out_of_a_closed_month(
     asyncio.run(scenario())
 
 
+def test_plain_reclassification_inside_a_closed_month_is_rejected(async_session_factory) -> None:
+    """Смена статьи без всякого переезда месяцев — тоже правка закрытых цифр.
+
+    Сравнение множеств «до» и «после» ловило только переезд расхода между месяцами. Обычная
+    переразметка внутри закрытого месяца множества не меняет — и проходила молча, хотя сумма
+    переезжает между СТРОКАМИ ОПиУ и закрытый отчёт становится другим.
+    """
+    from cp_helpers import make_wallet
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            article = await _article(session, code="test_lock_plain")
+            other = await _article(session, code="test_lock_plain_other")
+            wallet = await make_wallet(session, code="lock-w6", name="Сейф")
+            txn = _payment(wallet.id, article.id, day=date(2026, 7, 20), amount="45000.00")
+            session.add(txn)
+            await _close_july(session)
+            await session.commit()
+
+            with pytest.raises(accounting_periods.PeriodClosed):
+                await apply_cashflow_split(
+                    session,
+                    txn,
+                    splits=[
+                        CashflowSplitLine(article_id=other.id, amount=Decimal("45000.00"))
+                    ],
+                )
+
+    asyncio.run(scenario())
+
+
 def test_open_months_are_not_blocked(async_session_factory) -> None:
     """Замок держит только закрытое: в открытых месяцах разметка работает как прежде."""
     from cp_helpers import make_wallet

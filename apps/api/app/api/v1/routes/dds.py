@@ -2058,6 +2058,12 @@ async def classify_operation(
                 actor_user_id=actor.user_id,
                 allow_card=payload.allow_card,
             )
+        except accounting_periods.PeriodClosed as error:
+            # Закрытый месяц — конфликт состояния, а не негодный ввод. Ловим ДО ValueError:
+            # PeriodClosed его подкласс, иначе отказ ушёл бы к владельцу как 400 без смысла.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(error)
+            ) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "mark_safe_topup":
@@ -2141,6 +2147,10 @@ async def classify_operation(
                 allow_loan=allow_loan,
                 actor_user_id=actor.user_id,
             )
+        except accounting_periods.PeriodClosed as error:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(error)
+            ) from error
         except (ValueError, PayrollConflictError, PayrollNotFoundError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     else:

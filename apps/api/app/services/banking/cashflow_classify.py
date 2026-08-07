@@ -280,18 +280,24 @@ async def apply_cashflow_split(
     # Доля без разметки остаётся в месяце денег — она тоже часть раскладки.
     if any(line.expense_month is None for line in splits):
         becomes.add(money_month)
-    if was != becomes:
-        for touched in sorted(was | becomes):
-            if touched < accounting_periods.ACCOUNTING_START:
-                continue
-            action = (
-                "снять расход с этого месяца"
-                if touched not in becomes
-                else "отнести расход в этот месяц"
-                if touched not in was
-                else "перераспределить расход этого месяца"
-            )
-            await accounting_periods.assert_month_open(session, touched, action=action)
+    # ЛЮБОЙ РАЗБОР МЕНЯЕТ ЦИФРЫ СВОИХ МЕСЯЦЕВ, а не только тот, что двигает расход между ними.
+    # Сравнение множеств «до» и «после» ловило лишь переезд, и обычная смена статьи внутри
+    # закрытого месяца проходила молча: сумма переезжает между СТРОКАМИ ОПиУ, закрытый отчёт
+    # меняется. Под этим за июль ходят 302 ручные проводки на 3 688 210,95 ₽. Разница осталась
+    # только в тексте: он объясняет владельцу, что именно с месяцем происходит.
+    for touched in sorted(was | becomes):
+        if touched < accounting_periods.ACCOUNTING_START:
+            continue
+        action = (
+            "перераспределить расход этого месяца"
+            if was == becomes
+            else "снять расход с этого месяца"
+            if touched not in becomes
+            else "отнести расход в этот месяц"
+            if touched not in was
+            else "перераспределить расход этого месяца"
+        )
+        await accounting_periods.assert_month_open(session, touched, action=action)
 
     # Аналитика по помещению — то же правило, что у разбора банк-операции.
     location_context: dict[int, LocationContext] = {}

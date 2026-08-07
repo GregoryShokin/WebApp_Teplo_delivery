@@ -1363,6 +1363,19 @@ async def unfinalize_payroll_run(
     if period is None:
         raise PayrollNotFoundError("Payroll period not found")
 
+    # ОТКАТ ВЫНИМАЕТ ЗАРПЛАТУ ИЗ ОТЧЁТА ЦЕЛИКОМ: ОПиУ считает только финализированные
+    # ведомости (``pnl.sources.payroll.COUNTED_RUN_STATUSES``), и после отката строка не просто
+    # уменьшается, а показывает ноль — отчёт УТВЕРЖДАЕТ, что зарплаты не было. Период ведомости
+    # (вт—пн) может задевать два месяца, поэтому проверяем оба: закрыт хоть один — отказ.
+    from app.services import accounting_periods
+
+    await accounting_periods.assert_period_open(
+        session,
+        period.start_date,
+        period.end_date,
+        action="откатить финализацию ведомости",
+    )
+
     now = datetime.now(UTC)
     previous_run_status = run.status
     previous_period_status = period.status

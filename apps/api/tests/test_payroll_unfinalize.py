@@ -500,3 +500,35 @@ async def patch_runner_recompute(
         "mark_vacations_paid_for_payroll_period",
         fake_mark_vacations_paid,
     )
+
+
+async def test_unfinalize_is_rejected_when_the_month_is_closed(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Откат ведомости вынимает зарплату из закрытого месяца — и отчёт покажет там ноль.
+
+    ОПиУ считает только финализированные ведомости
+    (``pnl.sources.payroll.COUNTED_RUN_STATUSES``), поэтому откат не уменьшает строку, а
+    обнуляет её: отчёт начинает УТВЕРЖДАТЬ, что зарплаты в месяце не было. Проверка перед
+    выкаткой оценила цену одного такого отката на данных стенда в 170 825,67 ₽, а месяца
+    целиком — до 1 049 475,51 ₽. Замка на этой двери не было вовсе.
+    """
+    from app.models import AccountingPeriodClose
+    from app.services import accounting_periods
+
+    async with async_session_factory() as session:
+        actor = await create_actor_user(session)
+        period, run, _employee, _account = await create_payroll_run_with_deposit(session)
+        await finalize_payroll_run(session, run.id, finalized_by_user_id=actor.id)
+
+        session.add(AccountingPeriodClose(period_month=date(2026, 5, 1)))
+        await session.commit()
+
+        with pytest.raises(accounting_periods.PeriodClosed):
+            await unfinalize_payroll_run(
+                session, run.id, reason="Забыли премию", actor_user_id=actor.id
+            )
+        await session.rollback()
+
+        await session.refresh(run)
+        assert run.status == "finalized", "зарплата ушла из закрытого месяца"

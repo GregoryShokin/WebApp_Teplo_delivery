@@ -622,6 +622,80 @@ async def test_unperioded_closing_prefers_exact_bill_and_inherits_its_period(
         assert accrual.service_period_end == date(2026, 7, 31)
 
 
+async def test_inherited_period_brings_the_expense_with_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Унаследовав период, документ обязан тут же признать расход — иначе тот исчезает молча.
+
+    Наследование живёт внутри ``auto_settle_invoice_from_open_prepayments``, а начисление
+    заводит ``sync_invoice_accrual`` — и зовут его СНАРУЖИ, причём не все двери: складские
+    накладные, синхронизация карточек, коммуналка, реестр контрагентов и ремонтные скрипты
+    этого не делают. Пока период не наследовался, документ без периода честно висел в
+    предупреждении «оплачено, а расход не признан». Как только период стал появляться сам,
+    предупреждение замолчало, а расхода по-прежнему нет ни рубля — занижение без подписи,
+    ровно то, что этот модуль обязан не допускать.
+
+    Проверяем самой дверью ``apply_closing_document``, без ручного досбора снаружи.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Наследование-расход", inn="1655166019")
+        article = await make_expense_article(session, code="inherit_expense", name="Услуги")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3500.00",
+            number="СЧЁТ-НАСЛ",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 1),
+            operational_scope="finance",
+        )
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=cp.id,
+                kind="prepaid_bill",
+                bill_invoice_id=bill.id,
+                article_id=article.id,
+                amount=Decimal("3500.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                service_period_status="ready",
+                service_period_start=date(2026, 7, 1),
+                service_period_end=date(2026, 7, 31),
+            )
+        )
+        await session.flush()
+
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3500.00",
+            number="АКТ-НАСЛ",
+            doc_kind="closing",
+            invoice_date=date(2026, 7, 31),
+            operational_scope="finance",
+        )
+        act.dds_article_id = article.id
+        await session.flush()
+
+        settled = await supplier_prepayments.apply_closing_document(
+            session, act, as_of=date(2026, 8, 1)
+        )
+        await session.commit()
+
+        assert settled == Decimal("3500.00")
+        assert act.service_period_status == "ready", "период не унаследован — сценарий не тот"
+
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == act.id)
+        )
+        assert accrual is not None, (
+            "период проставлен, а расход не признан: 3 500 ₽ исчезли из отчёта молча"
+        )
+        assert accrual.amount == Decimal("3500.00")
+        assert accrual.service_period_start == date(2026, 7, 1)
+        assert accrual.service_period_end == date(2026, 7, 31)
+
+
 async def test_repair_unperioded_closings_rebuilds_old_fifo_cross_match(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

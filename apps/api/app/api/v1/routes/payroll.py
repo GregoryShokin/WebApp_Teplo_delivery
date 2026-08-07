@@ -72,6 +72,7 @@ from app.schemas.payroll import (
     RecoveryOverridesRequest,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
+from app.services import accounting_periods
 from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.deferred_audit_charge_service import (
     DeferredChargeConflictError,
@@ -604,7 +605,8 @@ async def post_unfinalize(
         return await get_run(session, run.id)
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except PayrollConflictError as exc:
+    except (PayrollConflictError, accounting_periods.PeriodClosed) as exc:
+        # Закрытый месяц — такой же конфликт состояния, как «ведомость не финализирована».
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 

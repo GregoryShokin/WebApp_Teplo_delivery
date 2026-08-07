@@ -873,6 +873,22 @@ async def cancel_payouts_of_excluded_transactions(
     await session.flush()
 
 
+async def _operation_cashflow_rows(
+    session: AsyncSession, operation: BankOperation
+) -> list[CashflowTransaction]:
+    """Проводки ДДС, порождённые этой операцией. Пусто — операция ещё не учтена."""
+    return list(
+        (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_id == operation.id,
+                )
+            )
+        ).all()
+    )
+
+
 async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
     """Убрать из ДДС проводки, порождённые ЭТОЙ операцией (``exclude`` / внутренний перевод).
 
@@ -1137,6 +1153,22 @@ async def apply_operation_split(
     wallet = await _wallet_for_operation(session, operation)
     if wallet is None:
         raise ValueError("Не найден кошелёк для операции")
+
+    # ПЕРЕРАЗБОР УЖЕ УЧТЁННОЙ ОПЕРАЦИИ — правка цифр её месяца: доли переезжают между строками
+    # отчёта, меняются контрагенты, дебиторка пересобирается. Замка здесь не было: он стоял
+    # только на действиях над операцией целиком (``apply_operation_action``), а через разбор по
+    # строкам идёт основной поток — за июль это 302 проводки на 3 688 210,95 ₽. Первый разбор
+    # (проводок ещё нет) не трогаем: выписка вправе приезжать задним числом, и запретить её
+    # разбор было бы хуже, чем разрешить.
+    from app.services import accounting_periods
+
+    for booked in await _operation_cashflow_rows(session, operation):
+        await accounting_periods.assert_cashflow_month_open(
+            session,
+            expense_month=booked.expense_month,
+            operation_date=booked.operation_date,
+            action="переразнести операцию по статьям",
+        )
 
     # Контрагент доли: свой либо общий по операции (дефолт запроса).
     def line_counterparty(line: OperationSplitLine) -> UUID | None:
