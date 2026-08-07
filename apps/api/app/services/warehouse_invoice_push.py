@@ -162,36 +162,41 @@ async def _store_guid(session: AsyncSession, invoice: SupplierInvoice) -> str | 
 
 
 def _line_amounts_for_iiko(
-    quantity: Decimal | None, price: Decimal, line_sum: Decimal | None
-) -> tuple[Decimal, Decimal | None]:
+    quantity: Decimal | None, price: Decimal | None, line_sum: Decimal | None
+) -> tuple[float | None, float | None]:
     """``(цена, сумма)`` строки для документа iiko: строго ``sum == price * amount``.
 
     iiko сверяет каждую позицию и отвергает ВЕСЬ документ при малейшем расхождении — «sum must
-    be equal to price * amount in item» (прод 06.08.2026, накладная №515256). Сверка строгая, не
-    до копеек: живой пробой на Cloud API подтверждено, что сумма 839,9995 при цене 289,655
-    отвергается, а 839,9999988 при цене 289,655172 — принимается.
+    be equal to price * amount in item» (прод 06.08.2026, накладная №515256).
 
     У нас эталон строки — СУММА, как её ввёл кассир (см. project_invoice_line_sum_rounding), а
     цена хранится 2-знаковой (``InvoiceLineItem.price`` = ``Numeric(14,2)``) и потому справочна:
     при вводе через сумму ``сумма ÷ кол-во`` в целые копейки не делится (2,9 кг за 840 ₽ →
-    289,655172…), и точного равенства с 2-знаковой ценой не существует в принципе.
+    289,655172…), и точного равенства с 2-знаковой ценой не существует в принципе. Поэтому такой
+    строке восстанавливаем цену из эталонной суммы с максимальной точностью, а сумму считаем
+    произведением. От эталона сумма отходит на доли копейки (839,9999988 вместо 840,00 — в рублях
+    и копейках та же сумма); в базе не меняется ничего.
 
-    Поэтому такой строке восстанавливаем цену из эталонной суммы с максимальной точностью, а
-    сумму шлём ТОЧНЫМ произведением: правило iiko выполнено, а от эталона сумма отходит на доли
-    копейки (839,9999988 вместо 840,00 — в рублях и копейках та же 840,00). В базе не меняется
-    ничего. Строки, где равенство и так строгое (подавляющее большинство), уходят нетронутыми.
+    **Произведение считаем во ``float``, а не в ``Decimal``** — то есть ровно той арифметикой,
+    какой его пересчитает у себя iiko. Разница не косметическая: пробы на живом Cloud API
+    06.08.2026 показали, что точная десятичная сумма 224,059999983 при цене 4393,333333
+    отвергается, а та же строка с ``float``-произведением 224,05999998299995 проходит — расходятся
+    последние двоичные разряды, и сверка этого не прощает.
 
-    Критерий именно строгий: «сходится до копеек» мало. Строка 2,9 × 289,66 при сумме 840,01
-    округляется в ту же копейку, но точное произведение 840,014 — и iiko её отвергнет.
+    Критерий «нужно ли править» тоже строгий: «сходится до копеек» мало. Строка 2,9 × 289,66 при
+    сумме 840,01 округляется в ту же копейку, но точное произведение 840,014 — и iiko её отвергнет.
     """
+    if price is None:
+        return None, float(line_sum) if line_sum is not None else None
     if line_sum is None or quantity is None or quantity <= 0:
-        return price, line_sum
+        return float(price), float(line_sum) if line_sum is not None else None
     if quantity * price == line_sum:
-        return price, line_sum
+        return float(price), float(line_sum)
     exact = (Decimal(line_sum) / Decimal(quantity)).quantize(
         Decimal(1).scaleb(-_IIKO_PRICE_SCALE), rounding=ROUND_HALF_UP
     )
-    return exact, exact * quantity
+    push_price = float(exact)
+    return push_price, push_price * float(quantity)
 
 
 async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> PreparedPush:
@@ -247,18 +252,15 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
             continue
         # Цена и сумма идут в документ не как в базе, а приведёнными к строгому равенству
         # sum == price * amount — иначе iiko отвергает ВЕСЬ документ (см. _line_amounts_for_iiko).
-        if line.price is not None:
-            push_price, push_sum = _line_amounts_for_iiko(line.quantity, line.price, line.sum)
-        else:
-            push_price, push_sum = None, line.sum
+        push_price, push_sum = _line_amounts_for_iiko(line.quantity, line.price, line.sum)
         lines.append(
             CloudInvoiceLine(
                 num=index,
                 product=line.product_guid,
                 store=store_guid,
                 amount=float(line.quantity),
-                price=float(push_price) if push_price is not None else None,
-                sum=float(push_sum) if push_sum is not None else None,
+                price=push_price,
+                sum=push_sum,
                 amount_unit=unit_by_product.get(line.iiko_product_id),
                 vat_percent=float(line.vat_percent) if line.vat_percent is not None else None,
             )
