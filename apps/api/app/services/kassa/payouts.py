@@ -67,6 +67,7 @@ from app.services.location_analytics import (
     resolve_location_context,
 )
 from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
+from app.services.wallet_balance_as_of import wallet_balance_as_of
 from app.services.wallets import CashWalletError, resolve_cash_wallet
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -192,37 +193,22 @@ async def get_kassa_wallet(session: AsyncSession) -> Wallet:
         raise KassaPayoutError("Счёт «Торговая касса Черникова» не найден или неактивен") from exc
 
 
-async def kassa_balance(session: AsyncSession, wallet: Wallet) -> Decimal:
+async def kassa_balance(
+    session: AsyncSession, wallet: Wallet, *, as_of: date | None = None
+) -> Decimal:
     """Учётный остаток кассы: вступительный остаток + движения ДДС после него.
 
-    Наличный кошелёк без выписки — баланс от проводок, ТОЧНО как плитка ДДС
-    «Кошельки» (``_wallet_movement_deltas``): мягко-исключённые проводки
-    (``quality_status='excluded'``, ручной разбор) в баланс НЕ входят. Фильтр
-    обязан совпадать с ``_wallet_movement_deltas`` — иначе плитка/окно/журнал
-    кассы разъезжаются (был баг: исключённая корректировка кассы двоила остаток).
+    Наличный кошелёк без выписки — баланс от проводок, ТОЧНО как плитка ДДС «Кошельки»:
+    мягко-исключённые проводки (``quality_status='excluded'``, ручной разбор) в баланс НЕ
+    входят. Фильтр обязан совпадать с общей формулой — иначе плитка, окно и журнал кассы
+    разъезжаются (был баг: исключённая корректировка кассы двоила остаток).
+
+    Собственного SQL здесь больше нет ровно поэтому: формула одна на весь проект и живёт в
+    ``services/wallet_balance_as_of``. Копия «почти такая же» и была тем, из-за чего цифры
+    расходились. ``as_of`` для кассы не нужен ни одному сегодняшнему вызову, но принимается:
+    балансу нужен остаток на дату, а не только на сейчас.
     """
-    after_opening = or_(
-        Wallet.opening_balance_date.is_(None),
-        CashflowTransaction.operation_date > Wallet.opening_balance_date,
-    )
-    rows = await session.execute(
-        select(
-            CashflowTransaction.direction,
-            func.coalesce(func.sum(CashflowTransaction.amount), 0),
-        )
-        .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
-        .where(
-            CashflowTransaction.wallet_id == wallet.id,
-            CashflowTransaction.quality_status != EXCLUDED_QUALITY,
-            after_opening,
-        )
-        .group_by(CashflowTransaction.direction)
-    )
-    delta = Decimal("0")
-    for direction, total in rows:
-        amount = Decimal(total)
-        delta += amount if direction == "in" else -amount
-    return _money(Decimal(str(wallet.opening_balance)) + delta)
+    return await wallet_balance_as_of(session, wallet, as_of=as_of)
 
 
 async def list_payout_articles(session: AsyncSession) -> list[dict[str, Any]]:
@@ -785,7 +771,9 @@ async def pay_kassa_target(
     # не задваивается; ключ-комментарий — allocation.id.
     if disbursement is not None:
         await post_production_deposit_payout_to_iiko(
-            session, amount=disbursement.amount, payout_date=kassa_today(),
+            session,
+            amount=disbursement.amount,
+            payout_date=kassa_today(),
             source_id=str(allocation.id),
         )
     return transaction_id

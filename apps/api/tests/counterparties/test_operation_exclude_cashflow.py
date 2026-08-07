@@ -149,10 +149,10 @@ async def test_exclude_does_not_move_the_bank_wallet_balance(
     """Баланс банка идёт от ВЫПИСКИ — проводка его не двигает ни в одну сторону.
 
     Исключение убирает из баланса саму операцию (``classification_status='excluded'``,
-    ``_wallet_movement_deltas``) — это by design. Мягкое исключение её проводки не смеет
+    ``wallet_movement_deltas``) — это by design. Мягкое исключение её проводки не смеет
     добавить к этому второй, уже двойной, эффект.
     """
-    from app.api.v1.routes.dds import _wallet_movement_deltas
+    from app.services.wallet_balance_as_of import wallet_movement_deltas
 
     async with async_session_factory() as session:
         wallet, article, operation = await _bank_fixture(session)
@@ -162,12 +162,12 @@ async def test_exclude_does_not_move_the_bank_wallet_balance(
             session, operation, action="set_article", article_id=article.id
         )
         await session.commit()
-        classified = (await _wallet_movement_deltas(session))[wallet.id]
+        classified = (await wallet_movement_deltas(session))[wallet.id]
         assert classified == Decimal(f"-{OP_AMOUNT}")
 
         await apply_operation_action(session, operation, action="exclude")
         await session.commit()
-        assert (await _wallet_movement_deltas(session)).get(wallet.id, Decimal("0")) == Decimal(
+        assert (await wallet_movement_deltas(session)).get(wallet.id, Decimal("0")) == Decimal(
             "0"
         ), "ушла ровно операция выписки; проводка вычлась бы вторым разом"
 
@@ -175,7 +175,7 @@ async def test_exclude_does_not_move_the_bank_wallet_balance(
             session, operation, action="set_article", article_id=article.id
         )
         await session.commit()
-        assert (await _wallet_movement_deltas(session))[wallet.id] == classified
+        assert (await wallet_movement_deltas(session))[wallet.id] == classified
 
 
 async def test_exclude_marks_every_split_line(

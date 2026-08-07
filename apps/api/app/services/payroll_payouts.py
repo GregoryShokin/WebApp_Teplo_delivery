@@ -43,6 +43,7 @@ from app.services.payroll_payout_allocation import (
     build_payout_buckets,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
+from app.services.wallet_balance_as_of import wallet_balance_as_of
 from app.services.wallets import (  # реэкспорт для обратной совместимости
     CASH_WALLET_TYPES,
     DDS_ARTICLE_TRANSFER_IN_CODE,
@@ -948,32 +949,14 @@ async def get_run_funding_sources(
 
 
 async def _wallet_ledger_balance(session: AsyncSession, wallet: Wallet) -> Decimal:
-    """Баланс ровно по тем правилам, которыми ДДС строит плитки счетов."""
-    if wallet.type not in ("bank", "bank_account"):
-        from app.services.kassa.payouts import kassa_balance
+    """Баланс ровно по тем правилам, которыми ДДС строит плитки счетов.
 
-        return _money(await kassa_balance(session, wallet))
-
-    rows = await session.execute(
-        select(
-            BankOperation.direction,
-            func.coalesce(func.sum(BankOperation.amount), 0),
-        )
-        .where(
-            BankOperation.account_id == wallet.account_id,
-            BankOperation.classification_status != "excluded",
-            or_(
-                wallet.opening_balance_date is None,
-                BankOperation.operation_date > wallet.opening_balance_date,
-            ),
-        )
-        .group_by(BankOperation.direction)
-    )
-    balance = Decimal(str(wallet.opening_balance or 0))
-    for direction, total in rows:
-        amount = Decimal(total)
-        balance += amount if direction == "in" else -amount
-    return _money(balance)
+    Своей копии формулы здесь больше нет: она жила рядом с двумя другими и одна из трёх уже
+    успела разойтись по смыслу. Заодно ушла запись ``wallet.opening_balance_date is None``
+    внутри ``or_()`` — это Python-значение в SQL-выражении, дававшее верный ответ по совпадению
+    (``false OR cond`` схлопывается в ``cond``), а не по написанному.
+    """
+    return await wallet_balance_as_of(session, wallet)
 
 
 async def _reserved_by_other_payments(

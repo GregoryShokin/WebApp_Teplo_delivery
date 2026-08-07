@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal, NamedTuple
@@ -185,6 +184,7 @@ from app.services.supplier_prepayments import (
     resync_counterparty_refunds,
     sync_manual_payment_receivable,
 )
+from app.services.wallet_balance_as_of import wallet_movement_deltas
 from app.services.warehouse_invoices import invoice_permission_kind
 
 # Статьи аванса/займа сотрудника: разбор операции на них заводит SalaryAdvance (деньги ушли
@@ -570,7 +570,7 @@ async def list_wallets(
 ) -> list[dict[str, object]]:
     result = await session.scalars(select(Wallet).order_by(Wallet.code))
     wallets = result.all()
-    deltas = await _wallet_movement_deltas(session)
+    deltas = await wallet_movement_deltas(session)
     bank_by_account = dict((await session.execute(select(Account.id, Account.bank_code))).all())
     payloads: list[dict[str, object]] = []
     for wallet in wallets:
@@ -599,86 +599,6 @@ async def list_wallets(
             )
         )
     return payloads
-
-
-async def _wallet_movement_deltas(session: AsyncSession) -> dict[UUID, Decimal]:
-    """Net cash movement per wallet — driven by the FACT of money moving.
-
-    Balance is bank reality, not DDS classification:
-
-    * Bank wallets follow their STATEMENT. Every imported bank operation moves the
-      balance by its direction/amount the moment it lands, whether or not it has
-      been classified into a DDS article yet — classification only decides which
-      article a movement is filed under, it never gates the balance. Only
-      operations explicitly marked ``excluded`` are left out. Internal transfers
-      need no special handling: each leg is a real operation on its own account
-      (out of one bank, in to another) that moves its wallet on its own, so the
-      balance never depends on the transfer pair being matched. The bank's own
-      reported balance (T-Bank ``otb``) is never used — it is inflated by the
-      overdraft limit.
-    * Non-bank wallets (cash safe, store cash, funds) have no statement, so their
-      balance comes from the manually booked cashflow entries instead.
-
-    Only movements dated AFTER ``opening_balance_date`` are counted: the opening
-    snapshot already incorporates everything up to and including that date, so
-    summing earlier movements would double-count them. Wallets with no opening
-    date count all movements.
-    """
-    bank_types = ("bank", "bank_account")
-    deltas: dict[UUID, Decimal] = defaultdict(lambda: Decimal("0"))
-
-    # Bank wallets: balance IS the statement — every non-excluded operation counts,
-    # classified or not, so "needs review" never hides money from the balance.
-    after_opening_bank = or_(
-        Wallet.opening_balance_date.is_(None),
-        BankOperation.operation_date > Wallet.opening_balance_date,
-    )
-    bank_rows = await session.execute(
-        select(
-            Wallet.id,
-            BankOperation.direction,
-            func.coalesce(func.sum(BankOperation.amount), 0),
-        )
-        .join(Account, Account.id == Wallet.account_id)
-        .join(BankOperation, BankOperation.account_id == Account.id)
-        .where(
-            Wallet.type.in_(bank_types),
-            BankOperation.classification_status != "excluded",
-            after_opening_bank,
-        )
-        .group_by(Wallet.id, BankOperation.direction)
-    )
-    for wallet_id, direction, total in bank_rows:
-        amount = Decimal(total)
-        deltas[wallet_id] += amount if direction == "in" else -amount
-
-    # Non-bank wallets: no statement — balance comes from manual cashflow entries.
-    # Мягко исключённые проводки (ручной разбор) из баланса выпадают — как excluded у банка.
-    after_opening_cash = or_(
-        Wallet.opening_balance_date.is_(None),
-        CashflowTransaction.operation_date > Wallet.opening_balance_date,
-    )
-    cash_rows = await session.execute(
-        select(
-            CashflowTransaction.wallet_id,
-            CashflowTransaction.direction,
-            func.coalesce(func.sum(CashflowTransaction.amount), 0),
-        )
-        .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
-        .where(
-            Wallet.type.not_in(bank_types),
-            CashflowTransaction.quality_status != EXCLUDED_QUALITY,
-            after_opening_cash,
-        )
-        .group_by(CashflowTransaction.wallet_id, CashflowTransaction.direction)
-    )
-    for wallet_id, direction, total in cash_rows:
-        if wallet_id is None:
-            continue
-        amount = Decimal(total)
-        deltas[wallet_id] += amount if direction == "in" else -amount
-
-    return deltas
 
 
 @router.get("/articles", response_model=list[DdsArticleRead], dependencies=DDS_READ_ACCESS)
@@ -2453,7 +2373,7 @@ async def _allocation_counterparty_name(
 
 async def _safe_free_amount(session: AsyncSession, wallet: Wallet) -> Decimal:
     """Свободный остаток Сейфа = баланс − Σ непогашенных резервов."""
-    deltas = await _wallet_movement_deltas(session)
+    deltas = await wallet_movement_deltas(session)
     balance = Decimal(str(wallet.opening_balance)) + deltas.get(wallet.id, Decimal("0"))
     reserved = await safe_reserved_total(session, wallet.id)
     return balance - reserved
@@ -2780,7 +2700,7 @@ async def withdraw_safe_cash(
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     await session.commit()
-    deltas = await _wallet_movement_deltas(session)
+    deltas = await wallet_movement_deltas(session)
     reserved = await safe_reserved_total(session, wallet.id)
     active_count = await safe_active_allocations_count(session, wallet.id)
     return _wallet_payload(
@@ -2802,7 +2722,7 @@ async def reconcile_safe(
     wallet = await session.get(Wallet, wallet_id)
     if wallet is None or wallet.code != SAFE_WALLET_CODE:
         raise HTTPException(status_code=404, detail="Кошелёк «Сейф» не найден")
-    deltas = await _wallet_movement_deltas(session)
+    deltas = await wallet_movement_deltas(session)
     accounted = Decimal(str(wallet.opening_balance)) + deltas.get(wallet.id, Decimal("0"))
     actual = payload.actual_balance
     delta = actual - accounted

@@ -28,9 +28,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Account,
     AppSetting,
-    BankOperation,
     CashflowTransaction,
     DdsArticle,
     PayrollLine,
@@ -50,6 +48,7 @@ from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_PRODUCTION_PAYROLL,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.wallet_balance_as_of import build_money_balance_as_of
 from app.services.wallets import SAFE_WALLET_CODE
 
 KASSA_WALLET_CODE = "tk_chernikova"
@@ -939,38 +938,16 @@ async def _reserved_by_other_runs(session: AsyncSession, run_id: uuid.UUID) -> D
 
 
 async def _bank_total(session: AsyncSession) -> Decimal:
-    """Σ балансов банковских кошельков по выписке (advisory)."""
-    wallets = (
-        await session.scalars(
-            select(Wallet).where(
-                Wallet.type.in_(("bank", "bank_account")), Wallet.status == "active"
-            )
-        )
-    ).all()
-    total = sum((Decimal(str(w.opening_balance or 0)) for w in wallets), Decimal("0"))
-    rows = (
-        await session.execute(
-            select(
-                BankOperation.direction,
-                func.coalesce(func.sum(BankOperation.amount), 0),
-            )
-            .join(Account, Account.id == BankOperation.account_id)
-            .join(Wallet, Wallet.account_id == Account.id)
-            .where(
-                Wallet.type.in_(("bank", "bank_account")),
-                Wallet.status == "active",
-                BankOperation.classification_status != "excluded",
-                or_(
-                    Wallet.opening_balance_date.is_(None),
-                    BankOperation.operation_date > Wallet.opening_balance_date,
-                ),
-            )
-            .group_by(BankOperation.direction)
-        )
-    ).all()
-    for direction, amount in rows:
-        total += Decimal(amount) if direction == "in" else -Decimal(amount)
-    return _q(total)
+    """Σ балансов банковских кошельков по выписке (advisory).
+
+    ``include_inactive=False`` передаётся ЯВНО, и это единственное место, где так и надо:
+    расчёт отвечает на вопрос «чем платить прямо сейчас», а с закрытого счёта не платят.
+    Балансу на дату нужен противоположный ответ — счёт, закрытый в сентябре, 31 августа деньги
+    ещё держал, — поэтому витрина и снимок зовут ту же функцию без этого флага. Раньше разница
+    была не параметром, а четвёртой копией формулы, и заметить её можно было только сличением.
+    """
+    money = await build_money_balance_as_of(session, include_inactive=False)
+    return _q(sum((row.balance for row in money.rows if row.is_bank), Decimal("0")))
 
 
 async def _overdraft_limit(session: AsyncSession) -> Decimal:
