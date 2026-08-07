@@ -451,7 +451,16 @@ async def apply_operation_action(
         # (``unwind_operation_bank_allocations``, ``_drop_untouched_bank_prepayments``) идёт ЗДЕСЬ,
         # ДО неё. Для операции, деньги которой несёт prebooked-проводка чужого контура, своих
         # строк нет вовсе — и исключение в закрытом месяце снимало зачёты без единого возражения.
-        await _assert_operation_month_open(session, operation, action="исключить операцию из учёта")
+        # Ветка обслуживает два действия — текст отказа должен называть то, что делал человек.
+        await _assert_operation_month_open(
+            session,
+            operation,
+            action=(
+                "пометить операцию внутренним переводом"
+                if action == "mark_internal_transfer"
+                else "исключить операцию из учёта"
+            ),
+        )
         # Операция перестаёт быть платежом поставщику — из учёта уходят её деньги, значит
         # уходит и всё, что они «оплачивали»: cash-зачёты проводки (внутри drop) И bank-аллокации
         # сверки (ключ bank_operation_id — их drop по проводке не видит). Иначе накладная

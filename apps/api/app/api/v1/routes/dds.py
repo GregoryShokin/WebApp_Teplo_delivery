@@ -2061,9 +2061,7 @@ async def classify_operation(
         except accounting_periods.PeriodClosed as error:
             # Закрытый месяц — конфликт состояния, а не негодный ввод. Ловим ДО ValueError:
             # PeriodClosed его подкласс, иначе отказ ушёл бы к владельцу как 400 без смысла.
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(error)
-            ) from error
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "mark_safe_topup":
@@ -2110,9 +2108,7 @@ async def classify_operation(
         except accounting_periods.PeriodClosed as error:
             # Как и у остальных дверей замка: конфликт состояния, а не негодный ввод. Ловим
             # ДО ValueError — PeriodClosed его подкласс.
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(error)
-            ) from error
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "employee_advance":
@@ -2154,9 +2150,7 @@ async def classify_operation(
                 actor_user_id=actor.user_id,
             )
         except accounting_periods.PeriodClosed as error:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(error)
-            ) from error
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except (ValueError, PayrollConflictError, PayrollNotFoundError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     else:
@@ -2169,9 +2163,7 @@ async def classify_operation(
                 quality_status="owner_review",
             )
         except accounting_periods.PeriodClosed as error:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(error)
-            ) from error
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         if payload.action == "mark_internal_transfer":
             await find_and_link_transfer_pairs(session)
 
@@ -2319,9 +2311,7 @@ async def classify_transaction(
                 if touched >= accounting_periods.ACCOUNTING_START:
                     await accounting_periods.assert_month_open(session, touched, action=action)
         except accounting_periods.PeriodClosed as error:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(error)
-            ) from error
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         txn.expense_month = None
     await link_transaction_to_asset(
         session, context=asset_context, transaction_id=txn.id, amount=txn.amount
