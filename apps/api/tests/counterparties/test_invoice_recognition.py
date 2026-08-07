@@ -805,3 +805,86 @@ def test_invoice_number_search_ignores_basis_reference() -> None:
     """Ссылка на другой документ не подменяет номер своего — даже без таблицы-бланка."""
     text = "Акт выполненных работ № ВД-46890\nОснование: Счет на оплату № 55 от 01.06.2026\n"
     assert _pick_number(text) == "ВД-46890"
+# --- НДС: доля налога в назначении платежа --------------------------------------------------
+
+
+def test_cdek_bill_reads_vat_from_the_payment_purpose_line() -> None:
+    """Налог берётся из строки назначения — вместе с точкой в конце предложения.
+
+    «…за услуги доставки, в т.ч. НДС 1439,90.» — самый частый способ напечатать налог в счёте,
+    и общий денежный шаблон его не видел: он запрещает точку после копеек (иначе «19.07» из
+    даты 19.07.2026 сходит за деньги). Без налога счёт уходил в банк с «Без НДС.» при живом
+    НДС в документе.
+    """
+    rec = deterministic_recognize(CDEK_PAGE_BILL)
+
+    assert rec.vat_mode == "included"
+    assert rec.vat_amount == Decimal("1439.90")
+    assert rec.amount == Decimal("7984.90")  # налог не подменил сумму к оплате
+    assert rec.vat_breakdown() == {"": "1439.90"}
+
+
+def test_total_with_vat_is_not_the_vat_amount() -> None:
+    """«Итого с НДС 22%: 7 984,90» — это ИТОГ, а не налог.
+
+    Предлог «с» переворачивает смысл числа за маркером. Без проверки счёт СДЭК объявлял бы
+    налогом весь платёж: в назначение уходило «В т.ч. НДС: 22% - 7984,90 руб.» при сумме
+    платежа 7 984,90.
+    """
+    rec = deterministic_recognize(
+        "Счет на оплату № 5 от 19 июля 2026 г.\nВсего к оплате 7 984,90\nИтого с НДС 22%: 7 984,90"
+    )
+
+    assert rec.vat_mode == ""  # ставку видим, сумму налога — нет
+    assert rec.vat_amount is None
+    assert any("ставка НДС" in note for note in rec.notes)
+
+
+def test_price_list_line_without_vat_is_not_a_vat_amount() -> None:
+    """«Лицензия … Без НДС 3 540,00» — цена позиции, а не сумма налога.
+
+    Тот же предлог, но с обратным знаком: после «без НДС» стоит стоимость строки прейскуранта.
+    Акт iiko на 4 260 ₽ иначе объявлял налогом 3 540 ₽ — восемьдесят процентов документа.
+    """
+    rec = deterministic_recognize(IIKO_ACT)
+
+    assert rec.vat_mode == "none"
+    assert rec.vat_amount is None
+    assert rec.vat_breakdown() == {}
+
+
+def test_vat_rate_is_kept_when_the_document_prints_it() -> None:
+    """Явная ставка сохраняется и попадает в разбивку — в платёжке будет «22% - …»."""
+    rec = deterministic_recognize(
+        "Счет на оплату № 7\nВсего к оплате 122 000,00\nв том числе НДС (22%) - 22 000,00"
+    )
+
+    assert (rec.vat_mode, rec.vat_rate, rec.vat_amount) == ("included", "22", Decimal("22000.00"))
+    assert rec.vat_breakdown() == {"22": "22000.00"}
+
+
+def test_vat_larger_than_the_invoice_is_dropped() -> None:
+    """Налог больше платежа — заведомо чужое число: маркер поймал не ту колонку.
+
+    Пустое поле оператор увидит в окне разбора и заполнит с бумаги; неправдоподобная цифра
+    уехала бы в банк молча.
+    """
+    rec = deterministic_recognize("Счет на оплату № 8\nК оплате 1 000,00\nв т.ч. НДС 9 000,00")
+
+    assert rec.vat_mode == ""
+    assert rec.vat_amount is None
+
+
+def test_vat_free_wording_differs_from_vat_not_found() -> None:
+    """«НДС не облагается» — факт документа, отсутствие упоминаний — наше незнание.
+
+    В платёжке оба дают «Без НДС.», но человеку это разные новости: во втором случае окно
+    разбора подсвечивает поле и просит перебить налог с бумаги.
+    """
+    stated = deterministic_recognize(
+        "Счет на оплату № 9\nВсего к оплате 5 000,00\nНДС не облагается"
+    )
+    silent = deterministic_recognize("Счет на оплату № 10\nВсего к оплате 5 000,00")
+
+    assert stated.vat_mode == "none"
+    assert silent.vat_mode == ""

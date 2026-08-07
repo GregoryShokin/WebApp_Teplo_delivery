@@ -26,6 +26,7 @@ import {
 import { DocumentPreview } from "./DocumentPreview";
 import { RequisitesFields } from "./RequisitesFields";
 import { useRequisitesForm } from "./requisites";
+import { VatFields, type VatValue } from "./VatFields";
 
 function Field({
   label,
@@ -77,6 +78,10 @@ export function ReviewDialog({
   const [invoiceDate, setInvoiceDate] = useState(intake.invoice_date ?? "");
   const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
   const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
+  const [vat, setVat] = useState<VatValue>({
+    amount: intake.vat_amount ?? "",
+    rate: intake.vat_rate ?? "",
+  });
   // Реквизиты формы: распознанное из PDF, а чего в счёте нет — из карточки выбранного
   // контрагента (при создании нового карточки ещё нет, поэтому только счёт).
   const {
@@ -126,6 +131,10 @@ export function ReviewDialog({
     invoice_date: invoiceDate || null,
     service_period_start: periodStart || null,
     service_period_end: periodEnd || null,
+    // Пустая сумма — не «поле не трогали», а утверждение «налога в счёте нет»: подтверждение
+    // разбора и есть тот момент, когда человек за это отвечает.
+    vat_amount: vat.amount.trim(),
+    vat_rate: vat.rate.trim() || null,
     requisites: r,
     // Переносить нечего, когда в форме ровно то, что уже лежит в карточке: иначе каждое
     // подтверждение молча ставило бы отметку «реквизиты проверены» за человека.
@@ -207,6 +216,13 @@ export function ReviewDialog({
               <Field label="№ счёта" value={invoiceNumber} onChange={setInvoiceNumber} />
               <Field label="Дата" type="date" value={invoiceDate} onChange={setInvoiceDate} />
             </div>
+
+            <VatFields
+              mode={intake.vat_mode}
+              value={vat}
+              onChange={setVat}
+              invoiceAmount={amount}
+            />
 
             <div className="grid gap-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">

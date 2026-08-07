@@ -101,13 +101,18 @@ def compute_invoice_due_date(
 def _normalize_vat_breakdown(
     vat_breakdown: dict[str, Any] | None,
 ) -> tuple[dict[str, str], Decimal]:
-    """Clean a rate->amount map: drop empty/zero, stringify amounts, return total."""
+    """Clean a rate->amount map: drop zero, stringify amounts, return total.
+
+    Пустой ключ — легальная запись «сумма налога известна, ставка нет»: так приходит НДС из
+    ЭДО и из счетов, где напечатана одна строка налога без процента. Отбрасывать её нельзя —
+    иначе налог теряется по дороге в назначение платежа.
+    """
     clean: dict[str, str] = {}
     total = Decimal("0.00")
     for rate, value in (vat_breakdown or {}).items():
         rate_key = str(rate).strip()
         amount = _money(value)
-        if not rate_key or amount <= 0:
+        if amount <= 0:
             continue
         clean[rate_key] = str(amount)
         total += amount

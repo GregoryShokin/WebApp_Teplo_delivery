@@ -29,6 +29,7 @@ import {
 import { DocumentPreview } from "./DocumentPreview";
 import { RequisitesFields } from "./RequisitesFields";
 import { useRequisitesForm } from "./requisites";
+import { VatFields, type VatValue } from "./VatFields";
 
 // Окно отправки счёта в банк: сверка реквизитов получателя + выбор даты (дефолт — сегодня).
 // Сегодня → уходит сразу; будущая дата → запланированная авто-отправка. Реквизиты подтверждаются
@@ -50,6 +51,19 @@ export function SendDialog({
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
   const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
   const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
+  // НДС правится и здесь: это последняя точка перед деньгами, и текст назначения платежа
+  // собирается ровно из этой цифры. Уходит тем же confirm, что и реквизиты с периодом.
+  const [vat, setVat] = useState<VatValue>({
+    amount: intake.vat_amount ?? "",
+    rate: intake.vat_rate ?? "",
+  });
+  const vatParsed = Number(vat.amount.replace(",", ".").replace(/\s/g, ""));
+  const invoiceTotal = Number((intake.amount ?? "").replace(",", ".").replace(/\s/g, ""));
+  const vatReady =
+    !vat.amount.trim() ||
+    (Number.isFinite(vatParsed) &&
+      vatParsed > 0 &&
+      (!Number.isFinite(invoiceTotal) || invoiceTotal <= 0 || vatParsed < invoiceTotal));
   // Статья ДДС оплаты: уже выбранная на счёте → закреплённая за контрагентом → пусто (на бэке
   // дефолт «Оплата поставщикам»). Чекбокс закрепляет выбранную статью за контрагентом на будущее.
   const [ddsArticleId, setDdsArticleId] = useState(
@@ -120,6 +134,8 @@ export function SendDialog({
           apply_requisites: !viaIpCard,
           service_period_start: periodStart || null,
           service_period_end: periodEnd || null,
+          vat_amount: vat.amount.trim(),
+          vat_rate: vat.rate.trim() || null,
         });
       }
       const choice = {
@@ -227,6 +243,17 @@ export function SendDialog({
               </button>
             ) : null}
           </div>
+
+          {/* Коммунальная платёжка идёт своим контуром: там назначение платежа собирает
+              utility_recognition, и это окно его не правит. */}
+          {!intake.utility_kind ? (
+            <VatFields
+              mode={intake.vat_mode}
+              value={vat}
+              onChange={setVat}
+              invoiceAmount={intake.amount}
+            />
+          ) : null}
 
           <div className="grid gap-2">
             <RequisitesFields
@@ -382,7 +409,10 @@ export function SendDialog({
             <Button variant="outline" onClick={onClose} disabled={busy}>
               Отмена
             </Button>
-            <Button onClick={() => send.mutate()} disabled={!ready || !periodReady || busy}>
+            <Button
+              onClick={() => send.mutate()}
+              disabled={!ready || !periodReady || !vatReady || busy}
+            >
               {isNow ? "Отправить в банк" : "Запланировать"}
             </Button>
           </div>

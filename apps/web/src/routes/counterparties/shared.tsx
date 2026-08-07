@@ -89,9 +89,12 @@ export function formatVat(breakdown: Record<string, string> | null | undefined) 
   if (entries.length === 0) {
     return "Без НДС";
   }
+  // Пустая ставка — «сумма налога известна, ставка нет» (так приходит НДС из ЭДО и из счетов,
+  // где напечатана одна строка налога). Печатаем её суммой, как и назначение платежа: «% — …»
+  // без числа читалось бы как потерянная ставка.
   return entries
-    .sort((a, b) => Number(a[0]) - Number(b[0]))
-    .map(([rate, amount]) => `${rate}% — ${formatRub(amount)}`)
+    .sort((a, b) => (Number(a[0]) || Infinity) - (Number(b[0]) || Infinity))
+    .map(([rate, amount]) => (rate ? `${rate}% — ${formatRub(amount)}` : formatRub(amount)))
     .join("; ");
 }
 

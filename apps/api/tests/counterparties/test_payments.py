@@ -353,3 +353,97 @@ async def test_create_draft_rejects_receivable_invoice(
             await create_payment_draft_for_invoices(
                 session, invoice_ids=[invoice.id], actor_user_id=None
             )
+
+
+# --- НДС в назначении платежа ---------------------------------------------------------------
+
+
+async def test_vat_without_a_rate_still_reaches_the_purpose(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сумма налога без ставки печатается суммой — и всё равно доезжает до банка.
+
+    Так приходит НДС из ЭДО: СБИС отдаёт «сумму» и «сумму без НДС», ставки в данных нет вовсе,
+    поэтому ``vat_breakdown`` пуст, а ``vat_total`` заполнен. Назначение читало только разбивку
+    — и платёжка по счёту с живым налогом уходила в банк с «Без НДС.».
+    """
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        invoice = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="7984.90",
+            number="СКБ-0437096",
+            vat_total="1439.90",
+            vat_breakdown={},
+        )
+        await session.commit()
+
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+
+        purpose = draft.payload["paymentPurpose"]
+        assert "В т.ч. НДС: 1439,90 руб." in purpose
+        assert "%" not in purpose  # ставку не выдумываем
+        assert len(purpose) <= 210
+
+
+async def test_rate_and_rateless_vat_live_together_in_one_purpose(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пачка из счёта с известной ставкой и счёта из ЭДО: в назначении обе доли, без потерь."""
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        with_rate = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="122.00",
+            number="A-1",
+            vat_total="22.00",
+            vat_breakdown={"22": "22.00"},
+        )
+        from_edo = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="110.00",
+            number="A-2",
+            vat_total="10.00",
+            vat_breakdown={},
+        )
+        await session.commit()
+
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[with_rate.id, from_edo.id], actor_user_id=None
+        )
+
+        purpose = draft.payload["paymentPurpose"]
+        # Известная ставка идёт первой, безставочная доля — последней.
+        assert "В т.ч. НДС: 22% - 22,00 руб.; 10,00 руб." in purpose
+
+
+async def test_invoice_without_vat_keeps_the_no_vat_wording(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Нулевой налог — «Без НДС.», как и было: решение владельца 07.08.2026.
+
+    Оператор видит НДС в окне разбора и в окне отправки, поэтому нераспознанный налог он
+    успевает вписать до денег; блокировать отправку из-за пустого поля не стали.
+    """
+    async with async_session_factory() as session:
+        supplier = await _verified_supplier(session)
+        invoice = await make_invoice(
+            session,
+            counterparty_id=supplier.id,
+            amount="5000.00",
+            number="B-1",
+            vat_total="0.00",
+            vat_breakdown={},
+        )
+        await session.commit()
+
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+
+        assert "Без НДС." in draft.payload["paymentPurpose"]
