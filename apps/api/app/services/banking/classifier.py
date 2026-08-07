@@ -1168,7 +1168,7 @@ async def apply_operation_split(
     контрагентов сразу: каждая порождённая проводка (и её дебиторка/гашение накладной) идёт в
     карточку своего контрагента.
 
-    Balance is taken from the statement (see ``_wallet_movement_deltas``), so this
+    Balance is taken from the statement (see ``services.wallet_balance_as_of``), so this
     only fills DDS analytics — the split amounts must add up to the operation amount
     but never move the wallet balance. Re-splitting first drops any cashflow already
     booked from this operation, then books one cashflow row per article.
@@ -1221,6 +1221,29 @@ async def apply_operation_split(
     await _assert_operation_month_open(
         session, operation, action="переразнести операцию по статьям"
     )
+
+    # ДЕНЬГИ ОПЕРАЦИИ УЖЕ НЕСЁТ ЧУЖАЯ ПРОВОДКА — разносить их второй раз нельзя.
+    # У трети банковских операций собственной строки нет вовсе: расход книжит prebooked-проводка
+    # другого контура (оплата поставщику, транзит ЗП, выдача аванса), а операция связана с ней
+    # якорём. ``_clear_operation_cashflow`` ниже удаляет ТОЛЬКО свои строки — чужую он
+    # справедливо не трогает, но якорь обнуляет. Дальше разбор заводит собственные проводки, и
+    # один платёж оказывается описан дважды: чужая строка остаётся живой и уже ни с чем не
+    # связанной. В соседних дверях этого не происходит — там prebooked-проводка ПРИВЯЗЫВАЕТСЯ
+    # вместо создания своей (``_find_prebooked_payment``), но разбор по строкам так не умеет:
+    # он делит сумму между статьями, а чужая проводка неделима и несёт свои связи — гашение
+    # накладной, выплату, предоплату. Снять её здесь значило бы отменить чужую операцию молча.
+    foreign = [
+        row
+        for row in await _operation_cashflow_rows(session, operation)
+        if row.source_kind != "bank_operation"
+    ]
+    if foreign:
+        kinds = ", ".join(sorted({str(row.source_kind) for row in foreign}))
+        raise ValueError(
+            "Деньги этой операции уже проведены другим контуром "
+            f"({kinds}) — разбор по статьям создал бы второй расход на ту же сумму. "
+            "Правьте исходный документ (черновик оплаты, ведомость, аванс), а не операцию"
+        )
 
     # Контрагент доли: свой либо общий по операции (дефолт запроса).
     def line_counterparty(line: OperationSplitLine) -> UUID | None:

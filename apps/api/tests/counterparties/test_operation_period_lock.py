@@ -332,10 +332,18 @@ async def test_safe_topup_cannot_erase_a_closed_month(
         assert rows[0].article_id == article_id
 
 
-async def test_prebooked_operation_is_not_blocked_in_an_open_month(
+async def test_prebooked_operation_is_not_blocked_by_the_lock_in_an_open_month(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Обратная сторона: в ОТКРЫТОМ месяце ни одна из трёх дверей не должна отказывать."""
+    """Обратная сторона: в ОТКРЫТОМ месяце замок не должен отказывать ни на одной двери.
+
+    ИСТОРИЯ ЭТОГО ТЕСТА. Раньше он проверял, что в открытом месяце проходит и разбор по
+    статьям, — и проходил, заводя строку расхода РЯДОМ с живой prebooked-проводкой. Задвоения
+    он не замечал по построению: ``_rows`` отбирает только ``source_kind='bank_operation'``,
+    то есть чужую строку не видит вовсе. Разбор поверх prebooked теперь отвергается, но
+    ЗАМКОМ ЭТО НЕ ЯВЛЯЕТСЯ — отказ приходит обычной ошибкой и по другой причине, что здесь и
+    проверяется: месяц открыт, и ``PeriodClosed`` не поднимается.
+    """
     from app.services.banking.classifier import (
         OperationSplitLine,
         apply_operation_split,
@@ -349,13 +357,14 @@ async def test_prebooked_operation_is_not_blocked_in_an_open_month(
         await session.commit()
         operation_id = operation.id
 
-        await apply_operation_split(
-            session,
-            operation,
-            splits=[OperationSplitLine(article_id=other.id, amount=Decimal("12000.00"))],
-        )
-        await session.commit()
-        assert len(await _rows(session, operation_id)) == 1
+        with pytest.raises(ValueError, match="уже проведены другим контуром") as refused:
+            await apply_operation_split(
+                session,
+                operation,
+                splits=[OperationSplitLine(article_id=other.id, amount=Decimal("12000.00"))],
+            )
+        assert not isinstance(refused.value, accounting_periods.PeriodClosed)
+        assert not await _rows(session, operation_id), "второй строки расхода появиться не должно"
 
         await book_safe_topup(session, operation)
         await session.commit()

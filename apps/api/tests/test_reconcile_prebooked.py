@@ -7,6 +7,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -287,3 +288,45 @@ async def test_reconcile_still_links_ordinary_operation_without_inn(
     async with async_session_factory() as session:
         op = await session.get(BankOperation, op_id)
     assert op.cashflow_transaction_id == ct_id
+
+
+async def test_split_refuses_an_operation_whose_money_a_foreign_row_already_carries(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Разбор по статьям поверх prebooked-проводки задваивал расход — теперь отказ.
+
+    У трети банковских операций собственной строки ДДС нет вовсе: деньги книжит контур оплаты
+    поставщику, транзита ЗП или выдачи аванса, а операция связана с этой строкой якорем.
+    ``_clear_operation_cashflow`` чужую строку не удаляет (и правильно — она несёт гашение
+    накладной), но якорь обнуляет; дальше разбор заводил свои проводки, и один платёж
+    оказывался описан дважды. Верхняя оценка по проду — 168 операций.
+    """
+    from app.services.banking.classifier import OperationSplitLine, apply_operation_split
+
+    async with async_session_factory() as session:
+        wallet = await _bank_wallet(session)
+        op = await _needs_review_op(
+            session, account_id=wallet.account_id, amount=Decimal("29168.99")
+        )
+        prebooked = await _prebooked(session, wallet_id=wallet.id, amount=Decimal("29168.99"))
+        op.cashflow_transaction_id = prebooked.id
+        op.classification_status = "classified"
+        await session.commit()
+
+        article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == "payment_to_supplier")
+        )
+        with pytest.raises(ValueError, match="уже проведены другим контуром"):
+            await apply_operation_split(
+                session,
+                op,
+                splits=[OperationSplitLine(article_id, Decimal("29168.99"), None, None)],
+            )
+
+        # Чужая проводка на месте, второй строки не появилось.
+        rows = (
+            await session.scalars(
+                select(CashflowTransaction).where(CashflowTransaction.wallet_id == wallet.id)
+            )
+        ).all()
+        assert [row.source_kind for row in rows] == ["counterparty_payment"]
