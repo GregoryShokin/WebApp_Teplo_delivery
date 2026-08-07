@@ -831,9 +831,7 @@ async def _unwind_transaction_kz_settlements(
             and inv.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE
         }
         allocs = [
-            a
-            for a in allocs
-            if a.invoice_id in closing_ids or a.origin == RULE1_ALLOCATION_ORIGIN
+            a for a in allocs if a.invoice_id in closing_ids or a.origin == RULE1_ALLOCATION_ORIGIN
         ]
         if not allocs:
             return True
@@ -1735,6 +1733,20 @@ async def _basis_bill_id(session: AsyncSession, invoice: SupplierInvoice) -> uui
     recognition = _recognition(invoice)
     number = str(recognition.get("basis_number") or "").strip()
     if not number:
+        # ПАРА, ПОРОЖДЁННАЯ САМОЙ СИСТЕМОЙ, строки «Основание Счет №» не несёт — её неоткуда
+        # взять, текста документа нет вовсе (коммуналка `source='utility'`, ЭДО-пары). Зато
+        # номер у счёта и акта ОДИН по построению, и это такая же точная ссылка.
+        #
+        # Цена молчания известна по проду: акт «Возмещение: вода, 07.2026» не нашёл своего
+        # счёта, а «Аренда 07.2026» с тем же периодом июля обработалась первой и забрала его
+        # дебиторку рангом «период». Аренду закрыли водяные деньги, воду — арендные: нетто
+        # сходилось, адресность врала. У арендодателя такая пара приходит КАЖДЫЙ месяц.
+        #
+        # Для разобранного поставщиком документа этот фолбэк безвреден: номер акта и номер
+        # счёта у него разные, совпадения не будет, а гард «ровно один счёт» ниже отсекает
+        # случайные пересечения.
+        number = str(invoice.number or "").strip()
+    if not number:
         return None
     candidates = (
         await session.scalars(
@@ -1783,9 +1795,7 @@ async def _prepayment_products(
     ).all()
     by_bill = {bill.id: str(_recognition(bill).get("product_hint") or "") or None for bill in bills}
     return {
-        p.id: by_bill.get(p.bill_invoice_id)
-        for p in prepayments
-        if p.bill_invoice_id is not None
+        p.id: by_bill.get(p.bill_invoice_id) for p in prepayments if p.bill_invoice_id is not None
     }
 
 
@@ -1808,6 +1818,30 @@ def _match_basis(
         return MATCH_PERIOD_PRODUCT
     if same_product:
         return MATCH_PRODUCT
+    # ДЕНЬГИ ЧУЖОГО СЧЁТА НЕ БЕРУТ ГОЛЫМ ПЕРИОДОМ. Аванс с ``bill_invoice_id`` — не свободный
+    # пул: человек заплатил ИМЕННО по тому счёту, и закрыть им посторонний документ значит
+    # оставить дебиторку того счёта открытой, а этот документ показать оплаченным не своими
+    # деньгами. Так «Аренда 07.2026» забрала водяную дебиторку: период июля у обеих, и ранг
+    # «период» отдал ей чужие адресные деньги.
+    #
+    # ГРАНИЦЫ ЭТОГО ГАРДА ОПЛАЧЕНЫ ДВУМЯ СЛОМАННЫМИ ПРОГОНАМИ, и обе важны.
+    #
+    # СНИЗУ — ниже продукта, а не выше. Продукт СИЛЬНЕЕ адресности счёта: у АЙКО обе линии
+    # (Курьерика и лицензия) оплачены каждая своим счётом, и разводит их именно продукт, когда
+    # акт основания не называет. Проверка выше продукта роняет ``test_two_product_lines_do_not
+    # _cross_settle``.
+    #
+    # СВЕРХУ — только там, где сработал бы ГОЛЫЙ ПЕРИОД. Равенство суммы не трогаем: у
+    # документа БЕЗ периода ``same_period`` ложен всегда, и ранг ``amount`` остаётся
+    # единственным, чем два адресных аванса вообще различаются. Безусловный гард отменял его и
+    # отдавал акт чужим деньгам по дате — тот же перекрёст АЙКО, только в ветке «периода нет»
+    # (краснели три теста ``test_subscription_accruals``: :555, :625, :699).
+    #
+    # Не фильтр, а порядок — как и вся лестница: если ничего лучше нет, документ по-прежнему
+    # гасится этим авансом, но признак честно скажет «связь не подтверждена документом», и в
+    # реестре ДЗ/КЗ загорится янтарное «подобрано».
+    if same_period and prepayment.bill_invoice_id is not None:
+        return MATCH_CHRONOLOGY
     if same_period:
         return MATCH_SERVICE_PERIOD
     # Равенство суммы — САМЫЙ слабый признак, и он опасен: у подписочного поставщика с ровной
@@ -2015,9 +2049,9 @@ async def auto_settle_invoice_from_open_prepayments(
         # называет, а погасившая его дебиторка — знает. Право на перенос даёт адресность
         # подбора, поэтому смотрим на основания ФАКТИЧЕСКИ использованных авансов, а не на
         # весь список кандидатов.
-        if _period_may_be_inherited(used, candidates) and await (
-            _inherit_period_from_prepayment_allocations(session, invoice)
-        ):
+        if _period_may_be_inherited(
+            used, candidates
+        ) and await _inherit_period_from_prepayment_allocations(session, invoice):
             # ПЕРИОД БЕЗ НАЧИСЛЕНИЯ — ЭТО ИСЧЕЗНУВШИЙ РАСХОД. Заводит начисление
             # ``sync_invoice_accrual``, и зовут его СНАРУЖИ, причём не все двери: складские
             # накладные, синхронизация карточек, коммуналка, реестр контрагентов и ремонтные
@@ -2172,6 +2206,7 @@ async def activate_due_closing_invoices(
     признанными дважды — 6 000 ₽ лишнего расхода."""
     today = as_of or datetime.now(MOSCOW_TZ).date()
     from app.services import supplier_service_periods
+
     rows = list(
         (
             await session.scalars(

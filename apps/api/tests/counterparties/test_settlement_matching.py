@@ -454,9 +454,9 @@ async def test_closing_waits_for_the_end_of_its_service_period(
         assert await _allocations(session, act.id) == []
 
         # Вечером 31 августа услуга ещё оказывается — документ по-прежнему ждёт.
-        assert (
-            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31))
-        )["activated"] == 0
+        assert (await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31)))[
+            "activated"
+        ] == 0
         await session.refresh(prepaid)
         assert prepaid.status == "open"
 
@@ -554,9 +554,7 @@ async def test_balance_as_of_keeps_advance_while_service_runs(
         await session.commit()
 
         def mine(rows) -> Decimal:
-            return sum(
-                (r.receivable for r in rows if r.counterparty_id == cp.id), Decimal("0.00")
-            )
+            return sum((r.receivable for r in rows if r.counterparty_id == cp.id), Decimal("0.00"))
 
         # Услуга ещё идёт — деньги остаются нашим активом.
         mid = await build_balance_as_of(session, as_of=date(2026, 8, 15))
@@ -749,9 +747,7 @@ async def test_product_beats_bare_period_for_two_lines_of_one_month(
         )
         await session.commit()
 
-        await prepayments.apply_closing_document(
-            session, license_act, as_of=date(2026, 10, 1)
-        )
+        await prepayments.apply_closing_document(session, license_act, as_of=date(2026, 10, 1))
         await session.commit()
 
         allocations = await _allocations(session, license_act.id)
@@ -864,9 +860,9 @@ async def test_settlement_and_recognition_happen_in_one_run(
         assert accrual is not None
 
         # Вечер 31 августа: аванс на месте, расход не признан. Обе стороны говорят одно.
-        assert (
-            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31))
-        )["activated"] == 0
+        assert (await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 8, 31)))[
+            "activated"
+        ] == 0
         assert (
             await periods.recognize_due_expenses(
                 session, as_of=date(2026, 8, 31), invoice_ids=[act.id]
@@ -880,9 +876,9 @@ async def test_settlement_and_recognition_happen_in_one_run(
         assert accrual.status == "scheduled"
 
         # 1 сентября: тот же день гасит аванс и признаёт расход августа.
-        assert (
-            await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 9, 1))
-        )["activated"] == 1
+        assert (await prepayments.activate_due_closing_invoices(session, as_of=date(2026, 9, 1)))[
+            "activated"
+        ] == 1
         assert (
             await periods.recognize_due_expenses(
                 session, as_of=date(2026, 9, 1), invoice_ids=[act.id]
@@ -895,3 +891,282 @@ async def test_settlement_and_recognition_happen_in_one_run(
         assert prepaid.status == "settled"
         assert accrual.status == "recognized"
         assert accrual.recognition_month == date(2026, 8, 1)
+
+
+async def test_landlord_rent_does_not_eat_the_water_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Кейс арендодателя (прод, 03.08.2026): аренда и вода одного месяца не гасятся крест-накрест.
+
+    У Станислава Юрьевича каждый месяц приходит ПАРА: акт аренды и пара «счёт + акт» на
+    возмещение воды, у обоих период одного месяца. Пару по воде порождает сама система, строки
+    «Основание Счет №» в ней нет — поэтому ранг счёта-основания молчал. Аренда обрабатывалась
+    первой (по дате документа она равна, дальше по номеру «А» < «В») и забирала водяную
+    дебиторку рангом «период»; воде доставались арендные деньги. Нетто сходилось, адресность
+    врала, и в августе 9 654,25 ₽ повисали фантомной кредиторкой перед арендодателем.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Арендодатель", inn="7712345678")
+        july = (date(2026, 7, 1), date(2026, 7, 31))
+
+        water_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="Возмещение: вода, 07.2026",
+            amount="9654.25",
+            invoice_date=date(2026, 7, 31),
+            period=july,
+        )
+        # Арендный аванс: свободные деньги, ни к какому счёту не привязаны.
+        rent_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="50000.00",
+            paid_on=date(2026, 7, 1),
+            wallet_code="landlord-rent",
+            kind="subscription",
+        )
+        # Водяные деньги адресны: заплачено ИМЕННО по счёту за воду.
+        water_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="9654.25",
+            paid_on=date(2026, 8, 4),
+            wallet_code="landlord-water",
+            bill=water_bill,
+            period=july,
+        )
+
+        rent_act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="Аренда 07.2026",
+            amount="50000.00",
+            invoice_date=date(2026, 7, 31),
+            period=july,
+        )
+        water_act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="Возмещение: вода, 07.2026",
+            amount="9654.25",
+            invoice_date=date(2026, 7, 31),
+            period=july,
+        )
+        await session.commit()
+
+        # Порядок как у пересборки зачётов: аренда идёт первой и раньше съедала чужое.
+        assert await prepayments.auto_settle_invoice_from_open_prepayments(
+            session, rent_act
+        ) == Decimal("50000.00")
+        assert await prepayments.auto_settle_invoice_from_open_prepayments(
+            session, water_act
+        ) == Decimal("9654.25")
+        await session.commit()
+
+        rent_alloc = await _allocations(session, rent_act.id)
+        assert [a.prepayment_id for a in rent_alloc] == [rent_money.id], (
+            "аренда снова закрылась водяными деньгами"
+        )
+        water_alloc = await _allocations(session, water_act.id)
+        assert [a.prepayment_id for a in water_alloc] == [water_money.id]
+        assert [a.match_basis for a in water_alloc] == [prepayments.MATCH_BASIS_INVOICE]
+
+        await session.refresh(rent_money)
+        assert rent_money.amount - rent_money.amount_settled == Decimal("0.00")
+
+
+async def test_system_generated_pair_matches_by_identical_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Пара «счёт + акт», порождённая системой, связывается номером: текста «Основание» нет."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ЭкоЦентр-пара", inn="7712345679")
+        august = (date(2026, 8, 1), date(2026, 8, 31))
+        bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="ВД-54475",
+            amount="4185.28",
+            invoice_date=date(2026, 8, 31),
+        )
+        own = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="4185.28",
+            paid_on=date(2026, 8, 5),
+            wallet_code="eco-own",
+            bill=bill,
+        )
+        # Посторонний аванс с совпавшим периодом: раньше он выигрывал у безымянного акта.
+        await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="4185.28",
+            paid_on=date(2026, 8, 1),
+            wallet_code="eco-other",
+            kind="subscription",
+            period=august,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="ВД-54475",
+            amount="4185.28",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [own.id]
+        assert [a.match_basis for a in alloc] == [prepayments.MATCH_BASIS_INVOICE]
+
+
+async def test_foreign_bill_money_is_last_resort_but_still_usable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Адресные деньги чужого счёта — это ПОРЯДОК, а не запрет.
+
+    Если свободных денег нет вовсе, документ по-прежнему гасится адресным авансом чужого
+    счёта — иначе он остался бы неоплаченным при живых деньгах. Но признак честно скажет
+    «подобрано»: связь документом не подтверждена."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Только чужие деньги", inn="7712345680")
+        july = (date(2026, 7, 1), date(2026, 7, 31))
+        other_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-ЧУЖОЙ",
+            amount="5000.00",
+            invoice_date=date(2026, 7, 10),
+            period=july,
+        )
+        foreign = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="5000.00",
+            paid_on=date(2026, 7, 10),
+            wallet_code="foreign-only",
+            bill=other_bill,
+            period=july,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="АКТ-БЕЗ-СВОИХ-ДЕНЕГ",
+            amount="5000.00",
+            invoice_date=date(2026, 7, 31),
+            period=july,
+        )
+        await session.commit()
+
+        settled = await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        assert settled == Decimal("5000.00"), "документ остался неоплаченным при живых деньгах"
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [foreign.id]
+        assert [a.match_basis for a in alloc] == [prepayments.MATCH_CHRONOLOGY], (
+            "чужие адресные деньги выданы за подтверждённую связь"
+        )
+
+
+async def test_parsed_act_number_does_not_invent_a_basis(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Фолбэк по номеру не выдумывает основание: у разобранного акта номер свой, не счёта."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Обычный поставщик", inn="7712345681")
+        bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-100",
+            amount="3000.00",
+            invoice_date=date(2026, 7, 5),
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="АКТ-777",
+            amount="3000.00",
+            invoice_date=date(2026, 7, 31),
+        )
+        await session.commit()
+
+        assert await prepayments._basis_bill_id(session, act) is None
+        # А документ с номером счёта — находит его.
+        twin = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-100",
+            amount="3000.00",
+            invoice_date=date(2026, 7, 31),
+        )
+        await session.commit()
+        assert await prepayments._basis_bill_id(session, twin) == bill.id
+
+
+async def test_own_bill_money_keeps_amount_rank_when_document_has_no_period(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """У документа БЕЗ периода равенство суммы остаётся единственным различителем.
+
+    Граница гарда «чужие адресные деньги» проходит здесь, и её легко поставить неверно.
+    Безусловный гард (без ``same_period``) отменял ранг ``amount`` у аванса СВОЕГО счёта:
+    у акта без периода ``same_period`` ложен всегда, все кандидаты сваливались в
+    ``chronology``, и победителя выбирала дата денег — тот же перекрёст АЙКО, только в ветке
+    «периода нет». Тест держит границу сверху; ``test_two_product_lines_do_not_cross_settle``
+    держит её снизу.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Акт без периода", inn="7712345682")
+        own_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-СВОЙ",
+            amount="4260.00",
+            invoice_date=date(2026, 7, 4),
+        )
+        other_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-ЧУЖОЙ-БОЛЬШОЙ",
+            amount="16430.00",
+            invoice_date=date(2026, 6, 1),
+        )
+        # Чужие деньги ушли РАНЬШЕ: по хронологии они первые и без ранга суммы победили бы.
+        await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="16430.00",
+            paid_on=date(2026, 6, 2),
+            wallet_code="noperiod-foreign",
+            bill=other_bill,
+        )
+        own = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="4260.00",
+            paid_on=date(2026, 7, 5),
+            wallet_code="noperiod-own",
+            bill=own_bill,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="АКТ-БЕЗ-ПЕРИОДА",
+            amount="4260.00",
+            invoice_date=date(2026, 7, 31),
+        )
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [own.id], "акт закрылся чужими деньгами"
+        assert [a.match_basis for a in alloc] == [prepayments.MATCH_AMOUNT]
