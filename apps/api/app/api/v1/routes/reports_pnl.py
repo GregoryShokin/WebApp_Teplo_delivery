@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
+from app.services import accounting_periods
 from app.services.pnl import drill as drill_service
 from app.services.pnl import ledgers as ledger_service
 from app.services.pnl import projector, workup_review
@@ -701,6 +702,10 @@ async def update_goods_classification(
             note=(payload.note or "").strip() or None,
             user_id=actor.user_id,
         )
+    except accounting_periods.PeriodClosed as error:
+        # Закрытый месяц — конфликт состояния (409), а не негодный ввод (422). Ловим ДО
+        # ValueError: PeriodClosed его подкласс, иначе отказ уехал бы к владельцу под чужим кодом.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

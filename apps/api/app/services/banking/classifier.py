@@ -446,6 +446,12 @@ async def apply_operation_action(
         return
 
     if action in ("mark_internal_transfer", "exclude"):
+        # ЗАМОК — ДО ПЕРВОЙ ЗАПИСИ, а не внутри ``_soft_exclude_operation_cashflow``. Там он
+        # стоит за проверкой «своих строк нет — выходим», а снятие зачётов накладных и предоплат
+        # (``unwind_operation_bank_allocations``, ``_drop_untouched_bank_prepayments``) идёт ЗДЕСЬ,
+        # ДО неё. Для операции, деньги которой несёт prebooked-проводка чужого контура, своих
+        # строк нет вовсе — и исключение в закрытом месяце снимало зачёты без единого возражения.
+        await _assert_operation_month_open(session, operation, action="исключить операцию из учёта")
         # Операция перестаёт быть платежом поставщику — из учёта уходят её деньги, значит
         # уходит и всё, что они «оплачивали»: cash-зачёты проводки (внутри drop) И bank-аллокации
         # сверки (ключ bank_operation_id — их drop по проводке не видит). Иначе накладная
@@ -874,19 +880,62 @@ async def cancel_payouts_of_excluded_transactions(
 
 
 async def _operation_cashflow_rows(
-    session: AsyncSession, operation: BankOperation
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    source_kinds: tuple[str, ...] = ("bank_operation",),
 ) -> list[CashflowTransaction]:
-    """Проводки ДДС, порождённые этой операцией. Пусто — операция ещё не учтена."""
-    return list(
+    """Проводки, которыми учтены деньги операции. Пусто — операция ещё не учтена.
+
+    СВОИХ строк (``bank_operation``) может не быть вовсе, и это штатное состояние, а не признак
+    неразобранной операции: у трети банковских операций деньги несёт prebooked-проводка чужого
+    контура (``counterparty_payment``, ``kassa_cheque``, ``*_bank_to_safe``), с которой операция
+    связана якорем ``cashflow_transaction_id``. За июль под этим 112 операций на 2 063 686,91 ₽,
+    и по выборке «только свои строки» цикл замка по ним не выполнялся НИ РАЗУ — замок молчал на
+    трети потока.
+
+    Критерий «деньги этой операции» здесь тот же, что у соседних дверей: ``apply_operation_action``
+    берёт проводку по якорю, ветка ``exclude`` добавляет якорь к своим строкам явно.
+    """
+    rows = list(
         (
             await session.scalars(
                 select(CashflowTransaction).where(
-                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_kind.in_(source_kinds),
                     CashflowTransaction.source_id == operation.id,
                 )
             )
         ).all()
     )
+    anchor_id = operation.cashflow_transaction_id
+    if anchor_id is not None and all(row.id != anchor_id for row in rows):
+        anchor = await session.get(CashflowTransaction, anchor_id)
+        if anchor is not None:
+            rows.append(anchor)
+    return rows
+
+
+async def _assert_operation_month_open(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    action: str,
+    source_kinds: tuple[str, ...] = ("bank_operation",),
+) -> None:
+    """Замок закрытого месяца по деньгам операции — до первой записи, а не после.
+
+    Одна функция на все двери, меняющие уже учтённую операцию: разбор по строкам, исключение,
+    пополнение Сейфа. Раньше каждая считала «месяц операции» сама, и каждая считала по-своему.
+    """
+    from app.services import accounting_periods
+
+    for booked in await _operation_cashflow_rows(session, operation, source_kinds=source_kinds):
+        await accounting_periods.assert_cashflow_month_open(
+            session,
+            expense_month=booked.expense_month,
+            operation_date=booked.operation_date,
+            action=action,
+        )
 
 
 async def _soft_exclude_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
@@ -1160,15 +1209,9 @@ async def apply_operation_split(
     # строкам идёт основной поток — за июль это 302 проводки на 3 688 210,95 ₽. Первый разбор
     # (проводок ещё нет) не трогаем: выписка вправе приезжать задним числом, и запретить её
     # разбор было бы хуже, чем разрешить.
-    from app.services import accounting_periods
-
-    for booked in await _operation_cashflow_rows(session, operation):
-        await accounting_periods.assert_cashflow_month_open(
-            session,
-            expense_month=booked.expense_month,
-            operation_date=booked.operation_date,
-            action="переразнести операцию по статьям",
-        )
+    await _assert_operation_month_open(
+        session, operation, action="переразнести операцию по статьям"
+    )
 
     # Контрагент доли: свой либо общий по операции (дефолт запроса).
     def line_counterparty(line: OperationSplitLine) -> UUID | None:
@@ -1486,6 +1529,17 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
     )
     if out_article is None or in_article is None:
         raise ValueError("Не найдены статьи перевода между счетами")
+
+    # ПЕРЕРАЗМЕТКА В ПОПОЛНЕНИЕ СЕЙФА СНОСИТ ПРЕЖНИЙ РАЗБОР ЦЕЛИКОМ, а новые ноги идут статьёй
+    # перевода (``in_pnl=false``) — расход закрытого месяца исчезает из ОПиУ, и замена в отчёт
+    # не приходит. Замка у этой двери не было вовсе: за июль под ней 35 проводок на 713 262,42 ₽.
+    # Ставим до первой записи и по тем же строкам, что удаляем, плюс prebooked-якорь.
+    await _assert_operation_month_open(
+        session,
+        operation,
+        action="переразметить операцию как пополнение Сейфа",
+        source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
 
     # Снести прежние проводки, заведённые из этой операции (re-classify) — и обычный
     # сплит (``bank_operation``), и прошлый topup (``manual_bank_to_safe``).

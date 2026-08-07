@@ -2107,6 +2107,12 @@ async def classify_operation(
                 created_ids = []
             else:
                 created_ids = await book_safe_topup(session, operation)
+        except accounting_periods.PeriodClosed as error:
+            # Как и у остальных дверей замка: конфликт состояния, а не негодный ввод. Ловим
+            # ДО ValueError — PeriodClosed его подкласс.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(error)
+            ) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
     elif payload.action == "employee_advance":

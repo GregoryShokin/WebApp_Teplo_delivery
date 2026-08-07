@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -213,27 +214,173 @@ async def test_first_split_of_a_fresh_operation_is_allowed(
         assert len(rows) == 1, "первый разбор новой операции обязан проходить"
 
 
+async def _prebook(session: AsyncSession, operation, *, wallet, article) -> CashflowTransaction:
+    """Деньги операции учтены проводкой ЧУЖОГО контура, своей строки у операции нет.
+
+    Ровно так выглядит треть банковских операций: оплата контрагенту, чек кассы, транзит в
+    Сейф. Операция связана с проводкой якорем ``cashflow_transaction_id``, а ``source_kind`` у
+    той — доменный, не ``bank_operation``.
+    """
+    prebooked = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=operation.amount,
+        operation_date=operation.operation_date,
+        article_id=article.id,
+        source_kind="counterparty_payment",
+        source_id=uuid.uuid4(),
+        payment_purpose="Оплата поставщику",
+        quality_status="final",
+    )
+    session.add(prebooked)
+    await session.flush()
+    operation.cashflow_transaction_id = prebooked.id
+    operation.classification_status = "classified"
+    await session.flush()
+    return prebooked
+
+
+async def test_split_is_blocked_when_the_money_sits_on_a_prebooked_row(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Своих строк нет — но операция УЧТЕНА, и переразбор правит закрытый месяц.
+
+    Замок отбирал проводки строго по ``source_kind='bank_operation'``, а у 112 июльских операций
+    на 2 063 686,91 ₽ деньги несёт проводка чужого контура. Цикл замка по ним не выполнялся ни
+    разу: «нет своих строк» читалось как «операция ещё не учтена», и переразбор проходил молча.
+    """
+    from app.services.banking.classifier import OperationSplitLine, apply_operation_split
+
+    async with async_session_factory() as session:
+        wallet, article, operation = await _fixture(session, code="lock-op-7")
+        other = await make_expense_article(session, code="lock_op_7_other", name="Аренда")
+        prebooked = await _prebook(session, operation, wallet=wallet, article=article)
+        await session.commit()
+        operation_id, prebooked_id, article_id = operation.id, prebooked.id, article.id
+
+        await _close_july(session)
+        await session.commit()
+
+        with pytest.raises(accounting_periods.PeriodClosed):
+            await apply_operation_split(
+                session,
+                operation,
+                splits=[OperationSplitLine(article_id=other.id, amount=Decimal("88000.00"))],
+            )
+        await session.rollback()
+
+        assert not await _rows(session, operation_id), "разбор всё-таки завёл свои строки"
+        survivor = await session.get(CashflowTransaction, prebooked_id)
+        assert survivor is not None and survivor.article_id == article_id
+
+
+async def test_exclude_is_blocked_when_the_money_sits_on_a_prebooked_row(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Та же дыра у «Исключить»: зачёты снимались ДО проверки, а проверять было нечего.
+
+    ``_soft_exclude_operation_cashflow`` выходит на «своих строк нет» раньше своего замка, а
+    снятие банк-аллокаций накладных и предоплат идёт ещё выше по коду — то есть до него.
+    """
+    async with async_session_factory() as session:
+        wallet, article, operation = await _fixture(session, code="lock-op-8")
+        await _prebook(session, operation, wallet=wallet, article=article)
+        await session.commit()
+        anchor_id = operation.cashflow_transaction_id
+
+        await _close_july(session)
+        await session.commit()
+
+        with pytest.raises(accounting_periods.PeriodClosed):
+            await apply_operation_action(session, operation, action="exclude")
+        await session.rollback()
+
+        await session.refresh(operation)
+        assert operation.cashflow_transaction_id == anchor_id, "якорь оборвали в закрытом месяце"
+        assert operation.classification_status != "excluded"
+
+
+async def test_safe_topup_cannot_erase_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Пополнение Сейфа» сносит прежний разбор целиком, а замка у этой двери не было вовсе.
+
+    Новые ноги идут статьёй перевода (``in_pnl=false``), поэтому расход закрытого месяца из
+    ОПиУ исчезает, а замена в отчёт не приходит. За июль под дверью 35 проводок на 713 262,42 ₽.
+    """
+    from app.services.banking.classifier import book_safe_topup
+
+    async with async_session_factory() as session:
+        _wallet, article, operation = await _fixture(session, code="lock-op-9")
+        await session.commit()
+        operation_id, article_id = operation.id, article.id
+
+        await apply_operation_action(
+            session, operation, action="set_article", article_id=article.id
+        )
+        await session.commit()
+
+        await _close_july(session)
+        await session.commit()
+
+        with pytest.raises(accounting_periods.PeriodClosed):
+            await book_safe_topup(session, operation)
+        await session.rollback()
+
+        rows = await _rows(session, operation_id)
+        assert len(rows) == 1, "прежний разбор снесли в закрытом месяце"
+        assert rows[0].article_id == article_id
+
+
+async def test_prebooked_operation_is_not_blocked_in_an_open_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Обратная сторона: в ОТКРЫТОМ месяце ни одна из трёх дверей не должна отказывать."""
+    from app.services.banking.classifier import (
+        OperationSplitLine,
+        apply_operation_split,
+        book_safe_topup,
+    )
+
+    async with async_session_factory() as session:
+        wallet, article, operation = await _fixture(session, code="lock-op-10", amount="12000.00")
+        other = await make_expense_article(session, code="lock_op_10_other", name="Аренда")
+        await _prebook(session, operation, wallet=wallet, article=article)
+        await session.commit()
+        operation_id = operation.id
+
+        await apply_operation_split(
+            session,
+            operation,
+            splits=[OperationSplitLine(article_id=other.id, amount=Decimal("12000.00"))],
+        )
+        await session.commit()
+        assert len(await _rows(session, operation_id)) == 1
+
+        await book_safe_topup(session, operation)
+        await session.commit()
+        assert operation.classification_status == "classified"
+
+        await apply_operation_action(session, operation, action="exclude")
+        await session.commit()
+        assert operation.classification_status == "excluded"
+
+
 async def test_open_month_operations_are_not_blocked(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Замок держит только закрытое: в открытом месяце все три двери работают как прежде."""
     async with async_session_factory() as session:
-        _wallet, article, operation = await _fixture(
-            session, code="lock-op-4", amount="12000.00"
-        )
+        _wallet, article, operation = await _fixture(session, code="lock-op-4", amount="12000.00")
         other = await make_expense_article(session, code="lock_op_4_other", name="Аренда")
         await session.commit()
 
         await apply_operation_action(
             session, operation, action="set_article", article_id=article.id
         )
-        await apply_operation_action(
-            session, operation, action="set_article", article_id=other.id
-        )
+        await apply_operation_action(session, operation, action="set_article", article_id=other.id)
         await apply_operation_action(session, operation, action="exclude")
-        await apply_operation_action(
-            session, operation, action="set_article", article_id=other.id
-        )
+        await apply_operation_action(session, operation, action="set_article", article_id=other.id)
         await session.commit()
 
         rows = await _rows(session, operation.id)
