@@ -30,6 +30,15 @@ export type PaymentIntake = {
   service_period_status: string | null;
   service_period_confidence: number | null;
   service_period_required: boolean;
+  /**
+   * НДС счёта — то, что уйдёт в назначение платежа.
+   * 'included' — налог есть, 'none' — в счёте написано «без НДС», '' — не распознан.
+   * Последнее банк увидит как «Без НДС.», поэтому окно просит заполнить руками.
+   */
+  vat_mode: string;
+  /** Ставка бывает неизвестна и при известной сумме — так приходит НДС из ЭДО. */
+  vat_rate: string | null;
+  vat_amount: string | null;
   /** Режим признания услуг: 'per_invoice' — расход принесёт УПД, период спрашивать незачем. */
   service_billing_mode: string | null;
   // Что распознано в самом PDF. Правки оператора сюда не пишутся — они в reviewed_requisites.
@@ -74,6 +83,10 @@ export type ConfirmPayload = {
   invoice_date?: string | null;
   service_period_start?: string | null;
   service_period_end?: string | null;
+  /** Сумма НДС для назначения платежа. Пустая строка — осознанное «налога в счёте нет»;
+   *  undefined — поле не трогали (окно отправки шлёт правки реквизитов, но не налога). */
+  vat_amount?: string | null;
+  vat_rate?: string | null;
   requisites?: Record<string, string | null> | null;
   apply_requisites?: boolean;
 };

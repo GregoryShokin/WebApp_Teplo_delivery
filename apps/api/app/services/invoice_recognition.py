@@ -157,10 +157,30 @@ class RecognizedInvoice:
     # но по ним ingest находит оплаченный счёт и наследует его период услуги.
     basis_number: str | None = None
     basis_date: date | None = None
+    # НДС уходит в НАЗНАЧЕНИЕ ПЛАТЕЖА, поэтому три состояния держим врозь:
+    # 'included' — налог в документе есть (сумма в ``vat_amount``), 'none' — документ прямо
+    # говорит «без НДС» (поставщик на УСН/льгота), '' — в документе не нашли. Последнее НЕ то же
+    # самое, что «без НДС»: это наше незнание, и оператор должен видеть поле пустым.
+    vat_mode: str = ""
+    # Ставка только явная («в т.ч. НДС 22%»). Вычислять её из отношения нельзя: у счёта со
+    # смешанными ставками расчёт даст несуществующую, а в платёжке это уже неправда.
+    vat_rate: str | None = None
+    vat_amount: Decimal | None = None
 
     @property
     def is_payment_invoice(self) -> bool:
         return self.document_kind == "invoice"
+
+    def vat_breakdown(self) -> dict[str, str]:
+        """НДС в форме ``SupplierInvoice.vat_breakdown`` (ставка → сумма).
+
+        Ключ пустой строкой — «сумма известна, ставка нет»: так приходит ЭДО (СБИС даёт
+        «сумма» и «сумма без НДС», ставки в данных нет вовсе) и часть счетов, где налог
+        напечатан одной строкой. Назначение платежа такую долю печатает суммой без процента.
+        """
+        if self.vat_mode != "included" or self.vat_amount is None or self.vat_amount <= 0:
+            return {}
+        return {self.vat_rate or "": str(self.vat_amount)}
 
     def requisites(self) -> dict[str, str]:
         """Реквизиты в форме, понятной ``build_payment_draft_api_payload`` (для Фазы 2/3)."""
@@ -203,6 +223,9 @@ class RecognizedInvoice:
                 {"start": start.isoformat(), "end": end.isoformat()}
                 for start, end in self.service_period_candidates
             ],
+            "vat_mode": self.vat_mode,
+            "vat_rate": self.vat_rate,
+            "vat_amount": str(self.vat_amount) if self.vat_amount is not None else None,
             "confidence": round(self.confidence, 3),
             "engine": self.engine,
             "document_kind": self.document_kind,
@@ -581,6 +604,90 @@ def _pick_amount(text: str) -> Decimal | None:
     return None
 
 
+# «Без НДС» как ФАКТ документа: поставщик на УСН, льгота или необлагаемая операция. Держим
+# отдельно от «налог не нашли» — в назначении платежа это разные утверждения.
+_VAT_FREE_RE = re.compile(
+    r"без\s+ндс"
+    r"|ндс\s+не\s+облага\w*"
+    r"|не\s+облага\w*\s+ндс"
+    r"|без\s+налога\s*\(?\s*ндс"
+    r"|ндс\s+не\s+предусмотрен\w*"
+    r"|не\s+явля\w*\s+плательщик\w*\s+ндс",
+    re.IGNORECASE,
+)
+# Между маркером НДС и его суммой в счетах стоят только знаки и «руб.»: скобки, двоеточие,
+# тире, знак процента. Букв здесь быть не должно — иначе шаблон перепрыгивает заголовок
+# колонки («… НДС Сумма, руб 1 Услуги доставки 1 439,90») и берёт первую строку реестра.
+_VAT_TAIL = r"[\s:=(),\-–—*]*(?:руб(?:\.|лей)?)?[\s:=(),\-–—*]*"
+# Сумма налога часто завершает предложение — «…за услуги доставки, в т.ч. НДС 1439,90.» —
+# а общий ``_MONEY`` точку после копеек запрещает (иначе «19.07» из даты 19.07.2026 сходит за
+# деньги). Здесь конечная точка разрешена ровно до тех пор, пока за ней не идёт цифра: дата
+# остаётся неденьгами, а налог в конце фразы больше не теряется.
+_VAT_MONEY = r"(?<![\d,.])\d{1,3}(?:[   ]?\d{3})*[.,]\d{2}(?![\d,]|\.\d)"
+# Ставка печатается либо в самом маркере («в т.ч. НДС 22%: 1 439,90»), либо отдельной
+# колонкой. Ловим только явную — вычисленная из отношения на счёте со смешанными ставками
+# была бы выдумкой, а назначение платежа читает налоговая.
+_VAT_RATE = r"(?:\(?\s*(\d{1,2})(?:[.,]\d+)?\s*%\s*\)?)?"
+_VAT_AMOUNT_PATTERNS = (
+    # «в том числе НДС 22% — 1 439,90», «включая НДС: 1 439,90»
+    rf"(?:в\s*т(?:ом)?\.?\s*ч(?:исле)?\.?|включая|в\s+числе)\s*ндс{_VAT_TAIL}{_VAT_RATE}"
+    rf"{_VAT_TAIL}({_VAT_MONEY})",
+    # «Сумма НДС: 1 439,90», «Итого НДС 22% 1 439,90»
+    rf"(?:сумма|итого|всего)\s+ндс{_VAT_TAIL}{_VAT_RATE}{_VAT_TAIL}({_VAT_MONEY})",
+    # Голое «НДС 22% 1 439,90» — самый широкий шаблон, поэтому последний.
+    rf"ндс{_VAT_TAIL}{_VAT_RATE}{_VAT_TAIL}({_VAT_MONEY})",
+)
+# Предлог перед «НДС» переворачивает смысл следующего за ним числа, и оба случая встречаются
+# в живых счетах: «Итого С НДС 22%: 7 984,90» — это ИТОГ (без проверки счёт СДЭК объявлял
+# налогом весь платёж), «Лицензия … БЕЗ НДС 3 540,00» — цена позиции прейскуранта (счёт
+# Курьерики заводил 3 540 ₽ налога там, где налога нет вовсе).
+_VAT_SKIP_PREFIX_RE = re.compile(r"\b(?:с|без)\s*$", re.IGNORECASE)
+
+
+def _vat_ratio_plausible(amount: Decimal, vat: Decimal, rate: str | None) -> bool:
+    """НДС правдоподобен, если он меньше суммы и (при явной ставке) сходится с ней.
+
+    Сумма счёта — gross (с налогом), поэтому налог по ставке r считается как
+    ``amount * r / (100 + r)``. Допуск 2 % покрывает построчные округления и случай, когда
+    ставка напечатана у строки, а сумма счёта включает необлагаемые позиции.
+    """
+    if vat <= 0 or vat >= amount:
+        return False
+    if not rate:
+        return True
+    try:
+        r = Decimal(rate)
+    except (InvalidOperation, ValueError):
+        return True
+    if r <= 0:
+        return False
+    expected = amount * r / (Decimal(100) + r)
+    return abs(vat - expected) <= max(expected * Decimal("0.02"), Decimal("1"))
+
+
+def _pick_vat(text: str, amount: Decimal | None) -> tuple[str, str | None, Decimal | None]:
+    """НДС документа: ``(mode, rate, vat_amount)``.
+
+    Явная сумма налога главнее пометки «без НДС»: в счёте со смешанными позициями
+    («Лицензия … Без НДС» + облагаемая услуга) итоговая строка НДС описывает документ, а
+    построчная пометка — только свою строку.
+    """
+    for pattern in _VAT_AMOUNT_PATTERNS:
+        for m in re.finditer(pattern, text, re.IGNORECASE):
+            if _VAT_SKIP_PREFIX_RE.search(text[max(0, m.start() - 8) : m.start()]):
+                continue
+            vat = _money(m.group(2))
+            if vat is None:
+                continue
+            rate = m.group(1)
+            if amount is not None and not _vat_ratio_plausible(amount, vat, rate):
+                continue
+            return "included", rate, vat
+    if _VAT_FREE_RE.search(text):
+        return "none", None, None
+    return "", None, None
+
+
 def _pick_recipient(text: str) -> str | None:
     for m in _ORG_RE.finditer(text):
         name = re.sub(r"\s+", " ", m.group(0)).strip(" .,;:")
@@ -861,6 +968,12 @@ def deterministic_recognize(text: str, *, context_text: str | None = None) -> Re
     # становятся (иначе акт неотличим от счёта, по которому уже прошла оплата), но по ним ingest
     # находит счёт и наследует его период услуги.
     rec.basis_number, rec.basis_date = _pick_basis(text)
+    rec.vat_mode, rec.vat_rate, rec.vat_amount = _pick_vat(text, rec.amount)
+    if rec.vat_mode == "" and re.search(r"ндс\s*\(?\s*\d{1,2}\s*%", text, re.IGNORECASE):
+        # Ставка в документе видна, а сама сумма налога — нет (её печатают только в итоговой
+        # строке «Итого с НДС 22%»). Вычислять налог из ставки не будем: у счёта со смешанными
+        # позициями расчёт по итогу даёт не ту цифру. Пусть оператор впишет с бумаги.
+        rec.notes.append("в счёте указана ставка НДС, но сумма налога не распознана")
     rec.invoice_number = _pick_number(text)
     rec.invoice_date = _pick_invoice_date(text)
     _apply_service_period(rec, text, context_text)
@@ -942,6 +1055,28 @@ _LLM_TOOL = {
                 "description": "Корреспондентский счёт банка (20 цифр).",
             },
             "amount": {"type": "string", "description": "Итоговая сумма К ОПЛАТЕ с НДС, число."},
+            "vat_mode": {
+                "type": "string",
+                "enum": ["included", "none", "unknown"],
+                "description": (
+                    "'included' — в документе есть НДС; 'none' — документ прямо говорит «без "
+                    "НДС» / «НДС не облагается»; 'unknown' — про НДС в документе ничего нет."
+                ),
+            },
+            "vat_amount": {
+                "type": "string",
+                "description": (
+                    "СУММА НДС из документа, число. Только если она там напечатана — "
+                    "самому считать её от суммы к оплате нельзя."
+                ),
+            },
+            "vat_rate": {
+                "type": "string",
+                "description": (
+                    "Ставка НДС в процентах ('22', '20', '10'), только если указана явно. "
+                    "Если ставок в документе несколько — оставь пустым."
+                ),
+            },
             "invoice_number": {"type": "string"},
             "invoice_date": {"type": "string", "description": "Дата счёта в формате YYYY-MM-DD."},
             "service_period_start": {
@@ -963,6 +1098,10 @@ _LLM_PROMPT = (
     "890307589201). Если это счёт на оплату / счёт-фактура / УПД — извлеки реквизиты "
     "ПОЛУЧАТЕЛЯ платежа (поставщика), НЕ покупателя, итоговую сумму К ОПЛАТЕ с НДС и "
     "период оказания услуги, только если он явно указан. "
+    "НДС (vat_mode/vat_amount/vat_rate) укажи так, как он напечатан в документе: сумма налога "
+    "уходит в назначение платежа, поэтому её нельзя считать самому — если суммы НДС в бумаге "
+    "нет, оставь vat_amount пустым. Различай «без НДС» (так написано в документе) и «про НДС "
+    "ничего не сказано» — это vat_mode='none' и vat_mode='unknown' соответственно. "
     "ОБЯЗАТЕЛЬНО определи вид документа (document_kind): счёт на оплату ОПЛАЧИВАЮТ, а УПД и "
     "акт подтверждают уже оказанную услугу — это разные роли в учёте, и перепутать их нельзя. "
     "Если документ НЕ является счётом/УПД (письмо, акт сверки, договор, реклама) — верни "
@@ -1035,6 +1174,22 @@ async def llm_recognize(pdf: bytes, *, settings: Settings) -> RecognizedInvoice 
     rec.bank_bik = _digits(payload.get("bank_bik"), (9,))
     rec.corr_account = _digits(payload.get("corr_account"), (20,))
     rec.amount = _money(str(payload.get("amount"))) if payload.get("amount") is not None else None
+    # НДС модели верим только на просчёте: сумма налога, не сходящаяся ни со ставкой, ни с
+    # суммой счёта, — верный признак, что модель посчитала её сама вопреки запрету в промте.
+    # Такая цифра уехала бы прямо в назначение платежа, поэтому лучше пусто, чем «примерно».
+    vat_mode = str(payload.get("vat_mode") or "").strip().lower()
+    vat_rate = re.sub(r"[^\d]", "", str(payload.get("vat_rate") or "")) or None
+    vat_amount = _money(_text("vat_amount") or "")
+    if vat_mode == "none":
+        rec.vat_mode = "none"
+    elif vat_amount is not None and (
+        rec.amount is None or _vat_ratio_plausible(rec.amount, vat_amount, vat_rate)
+    ):
+        rec.vat_mode = "included"
+        rec.vat_rate = vat_rate
+        rec.vat_amount = vat_amount
+    elif vat_amount is not None:
+        rec.notes.append("llm вернул сумму НДС, не сходящуюся со счётом — отброшено")
     rec.invoice_number = _text("invoice_number")
     rec.invoice_date = _parse_date(_text("invoice_date") or "")
     start_text = _text("service_period_start")
@@ -1094,6 +1249,14 @@ def _merge(base: RecognizedInvoice, extra: RecognizedInvoice) -> RecognizedInvoi
     ):
         if getattr(base, attr) in (None, "") and getattr(extra, attr) not in (None, ""):
             setattr(base, attr, getattr(extra, attr))
+    # НДС переносим блоком «режим + ставка + сумма», а не по одному полю. Смешение источников
+    # даёт нежить вроде «режим „без НДС“ со ставкой 22 % от модели»: в назначении платежа это
+    # обернулось бы либо потерянным налогом, либо выдуманным. Пустой режим у base означает,
+    # что детерминированный слой про НДС не сказал НИЧЕГО — только тогда слушаем модель.
+    if base.vat_mode == "" and extra.vat_mode:
+        base.vat_mode = extra.vat_mode
+        base.vat_rate = extra.vat_rate
+        base.vat_amount = extra.vat_amount
     return base
 
 

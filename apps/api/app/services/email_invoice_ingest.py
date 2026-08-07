@@ -14,10 +14,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from email.utils import parseaddr
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -387,6 +389,7 @@ async def _materialize_companion(
 
     period_start = _date_or_none(companion.get("service_period_start"))
     period_end = _date_or_none(companion.get("service_period_end"))
+    companion_vat_total, companion_vat_breakdown = _recognized_vat(companion, amount)
     closing = SupplierInvoice(
         counterparty_id=cp_id,
         source="email",
@@ -406,6 +409,11 @@ async def _materialize_companion(
         ),
         service_period_confidence=companion.get("service_period_confidence"),
         amount=amount,
+        # НДС у закрывающего свой: спутник несёт кредиторку по факту услуги, и налог в ней —
+        # из его собственной бумаги, а не унаследованный от счёта (``_merge_identity`` НДС
+        # намеренно не переносит).
+        vat_total=companion_vat_total,
+        vat_breakdown=companion_vat_breakdown,
         payment_status="unpaid",
         note=intake.subject,
         raw_payload={
@@ -442,6 +450,30 @@ def _intake_amount(intake: EmailInvoiceIntake) -> Decimal | None:
     except (InvalidOperation, ValueError):
         return None
     return value if value > 0 else None
+
+
+def _recognized_vat(
+    recognition: dict[str, Any] | None, amount: Decimal | None
+) -> tuple[Decimal, dict[str, str]]:
+    """НДС распознанного документа → ``(vat_total, vat_breakdown)`` для накладной.
+
+    Ключ разбивки пустой, когда ставка в документе не напечатана: сумма налога всё равно
+    обязана доехать до назначения платежа. Налог больше самой суммы счёта — заведомо чужое
+    число (маркер поймал итог), такой НДС отбрасываем: лучше пустое поле, которое оператор
+    увидит в окне разбора, чем платёжка, где налог больше платежа.
+    """
+    rec = recognition or {}
+    if str(rec.get("vat_mode") or "") != "included":
+        return Decimal("0.00"), {}
+    try:
+        vat = Decimal(str(rec.get("vat_amount") or "0"))
+    except (InvalidOperation, ValueError):
+        return Decimal("0.00"), {}
+    vat = vat.quantize(Decimal("0.01"))
+    if vat <= 0 or (amount is not None and vat >= amount):
+        return Decimal("0.00"), {}
+    rate = str(rec.get("vat_rate") or "").strip()
+    return vat, {rate: str(vat)}
 
 
 async def materialize_from_intake(
@@ -530,6 +562,7 @@ async def materialize_from_intake(
         await _materialize_package_companion(session, intake, cp_id=cp_id, recognition=rec_json)
         return intake.status
 
+    vat_total, vat_breakdown = _recognized_vat(rec_json, amount)
     invoice = SupplierInvoice(
         counterparty_id=cp_id,
         source="email",
@@ -545,6 +578,8 @@ async def materialize_from_intake(
         service_period_status=period_status,
         service_period_confidence=rec_json.get("service_period_confidence"),
         amount=amount,
+        vat_total=vat_total,
+        vat_breakdown=vat_breakdown,
         payment_status="unpaid",
         note=intake.subject,
         raw_payload={
@@ -592,6 +627,8 @@ async def confirm_intake_with_review(
     invoice_date: str | None = None,
     service_period_start: str | None = None,
     service_period_end: str | None = None,
+    vat_amount: str | None = None,
+    vat_rate: str | None = None,
     requisites: dict[str, str] | None = None,
     apply_requisites: bool = False,
 ) -> str:
@@ -645,6 +682,35 @@ async def confirm_intake_with_review(
         rec["service_period_end"] = (service_period_end or "").strip() or None
         rec["service_period_source"] = "manual"
         rec["service_period_ambiguous"] = False
+    if vat_amount is not None or vat_rate is not None:
+        # НДС правит человек, глядя в бумагу, — его слово последнее. Пустая сумма означает
+        # «налога в счёте нет»: режим уходит в 'none', и в назначение платежа встаёт «Без НДС.»
+        # Ставка без суммы бессмысленна (в платёжку идёт именно сумма), поэтому не хранится.
+        clean_vat = (vat_amount or "").strip().replace(",", ".")
+        clean_rate = re.sub(r"[^\d]", "", vat_rate or "")
+        parsed: Decimal | None = None
+        if clean_vat:
+            try:
+                parsed = Decimal(clean_vat)
+            except (InvalidOperation, ValueError):
+                raise ValueError("Сумма НДС — не число") from None
+        # Сумму берём из ПРАВЛЕНОГО ``rec``, а не из intake: оператор мог поправить её в этом
+        # же окне, и сверять налог со старой суммой значит пропустить ровно тот случай, ради
+        # которого сверка нужна.
+        try:
+            invoice_amount = Decimal(str(rec.get("amount") or "0")) or None
+        except (InvalidOperation, ValueError):
+            invoice_amount = None
+        if parsed is not None and parsed > 0:
+            if invoice_amount is not None and parsed >= invoice_amount:
+                raise ValueError("Сумма НДС не может быть больше суммы счёта")
+            rec["vat_mode"] = "included"
+            rec["vat_amount"] = str(parsed.quantize(Decimal("0.01")))
+            rec["vat_rate"] = clean_rate or None
+        else:
+            rec["vat_mode"] = "none"
+            rec["vat_amount"] = None
+            rec["vat_rate"] = None
     clean_req = {k: v.strip() for k, v in (requisites or {}).items() if v and v.strip()}
     if requisites is not None:
         # Правки оператора кладём РЯДОМ с распознанным, а не поверх. ``rec["requisites"]`` —
@@ -679,6 +745,12 @@ async def confirm_intake_with_review(
             new_amount = _intake_amount(intake)
             if new_amount is not None:
                 inv.amount = new_amount
+            # НДС переносим на накладную и при пере-разборе: окно отправки в банк правит его
+            # ровно этим путём, а назначение платежа собирается из полей накладной, а не из
+            # распознанного. Без синхронизации правка оператора оставалась бы в intake и не
+            # доезжала до платёжки.
+            if rec.get("vat_mode"):
+                inv.vat_total, inv.vat_breakdown = _recognized_vat(rec, inv.amount)
             inv.number = rec.get("invoice_number") or None
             iso_date = rec.get("invoice_date")
             if iso_date:
@@ -1064,6 +1136,8 @@ async def process_attachment(
         ),
         service_period_confidence=rec.service_period_confidence,
         amount=rec.amount,
+        vat_total=rec.vat_amount if rec.vat_mode == "included" else Decimal("0.00"),
+        vat_breakdown=rec.vat_breakdown(),
         payment_status="unpaid",
         note=att.subject,
         raw_payload={

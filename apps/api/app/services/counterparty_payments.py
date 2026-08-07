@@ -92,10 +92,19 @@ async def _allocated_amount(session: AsyncSession, invoice_id: uuid.UUID) -> Dec
 
 
 def _aggregate_vat(invoices: Sequence[SupplierInvoice]) -> dict[str, Decimal]:
-    """Sum VAT across the pack per rate (e.g. 10% / 22%)."""
+    """Sum VAT across the pack per rate (e.g. 10% / 22%).
+
+    Пустой ключ — «сумма налога известна, ставка нет». Так приходит ЭДО (СБИС даёт только
+    «сумма» и «сумма без НДС») и часть распознанных счетов, где напечатана одна строка НДС.
+    Без этой ветки налог таких счетов не доезжал до назначения вовсе: разбивка по ставкам
+    пуста, и платёжка уходила в банк с «Без НДС.» при живом налоге в документе.
+    """
     aggregate: dict[str, Decimal] = {}
     for invoice in invoices:
-        for rate, amount in (invoice.vat_breakdown or {}).items():
+        breakdown = invoice.vat_breakdown or {}
+        if not breakdown and _money(invoice.vat_total) > 0:
+            breakdown = {"": invoice.vat_total}
+        for rate, amount in breakdown.items():
             aggregate[rate] = aggregate.get(rate, Decimal(0)) + Decimal(str(amount))
     return {rate: _money(amount) for rate, amount in aggregate.items() if _money(amount) > 0}
 
@@ -103,9 +112,12 @@ def _aggregate_vat(invoices: Sequence[SupplierInvoice]) -> dict[str, Decimal]:
 def _vat_suffix(vat: dict[str, Decimal]) -> str:
     if not vat:
         return "Без НДС."
+    # Ставку не выдумываем: где её нет, печатаем одну сумму — банку этого достаточно, а
+    # вычисленный из отношения процент на счёте со смешанными ставками был бы неправдой.
+    # Безставочная доля идёт последней (сортировка ставит её в конец через float('inf')).
     parts = [
-        f"{rate}% - {format(vat[rate], 'f').replace('.', ',')} руб."
-        for rate in sorted(vat, key=lambda rate: float(rate))
+        (f"{rate}% - " if rate else "") + f"{format(vat[rate], 'f').replace('.', ',')} руб."
+        for rate in sorted(vat, key=lambda rate: float(rate) if rate else float("inf"))
     ]
     # Each part ends with "руб." so the last one provides the terminal period.
     return "В т.ч. НДС: " + "; ".join(parts)

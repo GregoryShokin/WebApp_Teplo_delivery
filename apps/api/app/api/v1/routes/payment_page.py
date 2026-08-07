@@ -91,6 +91,13 @@ class IntakeRead(BaseModel):
     service_period_status: str | None
     service_period_confidence: float | None
     service_period_required: bool
+    # НДС счёта — то, что уйдёт в назначение платежа. 'included' — налог есть, 'none' — счёт
+    # прямо говорит «без НДС», '' — не распознан (окно показывает поле пустым и просит
+    # заполнить: пустой налог банк увидит как «Без НДС.»). Ставка бывает неизвестна и при
+    # известной сумме — так приходит ЭДО.
+    vat_mode: str
+    vat_rate: str | None
+    vat_amount: str | None
     # Режим признания услуг контрагента. Решает, спрашивать ли период в момент оплаты:
     # у «счёт + УПД» сумму расхода принесёт документ, и период там знает только оператор
     # услуги (Манго: платим 5 000, а расход по звонкам 372,08) — спрашивать бессмысленно.
@@ -167,6 +174,10 @@ class ConfirmIn(BaseModel):
     invoice_date: str | None = None
     service_period_start: str | None = None
     service_period_end: str | None = None
+    # НДС платежа: сумма налога и (если известна) ставка. Пустая строка — осознанное «налога
+    # в счёте нет», и в назначение встанет «Без НДС.»; None — оператор поля не трогал.
+    vat_amount: str | None = None
+    vat_rate: str | None = None
     requisites: ReviewRequisites | None = None
     # Перенести реквизиты в карточку контрагента и пометить проверенными.
     apply_requisites: bool = False
@@ -229,11 +240,31 @@ def _to_read(
     invoice_service_period_source: str | None = None,
     invoice_service_period_status: str | None = None,
     invoice_service_period_confidence: Any | None = None,
+    invoice_vat_total: Decimal | None = None,
+    invoice_vat_breakdown: dict[str, Any] | None = None,
     service_period_required: bool | None = False,
     service_billing_mode: str | None = None,
 ) -> IntakeRead:
     rec: dict[str, Any] = intake.recognition or {}
     utility: dict[str, Any] = rec.get("utility") or {}
+    # НДС: у заведённой накладной истина в ней — там и правки оператора, и данные ЭДО. Но
+    # НУЛЕВОЙ налог накладной сам по себе ничего не говорит: «без НДС» и «не распознали» лежат
+    # в базе одинаковым нулём. Различает их режим из распознанного — иначе окно отправки в
+    # банк показывало бы уверенное «Без НДС» там, где налог просто потеряли.
+    if invoice_vat_total is not None and invoice_vat_total > 0:
+        vat_rate_value = next(iter(invoice_vat_breakdown or {}), None) or None
+        vat_amount_value = str(invoice_vat_total)
+        vat_mode_value = "included"
+    else:
+        vat_rate_value = rec.get("vat_rate") or None
+        vat_amount_value = rec.get("vat_amount") or None
+        vat_mode_value = str(rec.get("vat_mode") or "")
+        if vat_mode_value == "included" and invoice_vat_total is not None:
+            # Распознанный налог до накладной не доехал (не прошёл сверку с суммой) — честнее
+            # показать поле пустым, чем цифру, которой в платёжке не будет.
+            vat_mode_value = ""
+            vat_amount_value = None
+            vat_rate_value = None
     period_start_value = (
         invoice_service_period_start.isoformat()
         if invoice_service_period_start
@@ -288,6 +319,9 @@ def _to_read(
             )
         ),
         service_period_required=bool(service_period_required),
+        vat_mode=vat_mode_value,
+        vat_rate=vat_rate_value,
+        vat_amount=vat_amount_value,
         service_billing_mode=service_billing_mode,
         requisites=rec.get("requisites") or {},
         reviewed_requisites=rec.get("requisites_reviewed") or {},
@@ -383,6 +417,8 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
                 SupplierInvoice.service_period_source,
                 SupplierInvoice.service_period_status,
                 SupplierInvoice.service_period_confidence,
+                SupplierInvoice.vat_total,
+                SupplierInvoice.vat_breakdown,
                 CounterpartyPayableProfile.service_period_required,
                 CounterpartyPayableProfile.service_billing_mode,
             )
@@ -410,6 +446,8 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
         period_source,
         period_status,
         period_confidence,
+        invoice_vat_total,
+        invoice_vat_breakdown,
         period_required,
         billing_mode,
     ) = row
@@ -426,6 +464,8 @@ async def _load_read(session: AsyncSession, intake_id: uuid.UUID) -> IntakeRead:
         invoice_service_period_source=period_source,
         invoice_service_period_status=period_status,
         invoice_service_period_confidence=period_confidence,
+        invoice_vat_total=invoice_vat_total,
+        invoice_vat_breakdown=invoice_vat_breakdown,
         service_period_required=period_required,
         service_billing_mode=billing_mode,
     )
@@ -451,6 +491,8 @@ async def list_intakes(
             SupplierInvoice.service_period_source,
             SupplierInvoice.service_period_status,
             SupplierInvoice.service_period_confidence,
+            SupplierInvoice.vat_total,
+            SupplierInvoice.vat_breakdown,
             CounterpartyPayableProfile.service_period_required,
             CounterpartyPayableProfile.service_billing_mode,
         )
@@ -482,6 +524,8 @@ async def list_intakes(
             invoice_service_period_source=period_source,
             invoice_service_period_status=period_status,
             invoice_service_period_confidence=period_confidence,
+            invoice_vat_total=invoice_vat_total,
+            invoice_vat_breakdown=invoice_vat_breakdown,
             service_period_required=period_required,
             service_billing_mode=billing_mode,
         )
@@ -498,6 +542,8 @@ async def list_intakes(
             period_source,
             period_status,
             period_confidence,
+            invoice_vat_total,
+            invoice_vat_breakdown,
             period_required,
             billing_mode,
         ) in rows
@@ -693,6 +739,8 @@ async def confirm_intake(
             invoice_date=body.invoice_date,
             service_period_start=body.service_period_start,
             service_period_end=body.service_period_end,
+            vat_amount=body.vat_amount,
+            vat_rate=body.vat_rate,
             requisites=body.requisites.model_dump(exclude_none=True) if body.requisites else None,
             apply_requisites=body.apply_requisites,
         )
