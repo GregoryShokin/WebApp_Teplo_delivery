@@ -392,6 +392,14 @@ async def build_goods_ledger(session: AsyncSession, month: date) -> GoodsLedger:
         detail_totals[detail.metric_code] = (
             detail_totals.get(detail.metric_code, Decimal("0.00")) + detail.amount
         )
+        expense = pnl_goods_amount(detail.metric_code, detail.amount)
+        # БАРНЫЕ КОРЗИНЫ ПОКАЗЫВАЮТСЯ ВО ВКЛАДКЕ «РЕВИЗИИ», а там две колонки — «Недостача» и
+        # «Излишек» (фильтр вкладки: ``source_kind === 'inventory'``). Раскладываем по знаку
+        # ровно так же, как ветка ревизий ниже. Без этого излишек коробок за июль (7 290,59 ₽)
+        # встал бы ОТРИЦАТЕЛЬНЫМ числом в колонку «Недостача», при том что подпись вкладки
+        # обещает показывать недостачи и излишки отдельно.
+        # Закупочным строкам (накладные) расклад не нужен: у них своя вкладка с одной суммой.
+        is_bar_audit = detail.source_kind == "inventory"
         rows.append(
             GoodsLedgerRow(
                 line_code=line_code,
@@ -400,8 +408,9 @@ async def build_goods_ledger(session: AsyncSession, month: date) -> GoodsLedger:
                 product_guid=detail.iiko_product_guid,
                 product_name=detail.product_name or detail.iiko_product_guid,
                 source_amount=detail.amount,
-                amount=pnl_goods_amount(detail.metric_code, detail.amount),
+                amount=max(expense, Decimal("0.00")) if is_bar_audit else expense,
                 rows_count=detail.rows_count,
+                surplus_amount=max(-expense, Decimal("0.00")) if is_bar_audit else Decimal("0.00"),
             )
         )
 

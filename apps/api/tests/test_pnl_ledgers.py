@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core.config import Settings
 from app.jobs.pnl_iiko_sync_job import target_months
@@ -1843,3 +1843,211 @@ def test_rebuild_leaves_unsynced_month_untouched(async_session_factory) -> None:
             assert fact.amount == Decimal("1234.00")
 
     asyncio.run(scenario())
+
+
+async def test_bar_audit_total_survives_rebuild_only_with_details(
+    async_session_factory,
+) -> None:
+    """Итог барной ревизии живёт ДЕТАЛИЗАЦИЕЙ: без неё пересборка обнуляет его молча.
+
+    Прод, 07.08.2026. ``sync_month`` считал расхождение верно и записывал его, а следом звал
+    ``rebuild_goods_from_observations(..., 'inventory')``. Та для барных корзин не считает
+    заново — она ПЕРЕНОСИТ сохранённую детализацию. Детализации синк не писал, поэтому
+    пересборка видела пустоту, а строку факта — существующей, и ставила 0,00 ₽ поверх верной
+    суммы. Ноль сам себя поддерживал: следующий прогон читал его как «величина уже была».
+
+    Цена: июль — упаковка −28 146,04 и коробки +7 290,59; отчёт при этом подписывал строки
+    ``zero_confirmed``, то есть утверждал, что потерь не было.
+
+    Тест держит ОБЕ стороны контракта: с детализацией итог выживает, без неё — обнуляется.
+    Вторую половину проверяем намеренно: она объясняет, почему синк ОБЯЗАН писать строки.
+    """
+    guid = "bar-audit-packaging-guid"
+
+    async def _seed(session, *, with_details: bool) -> None:
+        session.add(
+            PnlProductWhitelist(
+                iiko_product_guid=guid,
+                line_code="packaging_inventory",
+                include_status="stocked",
+                source_kind="inventory",
+                product_name="Пакет крафт",
+            )
+        )
+        session.add(
+            PnlIikoProductObservation(
+                period_month=date(2026, 7, 1),
+                source_kind="inventory",
+                iiko_product_guid=guid,
+                product_name="Пакет крафт",
+                amount=Decimal("1000.00"),
+                rows_count=1,
+            )
+        )
+        # Итог, записанный основным циклом синка, — верная цифра расхождения.
+        session.add(
+            PnlIikoFact(
+                period_month=date(2026, 7, 1),
+                metric_code="packaging_result",
+                direction="total",
+                amount=Decimal("-28146.04"),
+                rows_count=27,
+                source_ref="/reports/storeOperations",
+            )
+        )
+        if with_details:
+            session.add(
+                PnlIikoGoodsFact(
+                    period_month=date(2026, 7, 1),
+                    metric_code="packaging_result",
+                    line_code="packaging_inventory",
+                    source_kind="inventory",
+                    iiko_product_guid=guid,
+                    product_name="Пакет крафт",
+                    amount=Decimal("-28146.04"),
+                    rows_count=27,
+                )
+            )
+        await session.commit()
+
+    async def _total(session) -> Decimal:
+        fact = await session.scalar(
+            select(PnlIikoFact).where(
+                PnlIikoFact.period_month == date(2026, 7, 1),
+                PnlIikoFact.metric_code == "packaging_result",
+                PnlIikoFact.direction == "total",
+            )
+        )
+        return fact.amount
+
+    async with async_session_factory() as session:
+        await _seed(session, with_details=True)
+        await rebuild_goods_from_observations(session, date(2026, 7, 1), "inventory")
+        await session.commit()
+        assert await _total(session) == Decimal("-28146.04"), (
+            "пересборка стёрла расхождение, хотя детализация на месте"
+        )
+        detail = await session.scalar(
+            select(PnlIikoGoodsFact).where(PnlIikoGoodsFact.iiko_product_guid == guid)
+        )
+        assert detail is not None and detail.amount == Decimal("-28146.04")
+
+    async with async_session_factory() as session:
+        await session.execute(delete(PnlIikoGoodsFact))
+        await session.execute(delete(PnlIikoFact))
+        await session.execute(delete(PnlIikoProductObservation))
+        await session.execute(delete(PnlProductWhitelist))
+        await session.commit()
+        await _seed(session, with_details=False)
+        await rebuild_goods_from_observations(session, date(2026, 7, 1), "inventory")
+        await session.commit()
+        assert await _total(session) == Decimal("0.00"), (
+            "без детализации пересборка обязана обнулять — на этом и держится требование "
+            "к синку писать строки; если поведение изменилось, правку синка надо пересмотреть"
+        )
+
+
+async def test_sync_writes_inventory_details_so_rebuild_can_carry_them(
+    async_session_factory, monkeypatch
+) -> None:
+    """Синк ОБЯЗАН класть расхождения барной ревизии в ``result.details``.
+
+    Это вторая половина контракта из теста выше. Пересборка переносит детализацию, а не
+    считает её заново, — значит без этих строк итог обнулится. Прежде синк писал только итог
+    (комментарий в коде прямо это предписывал), и строка стояла нулём с первого прогона.
+
+    Сетевые вызовы iiko заглушены: проверяем ровно то, что делает наш код с ответом.
+    """
+    from app.services.pnl import iiko_sync
+
+    guid = "sync-detail-packaging-guid"
+    inventory_rows = [{"product": guid, "sum": "-28146.04"}]
+
+    async def _no_raw(endpoint, params=None):
+        raise RuntimeError("эндпоинт заглушен")
+
+    async def _no_invoices(start, last):
+        raise RuntimeError("накладные заглушены")
+
+    async def _no_stock(moment):
+        raise RuntimeError("остатки заглушены")
+
+    async def _inventory(start, last):
+        return inventory_rows
+
+    monkeypatch.setattr(iiko_sync, "_fetch_raw", _no_raw)
+    monkeypatch.setattr(iiko_sync, "_fetch_invoice_rows", _no_invoices)
+    monkeypatch.setattr(iiko_sync, "_fetch_stock_balance_rows", _no_stock)
+    monkeypatch.setattr(iiko_sync, "_fetch_inventory_rows", _inventory)
+
+    async with async_session_factory() as session:
+        session.add(
+            PnlProductWhitelist(
+                iiko_product_guid=guid,
+                line_code="packaging_inventory",
+                include_status="stocked",
+                source_kind="inventory",
+                product_name="Пакет крафт",
+            )
+        )
+        await session.commit()
+
+        goods = await iiko_sync.fetch_goods_metrics(session, date(2026, 7, 1))
+
+        assert goods.metrics["packaging_result"] == Decimal("-28146.04")
+        inventory_details = [
+            detail for detail in goods.details if detail.source_kind == "inventory"
+        ]
+        assert inventory_details, (
+            "синк не положил расхождение в детализацию — пересборка обнулит итог"
+        )
+        assert inventory_details[0].iiko_product_guid == guid
+        assert inventory_details[0].amount == Decimal("-28146.04")
+        assert inventory_details[0].metric_code == "packaging_result"
+
+
+async def test_bar_audit_rows_split_shortage_and_surplus(async_session_factory) -> None:
+    """Излишек коробок не должен стоять отрицательным числом в колонке «Недостача».
+
+    Детализация барных корзин попадает во вкладку «Ревизии» (фильтр по source_kind='inventory'),
+    а там две колонки — «Недостача» и «Излишек», и подпись обещает показывать их отдельно.
+    Строка строилась одним полем ``amount``, поэтому июльский излишек коробок (7 290,59 ₽)
+    вставал бы минусом в «Недостачу».
+    """
+    async with async_session_factory() as session:
+        session.add_all(
+            [
+                PnlIikoGoodsFact(
+                    period_month=date(2026, 7, 1),
+                    metric_code="packaging_result",
+                    line_code="packaging_inventory",
+                    source_kind="inventory",
+                    iiko_product_guid="split-shortage-guid",
+                    product_name="Пакет крафт",
+                    amount=Decimal("-28146.04"),  # сырой знак iiko: минус = недостача
+                    rows_count=27,
+                ),
+                PnlIikoGoodsFact(
+                    period_month=date(2026, 7, 1),
+                    metric_code="pizza_box_result",
+                    line_code="pizza_box_inventory",
+                    source_kind="inventory",
+                    iiko_product_guid="split-surplus-guid",
+                    product_name="Коробка для пиццы",
+                    amount=Decimal("7290.59"),  # плюс = излишек
+                    rows_count=3,
+                ),
+            ]
+        )
+        await session.commit()
+
+        ledger = await build_goods_ledger(session, date(2026, 7, 1))
+        by_guid = {row.product_guid: row for row in ledger.rows}
+
+        shortage = by_guid["split-shortage-guid"]
+        assert shortage.amount == Decimal("28146.04"), "недостача обязана быть расходом со знаком +"
+        assert shortage.surplus_amount == Decimal("0.00")
+
+        surplus = by_guid["split-surplus-guid"]
+        assert surplus.amount == Decimal("0.00"), "излишек попал в колонку «Недостача»"
+        assert surplus.surplus_amount == Decimal("7290.59")

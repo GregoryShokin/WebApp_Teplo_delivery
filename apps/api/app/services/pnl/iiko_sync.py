@@ -457,10 +457,19 @@ async def sync_month(session: AsyncSession, month: dt.date) -> SyncResult:
                     rows_count=observation.rows_count,
                 )
             )
+        # Удаляем ТОЛЬКО по источникам, чья детализация в этом прогоне реально перечитана.
+        # ``refreshed_sources`` для этого не годится, и это не педантизм: «inventory» туда
+        # кладёт СКЛАДСКОЙ блок (roll-forward), а носитель барных корзин приходит запросом
+        # ``/reports/storeOperations``. Возьми мы ``refreshed_sources`` — ночь, в которую
+        # storeOperations промолчал, а остатки ответили, снесла бы барные строки без замены, и
+        # пересборка ниже поставила бы 0,00 ₽ поверх верной суммы: тот же дефект, что чинит
+        # этот коммит, только зашедший с другой стороны.
+        # Обратный случай — детализация пришла, а roll-forward упал — закрыт этим же набором:
+        # без удаления повторная вставка упала бы на уникальном ключе и откатила весь синк.
         await session.execute(
             delete(PnlIikoGoodsFact).where(
                 PnlIikoGoodsFact.period_month == start,
-                PnlIikoGoodsFact.source_kind.in_(goods.refreshed_sources),
+                PnlIikoGoodsFact.source_kind.in_(goods.refreshed_detail_sources),
             )
         )
         product_guids = {detail.iiko_product_guid for detail in goods.details}
@@ -658,6 +667,12 @@ class GoodsSyncResult:
     writeoff_observations: list[GoodsProductObservation] | None = None
     notes: list[str] = field(default_factory=list)
     refreshed_sources: set[str] = field(default_factory=set)
+    #: Источники, чья ДЕТАЛИЗАЦИЯ (``details``) в этом прогоне действительно перечитана.
+    #: Отдельно от ``refreshed_sources``, и это различие оплачено: «inventory» туда кладёт
+    #: СКЛАДСКОЙ roll-forward, а носитель барных корзин приходит своим запросом
+    #: ``/reports/storeOperations``. Удалять ``PnlIikoGoodsFact`` можно только по этому набору —
+    #: иначе ночь, в которую промолчал один эндпоинт, снесёт детализацию, записанную другим.
+    refreshed_detail_sources: set[str] = field(default_factory=set)
     products_payload: Any = None
     charts_payload: Any = None
     menu_snapshot_complete: bool = False
@@ -1166,6 +1181,7 @@ async def fetch_goods_metrics(session: AsyncSession, month: dt.date) -> GoodsSyn
             source_kind="incoming_invoice",
         )
         result.details.extend(details)
+        result.refreshed_detail_sources.add("incoming_invoice")
         result.refreshed_sources.add("incoming_invoice")
         for metric in INVOICE_BASKETS:
             result.metrics[metric] = sum(
@@ -1179,13 +1195,25 @@ async def fetch_goods_metrics(session: AsyncSession, month: dt.date) -> GoodsSyn
     # оборот. Живёт отдельным запросом рядом с roll-forward, потому что отвечает на другой
     # вопрос: не «сколько израсходовали», а «сколько потеряли». Первое уже посчитано
     # фудкостом, второе не считается больше нигде.
-    # ТОЛЬКО ИТОГИ, БЕЗ ``result.details``, и это не экономия, а необходимость. Детализация
-    # ``PnlIikoGoodsFact`` привязана к ``source_kind``, а ``rebuild_goods_from_observations``
-    # пересобирает её из наблюдений: для источника ``inventory`` наблюдения приходят из
-    # roll-forward и несут ПОТРЕБЛЕНИЕ, а не расхождение. Записанные здесь строки удалялись
-    # бы той же транзакцией (``ledgers.GOODS_LINES_BY_SOURCE['inventory']`` пуст), а если
-    # добавить их в пересборку — в детализацию встал бы складской оборот вместо недостачи.
-    # Итог метрики от этого не страдает: его пишет цикл по ``result.metrics``.
+    # ДЕТАЛИЗАЦИЮ ПИШЕМ ОБЯЗАТЕЛЬНО, И ЭТО НЕ УДОБСТВО, А УСЛОВИЕ ТОГО, ЧТО ИТОГ ВЫЖИВЕТ.
+    # Прежний комментарий здесь утверждал обратное («только итоги, без ``result.details``»),
+    # и на нём строка молча стояла нулём с первого же прогона.
+    #
+    # Как ломалось. Итог пишется циклом по ``result.facts`` — верной цифрой. Следом
+    # ``sync_month`` зовёт ``rebuild_goods_from_observations(..., 'inventory')``, а та для
+    # барных корзин НЕ пересобирает из наблюдений: она ПЕРЕНОСИТ уже сохранённую детализацию
+    # (``carried``) и раскладывает её по текущей разметке. Детализации не было вовсе, поэтому
+    # ``_rebuild_bar_audit_details`` видела пустоту, а строку факта — существующей, и
+    # добросовестно проставляла 0,00 ₽ поверх только что записанной суммы. Ноль сам себя
+    # поддерживал: следующий прогон читал его как «величина уже была» и повторял.
+    #
+    # Цена на проде: июль — упаковка −28 146,04, коробки +7 290,59, напитки −227,25; август —
+    # −26 401,43 / −9 074,23 / −511,95. Отчёт при этом подписывал строки ``zero_confirmed`` —
+    # «источник ответил, движения не было», то есть уверенно утверждал, что потерь нет.
+    #
+    # Наблюдения источника ``inventory`` действительно несут складское ПОТРЕБЛЕНИЕ, а не
+    # расхождение — но в детализацию барных корзин они и не идут: у неё свой носитель, вот эти
+    # самые строки. Записав их, мы замыкаем цепочку, ради которой ``carried`` и написан.
     try:
         inventory_rows = await _fetch_inventory_rows(start, last)
         inventory_wl = await load_whitelist(session, "inventory", start)
@@ -1195,6 +1223,10 @@ async def fetch_goods_metrics(session: AsyncSession, month: dt.date) -> GoodsSyn
             "sum",
             source_kind="inventory",
         )
+        result.details.extend(inventory_details)
+        # Флаг ставим ДАЖЕ на пустой ответ: пустота от ОТВЕТИВШЕГО эндпоинта — законный ноль и
+        # обязана снести прежние строки. Различаем ответ и отказ, а не «есть строки» и «нет».
+        result.refreshed_detail_sources.add("inventory")
         for metric in INVENTORY_BASKETS:
             result.metrics[metric] = sum(
                 (detail.amount for detail in inventory_details if detail.metric_code == metric),
