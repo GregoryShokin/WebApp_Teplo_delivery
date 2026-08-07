@@ -123,6 +123,8 @@ export type WarehouseInvoiceDetail = WarehouseInvoiceSummary & {
   // Период оказания услуги: нужен ли контрагенту (обязателен на платеже) и заполнен ли.
   // «missing» у обязательного — накладную нельзя отправить в банк, пока период не введён.
   service_period_required?: boolean;
+  // Можно ли вписать период руками. Шире, чем «обязателен»: любой услуговый контрагент.
+  service_period_editable?: boolean;
   service_period_status?: string;
   service_period_start?: string | null;
   service_period_end?: string | null;

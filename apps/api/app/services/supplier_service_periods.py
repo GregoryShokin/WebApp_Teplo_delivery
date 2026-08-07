@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import calendar
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
@@ -78,6 +79,70 @@ def is_expense_bearing(invoice: SupplierInvoice) -> bool:
     )
 
 
+# Подтип услугового контрагента, у которого сумма месяца известна только из документа
+# (``CounterpartyPayableProfile.service_billing_mode``). Канон владельца от 01.08.2026,
+# режим 3 «Счёт + УПД»: Манго Телеком, ЭкоЦентр.
+PER_INVOICE_BILLING_MODE = "per_invoice"
+
+
+async def _period_from_document_date(
+    session: AsyncSession, invoice: SupplierInvoice
+) -> tuple[date, date] | None:
+    """Период для закрывающего режима «счёт + УПД», у которого явного периода нет вовсе.
+
+    ЗАЧЕМ. У режима 3 расход признаётся ТОЛЬКО документом: платежи такого контрагента
+    исключаются из кассового расхода с формулировкой «расход придёт документом». Документ
+    приходил — и расхода не приносил: период у него пуст (``not_required``), а начисление
+    заводится строго при ``ready``. Ловушка захлопывалась с двух сторон, и расход исчезал
+    молча. За июль 2026 так потерялись 11 695,54 ₽ Манго: строка «Телекоммуникации»
+    показывала 3 230 ₽ вместо 14 925,54 ₽.
+
+    ПОЧЕМУ МЕСЯЦ ДАТЫ ДОКУМЕНТА — ЧЕСТНЫЙ ОТВЕТ. Акт за услуги месяца датируется его
+    последним днём: на проде все четыре таких документа (Манго ×2 за 31.07, ЭкоЦентр ×2 за
+    31.08) — ровно последний день своего месяца. Это не догадка о периоде, а прочтение даты,
+    которую поставил сам контрагент.
+
+    ПОЛЕЙ НАКЛАДНОЙ НЕ ТРОГАЕМ. Период живёт только в начислении: документ остаётся честно
+    «без периода», и как только человек впишет период руками, тот победит — эта функция
+    вернёт ``None``, и дальше пойдёт обычная ветка ``ready``.
+
+    ОГРАНИЧИТЕЛЬ ОБЯЗАТЕЛЕН, каждое условие оплачено данными:
+    * ``operational_scope='finance'`` — иначе начисления получат 142 товарные накладные июля
+      на 1,53 млн ₽, а их себестоимость уже приходит фудкостом из зеркала iiko: двойной счёт;
+    * ``direction='payable'`` — исходящий бартер расхода не несёт;
+    * ``service_billing_mode='per_invoice'`` — у режимов «договор» и «счёт за период» расход
+      признаёт свой механизм, а у НЕразмеченного контрагента платёж из кассы не исключается,
+      и начисление задвоило бы его (по июлю это 22 074,65 ₽: Билинский и Яндекс.Еда);
+    * ``invoice_date >= ACCOUNTING_START`` — июньский расход уже сидит во входящих остатках
+      на 01.07, а отчёта за июнь не существует вовсе.
+    """
+    if invoice.doc_kind != "closing" or invoice.direction != "payable":
+        return None
+    if invoice.operational_scope != "finance":
+        return None
+    # Явный период — всегда сильнее выведенного, в том числе наполовину заполненный: он
+    # означает, что за документ уже взялся человек.
+    if invoice.service_period_start is not None or invoice.service_period_end is not None:
+        return None
+    if invoice.invoice_date is None:
+        return None
+
+    from app.services import accounting_periods
+
+    if invoice.invoice_date < accounting_periods.ACCOUNTING_START:
+        return None
+    mode = await session.scalar(
+        select(CounterpartyPayableProfile.service_billing_mode).where(
+            CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
+        )
+    )
+    if mode != PER_INVOICE_BILLING_MODE:
+        return None
+    start = invoice.invoice_date.replace(day=1)
+    end = start.replace(day=calendar.monthrange(start.year, start.month)[1])
+    return start, end
+
+
 async def sync_invoice_accrual(
     session: AsyncSession,
     invoice: SupplierInvoice,
@@ -100,15 +165,21 @@ async def sync_invoice_accrual(
     if not is_expense_bearing(invoice):
         return await _cancel_accrual(session, existing)
     if (
-        invoice.service_period_status != "ready"
-        or invoice.service_period_start is None
-        or invoice.service_period_end is None
+        invoice.service_period_status == "ready"
+        and invoice.service_period_start is not None
+        and invoice.service_period_end is not None
     ):
+        period = (invoice.service_period_start, invoice.service_period_end)
+    else:
+        # Периода в документе нет. У режима «счёт + УПД» его даёт дата документа — иначе
+        # расход не признает никто (см. ``_period_from_document_date``).
+        period = await _period_from_document_date(session, invoice)
+    if period is None:
         # Периода нет — начисление создать не из чего, но и отменять существующее не за что:
         # «период ещё не заполнен» не то же самое, что «расхода не будет».
         return existing
 
-    start, end = validate_period(invoice.service_period_start, invoice.service_period_end)
+    start, end = validate_period(*period)
     if existing is None:
         existing = SupplierExpenseAccrual(
             counterparty_id=invoice.counterparty_id,
@@ -322,7 +393,11 @@ async def sync_expense_line_accrual(
         return None
     start, end = validate_period(line.service_period_start, line.service_period_end)
     if await _recognized_by_other_mechanism(
-        session, counterparty_id=line.counterparty_id, start=start, end=end, article_id=line.article_id
+        session,
+        counterparty_id=line.counterparty_id,
+        start=start,
+        end=end,
+        article_id=line.article_id,
     ):
         return None
     existing = await session.scalar(
@@ -494,6 +569,20 @@ async def change_accrual_period(
             line.service_period_start = start
             line.service_period_end = end
             line.service_period_source = "corrected"
+    # ВТОРАЯ ДВЕРЬ ПРАВКИ ПЕРИОДА ОБЯЗАНА ПРИЗНАВАТЬ СРАЗУ, КАК И ПЕРВАЯ. У ``sync_invoice_accrual``
+    # догоняющий вызов есть (см. конец функции), здесь его не было: человек исправлял период на
+    # уже прошедший, начисление оставалось ``scheduled``, и расход не появлялся в отчёте до
+    # ближайших 00:05. Он видел, что дата прошла, а строки нет, и читал это как поломку.
+    # Условие то же самое, поэтому разойтись две двери не могут.
+    # Ограничение по документу обязательно: без него правка одного периода утащила бы в отчёт
+    # все созревшие начисления системы. У начисления по строке платежа фильтра нет — его
+    # по-прежнему признаёт ночная джоба.
+    if (
+        accrual.status == "scheduled"
+        and accrual.invoice_id is not None
+        and end < datetime.now(MOSCOW_TZ).date()
+    ):
+        await recognize_due_expenses(session, invoice_ids=[accrual.invoice_id], commit=False)
     await session.commit()
     await session.refresh(accrual)
     return accrual

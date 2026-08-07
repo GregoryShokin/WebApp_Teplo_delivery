@@ -417,9 +417,7 @@ async def _rebuild_invoice_lines(
     считает товаром и строку без статьи), а вот разнос чека по статьям ДДС рассыпался — и молча:
     ``_pending_article_sums`` строки без статьи ПРОПУСКАЕТ, поэтому пендинг-чек при матче с
     выпиской разнёсся бы не по всем позициям."""
-    await session.execute(
-        delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id)
-    )
+    await session.execute(delete(InvoiceLineItem).where(InvoiceLineItem.invoice_id == invoice.id))
     cheque_default_article_id: uuid.UUID | None = None
     if invoice.source == "kassa_cheque" and any(
         not line.is_staff and line.dds_article_id is None for line in lines
@@ -699,7 +697,9 @@ def _goods_from_lines(
         product = products.get(line.iiko_product_id) if line.iiko_product_id else None
         if product is None:
             continue
-        goods[product.iiko_id] = _qty(goods.get(product.iiko_id, Decimal("0")) + _qty(line.quantity))
+        goods[product.iiko_id] = _qty(
+            goods.get(product.iiko_id, Decimal("0")) + _qty(line.quantity)
+        )
     return goods
 
 
@@ -946,22 +946,33 @@ async def get_warehouse_invoice(
     summary["iiko_return_error"] = invoice.iiko_return_error
     # Статус привязанного черновика — фронту для «Отправлено в банк» / «Деньги в Сейфе».
     draft = (
-        await session.get(CounterpartyPaymentDraft, invoice.draft_id)
-        if invoice.draft_id
-        else None
+        await session.get(CounterpartyPaymentDraft, invoice.draft_id) if invoice.draft_id else None
     )
     summary["draft_status"] = draft.status if draft else None
     summary["draft_pays_via_safe"] = bool(draft.pays_via_safe) if draft else False
     # Период оказания услуги: нужен ли он этому контрагенту и заполнен ли. Накладная не из
     # почты рождается без периода — тогда карточка даёт его ввести (иначе счёт не уйдёт в банк).
-    period_required = bool(
-        await session.scalar(
-            select(CounterpartyPayableProfile.service_period_required).where(
-                CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
-            )
+    profile_row = (
+        await session.execute(
+            select(
+                CounterpartyPayableProfile.service_period_required,
+                CounterpartyPayableProfile.service_billing_mode,
+            ).where(CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id)
         )
-    )
+    ).first()
+    period_required = bool(profile_row and profile_row.service_period_required)
     summary["service_period_required"] = period_required
+    # ВВОД ПЕРИОДА НУЖЕН ШИРЕ, ЧЕМ «ОБЯЗАТЕЛЕН». Блок показывался только по
+    # ``service_period_required``, а он выключен у ВСЕХ 53 карточек — то есть вписать период
+    # было негде вообще. При этом ОПиУ печатал владельцу «заполните период в ДЗ/КЗ»: указание
+    # вело в тупик. Любой услуговый контрагент (у кого размечен режим расчётов) период
+    # принимает; товарные накладные блок по-прежнему не показывают — им он не нужен.
+    # Гард по scope — В КОДЕ, а не «в данных». Товарной накладной период не нужен; сегодня
+    # таких карточек с размеченным режимом нет ни одной, но держать правило на состоянии
+    # данных значит ждать первого контрагента, который возит и товар, и услуги.
+    summary["service_period_editable"] = invoice.operational_scope == "finance" and (
+        period_required or bool(profile_row and profile_row.service_billing_mode)
+    )
     summary["service_period_status"] = service_periods.effective_period_status(
         invoice.service_period_status, required=period_required
     )
@@ -1053,12 +1064,8 @@ async def get_warehouse_invoice(
             "dds_article_id": str(line.dds_article_id) if line.dds_article_id else None,
             # Контроль цен: если цена строки аномальна — среднее/отклонение/направление
             # (high=дорого, low=дёшево) для подсветки конкретной ячейки цены. Иначе None.
-            "price_flag": (
-                anomaly_by_key.get((line.product_guid, line.unit), {}).get("direction")
-            ),
-            "price_avg": (
-                anomaly_by_key.get((line.product_guid, line.unit), {}).get("avg_price")
-            ),
+            "price_flag": (anomaly_by_key.get((line.product_guid, line.unit), {}).get("direction")),
+            "price_avg": (anomaly_by_key.get((line.product_guid, line.unit), {}).get("avg_price")),
             "price_deviation_pct": (
                 anomaly_by_key.get((line.product_guid, line.unit), {}).get("deviation_pct")
             ),
@@ -1357,9 +1364,9 @@ async def convert_invoice_to_barter_loan(
 
     has_lines = (
         await session.scalar(
-            select(func.count()).select_from(InvoiceLineItem).where(
-                InvoiceLineItem.invoice_id == invoice.id
-            )
+            select(func.count())
+            .select_from(InvoiceLineItem)
+            .where(InvoiceLineItem.invoice_id == invoice.id)
         )
     ) or 0
     if not has_lines:
@@ -1387,9 +1394,7 @@ async def convert_invoice_to_barter_loan(
         # бы заём без позиций — его нельзя было бы погасить по килограммам никогда.
         has_lines = created
     if not has_lines:
-        raise WarehouseInvoiceError(
-            "У накладной нет позиций — гашение по килограммам невозможно"
-        )
+        raise WarehouseInvoiceError("У накладной нет позиций — гашение по килограммам невозможно")
 
     invoice.barter_role = "loan"
     invoice.barter_return_status = "open"
