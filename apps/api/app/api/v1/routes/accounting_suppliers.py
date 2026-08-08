@@ -53,11 +53,11 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.services import accounting_periods as periods_service
+from app.services import accounting_readiness, owner_analytics
 from app.services import counterparty_balance_as_of as balance_as_of
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
 from app.services import expense_reversal as reversal_service
-from app.services import owner_analytics
 from app.services import staff_balance_as_of as staff_balance
 from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
@@ -2605,6 +2605,53 @@ async def list_closed_periods(
             PeriodCloseRow(period_month=row.period_month, note=row.note, closed_at=row.created_at)
             for row in rows
         ]
+    )
+
+
+class ReadinessItemRow(BaseModel):
+    code: str
+    severity: str
+    title: str
+    explanation: str
+    count: int
+    amount: Decimal
+    rows: list[dict[str, object]]
+
+
+class MonthReadinessRow(BaseModel):
+    month: date
+    ready: bool
+    items: list[ReadinessItemRow]
+
+
+@router.get("/periods/readiness", response_model=MonthReadinessRow, dependencies=READ)
+async def get_month_readiness(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    month: date,
+) -> MonthReadinessRow:
+    """Что молча не доехало до отчёта — читать ПЕРЕД закрытием месяца.
+
+    Главное, что тут видно: начисления, застрявшие в ожидании признания. Ночная джоба
+    пропускает их без единого слова, если период услуги задевает закрытый месяц, и они остаются
+    так навсегда — расхода нет, а никакой сигнал не срабатывает. Ручка только читает: доложить
+    расход в закрытый месяц — решение владельца, а не автоматики.
+    """
+    readiness = await accounting_readiness.build_month_readiness(session, month=month)
+    return MonthReadinessRow(
+        month=readiness.month,
+        ready=readiness.ready,
+        items=[
+            ReadinessItemRow(
+                code=item.code,
+                severity=item.severity,
+                title=item.title,
+                explanation=item.explanation,
+                count=item.count,
+                amount=item.amount,
+                rows=[dict(row) for row in item.rows],
+            )
+            for item in readiness.items
+        ],
     )
 
 

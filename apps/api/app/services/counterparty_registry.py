@@ -31,6 +31,7 @@ from app.models import (
     DdsArticle,
     InvoicePaymentAllocation,
     SbisDocument,
+    SupplierExpenseAccrual,
     SupplierInvoice,
     SupplierPrepayment,
     Wallet,
@@ -1151,6 +1152,28 @@ async def void_invoice(session: AsyncSession, invoice_id: uuid.UUID) -> Supplier
     )
     if has_allocations is not None:
         raise CounterpartyRegistryError("По накладной есть оплаты — аннулирование недоступно")
+
+    # ЗАМОК ЗАКРЫТОГО МЕСЯЦА. Аннулирование уводит документ из кредиторки мгновенно и на любую
+    # дату — поля ``voided_at`` у накладной нет, статус один на всю историю. Значит остаток на
+    # 31 августа, уже перенесённый в отчёт, изменится задним числом от действия в октябре.
+    # Отмена начисления ниже замок проверяет и в закрытом месяце оставляет расход на месте —
+    # без этой проверки пара распадалась бы: документа в долгах нет, а расход по нему есть.
+    from app.services import accounting_periods
+
+    accrual = await session.scalar(
+        select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice_id)
+    )
+    if accrual is not None:
+        try:
+            await accounting_periods.assert_period_open(
+                session,
+                accrual.service_period_start,
+                accrual.service_period_end,
+                action="аннулирование накладной",
+            )
+        except accounting_periods.PeriodClosed as exc:
+            raise CounterpartyRegistryError(str(exc)) from exc
+
     invoice.payment_status = "void"
     # Аннулированной накладной не существует — её начисление тоже отменяем, иначе джоба
     # признания превратит расход по ней в фантом в P&L.
