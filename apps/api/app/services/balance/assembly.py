@@ -345,13 +345,19 @@ async def _counterparty_lines(
         _line(
             cat.CATALOG_BY_CODE["ar_partner"],
             partner.outstanding,
-            cat.ST_OK if partner.repayments_linked else cat.ST_APPROXIMATE,
+            cat.ST_OK if partner.complete else cat.ST_APPROXIMATE,
             source_kind="partner_cash",
-            detail={"taken": str(partner.taken), "returned": str(partner.returned)},
+            detail={
+                "taken": str(partner.taken),
+                "commission": str(partner.commission),
+                "returned": str(partner.returned),
+            },
         )
     )
 
     flags: list[AssembledFlag] = []
+    # Три разные неполноты, и каждая завышает долг СВОИМ слагаемым. Один общий сигнал
+    # «цифра приблизительна» не сказал бы владельцу, что именно чинить.
     if not partner.repayments_linked and partner.taken:
         flags.append(
             AssembledFlag(
@@ -359,13 +365,42 @@ async def _counterparty_lines(
                 severity="warning",
                 title="Возвраты партнёра не привязаны к контрагенту",
                 explanation=(
-                    "Начисление считается из изъятий смены, а гашение — по контрагенту на "
+                    "Взятое считается из изъятий смены, а возвращённое — по контрагенту на "
                     "проводке внесения. Партнёр не объявлен в настройках, поэтому возвраты "
                     "не вычитаются и долг ЗАВЫШЕН. Укажите контрагента партнёра и привяжите "
                     "его к пресету внесения в «Настройках → Касса»."
                 ),
                 count=1,
                 amount=partner.taken,
+            )
+        )
+    if partner.open_month:
+        flags.append(
+            AssembledFlag(
+                code="partner_commission_open_month",
+                severity="info",
+                title="Комиссия партнёра за текущий месяц ещё не посчитана",
+                explanation=(
+                    "Выручка партнёра приходит помесячно, поэтому на срез внутри месяца "
+                    "комиссия текущего месяца не вычтена и долг завышен на неё. На конец "
+                    "месяца цифра станет точной."
+                ),
+                count=1,
+            )
+        )
+    if partner.months_without_commission:
+        flags.append(
+            AssembledFlag(
+                code="partner_commission_missing",
+                severity="warning",
+                title="За завершённый месяц нет комиссии партнёра",
+                explanation=(
+                    "Партнёр брал наличные, а его комиссия за этот месяц не посчитана — "
+                    "вычесть нечего, и долг завышен на неизвестную величину. Проверьте "
+                    "выгрузку партнёрских комиссий."
+                ),
+                count=len(partner.months_without_commission),
+                rows=[{"month": month.isoformat()} for month in partner.months_without_commission],
             )
         )
     if sheet.approximate_settlements:
