@@ -357,19 +357,23 @@ async def test_prebooked_operation_is_not_blocked_by_the_lock_in_an_open_month(
         await session.commit()
         operation_id = operation.id
 
-        with pytest.raises(ValueError, match="уже проведены другим контуром") as refused:
-            await apply_operation_split(
+        # Обе двери, заводящие СВОИ строки, отказывают — но не замком, а правилом «деньги уже
+        # проведены другим контуром». Пополнение Сейфа здесь опаснее разбора: Сейф не банковский
+        # кошелёк, его остаток идёт от проводок, и вторая нога задвоила бы живые деньги.
+        for door in (
+            lambda: apply_operation_split(
                 session,
                 operation,
                 splits=[OperationSplitLine(article_id=other.id, amount=Decimal("12000.00"))],
-            )
-        assert not isinstance(refused.value, accounting_periods.PeriodClosed)
+            ),
+            lambda: book_safe_topup(session, operation),
+        ):
+            with pytest.raises(ValueError, match="уже проведены другим контуром") as refused:
+                await door()
+            assert not isinstance(refused.value, accounting_periods.PeriodClosed)
         assert not await _rows(session, operation_id), "второй строки расхода появиться не должно"
 
-        await book_safe_topup(session, operation)
-        await session.commit()
-        assert operation.classification_status == "classified"
-
+        # А дверь, которая своих строк не заводит, в открытом месяце работает как прежде.
         await apply_operation_action(session, operation, action="exclude")
         await session.commit()
         assert operation.classification_status == "excluded"

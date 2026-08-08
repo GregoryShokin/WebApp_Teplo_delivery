@@ -924,6 +924,58 @@ async def _operation_cashflow_rows(
     return rows
 
 
+class OperationAlreadyBooked(ValueError):
+    """Деньги операции уже несёт проводка другого контура — второй раз их разносить нельзя."""
+
+
+async def _foreign_booked_rows(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    own_source_kinds: tuple[str, ...] = ("bank_operation",),
+) -> list[CashflowTransaction]:
+    """Проводки операции, заведённые НЕ этой дверью: оплата поставщику, транзит ЗП, чек кассы.
+
+    Своя строка узнаётся по паре (вид, ``source_id == operation.id``). Всё остальное, что
+    операция несёт якорем, — чужой контур со своими связями: гашением накладной, выплатой,
+    предоплатой.
+    """
+    rows = await _operation_cashflow_rows(session, operation, source_kinds=own_source_kinds)
+    return [
+        row
+        for row in rows
+        if not (row.source_kind in own_source_kinds and row.source_id == operation.id)
+    ]
+
+
+async def _assert_not_prebooked(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    action: str,
+    own_source_kinds: tuple[str, ...] = ("bank_operation",),
+) -> None:
+    """Отказать, если деньги операции уже проведены чужим контуром.
+
+    У трети банковских операций собственной строки нет вовсе — расход книжит prebooked-проводка
+    другого контура, а операция связана с ней якорем. Дверь, которая заводит СВОИ строки, обязана
+    сначала убедиться, что чужих нет: ``_clear_operation_cashflow`` чужую справедливо не удаляет
+    (за ней стоит гашение накладной), но якорь обнуляет — и один платёж оказывается описан дважды.
+
+    Правило не новое: ровно так рассуждает налоговая проекция ДДС («операция привязана к чужой
+    проводке — отбирать её назад не наше дело»). Здесь оно поднято в общую функцию.
+    """
+    rows = await _foreign_booked_rows(session, operation, own_source_kinds=own_source_kinds)
+    if not rows:
+        return
+    kinds = ", ".join(sorted({str(row.source_kind) for row in rows}))
+    raise OperationAlreadyBooked(
+        f"Деньги этой операции уже проведены другим контуром ({kinds}) — {action} создало бы "
+        f"второй расход на ту же сумму. Правьте исходный документ (черновик оплаты, ведомость, "
+        f"аванс), а не операцию"
+    )
+
+
 async def _assert_operation_month_open(
     session: AsyncSession,
     operation: BankOperation,
@@ -1232,18 +1284,7 @@ async def apply_operation_split(
     # вместо создания своей (``_find_prebooked_payment``), но разбор по строкам так не умеет:
     # он делит сумму между статьями, а чужая проводка неделима и несёт свои связи — гашение
     # накладной, выплату, предоплату. Снять её здесь значило бы отменить чужую операцию молча.
-    foreign = [
-        row
-        for row in await _operation_cashflow_rows(session, operation)
-        if row.source_kind != "bank_operation"
-    ]
-    if foreign:
-        kinds = ", ".join(sorted({str(row.source_kind) for row in foreign}))
-        raise ValueError(
-            "Деньги этой операции уже проведены другим контуром "
-            f"({kinds}) — разбор по статьям создал бы второй расход на ту же сумму. "
-            "Правьте исходный документ (черновик оплаты, ведомость, аванс), а не операцию"
-        )
+    await _assert_not_prebooked(session, operation, action="разнести операцию по статьям")
 
     # Контрагент доли: свой либо общий по операции (дефолт запроса).
     def line_counterparty(line: OperationSplitLine) -> UUID | None:
@@ -1571,6 +1612,16 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
         operation,
         action="переразметить операцию как пополнение Сейфа",
         source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
+    # Эта дверь опаснее разбора по статьям: Сейф — НЕ банковский кошелёк, его остаток идёт от
+    # проводок, а не от выписки. Вторая Сейф-нога рядом с живой чужой prebooked-ногой задваивает
+    # не аналитику, а ДЕНЬГИ в кассовой строке баланса. Чистка ниже её не снимает: она отбирает
+    # строки по ``source_id == operation.id``, а у чужой ноги source_id — идентификатор документа.
+    await _assert_not_prebooked(
+        session,
+        operation,
+        action="пометить операцию пополнением Сейфа",
+        own_source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
     )
 
     # Снести прежние проводки, заведённые из этой операции (re-classify) — и обычный

@@ -114,6 +114,7 @@ from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
     EMPLOYEE_PAYOUT_ARTICLE_CODES,
     SAFE_WALLET_CODE,
+    OperationAlreadyBooked,
     OperationSplitLine,
     apply_operation_action,
     apply_operation_split,
@@ -1978,6 +1979,10 @@ async def classify_operation(
                 actor_user_id=actor.user_id,
                 allow_card=payload.allow_card,
             )
+        except OperationAlreadyBooked as error:
+            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
+            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except accounting_periods.PeriodClosed as error:
             # Закрытый месяц — конфликт состояния, а не негодный ввод. Ловим ДО ValueError:
             # PeriodClosed его подкласс, иначе отказ ушёл бы к владельцу как 400 без смысла.
@@ -2025,6 +2030,10 @@ async def classify_operation(
                 created_ids = []
             else:
                 created_ids = await book_safe_topup(session, operation)
+        except OperationAlreadyBooked as error:
+            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
+            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except accounting_periods.PeriodClosed as error:
             # Как и у остальных дверей замка: конфликт состояния, а не негодный ввод. Ловим
             # ДО ValueError — PeriodClosed его подкласс.
@@ -2069,6 +2078,10 @@ async def classify_operation(
                 allow_loan=allow_loan,
                 actor_user_id=actor.user_id,
             )
+        except OperationAlreadyBooked as error:
+            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
+            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except accounting_periods.PeriodClosed as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except (ValueError, PayrollConflictError, PayrollNotFoundError) as error:
@@ -2082,6 +2095,10 @@ async def classify_operation(
                 counterparty_id=payload.counterparty_id,
                 quality_status="owner_review",
             )
+        except OperationAlreadyBooked as error:
+            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
+            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except accounting_periods.PeriodClosed as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         if payload.action == "mark_internal_transfer":
@@ -2230,6 +2247,10 @@ async def classify_transaction(
             ):
                 if touched >= accounting_periods.ACCOUNTING_START:
                     await accounting_periods.assert_month_open(session, touched, action=action)
+        except OperationAlreadyBooked as error:
+            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
+            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except accounting_periods.PeriodClosed as error:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         txn.expense_month = None
