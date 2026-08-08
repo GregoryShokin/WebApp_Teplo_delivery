@@ -40,7 +40,10 @@ def upgrade() -> None:
         sa.Column("liability_total", sa.Numeric(16, 2), nullable=False),
         sa.Column("equity_plug", sa.Numeric(16, 2), nullable=False),
         sa.Column("net_profit", sa.Numeric(16, 2), nullable=True),
-        sa.Column("net_profit_status", sa.String(24), nullable=True),
+        # 200, а не 24: сюда пишется либо статус строки отчёта («ok», «incomplete»), либо ПРИЧИНА,
+        # по которой прибыль не пришла. Под 24 символа причина не влезала, и это не мелочь —
+        # именно безымянность отказа однажды спрятала поломку вызова отчёта.
+        sa.Column("net_profit_status", sa.String(200), nullable=True),
         sa.Column("net_profit_missing", postgresql.JSONB(), nullable=True),
         sa.Column("equity_dividends", sa.Numeric(16, 2), nullable=False, server_default="0"),
         sa.Column("equity_contributions", sa.Numeric(16, 2), nullable=False, server_default="0"),

@@ -376,6 +376,70 @@ async def test_the_tolerance_uses_the_frozen_approximation_of_the_previous_month
         assert august.tolerance_band == Decimal("120001.00")
 
 
+async def test_the_profit_really_comes_back_from_the_pnl_report(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Прибыль месяца обязана ПРИЙТИ, а не «оказаться недоступной».
+
+    Тест закрепляет контракт вызова отчёта о прибыли, и появился он не из осторожности. Модуль
+    звал ``build_report(session, period_month=…)``, а у проектора параметр называется ``month``:
+    вызов падал TypeError, широкий ``except`` записывал в снимок «недоступен», и снимок выглядел
+    здоровым. Прогон из 3051 теста и стенд на прод-данных промолчали оба — потому что все тесты
+    сверки подставляли прибыль руками, и ни один не спрашивал её у настоящего отчёта.
+    """
+    async with async_session_factory() as session:
+        await snapshot_service.freeze(session, as_of=JULY_END)
+        await session.commit()
+
+        snapshot = await session.scalar(
+            select(BalanceSnapshot).where(BalanceSnapshot.as_of == JULY_END)
+        )
+        assert snapshot.net_profit is not None, (
+            f"прибыль не пришла из отчёта: {snapshot.net_profit_status}"
+        )
+        # Статус — из словаря отчёта, а не текст ошибки: «недоступен: …» означает, что вызов
+        # сломан, даже если поле прибыли каким-то образом заполнилось.
+        assert not (snapshot.net_profit_status or "").startswith("недоступен")
+
+
+async def test_an_unavailable_profit_raises_a_blocking_signal(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сломанный отчёт не мешает заморозить баланс, но и молчать о себе не может.
+
+    Сигнал поднимается ВСЕГДА, а не только при наличии сверки: у первого снимка сверки нет, и
+    без флага поломка была бы видна лишь в поле таблицы — на экране месяц выглядел бы безупречно,
+    а сверить следующий оказалось бы нечем.
+    """
+    from app.services.pnl import projector
+
+    async def _broken(*args, **kwargs):
+        raise RuntimeError("отчёт недоступен")
+
+    monkeypatch.setattr(projector, "build_report", _broken)
+
+    async with async_session_factory() as session:
+        await snapshot_service.freeze(session, as_of=JULY_END)
+        await session.commit()
+
+        snapshot = await session.scalar(
+            select(BalanceSnapshot).where(BalanceSnapshot.as_of == JULY_END)
+        )
+        assert snapshot.status == "draft", "снимок обязан собраться даже со сломанным отчётом"
+        assert snapshot.net_profit is None
+
+        flag = await session.scalar(
+            select(BalanceSnapshotFlag).where(
+                BalanceSnapshotFlag.snapshot_id == snapshot.id,
+                BalanceSnapshotFlag.code == "net_profit_unavailable",
+            )
+        )
+        assert flag is not None and flag.severity == "blocking"
+        # В объяснении — причина, а не одно имя класса: именно безымянность и спрятала поломку.
+        assert "отчёт недоступен" in flag.explanation
+
+
 async def test_a_hand_entered_value_survives_the_reassembly_of_the_draft(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

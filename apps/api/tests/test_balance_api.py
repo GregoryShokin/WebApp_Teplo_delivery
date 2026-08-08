@@ -134,24 +134,24 @@ def test_a_hand_entered_number_needs_a_reason_and_then_shows_up(
     headers = _admin(async_session_factory)
 
     without_reason = client.put(
-        f"{BASE}/manual/{JULY_END}/ar_partner",
+        f"{BASE}/manual/{JULY_END}/ap_vacation_reserve",
         json={"amount": "18400.00", "reason": ""},
         headers=headers,
     )
     assert without_reason.status_code == 422, without_reason.text
 
     accepted = client.put(
-        f"{BASE}/manual/{JULY_END}/ar_partner",
-        json={"amount": "18400.00", "reason": "Расписка №4 от 31.07"},
+        f"{BASE}/manual/{JULY_END}/ap_vacation_reserve",
+        json={"amount": "18400.00", "reason": "Расчёт накопленных дней на 31.07"},
         headers=headers,
     )
     assert accepted.status_code == 200, accepted.text
 
     view = client.get(f"{BASE}/preview", params={"as_of": JULY_END}, headers=headers).json()
-    line = _line(view, "ar_partner")
+    line = _line(view, "ap_vacation_reserve")
     assert line["amount"] == "18400.00"
     assert line["status"] == "manual"
-    assert "Расписка" in line["source_note"]
+    assert "Расчёт накопленных" in line["source_note"]
 
 
 def test_drift_is_empty_while_nothing_has_moved(
@@ -176,8 +176,10 @@ def test_the_catalog_explains_why_a_line_is_empty(
     by_code = {item["code"]: item for item in response.json()}
     assert by_code["debt_overdraft"]["fill"] == "zero_confirmed"
     assert by_code["debt_overdraft"]["note"]
-    assert by_code["ar_owners"]["fill"] == "manual"
+    assert by_code["ap_vacation_reserve"]["fill"] == "manual"
     assert by_code["equity_charter"]["fill"] == "not_applicable"
+    # Займы собственникам считает регистр — ручной ввод для них закрыт (см. каталог).
+    assert by_code["ar_owners"]["fill"] == "auto"
 
 
 def test_the_snapshot_list_is_newest_first(

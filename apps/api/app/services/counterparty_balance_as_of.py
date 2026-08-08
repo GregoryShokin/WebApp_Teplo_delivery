@@ -47,6 +47,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services.accounting_periods import ACCOUNTING_START
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.supplier_prepayments import SUPPLIER_REFUND_ARTICLE_CODE
 from app.services.supplier_service_periods import money
@@ -89,15 +90,42 @@ class BalanceSheetAsOf:
     # денежного ключа): учтены по дате записи. Цифра нужна, чтобы расхождение баланса на
     # копейки не искали там, где его нет.
     approximate_settlements: Decimal
+    # Займы собственникам — ОТДЕЛЬНОЙ величиной, а не внутри дебиторки поставщиков.
+    # Собственник в этом смысле не поставщик: деньги ему выданы не под товар и не под услугу,
+    # гасятся они не накладной, и в балансе им место в своей строке. Сложенные вместе, 1,22 млн
+    # займов растворялись в 358 тысячах поставщицкой дебиторки и читались как «мы много
+    # авансировали поставщиков».
+    owner_loans_total: Decimal
+
+
+# Виды предоплат, которые НЕ являются авансом поставщику. Заведены той же таблицей, потому что
+# механика одна (деньги ушли, обязательство встречное), но экономический смысл другой.
+OWNER_LOAN_KINDS: tuple[str, ...] = ("owner_loan",)
+
+
+def _prepayment_event_date(created_at_column):
+    """Дата, с которой предоплата считается существующей.
+
+    ВХОДЯЩИЙ ОСТАТОК ДАТИРУЕТСЯ НАЧАЛОМ УЧЁТА, А НЕ ДНЁМ ВВОДА. Строка с ``opening=true``
+    описывает долг, который был на 01.07.2026 — это записано и в её примечании. Брать дату
+    создания значит утверждать, что до момента, пока человек не дошёл до формы, долга не
+    существовало: 1,22 млн займов собственникам, заведённых 2 августа, пропадали из июльского
+    среза целиком и молча уходили в капитал.
+    """
+    return case(
+        (SupplierPrepayment.opening.is_(True), ACCOUNTING_START),
+        else_=func.date(created_at_column),
+    )
 
 
 # Дата, когда деньги предоплаты реально ушли: у неё либо своя ДДС-проводка, либо это
-# входящий остаток (тогда ориентир — дата записи).
+# входящий остаток (тогда ориентир — начало учёта, см. ``_prepayment_event_date``).
 _prepayment_money_date = (
     select(
         SupplierPrepayment.id.label("prepayment_id"),
         func.coalesce(
-            CashflowTransaction.operation_date, func.date(SupplierPrepayment.created_at)
+            CashflowTransaction.operation_date,
+            _prepayment_event_date(SupplierPrepayment.created_at),
         ).label("money_date"),
     )
     .outerjoin(
@@ -185,9 +213,7 @@ def _allocation_event_date():
     )
 
 
-async def build_balance_as_of(
-    session: AsyncSession, *, as_of: date
-) -> BalanceSheetAsOf:
+async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceSheetAsOf:
     """Остатки расчётов с контрагентами на конец указанной даты (включительно)."""
     event_date = _allocation_event_date()
     settled_by_invoice = (
@@ -219,9 +245,7 @@ async def build_balance_as_of(
             CashflowTransaction,
             CashflowTransaction.id == InvoicePaymentAllocation.cashflow_transaction_id,
         )
-        .outerjoin(
-            BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id
-        )
+        .outerjoin(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
         .outerjoin(
             _prepayment_money_date,
@@ -244,9 +268,7 @@ async def build_balance_as_of(
                 ),
                 func.sum(func.coalesce(settled_by_invoice.c.approximate, 0)),
             )
-            .outerjoin(
-                settled_by_invoice, settled_by_invoice.c.invoice_id == SupplierInvoice.id
-            )
+            .outerjoin(settled_by_invoice, settled_by_invoice.c.invoice_id == SupplierInvoice.id)
             .where(
                 *_DOC_CONDITIONS,
                 # Правило 4 канона: документ становится обязательством, когда услуга по нему
@@ -290,7 +312,8 @@ async def build_balance_as_of(
         .subquery()
     )
     prepayment_date = func.coalesce(
-        CashflowTransaction.operation_date, func.date(SupplierPrepayment.created_at)
+        CashflowTransaction.operation_date,
+        _prepayment_event_date(SupplierPrepayment.created_at),
     )
     receivable_rows = (
         await session.execute(
@@ -304,6 +327,8 @@ async def build_balance_as_of(
                     )
                 ),
             )
+            # Займы собственникам считаются отдельно: см. ``owner_loans_total``.
+            .where(SupplierPrepayment.kind.not_in(OWNER_LOAN_KINDS))
             .outerjoin(
                 CashflowTransaction,
                 CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
@@ -373,6 +398,8 @@ async def build_balance_as_of(
     ).all()
     refunds_by_cp = {row[0]: money(row[1]) for row in refund_rows}
 
+    owner_loans = await _owner_loans_as_of(session, as_of, settled_by_prepayment)
+
     payable_by_cp = {row[0]: money(row[1]) for row in payable_rows}
     approximate = money(sum((row[2] or Decimal("0") for row in payable_rows), Decimal("0")))
     receivable_by_cp = {
@@ -387,6 +414,7 @@ async def build_balance_as_of(
             receivable_total=Decimal("0.00"),
             payable_total=Decimal("0.00"),
             approximate_settlements=Decimal("0.00"),
+            owner_loans_total=owner_loans,
         )
     names = dict(
         (
@@ -412,4 +440,57 @@ async def build_balance_as_of(
         receivable_total=money(sum((row.receivable for row in rows), Decimal("0.00"))),
         payable_total=money(sum((row.payable for row in rows), Decimal("0.00"))),
         approximate_settlements=approximate,
+        owner_loans_total=owner_loans,
     )
+
+
+async def _owner_loans_as_of(session: AsyncSession, as_of: date, settled_by_prepayment) -> Decimal:
+    """Непогашенные займы собственникам на дату.
+
+    Отбор — тот же, что у поставщицкой дебиторки, и это не копипаста ради симметрии: заём живёт
+    в той же таблице и гасится теми же аллокациями, поэтому «на дату» он обязан считаться по тем
+    же правилам. Отличается ровно вид предоплаты и то, куда величина попадёт в балансе.
+    """
+    prepayment_date = func.coalesce(
+        CashflowTransaction.operation_date,
+        _prepayment_event_date(SupplierPrepayment.created_at),
+    )
+    total = await session.scalar(
+        select(
+            func.coalesce(
+                func.sum(
+                    func.greatest(
+                        SupplierPrepayment.amount
+                        - func.coalesce(settled_by_prepayment.c.settled, 0),
+                        0,
+                    )
+                ),
+                0,
+            )
+        )
+        .select_from(SupplierPrepayment)
+        .outerjoin(
+            CashflowTransaction,
+            CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
+        )
+        .outerjoin(
+            settled_by_prepayment,
+            settled_by_prepayment.c.prepayment_id == SupplierPrepayment.id,
+        )
+        .where(SupplierPrepayment.kind.in_(OWNER_LOAN_KINDS))
+        .where(prepayment_date <= as_of)
+        .where(
+            or_(
+                SupplierPrepayment.status != "settled",
+                select(InvoicePaymentAllocation.id)
+                .where(InvoicePaymentAllocation.prepayment_id == SupplierPrepayment.id)
+                .exists(),
+                func.coalesce(
+                    SupplierPrepayment.settled_on,
+                    _msk_date(SupplierPrepayment.created_at),
+                )
+                > as_of,
+            )
+        )
+    )
+    return money(total or 0)

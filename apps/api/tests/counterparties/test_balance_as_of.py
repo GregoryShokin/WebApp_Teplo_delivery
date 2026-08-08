@@ -246,3 +246,77 @@ async def test_prepayment_settlement_counts_from_the_money_date(
         august = await build_balance_as_of(session, as_of=date(2026, 8, 31))
         assert august.payable_total == Decimal("0.00")
         assert august.receivable_total == Decimal("0.00")
+
+
+async def test_an_owner_loan_is_not_a_supplier_advance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Заём собственнику живёт в той же таблице, но это не аванс поставщику.
+
+    Найдено на копии прод-базы: 1 220 000 ₽ займов Григорию и Павлу стояли внутри «Выданных
+    авансов поставщикам» и составляли там 77 % строки — то есть баланс сообщал, что бизнес
+    щедро авансирует поставщиков, хотя деньги ушли собственникам. Деньги выданы не под товар,
+    гасятся не накладной, и в отчёте им место в своей строке.
+    """
+    async with async_session_factory() as session:
+        owner = await make_counterparty(session, name="Собственник")
+        supplier = await make_counterparty(session, name="Поставщик")
+        wallet = await make_wallet(session, code="tbank-owner-loan", name="Т-Банк")
+        for cp, kind, amount in (
+            (owner, "owner_loan", "1020000.00"),
+            (supplier, "subscription", "9000.00"),
+        ):
+            tx = await _cash_payment(
+                session,
+                counterparty_id=cp.id,
+                wallet_id=wallet.id,
+                amount=amount,
+                on=date(2026, 7, 10),
+            )
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=cp.id,
+                    kind=kind,
+                    wallet_id=wallet.id,
+                    amount=Decimal(amount),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    cashflow_transaction_id=tx.id,
+                )
+            )
+        await session.commit()
+
+        sheet = await build_balance_as_of(session, as_of=date(2026, 7, 31))
+        assert sheet.owner_loans_total == Decimal("1020000.00")
+        assert sheet.receivable_total == Decimal("9000.00")
+
+
+async def test_an_opening_balance_exists_from_the_start_of_accounting(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Входящий остаток датируется началом учёта, а не днём, когда его успели завести.
+
+    Второй дефект того же прод-случая: займы собственникам завели 2 августа, и датировка «по
+    дате создания» вычёркивала их из июля целиком — 1,22 млн молча уходили в капитал, потому
+    что баланс сводится всегда. Строка с ``opening=true`` описывает долг, который БЫЛ на
+    01.07.2026; дата ввода к его существованию отношения не имеет.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Собственник с опенингом")
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=cp.id,
+                kind="owner_loan",
+                amount=Decimal("200000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                opening=True,
+                # Денежной проводки у входящего остатка нет — иначе он был бы обычной оплатой.
+                cashflow_transaction_id=None,
+                created_at=datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+
+        july = await build_balance_as_of(session, as_of=date(2026, 7, 31))
+        assert july.owner_loans_total == Decimal("200000.00")

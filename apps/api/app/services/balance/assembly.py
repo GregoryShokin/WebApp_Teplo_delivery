@@ -25,7 +25,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BalanceManualValue, PnlIikoStockFact
-from app.services import asset_balance, counterparty_balance_as_of, staff_balance_as_of
+from app.services import (
+    asset_balance,
+    counterparty_balance_as_of,
+    partner_cash_balance,
+    staff_balance_as_of,
+)
 from app.services import wallet_balance_as_of as money
 from app.services.accounting_periods import ACCOUNTING_START
 from app.services.balance import catalog as cat
@@ -328,8 +333,41 @@ async def _counterparty_lines(
             cat.ST_APPROXIMATE if sheet.approximate_settlements else cat.ST_OK,
             source_kind="counterparty_balance_as_of",
         ),
+        _line(
+            cat.CATALOG_BY_CODE["ar_owners"],
+            _money(sheet.owner_loans_total),
+            cat.ST_OK,
+            source_kind="counterparty_balance_as_of",
+        ),
     ]
+    partner = await partner_cash_balance.build_partner_cash_balance(session, as_of=as_of)
+    lines.append(
+        _line(
+            cat.CATALOG_BY_CODE["ar_partner"],
+            partner.outstanding,
+            cat.ST_OK if partner.repayments_linked else cat.ST_APPROXIMATE,
+            source_kind="partner_cash",
+            detail={"taken": str(partner.taken), "returned": str(partner.returned)},
+        )
+    )
+
     flags: list[AssembledFlag] = []
+    if not partner.repayments_linked and partner.taken:
+        flags.append(
+            AssembledFlag(
+                code="partner_repayments_not_linked",
+                severity="warning",
+                title="Возвраты партнёра не привязаны к контрагенту",
+                explanation=(
+                    "Начисление считается из изъятий смены, а гашение — по контрагенту на "
+                    "проводке внесения. Партнёр не объявлен в настройках, поэтому возвраты "
+                    "не вычитаются и долг ЗАВЫШЕН. Укажите контрагента партнёра и привяжите "
+                    "его к пресету внесения в «Настройках → Касса»."
+                ),
+                count=1,
+                amount=partner.taken,
+            )
+        )
     if sheet.approximate_settlements:
         flags.append(
             AssembledFlag(

@@ -58,13 +58,25 @@ async def _previous_snapshot(session: AsyncSession, as_of: date) -> BalanceSnaps
 async def _net_profit(
     session: AsyncSession, month: date
 ) -> tuple[Decimal | None, str | None, dict | None]:
-    """Прибыль месяца из отчёта. Считается НЕЗАВИСИМО от снимка — см. правило в reconcile."""
+    """Прибыль месяца из отчёта. Считается НЕЗАВИСИМО от снимка — см. правило в reconcile.
+
+    Отчёт не собрался — снимок всё равно замораживается: балансу нельзя запрещать закрыть месяц
+    из-за поломки в соседнем модуле. Но молчать об этом тоже нельзя, поэтому неизвестная прибыль
+    поднимает БЛОКИРУЮЩИЙ сигнал (см. ``_profit_flag``): без прибыли единственная настоящая
+    проверка модуля не работает, и следующий месяц сверить будет не с чем.
+
+    Ошибку записываем с текстом, а не одним именем класса: ``TypeError`` в статусе — это то, что
+    я и увидел, когда позвал ``build_report`` несуществующим именем аргумента. Имя класса не
+    сказало ничего, а прогон из 3051 теста и зелёный стенд не заметили поломку вовсе.
+    """
     from app.services.pnl import projector
 
     try:
-        report = await projector.build_report(session, period_month=month)
+        # Позиционно и именно ``month``: у проектора нет параметра ``period_month``, и вызов с
+        # чужим именем падал бы TypeError — молча, потому что ниже стоит широкий except.
+        report = await projector.build_report(session, month)
     except Exception as error:  # noqa: BLE001 — отчёт может не собраться; это не повод падать
-        return None, f"недоступен: {type(error).__name__}", None
+        return None, f"недоступен: {type(error).__name__}: {error}"[:200], None
 
     line = next(
         (row for row in getattr(report, "lines", []) if getattr(row, "code", "") == "net_profit"),
@@ -208,6 +220,11 @@ async def freeze(
     # Объём приблизительного замораживается флагом: посчитанный в октябре, он был бы другим,
     # и подпись «сошлось в пределах неточности» задним числом осталась бы без основания.
     flags.append(_approximate_flag(assembled.approximate_total))
+    # Неизвестная прибыль — сигнал ВСЕГДА, а не только когда есть с чем сверять. У первого
+    # снимка сверки нет вовсе, и раньше поломка отчёта была видна только в поле таблицы: на
+    # экране первый месяц выглядел безупречно, а сверить второй оказалось бы нечем.
+    if net_profit is None:
+        flags.append(_profit_flag(month, profit_status))
     if reconciliation is not None and not reconciliation.explained:
         flags.append(_reconciliation_flag(reconciliation))
 
@@ -227,6 +244,24 @@ async def freeze(
 
     await session.flush()
     return snapshot
+
+
+def _profit_flag(month: date, status: str | None):
+    """Прибыли за месяц нет — сверять приращение капитала будет нечем."""
+    from app.services.balance.assembly import AssembledFlag
+
+    return AssembledFlag(
+        code="net_profit_unavailable",
+        severity="blocking",
+        title="Прибыль за месяц не посчиталась",
+        explanation=(
+            f"Отчёт о прибыли за {month:%m.%Y} не отдал чистую прибыль "
+            f"({status or 'без причины'}). "
+            "Снимок собран, но проверить его следующим месяцем не получится: приращение капитала "
+            "не с чем сравнивать. Это не «сошлось» и не «не сошлось» — это отсутствие ответа."
+        ),
+        count=1,
+    )
 
 
 def _approximate_flag(total: Decimal):

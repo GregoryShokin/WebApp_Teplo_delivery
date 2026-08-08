@@ -80,7 +80,8 @@ class BalanceSnapshot(Base):
     # Прибыль месяца, замороженная из отчёта. NULL допустим: у отчёта строка может быть
     # неполной, и ноль вместо «неизвестно» соврал бы в сверке.
     net_profit: Mapped[Decimal | None] = mapped_column(Numeric(16, 2), nullable=True)
-    net_profit_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # Либо статус строки отчёта («ok», «incomplete»), либо ПРИЧИНА отсутствия прибыли.
+    net_profit_status: Mapped[str | None] = mapped_column(String(200), nullable=True)
     net_profit_missing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Три движения капитала за месяц — считаются из проводок, НЕ из строк снимка.

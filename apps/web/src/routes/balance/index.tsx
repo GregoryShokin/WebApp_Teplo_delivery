@@ -43,6 +43,12 @@ function formatMoney(value: string): string {
   });
 }
 
+/** Начало управленческого учёта. Раньше этой даты остатков в системе нет, и сервер их не отдаёт
+ *  (`ACCOUNTING_START` в `app/services/accounting_periods.py`). Константа продублирована здесь
+ *  намеренно: тянуть её ручкой ради одного числа, которое меняется раз в жизни бизнеса, дороже,
+ *  чем держать рядом с местом, где она нужна. */
+const ACCOUNTING_START = "2026-07-01";
+
 /** Последний день месяца — единственная дата, на которую собирается баланс. */
 function lastDayOfMonth(year: number, month: number): string {
   return toIsoDate(new Date(year, month + 1, 0));
@@ -176,6 +182,14 @@ function ReconciliationCard({ view }: { view: BalanceView }) {
           Прибыль за период неизвестна ({recon.net_profit_status ?? "нет данных"}), поэтому это
           не «сошлось» и не «не сошлось» — это отсутствие ответа.
         </p>
+      ) : recon.net_profit_status && recon.net_profit_status !== "ok" ? (
+        // Неполная прибыль хуже неизвестной: она выглядит как цифра. Слагаемых в ОПиУ не
+        // хватает, значит прибыль завышена на неизвестную величину, и «сошлось» здесь означает
+        // «сошлось с неполной прибылью» — это надо сказать вслух, а не прятать в поле таблицы.
+        <p className="text-muted-foreground mt-2 text-xs">
+          Прибыль взята со статусом «{recon.net_profit_status}»: в ОПиУ известны не все
+          слагаемые, поэтому сама она неполная. Расхождение ниже настолько же приблизительно.
+        </p>
       ) : null}
     </Card>
   );
@@ -250,8 +264,12 @@ export function BalanceRoute() {
   const monthOptions = useMemo(() => {
     const now = new Date();
     const out: string[] = [];
-    for (let back = 1; back <= 12; back += 1) {
-      out.push(lastDayOfMonth(now.getFullYear(), now.getMonth() - back));
+    for (let back = 1; back <= 24; back += 1) {
+      const value = lastDayOfMonth(now.getFullYear(), now.getMonth() - back);
+      // Ниже начала учёта не спускаемся: сервер такую дату отвергает, и предложить её значило бы
+      // звать владельца в ошибку. Список кончается там, где кончаются данные.
+      if (value < ACCOUNTING_START) break;
+      out.push(value);
     }
     return out;
   }, []);

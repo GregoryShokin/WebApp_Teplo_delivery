@@ -139,7 +139,7 @@ async def test_the_three_kinds_of_emptiness_stay_apart(
     async with async_session_factory() as session:
         assembled = await assemble(session, as_of=JULY_END)
 
-        unknown = _line(assembled, "ar_owners")
+        unknown = _line(assembled, "ap_vacation_reserve")
         assert unknown.amount is None
         assert unknown.status == cat.ST_MISSING
 
@@ -154,10 +154,13 @@ async def test_the_three_kinds_of_emptiness_stay_apart(
         waiting = _flag(assembled, "manual_lines_empty")
         assert waiting is not None
         codes = {row["code"] for row in waiting.rows}
-        assert "ar_owners" in codes
+        assert "ap_vacation_reserve" in codes
         # Кредитов нет — строка не приглашает к вводу и в сигнал не попадает.
         assert "debt_overdraft" not in codes
         assert "debt_leasing" not in codes
+        # Займы собственникам считает регистр, значит приглашать к вводу их нельзя: иначе
+        # владелец впишет то же самое руками и сумма встанет в баланс дважды.
+        assert "ar_owners" not in codes
 
 
 async def test_a_wallet_outside_the_map_gets_its_own_line_instead_of_the_bank_one(
@@ -262,22 +265,23 @@ async def test_a_hand_entered_value_fills_the_line_and_clears_the_signal(
         session.add(
             BalanceManualValue(
                 as_of=JULY_END,
-                line_code="ar_partner",
+                line_code="ap_vacation_reserve",
                 amount=Decimal("18400.00"),
-                reason="Наличные у «Алисы» по расписке от 31.07",
-                source_document="Расписка №4",
+                reason="Накопленные дни отпуска по расчёту от 31.07",
+                source_document="Расчёт №4",
             )
         )
         await session.commit()
 
         assembled = await assemble(session, as_of=JULY_END)
-        line = _line(assembled, "ar_partner")
+        line = _line(assembled, "ap_vacation_reserve")
         assert line.amount == Decimal("18400.00")
         assert line.status == cat.ST_MANUAL
-        assert "Алисы" in (line.source_note or "")
+        assert "Накопленные дни" in (line.source_note or "")
 
         waiting = _flag(assembled, "manual_lines_empty")
-        assert "ar_partner" not in {row["code"] for row in (waiting.rows if waiting else [])}
+        still_waiting = {row["code"] for row in (waiting.rows if waiting else [])}
+        assert "ap_vacation_reserve" not in still_waiting
 
 
 async def test_a_hand_entered_value_belongs_to_its_date_alone(
@@ -285,19 +289,19 @@ async def test_a_hand_entered_value_belongs_to_its_date_alone(
 ) -> None:
     """Величина, введённая на 31 июля, не переезжает в август сама собой.
 
-    Ручные строки — это остаток НА ДАТУ, а не постоянная настройка: деньги у партнёра за месяц
-    меняются, и молча перенесённая цифра была бы вымыслом.
+    Ручные строки — это остаток НА ДАТУ, а не постоянная настройка: накопленные дни отпуска за
+    месяц меняются, и молча перенесённая цифра была бы вымыслом.
     """
     async with async_session_factory() as session:
         session.add(
             BalanceManualValue(
                 as_of=JULY_END,
-                line_code="ar_partner",
+                line_code="ap_vacation_reserve",
                 amount=Decimal("18400.00"),
-                reason="Расписка от 31.07",
+                reason="Расчёт накопленных дней на 31.07",
             )
         )
         await session.commit()
 
         august = await assemble(session, as_of=date(2026, 8, 31))
-        assert _line(august, "ar_partner").amount is None
+        assert _line(august, "ap_vacation_reserve").amount is None
