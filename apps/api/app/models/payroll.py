@@ -526,6 +526,10 @@ class DepositTransaction(Base):
     )
     transaction_type: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    # Хозяйственный день события, а не момент записи. У строки ведомости это её день выплаты
+    # (``payroll_period.payroll_date``): удержание за неделю 25–31.08 записывается при
+    # финализации, то есть уже в сентябре, и по ``created_at`` августовский срез его потерял бы.
+    happened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -642,6 +646,8 @@ class AccumulationFundTransaction(Base):
     rate_percent: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
     base_pay_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Хозяйственный день события — см. одноимённое поле у ``DepositTransaction``.
+    happened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -1264,6 +1270,11 @@ class SalaryAdvance(Base):
         String(24), nullable=False, default="issued", server_default="issued"
     )
     issued_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # День, когда заём перестал быть долгом: списан или отменён. Статус этого не говорит —
+    # он отвечает «как сейчас», а балансу нужно «как было на дату»: заём, списанный в сентябре,
+    # на 31 августа ещё дебиторка. NULL — заём жив либо погашен удержаниями (у них своя
+    # датированная строка ``SalaryAdvanceRecovery``).
+    closed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     # С какой даты заём попадает в удержание. NULL = с ближайшей ведомости.
     recovery_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     payout_method: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -10,6 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AccumulationFundAccount, AccumulationFundTransaction, Employee
+from app.services.clock import MOSCOW_TZ
 from app.services.payroll_calculator import decimal
 from app.services.position_registry import production_payroll_positions
 
@@ -60,7 +61,13 @@ def forfeit_fund_account(
     *,
     now: datetime,
     comment: str,
+    happened_on: date | None = None,
 ) -> Decimal:
+    """Сгорание фонда. ``happened_on`` — день события (при увольнении это дата увольнения).
+
+    Без него баланс на дату считал бы фонд по ТЕКУЩЕМУ статусу счёта: сотрудник, уволенный в
+    сентябре, задним числом лишался бы фонда и в августовском срезе, где долг перед ним был жив.
+    """
     outstanding = fund_outstanding(account)
     if outstanding <= 0:
         if outstanding == 0 and decimal(account.accumulated_amount) > 0:
@@ -85,6 +92,7 @@ def forfeit_fund_account(
             transaction_type="forfeit",
             amount=outstanding,
             comment=comment,
+            happened_on=happened_on or now.astimezone(MOSCOW_TZ).date(),
             created_at=now,
         )
     )
@@ -114,6 +122,8 @@ async def forfeit_active_fund_on_dismiss(
             account,
             now=now,
             comment=f"Увольнение {fire_date.isoformat()}",
+            # Дата увольнения, а не день обработки: фонд сгорает вместе с человеком.
+            happened_on=fire_date,
         )
 
 
@@ -124,6 +134,7 @@ async def payout_fund_accounts_for_year(
     run_id: uuid.UUID | None = None,
     now: datetime | None = None,
     comment: str | None = None,
+    happened_on: date | None = None,
 ) -> FundPayoutResult:
     now = now or datetime.now(UTC)
     dismissed_result = await session.scalars(
@@ -145,6 +156,7 @@ async def payout_fund_accounts_for_year(
             account,
             now=now,
             comment=f"Списание фонда за {year} год: сотрудник уволен до выплаты",
+            happened_on=happened_on,
         )
         if forfeited > 0:
             forfeited_total += forfeited
@@ -193,6 +205,7 @@ async def payout_fund_accounts_for_year(
                 transaction_type="payout",
                 amount=outstanding,
                 comment=comment or f"Выплата фонда за {year} год",
+                happened_on=happened_on or now.astimezone(MOSCOW_TZ).date(),
                 created_at=now,
             )
         )

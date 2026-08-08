@@ -19,6 +19,7 @@ from app.models import (
     PayrollRun,
     Wallet,
 )
+from app.services.clock import MOSCOW_TZ
 from app.services.payroll_calculator import decimal
 from app.services.wallets import SAFE_WALLET_CODE
 
@@ -104,13 +105,21 @@ def add_transaction(
     transaction_type: str,
     amount: Decimal,
     now: datetime,
+    happened_on: date | None = None,
 ) -> DepositTransaction:
+    """Строка депозитного леджера.
+
+    ``happened_on`` — хозяйственный день события; по умолчанию день записи ПО МОСКВЕ. Момент
+    записи (``created_at``) для баланса не годится: он в UTC, и всё, что заведено между
+    полуночью и тремя часами ночи, уехало бы в предыдущий день, а с ним и в предыдущий месяц.
+    """
     transaction = DepositTransaction(
         id=uuid.uuid4(),
         employee_id=employee_id,
         run_id=None,
         transaction_type=transaction_type,
         amount=amount,
+        happened_on=happened_on or now.astimezone(MOSCOW_TZ).date(),
         created_at=now,
     )
     session.add(transaction)

@@ -887,6 +887,10 @@ async def update_deposits_and_fund(
             run_id=run.id,
             transaction_type="accrual",
             amount=amount,
+            # Хозяйственный день удержания — день выплаты ведомости, а не момент расчёта:
+            # неделя 25–31.08 финализируется в сентябре, и по дате записи удержание ушло бы
+            # в чужой месяц.
+            happened_on=period.payroll_date,
             created_at=now,
         )
         session.add(transaction)
@@ -904,6 +908,7 @@ async def update_deposits_and_fund(
             run_id=run.id,
             transaction_type="payout",
             amount=payout,
+            happened_on=period.payroll_date,
             created_at=now,
         )
         session.add(transaction)
@@ -972,6 +977,7 @@ async def apply_configured_deposit_write_offs(
         run.id,
         now,
         session=session,
+        happened_on=period.payroll_date,
     )
 
 
@@ -1011,6 +1017,7 @@ def apply_deposit_write_offs_to_accounts(
     now: datetime,
     *,
     session: AsyncSession | None = None,
+    happened_on: date | None = None,
 ) -> list[DepositTransaction]:
     transactions = []
     for item in write_offs:
@@ -1028,6 +1035,8 @@ def apply_deposit_write_offs_to_accounts(
             run_id=run_id,
             transaction_type="write_off",
             amount=amount,
+            # День выплаты ведомости, как у накопления; без прогона (ручной вызов) — день записи.
+            happened_on=happened_on or now.astimezone(MOSCOW_TZ).date(),
             created_at=now,
         )
         if session is not None:
@@ -1078,6 +1087,7 @@ async def accrue_fund(
                 amount=amount,
                 rate_percent=rate.quantize(Decimal("0.00001")),
                 base_pay_amount=base_pay,
+                happened_on=period.payroll_date,
                 created_at=now,
             )
         )

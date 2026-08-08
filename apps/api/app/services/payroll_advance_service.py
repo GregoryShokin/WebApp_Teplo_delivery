@@ -729,6 +729,7 @@ async def cancel_advance(
     if cash_tx is not None:
         await session.delete(cash_tx)
     advance.status = "cancelled"
+    advance.closed_on = advance_today()
     await session.commit()
     await session.refresh(advance)
     return advance
@@ -751,6 +752,9 @@ async def write_off_advance(
     if advance.status != "issued":
         raise PayrollConflictError("Списать можно только непогашенный (выданный) аванс")
     advance.status = "written_off"
+    # День, когда заём перестал быть долгом. Балансу на дату статуса мало: заём, списанный
+    # в сентябре, на 31 августа ещё дебиторка, и по статусу он исчез бы из августа задним числом.
+    advance.closed_on = advance_today()
     if reason:
         suffix = f"Списание: {reason}"
         advance.comment = f"{advance.comment} | {suffix}" if advance.comment else suffix
