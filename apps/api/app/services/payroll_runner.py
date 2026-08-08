@@ -887,10 +887,11 @@ async def update_deposits_and_fund(
             run_id=run.id,
             transaction_type="accrual",
             amount=amount,
-            # Хозяйственный день удержания — день выплаты ведомости, а не момент расчёта:
-            # неделя 25–31.08 финализируется в сентябре, и по дате записи удержание ушло бы
-            # в чужой месяц.
-            happened_on=period.payroll_date,
+            # Хозяйственный день удержания — КОНЕЦ ПЕРИОДА РАБОТЫ (решение владельца
+            # 08.08.2026), а не день выплаты и не момент расчёта. Неделя 25–31.08 платится
+            # 2 сентября и финализируется тогда же: по дате выплаты удержание уехало бы в
+            # сентябрь, по дате записи — туда же, хотя заработаны эти деньги в августе.
+            happened_on=period.end_date,
             created_at=now,
         )
         session.add(transaction)
@@ -908,7 +909,7 @@ async def update_deposits_and_fund(
             run_id=run.id,
             transaction_type="payout",
             amount=payout,
-            happened_on=period.payroll_date,
+            happened_on=period.end_date,
             created_at=now,
         )
         session.add(transaction)
@@ -977,7 +978,7 @@ async def apply_configured_deposit_write_offs(
         run.id,
         now,
         session=session,
-        happened_on=period.payroll_date,
+        happened_on=period.end_date,
     )
 
 
@@ -1035,7 +1036,7 @@ def apply_deposit_write_offs_to_accounts(
             run_id=run_id,
             transaction_type="write_off",
             amount=amount,
-            # День выплаты ведомости, как у накопления; без прогона (ручной вызов) — день записи.
+            # Конец периода работы, как у накопления; без прогона (ручной вызов) — день записи.
             happened_on=happened_on or now.astimezone(MOSCOW_TZ).date(),
             created_at=now,
         )
@@ -1087,7 +1088,7 @@ async def accrue_fund(
                 amount=amount,
                 rate_percent=rate.quantize(Decimal("0.00001")),
                 base_pay_amount=base_pay,
-                happened_on=period.payroll_date,
+                happened_on=period.end_date,
                 created_at=now,
             )
         )

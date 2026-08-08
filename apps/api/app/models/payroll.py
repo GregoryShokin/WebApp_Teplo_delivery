@@ -526,9 +526,10 @@ class DepositTransaction(Base):
     )
     transaction_type: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    # Хозяйственный день события, а не момент записи. У строки ведомости это её день выплаты
-    # (``payroll_period.payroll_date``): удержание за неделю 25–31.08 записывается при
-    # финализации, то есть уже в сентябре, и по ``created_at`` августовский срез его потерял бы.
+    # Хозяйственный день события, а не момент записи. У строки ведомости это КОНЕЦ ПЕРИОДА
+    # РАБОТЫ (``payroll_period.end_date``, решение владельца 08.08.2026): неделя 25–31.08
+    # платится 2 сентября и тогда же финализируется, но заработаны эти деньги в августе —
+    # и в августовском балансе им и место. По ``created_at`` удержание уехало бы в сентябрь.
     happened_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
