@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyModule } from "@/components/layout/EmptyModule";
+import { BalanceRoute } from "@/routes/balance";
 import { PnlRoute } from "@/routes/reports/pnl";
 import { Toaster } from "@/components/ui/sonner";
 import { restoreSession } from "@/lib/api";
@@ -521,7 +522,7 @@ const routes: AppRoute[] = [
   },
   {
     path: "/balance",
-    render: () => <EmptyModule name="Баланс" />,
+    render: () => <BalanceRoute />,
   },
   {
     path: "/reports/pnl",

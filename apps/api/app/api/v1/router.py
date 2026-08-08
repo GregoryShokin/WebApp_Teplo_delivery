@@ -5,6 +5,7 @@ from app.api.v1.routes.access_control import router as access_control_router
 from app.api.v1.routes.accounting_suppliers import router as accounting_suppliers_router
 from app.api.v1.routes.accumulation_fund import router as accumulation_fund_router
 from app.api.v1.routes.auth import router as auth_router
+from app.api.v1.routes.balance import router as balance_router
 from app.api.v1.routes.counterparties import router as counterparties_router
 from app.api.v1.routes.couriers import router as couriers_router
 from app.api.v1.routes.dds import router as dds_router
@@ -75,4 +76,5 @@ api_router.include_router(owners_router, prefix="/owners", tags=["owners"])
 api_router.include_router(
     finance_payments_router, prefix="/finance/payments", tags=["finance-payments"]
 )
+api_router.include_router(balance_router, prefix="/balance", tags=["balance"])
 api_router.include_router(reports_pnl_router, prefix="/reports/pnl", tags=["reports"])

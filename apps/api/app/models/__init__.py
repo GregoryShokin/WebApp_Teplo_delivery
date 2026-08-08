@@ -7,6 +7,12 @@ from app.models.audit import (
     SourceDocument,
     SourceSnapshot,
 )
+from app.models.balance import (
+    BalanceManualValue,
+    BalanceSnapshot,
+    BalanceSnapshotFlag,
+    BalanceSnapshotLine,
+)
 from app.models.core import (
     Location,
     Organization,
@@ -208,6 +214,10 @@ __all__ = [
     "AssetConditionReport",
     "AssetMovement",
     "AttendanceEntry",
+    "BalanceManualValue",
+    "BalanceSnapshot",
+    "BalanceSnapshotFlag",
+    "BalanceSnapshotLine",
     "BankOperation",
     "BarterReturnLine",
     "BarterSettlement",
