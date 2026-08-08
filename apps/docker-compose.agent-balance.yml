@@ -1,0 +1,86 @@
+# Изолированный стенд ветки agent/balance-as-of-foundation (фундамент модуля «Баланс»).
+#
+# Запуск (из папки apps/ в worktree):
+#   docker compose -p teplo-balance -f docker-compose.agent-balance.yml up -d
+#   docker exec -w /app/apps/api teplo-api-balance-stand alembic upgrade head
+#   docker exec -w /app/apps/api -e PYTHONPATH=/app/apps/api teplo-api-balance-stand \
+#     python -m app.scripts.seed_preview_admin
+#
+# Вход: admin1@teplo.local / admin-password-for-smoke — единственная учётка превью.
+# Порты слота: web 5343, api 8170, postgres 5602.
+#
+# Что смотреть на этом стенде: остатки НА ДАТУ — ОС, деньги, обязательства перед сотрудниками
+# (GET /api/v1/accounting/suppliers/staff-payable/as-of?as_of=…) и готовность месяца к закрытию
+# (GET /api/v1/accounting/suppliers/periods/readiness?month=…).
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-pg-balance-stand
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    ports:
+      - "5602:5432"
+    volumes:
+      - teplo_pgdata_balance:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-balance-stand
+    # env_file НЕ подключаем: боевые ключи (Сбер, Т-Банк, Telegram, почта, iiko) на превью
+    # не переносим — стенд не должен уметь писать во внешние системы.
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      ENVIRONMENT: local
+      # Фон выключен: стенд не ходит наружу и ничего не начисляет сам.
+      SCHEDULER_ENABLED: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      COUNTERPARTY_INVOICE_SYNC_ENABLED: "false"
+      SBIS_SYNC_ENABLED: "false"
+      MAIL_POLL_ENABLED: "false"
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko ОБЯЗАТЕЛЬНА: без переменной IikoClient.__init__ бросает SystemExit, он
+      # пробивает обработчики FastAPI и убивает uvicorn — контейнер остаётся «Up», а стенд
+      # лежит. С заглушкой тот же запрос честно отдаёт 500.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5343","http://127.0.0.1:5343"]'
+    ports:
+      - "8170:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-balance-stand
+    environment:
+      VITE_API_BASE_URL: http://localhost:8170
+    ports:
+      - "5343:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_balance:

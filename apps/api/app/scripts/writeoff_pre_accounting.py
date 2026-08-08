@@ -32,6 +32,7 @@ from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
 from app.models import Counterparty, SupplierPrepayment
+from app.services import clock
 from app.services.accounting_periods import ACCOUNTING_START
 
 NOTE = f"Закрыто как учтённое во входящих остатках на {ACCOUNTING_START:%d.%m.%Y}"
@@ -117,6 +118,9 @@ async def main(*, apply: bool, includes: dict[uuid.UUID, date]) -> None:
                 prepayment.service_period_status = "ready"
             prepayment.amount_settled = prepayment.amount
             prepayment.status = "settled"
+            # Дата закрытия: без неё расчёт остатка на дату (он считает гашения по аллокациям,
+            # а их здесь нет) держал бы эту предоплату открытой дебиторкой навсегда.
+            prepayment.settled_on = clock.moscow_today()
             prepayment.note = f"{prepayment.note + ' · ' if prepayment.note else ''}{NOTE}"
         await session.commit()
         print(f"\nЗакрыто {len(planned)} строк на {total:,.2f} ₽".replace(",", " "))

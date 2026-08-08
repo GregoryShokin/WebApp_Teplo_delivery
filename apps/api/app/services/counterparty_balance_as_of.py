@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -60,6 +60,11 @@ _DOC_CONDITIONS = (
     SupplierInvoice.informational.is_(False),
     SupplierInvoice.barter_role.is_(None),
 )
+
+
+def _msk_date(column):
+    """Момент записи → календарный день ПО МОСКВЕ (как в остальном леджерном коде)."""
+    return func.date(func.timezone("Europe/Moscow", column))
 
 
 @dataclass
@@ -311,7 +316,34 @@ async def build_balance_as_of(
             # предоплата, возвращённая 10 августа, на 31 июля была живой дебиторкой. Возврат
             # вычитается ниже по дате своей проводки — это и есть «состояние на дату» вместо
             # «текущего статуса», ради чего весь модуль и написан.
+            #
+            # ОДНО ИСКЛЮЧЕНИЕ — закрытие БЕЗ аллокации. Дозачётные остатки и ручные коррекции
+            # ставят ``settled`` прямым присвоением (``scripts/writeoff_pre_accounting``,
+            # разбор исторических расчётов), не создавая строки гашения. Гашение считается по
+            # аллокациям, поэтому такая предоплата висела бы открытой дебиторкой НА ЛЮБУЮ дату,
+            # хотя закрыта решением человека. На проде это 38 479 ₽ одной строкой.
+            # Дату такого закрытия несёт ``settled_on`` (миграция 0273); у строк, закрытых до
+            # её появления, фолбэк — день создания. Фолбэк ЗАНИЖАЕТ срок жизни дебиторки, но
+            # для единственной прод-строки разница в два дня и на срез не влияет.
             .where(prepayment_date <= as_of)
+            .where(
+                or_(
+                    SupplierPrepayment.status != "settled",
+                    # ВНИМАНИЕ: проверять надо наличие аллокаций ВООБЩЕ, а не в подзапросе
+                    # ``settled_by_prepayment`` — тот отфильтрован по дате, и «гашений не было
+                    # НА ЭТУ ДАТУ» читалось бы как «гашений нет вовсе». Предоплата, зачтённая
+                    # позже среза, тогда выбрасывалась бы из дебиторки задним числом — то есть
+                    # ровно наоборот тому, ради чего расчёт на дату написан.
+                    select(InvoicePaymentAllocation.id)
+                    .where(InvoicePaymentAllocation.prepayment_id == SupplierPrepayment.id)
+                    .exists(),
+                    func.coalesce(
+                        SupplierPrepayment.settled_on,
+                        _msk_date(SupplierPrepayment.created_at),
+                    )
+                    > as_of,
+                )
+            )
             .group_by(SupplierPrepayment.counterparty_id)
         )
     ).all()

@@ -1043,6 +1043,11 @@ class SupplierPrepayment(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # День, когда предоплату закрыли РЕШЕНИЕМ, а не гашением документа: дозачётные остатки и
+    # ручные коррекции ставят ``settled`` прямым присвоением, не создавая аллокации. Расчёт
+    # остатка на дату считает гашения по аллокациям, поэтому без этой даты такая предоплата
+    # висела бы открытой дебиторкой на любую дату. NULL — закрыта обычным путём (или ещё жива).
+    settled_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
