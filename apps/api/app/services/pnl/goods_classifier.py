@@ -40,6 +40,7 @@ from app.models.pnl import (
     PnlProductWhitelist,
 )
 from app.services.anthropic_client import LlmCallError, call_tool
+from app.services.pnl.product_types import load_non_goods_guids
 from app.services.pnl.revision_products import (
     load_revision_product_guids,
     normalize_iiko_product_guid,
@@ -443,11 +444,18 @@ async def auto_classify_new_goods(
     if not settings.pnl_goods_auto_classification_enabled:
         return result
 
+    # ГЕЙТ ТИПА СТОИТ ПЕРЕД ВСЕМИ ЧЕТЫРЬМЯ ПРАВИЛАМИ. Правило 1 назначает ``stocked`` всему, что
+    # встретилось в складских остатках, а там лежат и блюда с заготовками — на августе 2026 это
+    # 170 позиций. Без гейта авторазметка возвращала бы в whitelist ровно тот мусор, который
+    # владелец снял руками, и делала бы это молча при каждой синхронизации.
+    non_goods_guids = await load_non_goods_guids(session)
     observations_by_guid: dict[str, dict[str, Any]] = defaultdict(dict)
     for observation in observations:
         guid = _clean(getattr(observation, "iiko_product_guid", None))
         source_kind = _clean(getattr(observation, "source_kind", None))
-        if guid and source_kind in {SOURCE_INVENTORY, SOURCE_INVOICE}:
+        if not guid or normalize_iiko_product_guid(guid) in non_goods_guids:
+            continue
+        if source_kind in {SOURCE_INVENTORY, SOURCE_INVOICE}:
             observations_by_guid[guid][source_kind] = observation
     product_guids = set(observations_by_guid)
     if not product_guids:

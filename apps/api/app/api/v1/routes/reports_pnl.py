@@ -290,6 +290,10 @@ class GoodsClassificationRowOut(BaseModel):
     revision_product: bool
     note: str | None
     updated_at: datetime | None
+    #: Тип позиции в справочнике iiko: GOODS / DISH / PREPARED / MODIFIER / SERVICE.
+    product_type: str | None = None
+    #: Позиция не-товарного типа со старой разметкой — её можно только снять с учёта.
+    needs_removal: bool = False
 
 
 class GoodsClassificationLedgerOut(BaseModel):
@@ -299,6 +303,7 @@ class GoodsClassificationLedgerOut(BaseModel):
     rules_count: int
     options: list[GoodsClassificationOptionOut]
     rows: list[GoodsClassificationRowOut]
+    removal_count: int = 0
 
     @field_serializer("attention_amount")
     def _money(self, value: Decimal) -> str:
@@ -660,9 +665,12 @@ def _goods_classification_out(
                 revision_product=item.revision_product,
                 note=item.note,
                 updated_at=item.updated_at,
+                product_type=item.product_type,
+                needs_removal=item.needs_removal,
             )
             for item in ledger.rows
         ],
+        removal_count=ledger.removal_count,
     )
 
 
@@ -705,6 +713,33 @@ async def update_goods_classification(
     except accounting_periods.PeriodClosed as error:
         # Закрытый месяц — конфликт состояния (409), а не негодный ввод (422). Ловим ДО
         # ValueError: PeriodClosed его подкласс, иначе отказ уехал бы к владельцу под чужим кодом.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(error),
+        ) from error
+    return _goods_classification_out(ledger)
+
+
+@router.delete(
+    "/ledgers/goods/classifications/{product_guid}",
+    response_model=GoodsClassificationLedgerOut,
+    dependencies=[Depends(require_permission("reports.pnl.manual_input"))],
+)
+async def remove_goods_classification(
+    product_guid: str,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GoodsClassificationLedgerOut:
+    """Снять с учёта позицию не-товарного типа: блюдо, заготовку, модификатор."""
+    try:
+        ledger = await ledger_service.remove_goods_classification(
+            session,
+            display_month=_month_or_422(month),
+            product_guid=product_guid,
+        )
+    except accounting_periods.PeriodClosed as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(

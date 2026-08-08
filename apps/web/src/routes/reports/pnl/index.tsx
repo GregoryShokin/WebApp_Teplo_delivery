@@ -48,6 +48,7 @@ import {
   confirmWorkupReview,
   fetchWorkupReview,
   rejectWorkupReview,
+  removeGoodsClassification,
   updateGoodsClassification,
   type GoodsClassificationDecision,
   type GoodsClassificationLedger,
@@ -641,6 +642,40 @@ const GOODS_SOURCE_LABEL: Record<GoodsSourceKind | "temporary", string> = {
   temporary: "Временная разметка месяца",
 };
 
+/** Типы номенклатуры iiko. В товарном учёте участвует только GOODS. */
+const IIKO_TYPE_LABEL: Record<string, string> = {
+  GOODS: "товар",
+  DISH: "блюдо",
+  PREPARED: "заготовка",
+  MODIFIER: "модификатор",
+  SERVICE: "услуга",
+};
+
+/** «1 позиция», «2 позиции», «5 позиций» — счётчик стоит рядом с числом и читается вслух. */
+function pluralPositions(count: number): string {
+  const tail = count % 100;
+  if (tail >= 11 && tail <= 14) return "позиций";
+  switch (count % 10) {
+    case 1:
+      return "позиция";
+    case 2:
+    case 3:
+    case 4:
+      return "позиции";
+    default:
+      return "позиций";
+  }
+}
+
+const GOODS_STATUS_LABEL: Record<string, string> = {
+  stocked: "Складской учёт",
+  include: "В товарных расходах",
+  exclude: "Не учитывается",
+  workup: "Проработка",
+  requires_owner_review: "Нужен ответ владельца",
+  unclassified: "Не размечено",
+};
+
 /** Очередь «Требует проверки»: товар похож на проработку, человек подтверждает или отклоняет.
 
     Расход проработки признаётся АКТОМ СПИСАНИЯ, поэтому вопрос не косметический: подтвердили —
@@ -739,10 +774,12 @@ function GoodsClassificationView({
   ledger,
   savingKey,
   onChange,
+  onRemove,
 }: {
   ledger: GoodsClassificationLedger;
   savingKey: string | null;
   onChange: (row: GoodsClassificationRow, decision: GoodsClassificationDecision) => void;
+  onRemove: (row: GoodsClassificationRow) => void;
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase("ru-RU");
@@ -752,13 +789,15 @@ function GoodsClassificationView({
       row.product_name.toLocaleLowerCase("ru-RU").includes(normalizedQuery) ||
       row.product_code?.toLocaleLowerCase("ru-RU").includes(normalizedQuery),
   );
-  const attentionRows = matchedRows.filter(
+  // Не-товар со старой разметкой не разметить заново — оба селекта для него закрыты. Держим
+  // его отдельной карточкой, иначе он висел бы среди размеченных товаров как равный им.
+  const removalRows = matchedRows.filter((row) => row.needs_removal);
+  const decidableRows = matchedRows.filter((row) => !row.needs_removal);
+  const attentionRows = decidableRows.filter(
     (row) => row.status === "unclassified" || row.status === "requires_owner_review",
   );
-  const attentionRowsCount = ledger.rows.filter(
-    (row) => row.status === "unclassified" || row.status === "requires_owner_review",
-  ).length;
-  const classifiedRows = matchedRows.filter(
+  const attentionRowsCount = ledger.attention_count;
+  const classifiedRows = decidableRows.filter(
     (row) => row.status !== "unclassified" && row.status !== "requires_owner_review",
   );
 
@@ -967,6 +1006,74 @@ function GoodsClassificationView({
         )}
       </Card>
 
+      {ledger.removal_count > 0 ? (
+        <Card className="border-amber-300 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Не товары — снять с учёта</div>
+              <div className="mt-1 max-w-2xl text-xs text-muted-foreground">
+                Складской учёт ведётся только по товарам, а это блюда, заготовки или
+                модификаторы: разметка досталась им от прежних решений. Разметить их заново
+                нельзя — можно только снять. Автоматически они не убраны намеренно: за строкой
+                могут стоять уже посчитанные месяцы.
+              </div>
+            </div>
+            <Badge variant="outline">
+              {ledger.removal_count} {pluralPositions(ledger.removal_count)}
+            </Badge>
+          </div>
+          {removalRows.length === 0 ? (
+            <div className="mt-4 rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">
+              По запросу таких позиций не найдено.
+            </div>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[700px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="pb-2 font-medium">Номенклатура</th>
+                    <th className="pb-2 pl-4 font-medium">Тип в iiko</th>
+                    <th className="pb-2 pl-4 font-medium">Текущая разметка</th>
+                    <th className="pb-2 pl-4 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {removalRows.map((row) => (
+                    <tr key={row.product_guid} className="border-b border-muted/40 align-middle">
+                      <td className="py-3 pr-4">
+                        <div className="font-medium">{row.product_name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {row.product_code ? `Код ${row.product_code} · ` : ""}
+                          {row.product_guid}
+                        </div>
+                      </td>
+                      <td className="py-3 pl-4">
+                        <Badge variant="outline">
+                          {IIKO_TYPE_LABEL[row.product_type ?? ""] ?? row.product_type ?? "—"}
+                        </Badge>
+                      </td>
+                      <td className="py-3 pl-4 text-muted-foreground">
+                        {row.line_title ?? GOODS_STATUS_LABEL[row.status] ?? row.status}
+                      </td>
+                      <td className="py-3 pl-4 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={savingKey === row.product_guid}
+                          onClick={() => onRemove(row)}
+                        >
+                          Снять с учёта
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      ) : null}
+
       <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -997,6 +1104,7 @@ function GoodsLedgerView({
   onWorkupAnswer,
   savingKey,
   onClassificationChange,
+  onClassificationRemove,
 }: {
   ledger: GoodsLedger;
   classifications: GoodsClassificationLedger;
@@ -1008,6 +1116,7 @@ function GoodsLedgerView({
     row: GoodsClassificationRow,
     decision: GoodsClassificationDecision,
   ) => void;
+  onClassificationRemove: (row: GoodsClassificationRow) => void;
 }) {
   const revisionSummaries = ledger.summaries.filter((item) => item.source_kind === "inventory");
   const revisionRows = ledger.rows.filter((item) => item.source_kind === "inventory");
@@ -1180,6 +1289,7 @@ function GoodsLedgerView({
         ledger={classifications}
         savingKey={savingKey}
         onChange={onClassificationChange}
+        onRemove={onClassificationRemove}
       />
     </div>
   );
@@ -1360,6 +1470,32 @@ export function PnlRoute() {
     [goodsClassifications, goodsLedger, month],
   );
 
+  const removeGoodsRow = useCallback(
+    async (row: GoodsClassificationRow) => {
+      setGoodsSavingKey(row.product_guid);
+      try {
+        const updatedClassifications = await removeGoodsClassification(month, row.product_guid);
+        goodsClassifications.replace(updatedClassifications);
+        toast.success(`«${row.product_name}» снята с товарного учёта`);
+        try {
+          const [updatedGoodsLedger, updatedReport] = await Promise.all([
+            fetchGoodsLedger(month),
+            fetchPnlReport(month),
+          ]);
+          goodsLedger.replace(updatedGoodsLedger);
+          setReport(updatedReport);
+        } catch (cause: unknown) {
+          toast.warning(apiErrorMessage(cause, "Позиция снята, но итоговые суммы не обновились"));
+        }
+      } catch (cause: unknown) {
+        toast.error(apiErrorMessage(cause, "Не удалось снять позицию с учёта"));
+      } finally {
+        setGoodsSavingKey(null);
+      }
+    },
+    [goodsClassifications, goodsLedger, month],
+  );
+
   // Расшифровка запрашивается по клику, а не вместе с отчётом: восемьдесят разложений в
   // каждом ответе утяжелили бы главный экран ради данных, которые чаще всего не откроют.
   useEffect(() => {
@@ -1527,6 +1663,7 @@ export function PnlRoute() {
               onWorkupAnswer={answerWorkup}
               savingKey={goodsSavingKey}
               onClassificationChange={saveGoodsClassification}
+              onClassificationRemove={removeGoodsRow}
             />
           ) : null}
         </TabsContent>

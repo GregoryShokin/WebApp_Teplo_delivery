@@ -239,6 +239,10 @@ export type GoodsClassificationRow = {
   revision_product: boolean;
   note: string | null;
   updated_at: string | null;
+  /** Тип позиции в справочнике iiko. `null` — GUID справочнику ещё неизвестен. */
+  product_type: string | null;
+  /** Не товар, но разметка за ним осталась. Размечать нельзя, можно только снять. */
+  needs_removal: boolean;
 };
 
 export type GoodsClassificationLedger = {
@@ -248,6 +252,7 @@ export type GoodsClassificationLedger = {
   rules_count: number;
   options: GoodsClassificationOption[];
   rows: GoodsClassificationRow[];
+  removal_count: number;
 };
 
 export type GoodsClassificationDecision = {
@@ -259,6 +264,18 @@ export type GoodsClassificationDecision = {
 export async function fetchGoodsClassifications(month: string): Promise<GoodsClassificationLedger> {
   const response = await api.get<GoodsClassificationLedger>(
     "/reports/pnl/ledgers/goods/classifications",
+    { params: { month }, timeout: 60_000 },
+  );
+  return response.data;
+}
+
+/** Снять с учёта позицию не-товарного типа: блюдо, заготовку, модификатор. */
+export async function removeGoodsClassification(
+  month: string,
+  productGuid: string,
+): Promise<GoodsClassificationLedger> {
+  const response = await api.delete<GoodsClassificationLedger>(
+    `/reports/pnl/ledgers/goods/classifications/${productGuid}`,
     { params: { month }, timeout: 60_000 },
   );
   return response.data;

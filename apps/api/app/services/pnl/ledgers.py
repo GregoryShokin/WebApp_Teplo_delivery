@@ -28,6 +28,12 @@ from app.models.pnl import (
 )
 from app.services import accounting_periods
 from app.services.pnl import iiko_sync, projector
+from app.services.pnl.product_types import (
+    GOODS_TYPE,
+    load_non_goods_guids,
+    load_product_types,
+    type_label,
+)
 from app.services.pnl.revision_products import (
     load_revision_product_guids,
     normalize_iiko_product_guid,
@@ -288,7 +294,16 @@ def pnl_goods_amount(metric_code: str, amount: Decimal) -> Decimal:
 
 
 async def _stocked_product_guids(session: AsyncSession, month: date) -> set[str]:
-    """Нормализованные GUID товаров, стоимость которых идёт через складской roll-forward."""
+    """Нормализованные GUID товаров, стоимость которых идёт через складской roll-forward.
+
+    НЕ-ТОВАРНЫЕ ТИПЫ ВЫЧИТАЮТСЯ В КОНЦЕ, И ЭТО МЕНЯЕТ ЦИФРУ. Складские остатки iiko несут не
+    только закупаемое сырьё: блюда, заготовки и модификаторы лежат там же и попадали в контур
+    неявной веткой ``implicit_inventory_guids`` — по факту появления в остатках, без всякого
+    правила. На 31.07.2026 это 89 682,24 ₽ из 1 309 155,05 ₽ складского остатка (заготовки
+    58 605,77, блюда 21 620,44, модификаторы 9 456,03). Расход они при этом не двигали:
+    ``consumption_amount`` у всех трёх типов ровно 0,00 ₽ — остаток стоит и не расходуется.
+    Поэтому вычитание уводит из складских метрик именно запас, а не потребление.
+    """
     explicit_rules = (
         await session.execute(
             select(
@@ -330,9 +345,12 @@ async def _stocked_product_guids(session: AsyncSession, month: date) -> set[str]
             )
         ).scalars()
     )
-    return (rule_guids | implicit_inventory_guids | revision_guids) - {
-        normalize_iiko_product_guid(guid) for guid in workup_guids
-    }
+    non_goods_guids = await load_non_goods_guids(session)
+    return (
+        (rule_guids | implicit_inventory_guids | revision_guids)
+        - {normalize_iiko_product_guid(guid) for guid in workup_guids}
+        - non_goods_guids
+    )
 
 
 async def build_goods_ledger(session: AsyncSession, month: date) -> GoodsLedger:
@@ -555,6 +573,11 @@ class GoodsClassificationRow:
     revision_product: bool
     note: str | None
     updated_at: datetime | None
+    #: Тип позиции в справочнике iiko. ``None`` — GUID справочнику ещё неизвестен.
+    product_type: str | None = None
+    #: Позиция не-товарного типа, у которой осталась разметка прошлых решений. Размечать её
+    #: заново нельзя, выбор для неё один — снять с учёта.
+    needs_removal: bool = False
 
 
 @dataclass(slots=True)
@@ -565,6 +588,8 @@ class GoodsClassificationLedger:
     rules_count: int
     options: list[GoodsClassificationOption]
     rows: list[GoodsClassificationRow]
+    #: Сколько не-товарных позиций ещё держат за собой старую разметку и ждут снятия.
+    removal_count: int = 0
 
 
 #: Строки ОПиУ, доступные для выбора у каждого источника.
@@ -586,9 +611,21 @@ async def build_goods_classifications(
     session: AsyncSession,
     month: date,
 ) -> GoodsClassificationLedger:
-    """Одна строка на товар: выбранный источник плюс оба наблюдаемых потока iiko."""
+    """Одна строка на товар: выбранный источник плюс оба наблюдаемых потока iiko.
+
+    ВЫБОР ПОКАЗЫВАЕТ ТОЛЬКО ТОВАРЫ. До 08.08.2026 сюда попадала вся номенклатура складских
+    остатков — на августе 2026 это 429 позиций, из которых 170 были блюдами, заготовками и
+    модификаторами. Владелец разметить их не мог и не должен: складской учёт ведётся по
+    товарам, а блюдо на складе — это уже приготовленные товары, посчитанные вторым разом.
+
+    УЖЕ РАЗМЕЧЕННОЕ НЕ ИСЧЕЗАЕТ. Не-товар, за которым осталось правило или решение месяца,
+    остаётся в выдаче с ``needs_removal`` — за его строкой могут стоять посчитанные месяцы,
+    и убрать её вправе только владелец. Отсюда же и разделение счётчиков: такая строка не
+    считается ни размеченным товаром (``rules_count``), ни вопросом (``attention_count``).
+    """
     month_start, _month_end = projector.month_bounds(month)
     revision_product_guids = await load_revision_product_guids(session)
+    non_goods_guids = await load_non_goods_guids(session)
     rules = (await session.execute(select(PnlProductWhitelist))).scalars().all()
     monthly_decisions = (
         (
@@ -647,14 +684,19 @@ async def build_goods_classifications(
         ] = observation
     monthly_by_guid = {decision.iiko_product_guid: decision for decision in monthly_decisions}
     product_guids = set(rules_by_guid) | set(observations_by_guid) | set(monthly_by_guid)
+    product_types = await load_product_types(session, product_guids)
     rows: list[GoodsClassificationRow] = []
     attention_count = 0
     attention_amount = Decimal("0.00")
+    removal_count = 0
     for product_guid in product_guids:
         is_revision_product = normalize_iiko_product_guid(product_guid) in revision_product_guids
         product_rules = rules_by_guid.get(product_guid, [])
         product_observations = observations_by_guid.get(product_guid, {})
         monthly_decision = monthly_by_guid.get(product_guid)
+        is_non_goods = normalize_iiko_product_guid(product_guid) in non_goods_guids
+        if is_non_goods and not product_rules and monthly_decision is None:
+            continue
 
         # В старых данных для GUID могли сохраниться правила обоих источников. В интерфейсе
         # и расчёте это всё равно одно решение: включённое правило приоритетнее проверки и
@@ -697,7 +739,11 @@ async def build_goods_classifications(
             )
             selected_source_kind = selected_rule.source_kind if selected_rule is not None else None
             line_code = selected_rule.line_code if selected_rule is not None else None
-        needs_attention = row_status in {"unclassified", "requires_owner_review"}
+        if is_non_goods:
+            removal_count += 1
+        needs_attention = (
+            row_status in {"unclassified", "requires_owner_review"} and not is_non_goods
+        )
         if product_observations and needs_attention:
             attention_count += 1
             # Один GUID в двух потоках — один новый товар, а не две независимые суммы.
@@ -788,6 +834,8 @@ async def build_goods_classifications(
                     if monthly_decision is not None
                     else (selected_rule.updated_at if selected_rule is not None else None)
                 ),
+                product_type=product_types.get(normalize_iiko_product_guid(product_guid)),
+                needs_removal=is_non_goods,
             )
         )
     rows.sort(
@@ -824,10 +872,12 @@ async def build_goods_classifications(
         attention_count=attention_count,
         attention_amount=attention_amount,
         rules_count=sum(
-            item.status in {"include", "exclude", "workup", "stocked"} for item in rows
+            item.status in {"include", "exclude", "workup", "stocked"} and not item.needs_removal
+            for item in rows
         ),
         options=options,
         rows=rows,
+        removal_count=removal_count,
     )
 
 
@@ -1113,6 +1163,115 @@ async def rebuild_goods_from_observations(
     await session.flush()
 
 
+async def _assert_goods_product(session: AsyncSession, product_guid: str) -> None:
+    """Пустить в товарную разметку только позицию типа ``GOODS``.
+
+    Неизвестная справочнику позиция проходит: справочник и накладные синхронизируются разными
+    задачами, и запрет по незнанию заблокировал бы разметку товара, купленного раньше первого
+    синка номенклатуры.
+    """
+    product_type = (await load_product_types(session, [product_guid])).get(
+        normalize_iiko_product_guid(product_guid)
+    )
+    if product_type is None or product_type.upper() == GOODS_TYPE:
+        return
+    raise ValueError(
+        f"В товарном учёте ОПиУ участвуют только товары iiko, а это {type_label(product_type)}. "
+        "Позицию нужно снять с учёта, а не размечать."
+    )
+
+
+async def remove_goods_classification(
+    session: AsyncSession,
+    *,
+    display_month: date,
+    product_guid: str,
+) -> GoodsClassificationLedger:
+    """Снять разметку с позиции, которой в товарном учёте не место.
+
+    ПОЧЕМУ ОТДЕЛЬНОЕ ДЕЙСТВИЕ, А НЕ МИГРАЦИЯ. За строкой могут стоять уже посчитанные и
+    показанные месяцы: у «Палочек»-блюда, найденных 08.08.2026, разметка ``stocked`` +
+    ``packaging_inventory`` стояла с сида 0253. Снос такой строки автоматом менял бы цифру
+    закрытого отчёта без ведома владельца, поэтому снятие — его осознанное действие, а замок
+    закрытого месяца действует на него так же, как на любую другую правку разметки.
+
+    ТОЛЬКО ДЛЯ НЕ-ТОВАРОВ. У товара снятие не нужно: у него есть «Не учитывать в товарных
+    расходах», и это решение, которое видно в списке. Полное исчезновение строки для товара
+    означало бы, что следующая выгрузка iiko вернёт его как новый и неразмеченный.
+    """
+    month_start, _month_end = projector.month_bounds(display_month)
+    await accounting_periods.assert_month_open(
+        session, month_start, action="менять разметку товаров"
+    )
+    product_type = (await load_product_types(session, [product_guid])).get(
+        normalize_iiko_product_guid(product_guid)
+    )
+    if product_type is None or product_type.upper() == GOODS_TYPE:
+        raise ValueError(
+            "Снятие предусмотрено только для позиций не-товарного типа. "
+            "Для товара выберите статью или «Не учитывать в товарных расходах»."
+        )
+    rules = (
+        (
+            await session.execute(
+                select(PnlProductWhitelist).where(
+                    PnlProductWhitelist.iiko_product_guid == product_guid
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    closed = await accounting_periods.closed_months(session)
+    monthly_decisions = (
+        (
+            await session.execute(
+                select(PnlProductMonthlyDecision).where(
+                    PnlProductMonthlyDecision.iiko_product_guid == product_guid,
+                    PnlProductMonthlyDecision.period_month >= month_start,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rules and not monthly_decisions:
+        # Позиция активного списка ревизии держится не разметкой ОПиУ, а самим списком, и
+        # убрать её отсюда нечем: следующий пересчёт вернёт её обратно. Тупик здесь возможен
+        # только у не-товара, попавшего в продуктовую ревизию, — говорим, где его снимать.
+        revision_guids = await load_revision_product_guids(session)
+        if normalize_iiko_product_guid(product_guid) in revision_guids:
+            raise ValueError(
+                "Позиция входит в активный список продуктовой ревизии и складской учёт "
+                "получает оттуда. Снимите её в модуле «Ревизии»."
+            )
+        raise ValueError("У этой позиции нет разметки, которую можно снять")
+    for rule in rules:
+        await session.delete(rule)
+    for decision in monthly_decisions:
+        if decision.period_month not in closed:
+            await session.delete(decision)
+    await session.flush()
+
+    affected_months = {
+        month
+        for month in (
+            await session.execute(
+                select(PnlIikoProductObservation.period_month)
+                .where(PnlIikoProductObservation.iiko_product_guid == product_guid)
+                .distinct()
+            )
+        ).scalars()
+        if month >= month_start
+    }
+    affected_months.add(month_start)
+    for affected_month in sorted(affected_months - closed):
+        await rebuild_goods_from_observations(session, affected_month, "inventory")
+        await rebuild_goods_from_observations(session, affected_month, "incoming_invoice")
+    await session.commit()
+    return await build_goods_classifications(session, display_month)
+
+
 async def save_goods_classification(
     session: AsyncSession,
     *,
@@ -1131,6 +1290,9 @@ async def save_goods_classification(
     )
     revision_product_guids = await load_revision_product_guids(session)
     is_revision_product = normalize_iiko_product_guid(product_guid) in revision_product_guids
+    # ЗАПРЕТ СТОИТ НА БЭКЕНДЕ, А НЕ ТОЛЬКО В ЭКРАНЕ. Спрятанная в интерфейсе строка вернулась бы
+    # тем же PATCH из любого клиента, и «Палочки»-блюдо снова оказались бы в складском учёте.
+    await _assert_goods_product(session, product_guid)
     if source_kind not in GOODS_LINES_BY_SOURCE:
         raise ValueError("Неизвестный источник товара")
     if status not in {
