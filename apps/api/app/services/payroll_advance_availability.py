@@ -278,7 +278,7 @@ async def _production_earned(
     as_of: date,
     *,
     period: PayrollPeriod | None = None,
-) -> tuple[Decimal, date | None, date | None, str | None, Decimal]:
+) -> tuple[Decimal, date | None, date | None, str | None, Decimal, Decimal]:
     """``period`` передают, когда период уже выбран снаружи — так делает исторический срез.
 
     Сам по себе этот расчёт ищет ОТКРЫТЫЙ период (аванс выдают из открытого), и для прошедшей
@@ -287,7 +287,14 @@ async def _production_earned(
     """
     period = period or await _open_weekly_period(session, as_of)
     if period is None:
-        return Decimal("0.00"), None, None, "Нет открытого недельного периода", Decimal("0.00")
+        return (
+            Decimal("0.00"),
+            None,
+            None,
+            "Нет открытого недельного периода",
+            Decimal("0.00"),
+            Decimal("0.00"),
+        )
     earned_through = min(as_of, period.end_date)
     # Только уже загруженные явки внутри рабочего периода (без live-iiko). В день выплаты
     # as_of может быть позже end_date, но заработанное считаем только до конца недели.
@@ -314,6 +321,7 @@ async def _production_earned(
             as_of,
             "Явки за период ещё не загружены",
             lump,
+            Decimal("0.00"),
         )
     provisional = PayrollPeriod(
         period_type="week",
@@ -336,13 +344,32 @@ async def _production_earned(
             as_of,
             "Расчёт заблокирован — проверьте явки/ставки",
             lump,
+            Decimal("0.00"),
         )
     earned = sum(
         (decimal(line.total_payable) for line in result.lines if line.employee_id == employee.id),
         Decimal("0"),
     )
+    # Удержание в депозит: из ``total_payable`` оно уже вычтено, но на депозитный счёт ляжет
+    # только при финализации. Для среза на дату внутри периода эти деньги иначе исчезают —
+    # из зарплаты вычтены, на счёт не попали.
+    withheld = sum(
+        (
+            decimal((line.components or {}).get("deposit_withholding", 0))
+            for line in result.lines
+            if line.employee_id == employee.id
+        ),
+        Decimal("0"),
+    )
     note = _vacation_lump_note(lump, period.payroll_date)
-    return earned.quantize(_CENTS), period.start_date, as_of, note, lump
+    return (
+        earned.quantize(_CENTS),
+        period.start_date,
+        as_of,
+        note,
+        lump,
+        withheld.quantize(_CENTS),
+    )
 
 
 async def _already_advanced_in_period(
@@ -383,7 +410,8 @@ async def _basis_earned(
     if basis == "dishwasher":
         earned, start, end = await _dishwasher_earned(session, employee, as_of)
         return earned, start, end, None, Decimal("0.00")
-    return await _production_earned(session, employee, as_of)
+    earned, start, end, note, lump, _withheld = await _production_earned(session, employee, as_of)
+    return earned, start, end, note, lump
 
 
 def _upcoming_weekly_payslips(today: date, count: int) -> list[tuple[date, date, date]]:
@@ -585,6 +613,11 @@ class EarnedAsOf:
     period_end: date | None
     earned: Decimal
     vacation_lump: Decimal
+    # Удержание в депозит, посчитанное провизорным прогоном. Из ``earned`` оно уже вычтено, а на
+    # депозитный счёт ляжет только при финализации: строка леджера датируется концом периода.
+    # Поэтому на дату внутри периода эти деньги не лежат нигде, и срез обязан добавить их в
+    # депозит сам — иначе долг перед сотрудником занижен ровно на них.
+    deposit_withholding: Decimal
     # Период был финализирован НА ЭТУ ДАТУ: заработанное уже несёт хвост ведомости, и
     # складывать его сюда значило бы посчитать одни деньги дважды.
     period_finalized: bool
@@ -644,9 +677,26 @@ async def earned_as_of(session: AsyncSession, employee: Employee, as_of: date) -
                 period_end=period.end_date if period else None,
                 earned=Decimal("0.00"),
                 vacation_lump=Decimal("0.00"),
+                deposit_withholding=Decimal("0.00"),
                 period_finalized=True,
             )
-        earned, start, end, _note, lump = await _production_earned(
+        if period is None:
+            # Недельного периода, содержащего дату, нет вовсе (начало горизонта учёта).
+            # Звать расчёт нельзя: без периода он падает на авансовый фолбэк «первый
+            # нефинализированный период с payroll_date >= as_of», то есть на период ИЗ
+            # БУДУЩЕГО, и приносит в исторический срез его отпускной транш.
+            return EarnedAsOf(
+                employee_id=employee.id,
+                as_of=as_of,
+                basis=basis,
+                period_start=None,
+                period_end=None,
+                earned=Decimal("0.00"),
+                vacation_lump=Decimal("0.00"),
+                deposit_withholding=Decimal("0.00"),
+                period_finalized=False,
+            )
+        earned, start, end, _note, lump, withheld = await _production_earned(
             session, employee, as_of, period=period
         )
     else:
@@ -669,11 +719,14 @@ async def earned_as_of(session: AsyncSession, employee: Employee, as_of: date) -
                 period_end=end,
                 earned=Decimal("0.00"),
                 vacation_lump=Decimal("0.00"),
+                deposit_withholding=Decimal("0.00"),
                 period_finalized=True,
             )
         earned, start, end, _note, lump = await _basis_earned(
             session, employee, position, basis, as_of
         )
+        # У окладника и мойщицы депозит не удерживается — контур только производственный.
+        withheld = Decimal("0.00")
 
     return EarnedAsOf(
         employee_id=employee.id,
@@ -683,5 +736,6 @@ async def earned_as_of(session: AsyncSession, employee: Employee, as_of: date) -
         period_end=end,
         earned=decimal(earned).quantize(Decimal("0.01")),
         vacation_lump=decimal(lump).quantize(Decimal("0.01")),
+        deposit_withholding=decimal(withheld).quantize(Decimal("0.01")),
         period_finalized=False,
     )

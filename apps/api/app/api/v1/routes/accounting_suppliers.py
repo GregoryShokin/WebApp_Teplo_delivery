@@ -58,6 +58,7 @@ from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
 from app.services import expense_reversal as reversal_service
 from app.services import owner_analytics
+from app.services import staff_balance_as_of as staff_balance
 from app.services import subscription_accruals as subscriptions
 from app.services import supplier_service_periods as periods
 from app.services.accumulation_fund_service import (
@@ -2475,6 +2476,97 @@ async def list_balances_as_of(
         receivable_total=_float(report.receivable_total),
         payable_total=_float(report.payable_total),
         approximate_settlements=_float(report.approximate_settlements),
+    )
+
+
+class StaffBalanceAsOfRow(BaseModel):
+    employee_id: uuid.UUID
+    full_name: str
+    position: str | None = None
+    # ``salary`` уже содержит ``vacation``: отпускной транш показан отдельной цифрой
+    # справочно, складывать их нельзя.
+    salary: float
+    vacation: float
+    fund: float
+    production_deposit: float
+    courier_deposit: float
+    payable: float
+    receivable: float
+
+
+class StaffBalanceAsOfList(BaseModel):
+    """Расчёты с сотрудниками на дату — строки баланса, которых витрина «сейчас» не даёт.
+
+    ``approximate_payments`` — выплаты, взятые из ``PayrollPayment`` вместо иммутабельного
+    леджера выплат: эта строка при снятии отметки удаляется физически, поэтому на прошедшую
+    дату она может показывать выплату, которой в тот день ещё не было (или наоборот).
+
+    ``approximate_write_offs`` — остатки займов, чья дата закрытия получена бэкфиллом
+    (последнее касание строки, а не день решения). Пока обе цифры не ноль, срез на прошедшую
+    дату может отличаться от истинного на них — и это надо знать до того, как расхождение
+    начнут искать в другом месте.
+    """
+
+    as_of: date
+    items: list[StaffBalanceAsOfRow]
+    payable_total: float
+    receivable_total: float
+    salary_total: float
+    vacation_total: float
+    fund_total: float
+    production_deposit_total: float
+    courier_deposit_total: float
+    approximate_payments: float
+    approximate_write_offs: float
+
+
+@router.get("/staff-payable/as-of", response_model=StaffBalanceAsOfList, dependencies=READ)
+async def list_staff_payable_as_of(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    as_of: Annotated[date, Query()],
+) -> StaffBalanceAsOfList:
+    """Сколько мы были должны сотрудникам (и они нам) на указанную дату.
+
+    Соседняя витрина ``/staff-payable`` отвечает на вопрос «сколько должны СЕЙЧАС» и для
+    баланса не годится: она построена на текущих статусах, а те историю стирают — заём,
+    погашенный в августе, в срезе на 31 июля не появится ни при какой доработке фильтра.
+    Здесь каждое слагаемое отсечено своей хозяйственной датой, а то, что восстановить точно
+    нельзя, вынесено в отдельные поля приблизительности.
+    """
+    try:
+        report = await staff_balance.build_staff_balance_as_of(session, as_of=as_of)
+    except staff_balance.BeforeAccountingStart as exc:
+        # Дата вне горизонта учёта — негодный ввод (422), а не конфликт состояния (409):
+        # открывать тут нечего, до 01.07.2026 движений в системе нет вовсе.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return StaffBalanceAsOfList(
+        as_of=report.as_of,
+        items=[
+            StaffBalanceAsOfRow(
+                employee_id=row.employee_id,
+                full_name=row.full_name,
+                position=row.position,
+                salary=_float(row.salary),
+                vacation=_float(row.vacation),
+                fund=_float(row.fund),
+                production_deposit=_float(row.production_deposit),
+                courier_deposit=_float(row.courier_deposit),
+                payable=_float(row.payable),
+                receivable=_float(row.receivable),
+            )
+            for row in report.rows
+        ],
+        payable_total=_float(report.payable_total),
+        receivable_total=_float(report.receivable_total),
+        salary_total=_float(report.salary_total),
+        vacation_total=_float(report.vacation_total),
+        fund_total=_float(report.fund_total),
+        production_deposit_total=_float(report.production_deposit_total),
+        courier_deposit_total=_float(report.courier_deposit_total),
+        approximate_payments=_float(report.approximate_payments),
+        approximate_write_offs=_float(report.approximate_write_offs),
     )
 
 

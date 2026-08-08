@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
 from fastapi import HTTPException, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy import update as sqlalchemy_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -497,6 +498,69 @@ async def get_balance(
         else:
             balance -= transaction.amount_cents
     return balance
+
+
+async def balances_as_of(
+    session: AsyncSession,
+    employee_ids: Iterable[uuid.UUID],
+    at_date: date,
+) -> dict[uuid.UUID, int]:
+    """Остатки курьерских депозитов на дату — ПАЧКОЙ, двумя запросами.
+
+    Зачем отдельно от ``get_balance``: балансовый срез спрашивает про всех курьеров сразу, а
+    та отвечает про одного и делает это двумя обращениями к базе на человека. Полсотни
+    курьеров — сотня запросов там, где хватает двух. Считать в срезе «своей» формулой нельзя:
+    две формулы одного остатка расходятся молча, и потом никто не знает, какая из них права.
+
+    ``opening_date`` здесь НЕ отсекает движения, ровно как в ``get_balance``: входящий остаток
+    складывается со ВСЕМИ транзакциями по дату включительно. Семантика спорная (у денежных
+    кошельков опорная точка отсекает движения до себя, см. ``wallet_balance_as_of``), но
+    расхождение между двумя функциями одного модуля хуже неидеальной семантики: страница
+    «Депозиты курьеров» и баланс обязаны показывать одну цифру.
+
+    Возвращает копейки — той же единицей, что и ``get_balance``. Сотрудники без счёта в
+    ответе отсутствуют вовсе (нулевой строки не заводим: её не с чем сверять).
+    """
+    unique_ids = list({employee_id for employee_id in employee_ids})
+    if not unique_ids:
+        return {}
+    balances = {
+        employee_id: int(opening)
+        for employee_id, opening in (
+            await session.execute(
+                select(
+                    CourierDepositAccount.employee_id,
+                    CourierDepositAccount.opening_balance_cents,
+                ).where(CourierDepositAccount.employee_id.in_(unique_ids))
+            )
+        ).all()
+    }
+    if not balances:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                CourierDepositTransaction.account_employee_id,
+                CourierDepositTransaction.transaction_type,
+                func.coalesce(func.sum(CourierDepositTransaction.amount_cents), 0),
+            )
+            .where(
+                CourierDepositTransaction.account_employee_id.in_(list(balances)),
+                CourierDepositTransaction.transaction_date <= at_date,
+            )
+            .group_by(
+                CourierDepositTransaction.account_employee_id,
+                CourierDepositTransaction.transaction_type,
+            )
+        )
+    ).all()
+    for employee_id, transaction_type, total in rows:
+        amount = int(total or 0)
+        if _enum_value(transaction_type) == CourierDepositTransactionType.TOP_UP.value:
+            balances[employee_id] += amount
+        else:
+            balances[employee_id] -= amount
+    return balances
 
 
 async def list_couriers_with_balances(
