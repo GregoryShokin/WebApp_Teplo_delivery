@@ -276,8 +276,16 @@ async def _production_earned(
     session: AsyncSession,
     employee: Employee,
     as_of: date,
+    *,
+    period: PayrollPeriod | None = None,
 ) -> tuple[Decimal, date | None, date | None, str | None, Decimal]:
-    period = await _open_weekly_period(session, as_of)
+    """``period`` передают, когда период уже выбран снаружи — так делает исторический срез.
+
+    Сам по себе этот расчёт ищет ОТКРЫТЫЙ период (аванс выдают из открытого), и для прошедшей
+    даты это неверный выбор: содержащий её период давно финализирован, и поиск уехал бы на
+    следующий открытый — то есть вернул бы заработанное не за тот период.
+    """
+    period = period or await _open_weekly_period(session, as_of)
     if period is None:
         return Decimal("0.00"), None, None, "Нет открытого недельного периода", Decimal("0.00")
     earned_through = min(as_of, period.end_date)
@@ -557,4 +565,123 @@ async def available_to_advance(
         vacation_payout_lump=lump,
         note=note,
         payout_reached=False,
+    )
+
+
+@dataclass(frozen=True)
+class EarnedAsOf:
+    """Заработанное сотрудником на дату — историческая половина ``available_to_advance``.
+
+    Отдельная функция, а не флаг внутри существующей: та отвечает на вопрос «сколько можно
+    выдать авансом ПРЯМО СЕЙЧАС» и потому ищет ОТКРЫТЫЙ период. Для прошедшей даты это неверный
+    выбор — содержащий её период уже финализирован, и поиск уходит на следующий открытый,
+    возвращая заработанное не за тот период.
+    """
+
+    employee_id: uuid.UUID
+    as_of: date
+    basis: str
+    period_start: date | None
+    period_end: date | None
+    earned: Decimal
+    vacation_lump: Decimal
+    # Период был финализирован НА ЭТУ ДАТУ: заработанное уже несёт хвост ведомости, и
+    # складывать его сюда значило бы посчитать одни деньги дважды.
+    period_finalized: bool
+
+
+async def _period_containing(session: AsyncSession, as_of: date) -> PayrollPeriod | None:
+    """Недельный период, содержащий дату, БЕЗ фильтра по статусу.
+
+    Статус — свойство «сейчас», а вопрос исторический: на 31.08 нужен тот период, в который
+    31.08 попадает, независимо от того, закрыли его потом или нет.
+    """
+    return await session.scalar(
+        select(PayrollPeriod)
+        .where(
+            PayrollPeriod.period_type == "week",
+            PayrollPeriod.start_date <= as_of,
+            PayrollPeriod.end_date >= as_of,
+        )
+        .order_by(PayrollPeriod.start_date.desc())
+        .limit(1)
+    )
+
+
+def _finalized_by(period: PayrollPeriod | None, as_of: date) -> bool:
+    """Был ли период финализирован на конец дня ``as_of``.
+
+    Смотрим на ДАТУ финализации, а не на статус: витрина «на сейчас» сравнивает границы со
+    множеством финализированных периодов и потому на историческую дату обнуляет заработок
+    периода, который закрыли только в сентябре. Хвост ведомости его тоже не подхватит — он
+    появится позже as_of. Зарплата за такую неделю исчезала из среза целиком.
+    """
+    if period is None or period.finalized_at is None:
+        return False
+    return period.finalized_at.date() <= as_of
+
+
+async def earned_as_of(session: AsyncSession, employee: Employee, as_of: date) -> EarnedAsOf:
+    """Сколько сотрудник заработал к дате в периоде, который эту дату содержит."""
+    position = await get_position_on_date(session, employee.id, as_of)
+    position = position or employee.position or ""
+
+    if position in okladnik_positions():
+        basis = "okladnik"
+    elif position in dishwasher_positions():
+        basis = "dishwasher"
+    else:
+        basis = "production"
+
+    if basis == "production":
+        period = await _period_containing(session, as_of)
+        if _finalized_by(period, as_of):
+            return EarnedAsOf(
+                employee_id=employee.id,
+                as_of=as_of,
+                basis=basis,
+                period_start=period.start_date if period else None,
+                period_end=period.end_date if period else None,
+                earned=Decimal("0.00"),
+                vacation_lump=Decimal("0.00"),
+                period_finalized=True,
+            )
+        earned, start, end, _note, lump = await _production_earned(
+            session, employee, as_of, period=period
+        )
+    else:
+        start, end = _half_month_bounds(as_of)
+        # Полумесячный период строится по календарю, но узнать о его финализации можно только
+        # у реальной записи с теми же границами.
+        real = await session.scalar(
+            select(PayrollPeriod).where(
+                PayrollPeriod.period_type == "half_month",
+                PayrollPeriod.start_date == start,
+                PayrollPeriod.end_date == end,
+            )
+        )
+        if _finalized_by(real, as_of):
+            return EarnedAsOf(
+                employee_id=employee.id,
+                as_of=as_of,
+                basis=basis,
+                period_start=start,
+                period_end=end,
+                earned=Decimal("0.00"),
+                vacation_lump=Decimal("0.00"),
+                period_finalized=True,
+            )
+        earned, start, end, _note, lump = await _basis_earned(
+            session, employee, position, basis, as_of
+        )
+
+    return EarnedAsOf(
+        employee_id=employee.id,
+        as_of=as_of,
+        basis=basis,
+        period_start=start,
+        period_end=end,
+        earned=decimal(earned).quantize(Decimal("0.01")),
+        vacation_lump=decimal(lump).quantize(Decimal("0.01")),
+        period_finalized=False,
     )
