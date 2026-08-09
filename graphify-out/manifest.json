@@ -15015,9 +15015,9 @@
     "semantic_hash": "c8ac107ac30164387eed872ed13667f9"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/api/v1/routes/reports_pnl.py": {
-    "mtime": 1786099613.5674045,
-    "ast_hash": "97cdc434664c50f6c3fbdcc3f5c228cf",
-    "semantic_hash": "97cdc434664c50f6c3fbdcc3f5c228cf"
+    "mtime": 1786256090.2694728,
+    "ast_hash": "302a8badeaa7002837109a7c07051445",
+    "semantic_hash": "302a8badeaa7002837109a7c07051445"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/jobs/pnl_iiko_sync_job.py": {
     "mtime": 1786099613.5705173,
@@ -15055,9 +15055,9 @@
     "semantic_hash": "a86e9b61e89988f6b9d3aad91df24dba"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/pnl/goods_classifier.py": {
-    "mtime": 1786099613.5765533,
-    "ast_hash": "e65820d0842c295baf1070d4e1566615",
-    "semantic_hash": "e65820d0842c295baf1070d4e1566615"
+    "mtime": 1786256090.2699971,
+    "ast_hash": "ca0a9aa9fde7b1de2ac5da7ec96cc79a",
+    "semantic_hash": "ca0a9aa9fde7b1de2ac5da7ec96cc79a"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/pnl/iiko_sync.py": {
     "mtime": 1786131084.7733648,
@@ -15065,9 +15065,9 @@
     "semantic_hash": "49c662641a7fe7a196baf24e35ae1857"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/pnl/ledgers.py": {
-    "mtime": 1786131084.773984,
-    "ast_hash": "2d0eda7b2b251267970a7836146819f6",
-    "semantic_hash": "2d0eda7b2b251267970a7836146819f6"
+    "mtime": 1786256090.2704854,
+    "ast_hash": "ca24285a2a7c361b95d229e69cc31603",
+    "semantic_hash": "ca24285a2a7c361b95d229e69cc31603"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/pnl/projector.py": {
     "mtime": 1786099613.577811,
@@ -15220,14 +15220,14 @@
     "semantic_hash": "816704d1ca9b6400c4a90faac7bb17c9"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/reports/pnl/api.ts": {
-    "mtime": 1786099613.5909464,
-    "ast_hash": "1853b64b13ff12078dda2839c8959b6d",
-    "semantic_hash": "1853b64b13ff12078dda2839c8959b6d"
+    "mtime": 1786256090.2709658,
+    "ast_hash": "88224a02ad81ca46416a79da0c8b3724",
+    "semantic_hash": "88224a02ad81ca46416a79da0c8b3724"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/reports/pnl/index.tsx": {
-    "mtime": 1786099613.5913386,
-    "ast_hash": "d84e73aee03e8c352c5f6543af9acbc5",
-    "semantic_hash": "d84e73aee03e8c352c5f6543af9acbc5"
+    "mtime": 1786256090.2713144,
+    "ast_hash": "8d56f7db645c57776f49b59d39d94713",
+    "semantic_hash": "8d56f7db645c57776f49b59d39d94713"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/docker-compose.agent-pnl.yml": {
     "mtime": 1786099613.5879257,
@@ -15308,5 +15308,15 @@
     "mtime": 1786188800.5038772,
     "ast_hash": "c381c597052200eb521a5d9d22c062ae",
     "semantic_hash": "c381c597052200eb521a5d9d22c062ae"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/pnl/product_types.py": {
+    "mtime": 1786256090.270637,
+    "ast_hash": "6a6e3f5ca69f62012cc72a81fb579af0",
+    "semantic_hash": "6a6e3f5ca69f62012cc72a81fb579af0"
+  },
+  "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_pnl_goods_product_types.py": {
+    "mtime": 1786256090.270769,
+    "ast_hash": "7d07c729d33ace86ce36aad0be130e89",
+    "semantic_hash": "7d07c729d33ace86ce36aad0be130e89"
   }
 }
