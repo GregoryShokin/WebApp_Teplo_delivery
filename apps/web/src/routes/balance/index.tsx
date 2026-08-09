@@ -279,6 +279,76 @@ function ReconciliationCard({ view }: { view: BalanceView }) {
   );
 }
 
+type LinePart = { name: string; amount: string; quantity?: string };
+
+/** Состав строки, если сервер его прислал. Строка без состава остаётся обычной — не всякая
+ *  величина раскладывается (капитал выведен как остаток, у него слагаемых нет). */
+function linePartsOf(line: BalanceLine): LinePart[] {
+  const parts = (line.detail as { parts?: unknown } | null)?.parts;
+  return Array.isArray(parts) ? (parts as LinePart[]) : [];
+}
+
+/** Строка таблицы плюс её расшифровка.
+ *
+ *  ИТОГ БЕЗ СОСТАВА НЕПРОВЕРЯЕМ. «Выданные авансы поставщикам 252 461,46» — цифра, с которой
+ *  владельцу нечего делать: она либо совпадает с ожиданием, либо нет, и во втором случае искать
+ *  причину негде. Раскрытие превращает вопрос «откуда столько?» в «почему у этого столько?»,
+ *  на который уже можно ответить. */
+function LineRows({ line }: { line: BalanceLine }) {
+  const [open, setOpen] = useState(false);
+  const parts = linePartsOf(line);
+  const muted = line.kind === "memo";
+  return (
+    <>
+      <tr className={`border-b last:border-0 ${muted ? "text-muted-foreground" : ""}`}>
+        <td className="px-4 py-1.5">
+          <div className={muted ? "pl-4 italic" : ""}>
+            {parts.length ? (
+              <button
+                type="button"
+                className="text-left underline-offset-2 hover:underline"
+                onClick={() => setOpen((value) => !value)}
+                aria-expanded={open}
+              >
+                {line.title}
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {open ? "свернуть" : `${parts.length}`}
+                </span>
+              </button>
+            ) : (
+              line.title
+            )}
+          </div>
+          {line.source_note ? (
+            <div className="text-muted-foreground mt-0.5 text-xs">{line.source_note}</div>
+          ) : null}
+        </td>
+        <td className="px-4 py-1.5 text-right align-top">
+          <LineAmount line={line} />
+          {line.status !== "ok" && line.amount !== null ? (
+            <div className="text-muted-foreground text-xs">{STATUS_LABEL[line.status] ?? ""}</div>
+          ) : null}
+        </td>
+      </tr>
+      {open
+        ? parts.map((part, index) => (
+            <tr key={`${line.line_code}-${index}`} className="bg-muted/10 border-b last:border-0">
+              <td className="text-muted-foreground py-1 pl-8 pr-4 text-xs">
+                {part.name}
+                {part.quantity != null ? (
+                  <span className="ml-2 tabular-nums">× {part.quantity}</span>
+                ) : null}
+              </td>
+              <td className="tabular-nums text-muted-foreground px-4 py-1 text-right text-xs">
+                {formatMoney(part.amount)}
+              </td>
+            </tr>
+          ))
+        : null}
+    </>
+  );
+}
+
 /** Одна сторона баланса — актив или пассив — обычной таблицей.
  *
  *  ПОЧЕМУ ТАБЛИЦА, А НЕ КАРТОЧКИ ПО ГРУППАМ. Баланс читают глазами бухгалтера: сверху вниз по
@@ -325,29 +395,7 @@ function SideTable({
                 </td>
               </tr>
               {group.lines.map((line) => (
-                <tr
-                  key={line.line_code}
-                  className={`border-b last:border-0 ${
-                    line.kind === "memo" ? "text-muted-foreground" : ""
-                  }`}
-                >
-                  <td className="px-4 py-1.5">
-                    <div className={line.kind === "memo" ? "pl-4 italic" : ""}>{line.title}</div>
-                    {line.source_note ? (
-                      <div className="text-muted-foreground mt-0.5 text-xs">
-                        {line.source_note}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-1.5 text-right align-top">
-                    <LineAmount line={line} />
-                    {line.status !== "ok" && line.amount !== null ? (
-                      <div className="text-muted-foreground text-xs">
-                        {STATUS_LABEL[line.status] ?? ""}
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
+                <LineRows key={line.line_code} line={line} />
               ))}
             </Fragment>
           ))}

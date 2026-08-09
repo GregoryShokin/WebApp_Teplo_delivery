@@ -87,6 +87,26 @@ class AssembledBalance:
     approximate_total: Decimal
 
 
+def _parts(rows, pick, *, name=lambda row: row.counterparty_name) -> list[dict]:
+    """Состав строки: из чего сложилась сумма, по убыванию вклада.
+
+    ИТОГ БЕЗ СОСТАВА НЕПРОВЕРЯЕМ. «Выданные авансы поставщикам 252 461,46» — цифра, с которой
+    владельцу нечего делать: она либо совпадает с его ожиданием, либо нет, и во втором случае
+    искать причину негде. Разложение по контрагентам превращает вопрос «откуда столько?» в
+    вопрос «почему у этого столько?», на который уже можно ответить.
+
+    Нули отброшены: контрагент с закрытыми расчётами в составе строки не значит ничего, а
+    список раздувает — на проде их десятки.
+    """
+    out = [
+        {"name": name(row), "amount": str(_money(pick(row)))}
+        for row in rows
+        if _money(pick(row)) != _ZERO
+    ]
+    out.sort(key=lambda item: Decimal(item["amount"]), reverse=True)
+    return out
+
+
 def _line(defn: cat.BalanceLineDef, amount: Decimal | None, status: str, **kw) -> AssembledLine:
     return AssembledLine(
         code=defn.code,
@@ -227,15 +247,30 @@ async def _stock_line(
     counted = (
         await session.execute(
             select(
-                func.coalesce(func.sum(PnlIikoStockFact.closing_amount), 0),
-                func.count(),
-            ).where(
+                PnlIikoStockFact.product_name,
+                PnlIikoStockFact.closing_quantity,
+                PnlIikoStockFact.closing_amount,
+            )
+            .where(
                 PnlIikoStockFact.period_month == month,
                 PnlIikoStockFact.iiko_product_guid.in_(stocked),
             )
+            .order_by(PnlIikoStockFact.closing_amount.desc())
         )
-    ).one()
-    total, fact_count = _money(counted[0]), int(counted[1] or 0)
+    ).all()
+    total = _money(sum((row[2] for row in counted), _ZERO))
+    fact_count = len(counted)
+    # Отрицательный остаток попадает в состав как есть и виден сразу: он означает, что продали
+    # больше, чем оприходовали, — то есть приходной накладной нет. Прятать такую позицию
+    # значило бы прятать дыру в первичке.
+    positions = [
+        {
+            "name": row[0] or "—",
+            "amount": str(_money(row[2])),
+            "quantity": str(_money(row[1])),
+        }
+        for row in counted
+    ]
 
     flags: list[AssembledFlag] = []
 
@@ -335,6 +370,7 @@ async def _stock_line(
             "positions_in_snapshot": run_count,
             "excluded_amount": str(_money(run_total - total)),
             "synced_at": synced_at.isoformat() if synced_at else None,
+            "parts": positions,
         },
     )
     return line, flags
@@ -371,7 +407,13 @@ async def _money_lines(
                 by_line.get(code, _ZERO),
                 cat.ST_OK,
                 source_kind="wallets",
-                detail={"wallets": detail.get(code, [])},
+                detail={
+                    "parts": [
+                        {"name": item["wallet"], "amount": item["balance"]}
+                        for item in detail.get(code, [])
+                        if Decimal(item["balance"]) != _ZERO
+                    ]
+                },
             )
         )
 
@@ -427,12 +469,14 @@ async def _counterparty_lines(
             _money(sheet.receivable_total),
             cat.ST_APPROXIMATE if sheet.approximate_settlements else cat.ST_OK,
             source_kind="counterparty_balance_as_of",
+            detail={"parts": _parts(sheet.rows, lambda row: row.receivable)},
         ),
         _line(
             cat.CATALOG_BY_CODE["ap_suppliers"],
             _money(sheet.payable_total),
             cat.ST_APPROXIMATE if sheet.approximate_settlements else cat.ST_OK,
             source_kind="counterparty_balance_as_of",
+            detail={"parts": _parts(sheet.rows, lambda row: row.payable)},
         ),
         _line(
             cat.CATALOG_BY_CODE["ar_owners"],
