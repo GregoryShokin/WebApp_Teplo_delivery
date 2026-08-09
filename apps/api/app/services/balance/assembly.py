@@ -24,7 +24,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BalanceManualValue, PnlIikoStockFact, PnlProductWhitelist
+from app.models import BalanceManualValue, IikoProduct, PnlIikoStockFact, PnlProductWhitelist
 from app.services import (
     asset_balance,
     counterparty_balance_as_of,
@@ -85,6 +85,45 @@ class AssembledBalance:
     # приблизительных величин, а не оценка ошибки. Полоса считается из ИЗМЕНЕНИЯ этой суммы
     # между двумя снимками — см. ``reconcile``.
     approximate_total: Decimal
+
+
+async def month_net_profit(
+    session: AsyncSession, month: date
+) -> tuple[Decimal | None, str | None, dict | None]:
+    """Прибыль месяца из отчёта. Считается НЕЗАВИСИМО от снимка — см. правило в reconcile.
+
+    Отчёт не собрался — снимок всё равно замораживается: балансу нельзя запрещать закрыть месяц
+    из-за поломки в соседнем модуле. Но молчать об этом тоже нельзя, поэтому неизвестная прибыль
+    поднимает БЛОКИРУЮЩИЙ сигнал (см. ``_profit_flag``): без прибыли единственная настоящая
+    проверка модуля не работает, и следующий месяц сверить будет не с чем.
+
+    Ошибку записываем с текстом, а не одним именем класса: ``TypeError`` в статусе — это то, что
+    я и увидел, когда позвал ``build_report`` несуществующим именем аргумента. Имя класса не
+    сказало ничего, а прогон из 3051 теста и зелёный стенд не заметили поломку вовсе.
+    """
+    from app.services.pnl import projector
+
+    try:
+        # Позиционно и именно ``month``: у проектора нет параметра ``period_month``, и вызов с
+        # чужим именем падал бы TypeError — молча, потому что ниже стоит широкий except.
+        report = await projector.build_report(session, month)
+    except Exception as error:  # noqa: BLE001 — отчёт может не собраться; это не повод падать
+        return None, f"недоступен: {type(error).__name__}: {error}"[:200], None
+
+    line = next(
+        (row for row in getattr(report, "lines", []) if getattr(row, "code", "") == "net_profit"),
+        None,
+    )
+    if line is None:
+        return None, "строка чистой прибыли не найдена", None
+    amount = getattr(line, "amount", None)
+    status = getattr(line, "status", None)
+    missing = getattr(line, "missing_lines", None) or getattr(report, "missing_lines", None)
+    return (
+        _money(amount) if amount is not None else None,
+        str(status) if status is not None else None,
+        {"missing": [str(item) for item in missing]} if missing else None,
+    )
 
 
 def _parts(rows, pick, *, name=lambda row: row.counterparty_name) -> list[dict]:
@@ -183,17 +222,25 @@ async def _stock_line(
 ) -> tuple[AssembledLine, list[AssembledFlag]]:
     """Запасы: стоимостной остаток склада на конец месяца.
 
-    СЧИТАЕМ НЕ ВСЮ НОМЕНКЛАТУРУ, А ТОЛЬКО ИНВЕНТАРИЗИРУЕМУЮ. Снимок iiko приносит остатки по
-    всему справочнику — 427 позиций на 31.07.2026, — но складской учёт бизнес ведёт по 39 из
-    них: упаковка и напитки, те, что попадают в ревизию и имеют результат инвентаризации.
-    Остальное — блюда, заготовки, модификаторы: их «остаток» в iiko есть, а запасом на складе
-    он не является. Разница на июле — 1 017 800,18 ₽, то есть строка была завышена вчетверо.
-    Список ведёт владелец в леджере «Товары iiko» на вкладке «Ревизии»
-    (``pnl_product_whitelist`` с ``source_kind='inventory'``).
+    ЗАПАС — ЭТО ТОВАРЫ, И ТОЛЬКО ОНИ. Снимок iiko приносит остатки по всему справочнику — 427
+    позиций на 31.07.2026, — но склад состоит из товаров: продукты, упаковка, напитки, химия.
+    Блюда, заготовки и модификаторы тоже имеют в iiko «остаток», однако запасом на складе он не
+    является: заготовка — это уже переработанный товар, блюдо — рецепт, модификатор — добавка к
+    строке чека. На июле они дают 89 682,24 ₽ поверх настоящих 1 219 472,81 ₽.
 
-    Берётся только ПОДТВЕРЖДЁННЫЙ статус ``stocked``. Позиция, ждущая решения владельца, в
-    сумму не входит и поднимает сигнал: молча включить её значило бы посчитать спорное как
-    решённое, молча выбросить — потерять запас, о котором никто не узнает.
+    КРИТЕРИЙ — ТИП НОМЕНКЛАТУРЫ, А НЕ СПИСОК РЕВИЗИЙ. Первая версия брала ``pnl_product_whitelist``
+    (вкладка «Ревизии» в леджере «Товары iiko») и давала 291 354,87 ₽: список ведут руками, и
+    в нём оказались только упаковка и напитки — 37 позиций из 257 товаров, продукты в него просто
+    не завели. Складской учёт при этом ведётся по всем товарам. Ручной список отвечает на вопрос
+    «что владелец отметил», а балансу нужен ответ на «что является запасом», и это разные вопросы:
+    первый отстаёт ровно настолько, насколько давно его не пополняли.
+
+    Комбо-наборы отдельного типа в iiko не имеют — приходят как ``DISH`` и отсекаются вместе с
+    блюдами.
+
+    ПОЗИЦИЯ БЕЗ КАРТОЧКИ В СПРАВОЧНИКЕ не классифицируется вовсе: тип взять неоткуда. Такую в
+    сумму не берём и поднимаем сигнал — молча включить значило бы посчитать неизвестное товаром,
+    молча выбросить — потерять запас, о котором никто не узнает. На проде их сейчас ноль.
 
     Цифра существует ТОЛЬКО на границы месяца — снимок берётся у iiko на 00:00 первого числа
     следующего месяца. Поэтому у неё две беды, и обе надо показать, а не спрятать: снимка может
@@ -240,9 +287,11 @@ async def _stock_line(
             ],
         )
 
-    stocked = select(PnlProductWhitelist.iiko_product_guid).where(
-        PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
-        PnlProductWhitelist.include_status == cat.STOCK_WHITELIST_STATUS,
+    goods = select(IikoProduct.iiko_id).where(IikoProduct.type == cat.STOCK_PRODUCT_TYPE)
+    # Расходники: товар есть, склада по нему нет — расход признан при покупке.
+    expensed = select(PnlProductWhitelist.iiko_product_guid).where(
+        PnlProductWhitelist.source_kind == cat.EXPENSED_ON_PURCHASE_SOURCE,
+        PnlProductWhitelist.include_status == cat.EXPENSED_ON_PURCHASE_STATUS,
     )
     counted = (
         await session.execute(
@@ -253,7 +302,8 @@ async def _stock_line(
             )
             .where(
                 PnlIikoStockFact.period_month == month,
-                PnlIikoStockFact.iiko_product_guid.in_(stocked),
+                PnlIikoStockFact.iiko_product_guid.in_(goods),
+                PnlIikoStockFact.iiko_product_guid.not_in(expensed),
             )
             .order_by(PnlIikoStockFact.closing_amount.desc())
         )
@@ -294,61 +344,68 @@ async def _stock_line(
             )
         )
 
-    # Ревизуемая позиция, которой в снимке нет вовсе: её запас в строку не попал, и величина
-    # этой потери неизвестна — в отличие от исключённой номенклатуры, которую мы отбросили
-    # намеренно и знаем на сколько.
-    absent = (
-        await session.scalars(
-            select(PnlProductWhitelist.product_name)
-            .where(
-                PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
-                PnlProductWhitelist.include_status == cat.STOCK_WHITELIST_STATUS,
-                PnlProductWhitelist.iiko_product_guid.not_in(
-                    select(PnlIikoStockFact.iiko_product_guid).where(
-                        PnlIikoStockFact.period_month == month
-                    )
-                ),
-            )
-            .order_by(PnlProductWhitelist.product_name)
-        )
-    ).all()
-    if absent:
-        flags.append(
-            AssembledFlag(
-                code="stock_position_absent_from_snapshot",
-                severity="warning",
-                title="Ревизуемая позиция не попала в складской снимок",
-                explanation=(
-                    "Позиция числится под складским учётом, но её остатка в снимке iiko за "
-                    "этот месяц нет. Запасы занижены на неизвестную величину."
-                ),
-                count=len(absent),
-                rows=[{"product": name or "—"} for name in absent],
-            )
-        )
-
+    # Товар, по которому владелец ещё не решил, расходник он или запас. Считаем запасом —
+    # склад по умолчанию, расходником вещь становится решением, — но говорим об этом: если
+    # решение окажется «расходник», строка на эту величину завышена.
     undecided = (
-        await session.scalars(
-            select(PnlProductWhitelist.product_name)
+        await session.execute(
+            select(PnlIikoStockFact.product_name, PnlIikoStockFact.closing_amount)
+            .join(IikoProduct, IikoProduct.iiko_id == PnlIikoStockFact.iiko_product_guid)
+            .join(
+                PnlProductWhitelist,
+                PnlProductWhitelist.iiko_product_guid == PnlIikoStockFact.iiko_product_guid,
+            )
             .where(
-                PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
+                PnlIikoStockFact.period_month == month,
+                IikoProduct.type == cat.STOCK_PRODUCT_TYPE,
+                PnlProductWhitelist.source_kind == cat.EXPENSED_ON_PURCHASE_SOURCE,
                 PnlProductWhitelist.include_status == "requires_owner_review",
             )
-            .order_by(PnlProductWhitelist.product_name)
+            .order_by(PnlIikoStockFact.closing_amount.desc())
         )
     ).all()
     if undecided:
         flags.append(
             AssembledFlag(
-                code="stock_position_undecided",
+                code="stock_expense_decision_pending",
                 severity="info",
-                title="Номенклатура ждёт решения владельца",
+                title="Не решено, расходник это или запас",
                 explanation=(
-                    "По этим позициям не решено, ведётся ли складской учёт. В строку «Запасы» "
-                    "они не входят — включить спорное молча значило бы выдать его за решённое."
+                    "По этим товарам владелец ещё не решил, признавать ли расход при покупке. "
+                    "Пока они считаются запасом: складом вещь является по умолчанию, "
+                    "расходником становится решением. Решите — и строка уточнится."
                 ),
                 count=len(undecided),
-                rows=[{"product": name or "—"} for name in undecided],
+                amount=_money(sum((row[1] for row in undecided), _ZERO)),
+                rows=[
+                    {"product": row[0] or "—", "amount": str(_money(row[1]))} for row in undecided
+                ],
+            )
+        )
+
+    # Позиция снимка, которой нет в справочнике iiko: тип взять неоткуда, значит неизвестно,
+    # товар это или блюдо. В сумму не берём и называем — иначе запас потерялся бы молча.
+    unknown = (
+        await session.execute(
+            select(PnlIikoStockFact.product_name, PnlIikoStockFact.closing_amount)
+            .outerjoin(IikoProduct, IikoProduct.iiko_id == PnlIikoStockFact.iiko_product_guid)
+            .where(PnlIikoStockFact.period_month == month, IikoProduct.iiko_id.is_(None))
+            .order_by(PnlIikoStockFact.closing_amount.desc())
+        )
+    ).all()
+    if unknown:
+        flags.append(
+            AssembledFlag(
+                code="stock_position_unclassified",
+                severity="warning",
+                title="Позиция склада отсутствует в справочнике iiko",
+                explanation=(
+                    "Тип номенклатуры взять неоткуда, поэтому непонятно, товар это или блюдо. "
+                    "В запасы такая позиция не входит — величина показана, чтобы не потерялась."
+                ),
+                count=len(unknown),
+                amount=_money(sum((row[1] for row in unknown), _ZERO)),
+                rows=[{"product": row[0] or "—", "amount": str(_money(row[1]))} for row in unknown],
             )
         )
 
@@ -771,6 +828,122 @@ async def _tax_payable_line(
     return line, flag
 
 
+async def _equity_lines(
+    session: AsyncSession, as_of: date, *, total: Decimal
+) -> tuple[list[AssembledLine], list[AssembledFlag]]:
+    """Капитал, разложенный на слагаемые, а не одной балансирующей строкой.
+
+    ЧТО ЭТО ДАЁТ. «Капитал 3 870 985,45» не отвечает ни на «от чего вообще считается баланс»,
+    ни на «где накопленная прибыль» — а это первые два вопроса владельца. После разложения
+    балансирующей остаётся ТОЛЬКО одна строка: капитал на начало учёта, установленный описью.
+    Всё, что случилось с 01.07.2026, названо своими слагаемыми из регистров:
+
+        капитал = капитал на начало + вклады − возвраты − дивиденды + накопленная прибыль
+
+    ПОБОЧНОЕ СВОЙСТВО, РАДИ КОТОРОГО ЭТО И СТОИЛО ДЕЛАТЬ. «Капитал на начало учёта» посчитан
+    как остаток, значит обязан быть ОДИНАКОВЫМ во всех месяцах: он описывает момент, который
+    больше не меняется. Его сдвиг между снимками — ровно то нераспределённое расхождение,
+    которое ищет сверка приращения. Строка стала видимой формой той же проверки, и заметить
+    дыру теперь можно, не дожидаясь второго снимка.
+
+    ПРИБЫЛЬ СУММИРУЕТСЯ ПОМЕСЯЧНО, а не берётся одним запросом за период: отчёт о прибыли
+    считает месяц, и «прибыль за два месяца» у него спросить нельзя. Месяц, чью прибыль отчёт
+    не отдал, в сумму не входит и поднимает сигнал — молча пропустить его значило бы занизить
+    накопленную прибыль на неизвестную величину и переложить её в балансирующую строку.
+    """
+    from app.services.balance.reconcile import equity_movements
+
+    # Нижняя граница у ``equity_movements`` строгая, поэтому отступаем на день назад: движение
+    # первого дня учёта обязано попасть в накопительный итог.
+    movements = await equity_movements(
+        session, date_from=ACCOUNTING_START - timedelta(days=1), date_to=as_of
+    )
+
+    retained = _ZERO
+    # Прибыль текущего месяца отдельно и с правом быть НЕИЗВЕСТНОЙ: ноль здесь прочитался бы
+    # как «месяц отработали в ноль», то есть как факт вместо его отсутствия.
+    current_month: Decimal | None = None
+    unknown_months: list[str] = []
+    month = ACCOUNTING_START
+    last_month = as_of.replace(day=1)
+    while month <= last_month:
+        profit, status, _missing = await month_net_profit(session, month)
+        if profit is None:
+            unknown_months.append(f"{month:%m.%Y} — {status or 'без причины'}")
+        else:
+            retained += profit
+            if month == last_month:
+                current_month = profit
+        month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    named = movements.contributions - movements.returns - movements.dividends + retained
+    opening = _money(total - named)
+
+    lines = [
+        _line(
+            cat.CATALOG_BY_CODE["equity_opening"],
+            opening,
+            "plug",
+            source_kind="derived",
+        ),
+        _line(
+            cat.CATALOG_BY_CODE["equity_contributions"],
+            _money(movements.contributions),
+            cat.ST_OK,
+            source_kind="dds_articles",
+        ),
+        # Изъятия капитал УМЕНЬШАЮТ, поэтому уходят со знаком минус: подытог группы складывает
+        # строки как есть, и положительное число здесь раздуло бы капитал вдвое от изъятого.
+        _line(
+            cat.CATALOG_BY_CODE["equity_returns"],
+            _money(-movements.returns),
+            cat.ST_OK,
+            source_kind="dds_articles",
+        ),
+        _line(
+            cat.CATALOG_BY_CODE["equity_dividends"],
+            _money(-movements.dividends),
+            cat.ST_OK,
+            source_kind="dds_articles",
+        ),
+        _line(
+            cat.CATALOG_BY_CODE["equity_retained"],
+            _money(retained),
+            cat.ST_APPROXIMATE if unknown_months else cat.ST_OK,
+            source_kind="pnl",
+        ),
+        _line(
+            cat.CATALOG_BY_CODE["equity_profit_memo"],
+            _money(current_month) if current_month is not None else None,
+            cat.ST_OK if current_month is not None else cat.ST_MISSING,
+            source_kind="pnl",
+            source_note=(
+                None
+                if current_month is not None
+                else "Отчёт о прибыли за этот месяц величину не отдал"
+            ),
+        ),
+    ]
+
+    flags: list[AssembledFlag] = []
+    if unknown_months:
+        flags.append(
+            AssembledFlag(
+                code="equity_profit_month_unknown",
+                severity="blocking",
+                title="Прибыль части месяцев неизвестна",
+                explanation=(
+                    "Накопленная прибыль занижена на прибыль этих месяцев, а разница молча "
+                    "ушла в строку «капитал на начало учёта» — то есть туда, где её никто "
+                    "не ищет."
+                ),
+                count=len(unknown_months),
+                rows=[{"month": item} for item in unknown_months],
+            )
+        )
+    return lines, flags
+
+
 async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) -> AssembledBalance:
     """Собрать баланс на дату из регистров. Ничего не пишет.
 
@@ -836,20 +1009,9 @@ async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) ->
     )
     equity_plug = _money(asset_total - liability_total)
 
-    equity_defn = cat.CATALOG_BY_CODE["equity_plug"]
-    lines.append(
-        _line(
-            equity_defn,
-            equity_plug,
-            "plug",
-            source_kind="derived",
-            source_note=(
-                "Выведен как актив минус обязательства, а не посчитан: истории до начала учёта "
-                "в системе нет. Равенство «актив = пассив» поэтому тождественно и проверкой "
-                "не является — проверяет сверка приращения со следующим снимком."
-            ),
-        )
-    )
+    equity_lines, equity_flags = await _equity_lines(session, as_of, total=equity_plug)
+    lines += equity_lines
+    flags += equity_flags
 
     lines.sort(key=lambda item: item.sort_order)
     return AssembledBalance(

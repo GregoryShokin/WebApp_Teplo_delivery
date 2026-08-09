@@ -26,6 +26,7 @@ from cp_helpers import make_wallet  # noqa: E402
 from app.models import (  # noqa: E402
     BalanceManualValue,
     CashflowTransaction,
+    IikoProduct,
     PnlIikoStockFact,
     PnlProductWhitelist,
 )
@@ -67,12 +68,14 @@ async def _stock_fact(
     amount: str,
     synced_at: datetime,
     name: str = "Упаковка",
-    stocked: bool = True,
+    kind: str | None = "GOODS",
+    expensed: str | None = None,
 ) -> str:
-    """Складской факт месяца. ``stocked`` — числится ли позиция под складским учётом.
+    """Складской факт месяца плюс карточка номенклатуры iiko.
 
-    Снимок iiko приносит остатки по ВСЕЙ номенклатуре, а в баланс идёт только та, что
-    инвентаризируется, — поэтому у хелпера два режима, и по умолчанию позиция ревизуемая.
+    Снимок приносит остатки по ВСЕМУ справочнику, а запасом является только товар, поэтому у
+    хелпера есть ``kind``: ``GOODS`` (по умолчанию), любой другой тип — или ``None``, если
+    карточки в справочнике нет вовсе. ``expensed`` помечает товар расходником в разметке ОПиУ.
     """
     guid = str(uuid.uuid4())
     session.add(
@@ -89,23 +92,19 @@ async def _stock_fact(
             synced_at=synced_at,
         )
     )
-    if stocked:
-        await _stocked(session, guid=guid, name=name)
+    if kind is not None:
+        session.add(IikoProduct(iiko_id=guid, name=name, type=kind, unit="шт", synced_at=synced_at))
+    if expensed is not None:
+        session.add(
+            PnlProductWhitelist(
+                iiko_product_guid=guid,
+                source_kind=cat.EXPENSED_ON_PURCHASE_SOURCE,
+                include_status=expensed,
+                product_name=name,
+            )
+        )
     await session.flush()
     return guid
-
-
-async def _stocked(session: AsyncSession, *, guid: str, name: str, status: str = "stocked") -> None:
-    """Позиция в списке ревизий («Товары iiko» → «Ревизии»)."""
-    session.add(
-        PnlProductWhitelist(
-            iiko_product_guid=guid,
-            source_kind=cat.STOCK_WHITELIST_SOURCE,
-            include_status=status,
-            product_name=name,
-        )
-    )
-    await session.flush()
 
 
 async def test_a_date_before_the_start_of_accounting_is_refused(
@@ -120,22 +119,21 @@ async def test_a_date_before_the_start_of_accounting_is_refused(
             await assemble(session, as_of=date(2026, 6, 30))
 
 
-async def test_capital_is_the_plug_and_says_so(
+async def test_only_the_opening_capital_stays_a_plug(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Капитал выводится из актива и обязательств, поэтому «актив = пассив» ничего не проверяет.
+    """«Актив = пассив» ничего не проверяет, и ровно одна строка обязана это признавать.
 
-    Тест закрепляет не арифметику (она тождественна), а ПОМЕТКУ: строка обязана читаться иначе
-    прочих, иначе тождество примут за сошедшийся баланс.
+    Тест закрепляет не арифметику (она тождественна), а ПОМЕТКУ: балансирующая строка должна
+    читаться иначе прочих, иначе тождество примут за сошедшийся баланс. И она должна быть
+    ЕДИНСТВЕННОЙ: вторая означала бы, что часть капитала опять никем не объяснена.
     """
     async with async_session_factory() as session:
         assembled = await assemble(session, as_of=JULY_END)
 
         assert assembled.equity_plug == assembled.asset_total - assembled.liability_total
-        equity = _line(assembled, "equity_plug")
-        assert equity.status == "plug"
-        assert equity.amount == assembled.equity_plug
-        assert "выведен" in (equity.source_note or "").lower()
+        plugs = [item for item in assembled.lines if item.status == "plug"]
+        assert [item.code for item in plugs] == ["equity_opening"]
 
 
 async def test_the_vacation_memo_is_shown_but_not_counted_twice(
@@ -241,32 +239,36 @@ async def test_stock_is_empty_not_zero_when_the_iiko_snapshot_never_ran(
         assert flag.severity == "blocking"
 
 
-async def test_only_the_inventoried_nomenclature_lands_in_stock(
+async def test_only_goods_land_in_stock(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Снимок iiko приносит весь справочник, а запас на складе — это малая его часть.
+    """Запас — это товар. Блюдо, заготовка и модификатор в нём не участвуют.
 
-    Найдено владельцем 08.08.2026 на прод-данных: строка считала все 427 позиций снимка и
-    показывала 1 309 155,05 ₽ вместо 291 354,87 ₽ по 39 инвентаризируемым — завышение вчетверо.
-    Остаток блюда или заготовки в iiko существует, но запасом на складе не является: складской
-    учёт и результаты инвентаризации есть только у товаров из списка ревизий.
+    Найдено владельцем 08.08.2026: строка считала все 427 позиций снимка (1 309 155,05 ₽) при
+    настоящих 1 219 472,81 ₽ по 257 товарам. Остаток блюда или заготовки в iiko существует, но
+    запасом не является: заготовка — уже переработанный товар, блюдо — рецепт, модификатор —
+    добавка к строке чека. Комбо-наборы приходят как ``DISH`` и отсекаются вместе с блюдами.
     """
     august = date(2026, 8, 1)
     async with async_session_factory() as session:
         synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
         await _stock_fact(session, month=august, amount="90000.00", synced_at=synced, name="Кола")
         await _stock_fact(
-            session, month=august, amount="10000.00", synced_at=synced, name="Контейнер"
+            session, month=august, amount="10000.00", synced_at=synced, name="Креветка"
         )
-        # Блюдо: в снимке есть, складского учёта по нему не ведут.
-        await _stock_fact(
-            session,
-            month=august,
-            amount="777000.00",
-            synced_at=synced,
-            name="Ролл Филадельфия",
-            stocked=False,
-        )
+        for name, kind in (
+            ("Ролл Филадельфия", "DISH"),
+            ("Соус спайси заготовка", "PREPARED"),
+            ("Доп. васаби", "MODIFIER"),
+        ):
+            await _stock_fact(
+                session,
+                month=august,
+                amount="259000.00",
+                synced_at=synced,
+                name=name,
+                kind=kind,
+            )
         await session.commit()
 
         assembled = await assemble(session, as_of=date(2026, 8, 31))
@@ -275,70 +277,65 @@ async def test_only_the_inventoried_nomenclature_lands_in_stock(
         # Отброшенное названо цифрой: падение строки должно читаться как снятие лишнего,
         # а не как пропажа запасов.
         assert stock.detail["positions"] == 2
-        assert stock.detail["positions_in_snapshot"] == 3
+        assert stock.detail["positions_in_snapshot"] == 5
         assert stock.detail["excluded_amount"] == "777000.00"
 
 
-async def test_an_inventoried_position_missing_from_the_snapshot_is_reported(
+async def test_the_owner_curated_review_list_no_longer_decides_what_is_stock(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Позиция под складским учётом, которой в снимке нет, занижает запасы на неизвестное.
+    """Товар считается запасом, даже если в ручной список ревизий его не завели.
 
-    Отличается от намеренно отброшенной номенклатуры именно этим: там мы знаем, сколько сняли,
-    здесь — нет. На проде таких две («Палочки» и «Добрый лимон-лайм ж/б»).
+    Первая версия брала именно этот список и давала 291 354,87 ₽ вместо 1 219 472,81 ₽: в него
+    попали упаковка и напитки — 37 позиций из 257, — а продукты просто не завели. Ручной список
+    отвечает на вопрос «что владелец отметил», балансу нужен ответ на «что является запасом»,
+    и первый отстаёт ровно настолько, насколько давно его не пополняли.
     """
     august = date(2026, 8, 1)
     async with async_session_factory() as session:
         await _stock_fact(
             session,
             month=august,
-            amount="90000.00",
+            amount="47503.92",
             synced_at=datetime(2026, 9, 1, 3, 0, tzinfo=UTC),
-            name="Кола",
+            name="Креветка блок 1,8 кг",
         )
-        await _stocked(session, guid=str(uuid.uuid4()), name="Палочки")
         await session.commit()
 
-        assembled = await assemble(session, as_of=date(2026, 8, 31))
-        assert _line(assembled, "stock_total").amount == Decimal("90000.00")
-
-        flag = _flag(assembled, "stock_position_absent_from_snapshot")
-        assert flag is not None
-        assert flag.severity == "warning"
-        # Вхождение, а не точное совпадение: список ревизий засеян миграцией, и остальные его
-        # позиции в этом тесте тоже без фактов — сравнение множеств проверяло бы чужой сид.
-        assert "Палочки" in {row["product"] for row in flag.rows}
+        assert _line(await assemble(session, as_of=date(2026, 8, 31)), "stock_total").amount == (
+            Decimal("47503.92")
+        )
 
 
-async def test_a_position_awaiting_the_owner_is_neither_counted_nor_hidden(
+async def test_a_position_without_an_iiko_card_is_named_not_swallowed(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Спорная позиция в сумму не входит, но и не пропадает — о ней сказано отдельно.
+    """Нет карточки в справочнике — нет и типа: непонятно, товар это или блюдо.
 
-    Включить её молча значило бы выдать нерешённое за решённое; выбросить молча — потерять
-    запас, о котором никто уже не вспомнит.
+    В сумму такая позиция не идёт (посчитать неизвестное товаром значило бы угадать), но и не
+    пропадает молча — её называет сигнал вместе с величиной.
     """
     august = date(2026, 8, 1)
     async with async_session_factory() as session:
         synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
         await _stock_fact(session, month=august, amount="90000.00", synced_at=synced, name="Кола")
-        guid = await _stock_fact(
+        await _stock_fact(
             session,
             month=august,
-            amount="50000.00",
+            amount="12345.00",
             synced_at=synced,
-            name="Спорный товар",
-            stocked=False,
+            name="Позиция без карточки",
+            kind=None,
         )
-        await _stocked(session, guid=guid, name="Спорный товар", status="requires_owner_review")
         await session.commit()
 
         assembled = await assemble(session, as_of=date(2026, 8, 31))
         assert _line(assembled, "stock_total").amount == Decimal("90000.00")
 
-        flag = _flag(assembled, "stock_position_undecided")
+        flag = _flag(assembled, "stock_position_unclassified")
         assert flag is not None
-        assert {row["product"] for row in flag.rows} == {"Спорный товар"}
+        assert flag.amount == Decimal("12345.00")
+        assert {row["product"] for row in flag.rows} == {"Позиция без карточки"}
 
 
 async def test_a_stock_snapshot_taken_before_month_end_is_marked_approximate(
@@ -510,3 +507,205 @@ async def test_a_broken_tax_registry_does_not_break_the_balance(
         assert line.status == cat.ST_APPROXIMATE
         assert "не учтено" in (line.source_note or "")
         assert flag is None
+
+
+async def test_the_month_profit_is_shown_beside_capital_but_not_added_to_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """«Где в балансе за июль прибыль июля?» — первый вопрос владельца, и ответ должен быть.
+
+    Прибыль уже сидит ВНУТРИ балансирующей строки капитала: он выведен как актив минус
+    обязательства, и прибыль попала в него вместе со всем остальным. Отдельным слагаемым её
+    ставить нельзя — капитал удвоился бы на её величину. Поэтому заметка: величину видно,
+    в итог она не идёт.
+    """
+    from app.services.balance import assembly as assembly_module
+
+    async def _profit(session, month):  # noqa: ARG001
+        return Decimal("255676.18"), "ok", None
+
+    monkeypatch.setattr(assembly_module, "month_net_profit", _profit)
+
+    async with async_session_factory() as session:
+        assembled = await assemble(session, as_of=JULY_END)
+
+        memo = _line(assembled, "equity_profit_memo")
+        assert memo.amount == Decimal("255676.18")
+        assert memo.kind == cat.KIND_MEMO
+        # Тождество капитала не шелохнулось: заметка в него не вошла.
+        assert assembled.equity_plug == assembled.asset_total - assembled.liability_total
+
+
+async def test_an_unavailable_profit_is_a_dash_beside_capital_not_a_zero(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Отчёт молчит — у прибыли месяца прочерк, а не ноль.
+
+    Ноль прочитался бы как «месяц отработали в ноль», то есть как факт вместо его отсутствия.
+    """
+    from app.services.balance import assembly as assembly_module
+
+    async def _broken(session, month):  # noqa: ARG001
+        return None, "недоступен: RuntimeError: отчёт сломан", None
+
+    monkeypatch.setattr(assembly_module, "month_net_profit", _broken)
+
+    async with async_session_factory() as session:
+        memo = _line(await assemble(session, as_of=JULY_END), "equity_profit_memo")
+        assert memo.amount is None
+        assert memo.status == cat.ST_MISSING
+
+
+async def test_a_consumable_is_not_stock_even_though_it_is_a_good(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Моющие средства, мешки для мусора и фольга — товары, но складом не являются.
+
+    Владелец 09.08.2026: расход по ним признаётся ПО ФАКТУ ПОКУПКИ, склад по ним не ведётся.
+    Одного типа номенклатуры мало: по типу они такие же ``GOODS``, как коробка и сёмга. Разметку
+    бизнес уже ведёт в ОПиУ — «вспомогательные товары» и «содержание торговых точек», — и вторую
+    копию заводить нельзя: один и тот же мешок для мусора оказался бы разом и расходом месяца,
+    и остатком на складе.
+
+    На проде это 22 позиции на 367 194,75 ₽ — почти треть того, что казалось запасом.
+    """
+    august = date(2026, 8, 1)
+    async with async_session_factory() as session:
+        synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
+        await _stock_fact(
+            session, month=august, amount="130032.53", synced_at=synced, name="Коробка 30х30 бренд"
+        )
+        await _stock_fact(
+            session, month=august, amount="47503.92", synced_at=synced, name="Креветка блок"
+        )
+        for name in ("Моющие и чистящие средства", "Мешок для мусора 240л", "Фольга 29см"):
+            await _stock_fact(
+                session,
+                month=august,
+                amount="50000.00",
+                synced_at=synced,
+                name=name,
+                expensed="include",
+            )
+        await session.commit()
+
+        stock = _line(await assemble(session, as_of=date(2026, 8, 31)), "stock_total")
+        assert stock.amount == Decimal("177536.45")
+        assert {part["name"] for part in stock.detail["parts"]} == {
+            "Коробка 30х30 бренд",
+            "Креветка блок",
+        }
+
+
+async def test_an_undecided_good_stays_in_stock_and_says_so(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Не решено, расходник это или запас — считаем запасом и говорим вслух.
+
+    Складом вещь является по умолчанию, расходником становится решением человека. Поэтому
+    умолчание в пользу запаса, но с сигналом: окажется расходником — строка завышена ровно на
+    эту величину. На проде так висит «диспенсер 0,7» на 562,88 ₽.
+    """
+    august = date(2026, 8, 1)
+    async with async_session_factory() as session:
+        synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
+        await _stock_fact(session, month=august, amount="90000.00", synced_at=synced, name="Кола")
+        await _stock_fact(
+            session,
+            month=august,
+            amount="562.88",
+            synced_at=synced,
+            name="диспенсер 0,7",
+            expensed="requires_owner_review",
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=date(2026, 8, 31))
+        assert _line(assembled, "stock_total").amount == Decimal("90562.88")
+
+        flag = _flag(assembled, "stock_expense_decision_pending")
+        assert flag is not None
+        assert flag.amount == Decimal("562.88")
+
+
+async def test_capital_is_decomposed_and_only_the_opening_stays_a_plug(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Капитал разложен на слагаемые; балансирующей осталась одна строка — начало учёта.
+
+    Владелец 09.08.2026: «не хватает вкладов от собственников, то есть вообще от чего считается
+    баланс, и накопленной прибыли». Одна строка «актив минус обязательства» не отвечала ни на
+    один из этих вопросов.
+
+    Проверяется тождество разложения: сумма названных слагаемых плюс остаток равна капиталу.
+    Если однажды слагаемое посчитают дважды, оно сойдётся только за счёт «начала учёта» —
+    и тест это поймает.
+    """
+    from app.services.balance import assembly as assembly_module
+
+    async def _profit(session, month):  # noqa: ARG001
+        return Decimal("100000.00"), "ok", None
+
+    monkeypatch.setattr(assembly_module, "month_net_profit", _profit)
+
+    async with async_session_factory() as session:
+        assembled = await assemble(session, as_of=JULY_END)
+
+        opening = _line(assembled, "equity_opening")
+        retained = _line(assembled, "equity_retained")
+        memo = _line(assembled, "equity_profit_memo")
+
+        assert retained.amount == Decimal("100000.00")
+        assert memo.kind == cat.KIND_MEMO
+        assert opening.status == "plug"
+
+        named = sum(
+            (item.amount or Decimal("0"))
+            for item in assembled.lines
+            if item.group == "Капитал" and item.kind != cat.KIND_MEMO
+        )
+        assert Decimal(named).quantize(Decimal("0.01")) == assembled.equity_plug
+
+
+async def test_a_withdrawal_lowers_capital_instead_of_raising_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Дивиденды и возврат вкладов уходят со знаком минус.
+
+    Подытог группы складывает строки как есть: положительное число здесь раздуло бы капитал
+    вдвое от изъятого, и тождество сошлось бы только за счёт «начала учёта» — то есть ошибка
+    спряталась бы в единственной строке, которую никто не проверяет.
+    """
+    async with async_session_factory() as session:
+        assembled = await assemble(session, as_of=JULY_END)
+        assert _line(assembled, "equity_dividends").amount <= Decimal("0")
+        assert _line(assembled, "equity_returns").amount <= Decimal("0")
+
+
+async def test_a_month_without_profit_is_named_not_folded_into_the_opening(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Месяц без прибыли занижает накопленную — и разница молча уехала бы в «начало учёта».
+
+    Там её никто не ищет: строка балансирующая, любое число в ней выглядит нормально. Поэтому
+    сигнал блокирующий.
+    """
+    from app.services.balance import assembly as assembly_module
+
+    async def _broken(session, month):  # noqa: ARG001
+        return None, "недоступен: RuntimeError: отчёт сломан", None
+
+    monkeypatch.setattr(assembly_module, "month_net_profit", _broken)
+
+    async with async_session_factory() as session:
+        assembled = await assemble(session, as_of=JULY_END)
+
+        assert _line(assembled, "equity_retained").amount == Decimal("0.00")
+        flag = _flag(assembled, "equity_profit_month_unknown")
+        assert flag is not None
+        assert flag.severity == "blocking"
+        assert "07.2026" in flag.rows[0]["month"]

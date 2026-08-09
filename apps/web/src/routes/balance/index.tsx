@@ -56,6 +56,14 @@ function lastDayOfMonth(year: number, month: number): string {
   return toIsoDate(new Date(year, month + 1, 0));
 }
 
+/** Дата среза словами. Название месяца в селекторе двусмысленно: «июль 2026» одинаково читается
+ *  как «на начало июля» и «на конец июля», а это два разных баланса. Пишем день. */
+function asOfLabel(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+}
+
 function defaultAsOf(): string {
   const now = new Date();
   // По умолчанию — конец ПРОШЛОГО месяца: текущий ещё не закончился, и остаток на его конец
@@ -518,10 +526,13 @@ export function BalanceRoute() {
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Баланс</h1>
+          <h1 className="text-xl font-semibold">
+            Баланс <span className="text-muted-foreground font-normal">на {asOfLabel(asOf)}</span>
+          </h1>
           <p className="text-muted-foreground text-sm">
-            Остатки на конец месяца. Капитал выводится как актив минус обязательства, поэтому
-            равенство сторон здесь не проверка — проверяет сверка приращения.
+            Состояние на конец дня — то есть итог месяца, а не его начало. Капитал выводится как
+            актив минус обязательства, поэтому равенство сторон здесь не проверка — проверяет
+            сверка приращения.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -532,10 +543,7 @@ export function BalanceRoute() {
           >
             {monthOptions.map((value) => (
               <option key={value} value={value}>
-                {new Date(value).toLocaleDateString("ru-RU", {
-                  month: "long",
-                  year: "numeric",
-                })}
+                на {asOfLabel(value)}
               </option>
             ))}
           </select>

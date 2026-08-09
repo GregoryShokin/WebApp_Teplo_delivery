@@ -28,7 +28,7 @@ from app.models import (
     BalanceSnapshotLine,
 )
 from app.services.balance import reconcile as recon_service
-from app.services.balance.assembly import AssembledBalance, assemble
+from app.services.balance.assembly import AssembledBalance, assemble, month_net_profit
 
 _ZERO = Decimal("0.00")
 
@@ -52,45 +52,6 @@ async def _previous_snapshot(session: AsyncSession, as_of: date) -> BalanceSnaps
         .where(BalanceSnapshot.as_of < as_of, BalanceSnapshot.status == "final")
         .order_by(BalanceSnapshot.as_of.desc())
         .limit(1)
-    )
-
-
-async def _net_profit(
-    session: AsyncSession, month: date
-) -> tuple[Decimal | None, str | None, dict | None]:
-    """Прибыль месяца из отчёта. Считается НЕЗАВИСИМО от снимка — см. правило в reconcile.
-
-    Отчёт не собрался — снимок всё равно замораживается: балансу нельзя запрещать закрыть месяц
-    из-за поломки в соседнем модуле. Но молчать об этом тоже нельзя, поэтому неизвестная прибыль
-    поднимает БЛОКИРУЮЩИЙ сигнал (см. ``_profit_flag``): без прибыли единственная настоящая
-    проверка модуля не работает, и следующий месяц сверить будет не с чем.
-
-    Ошибку записываем с текстом, а не одним именем класса: ``TypeError`` в статусе — это то, что
-    я и увидел, когда позвал ``build_report`` несуществующим именем аргумента. Имя класса не
-    сказало ничего, а прогон из 3051 теста и зелёный стенд не заметили поломку вовсе.
-    """
-    from app.services.pnl import projector
-
-    try:
-        # Позиционно и именно ``month``: у проектора нет параметра ``period_month``, и вызов с
-        # чужим именем падал бы TypeError — молча, потому что ниже стоит широкий except.
-        report = await projector.build_report(session, month)
-    except Exception as error:  # noqa: BLE001 — отчёт может не собраться; это не повод падать
-        return None, f"недоступен: {type(error).__name__}: {error}"[:200], None
-
-    line = next(
-        (row for row in getattr(report, "lines", []) if getattr(row, "code", "") == "net_profit"),
-        None,
-    )
-    if line is None:
-        return None, "строка чистой прибыли не найдена", None
-    amount = getattr(line, "amount", None)
-    status = getattr(line, "status", None)
-    missing = getattr(line, "missing_lines", None) or getattr(report, "missing_lines", None)
-    return (
-        _money(amount) if amount is not None else None,
-        str(status) if status is not None else None,
-        {"missing": [str(item) for item in missing]} if missing else None,
     )
 
 
@@ -128,7 +89,7 @@ async def freeze(
     assembled: AssembledBalance = await assemble(session, as_of=as_of)
     previous = await _previous_snapshot(session, as_of)
     month = as_of.replace(day=1)
-    net_profit, profit_status, profit_missing = await _net_profit(session, month)
+    net_profit, profit_status, profit_missing = await month_net_profit(session, month)
 
     reconciliation = None
     if previous is not None:

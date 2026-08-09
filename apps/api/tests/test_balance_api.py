@@ -59,7 +59,7 @@ def test_preview_returns_the_lines_and_writes_nothing(
     view = response.json()
     assert view["status"] == "preview"
     assert view["lines"], "предпросмотр без строк — это пустая страница, а не баланс"
-    assert _line(view, "equity_plug")["status"] == "plug"
+    assert _line(view, "equity_opening")["status"] == "plug"
 
     # Ничего не записано: снимка на эту дату по-прежнему нет.
     assert client.get(f"{BASE}/snapshots/{JULY_END}", headers=headers).status_code == 404
