@@ -24,7 +24,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BalanceManualValue, PnlIikoStockFact
+from app.models import BalanceManualValue, PnlIikoStockFact, PnlProductWhitelist
 from app.services import (
     asset_balance,
     counterparty_balance_as_of,
@@ -160,8 +160,20 @@ async def _assets_lines(
 
 async def _stock_line(
     session: AsyncSession, as_of: date
-) -> tuple[AssembledLine, AssembledFlag | None]:
+) -> tuple[AssembledLine, list[AssembledFlag]]:
     """Запасы: стоимостной остаток склада на конец месяца.
+
+    СЧИТАЕМ НЕ ВСЮ НОМЕНКЛАТУРУ, А ТОЛЬКО ИНВЕНТАРИЗИРУЕМУЮ. Снимок iiko приносит остатки по
+    всему справочнику — 427 позиций на 31.07.2026, — но складской учёт бизнес ведёт по 39 из
+    них: упаковка и напитки, те, что попадают в ревизию и имеют результат инвентаризации.
+    Остальное — блюда, заготовки, модификаторы: их «остаток» в iiko есть, а запасом на складе
+    он не является. Разница на июле — 1 017 800,18 ₽, то есть строка была завышена вчетверо.
+    Список ведёт владелец в леджере «Товары iiko» на вкладке «Ревизии»
+    (``pnl_product_whitelist`` с ``source_kind='inventory'``).
+
+    Берётся только ПОДТВЕРЖДЁННЫЙ статус ``stocked``. Позиция, ждущая решения владельца, в
+    сумму не входит и поднимает сигнал: молча включить её значило бы посчитать спорное как
+    решённое, молча выбросить — потерять запас, о котором никто не узнает.
 
     Цифра существует ТОЛЬКО на границы месяца — снимок берётся у iiko на 00:00 первого числа
     следующего месяца. Поэтому у неё две беды, и обе надо показать, а не спрятать: снимка может
@@ -171,18 +183,21 @@ async def _stock_line(
     """
     defn = cat.CATALOG_BY_CODE["stock_total"]
     month = as_of.replace(day=1)
-    row = (
+
+    # Прогон месяца: был ли он вообще и когда. Считается по ВСЕМУ снимку, а не по ревизуемой
+    # части: свежесть — свойство прогона, а не выборки из него.
+    run = (
         await session.execute(
             select(
-                func.coalesce(func.sum(PnlIikoStockFact.closing_amount), 0),
                 func.count(),
                 func.max(PnlIikoStockFact.synced_at),
+                func.coalesce(func.sum(PnlIikoStockFact.closing_amount), 0),
             ).where(PnlIikoStockFact.period_month == month)
         )
     ).one()
-    total, fact_count, synced_at = _money(row[0]), int(row[1] or 0), row[2]
+    run_count, synced_at, run_total = int(run[0] or 0), run[1], _money(run[2])
 
-    if not fact_count:
+    if not run_count:
         return (
             _line(
                 defn,
@@ -191,23 +206,117 @@ async def _stock_line(
                 source_kind="iiko_stock",
                 source_note="Складского снимка за этот месяц нет — прогон iiko не состоялся",
             ),
-            AssembledFlag(
-                code="stock_month_missing",
-                severity="blocking",
-                title="Нет складского остатка за месяц",
-                explanation=(
-                    "Стоимостной остаток склада берётся снимком iiko на конец месяца. Снимка "
-                    "нет, поэтому строка «Запасы» пуста, а не равна нулю."
-                ),
-                count=1,
-            ),
+            [
+                AssembledFlag(
+                    code="stock_month_missing",
+                    severity="blocking",
+                    title="Нет складского остатка за месяц",
+                    explanation=(
+                        "Стоимостной остаток склада берётся снимком iiko на конец месяца. "
+                        "Снимка нет, поэтому строка «Запасы» пуста, а не равна нулю."
+                    ),
+                    count=1,
+                )
+            ],
         )
+
+    stocked = select(PnlProductWhitelist.iiko_product_guid).where(
+        PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
+        PnlProductWhitelist.include_status == cat.STOCK_WHITELIST_STATUS,
+    )
+    counted = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(PnlIikoStockFact.closing_amount), 0),
+                func.count(),
+            ).where(
+                PnlIikoStockFact.period_month == month,
+                PnlIikoStockFact.iiko_product_guid.in_(stocked),
+            )
+        )
+    ).one()
+    total, fact_count = _money(counted[0]), int(counted[1] or 0)
+
+    flags: list[AssembledFlag] = []
 
     # Снимок закрывающего остатка берётся на 00:00 первого числа СЛЕДУЮЩЕГО месяца. Если
     # синхронизация прошла раньше этого момента, iiko ответила о будущем — то есть отдала
-    # состояние на «сейчас», а не на конец месяца.
+    # состояние на «сейчас», а не на конец периода.
     boundary = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     stale = synced_at is not None and synced_at.date() < boundary
+    if stale:
+        flags.append(
+            AssembledFlag(
+                code="stock_snapshot_stale",
+                severity="warning",
+                title="Складской остаток снят до конца месяца",
+                explanation=(
+                    "Прогон iiko состоялся раньше границы месяца, поэтому в снимке лежит "
+                    "остаток на день прогона. Пересобрать месяц после его окончания."
+                ),
+                count=1,
+                amount=total,
+            )
+        )
+
+    # Ревизуемая позиция, которой в снимке нет вовсе: её запас в строку не попал, и величина
+    # этой потери неизвестна — в отличие от исключённой номенклатуры, которую мы отбросили
+    # намеренно и знаем на сколько.
+    absent = (
+        await session.scalars(
+            select(PnlProductWhitelist.product_name)
+            .where(
+                PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
+                PnlProductWhitelist.include_status == cat.STOCK_WHITELIST_STATUS,
+                PnlProductWhitelist.iiko_product_guid.not_in(
+                    select(PnlIikoStockFact.iiko_product_guid).where(
+                        PnlIikoStockFact.period_month == month
+                    )
+                ),
+            )
+            .order_by(PnlProductWhitelist.product_name)
+        )
+    ).all()
+    if absent:
+        flags.append(
+            AssembledFlag(
+                code="stock_position_absent_from_snapshot",
+                severity="warning",
+                title="Ревизуемая позиция не попала в складской снимок",
+                explanation=(
+                    "Позиция числится под складским учётом, но её остатка в снимке iiko за "
+                    "этот месяц нет. Запасы занижены на неизвестную величину."
+                ),
+                count=len(absent),
+                rows=[{"product": name or "—"} for name in absent],
+            )
+        )
+
+    undecided = (
+        await session.scalars(
+            select(PnlProductWhitelist.product_name)
+            .where(
+                PnlProductWhitelist.source_kind == cat.STOCK_WHITELIST_SOURCE,
+                PnlProductWhitelist.include_status == "requires_owner_review",
+            )
+            .order_by(PnlProductWhitelist.product_name)
+        )
+    ).all()
+    if undecided:
+        flags.append(
+            AssembledFlag(
+                code="stock_position_undecided",
+                severity="info",
+                title="Номенклатура ждёт решения владельца",
+                explanation=(
+                    "По этим позициям не решено, ведётся ли складской учёт. В строку «Запасы» "
+                    "они не входят — включить спорное молча значило бы выдать его за решённое."
+                ),
+                count=len(undecided),
+                rows=[{"product": name or "—"} for name in undecided],
+            )
+        )
+
     line = _line(
         defn,
         total,
@@ -219,24 +328,16 @@ async def _stock_line(
             if stale
             else None
         ),
-        detail={"positions": fact_count, "synced_at": synced_at.isoformat() if synced_at else None},
+        # Отброшенное показываем цифрой: строка упала вчетверо, и без расшифровки это
+        # выглядело бы как пропажа запасов, а не как снятие лишнего.
+        detail={
+            "positions": fact_count,
+            "positions_in_snapshot": run_count,
+            "excluded_amount": str(_money(run_total - total)),
+            "synced_at": synced_at.isoformat() if synced_at else None,
+        },
     )
-    flag = (
-        AssembledFlag(
-            code="stock_snapshot_stale",
-            severity="warning",
-            title="Складской остаток снят до конца месяца",
-            explanation=(
-                "Прогон iiko состоялся раньше границы месяца, поэтому в снимке лежит остаток "
-                "на день прогона. Пересобрать месяц после его окончания."
-            ),
-            count=1,
-            amount=total,
-        )
-        if stale
-        else None
-    )
-    return line, flag
+    return line, flags
 
 
 async def _money_lines(
@@ -542,17 +643,88 @@ async def _tax_line(session: AsyncSession, as_of: date) -> AssembledLine:
     )
 
 
-async def _tax_payable_line(session: AsyncSession, as_of: date) -> AssembledLine:
-    """Долг перед бюджетом: недостача по ЕНС."""
+async def _tax_payable_line(
+    session: AsyncSession, as_of: date
+) -> tuple[AssembledLine, AssembledFlag | None]:
+    """Долг перед бюджетом: недостача по наступившим срокам ПЛЮС начисленное вперёд.
+
+    ПОЧЕМУ НЕ ОДНА НЕДОСТАЧА ЕНС. Сальдо ЕНС признаёт начисление по СРОКУ УПЛАТЫ, поэтому
+    зарплатный ЕНП за июль (срок 28.08) на 31 июля в нём ещё не виден. Для платёжного календаря
+    это верно — платить рано; для баланса нет: налог за июль начислен в июле и на 31 июля уже
+    является обязательством. Строка показывала 20 053,42 вместо 145 595,35 — занижение в семь
+    раз, и оно молча уезжало в капитал.
+
+    ИСТОЧНИК — ФУНКЦИЯ САМОГО НАЛОГОВОГО МОДУЛЯ. ``list_payable_obligations`` наполняет и
+    «Активные платежи», и строку налогов в учёте ДЗ/КЗ; её docstring прямо говорит «одна цифра
+    в трёх местах по построению». Баланс стал четвёртым местом и считал по-своему — ровно то,
+    из-за чего цифры разошлись.
+
+    ПРОГНОЗЫ НЕ ВХОДЯТ. Фиксированные взносы ИП «за остаток года» (43 042,50 со сроком 28.12) —
+    оценка будущего платежа, а не долг на дату: год ещё не прожит. В сумму они не идут, но и не
+    исчезают — их называет отдельный сигнал.
+    """
     from app.services.taxes.ens_wallet import compute_ens_wallet
+    from app.services.taxes.obligations import list_payable_obligations
 
     wallet = await compute_ens_wallet(session, as_of=as_of)
-    return _line(
+    try:
+        obligations = await list_payable_obligations(session, today=as_of)
+    except Exception as error:  # noqa: BLE001 — налоговый модуль не должен рушить баланс
+        return (
+            _line(
+                cat.CATALOG_BY_CODE["ap_tax"],
+                _money(wallet.shortfall),
+                cat.ST_APPROXIMATE,
+                source_kind="ens_wallet",
+                source_note=(
+                    f"Реестр обязательств недоступен ({type(error).__name__}) — показана только "
+                    f"недостача ЕНС, начисленное вперёд не учтено"
+                ),
+            ),
+            None,
+        )
+
+    accrued = [item for item in obligations if not getattr(item, "is_projection", False)]
+    projected = [item for item in obligations if getattr(item, "is_projection", False)]
+    # Недостача ЕНС и начисленное вперёд НЕ пересекаются: первая живёт по наступившим срокам,
+    # второе — по ненаступившим. Сложение здесь не задваивает.
+    total = _money(wallet.shortfall) + _money(sum((item.amount for item in accrued), _ZERO))
+
+    line = _line(
         cat.CATALOG_BY_CODE["ap_tax"],
-        _money(wallet.shortfall),
+        total,
         cat.ST_OK,
-        source_kind="ens_wallet",
+        source_kind="tax_obligations",
+        detail={
+            "ens_shortfall": str(_money(wallet.shortfall)),
+            "accrued_ahead": str(_money(sum((item.amount for item in accrued), _ZERO))),
+            "items": [
+                {"title": item.title, "amount": str(_money(item.amount)), "due": str(item.due_date)}
+                for item in accrued
+            ],
+        },
     )
+    flag = (
+        AssembledFlag(
+            code="tax_projection_not_counted",
+            severity="info",
+            title="Прогноз налоговых платежей в долг не включён",
+            explanation=(
+                "Это оценка будущих платежей, а не обязательство на дату среза: период, за "
+                "который они начисляются, ещё не прожит. В платёжном календаре они нужны, "
+                "в балансе — нет."
+            ),
+            count=len(projected),
+            amount=_money(sum((item.amount for item in projected), _ZERO)),
+            rows=[
+                {"title": item.title, "amount": str(_money(item.amount)), "due": str(item.due_date)}
+                for item in projected
+            ],
+        )
+        if projected
+        else None
+    )
+    return line, flag
 
 
 async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) -> AssembledBalance:
@@ -574,10 +746,9 @@ async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) ->
 
     lines += await _assets_lines(session, as_of, live=live)
 
-    stock_line, stock_flag = await _stock_line(session, as_of)
+    stock_line, stock_flags = await _stock_line(session, as_of)
     lines.append(stock_line)
-    if stock_flag:
-        flags.append(stock_flag)
+    flags += stock_flags
 
     money_lines, money_flags = await _money_lines(session, as_of)
     lines += money_lines
@@ -594,7 +765,10 @@ async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) ->
     approximate += staff_approx
 
     lines.append(await _tax_line(session, as_of))
-    lines.append(await _tax_payable_line(session, as_of))
+    tax_payable, tax_flag = await _tax_payable_line(session, as_of)
+    lines.append(tax_payable)
+    if tax_flag:
+        flags.append(tax_flag)
 
     manual_lines, manual_flag = await _manual_lines(session, as_of)
     lines += manual_lines

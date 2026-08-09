@@ -23,7 +23,12 @@ sys.path.append(str(Path(__file__).parent / "counterparties"))
 
 from cp_helpers import make_wallet  # noqa: E402
 
-from app.models import BalanceManualValue, CashflowTransaction, PnlIikoStockFact  # noqa: E402
+from app.models import (  # noqa: E402
+    BalanceManualValue,
+    CashflowTransaction,
+    PnlIikoStockFact,
+    PnlProductWhitelist,
+)
 from app.services.balance import catalog as cat  # noqa: E402
 from app.services.balance.assembly import BalanceBeforeAccountingStart, assemble  # noqa: E402
 
@@ -56,13 +61,25 @@ async def _cash(
 
 
 async def _stock_fact(
-    session: AsyncSession, *, month: date, amount: str, synced_at: datetime
-) -> None:
+    session: AsyncSession,
+    *,
+    month: date,
+    amount: str,
+    synced_at: datetime,
+    name: str = "Упаковка",
+    stocked: bool = True,
+) -> str:
+    """Складской факт месяца. ``stocked`` — числится ли позиция под складским учётом.
+
+    Снимок iiko приносит остатки по ВСЕЙ номенклатуре, а в баланс идёт только та, что
+    инвентаризируется, — поэтому у хелпера два режима, и по умолчанию позиция ревизуемая.
+    """
+    guid = str(uuid.uuid4())
     session.add(
         PnlIikoStockFact(
             period_month=month,
-            iiko_product_guid=str(uuid.uuid4()),
-            product_name="Мука",
+            iiko_product_guid=guid,
+            product_name=name,
             opening_quantity=Decimal("0"),
             opening_amount=Decimal("0"),
             receipts_amount=Decimal("0"),
@@ -70,6 +87,22 @@ async def _stock_fact(
             closing_amount=Decimal(amount),
             consumption_amount=Decimal("0"),
             synced_at=synced_at,
+        )
+    )
+    if stocked:
+        await _stocked(session, guid=guid, name=name)
+    await session.flush()
+    return guid
+
+
+async def _stocked(session: AsyncSession, *, guid: str, name: str, status: str = "stocked") -> None:
+    """Позиция в списке ревизий («Товары iiko» → «Ревизии»)."""
+    session.add(
+        PnlProductWhitelist(
+            iiko_product_guid=guid,
+            source_kind=cat.STOCK_WHITELIST_SOURCE,
+            include_status=status,
+            product_name=name,
         )
     )
     await session.flush()
@@ -208,6 +241,106 @@ async def test_stock_is_empty_not_zero_when_the_iiko_snapshot_never_ran(
         assert flag.severity == "blocking"
 
 
+async def test_only_the_inventoried_nomenclature_lands_in_stock(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Снимок iiko приносит весь справочник, а запас на складе — это малая его часть.
+
+    Найдено владельцем 08.08.2026 на прод-данных: строка считала все 427 позиций снимка и
+    показывала 1 309 155,05 ₽ вместо 291 354,87 ₽ по 39 инвентаризируемым — завышение вчетверо.
+    Остаток блюда или заготовки в iiko существует, но запасом на складе не является: складской
+    учёт и результаты инвентаризации есть только у товаров из списка ревизий.
+    """
+    august = date(2026, 8, 1)
+    async with async_session_factory() as session:
+        synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
+        await _stock_fact(session, month=august, amount="90000.00", synced_at=synced, name="Кола")
+        await _stock_fact(
+            session, month=august, amount="10000.00", synced_at=synced, name="Контейнер"
+        )
+        # Блюдо: в снимке есть, складского учёта по нему не ведут.
+        await _stock_fact(
+            session,
+            month=august,
+            amount="777000.00",
+            synced_at=synced,
+            name="Ролл Филадельфия",
+            stocked=False,
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=date(2026, 8, 31))
+        stock = _line(assembled, "stock_total")
+        assert stock.amount == Decimal("100000.00")
+        # Отброшенное названо цифрой: падение строки должно читаться как снятие лишнего,
+        # а не как пропажа запасов.
+        assert stock.detail["positions"] == 2
+        assert stock.detail["positions_in_snapshot"] == 3
+        assert stock.detail["excluded_amount"] == "777000.00"
+
+
+async def test_an_inventoried_position_missing_from_the_snapshot_is_reported(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Позиция под складским учётом, которой в снимке нет, занижает запасы на неизвестное.
+
+    Отличается от намеренно отброшенной номенклатуры именно этим: там мы знаем, сколько сняли,
+    здесь — нет. На проде таких две («Палочки» и «Добрый лимон-лайм ж/б»).
+    """
+    august = date(2026, 8, 1)
+    async with async_session_factory() as session:
+        await _stock_fact(
+            session,
+            month=august,
+            amount="90000.00",
+            synced_at=datetime(2026, 9, 1, 3, 0, tzinfo=UTC),
+            name="Кола",
+        )
+        await _stocked(session, guid=str(uuid.uuid4()), name="Палочки")
+        await session.commit()
+
+        assembled = await assemble(session, as_of=date(2026, 8, 31))
+        assert _line(assembled, "stock_total").amount == Decimal("90000.00")
+
+        flag = _flag(assembled, "stock_position_absent_from_snapshot")
+        assert flag is not None
+        assert flag.severity == "warning"
+        # Вхождение, а не точное совпадение: список ревизий засеян миграцией, и остальные его
+        # позиции в этом тесте тоже без фактов — сравнение множеств проверяло бы чужой сид.
+        assert "Палочки" in {row["product"] for row in flag.rows}
+
+
+async def test_a_position_awaiting_the_owner_is_neither_counted_nor_hidden(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Спорная позиция в сумму не входит, но и не пропадает — о ней сказано отдельно.
+
+    Включить её молча значило бы выдать нерешённое за решённое; выбросить молча — потерять
+    запас, о котором никто уже не вспомнит.
+    """
+    august = date(2026, 8, 1)
+    async with async_session_factory() as session:
+        synced = datetime(2026, 9, 1, 3, 0, tzinfo=UTC)
+        await _stock_fact(session, month=august, amount="90000.00", synced_at=synced, name="Кола")
+        guid = await _stock_fact(
+            session,
+            month=august,
+            amount="50000.00",
+            synced_at=synced,
+            name="Спорный товар",
+            stocked=False,
+        )
+        await _stocked(session, guid=guid, name="Спорный товар", status="requires_owner_review")
+        await session.commit()
+
+        assembled = await assemble(session, as_of=date(2026, 8, 31))
+        assert _line(assembled, "stock_total").amount == Decimal("90000.00")
+
+        flag = _flag(assembled, "stock_position_undecided")
+        assert flag is not None
+        assert {row["product"] for row in flag.rows} == {"Спорный товар"}
+
+
 async def test_a_stock_snapshot_taken_before_month_end_is_marked_approximate(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -305,3 +438,75 @@ async def test_a_hand_entered_value_belongs_to_its_date_alone(
 
         august = await assemble(session, as_of=date(2026, 8, 31))
         assert _line(august, "ap_vacation_reserve").amount is None
+
+
+async def test_tax_debt_counts_what_is_accrued_not_only_what_is_overdue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Налог, начисленный за период, — обязательство на дату, даже если срок уплаты впереди.
+
+    Владелец 09.08.2026: «налоги 168». Строка показывала 20 053,42 при 145 595,35 — потому что
+    брала только недостачу ЕНС, а та признаёт начисление по СРОКУ УПЛАТЫ. Для платёжного
+    календаря это верно, для баланса — нет: зарплатный ЕНП за июль со сроком 28.08 на 31 июля
+    уже начислен и уже является долгом.
+
+    Источник теперь — функция самого налогового модуля, та же, что наполняет «Активные платежи»
+    и строку налогов в учёте ДЗ/КЗ. Баланс перестал быть четвёртым местом со своей формулой.
+    """
+    from datetime import date as _date
+
+    from app.services.balance import assembly as assembly_module
+    from app.services.taxes import obligations as obligations_module
+
+    class _Ob:
+        def __init__(self, title, amount, due, projection):
+            self.title = title
+            self.amount = Decimal(amount)
+            self.due_date = due
+            self.is_projection = projection
+
+    async def _fake(session, *, today):  # noqa: ARG001
+        return [
+            _Ob("Зарплатный ЕНП за июль", "19913.93", _date(2026, 8, 28), False),
+            _Ob("Допвзнос 1% · II квартал", "105628.00", _date(2026, 9, 25), False),
+            _Ob("Взносы ИП «за себя» · остаток года", "43042.50", _date(2026, 12, 28), True),
+        ]
+
+    monkeypatch.setattr(obligations_module, "list_payable_obligations", _fake)
+
+    async with async_session_factory() as session:
+        line, flag = await assembly_module._tax_payable_line(session, JULY_END)
+
+        # Недостача ЕНС на пустой базе нулевая, поэтому итог — ровно начисленное вперёд.
+        assert line.amount == Decimal("125541.93")
+        assert line.detail["accrued_ahead"] == "125541.93"
+        # Прогноз в долг не вошёл, но и не пропал.
+        assert flag is not None
+        assert flag.amount == Decimal("43042.50")
+        assert flag.severity == "info"
+
+
+async def test_a_broken_tax_registry_does_not_break_the_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Налоговый модуль упал — баланс собирается, но говорит, что цифра неполная.
+
+    Тот же принцип, что с отчётом о прибыли: чужая поломка не имеет права ни уронить баланс,
+    ни тихо превратиться в правдоподобную цифру.
+    """
+    from app.services.balance import assembly as assembly_module
+    from app.services.taxes import obligations as obligations_module
+
+    async def _broken(session, *, today):  # noqa: ARG001
+        raise RuntimeError("реестр обязательств недоступен")
+
+    monkeypatch.setattr(obligations_module, "list_payable_obligations", _broken)
+
+    async with async_session_factory() as session:
+        line, flag = await assembly_module._tax_payable_line(session, JULY_END)
+
+        assert line.status == cat.ST_APPROXIMATE
+        assert "не учтено" in (line.source_note or "")
+        assert flag is None

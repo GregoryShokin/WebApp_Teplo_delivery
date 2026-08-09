@@ -14,7 +14,7 @@
  * Дата — через `toIsoDate`, а не срезом ISO-строки: с полуночи до трёх ночи по Москве UTC-дата
  * даёт вчерашний день, и снимок уехал бы в чужой месяц.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +25,11 @@ import { apiErrorMessage } from "@/lib/api";
 import { toIsoDate } from "@/lib/date";
 
 import {
+  type BalanceDriftRow,
   type BalanceFlag,
   type BalanceLine,
   type BalanceView,
+  fetchBalanceDrift,
   fetchBalancePreview,
   fetchBalanceSnapshot,
   freezeBalance,
@@ -96,42 +98,124 @@ function LineAmount({ line }: { line: BalanceLine }) {
   );
 }
 
-function LineRow({ line }: { line: BalanceLine }) {
-  const muted = line.kind === "memo";
-  return (
-    <div
-      className={`flex items-start justify-between gap-4 border-b px-3 py-2 last:border-0 ${
-        muted ? "text-muted-foreground" : ""
-      }`}
-    >
-      <div className="min-w-0">
-        <div className={`text-sm ${muted ? "pl-4 italic" : ""}`}>{line.title}</div>
-        {line.source_note ? (
-          <div className="text-muted-foreground mt-0.5 text-xs">{line.source_note}</div>
-        ) : null}
-      </div>
-      <div className="shrink-0 text-right text-sm">
-        <LineAmount line={line} />
-        {line.status !== "ok" && line.amount !== null ? (
-          <div className="text-muted-foreground text-xs">{STATUS_LABEL[line.status] ?? ""}</div>
-        ) : null}
-      </div>
-    </div>
-  );
+/** Человеческие подписи полей расшифровки сигнала. Ключи приходят с сервера как есть, и
+ *  показывать владельцу `line_code` вместо названия строки — то же самое, что не показывать
+ *  ничего. */
+const FLAG_ROW_LABELS: Record<string, string> = {
+  line: "строка",
+  product: "позиция",
+  why: "почему",
+  month: "месяц",
+  title: "начисление",
+  amount: "сумма",
+  due: "срок",
+  wallet: "счёт",
+  balance: "остаток",
+};
+
+/** Что показать в строке расшифровки: сначала человеческое имя, потом всё остальное.
+ *  `code` намеренно не печатается — он для меня, не для владельца. */
+function flagRowText(row: Record<string, unknown>): string {
+  const head = row.line ?? row.product ?? row.title ?? row.wallet ?? row.month;
+  const rest = Object.entries(row)
+    .filter(([key, value]) => key !== "code" && value != null && value !== head)
+    .map(([key, value]) => `${FLAG_ROW_LABELS[key] ?? key}: ${String(value)}`);
+  return [head ? String(head) : null, rest.length ? rest.join(" · ") : null]
+    .filter(Boolean)
+    .join(" — ");
 }
 
 function FlagCard({ flag }: { flag: BalanceFlag }) {
+  const [open, setOpen] = useState(false);
+  const rows = Array.isArray(flag.rows) ? flag.rows : [];
+  // Сигнал со счётчиком «3 шт» и без расшифровки — это предупреждение, на которое нельзя
+  // ответить: владелец видит, что что-то не так, и не видит что именно. Раскрываем.
+  const expandable = rows.length > 0;
   return (
     <Card className={`p-3 ${SEVERITY_STYLE[flag.severity] ?? ""}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm font-medium">{flag.title}</div>
+      <button
+        type="button"
+        className={`flex w-full items-center justify-between gap-3 text-left ${
+          expandable ? "cursor-pointer" : "cursor-default"
+        }`}
+        onClick={expandable ? () => setOpen((value) => !value) : undefined}
+        aria-expanded={expandable ? open : undefined}
+        disabled={!expandable}
+      >
+        <div className="text-sm font-medium">
+          {flag.title}
+          {expandable ? (
+            <span className="text-muted-foreground ml-2 text-xs font-normal">
+              {open ? "свернуть" : "показать"}
+            </span>
+          ) : null}
+        </div>
         {Number(flag.amount) !== 0 ? (
-          <div className="tabular-nums text-sm">{formatMoney(flag.amount)} ₽</div>
+          <div className="tabular-nums shrink-0 text-sm">{formatMoney(flag.amount)} ₽</div>
         ) : flag.count ? (
-          <div className="text-muted-foreground text-sm">{flag.count} шт</div>
+          <div className="text-muted-foreground shrink-0 text-sm">{flag.count} шт</div>
+        ) : null}
+      </button>
+      <div className="text-muted-foreground mt-1 text-xs">{flag.explanation}</div>
+      {expandable && open ? (
+        <ul className="mt-2 space-y-1 border-t pt-2">
+          {rows.map((row, index) => (
+            <li key={index} className="text-xs">
+              {flagRowText(row)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
+  );
+}
+
+function DriftCard({
+  rows,
+  status,
+  onRebuild,
+  busy,
+}: {
+  rows: BalanceDriftRow[];
+  status: BalanceView["status"];
+  onRebuild: () => void;
+  busy: boolean;
+}) {
+  const final = status === "final";
+  return (
+    <Card className="border-amber-400/50 bg-amber-50 p-4 dark:bg-amber-950/20">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm font-medium">
+          {final
+            ? "Подписанный снимок разошёлся с сегодняшним расчётом"
+            : "Черновик собран раньше — цифры на экране устарели"}
+        </div>
+        {final ? null : (
+          <Button size="sm" variant="secondary" onClick={onRebuild} disabled={busy}>
+            Пересобрать
+          </Button>
+        )}
+      </div>
+      <p className="text-muted-foreground mt-1 text-xs">
+        {final
+          ? "Снимок не пересобирается — так и задумано. Расхождение означает, что первичку правили после подписи; ниже видно, где именно."
+          : "Ниже показаны цифры на момент сборки черновика, а не текущие. Нажмите «Пересобрать», чтобы обновить."}
+      </p>
+      <div className="mt-3 space-y-1">
+        {rows.slice(0, 8).map((row) => (
+          <div key={row.line_code} className="flex items-center justify-between gap-4 text-sm">
+            <span className="min-w-0 truncate">{row.title}</span>
+            <span className="tabular-nums shrink-0">
+              {row.frozen_amount === null ? "нет данных" : formatMoney(row.frozen_amount)}
+              {" → "}
+              {row.live_amount === null ? "нет данных" : formatMoney(row.live_amount)}
+            </span>
+          </div>
+        ))}
+        {rows.length > 8 ? (
+          <div className="text-muted-foreground text-xs">…и ещё {rows.length - 8}</div>
         ) : null}
       </div>
-      <div className="text-muted-foreground mt-1 text-xs">{flag.explanation}</div>
     </Card>
   );
 }
@@ -195,9 +279,95 @@ function ReconciliationCard({ view }: { view: BalanceView }) {
   );
 }
 
+/** Одна сторона баланса — актив или пассив — обычной таблицей.
+ *
+ *  ПОЧЕМУ ТАБЛИЦА, А НЕ КАРТОЧКИ ПО ГРУППАМ. Баланс читают глазами бухгалтера: сверху вниз по
+ *  разделам, с подытогом у каждого и одним итогом внизу. Карточки, разложенные по сетке,
+ *  показывают те же строки, но порядок в них задаёт вёрстка, а не смысл, и сравнить две стороны
+ *  невозможно — они оказываются на разной высоте.
+ *
+ *  ПАССИВ — ЭТО ОБЯЗАТЕЛЬСТВА ПЛЮС КАПИТАЛ, поэтому итоги сторон совпадают всегда. Равенство
+ *  здесь не проверка, а следствие того, что капитал выведен как остаток; ради этого под
+ *  таблицей стоит отдельная оговорка. */
+function SideTable({
+  title,
+  total,
+  groups,
+  note,
+}: {
+  title: string;
+  total: string;
+  groups: { group: string; lines: BalanceLine[]; total: number }[];
+  note?: string;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="bg-muted/40 flex items-baseline justify-between gap-3 border-b px-4 py-2.5">
+        <div className="text-sm font-semibold uppercase tracking-wide">{title}</div>
+        <div className="tabular-nums text-base font-semibold">{formatMoney(total)} ₽</div>
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          {groups.map((group) => (
+            <Fragment key={group.group}>
+              <tr className="bg-muted/20 border-b">
+                <th
+                  scope="rowgroup"
+                  className="px-4 py-1.5 text-left text-xs font-medium uppercase tracking-wide"
+                >
+                  {group.group}
+                </th>
+                <td className="tabular-nums px-4 py-1.5 text-right text-xs font-medium">
+                  {group.total.toLocaleString("ru-RU", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </td>
+              </tr>
+              {group.lines.map((line) => (
+                <tr
+                  key={line.line_code}
+                  className={`border-b last:border-0 ${
+                    line.kind === "memo" ? "text-muted-foreground" : ""
+                  }`}
+                >
+                  <td className="px-4 py-1.5">
+                    <div className={line.kind === "memo" ? "pl-4 italic" : ""}>{line.title}</div>
+                    {line.source_note ? (
+                      <div className="text-muted-foreground mt-0.5 text-xs">
+                        {line.source_note}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-1.5 text-right align-top">
+                    <LineAmount line={line} />
+                    {line.status !== "ok" && line.amount !== null ? (
+                      <div className="text-muted-foreground text-xs">
+                        {STATUS_LABEL[line.status] ?? ""}
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </Fragment>
+          ))}
+          <tr className="bg-muted/40 border-t">
+            <td className="px-4 py-2 text-sm font-semibold">Итого {title.toLowerCase()}</td>
+            <td className="tabular-nums px-4 py-2 text-right text-sm font-semibold">
+              {formatMoney(total)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {note ? <div className="text-muted-foreground px-4 py-2 text-xs">{note}</div> : null}
+    </Card>
+  );
+}
+
 export function BalanceRoute() {
   const [asOf, setAsOf] = useState(defaultAsOf);
   const [view, setView] = useState<BalanceView | null>(null);
+  const [drift, setDrift] = useState<BalanceDriftRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [freezing, setFreezing] = useState(false);
 
@@ -207,8 +377,15 @@ export function BalanceRoute() {
       // Сначала подписанный снимок: он и есть ответ на вопрос «сколько мы сказали».
       // Нет снимка — показываем предпросмотр, то есть «сколько получается сейчас».
       let data: BalanceView;
+      let rows: BalanceDriftRow[] = [];
       try {
         data = await fetchBalanceSnapshot(date);
+        // Снимок числа НЕ пересчитывает — в этом весь его смысл. Но тогда экран обязан
+        // сказать, что живой расчёт с ним разошёлся: иначе владелец смотрит на цифры
+        // недельной давности и уверен, что видит сегодняшние. Ровно так и вышло 08.08.2026 —
+        // черновик, собранный до правок, показывал прежний актив, и это выглядело как «правки
+        // не приехали», хотя модуль работал верно.
+        rows = await fetchBalanceDrift(date).catch(() => []);
       } catch {
         data = await fetchBalancePreview(date);
       }
@@ -219,9 +396,11 @@ export function BalanceRoute() {
         throw new Error("Ответ не похож на баланс — проверьте права доступа");
       }
       setView(data);
+      setDrift(Array.isArray(rows) ? rows : []);
     } catch (error) {
       toast.error(apiErrorMessage(error));
       setView(null);
+      setDrift([]);
     } finally {
       setLoading(false);
     }
@@ -249,10 +428,23 @@ export function BalanceRoute() {
     }));
   }, [view]);
 
+  // Пассив = обязательства + капитал. Разделение на блоки приходит с сервера, здесь только
+  // раскладка по двум сторонам: порядок внутри каждой уже задан сортировкой строк.
+  const assetGroups = useMemo(() => groups.filter((g) => g.block === "asset"), [groups]);
+  const liabilityGroups = useMemo(
+    () => groups.filter((g) => g.block === "liability" || g.block === "equity"),
+    [groups],
+  );
+  const liabilitySideTotal = view
+    ? (Number(view.liability_total) + Number(view.equity_plug)).toFixed(2)
+    : "0";
+
   const onFreeze = async () => {
     setFreezing(true);
     try {
       setView(await freezeBalance(asOf));
+      // Пересобрали — расхождение снято по построению, спрашивать сервер незачем.
+      setDrift([]);
       toast.success("Черновик баланса собран");
     } catch (error) {
       toast.error(apiErrorMessage(error));
@@ -316,6 +508,17 @@ export function BalanceRoute() {
         </Card>
       ) : (
         <>
+          {/* Расхождение — ПЕРЕД цифрами: узнать, что смотришь на устаревшее, надо до того,
+              как поверишь итогам, а не после. */}
+          {drift.length ? (
+            <DriftCard
+              rows={drift}
+              status={view.status}
+              onRebuild={onFreeze}
+              busy={freezing}
+            />
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-3">
             <Card className="p-4">
               <div className="text-muted-foreground text-xs">Активы</div>
@@ -349,25 +552,18 @@ export function BalanceRoute() {
             </div>
           ) : null}
 
-          <div className="grid gap-3 lg:grid-cols-2">
-            {groups.map((group) => (
-              <Card key={group.group} className="overflow-hidden">
-                <div className="bg-muted/40 flex items-center justify-between px-3 py-2">
-                  <div className="text-sm font-medium">{group.group}</div>
-                  <div className="tabular-nums text-sm">
-                    {group.total.toLocaleString("ru-RU", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </div>
-                </div>
-                <div>
-                  {group.lines.map((line) => (
-                    <LineRow key={line.line_code} line={line} />
-                  ))}
-                </div>
-              </Card>
-            ))}
+          <div className="grid items-start gap-3 lg:grid-cols-2">
+            <SideTable title="Актив" total={view.asset_total} groups={assetGroups} />
+            <SideTable
+              title="Пассив"
+              total={liabilitySideTotal}
+              groups={liabilityGroups}
+              note={
+                "Пассив = обязательства + капитал, а капитал выведен как актив минус " +
+                "обязательства. Поэтому итоги сторон совпадают всегда — это следствие " +
+                "построения, а не проверка. Проверяет сверка приращения выше."
+              }
+            />
           </div>
 
           <p className="text-muted-foreground text-xs">

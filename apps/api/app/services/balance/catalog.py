@@ -309,6 +309,13 @@ class AssetLineKey:
 OS_GROUP = "Основные средства"
 OS_SORT_BASE = 100
 
+# Откуда берётся список инвентаризируемой номенклатуры для строки «Запасы»: леджер «Товары iiko»,
+# вкладка «Ревизии» (``pnl_product_whitelist``). Снимок iiko приносит остатки по всему
+# справочнику, а складской учёт бизнес ведёт по малой его части — см. ``_stock_line``.
+STOCK_WHITELIST_SOURCE = "inventory"
+# Только подтверждённый статус. ``requires_owner_review`` в сумму не входит и поднимает сигнал.
+STOCK_WHITELIST_STATUS = "stocked"
+
 # Порядок групп в отчёте: сверху внеоборотные, снизу капитал.
 GROUP_ORDER: tuple[str, ...] = (
     OS_GROUP,

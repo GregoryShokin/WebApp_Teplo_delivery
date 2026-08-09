@@ -107,6 +107,9 @@ type BalanceList = {
   items: CounterpartyBalance[];
   receivable_total: number;
   payable_total: number;
+  /** Займы собственникам — отдельно от авансов поставщикам, но внутри общей дебиторки.
+   *  В сумме с поставщиками они читались как «мы много авансировали поставщиков». */
+  owner_loans_total: number;
 };
 
 type SettledInvoiceRef = {
@@ -606,6 +609,10 @@ export function DzKzRoute() {
       ? undefined
       : (supplierPayable ?? 0) + (peoplePayable ?? 0) + (taxPayable ?? 0);
   const supplierReceivable = balances.data?.receivable_total;
+  // Займы собственникам вынуты из авансов поставщикам, но из ОБЩЕЙ дебиторки не пропали:
+  // деньги бизнесу должны, и в итоге они обязаны стоять. Иначе правка «разделить строки»
+  // молча уменьшила бы дебиторку на 1,25 млн.
+  const ownerLoans = balances.data?.owner_loans_total;
   const staffReceivable = staff.data
     ? staff.data.items
         .filter((item) => item.staff_group === "staff")
@@ -627,7 +634,10 @@ export function DzKzRoute() {
   const receivableTotal =
     supplierReceivable == null && peopleReceivable == null && taxReceivable == null
       ? undefined
-      : (supplierReceivable ?? 0) + (peopleReceivable ?? 0) + (taxReceivable ?? 0);
+      : (supplierReceivable ?? 0) +
+        (ownerLoans ?? 0) +
+        (peopleReceivable ?? 0) +
+        (taxReceivable ?? 0);
 
   const openCounterpartyCard = (counterpartyId: string) => setGapCardId(counterpartyId);
 
@@ -665,6 +675,11 @@ export function DzKzRoute() {
             (peopleReceivable > 0 || (taxReceivable ?? 0) > 0)
               ? [
                   `поставщики ${money.format(supplierReceivable)}`,
+                  // Займы собственникам — своей позицией: они крупнее авансов поставщикам в
+                  // несколько раз, и внутри общей цифры читались как раздутое авансирование.
+                  (ownerLoans ?? 0) > 0
+                    ? `собственники ${money.format(ownerLoans ?? 0)}`
+                    : null,
                   (staffReceivable ?? 0) > 0
                     ? `сотрудники ${money.format(staffReceivable ?? 0)}`
                     : null,

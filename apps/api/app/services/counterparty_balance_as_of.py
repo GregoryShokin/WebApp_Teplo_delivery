@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     BankOperation,
+    BusinessOwner,
     CashflowTransaction,
     Counterparty,
     DdsArticle,
@@ -101,6 +102,30 @@ class BalanceSheetAsOf:
 # Виды предоплат, которые НЕ являются авансом поставщику. Заведены той же таблицей, потому что
 # механика одна (деньги ушли, обязательство встречное), но экономический смысл другой.
 OWNER_LOAN_KINDS: tuple[str, ...] = ("owner_loan",)
+
+
+def is_owner_loan():
+    """Заём собственнику: либо по ВИДУ предоплаты, либо по ТОМУ, КОМУ она выдана.
+
+    Вид сам по себе ненадёжен, и это не гипотеза. Заём Павлу 30 000 ₽ от 14.07.2026 завела
+    автоматика разбора банковского списания — с видом ``subscription``, потому что она про
+    предоплатную модель и о собственниках не знает. Строка легла в «Выданные авансы
+    поставщикам», и долг Павла в балансе показывался как 200 000 вместо 230 000.
+
+    Принадлежность к собственникам — свойство КОНТРАГЕНТА, а не той формы, через которую
+    оформили деньги: реестр ``business_owner`` ведёт человек, а вид предоплаты подставляет тот
+    путь, который её создал. Поэтому смотрим на реестр — и любой будущий автоматический разбор
+    попадает в нужную строку сам.
+
+    Без ограничения по датам ``started_on``/``ended_on`` намеренно: экономическая природа долга
+    не меняется от того, что человек перестал быть собственником. Деньги всё равно выданы
+    физлицу, а не под товар, и превращать их задним числом в аванс поставщику значило бы
+    переписывать прошлое.
+    """
+    return or_(
+        SupplierPrepayment.kind.in_(OWNER_LOAN_KINDS),
+        SupplierPrepayment.counterparty_id.in_(select(BusinessOwner.counterparty_id)),
+    )
 
 
 def _prepayment_event_date(created_at_column):
@@ -328,7 +353,7 @@ async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceS
                 ),
             )
             # Займы собственникам считаются отдельно: см. ``owner_loans_total``.
-            .where(SupplierPrepayment.kind.not_in(OWNER_LOAN_KINDS))
+            .where(~is_owner_loan())
             .outerjoin(
                 CashflowTransaction,
                 CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
@@ -477,7 +502,7 @@ async def _owner_loans_as_of(session: AsyncSession, as_of: date, settled_by_prep
             settled_by_prepayment,
             settled_by_prepayment.c.prepayment_id == SupplierPrepayment.id,
         )
-        .where(SupplierPrepayment.kind.in_(OWNER_LOAN_KINDS))
+        .where(is_owner_loan())
         .where(prepayment_date <= as_of)
         .where(
             or_(

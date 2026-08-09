@@ -18,7 +18,12 @@ from decimal import Decimal
 from cp_helpers import make_counterparty, make_invoice, make_wallet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import CashflowTransaction, InvoicePaymentAllocation, SupplierPrepayment
+from app.models import (
+    BusinessOwner,
+    CashflowTransaction,
+    InvoicePaymentAllocation,
+    SupplierPrepayment,
+)
 from app.services.counterparty_balance_as_of import build_balance_as_of
 
 
@@ -320,3 +325,59 @@ async def test_an_opening_balance_exists_from_the_start_of_accounting(
 
         july = await build_balance_as_of(session, as_of=date(2026, 7, 31))
         assert july.owner_loans_total == Decimal("200000.00")
+
+
+async def test_a_prepayment_to_a_registered_owner_is_a_loan_whatever_its_kind(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Собственника узнаём по реестру, а не по виду предоплаты.
+
+    Владелец 09.08.2026: «у Павла 230 000, а не 200 000». Разница в 30 000 — заём от 14.07,
+    который завела автоматика разбора банковского списания с видом ``subscription``: она про
+    предоплатную модель и о собственниках не знает. Строка легла в «Выданные авансы
+    поставщикам», и долг собственника в балансе оказался занижен.
+
+    Вид ставит тот путь, который создал запись; принадлежность к собственникам ведёт человек в
+    ``business_owner``. Второе устойчиво, первое — нет, поэтому смотрим на второе.
+    """
+    async with async_session_factory() as session:
+        owner = await make_counterparty(session, name="Собственник Павел")
+        supplier = await make_counterparty(session, name="Обычный поставщик")
+        wallet = await make_wallet(session, code="tbank-owner-kind", name="Т-Банк")
+        session.add(
+            BusinessOwner(
+                counterparty_id=owner.id,
+                share_percent=Decimal("50.00"),
+                started_on=date(2026, 1, 1),
+            )
+        )
+        for cp, kind, amount in (
+            (owner, "owner_loan", "200000.00"),
+            # Тот самый автоматический разбор: вид «подписка», а по сути заём собственнику.
+            (owner, "subscription", "30000.00"),
+            (supplier, "subscription", "9000.00"),
+        ):
+            tx = await _cash_payment(
+                session,
+                counterparty_id=cp.id,
+                wallet_id=wallet.id,
+                amount=amount,
+                on=date(2026, 7, 14),
+            )
+            session.add(
+                SupplierPrepayment(
+                    counterparty_id=cp.id,
+                    kind=kind,
+                    wallet_id=wallet.id,
+                    amount=Decimal(amount),
+                    amount_settled=Decimal("0.00"),
+                    status="open",
+                    cashflow_transaction_id=tx.id,
+                )
+            )
+        await session.commit()
+
+        sheet = await build_balance_as_of(session, as_of=date(2026, 7, 31))
+        assert sheet.owner_loans_total == Decimal("230000.00")
+        # Подписка настоящего поставщика осталась там, где ей место.
+        assert sheet.receivable_total == Decimal("9000.00")

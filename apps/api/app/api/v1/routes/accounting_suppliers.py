@@ -1063,6 +1063,10 @@ class CounterpartyBalanceList(BaseModel):
     items: list[CounterpartyBalance]
     receivable_total: float
     payable_total: float
+    # Займы собственникам — своей величиной, как и в расчёте «на дату». Внутри дебиторки
+    # поставщиков они читались как «мы много авансировали поставщиков»: 1,25 млн на фоне
+    # 328 тысяч настоящих авансов.
+    owner_loans_total: float = 0.0
 
 
 class SettledInvoiceRef(BaseModel):
@@ -1196,6 +1200,25 @@ async def list_counterparty_balances(
             .group_by(SupplierPrepayment.counterparty_id)
         )
     ).all()
+    # Займы собственникам отделяются В ИТОГЕ, но НЕ в строках. Карточка собственника обязана
+    # показывать его долг — ради этого контур расчётов с собственниками и делали
+    # (``test_owner_settlements``). Вычеркнуть их из строк значило бы чинить итог ценой того,
+    # что владелец перестанет видеть, кто и сколько должен.
+    #
+    # Правило отбора — то же, что в расчёте «на дату» (``is_owner_loan``): двух разных ответов
+    # на вопрос «сколько нам должны» внутри одного модуля быть не может.
+    owner_ids = set(
+        (
+            await session.scalars(
+                select(SupplierPrepayment.counterparty_id)
+                .where(
+                    SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES),
+                    balance_as_of.is_owner_loan(),
+                )
+                .distinct()
+            )
+        ).all()
+    )
 
     allocated = (
         select(
@@ -1334,7 +1357,9 @@ async def list_counterparty_balances(
 
     cp_ids = set(receivable_by_cp) | set(payable_by_cp) | set(activity_by_cp)
     if not cp_ids:
-        return CounterpartyBalanceList(items=[], receivable_total=0, payable_total=0)
+        return CounterpartyBalanceList(
+            items=[], receivable_total=0, payable_total=0, owner_loans_total=0
+        )
 
     counterparties = (
         await session.execute(
@@ -1370,8 +1395,13 @@ async def list_counterparty_balances(
     )
     return CounterpartyBalanceList(
         items=items,
-        receivable_total=sum(item.receivable for item in items),
+        receivable_total=sum(
+            item.receivable for item in items if item.counterparty_id not in owner_ids
+        ),
         payable_total=sum(item.payable for item in items),
+        owner_loans_total=sum(
+            item.receivable for item in items if item.counterparty_id in owner_ids
+        ),
     )
 
 
