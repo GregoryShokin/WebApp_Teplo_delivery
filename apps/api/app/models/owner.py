@@ -62,6 +62,14 @@ class BusinessOwner(Base):
     started_on: Mapped[date] = mapped_column(Date, nullable=False)
     # Выход из состава. Запись остаётся: прошлые начисления и расчёты с ним никуда не деваются.
     ended_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Вклад в капитал — суммой и датой. Учредительный вклад сделан до начала управленческого
+    # учёта, деньгами он в системе не проходил, и без этой строки он молча сидел бы внутри
+    # балансирующей строки капитала. Вклад ПОСЛЕ начала учёта приходит проводкой ДДС и сюда
+    # не пишется: иначе одна и та же величина посчиталась бы дважды.
+    contribution_amount: Mapped[Decimal] = mapped_column(
+        Numeric(16, 2), nullable=False, default=Decimal("0"), server_default="0"
+    )
+    contributed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -709,3 +709,95 @@ async def test_a_month_without_profit_is_named_not_folded_into_the_opening(
         assert flag is not None
         assert flag.severity == "blocking"
         assert "07.2026" in flag.rows[0]["month"]
+
+
+async def test_founding_contributions_come_from_the_owner_registry(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Учредительный вклад деньгами в системе не проходил — его знает только реестр.
+
+    Владелец 09.08.2026: «вклады собственников — 5 миллионов, каждый по 2,5». В ДДС таких
+    поступлений ноль: деньги внесены до начала управленческого учёта. Без реестра вся сумма
+    молча сидела бы в балансирующей строке, и баланс отвечал бы «капитал такой, потому что
+    актив минус обязательства» вместо «внесли столько, заработали столько».
+
+    Дата вклада обязательна: вклад, о котором известно «когда-то», нельзя отнести ни к одному
+    срезу — и по нему нельзя сказать, был ли он на 31 июля.
+    """
+    from cp_helpers import make_counterparty
+
+    from app.models import BusinessOwner
+    from app.services.balance import assembly as assembly_module
+
+    async def _profit(session, month):  # noqa: ARG001
+        return Decimal("0.00"), "ok", None
+
+    monkeypatch.setattr(assembly_module, "month_net_profit", _profit)
+
+    async with async_session_factory() as session:
+        for name in ("Григорий", "Павел"):
+            owner = await make_counterparty(session, name=name)
+            session.add(
+                BusinessOwner(
+                    counterparty_id=owner.id,
+                    share_percent=Decimal("50.00"),
+                    started_on=date(2026, 1, 1),
+                    contribution_amount=Decimal("2500000.00"),
+                    contributed_on=date(2026, 1, 1),
+                )
+            )
+        # Вклад без даты — знание без места на оси времени, в срез не входит.
+        nameless = await make_counterparty(session, name="Третий")
+        session.add(
+            BusinessOwner(
+                counterparty_id=nameless.id,
+                share_percent=Decimal("1.00"),
+                started_on=date(2026, 1, 1),
+                contribution_amount=Decimal("999999.00"),
+                contributed_on=None,
+            )
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=JULY_END)
+        contributions = _line(assembled, "equity_contributions")
+        assert contributions.amount == Decimal("5000000.00")
+        assert {part["name"] for part in contributions.detail["parts"]} == {"Григорий", "Павел"}
+
+        # Тождество не нарушено: вклад ушёл из балансирующей строки в свою.
+        named = sum(
+            (item.amount or Decimal("0"))
+            for item in assembled.lines
+            if item.group == "Капитал" and item.kind != cat.KIND_MEMO
+        )
+        assert Decimal(named).quantize(Decimal("0.01")) == assembled.equity_plug
+
+
+async def test_a_contribution_made_after_the_snapshot_is_not_in_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вклад, внесённый в августе, в июльском балансе не стоит."""
+    from cp_helpers import make_counterparty
+
+    from app.models import BusinessOwner
+
+    async with async_session_factory() as session:
+        owner = await make_counterparty(session, name="Поздний вкладчик")
+        session.add(
+            BusinessOwner(
+                counterparty_id=owner.id,
+                share_percent=Decimal("10.00"),
+                started_on=date(2026, 1, 1),
+                contribution_amount=Decimal("1000000.00"),
+                contributed_on=date(2026, 8, 15),
+            )
+        )
+        await session.commit()
+
+        assert _line(await assemble(session, as_of=JULY_END), "equity_contributions").amount == (
+            Decimal("0.00")
+        )
+        assert _line(
+            await assemble(session, as_of=date(2026, 8, 31)), "equity_contributions"
+        ).amount == Decimal("1000000.00")

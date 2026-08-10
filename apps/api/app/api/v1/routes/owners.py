@@ -43,6 +43,8 @@ class OwnerRead(BaseModel):
     share_percent: Decimal
     started_on: date
     ended_on: date | None
+    contribution_amount: Decimal
+    contributed_on: date | None
 
 
 class OwnerListRead(BaseModel):
@@ -60,6 +62,10 @@ class OwnerCreate(BaseModel):
     type: Literal["individual", "legal_entity"] = "individual"
     share_percent: Decimal = Field(gt=0, le=100)
     started_on: date | None = None
+    # Учредительный вклад в капитал. Деньгами он в системе не проходил — иначе его принесла бы
+    # проводка ДДС, — и без этого поля он молча сидел бы внутри балансирующей строки капитала.
+    contribution_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    contributed_on: date | None = None
     # Уже заведённый контрагент: человек мог попасть в базу раньше — арендодателем или
     # подрядчиком. Заводить его вторым лицом значило бы расколоть расчёты надвое.
     counterparty_id: uuid.UUID | None = None
@@ -69,6 +75,8 @@ class OwnerUpdate(BaseModel):
     share_percent: Decimal | None = Field(default=None, gt=0, le=100)
     # Дата выхода из состава. Запись остаётся: прошлые начисления никуда не деваются.
     ended_on: date | None = None
+    contribution_amount: Decimal | None = Field(default=None, ge=0)
+    contributed_on: date | None = None
 
 
 def _to_read(row: owner_analytics.OwnerRow) -> OwnerRead:
@@ -80,6 +88,8 @@ def _to_read(row: owner_analytics.OwnerRow) -> OwnerRead:
         share_percent=row.share_percent,
         started_on=row.registration.started_on,
         ended_on=row.registration.ended_on,
+        contribution_amount=row.registration.contribution_amount,
+        contributed_on=row.registration.contributed_on,
     )
 
 
@@ -147,6 +157,8 @@ async def create_owner(
             counterparty_id=counterparty_id,
             share_percent=payload.share_percent,
             started_on=payload.started_on or clock.moscow_today(),
+            contribution_amount=payload.contribution_amount,
+            contributed_on=payload.contributed_on,
         )
     )
     await owner_analytics.ensure_role_marker(session, counterparty_id)
@@ -172,6 +184,10 @@ async def update_owner(
         )
     if payload.share_percent is not None:
         row.share_percent = payload.share_percent
+    if payload.contribution_amount is not None:
+        row.contribution_amount = payload.contribution_amount
+    if payload.contributed_on is not None:
+        row.contributed_on = payload.contributed_on
     if payload.ended_on is not None:
         if payload.ended_on < row.started_on:
             raise HTTPException(

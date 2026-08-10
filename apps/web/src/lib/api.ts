@@ -6183,6 +6183,10 @@ export type OwnerRecord = {
   share_percent: string;
   started_on: string;
   ended_on: string | null;
+  /** Учредительный вклад в капитал. Деньгами он в системе не проходил — иначе его принесла бы
+   *  проводка ДДС, — и без этого поля он молча сидел бы внутри балансирующей строки капитала. */
+  contribution_amount: string;
+  contributed_on: string | null;
 };
 
 export type OwnerListResponse = {
@@ -6202,6 +6206,8 @@ export async function createOwner(payload: {
   name: string;
   inn?: string | null;
   share_percent: string;
+  contribution_amount?: string;
+  contributed_on?: string | null;
 }): Promise<OwnerListResponse> {
   const response = await api.post<OwnerListResponse>("/owners", payload);
   return response.data;
@@ -6209,7 +6215,12 @@ export async function createOwner(payload: {
 
 export async function updateOwner(
   ownerId: string,
-  payload: { share_percent?: string; ended_on?: string },
+  payload: {
+    share_percent?: string;
+    ended_on?: string;
+    contribution_amount?: string;
+    contributed_on?: string;
+  },
 ): Promise<OwnerListResponse> {
   const response = await api.patch<OwnerListResponse>(`/owners/${ownerId}`, payload);
   return response.data;

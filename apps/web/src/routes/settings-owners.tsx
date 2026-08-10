@@ -18,6 +18,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiErrorMessage, createOwner, getOwners } from "@/lib/api";
 
+const money = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
+
+function formatMoney(value: string): string {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${money.format(number)} ₽` : value;
+}
+
 function formatShare(value: string): string {
   const number = Number(value);
   return Number.isFinite(number) ? `${number.toLocaleString("ru-RU")} %` : `${value} %`;
@@ -39,12 +46,22 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
   const [name, setName] = useState("");
   const [inn, setInn] = useState("");
   const [share, setShare] = useState("50");
+  // Учредительный вклад: сумма и дата. Дата обязательна не для порядка — вклад без неё нельзя
+  // отнести ни к одному срезу баланса, и он просто не попадёт ни в один месяц.
+  const [contribution, setContribution] = useState("");
+  const [contributedOn, setContributedOn] = useState("");
 
   const ownersQuery = useQuery({ queryKey: ["owners"], queryFn: () => getOwners() });
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      createOwner({ name: name.trim(), inn: inn.trim() || null, share_percent: share.trim() }),
+      createOwner({
+        name: name.trim(),
+        inn: inn.trim() || null,
+        share_percent: share.trim(),
+        contribution_amount: contribution.trim() || "0",
+        contributed_on: contributedOn.trim() || null,
+      }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["owners"] });
       toast.success("Собственник заведён");
@@ -52,6 +69,8 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
       setName("");
       setInn("");
       setShare("50");
+      setContribution("");
+      setContributedOn("");
     },
     onError: (error) => toast.error(apiErrorMessage(error)),
   });
@@ -115,6 +134,12 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{owner.name}</span>
               <Badge variant="secondary">{formatShare(owner.share_percent)}</Badge>
+              {Number(owner.contribution_amount) > 0 ? (
+                <Badge variant="outline">
+                  вклад {formatMoney(owner.contribution_amount)}
+                  {owner.contributed_on ? ` · ${owner.contributed_on}` : ""}
+                </Badge>
+              ) : null}
               {owner.inn ? <Badge variant="outline">ИНН {owner.inn}</Badge> : null}
               {owner.ended_on ? (
                 <Badge variant="outline" className="text-muted-foreground">
@@ -123,7 +148,9 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
               ) : null}
             </div>
             <span className="text-xs text-muted-foreground">
-              расчёты — в карточке контрагента
+              {Number(owner.contribution_amount) > 0
+                ? "расчёты — в карточке контрагента"
+                : "вклад не указан — в балансе он молча уйдёт в капитал"}
             </span>
           </div>
         ))}
@@ -182,6 +209,32 @@ export function OwnersPanel({ canEdit }: { canEdit: boolean }) {
                 />
               </div>
             </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="owner-contribution">Вклад в капитал, ₽</Label>
+                <Input
+                  id="owner-contribution"
+                  value={contribution}
+                  placeholder="0"
+                  onChange={(event) => setContribution(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="owner-contributed-on">Дата вклада</Label>
+                <Input
+                  id="owner-contributed-on"
+                  type="date"
+                  value={contributedOn}
+                  onChange={(event) => setContributedOn(event.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Вклад, внесённый ДО начала учёта: деньгами он в системе не проходил, и без этой
+              строки в балансе он молча уйдёт в капитал безымянной величиной. Вклад после начала
+              учёта заводить здесь не нужно — он придёт проводкой в ДДС, и запись тут посчитала
+              бы его вторично.
+            </p>
             <DialogFooter>
               <Button
                 type="button"

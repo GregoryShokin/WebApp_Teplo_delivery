@@ -24,7 +24,14 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BalanceManualValue, IikoProduct, PnlIikoStockFact, PnlProductWhitelist
+from app.models import (
+    BalanceManualValue,
+    BusinessOwner,
+    Counterparty,
+    IikoProduct,
+    PnlIikoStockFact,
+    PnlProductWhitelist,
+)
 from app.services import (
     asset_balance,
     counterparty_balance_as_of,
@@ -859,6 +866,24 @@ async def _equity_lines(
         session, date_from=ACCOUNTING_START - timedelta(days=1), date_to=as_of
     )
 
+    # Учредительные вклады из реестра собственников. Деньгами они в системе не проходили —
+    # иначе их принесла бы проводка ДДС, — и без реестра 5 млн молча сидели бы внутри
+    # балансирующей строки. Дата вклада обязательна для попадания в срез: вклад, о котором
+    # известно «когда-то», нельзя отнести ни к одному месяцу.
+    founding_rows = (
+        await session.execute(
+            select(Counterparty.name, BusinessOwner.contribution_amount)
+            .join(Counterparty, Counterparty.id == BusinessOwner.counterparty_id)
+            .where(
+                BusinessOwner.contribution_amount > 0,
+                BusinessOwner.contributed_on.is_not(None),
+                BusinessOwner.contributed_on <= as_of,
+            )
+            .order_by(BusinessOwner.contribution_amount.desc())
+        )
+    ).all()
+    founding = _money(sum((row[1] for row in founding_rows), _ZERO))
+
     retained = _ZERO
     # Прибыль текущего месяца отдельно и с правом быть НЕИЗВЕСТНОЙ: ноль здесь прочитался бы
     # как «месяц отработали в ноль», то есть как факт вместо его отсутствия.
@@ -876,21 +901,30 @@ async def _equity_lines(
                 current_month = profit
         month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
 
-    named = movements.contributions - movements.returns - movements.dividends + retained
+    contributions = _money(movements.contributions) + founding
+    named = contributions - movements.returns - movements.dividends + retained
     opening = _money(total - named)
 
     lines = [
+        _line(
+            cat.CATALOG_BY_CODE["equity_contributions"],
+            contributions,
+            cat.ST_OK,
+            source_kind="owner_registry",
+            detail={
+                "parts": [{"name": row[0], "amount": str(_money(row[1]))} for row in founding_rows]
+                + (
+                    [{"name": "Поступления деньгами", "amount": str(movements.contributions)}]
+                    if movements.contributions
+                    else []
+                )
+            },
+        ),
         _line(
             cat.CATALOG_BY_CODE["equity_opening"],
             opening,
             "plug",
             source_kind="derived",
-        ),
-        _line(
-            cat.CATALOG_BY_CODE["equity_contributions"],
-            _money(movements.contributions),
-            cat.ST_OK,
-            source_kind="dds_articles",
         ),
         # Изъятия капитал УМЕНЬШАЮТ, поэтому уходят со знаком минус: подытог группы складывает
         # строки как есть, и положительное число здесь раздуло бы капитал вдвое от изъятого.
