@@ -486,8 +486,9 @@ export function OperationClassifyDialog({
           asset_id: requiresAsset(item) ? item.assetId || null : null,
           // Месяц уходит только со строки, где он действительно применим (без контрагента,
           // не перевод, не зарплата) — бэк повторяет тот же гейт жёсткой ошибкой.
-          expense_month:
-            allowsExpenseMonth(item) && item.expenseMonth ? `${item.expenseMonth}-01` : null,
+          // Safari может вернуть из type="month" локализованное «июль», а не YYYY-MM.
+          // Бэк принимает оба вида и привязывает короткий месяц к году самой проводки.
+          expense_month: allowsExpenseMonth(item) && item.expenseMonth ? item.expenseMonth : null,
         })),
         counterparty_id: null,
       });

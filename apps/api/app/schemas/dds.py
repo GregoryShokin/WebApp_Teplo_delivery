@@ -421,7 +421,9 @@ class CashflowSplitItem(BaseModel):
     asset_id: uuid.UUID | None = None
     # Месяц признания расхода в ОПиУ («Оплата за Июнь» наличными в июле). Только для доли
     # без контрагента: у привязанного платежа месяц определяет документ в ДЗ/КЗ.
-    expense_month: date | None = None
+    # API принимает и дату, и пользовательское представление месяца. В строке ниже по потоку
+    # оно нормализуется с годом проводки — это позволяет Safari прислать локализованное «июль».
+    expense_month: date | str | None = None
 
 
 class CashflowClassifyRequest(BaseModel):

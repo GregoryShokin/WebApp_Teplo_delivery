@@ -171,6 +171,33 @@ def test_split_preserves_balance(
     assert all(r.article_id is not None for r in rows)
 
 
+def test_split_accepts_localized_expense_month(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Safari присылал ``июль-01``; год берём из самой проводки, а день отбрасываем."""
+    ids = _seed_single(async_session_factory)
+
+    response = client.post(
+        f"/api/v1/dds/transactions/{ids['txn_id']}/classify",
+        json={
+            "action": "split",
+            "splits": [
+                {
+                    "article_id": ids["food_id"],
+                    "amount": "500.00",
+                    "expense_month": "июль-01",
+                }
+            ],
+        },
+        headers=HEADERS,
+    )
+
+    assert response.status_code == 200, response.text
+    rows = _rows_for(async_session_factory, ids["wallet_id"])
+    assert len(rows) == 1
+    assert rows[0].expense_month == date(2026, 7, 1)
+
+
 def test_split_amount_mismatch_rejected(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:

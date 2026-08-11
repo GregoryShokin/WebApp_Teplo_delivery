@@ -22,8 +22,10 @@
 
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +46,129 @@ class PeriodClosed(ValueError):
 # 76 580 ₽ живых июльских предоплат (Директ, Синапсис, ДоксИнБокс), и расход июля недосчитался
 # бы их — при том что услуга оказана и деньги ушли.
 ACCOUNTING_START = date(2026, 7, 1)
+
+
+_MONTH_NAMES: dict[str, int] = {
+    "январь": 1,
+    "января": 1,
+    "янв": 1,
+    "февраль": 2,
+    "февраля": 2,
+    "фев": 2,
+    "март": 3,
+    "марта": 3,
+    "мар": 3,
+    "апрель": 4,
+    "апреля": 4,
+    "апр": 4,
+    "май": 5,
+    "мая": 5,
+    "июнь": 6,
+    "июня": 6,
+    "июн": 6,
+    "июль": 7,
+    "июля": 7,
+    "июл": 7,
+    "август": 8,
+    "августа": 8,
+    "авг": 8,
+    "сентябрь": 9,
+    "сентября": 9,
+    "сен": 9,
+    "сент": 9,
+    "октябрь": 10,
+    "октября": 10,
+    "окт": 10,
+    "ноябрь": 11,
+    "ноября": 11,
+    "ноя": 11,
+    "декабрь": 12,
+    "декабря": 12,
+    "дек": 12,
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def parse_month_input(value: Any, *, default_year: int | None = None) -> date | None:
+    """Принять человеческое представление месяца и вернуть его первое число.
+
+    ``default_year`` нужен для локализованных значений браузера вроде ``июль`` или
+    ``июль-01``. В разборе ДДС это год самой проводки, поэтому короткий ввод не может
+    случайно уехать в текущий календарный год сервера.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return date(value.year, value.month, 1)
+    if isinstance(value, date):
+        return value.replace(day=1)
+
+    text = str(value).strip().casefold().replace("ё", "е")
+    if not text:
+        return None
+
+    def build(year: int, month: int) -> date:
+        try:
+            return date(year, month, 1)
+        except ValueError as error:
+            raise ValueError(f"Некорректный месяц расхода: {value!r}") from error
+
+    # Год первым: 2026-07, 2026/7/15, 2026.07.01, 202607 и ISO datetime.
+    match = re.match(r"^(\d{4})\s*[-./]\s*(\d{1,2})(?:\s*[-./]\s*\d{1,2})?(?:[t\s].*)?$", text)
+    if match:
+        return build(int(match.group(1)), int(match.group(2)))
+    match = re.fullmatch(r"(\d{4})(\d{2})", text)
+    if match:
+        return build(int(match.group(1)), int(match.group(2)))
+
+    # Обычная русская дата или месяц с годом: 01.07.2026, 07.2026, 7/2026.
+    match = re.fullmatch(r"\d{1,2}\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{4})", text)
+    if match:
+        return build(int(match.group(2)), int(match.group(1)))
+    match = re.fullmatch(r"(\d{1,2})\s*[-./]\s*(\d{4})", text)
+    if match:
+        return build(int(match.group(2)), int(match.group(1)))
+
+    words = re.findall(r"[a-zа-я]+", text)
+    named_month = next((_MONTH_NAMES[word] for word in words if word in _MONTH_NAMES), None)
+    if named_month is not None:
+        year_match = re.search(r"(?<!\d)(\d{4})(?!\d)", text)
+        year = int(year_match.group(1)) if year_match else default_year
+        if year is not None:
+            return build(year, named_month)
+
+    # Короткое число означает номер месяца в году проводки: 7, 07, 07-01.
+    match = re.fullmatch(r"(\d{1,2})(?:\s*[-./]\s*\d{1,2})?", text)
+    if match and default_year is not None:
+        return build(default_year, int(match.group(1)))
+
+    raise ValueError(
+        "Не удалось распознать месяц расхода. Можно указать, например: "
+        "2026-07, 07.2026, 1 июля 2026 или июль"
+    )
 
 
 def month_start(value: date) -> date:

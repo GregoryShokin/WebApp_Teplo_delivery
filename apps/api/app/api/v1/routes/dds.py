@@ -2334,7 +2334,10 @@ async def classify_transaction_full(
                         location_id=item.location_id,
                         lease_id=item.lease_id,
                         asset_id=item.asset_id,
-                        expense_month=item.expense_month,
+                        expense_month=accounting_periods.parse_month_input(
+                            item.expense_month,
+                            default_year=txn.operation_date.year,
+                        ),
                     )
                     for item in payload.splits
                 ],
