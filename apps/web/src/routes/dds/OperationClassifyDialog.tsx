@@ -219,8 +219,10 @@ export function OperationClassifyDialog({
           // источника нет — берём его прямо из строки журнала. Иначе переоткрытие разбора
           // отдало бы пустое поле, и «Разнести» сняло бы привязку к объекту.
           assetId: isOperation ? "" : row.asset_id ?? "",
-          // Тот же мотив: без чтения из строки переоткрытие сняло бы разметку месяца.
-          expenseMonth: isOperation ? "" : (row.expense_month ?? "").slice(0, 7),
+          // С контрагентом месяц определяет документ в ДЗ/КЗ. Не поднимаем устаревшую ручную
+          // разметку обратно в форму: она должна исчезнуть при первой же пересборке проводки.
+          expenseMonth:
+            isOperation || row.counterparty_id ? "" : (row.expense_month ?? "").slice(0, 7),
         },
       ]);
       setRememberAsRule(false);
@@ -412,14 +414,9 @@ export function OperationClassifyDialog({
 
   const isTransferRow = (articleId: string) => transferArticleIds.has(articleId);
 
-  // Месяц признания расхода применим к ручной проводке с обычной расходной статьёй. У
-  // платежа С контрагентом месяц определяет документ в ДЗ/КЗ — кроме периода ДО начала
-  // учёта: туда ДЗ/КЗ не заглядывает вовсе, документов того периода нет и не будет, и без
-  // этой пометки доплата за прошлый период вечно висит «ждём документ». Бэкенд повторяет
-  // ту же границу жёсткой ошибкой.
-  // Границу «с контрагентом — только до начала учёта» держит СЕРВЕР и отвечает внятной
-  // ошибкой: прятать поле по этому признаку нельзя — чтобы поставить июнь платежу с
-  // контрагентом, поле должно быть видно ДО того, как месяц выбран.
+  // Месяц признания расхода применим к ручной проводке с обычной расходной статьёй. Поле
+  // остаётся на месте и после выбора контрагента, но становится неактивным: у такого платежа
+  // месяц определяет документ в ДЗ/КЗ, поэтому второго источника истины быть не должно.
   const allowsExpenseMonth = (item: SplitRow) =>
     !isOperation &&
     item.articleId !== "none" &&
@@ -428,7 +425,14 @@ export function OperationClassifyDialog({
     !employeeAdvanceArticleIds.has(item.articleId);
 
   function updateRow(key: string, patch: Partial<SplitRow>) {
-    setRows((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+    setRows((current) =>
+      current.map((item) => {
+        if (item.key !== key) return item;
+        const next = { ...item, ...patch };
+        if (next.counterpartyId || next.createNewCounterparty) next.expenseMonth = "";
+        return next;
+      }),
+    );
   }
 
   function addRow() {
@@ -531,8 +535,8 @@ export function OperationClassifyDialog({
           location_id: item.locationId || null,
           lease_id: item.leaseId || null,
           asset_id: requiresAsset(item) ? item.assetId || null : null,
-          // Месяц уходит только со строки, где он действительно применим (без контрагента,
-          // не перевод, не зарплата) — бэк повторяет тот же гейт жёсткой ошибкой.
+          // При выборе контрагента месяц уже сброшен и поле заблокировано. Дополнительно не
+          // отправляем его здесь, чтобы устаревшее состояние формы не стало вторым рулём.
           // Дропдаун хранит единый YYYY-MM; бэк нормализует его к первому числу месяца.
           expense_month: allowsExpenseMonth(item) && item.expenseMonth ? item.expenseMonth : null,
         })),
@@ -833,13 +837,14 @@ export function OperationClassifyDialog({
                       <div
                         className="flex items-center gap-1.5 text-xs text-muted-foreground"
                         title={
-                          item.counterpartyId
-                            ? "У платежа с контрагентом месяц расхода определяет документ в ДЗ/КЗ. Указать вручную можно только период ДО начала учёта — за него документов уже не будет («Оплата за Июнь» наличными в июле)."
+                          item.counterpartyId || item.createNewCounterparty
+                            ? "Месяц расхода определяет документ контрагента в ДЗ/КЗ"
                             : "Пусто — расход в месяце платежа. Заполняется, когда платёж закрывает другой месяц («Оплата за Июнь» наличными в июле)."
                         }
                       >
                         <span>Месяц расхода</span>
                         <Select
+                          disabled={Boolean(item.counterpartyId || item.createNewCounterparty)}
                           onValueChange={(value) =>
                             updateRow(item.key, {
                               expenseMonth: value === PAYMENT_MONTH_VALUE ? "" : value,
