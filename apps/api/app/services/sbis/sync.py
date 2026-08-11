@@ -26,6 +26,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -185,9 +186,7 @@ async def _upsert_documents(
             doc_ids.append(doc_id)
     existing_rows = (
         (
-            await session.execute(
-                select(SbisDocument).where(SbisDocument.sbis_doc_id.in_(doc_ids))
-            )
+            await session.execute(select(SbisDocument).where(SbisDocument.sbis_doc_id.in_(doc_ids)))
         ).scalars()
         if doc_ids
         else []
@@ -304,7 +303,12 @@ async def _find_existing_invoice(
     return None
 
 
-def _service_period_fields(doc: SbisDocument, *, required: bool) -> dict[str, Any]:
+def _service_period_fields(
+    doc: SbisDocument,
+    *,
+    required: bool,
+    extra_texts: tuple[str, ...] = (),
+) -> dict[str, Any]:
     """Период услуги из текстов СБИС-документа (название документа + названия вложений)
     существующим regex-слоем «Страницы на оплату». Несколько периодов = ambiguous —
     даты не выбираем, счёт уходит на ручной разбор (блок в карточке накладной)."""
@@ -312,6 +316,7 @@ def _service_period_fields(doc: SbisDocument, *, required: bool) -> dict[str, An
     raw_doc = (doc.raw or {}).get("Документ") or {}
     for attachment in raw_doc.get("Вложение") or []:
         texts.append(str(attachment.get("Название") or ""))
+    texts.extend(extra_texts)
     combined = " \n".join(text for text in texts if text)
     candidates = _extract_service_periods(combined) if combined else []
     if len(candidates) == 1:
@@ -328,14 +333,82 @@ def _service_period_fields(doc: SbisDocument, *, required: bool) -> dict[str, An
     return {"service_period_status": "missing" if required else "not_required"}
 
 
+def _xml_texts(content: bytes) -> tuple[str, ...]:
+    """Текстовые значения формализованного XML УПД без привязки к версии схемы ФНС."""
+    try:
+        root = ET.fromstring(content)
+    except (ET.ParseError, ValueError):
+        return ()
+    texts: list[str] = []
+    for element in root.iter():
+        texts.extend(str(value) for value in element.attrib.values() if value)
+        if element.text and element.text.strip():
+            texts.append(element.text.strip())
+    return tuple(texts)
+
+
+async def _service_period_fields_with_xml(
+    doc: SbisDocument,
+    *,
+    required: bool,
+    client: SbisClient | None,
+) -> tuple[dict[str, Any], bool]:
+    """Период из метаданных, затем из содержимого XML УПД.
+
+    В реестре СБИС имя вложения содержит только дату документа. Фактический месяц услуги
+    находится в ``СведТов/@НаимТов``: у Синапсиса УПД от 31.07 прямо пишет «Июл. 2026».
+    Второй элемент результата сообщает, была ли реально предпринята XML-проверка.
+    """
+    base = _service_period_fields(doc, required=required)
+    if base.get("service_period_status") in ("ready", "ambiguous"):
+        return base, False
+    if client is None or doc.doc_type != "ДокОтгрВх" or not doc.link_xml:
+        return base, False
+    try:
+        content = await client.download_file(doc.link_xml)
+    except Exception as exc:  # noqa: BLE001 — один недоступный XML не валит весь синк
+        logger.warning("СБИС УПД %s: XML не скачался: %s", doc.sbis_doc_id, exc)
+        return base, False
+    texts = _xml_texts(content)
+    if not texts:
+        return base, True
+    enriched = _service_period_fields(doc, required=required, extra_texts=texts)
+    return enriched, True
+
+
+def _xml_period_checked(invoice: SupplierInvoice, doc: SbisDocument) -> bool:
+    checked = (invoice.raw_payload or {}).get("sbis_xml_period_checked_ids") or []
+    return doc.sbis_doc_id in checked
+
+
+def _mark_xml_period_checked(invoice: SupplierInvoice, doc: SbisDocument) -> None:
+    payload = invoice.raw_payload or {}
+    checked = list(payload.get("sbis_xml_period_checked_ids") or [])
+    if doc.sbis_doc_id not in checked:
+        checked.append(doc.sbis_doc_id)
+    invoice.raw_payload = {**payload, "sbis_xml_period_checked_ids": checked}
+
+
 async def _enrich_duplicate_invoice(
-    session: AsyncSession, invoice: SupplierInvoice, doc: SbisDocument
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    doc: SbisDocument,
+    *,
+    client: SbisClient | None = None,
 ) -> None:
     """Дубль из ЭДО обогащает существующую накладную тем, чего в ней нет; заполненное
     не перетираем. Период услуги снимает блок отправки в банк (period_required-гейт),
     НДС из формализованного документа точнее распознанного из PDF."""
-    if invoice.service_period_status == "missing":
-        period = _service_period_fields(doc, required=True)
+    if (
+        invoice.service_period_status != "ready"
+        and invoice.service_period_start is None
+        and invoice.service_period_end is None
+    ):
+        period, xml_checked = await _service_period_fields_with_xml(
+            doc, required=True, client=client
+        )
+        if xml_checked:
+            _mark_xml_period_checked(invoice, doc)
         if period.get("service_period_status") == "ready":
             invoice.service_period_start = period["service_period_start"]
             invoice.service_period_end = period["service_period_end"]
@@ -359,6 +432,7 @@ async def _materialize_document(
     result: SbisSyncResult,
     *,
     profile: CounterpartyPayableProfile | None = None,
+    client: SbisClient | None = None,
 ) -> None:
     # Идемпотентность на случай дрейфа: счёт из этого же СБИС-документа уже есть.
     existing = await session.scalar(
@@ -373,6 +447,7 @@ async def _materialize_document(
         existing.operational_scope = "finance"
         doc.invoice_id = existing.id
         doc.intake_status = "materialized"
+        await _enrich_duplicate_invoice(session, existing, doc, client=client)
         return
 
     duplicate = await _find_existing_invoice(session, counterparty.id, doc)
@@ -380,7 +455,7 @@ async def _materialize_document(
         doc.invoice_id = duplicate.id
         doc.intake_status = "duplicate"
         result.duplicates += 1
-        await _enrich_duplicate_invoice(session, duplicate, doc)
+        await _enrich_duplicate_invoice(session, duplicate, doc, client=client)
         return
 
     # Профиль приходит из балк-кэша маршрутизации; одиночный SELECT — только для
@@ -391,15 +466,13 @@ async def _materialize_document(
                 CounterpartyPayableProfile.counterparty_id == counterparty.id
             )
         )
-    period = _service_period_fields(
-        doc, required=bool(profile and profile.service_period_required)
+    period, xml_checked = await _service_period_fields_with_xml(
+        doc,
+        required=bool(profile and profile.service_period_required),
+        client=client,
     )
     vat_total = Decimal("0")
-    if (
-        doc.amount is not None
-        and doc.amount_wo_vat is not None
-        and doc.amount > doc.amount_wo_vat
-    ):
+    if doc.amount is not None and doc.amount_wo_vat is not None and doc.amount > doc.amount_wo_vat:
         vat_total = doc.amount - doc.amount_wo_vat
 
     invoice = SupplierInvoice(
@@ -426,6 +499,7 @@ async def _materialize_document(
             "attachment_kind": doc.attachment_kind,
             "regulation": doc.regulation,
             "state": doc.state_name,
+            **({"sbis_xml_period_checked_ids": [doc.sbis_doc_id]} if xml_checked else {}),
         },
         **period,
     )
@@ -500,9 +574,7 @@ async def _send_attachment_to_recognition(
         content=content,
     )
     existing = await session.scalar(
-        select(EmailInvoiceIntake).where(
-            EmailInvoiceIntake.attachment_sha256 == fetched.sha256
-        )
+        select(EmailInvoiceIntake).where(EmailInvoiceIntake.attachment_sha256 == fetched.sha256)
     )
     if existing is None:
         settings = get_settings()
@@ -579,9 +651,7 @@ async def _route_package_invoices(
         (
             await session.scalars(
                 select(EmailInvoiceIntake.message_id).where(
-                    EmailInvoiceIntake.message_id.in_(
-                        [f"sbis:{doc.sbis_doc_id}" for doc in docs]
-                    )
+                    EmailInvoiceIntake.message_id.in_([f"sbis:{doc.sbis_doc_id}" for doc in docs])
                 )
             )
         ).all()
@@ -608,6 +678,7 @@ async def _route_documents(
     переразбор после её настройки (см. ``reroute_counterparty_documents``): человек
     только что решил судьбу поставщика и ждёт результата сейчас, а не через час.
     """
+    period_client = client
     client = client or SbisClient()
     filters = [
         SbisDocument.intake_status.in_(("mirror", "new_counterparty")),
@@ -643,9 +714,7 @@ async def _route_documents(
     cache: dict[str, Counterparty] = {}
     doc_inns = {doc.counterparty_inn for doc in docs if doc.counterparty_inn}
     if doc_inns:
-        known = await session.scalars(
-            select(Counterparty).where(Counterparty.inn.in_(doc_inns))
-        )
+        known = await session.scalars(select(Counterparty).where(Counterparty.inn.in_(doc_inns)))
         cache = {cp.inn: cp for cp in known if cp.inn}
     # Профили материализуемых карточек — тоже пачкой (нужны для срока оплаты и периода).
     profile_cache: dict[uuid.UUID, CounterpartyPayableProfile] = {}
@@ -701,8 +770,12 @@ async def _route_documents(
             and doc.amount is not None
         ):
             await _materialize_document(
-                session, doc, counterparty, result,
+                session,
+                doc,
+                counterparty,
+                result,
                 profile=profile_cache.get(counterparty.id),
+                client=period_client,
             )
         elif counterparty.id in channel_ids and (doc.doc_type or "") == "КоррВх":
             # Неформализованный счёт ходит письмом (сумма только в PDF) —
@@ -712,6 +785,43 @@ async def _route_documents(
                 doc.intake_status = "mirror"
         else:
             doc.intake_status = "mirror"
+
+
+async def _repair_materialized_service_periods(
+    session: AsyncSession,
+    client: SbisClient,
+    *,
+    counterparty_id: uuid.UUID | None = None,
+) -> None:
+    """Однократно дочитать XML у уже созданных УПД без периода услуги.
+
+    Маршрутизация намеренно не трогает ``materialized``/``duplicate`` повторно. Поэтому
+    одного исправления приёма новых документов недостаточно: уже загруженный УПД Синапсиса
+    остался бы без июля навсегда. Маркер в payload не даёт скачивать один XML каждый час.
+    """
+    filters = [
+        SbisDocument.invoice_id.is_not(None),
+        SbisDocument.doc_type == "ДокОтгрВх",
+        SbisDocument.link_xml.is_not(None),
+        SbisDocument.intake_status.in_(("materialized", "duplicate")),
+        SupplierInvoice.service_period_status != "ready",
+        SupplierInvoice.service_period_start.is_(None),
+        SupplierInvoice.service_period_end.is_(None),
+    ]
+    if counterparty_id is not None:
+        filters.append(SbisDocument.counterparty_id == counterparty_id)
+    rows = (
+        await session.execute(
+            select(SbisDocument, SupplierInvoice)
+            .join(SupplierInvoice, SupplierInvoice.id == SbisDocument.invoice_id)
+            .options(undefer(SbisDocument.raw))
+            .where(*filters)
+        )
+    ).all()
+    for doc, invoice in rows:
+        if _xml_period_checked(invoice, doc):
+            continue
+        await _enrich_duplicate_invoice(session, invoice, doc, client=client)
 
 
 async def _match_documents(session: AsyncSession, result: SbisSyncResult) -> None:
@@ -825,6 +935,8 @@ async def reroute_counterparty_documents(
     try:
         await _route_documents(session, result, client, counterparty_id=counterparty_id)
         await session.flush()
+        await _repair_materialized_service_periods(session, client, counterparty_id=counterparty_id)
+        await session.flush()
         await _route_package_invoices(session, result, client, counterparty_id=counterparty_id)
         await session.commit()
     finally:
@@ -857,6 +969,8 @@ async def sync_sbis_documents(
         await _upsert_documents(session, items, result)
         await session.flush()
         await _route_documents(session, result, client)
+        await session.flush()
+        await _repair_materialized_service_periods(session, client)
         await session.flush()
         # После маршрутизации: у свежематериализованных пакетов забираем PDF счёта на оплату.
         await _route_package_invoices(session, result, client)

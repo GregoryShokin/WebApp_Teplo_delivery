@@ -335,6 +335,13 @@ export async function fetchRecognitionLedger(month: string): Promise<Recognition
   return response.data;
 }
 
+export async function setInvoiceServicePeriod(
+  invoiceId: string,
+  period: { service_period_start: string; service_period_end: string },
+): Promise<void> {
+  await api.patch(`/counterparties/invoices/${invoiceId}/service-period`, period);
+}
+
 /** Строка расшифровки. `kind` решает, как её читать, а не как покрасить. */
 export type DrillRowKind = "included" | "waiting" | "excluded" | "info";
 

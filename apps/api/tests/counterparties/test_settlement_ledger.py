@@ -115,8 +115,82 @@ async def test_payment_then_document_nets_to_zero(
         assert ledger.closing_balance == Decimal("0.00")
         assert ledger.overdue_amount == Decimal("0")
         payment_row = next(row for row in ledger.rows if row.kind == "payment")
+        document_row = next(row for row in ledger.rows if row.kind == "document")
         assert payment_row.status == "ok"
         assert payment_row.uncovered == Decimal("0")
+        assert payment_row.period_assumed is False
+        # Дата УПД не подменяет период услуги. Пока период не заполнен, сверка показывает
+        # пустое значение так же, как леджер признания ОПиУ.
+        assert document_row.period_start is None
+        assert document_row.period_end is None
+        assert document_row.period_assumed is False
+
+
+async def test_late_month_payment_period_is_marked_as_assumption(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж после 16-го относим к следующему месяцу только как рабочую гипотезу."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис", inn="3525357535")
+        wallet = await make_wallet(session, code="tbank-ledger-assumed", name="Т-Банк")
+        await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="13000.00",
+            on=date(2026, 7, 22),
+        )
+        await session.commit()
+
+        ledger = await build_ledger(session, cp.id, today=date(2026, 8, 1))
+        row = ledger.rows[0]
+        assert (row.period_start, row.period_end) == (
+            date(2026, 8, 1),
+            date(2026, 8, 31),
+        )
+        assert row.period_assumed is True
+
+
+async def test_paid_bill_does_not_pretend_to_be_a_closing_document(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Оплата счёта за август остаётся дебиторкой до УПД, даже если счёт связан с платежом."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис-счёт", inn="3525357536")
+        wallet = await make_wallet(session, code="tbank-ledger-bill", name="Т-Банк")
+        tx, _prepayment = await _payment(
+            session,
+            counterparty_id=cp.id,
+            wallet_id=wallet.id,
+            amount="13000.00",
+            on=date(2026, 7, 22),
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="13000.00",
+            number="AUG-BILL",
+            doc_kind="bill",
+            invoice_date=date(2026, 7, 15),
+            payment_status="paid",
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=bill.id,
+                cashflow_transaction_id=tx.id,
+                amount=Decimal("13000.00"),
+                source_kind="cash",
+            )
+        )
+        await session.commit()
+
+        ledger = await build_ledger(session, cp.id, today=date(2026, 8, 11))
+        assert len(ledger.rows) == 1
+        assert ledger.rows[0].kind == "payment"
+        assert ledger.rows[0].status == "waiting"
+        assert ledger.rows[0].uncovered == Decimal("13000.00")
+        assert ledger.closing_balance == Decimal("13000.00")
 
 
 async def test_payment_without_document_becomes_overdue_after_deadline(

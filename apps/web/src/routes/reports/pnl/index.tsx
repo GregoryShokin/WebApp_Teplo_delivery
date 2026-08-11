@@ -18,7 +18,16 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -45,6 +54,7 @@ import {
   fetchPnlLineDrill,
   fetchPnlReport,
   fetchRecognitionLedger,
+  setInvoiceServicePeriod,
   confirmWorkupReview,
   fetchWorkupReview,
   rejectWorkupReview,
@@ -64,6 +74,7 @@ import {
   type PnlLine,
   type PnlReport,
   type RecognitionLedger,
+  type RecognitionLedgerRow,
 } from "./api";
 
 const MONTH_NAMES = [
@@ -1301,8 +1312,15 @@ const RECOGNITION_STATUS = {
   missing_period: { label: "нет периода", variant: "destructive" as const },
 };
 
-function RecognitionLedgerView({ ledger }: { ledger: RecognitionLedger }) {
+function RecognitionLedgerView({
+  ledger,
+  onReload,
+}: {
+  ledger: RecognitionLedger;
+  onReload: () => void;
+}) {
   const totals = ledger.totals;
+  const [editingPeriod, setEditingPeriod] = useState<RecognitionLedgerRow | null>(null);
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -1348,7 +1366,17 @@ function RecognitionLedgerView({ ledger }: { ledger: RecognitionLedger }) {
                       </div>
                     </td>
                     <td className="py-2 whitespace-nowrap">
-                      {formatPeriod(row.service_period_start, row.service_period_end)}
+                      <div>{formatPeriod(row.service_period_start, row.service_period_end)}</div>
+                      {row.status === "missing_period" && row.source_kind === "invoice" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-1 h-7"
+                          onClick={() => setEditingPeriod(row)}
+                        >
+                          Заполнить период
+                        </Button>
+                      ) : null}
                     </td>
                     <td className="py-2 text-right font-medium whitespace-nowrap tabular-nums">
                       {formatMoney(row.amount)}
@@ -1360,7 +1388,94 @@ function RecognitionLedgerView({ ledger }: { ledger: RecognitionLedger }) {
           </table>
         </Card>
       )}
+      {editingPeriod ? (
+        <InvoicePeriodDialog
+          row={editingPeriod}
+          onClose={() => setEditingPeriod(null)}
+          onSaved={() => {
+            setEditingPeriod(null);
+            onReload();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function InvoicePeriodDialog({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: RecognitionLedgerRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [saving, setSaving] = useState(false);
+  const valid = Boolean(start && end && end >= start);
+
+  const save = async () => {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await setInvoiceServicePeriod(row.source_id, {
+        service_period_start: start,
+        service_period_end: end,
+      });
+      toast.success("Период услуги заполнен, расход пересчитан");
+      onSaved();
+    } catch (cause) {
+      toast.error(apiErrorMessage(cause, "Не удалось заполнить период услуги"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open && !saving ? onClose() : undefined)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Период услуги</DialogTitle>
+          <DialogDescription>
+            {row.counterparty_name} · {formatMoney(row.amount)} ₽
+          </DialogDescription>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Укажите фактический период из закрывающего документа. После сохранения расход попадёт в
+          соответствующий месяц ОПиУ.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="invoice-period-start">С</Label>
+            <Input
+              id="invoice-period-start"
+              type="date"
+              value={start}
+              onChange={(event) => setStart(event.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="invoice-period-end">По</Label>
+            <Input
+              id="invoice-period-end"
+              type="date"
+              value={end}
+              onChange={(event) => setEnd(event.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            Отмена
+          </Button>
+          <Button onClick={save} disabled={!valid || saving}>
+            {saving ? "Сохраняем…" : "Сохранить"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1678,7 +1793,10 @@ export function PnlRoute() {
             <LedgerMessage>Загружаем признание расходов…</LedgerMessage>
           ) : null}
           {!recognitionLedger.loading && recognitionLedger.data ? (
-            <RecognitionLedgerView ledger={recognitionLedger.data} />
+            <RecognitionLedgerView
+              ledger={recognitionLedger.data}
+              onReload={recognitionLedger.reload}
+            />
           ) : null}
         </TabsContent>
       </Tabs>

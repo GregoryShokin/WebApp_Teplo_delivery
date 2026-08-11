@@ -63,8 +63,9 @@ const LEDGER = {
       amount: 3230,
       title: "УПД № 5541",
       subtitle: null,
-      period_start: "2026-06-01",
-      period_end: "2026-06-30",
+      period_start: null,
+      period_end: null,
+      period_assumed: false,
       uncovered: 0,
       status: "ok",
       expected_by: null,
@@ -81,6 +82,7 @@ const LEDGER = {
       subtitle: "Оплата интернета",
       period_start: "2026-06-01",
       period_end: "2026-06-30",
+      period_assumed: false,
       uncovered: 0,
       status: "ok",
       expected_by: "2026-06-30",
@@ -97,6 +99,7 @@ const LEDGER = {
       subtitle: "Оплата интернета",
       period_start: "2026-05-01",
       period_end: "2026-05-31",
+      period_assumed: true,
       uncovered: 3230,
       status: "overdue",
       expected_by: "2026-05-31",
@@ -217,6 +220,9 @@ test("клик по разрыву открывает сверку с бегущ
   await expect(card.getByText("документа нет · 62 дн")).toBeVisible();
   // Июнь закрыт полностью — по нему претензий нет.
   await expect(card.getByText("закрыт полностью")).toBeVisible();
+  // Дата УПД не выдаётся за период услуги, а расчётный период платежа помечен как гипотеза.
+  await expect(card.getByText("не заполнен")).toBeVisible();
+  await expect(card.getByText("≈ май 2026")).toBeVisible();
 });
 
 test("кредиторка не превращается в «не число», когда есть налоговый долг", async ({ page }) => {

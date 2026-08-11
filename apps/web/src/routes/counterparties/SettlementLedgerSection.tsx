@@ -37,7 +37,7 @@ function monthTitle(month: string): string {
 }
 
 function periodLabel(row: LedgerRow): string {
-  if (!row.period_start || !row.period_end) return "—";
+  if (!row.period_start || !row.period_end) return "не заполнен";
   const start = new Date(row.period_start);
   const end = new Date(row.period_end);
   // Целый календарный месяц — самый частый случай: показываем его словом, а не двумя датами.
@@ -45,8 +45,10 @@ function periodLabel(row: LedgerRow): string {
     start.getDate() === 1 &&
     start.getMonth() === end.getMonth() &&
     end.getDate() === new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate();
-  if (wholeMonth) return monthTitle(row.period_start.slice(0, 7));
-  return `${formatDate(row.period_start)} — ${formatDate(row.period_end)}`;
+  const value = wholeMonth
+    ? monthTitle(row.period_start.slice(0, 7))
+    : `${formatDate(row.period_start)} — ${formatDate(row.period_end)}`;
+  return row.period_assumed ? `≈ ${value}` : value;
 }
 
 function StatusCell({ row }: { row: LedgerRow }) {
@@ -242,7 +244,14 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
                         <div className="text-xs text-muted-foreground">{row.subtitle}</div>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    <TableCell
+                      className="text-xs text-muted-foreground"
+                      title={
+                        row.period_assumed
+                          ? "Предположение по дате платежа — период не заполнен вручную"
+                          : undefined
+                      }
+                    >
                       {periodLabel(row)}
                     </TableCell>
                     <TableCell

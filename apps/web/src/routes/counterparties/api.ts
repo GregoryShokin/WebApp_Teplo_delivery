@@ -387,6 +387,8 @@ export type LedgerRow = {
   subtitle: string | null;
   period_start: string | null;
   period_end: string | null;
+  /** Период выведен из даты платежа и ещё не подтверждён человеком или документом. */
+  period_assumed: boolean;
   /** Для платежа — сколько не подтверждено документом; для документа — неоплаченный остаток. */
   uncovered: number;
   status: "ok" | "waiting" | "overdue";

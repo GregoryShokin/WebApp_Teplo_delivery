@@ -124,9 +124,7 @@ async def test_upsert_skips_deleted(
 ) -> None:
     async with async_session_factory() as session:
         result = SbisSyncResult()
-        await _upsert_documents(
-            session, [_registry_item(doc_id="dead-doc", deleted="Да")], result
-        )
+        await _upsert_documents(session, [_registry_item(doc_id="dead-doc", deleted="Да")], result)
         await session.commit()
         assert result.skipped_deleted == 1
         assert await _count(session) == 0
@@ -277,9 +275,7 @@ async def test_unknown_inn_creates_requires_setup_placeholder(
         assert route_result.new_counterparties == 1
         assert doc.intake_status == "new_counterparty"
         placeholder = (
-            await session.execute(
-                select(Counterparty).where(Counterparty.inn == "231006560100")
-            )
+            await session.execute(select(Counterparty).where(Counterparty.inn == "231006560100"))
         ).scalar_one()
         assert placeholder.status == "requires_setup"
         assert placeholder.type == "individual"  # ИНН 12 знаков = ИП
@@ -347,9 +343,7 @@ async def test_channel_counterparty_materializes_invoice_with_period(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Манго Телеком", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         profile = (
             await session.execute(
@@ -395,6 +389,92 @@ async def test_channel_counterparty_materializes_invoice_with_period(
         assert accrual is not None
 
 
+async def test_closing_upd_reads_service_period_from_formalized_xml(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Синапсис: реестр говорит лишь «УПД от 31.07», а строка услуги в XML — «Июл. 2026»."""
+    from app.models import CounterpartyCollectionSource, SupplierExpenseAccrual
+    from app.services.sbis.sync import _route_documents
+
+    class XmlClient:
+        async def download_file(self, url: str) -> bytes:
+            assert url.startswith("https://disk.sbis.ru/")
+            return (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Файл><Документ><ТаблСчФакт><СведТов "
+                'НаимТов="Seo-продвижение: абонентское обслуживание Июл. 2026"/>'
+                "</ТаблСчФакт></Документ></Файл>"
+            ).encode()
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
+        )
+        result = SbisSyncResult()
+        item = _registry_item(number="518636", amount="13000.00", doc_date="31.07.2026")
+        await _upsert_documents(session, [item], result)
+        await session.flush()
+        await _route_documents(session, result, XmlClient())
+        await session.commit()
+
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert invoice is not None
+        assert invoice.service_period_status == "ready"
+        assert invoice.service_period_start == date(2026, 7, 1)
+        assert invoice.service_period_end == date(2026, 7, 31)
+        assert invoice.service_period_source == "sbis_document_month_abbr"
+        assert (invoice.raw_payload or {}).get("sbis_xml_period_checked_ids") == [doc.sbis_doc_id]
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice.id)
+        )
+        assert accrual is not None
+
+
+async def test_existing_materialized_upd_is_repaired_from_xml_once(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Исправление охватывает уже принятые УПД, которые обычный роут больше не посещает."""
+    from app.models import CounterpartyCollectionSource
+    from app.services.sbis.sync import (
+        _repair_materialized_service_periods,
+        _route_documents,
+    )
+
+    class XmlClient:
+        calls = 0
+
+        async def download_file(self, url: str) -> bytes:
+            self.calls += 1
+            return '<Файл><Стр НаимТов="Услуги Июл. 2026"/></Файл>'.encode()
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Синапсис", inn="231006560100")
+        session.add(
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
+        )
+        result = SbisSyncResult()
+        await _upsert_documents(session, [_registry_item(number="518636")], result)
+        await session.flush()
+        # Имитируем старый синк: материализация без доступа к содержимому XML.
+        await _route_documents(session, result)
+        await session.flush()
+        doc = (await session.execute(select(SbisDocument))).scalar_one()
+        invoice = await session.get(SupplierInvoice, doc.invoice_id)
+        assert invoice is not None and invoice.service_period_status == "not_required"
+
+        client = XmlClient()
+        await _repair_materialized_service_periods(session, client)
+        await session.flush()
+        assert client.calls == 1
+        assert invoice.service_period_status == "ready"
+        assert invoice.service_period_start == date(2026, 7, 1)
+
+        await _repair_materialized_service_periods(session, client)
+        assert client.calls == 1
+
+
 async def test_channel_materialization_dedups_against_email_invoice(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -403,9 +483,7 @@ async def test_channel_materialization_dedups_against_email_invoice(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="ЛЕММА", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         email_invoice = await make_invoice(
             session,
@@ -426,9 +504,7 @@ async def test_channel_materialization_dedups_against_email_invoice(
         assert route_result.materialized == 0
         assert doc.intake_status == "duplicate"
         assert doc.invoice_id == email_invoice.id
-        count = await session.scalar(
-            select(func.count()).select_from(SupplierInvoice)
-        )
+        count = await session.scalar(select(func.count()).select_from(SupplierInvoice))
         assert count == 1  # второй счёт НЕ создан
 
 
@@ -581,9 +657,7 @@ async def test_new_counterparty_backfills_after_setup(
         await session.commit()
 
         placeholder = (
-            await session.execute(
-                select(Counterparty).where(Counterparty.inn == "231006560100")
-            )
+            await session.execute(select(Counterparty).where(Counterparty.inn == "231006560100"))
         ).scalar_one()
         placeholder.status = "active"
         session.add(
@@ -712,9 +786,7 @@ async def test_archived_counterparty_not_materialized_even_with_channel(
             session, name="ИП Билинский", inn="231006560100", status="archived"
         )
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         await session.flush()
         result = SbisSyncResult()
@@ -739,9 +811,7 @@ async def test_materialized_invoice_auto_settles_from_open_prepayment(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Стартер", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         prepayment = SupplierPrepayment(
             counterparty_id=cp.id,
@@ -779,9 +849,7 @@ async def test_materialized_invoice_partial_prepayment_coverage(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Стартер", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         prepayment = SupplierPrepayment(
             counterparty_id=cp.id,
@@ -819,9 +887,7 @@ async def test_earmarked_goods_advance_not_auto_settled(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Стартер", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         prepayment = SupplierPrepayment(
             counterparty_id=cp.id,
@@ -862,9 +928,7 @@ async def test_invoice_and_closing_upd_coexist_as_bill_and_closing(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="ЛЕММА", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         await session.flush()
 
@@ -889,17 +953,23 @@ async def test_invoice_and_closing_upd_coexist_as_bill_and_closing(
         await session.commit()
 
         invoices = (
-            await session.execute(
-                select(SupplierInvoice).where(SupplierInvoice.counterparty_id == cp.id)
+            (
+                await session.execute(
+                    select(SupplierInvoice).where(SupplierInvoice.counterparty_id == cp.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(invoices) == 2  # счёт и УПД — два разных документа, не схлопываются
         by_kind = {inv.doc_kind: inv for inv in invoices}
         assert by_kind["bill"].number == "СЧ-100"
         assert by_kind["closing"].number == "УПД-312"
         docs = (
-            await session.execute(select(SbisDocument).order_by(SbisDocument.doc_date))
-        ).scalars().all()
+            (await session.execute(select(SbisDocument).order_by(SbisDocument.doc_date)))
+            .scalars()
+            .all()
+        )
         statuses = {d.doc_type: d.intake_status for d in docs}
         assert statuses["СчетВх"] == "materialized"
         assert statuses["ДокОтгрВх"] == "materialized"  # оба материализованы
@@ -919,9 +989,7 @@ async def test_sbis_doc_collapses_to_email_invoice_with_different_number(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         email_invoice = await make_invoice(
             session,
@@ -958,9 +1026,7 @@ async def test_sbis_doc_collapses_to_manual_invoice_in_window(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="ДОКСИНБОКС", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         manual_invoice = await make_invoice(
             session,
@@ -995,9 +1061,7 @@ async def test_monthly_invoices_outside_window_not_collapsed(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Лема", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         await make_invoice(
             session,
@@ -1034,9 +1098,7 @@ async def test_cross_channel_ignores_void_invoice(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         void_invoice = await make_invoice(
             session,
@@ -1072,9 +1134,7 @@ async def test_cross_channel_picks_nearest_by_date(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Назад в будущее", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         await make_invoice(
             session,
@@ -1116,9 +1176,7 @@ async def test_cross_channel_duplicate_enriches_period_and_vat(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Манго Телеком", inn="231006560100")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="sbis", value="231006560100"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="sbis", value="231006560100")
         )
         email_invoice = await make_invoice(
             session,
@@ -1181,9 +1239,7 @@ async def test_invoice_letter_routed_to_recognition(
             "Тип": "КоррВх",
             "Удален": "Нет",
             "Название": "Письмо № 15758 от 18.06.2026",
-            "Контрагент": {
-                "СвЮЛ": {"ИНН": "7802193688", "Название": "ООО ДОКСИНБОКС"}
-            },
+            "Контрагент": {"СвЮЛ": {"ИНН": "7802193688", "Название": "ООО ДОКСИНБОКС"}},
             "Вложение": [
                 {
                     "Служебный": "Нет",
@@ -1453,9 +1509,7 @@ async def test_package_invoice_skipped_for_iiko_counterparty(
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="ЭкоЦентр", inn="3444177534")
         session.add(
-            CounterpartyCollectionSource(
-                counterparty_id=cp.id, kind="iiko", value="3444177534"
-            )
+            CounterpartyCollectionSource(counterparty_id=cp.id, kind="iiko", value="3444177534")
         )
         await session.flush()
         client = _PackageClient()
@@ -1495,6 +1549,9 @@ async def test_package_invoice_skipped_when_links_are_stale(
         await session.flush()
         await _route_documents(session, result, client)
         await session.flush()
+        # Новый приём УПД вправе прочитать его XML ради периода услуги. Ниже проверяется
+        # только отдельная загрузка PDF счёта из уже протухшего пакета.
+        client.downloaded.clear()
 
         doc = (await session.execute(select(SbisDocument))).scalar_one()
         doc.last_synced_at = datetime.now(MOSCOW_TZ) - timedelta(days=40)

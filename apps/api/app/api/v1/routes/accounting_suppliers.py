@@ -1752,6 +1752,7 @@ class LedgerRowRead(BaseModel):
     subtitle: str | None = None
     period_start: date | None = None
     period_end: date | None = None
+    period_assumed: bool = False
     # Для платежа — сколько денег ещё не подтверждено закрывающим документом;
     # для документа — неоплаченный остаток.
     uncovered: float
@@ -1883,6 +1884,7 @@ async def get_settlement_ledger(
                 subtitle=row.subtitle,
                 period_start=row.period_start,
                 period_end=row.period_end,
+                period_assumed=row.period_assumed,
                 uncovered=_float(row.uncovered),
                 status=row.status,
                 expected_by=row.expected_by,

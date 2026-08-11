@@ -142,6 +142,9 @@ class LedgerRow:
     subtitle: str | None
     period_start: date | None
     period_end: date | None
+    # True, когда период выведен из даты платежа, а не сохранён пользователем/документом.
+    # Предположение нужно для срока ожидания УПД, но в интерфейсе не должно выглядеть фактом.
+    period_assumed: bool = False
     # Только для платежей: сколько денег ещё не подтверждено документом.
     uncovered: Decimal = Decimal("0")
     # ok — платёж закрыт документом либо документ пришёл; waiting — срок ещё не наступил;
@@ -307,7 +310,20 @@ async def _payment_rows(
                 InvoicePaymentAllocation.bank_operation_id.in_(list(bank_op_to_tx.keys()))
             )
         direct_allocs = list(
-            (await session.scalars(select(InvoicePaymentAllocation).where(or_(*conditions)))).all()
+            (
+                await session.scalars(
+                    select(InvoicePaymentAllocation)
+                    .join(
+                        SupplierInvoice,
+                        SupplierInvoice.id == InvoicePaymentAllocation.invoice_id,
+                    )
+                    .where(
+                        or_(*conditions),
+                        SupplierInvoice.doc_kind == "closing",
+                        SupplierInvoice.payment_status != "void",
+                    )
+                )
+            ).all()
         )
 
     prepayments = list(
@@ -508,6 +524,11 @@ async def build_ledger(
                 subtitle=subtitle,
                 period_start=start,
                 period_end=end,
+                period_assumed=not (
+                    prepayment
+                    and prepayment.service_period_start is not None
+                    and prepayment.service_period_end is not None
+                ),
                 uncovered=uncovered,
                 status=status,
                 expected_by=deadline,
@@ -537,7 +558,11 @@ async def build_ledger(
         paid = sum((money(a.amount) for a in doc_allocs.get(doc.id, [])), Decimal("0"))
         remainder = _clamp(money(doc.amount) - paid)
         doc_date = doc.invoice_date or doc.created_at.date()
-        start, end = period_of(doc.service_period_start, doc.service_period_end, doc_date)
+        # У документа нет безопасного фолбэка периода. Дата УПД — дата первички, а не
+        # доказательство месяца услуги. Прежний period_of() превращал любой УПД после 16-го
+        # в «услугу следующего месяца»: УПД Синапсиса от 31.07 визуально становился августом,
+        # хотя сохранённый период был пуст и ОПиУ справедливо требовал заполнить его вручную.
+        start, end = doc.service_period_start, doc.service_period_end
         # Самоакт — наш внутренний документ по абонентскому платежу: контрагент его не
         # выставлял. Называть его «УПД №…» нельзя ни в коем случае: человек решит, что
         # первичка есть, и учтёт расход в налоговой базе, которой он не принадлежит.
