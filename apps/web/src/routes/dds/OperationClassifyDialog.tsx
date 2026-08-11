@@ -15,6 +15,13 @@ import {
 import { InlineOptionList, type ComboboxOption } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ArticleCombobox } from "@/components/ui-app/ArticleCombobox";
 import {
   apiErrorMessage,
@@ -65,6 +72,21 @@ const EMPLOYEE_ADVANCE_ARTICLE_CODES = [
   EMPLOYEE_ADVANCE_ARTICLE_CODE,
   EMPLOYEE_LOAN_ARTICLE_CODE,
 ];
+const PAYMENT_MONTH_VALUE = "payment-month";
+const MONTH_NAMES = [
+  "Январь",
+  "Февраль",
+  "Март",
+  "Апрель",
+  "Май",
+  "Июнь",
+  "Июль",
+  "Август",
+  "Сентябрь",
+  "Октябрь",
+  "Ноябрь",
+  "Декабрь",
+];
 
 type SplitRow = {
   key: string;
@@ -99,6 +121,31 @@ const ACTION_TOAST: Record<string, string> = {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function monthTitle(value: string): string {
+  const match = /^(\d{4})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${MONTH_NAMES[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
+}
+
+function shiftMonth(value: string, offset: number): string {
+  const match = /^(\d{4})-(\d{2})/.exec(value);
+  if (!match) return value.slice(0, 7);
+  const total = Number(match[1]) * 12 + Number(match[2]) - 1 + offset;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+function expenseMonthOptions(operationDate: string, selected: string): string[] {
+  const anchor = operationDate.slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(anchor)) return selected ? [selected] : [];
+  const options = Array.from({ length: 25 }, (_, index) => shiftMonth(anchor, index - 12)).filter(
+    (month) => month !== anchor,
+  );
+  if (selected && !options.includes(selected)) options.push(selected);
+  return options.sort();
 }
 
 /**
@@ -486,8 +533,7 @@ export function OperationClassifyDialog({
           asset_id: requiresAsset(item) ? item.assetId || null : null,
           // Месяц уходит только со строки, где он действительно применим (без контрагента,
           // не перевод, не зарплата) — бэк повторяет тот же гейт жёсткой ошибкой.
-          // Safari может вернуть из type="month" локализованное «июль», а не YYYY-MM.
-          // Бэк принимает оба вида и привязывает короткий месяц к году самой проводки.
+          // Дропдаун хранит единый YYYY-MM; бэк нормализует его к первому числу месяца.
           expense_month: allowsExpenseMonth(item) && item.expenseMonth ? item.expenseMonth : null,
         })),
         counterparty_id: null,
@@ -784,7 +830,7 @@ export function OperationClassifyDialog({
                       </button>
                     ) : null}
                     {allowsExpenseMonth(item) ? (
-                      <label
+                      <div
                         className="flex items-center gap-1.5 text-xs text-muted-foreground"
                         title={
                           item.counterpartyId
@@ -792,26 +838,36 @@ export function OperationClassifyDialog({
                             : "Пусто — расход в месяце платежа. Заполняется, когда платёж закрывает другой месяц («Оплата за Июнь» наличными в июле)."
                         }
                       >
-                        Месяц расхода
-                        <input
-                          className="h-6 rounded border border-input bg-transparent px-1 text-xs"
-                          onChange={(event) =>
-                            updateRow(item.key, { expenseMonth: event.target.value })
+                        <span>Месяц расхода</span>
+                        <Select
+                          onValueChange={(value) =>
+                            updateRow(item.key, {
+                              expenseMonth: value === PAYMENT_MONTH_VALUE ? "" : value,
+                            })
                           }
-                          type="month"
-                          value={item.expenseMonth}
-                        />
-                        {item.expenseMonth ? (
-                          <button
-                            className="underline-offset-2 hover:underline"
-                            onClick={() => updateRow(item.key, { expenseMonth: "" })}
-                            title="Вернуть месяц платежа"
-                            type="button"
+                          value={item.expenseMonth || PAYMENT_MONTH_VALUE}
+                        >
+                          <SelectTrigger
+                            aria-label="Месяц расхода"
+                            className="h-7 w-[190px] bg-background px-2 text-xs"
                           >
-                            сбросить
-                          </button>
-                        ) : null}
-                      </label>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={PAYMENT_MONTH_VALUE}>
+                              Месяц платежа — {monthTitle(row?.operation_date ?? "")}
+                            </SelectItem>
+                            {expenseMonthOptions(
+                              row?.operation_date ?? "",
+                              item.expenseMonth,
+                            ).map((month) => (
+                              <SelectItem key={month} value={month}>
+                                {monthTitle(month)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     ) : null}
                   </div>
                 </div>
