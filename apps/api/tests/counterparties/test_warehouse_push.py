@@ -166,6 +166,8 @@ async def test_prepare_push_skips_all_staff(
         ("20", "88.46", "1769.28", 88.464, 1769.28),
         # Хвост двоичного умножения — его и ждёт iiko (строка «Ванилин» чека Ч-72).
         ("0.051", "4393.33", "224.06", 4393.333333, 224.05999998299995),
+        # В Decimal равенство точное, но во float произведение отличается — «Курица» чека Ч-80.
+        ("9.56", "499.00", "4770.44", 499.0, 4770.4400000000005),
         # Округляется в ту же копейку, но точного равенства нет — iiko отвергнет, правим.
         ("2.9", "289.66", "840.01", 289.658621, 840.0100008999999),
         # Равенство строгое — строка уходит нетронутой (подавляющее большинство).
@@ -183,9 +185,13 @@ def test_line_amounts_for_iiko(
     )
     assert got_price == expected_price
     assert got_sum == expected_sum
-    if got_price != float(Decimal(price)):
-        # Пересчитанная строка: равенство должно держаться в ТОЙ ЖЕ арифметике, что у iiko.
+    if Decimal(quantity) > 0:
+        assert got_price is not None
+        assert got_sum is not None
+        # Каждая строка должна сходиться в ТОЙ ЖЕ арифметике, что у iiko — даже когда исходные
+        # Decimal сходились и цена осталась прежней (9,56 × 499,00 из чека Ч-80).
         assert got_price * float(Decimal(quantity)) == got_sum
+    if got_price != float(Decimal(price)):
         # От эталона кассира уходим меньше чем на полкопейки.
         assert abs(Decimal(str(got_sum)) - Decimal(line_sum)) < Decimal("0.005")
 

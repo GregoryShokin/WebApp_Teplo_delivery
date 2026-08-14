@@ -183,20 +183,25 @@ def _line_amounts_for_iiko(
     отвергается, а та же строка с ``float``-произведением 224,05999998299995 проходит — расходятся
     последние двоичные разряды, и сверка этого не прощает.
 
-    Критерий «нужно ли править» тоже строгий: «сходится до копеек» мало. Строка 2,9 × 289,66 при
-    сумме 840,01 округляется в ту же копейку, но точное произведение 840,014 — и iiko её отвергнет.
+    Критерий «нужно ли править» тоже строгий и проверяется уже после преобразования во ``float``:
+    даже точное Decimal-равенство 9,56 × 499,00 = 4770,44 расходится в двоичной арифметике.
+    Аналогично, строка 2,9 × 289,66 при сумме 840,01 округляется в ту же копейку, но точное
+    произведение 840,014 — и iiko её отвергнет.
     """
     if price is None:
         return None, float(line_sum) if line_sum is not None else None
     if line_sum is None or quantity is None or quantity <= 0:
         return float(price), float(line_sum) if line_sum is not None else None
-    if quantity * price == line_sum:
-        return float(price), float(line_sum)
+    push_quantity = float(quantity)
+    push_price = float(price)
+    push_line_sum = float(line_sum)
+    if push_price * push_quantity == push_line_sum:
+        return push_price, push_line_sum
     exact = (Decimal(line_sum) / Decimal(quantity)).quantize(
         Decimal(1).scaleb(-_IIKO_PRICE_SCALE), rounding=ROUND_HALF_UP
     )
     push_price = float(exact)
-    return push_price, push_price * float(quantity)
+    return push_price, push_price * push_quantity
 
 
 async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> PreparedPush:
