@@ -25,6 +25,16 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-iiko-float — ветка `agent/iiko-float-fix-iiko-float-invariant`
+- worktree: `../Teplo-agent-iiko-float`
+- compose: не поднимаю; тесты без общей БД
+- задача: исправить строгий инвариант iiko `sum == price * amount` для строк, которые равны в
+  `Decimal`, но расходятся после преобразования в `float`
+- трогает: `apps/api/app/services/warehouse_invoice_push.py`,
+  `apps/api/tests/counterparties/test_warehouse_push.py`
+- НЕ трогать другим: `_line_amounts_for_iiko` и его регрессионные тесты
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
