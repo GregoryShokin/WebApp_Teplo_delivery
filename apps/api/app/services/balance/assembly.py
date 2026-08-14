@@ -26,7 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     BalanceManualValue,
+    BankOperation,
     BusinessOwner,
+    CashflowTransaction,
     Counterparty,
     IikoProduct,
     PnlIikoStockFact,
@@ -43,6 +45,7 @@ from app.services.accounting_periods import ACCOUNTING_START
 from app.services.balance import catalog as cat
 
 _ZERO = Decimal("0.00")
+ZERO_DATE = date(1970, 1, 1)
 
 
 def _money(value: object) -> Decimal:
@@ -835,6 +838,28 @@ async def _tax_payable_line(
     return line, flag
 
 
+async def _data_horizon(session: AsyncSession) -> date | None:
+    """Дата, до которой факты в систему заведены.
+
+    Берётся по ДЕНЕЖНЫМ регистрам — выписке и проводкам ДДС: именно они говорят, докуда книги
+    доведены. Накладные для этого не годятся: их датируют вперёд по договору (на прод-копии
+    лежат документы от 31.08 при фактах до 08.08), и по ним горизонт оказался бы в будущем.
+    """
+    return await session.scalar(
+        select(
+            func.greatest(
+                func.coalesce(
+                    select(func.max(BankOperation.operation_date)).scalar_subquery(), ZERO_DATE
+                ),
+                func.coalesce(
+                    select(func.max(CashflowTransaction.operation_date)).scalar_subquery(),
+                    ZERO_DATE,
+                ),
+            )
+        )
+    )
+
+
 async def _equity_lines(
     session: AsyncSession, as_of: date, *, total: Decimal
 ) -> tuple[list[AssembledLine], list[AssembledFlag]]:
@@ -1046,6 +1071,50 @@ async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) ->
     equity_lines, equity_flags = await _equity_lines(session, as_of, total=equity_plug)
     lines += equity_lines
     flags += equity_flags
+
+    # СРЕЗ ЗА ГОРИЗОНТОМ ДАННЫХ — не «почти готовый баланс», а смесь двух эпох, и молчать об
+    # этом нельзя. Разобрано на прод-копии 09.08.2026: баланс на 31.08 при фактах до 08.08
+    # показывал падение капитала на 92 844 ₽ при прибыли ОПиУ +190 338 ₽, и разница в
+    # 283 182 ₽ выглядела дырой в учёте. Дыры не было: обязательства месяца в срез уже вошли
+    # (зарплата начислена на полный месяц, накладные датированы 31.08, налог начислен), а
+    # выручка и расходы после 8 августа не существуют вовсе — их ещё не было.
+    #
+    # Строку «накопленный результат до начала учёта» это бьёт сильнее всего: она балансирующая
+    # и молча впитывает всю разницу, притом что обязана быть неизменной от месяца к месяцу.
+    horizon = await _data_horizon(session)
+    if horizon and as_of > horizon:
+        gap = (as_of - horizon).days
+        # Разрыв в день-два — обычное дело: выписку разбирают не каждый день, а в конце месяца
+        # запросто не случается ни одной проводки. Отличить «не было движений» от «не завели»
+        # по данным нельзя, поэтому сказать надо в обоих случаях, но блокировать — только когда
+        # непокрытых дней столько, что месяц заведомо неполон. Граница в три дня закрывает
+        # выходные и признаётся здесь как соглашение, а не как истина.
+        material = gap > 3
+        flags.append(
+            AssembledFlag(
+                code="balance_beyond_data_horizon",
+                severity="blocking" if material else "info",
+                title=(
+                    "Срез запрошен на дату позже последних данных"
+                    if material
+                    else "После последней проводки прошло несколько дней"
+                ),
+                explanation=(
+                    f"Факты в системе доведены до {horizon:%d.%m.%Y}, а баланс собран на "
+                    f"{as_of:%d.%m.%Y} — {gap} дн. без данных. "
+                    + (
+                        "Обязательства будущего в срез уже вошли: зарплата начислена на полный "
+                        "месяц, документы с поздней датой учтены. А выручки и расходов за "
+                        "оставшиеся дни ещё нет — их не было. Это прогноз, а не остаток, и "
+                        "сравнивать его с прошлым месяцем нельзя."
+                        if material
+                        else "Движений могло не быть, а могло не хватить разбора выписки — "
+                        "по данным это неразличимо."
+                    )
+                ),
+                count=gap,
+            )
+        )
 
     lines.sort(key=lambda item: item.sort_order)
     return AssembledBalance(

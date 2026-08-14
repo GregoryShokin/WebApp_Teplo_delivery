@@ -801,3 +801,41 @@ async def test_a_contribution_made_after_the_snapshot_is_not_in_it(
         assert _line(
             await assemble(session, as_of=date(2026, 8, 31)), "equity_contributions"
         ).amount == Decimal("1000000.00")
+
+
+async def test_a_snapshot_past_the_data_horizon_is_called_a_forecast(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Срез на дату, до которой фактов ещё нет, — прогноз, и он обязан называться прогнозом.
+
+    Разобрано на прод-копии 09.08.2026. Баланс на 31.08 при фактах до 08.08 показывал падение
+    капитала на 92 844 ₽ при прибыли ОПиУ +190 338 ₽; разница в 283 182 ₽ выглядела дырой в
+    учёте. Дыры не было: обязательства месяца в срез вошли целиком (зарплата начислена на
+    полный месяц, накладные датированы 31.08, налог начислен), а выручки и расходов после
+    8 августа не существует. Балансирующая строка «накопленный результат до начала учёта»
+    молча впитала всю разницу — притом что обязана быть неизменной от месяца к месяцу.
+
+    Горизонт берётся по ДЕНЕЖНЫМ регистрам: накладные датируют вперёд по договору, и по ним
+    горизонт оказался бы в будущем — ровно там, где проверять нечего.
+    """
+    async with async_session_factory() as session:
+        wallet = await make_wallet(session, name="Горизонт", wallet_type="cash_safe")
+        await _cash(session, wallet_id=wallet.id, amount="1000.00", on=JULY_END)
+        await session.commit()
+
+        # Срез внутри данных — сигнала нет вовсе.
+        assert _flag(await assemble(session, as_of=JULY_END), "balance_beyond_data_horizon") is None
+
+        # Пара дней без проводок — это обычная тишина, а не прогноз: говорим, но не блокируем.
+        quiet = _flag(
+            await assemble(session, as_of=date(2026, 8, 2)), "balance_beyond_data_horizon"
+        )
+        assert quiet is not None and quiet.severity == "info"
+
+        # Три недели без фактов — уже прогноз.
+        beyond = _flag(
+            await assemble(session, as_of=date(2026, 8, 31)), "balance_beyond_data_horizon"
+        )
+        assert beyond is not None
+        assert beyond.severity == "blocking"
+        assert "31.07.2026" in beyond.explanation
