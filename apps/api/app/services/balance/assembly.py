@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -615,19 +616,8 @@ async def _counterparty_lines(
                 rows=[{"month": month.isoformat()} for month in partner.months_without_commission],
             )
         )
-    if sheet.approximate_settlements:
-        flags.append(
-            AssembledFlag(
-                code="settlements_approximate",
-                severity="info",
-                title="Часть гашений датирована приблизительно",
-                explanation=(
-                    "У бартерных зачётов даты события нет — берётся дата записи. Само по себе "
-                    "это не ошибка, но сдвиг на день переносит сумму в соседний месяц."
-                ),
-                amount=_money(sheet.approximate_settlements),
-            )
-        )
+    # Бартерные гашения — второе слагаемое общего объёма недоказуемого; отдельной карточки у
+    # них нет по той же причине, что и у расчётов с людьми (см. ``_approximate_flag``).
     return lines, flags, _money(sheet.approximate_settlements)
 
 
@@ -675,21 +665,10 @@ async def _staff_lines(
             source_kind="courier_deposits",
         ),
     ]
-    flags: list[AssembledFlag] = []
-    if approximate:
-        flags.append(
-            AssembledFlag(
-                code="staff_approximate",
-                severity="info",
-                title="Часть расчётов с людьми восстановлена приблизительно",
-                explanation=(
-                    "Выплаты без проводки в леджере и займы, чья дата закрытия получена "
-                    "бэкфиллом. Величина показана, но её датировка не доказана."
-                ),
-                amount=approximate,
-            )
-        )
-    return lines, flags, approximate
+    # Своего флага здесь нет намеренно: объём недоказуемого показывает ОДИН сигнал на весь
+    # баланс (``_approximate_flag``), а расчёты с людьми входят в него слагаемым. Две карточки
+    # с одинаковой суммой владелец читал как два разных факта и искал между ними разницу.
+    return lines, [], approximate
 
 
 async def _manual_lines(
@@ -754,6 +733,106 @@ async def _tax_line(session: AsyncSession, as_of: date) -> AssembledLine:
     )
 
 
+def _approximate_flag(
+    total: Decimal, *, staff: Decimal, settlements: Decimal
+) -> AssembledFlag | None:
+    """Объём величин, чья датировка не доказана, — ОДНИМ сигналом на весь баланс.
+
+    ПОЧЕМУ ОДИН, А НЕ ТРИ. Раньше слагаемые поднимали свои карточки, и рядом с ними стояла
+    карточка агрегата. Когда бартерных зачётов нет (а их в базе нет вовсе), агрегат становился
+    дословной копией расчётов с людьми: та же сумма, другой заголовок. Владелец 15.08.2026
+    читал это как два разных факта на 1,1 млн каждый и просил объяснить разницу, которой нет.
+
+    ЧТО ЭТО ЗА ВЕЛИЧИНА. Не ошибка и не её оценка: столько денег в срезе держится на записях,
+    которые можно изменить задним числом, не оставив следа (отметка выплаты удаляется
+    физически) или чья дата восстановлена бэкфиллом. Полоса допуска сверки считается из
+    ИЗМЕНЕНИЯ этой суммы между снимками, а не из неё самой.
+
+    СЧИТАЕТСЯ ТОЛЬКО ПО ТОМУ, ЧТО В СРЕЗЕ СТОИТ. Прогоны, чей период кончился до начала учёта,
+    и займы, закрытые до даты среза, сюда не идут: мерить риск деньгами, которых нет ни в одной
+    строке, значит пугать числом, с которым нечего делать.
+    """
+    if not total:
+        return None
+    rows = []
+    if staff:
+        rows.append({"title": "Расчёты с людьми", "amount": str(staff)})
+    if settlements:
+        rows.append({"title": "Бартерные гашения", "amount": str(settlements)})
+    return AssembledFlag(
+        code="approximate_total",
+        severity="info",
+        title="Объём приблизительно датированных величин",
+        explanation=(
+            "Столько в срезе держится на записях, чью дату нельзя доказать: выплаты без "
+            "проводки в леджере и займы с датой закрытия из бэкфилла. Это не ошибка и не её "
+            "оценка — допуск сверки считается из ИЗМЕНЕНИЯ этой суммы между снимками."
+        ),
+        count=len(rows),
+        amount=total,
+        rows=rows,
+    )
+
+
+def _months_lived(year: int, as_of: date) -> int:
+    """Сколько месяцев года прожито на дату среза. Месяц засчитывается только целиком.
+
+    Помесячно, а не по дням, намеренно: взносы платятся квартальными долями, и дробление по
+    дням дало бы число, которое не сходится ни с одной платёжкой. Незавершённый месяц не
+    засчитывается — на 15 июля прожито шесть месяцев, а не шесть с половиной.
+    """
+    if as_of.year > year:
+        return 12
+    if as_of.year < year:
+        return 0
+    last_day = calendar.monthrange(as_of.year, as_of.month)[1]
+    return as_of.month if as_of.day >= last_day else as_of.month - 1
+
+
+def _earned_by_time(item, as_of: date) -> Decimal:
+    """Какая часть ПРОГНОЗНОГО обязательства уже заработана временем на дату среза.
+
+    ЗАЧЕМ ЭТО ВООБЩЕ НУЖНО. ``is_projection`` — метка ПРОИСХОЖДЕНИЯ строки («документов от
+    бухгалтера ещё нет, платить по ней нельзя»), а не времени. Баланс читал её как «период не
+    прожит» и выбрасывал строку целиком — из-за чего фиксированные взносы ИП, заработанные
+    январём–июлем, не стояли в долге вовсе: 19 130 ₽ на 31.07.2026 молча уезжали в капитал.
+
+    ГОДОВОЙ ПЛАТЁЖ ЗАРАБАТЫВАЕТСЯ ВРЕМЕНЕМ. Обязанность по фиксвзносам возникает за время
+    ведения деятельности, а не в день срока уплаты: закройся ИП в августе, за сентябрь–декабрь
+    платить не пришлось бы. Поэтому прожитая часть — обязательство, непрожитая — прогноз.
+    Считаем от ГОДОВОЙ суммы, а не от остатка: остаток уже уменьшен уплаченным, и доля
+    непрожитых месяцев должна вычитаться из полной величины года.
+
+    МЕСЯЧНЫЙ ПРОГНОЗ ДЕЛИТЬ НЕ НА ЧТО — месяц либо прожит, либо нет.
+    """
+    for_year = getattr(item, "for_year", None)
+    if for_year is None:
+        return _ZERO
+    period = getattr(item, "for_period", None) or ""
+
+    if period == "year":
+        try:
+            from app.services.taxes.repository import year_config
+
+            year_total = _money(year_config(for_year).fixed_contribution)
+        except Exception:  # noqa: BLE001 — нет конфига года: в долг не берём, покажет сигнал
+            return _ZERO
+        months_left = 12 - _months_lived(for_year, as_of)
+        unlived = _money(year_total * Decimal(months_left) / Decimal(12))
+        return max(_ZERO, _money(item.amount) - unlived)
+
+    if len(period) == 7 and period[4] == "-":
+        try:
+            year, month = int(period[:4]), int(period[5:])
+            month_end = date(year, month, calendar.monthrange(year, month)[1])
+        except ValueError:
+            return _ZERO
+        return _money(item.amount) if month_end <= as_of else _ZERO
+
+    # Незнакомая разметка периода: в долг не берём. Занижение видно сигналом, выдумка — нет.
+    return _ZERO
+
+
 async def _tax_payable_line(
     session: AsyncSession, as_of: date
 ) -> tuple[AssembledLine, AssembledFlag | None]:
@@ -770,9 +849,11 @@ async def _tax_payable_line(
     в трёх местах по построению». Баланс стал четвёртым местом и считал по-своему — ровно то,
     из-за чего цифры разошлись.
 
-    ПРОГНОЗЫ НЕ ВХОДЯТ. Фиксированные взносы ИП «за остаток года» (43 042,50 со сроком 28.12) —
-    оценка будущего платежа, а не долг на дату: год ещё не прожит. В сумму они не идут, но и не
-    исчезают — их называет отдельный сигнал.
+    ПРОГНОЗ ДЕЛИТСЯ ВРЕМЕНЕМ, А НЕ ВЫБРАСЫВАЕТСЯ ЦЕЛИКОМ. Строка «Взносы ИП за себя · остаток
+    года» (43 042,50 со сроком 28.12) не является ни чистым долгом, ни чистым прогнозом:
+    апрель–июль на 31.07.2026 прожиты и уже заработаны (19 130,00), август–декабрь — нет
+    (23 912,50). Раньше выбрасывалась вся строка, и заработанная часть молча уезжала в капитал.
+    Делит ``_earned_by_time``; непрожитый хвост называет отдельный сигнал.
     """
     from app.services.taxes.ens_wallet import compute_ens_wallet
     from app.services.taxes.obligations import list_payable_obligations
@@ -797,9 +878,23 @@ async def _tax_payable_line(
 
     accrued = [item for item in obligations if not getattr(item, "is_projection", False)]
     projected = [item for item in obligations if getattr(item, "is_projection", False)]
+
+    # Прогноз делится временем: прожитую часть года бизнес уже должен, непрожитую — ещё нет.
+    earned: list[tuple[object, Decimal]] = []
+    unlived: list[tuple[object, Decimal]] = []
+    for item in projected:
+        part = _earned_by_time(item, as_of)
+        if part > _ZERO:
+            earned.append((item, part))
+        rest = _money(item.amount) - part
+        if rest > _ZERO:
+            unlived.append((item, rest))
+
+    accrued_total = _money(sum((item.amount for item in accrued), _ZERO))
+    earned_total = _money(sum((part for _, part in earned), _ZERO))
     # Недостача ЕНС и начисленное вперёд НЕ пересекаются: первая живёт по наступившим срокам,
     # второе — по ненаступившим. Сложение здесь не задваивает.
-    total = _money(wallet.shortfall) + _money(sum((item.amount for item in accrued), _ZERO))
+    total = _money(wallet.shortfall) + accrued_total + earned_total
 
     line = _line(
         cat.CATALOG_BY_CODE["ap_tax"],
@@ -808,10 +903,19 @@ async def _tax_payable_line(
         source_kind="tax_obligations",
         detail={
             "ens_shortfall": str(_money(wallet.shortfall)),
-            "accrued_ahead": str(_money(sum((item.amount for item in accrued), _ZERO))),
+            "accrued_ahead": str(accrued_total),
+            "earned_projection": str(earned_total),
             "items": [
                 {"title": item.title, "amount": str(_money(item.amount)), "due": str(item.due_date)}
                 for item in accrued
+            ]
+            + [
+                {
+                    "title": f"{item.title} · заработанная часть",
+                    "amount": str(part),
+                    "due": str(item.due_date),
+                }
+                for item, part in earned
             ],
         },
     )
@@ -819,20 +923,25 @@ async def _tax_payable_line(
         AssembledFlag(
             code="tax_projection_not_counted",
             severity="info",
-            title="Прогноз налоговых платежей в долг не включён",
+            title="Налог за непрожитый период в долг не включён",
             explanation=(
-                "Это оценка будущих платежей, а не обязательство на дату среза: период, за "
-                "который они начисляются, ещё не прожит. В платёжном календаре они нужны, "
-                "в балансе — нет."
+                "Остаток налоговых начислений, время которых ещё не наступило: закройся дело "
+                "завтра — платить по ним не пришлось бы. Та часть, что уже заработана временем, "
+                "в долге стоит — она внутри строки «Задолженность по налогам и взносам»."
             ),
-            count=len(projected),
-            amount=_money(sum((item.amount for item in projected), _ZERO)),
+            count=len(unlived),
+            amount=_money(sum((rest for _, rest in unlived), _ZERO)),
             rows=[
-                {"title": item.title, "amount": str(_money(item.amount)), "due": str(item.due_date)}
-                for item in projected
+                {
+                    "title": item.title,
+                    "amount": str(rest),
+                    "due": str(item.due_date),
+                    "earned": str(_money(item.amount) - rest),
+                }
+                for item, rest in unlived
             ],
         )
-        if projected
+        if unlived
         else None
     )
     return line, flag
@@ -1039,6 +1148,10 @@ async def assemble(session: AsyncSession, *, as_of: date, live: bool = False) ->
     lines += staff_lines
     flags += staff_flags
     approximate += staff_approx
+
+    approximate_flag = _approximate_flag(approximate, staff=staff_approx, settlements=cp_approx)
+    if approximate_flag is not None:
+        flags.append(approximate_flag)
 
     lines.append(await _tax_line(session, as_of))
     tax_payable, tax_flag = await _tax_payable_line(session, as_of)

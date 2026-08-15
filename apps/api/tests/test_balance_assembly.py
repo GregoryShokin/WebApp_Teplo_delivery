@@ -457,17 +457,25 @@ async def test_tax_debt_counts_what_is_accrued_not_only_what_is_overdue(
     from app.services.taxes import obligations as obligations_module
 
     class _Ob:
-        def __init__(self, title, amount, due, projection):
+        def __init__(self, title, amount, due, projection, year=2026, period=None):
             self.title = title
             self.amount = Decimal(amount)
             self.due_date = due
             self.is_projection = projection
+            self.for_year = year
+            self.for_period = period
 
     async def _fake(session, *, today):  # noqa: ARG001
         return [
-            _Ob("Зарплатный ЕНП за июль", "19913.93", _date(2026, 8, 28), False),
-            _Ob("Допвзнос 1% · II квартал", "105628.00", _date(2026, 9, 25), False),
-            _Ob("Взносы ИП «за себя» · остаток года", "43042.50", _date(2026, 12, 28), True),
+            _Ob("Зарплатный ЕНП за июль", "19913.93", _date(2026, 8, 28), False, period="2026-07"),
+            _Ob("Допвзнос 1% · II квартал", "105628.00", _date(2026, 9, 25), False, period="q2"),
+            _Ob(
+                "Взносы ИП «за себя» · остаток года",
+                "43042.50",
+                _date(2026, 12, 28),
+                True,
+                period="year",
+            ),
         ]
 
     monkeypatch.setattr(obligations_module, "list_payable_obligations", _fake)
@@ -475,13 +483,79 @@ async def test_tax_debt_counts_what_is_accrued_not_only_what_is_overdue(
     async with async_session_factory() as session:
         line, flag = await assembly_module._tax_payable_line(session, JULY_END)
 
-        # Недостача ЕНС на пустой базе нулевая, поэтому итог — ровно начисленное вперёд.
-        assert line.amount == Decimal("125541.93")
+        # Недостача ЕНС на пустой базе нулевая. Итог — начисленное вперёд ПЛЮС та часть
+        # годовых взносов, которую время уже заработало: апрель–июль, 4 × 4 782,50.
         assert line.detail["accrued_ahead"] == "125541.93"
-        # Прогноз в долг не вошёл, но и не пропал.
+        assert line.detail["earned_projection"] == "19130.00"
+        assert line.amount == Decimal("144671.93")
+        # Непрожитый хвост в долг не вошёл, но и не пропал.
         assert flag is not None
-        assert flag.amount == Decimal("43042.50")
+        assert flag.amount == Decimal("23912.50")
         assert flag.severity == "info"
+        assert flag.rows[0]["earned"] == "19130.00"
+
+
+def test_a_yearly_contribution_is_earned_by_time_not_by_its_due_date() -> None:
+    """Годовой платёж делится временем: прожитое — долг, непрожитое — прогноз.
+
+    ОТКУДА ОШИБКА БРАЛАСЬ. ``is_projection`` — метка происхождения строки («документов от
+    бухгалтера ещё нет»), а не времени. Баланс читал её как «период не прожит» и выбрасывал
+    строку целиком, из-за чего взносы ИП, заработанные январём–июлем, не стояли в долге вовсе.
+
+    Проверяем обе крайности, потому что ошибиться можно в любую сторону: в начале года почти
+    всё — прогноз, в конце почти всё — долг, и год, который уже кончился, должен быть долгом
+    целиком, а будущий — прогнозом целиком.
+    """
+    from datetime import date as _date
+
+    from app.services.balance import assembly as assembly_module
+
+    class _Ob:
+        for_year = 2026
+        for_period = "year"
+        amount = Decimal("43042.50")  # 57 390 годовых минус уплаченный I квартал
+
+    earned = assembly_module._earned_by_time
+
+    # Конец июля: прожито 7 месяцев, непрожитыми остались 5 × 4 782,50 = 23 912,50.
+    assert earned(_Ob(), _date(2026, 7, 31)) == Decimal("19130.00")
+    # Середина июля: июль ещё не прожит — засчитаны шесть месяцев, ни днём больше.
+    assert earned(_Ob(), _date(2026, 7, 15)) == Decimal("14347.50")
+    # Год кончился — заработан весь остаток, прогноза не осталось.
+    assert earned(_Ob(), _date(2026, 12, 31)) == Decimal("43042.50")
+    assert earned(_Ob(), _date(2027, 3, 1)) == Decimal("43042.50")
+    # Год ещё не начался — не заработано ничего.
+    assert earned(_Ob(), _date(2025, 12, 31)) == Decimal("0.00")
+    # Начало года: уплаченный вперёд квартал не делает долгом непрожитое время.
+    assert earned(_Ob(), _date(2026, 1, 31)) == Decimal("0.00")
+
+
+def test_a_monthly_projection_is_all_or_nothing() -> None:
+    """Месячный прогноз делить не на что: месяц либо прожит, либо нет.
+
+    Годовой платёж дробится, месячный — нет, и разница не косметическая: попытка дробить месяц
+    по дням дала бы в балансе величину, которой не соответствует ни одна платёжка.
+    """
+    from datetime import date as _date
+
+    from app.services.balance import assembly as assembly_module
+
+    class _Ob:
+        for_year = 2026
+        for_period = "2026-06"
+        amount = Decimal("13595.93")
+
+    earned = assembly_module._earned_by_time
+
+    assert earned(_Ob(), _date(2026, 7, 31)) == Decimal("13595.93")
+    assert earned(_Ob(), _date(2026, 6, 30)) == Decimal("13595.93")
+    assert earned(_Ob(), _date(2026, 6, 29)) == Decimal("0.00")
+
+    class _Unknown(_Ob):
+        for_period = "невнятная разметка"
+
+    # Незнакомый период в долг не берём: занижение видно сигналом, выдумка — нет.
+    assert earned(_Unknown(), _date(2026, 7, 31)) == Decimal("0.00")
 
 
 async def test_a_broken_tax_registry_does_not_break_the_balance(
@@ -839,3 +913,33 @@ async def test_a_snapshot_past_the_data_horizon_is_called_a_forecast(
         assert beyond is not None
         assert beyond.severity == "blocking"
         assert "31.07.2026" in beyond.explanation
+
+
+def test_the_approximation_is_shown_by_one_card_not_by_each_part() -> None:
+    """Объём недоказуемого — ОДИН сигнал, даже когда слагаемое всего одно.
+
+    Раньше карточку поднимало каждое слагаемое, и рядом стояла карточка агрегата. Бартерных
+    зачётов в базе нет вовсе, поэтому агрегат становился дословной копией расчётов с людьми:
+    та же сумма, другой заголовок, никакого намёка на вложенность. Владелец 15.08.2026 читал
+    это как два разных факта на 1,1 млн каждый и просил объяснить разницу, которой нет.
+    """
+    from app.services.balance import assembly as assembly_module
+
+    only_staff = assembly_module._approximate_flag(
+        Decimal("390090.41"), staff=Decimal("390090.41"), settlements=Decimal("0.00")
+    )
+    assert only_staff is not None
+    assert only_staff.code == "approximate_total"
+    assert only_staff.amount == Decimal("390090.41")
+    # Состав называет слагаемое, но карточка одна — второй с тем же числом не появляется.
+    assert [row["title"] for row in only_staff.rows] == ["Расчёты с людьми"]
+
+    both = assembly_module._approximate_flag(
+        Decimal("400090.41"), staff=Decimal("390090.41"), settlements=Decimal("10000.00")
+    )
+    assert [row["title"] for row in both.rows] == ["Расчёты с людьми", "Бартерные гашения"]
+
+    # Нечего показывать — карточки нет. «Объём приблизительного: 0,00» не сообщает ничего.
+    assert assembly_module._approximate_flag(
+        Decimal("0.00"), staff=Decimal("0.00"), settlements=Decimal("0.00")
+    ) is None
