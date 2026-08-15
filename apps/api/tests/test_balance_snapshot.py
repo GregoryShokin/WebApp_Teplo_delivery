@@ -18,7 +18,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 sys.path.append(str(Path(__file__).parent / "counterparties"))
@@ -355,13 +355,18 @@ async def test_the_tolerance_uses_the_frozen_approximation_of_the_previous_month
         july = await session.scalar(
             select(BalanceSnapshot).where(BalanceSnapshot.as_of == JULY_END)
         )
-        await session.execute(
-            update(BalanceSnapshotFlag)
-            .where(
-                BalanceSnapshotFlag.snapshot_id == july.id,
-                BalanceSnapshotFlag.code == "approximate_total",
+        # Приблизительных величин на пустой базе нет, и карточки с нулём модуль не рисует —
+        # поэтому флаг здесь ЗАВОДИТСЯ, а не правится. Проверяем то же самое: допуск обязан
+        # прочитать записанное число, а не пересчитать его заново.
+        session.add(
+            BalanceSnapshotFlag(
+                snapshot_id=july.id,
+                code="approximate_total",
+                severity="info",
+                title="Объём приблизительно датированных величин",
+                explanation="подставлено тестом",
+                amount=Decimal("120000.00"),
             )
-            .values(amount=Decimal("120000.00"))
         )
         await session.commit()
 

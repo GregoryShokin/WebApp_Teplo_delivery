@@ -309,6 +309,7 @@ async def _paid_by_employee(
     missing = [key for key in accrued if key not in booked_pairs]
     approximate = _ZERO
     if missing:
+        missing_runs = {run_id for run_id, _ in missing}
         fallback_rows = (
             await session.execute(
                 select(
@@ -316,12 +317,29 @@ async def _paid_by_employee(
                     PayrollPayment.employee_id,
                     PayrollPayment.amount,
                 ).where(
-                    PayrollPayment.run_id.in_({run_id for run_id, _ in missing}),
+                    PayrollPayment.run_id.in_(missing_runs),
                     PayrollPayment.status.in_(("paid", "partially_paid")),
                     PayrollPayment.paid_at <= as_of,
                 )
             )
         ).all()
+        # Прогоны, чей период РАБОТЫ кончился до начала учёта, в объём недоказуемого не идут.
+        # Их выплаты баланс не показывает ни одной строкой: сам этот расчёт отказывается
+        # собирать срез раньше ACCOUNTING_START. Считать их значило бы мерить риск по деньгам,
+        # за которые модуль не отвечает: на 31.07.2026 июньские прогоны давали 653 588,77 из
+        # 1 102 179,18 — почти две трети сигнала жили вне периода учёта.
+        in_scope_runs = set(
+            (
+                await session.scalars(
+                    select(PayrollRun.id)
+                    .join(PayrollPeriod, PayrollPeriod.id == PayrollRun.period_id)
+                    .where(
+                        PayrollRun.id.in_(missing_runs),
+                        PayrollPeriod.end_date >= ACCOUNTING_START,
+                    )
+                )
+            ).all()
+        )
         missing_set = set(missing)
         for run_id, employee_id, amount in fallback_rows:
             key = (run_id, employee_id)
@@ -329,7 +347,8 @@ async def _paid_by_employee(
                 continue
             value = _money(amount)
             paid[key] = paid.get(key, _ZERO) + value
-            approximate += value
+            if run_id in in_scope_runs:
+                approximate += value
     return paid, _money(approximate)
 
 
@@ -667,8 +686,9 @@ async def _advances_as_of(
 
     ``closed_on`` — день, когда заём перестал быть долгом (списан или отменён). У значений,
     доставшихся от бэкфилла миграции 0272, это ``updated_at``, то есть последнее касание
-    строки: остаток такого займа уходит в ``approximate_write_offs`` независимо от того, по
-    какую сторону даты он оказался.
+    строки. Остаток такого займа уходит в ``approximate_write_offs`` — но ТОЛЬКО если заём
+    ещё стоит в срезе: закрытый до даты в дебиторку не входит, и мерить им недоказуемое
+    значило бы пугать величиной, которой в балансе нет.
 
     ОТМЕНА ВЫДАЧИ ЗДЕСЬ АСИММЕТРИЧНА ДЕНЬГАМ, и знать об этом надо. ``cancel_advance``
     УДАЛЯЕТ денежную проводку выдачи физически, то есть денежная половина баланса задним
@@ -711,10 +731,14 @@ async def _advances_as_of(
         remainder = max(_money(amount) - _money(recovered_amount), _ZERO)
         if not remainder:
             continue
+        if closed_on is not None and closed_on <= as_of:
+            # Заём закрыт до среза — в дебиторке его нет, и в объёме недоказуемого ему тоже
+            # не место: приблизительность меряет то, что в срезе СТОИТ. Накопитель раньше
+            # работал строкой выше этой проверки и считал закрытое: на 31.07.2026 в сигнал
+            # попадали два ОТМЕНЁННЫХ июньских займа на 32 000, которых нет ни в одной строке.
+            continue
         if closed_on is not None and closed_on <= _CLOSED_ON_BACKFILL_DATE:
             approximate += remainder
-        if closed_on is not None and closed_on <= as_of:
-            continue
         outstanding[employee_id] = outstanding.get(employee_id, _ZERO) + remainder
     return {
         employee_id: _money(value) for employee_id, value in outstanding.items()

@@ -795,3 +795,100 @@ async def test_payment_without_a_ledger_booking_falls_back_and_is_flagged(
         assert row.salary == Decimal("20000.00")
         # И честно сказано, что 30 000 восстановлены не по леджеру.
         assert snapshot.approximate_payments == Decimal("30000.00")
+
+
+async def test_a_loan_closed_before_the_date_is_not_counted_as_approximate(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Заём, закрытый ДО среза, не стоит в дебиторке — значит и в объёме недоказуемого его нет.
+
+    Накопитель приблизительного стоял строкой ВЫШЕ проверки ``closed_on <= as_of`` и считал
+    закрытое: на прод-копии в сигнал попадали два отменённых июньских займа на 32 000 ₽,
+    которых нет ни в одной строке баланса. Приблизительность меряет то, что в срезе СТОИТ, —
+    иначе она пугает величиной, с которой владельцу нечего делать.
+    """
+    async with async_session_factory() as session:
+        cook = await _make_employee(session, name="Повар Отменённый")
+        session.add(
+            SalaryAdvance(
+                id=uuid.uuid4(),
+                employee_id=cook.id,
+                role="Повар",
+                kind="loan",
+                amount=Decimal("30000.00"),
+                per_installment_amount=Decimal("30000.00"),
+                installments_count=1,
+                recovered_amount=ZERO,
+                status="cancelled",
+                issued_on=date(2026, 7, 10),
+                # Закрыт до среза и до даты бэкфилла — обе проверки срабатывают разом.
+                closed_on=date(2026, 7, 15),
+            )
+        )
+        await session.commit()
+
+        snapshot = await build_staff_balance_as_of(session, as_of=date(2026, 7, 31))
+        assert _row(snapshot, cook.id) is None, "закрытый заём вернулся в дебиторку"
+        assert snapshot.approximate_write_offs == ZERO, (
+            "заём, которого нет ни в одной строке, попал в объём приблизительного"
+        )
+
+
+async def test_payments_of_runs_that_ended_before_accounting_start_are_out_of_scope(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Прогон, чей период кончился до начала учёта, в объём недоказуемого не идёт.
+
+    Сам этот расчёт отказывается собирать срез раньше ``ACCOUNTING_START`` — значит за июньские
+    деньги баланс не отвечает ни одной строкой. Считать их приблизительными означало мерить
+    риск по тому, чего в отчёте нет: на 31.07.2026 июньские прогоны давали 653 588,77 ₽ из
+    1 102 179,18 ₽ сигнала, то есть почти две трети предупреждения жили вне периода учёта.
+    """
+    async with async_session_factory() as session:
+        june_cook = await _make_employee(session, name="Повар Июньский")
+        june_period = await _make_week(
+            session,
+            start=date(2026, 6, 23),
+            end=date(2026, 6, 29),
+            payroll_date=date(2026, 7, 1),
+            finalized_at=datetime(2026, 6, 30, 12, tzinfo=UTC),
+        )
+        june_run = await _make_run(session, june_period)
+        await _make_line(session, run=june_run, employee=june_cook, total_payable="40000.00")
+        session.add(
+            PayrollPayment(
+                id=uuid.uuid4(),
+                run_id=june_run.id,
+                employee_id=june_cook.id,
+                amount=Decimal("40000.00"),
+                paid_at=datetime(2026, 6, 30, 10, tzinfo=UTC),
+            )
+        )
+
+        july_cook = await _make_employee(session, name="Повар Июльский")
+        july_period = await _make_week(
+            session,
+            start=date(2026, 7, 7),
+            end=date(2026, 7, 13),
+            payroll_date=date(2026, 7, 15),
+            finalized_at=datetime(2026, 7, 14, 12, tzinfo=UTC),
+        )
+        july_run = await _make_run(session, july_period)
+        await _make_line(session, run=july_run, employee=july_cook, total_payable="25000.00")
+        session.add(
+            PayrollPayment(
+                id=uuid.uuid4(),
+                run_id=july_run.id,
+                employee_id=july_cook.id,
+                amount=Decimal("25000.00"),
+                paid_at=datetime(2026, 7, 15, 10, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+
+        snapshot = await build_staff_balance_as_of(session, as_of=date(2026, 7, 31))
+        # Обе выплаты по-прежнему ЗАЧТЕНЫ — иначе долг вырос бы на пустом месте.
+        assert _row(snapshot, june_cook.id) is None
+        assert _row(snapshot, july_cook.id) is None
+        # А в объём недоказуемого попала только июльская.
+        assert snapshot.approximate_payments == Decimal("25000.00")
