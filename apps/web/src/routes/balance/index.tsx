@@ -20,6 +20,16 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api";
 import { toIsoDate } from "@/lib/date";
@@ -33,6 +43,7 @@ import {
   fetchBalancePreview,
   fetchBalanceSnapshot,
   freezeBalance,
+  setBalanceManualValue,
 } from "./api";
 
 /** Деньги с разделителем разрядов. Строку не парсим ради арифметики — только для показа. */
@@ -247,9 +258,7 @@ function ReconciliationCard({ view }: { view: BalanceView }) {
     <Card className={`p-4 ${ok ? "" : "border-destructive/40 bg-destructive/5"}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-medium">Сверка приращения капитала</div>
-        <Badge variant={ok ? "secondary" : "destructive"}>
-          {ok ? "сошлось" : "не объяснено"}
-        </Badge>
+        <Badge variant={ok ? "secondary" : "destructive"}>{ok ? "сошлось" : "не объяснено"}</Badge>
       </div>
       <dl className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
         <div className="flex justify-between gap-4">
@@ -271,16 +280,16 @@ function ReconciliationCard({ view }: { view: BalanceView }) {
       </dl>
       {recon.net_profit === null ? (
         <p className="text-muted-foreground mt-2 text-xs">
-          Прибыль за период неизвестна ({recon.net_profit_status ?? "нет данных"}), поэтому это
-          не «сошлось» и не «не сошлось» — это отсутствие ответа.
+          Прибыль за период неизвестна ({recon.net_profit_status ?? "нет данных"}), поэтому это не
+          «сошлось» и не «не сошлось» — это отсутствие ответа.
         </p>
       ) : recon.net_profit_status && recon.net_profit_status !== "ok" ? (
         // Неполная прибыль хуже неизвестной: она выглядит как цифра. Слагаемых в ОПиУ не
         // хватает, значит прибыль завышена на неизвестную величину, и «сошлось» здесь означает
         // «сошлось с неполной прибылью» — это надо сказать вслух, а не прятать в поле таблицы.
         <p className="text-muted-foreground mt-2 text-xs">
-          Прибыль взята со статусом «{recon.net_profit_status}»: в ОПиУ известны не все
-          слагаемые, поэтому сама она неполная. Расхождение ниже настолько же приблизительно.
+          Прибыль взята со статусом «{recon.net_profit_status}»: в ОПиУ известны не все слагаемые,
+          поэтому сама она неполная. Расхождение ниже настолько же приблизительно.
         </p>
       ) : null}
     </Card>
@@ -302,10 +311,153 @@ function linePartsOf(line: BalanceLine): LinePart[] {
  *  владельцу нечего делать: она либо совпадает с ожиданием, либо нет, и во втором случае искать
  *  причину негде. Раскрытие превращает вопрос «откуда столько?» в «почему у этого столько?»,
  *  на который уже можно ответить. */
-function LineRows({ line }: { line: BalanceLine }) {
+/** Строка без регистра: величину вносит человек.
+ *
+ *  ЗАЧЕМ ЭТО ОКНО. Сигнал «строки ждут ручного ввода» висел на каждом срезе, а ввести значение
+ *  было НЕГДЕ: ручка `PUT /balance/manual/…` и клиент к ней существовали, но ни один экран их
+ *  не звал. Владелец 15.08.2026 спросил прямо: «куда вводить?» — и правильный ответ был
+ *  «никуда». Предупреждение, на которое нельзя ответить, — это шум, а не сигнал.
+ *
+ *  ОСНОВАНИЕ ОБЯЗАТЕЛЬНО (сервер требует три символа). Цифра без объяснения в балансе
+ *  неотличима от опечатки: через месяц никто не вспомнит, откуда взялись эти 87 868,08.
+ *
+ *  ЗНАЧЕНИЕ ЖИВЁТ НА ОДНУ ДАТУ. Остаток на 31 июля не переносится на 31 августа сам — это не
+ *  забывчивость, а смысл: величина без регистра на новую дату может быть любой, и подставить
+ *  прошлую значило бы выдать позапрошлый эквайринг за сегодняшний. */
+function ManualValueDialog({
+  line,
+  asOf,
+  onSaved,
+}: {
+  line: BalanceLine;
+  asOf: string;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [document, setDocument] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const entered = line.status === "manual";
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = amount.trim().replace(/\s/g, "").replace(",", ".");
+    if (!normalized || !Number.isFinite(Number(normalized))) {
+      toast.error("Сумма — число, например 87868.08");
+      return;
+    }
+    if (reason.trim().length < 3) {
+      toast.error("Напишите основание: откуда взялась эта величина");
+      return;
+    }
+    setSaving(true);
+    try {
+      await setBalanceManualValue(asOf, line.line_code, {
+        amount: normalized,
+        reason: reason.trim(),
+        source_document: document.trim() || null,
+      });
+      toast.success(`«${line.title}» — величина внесена`);
+      setOpen(false);
+      setAmount("");
+      setReason("");
+      setDocument("");
+      onSaved();
+    } catch (error) {
+      toast.error(apiErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="text-primary text-xs underline-offset-2 hover:underline"
+        onClick={() => setOpen(true)}
+      >
+        {entered ? "изменить" : "ввести"}
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{line.title}</DialogTitle>
+            <DialogDescription>
+              У строки нет регистра — величину на {asOfLabel(asOf)} вносит человек. Пока она пуста,
+              её молча вбирает в себя капитал: он выводится как остаток.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-3" onSubmit={submit}>
+            <div className="space-y-1">
+              <Label htmlFor="manual-amount">Сумма, ₽</Label>
+              <Input
+                id="manual-amount"
+                value={amount}
+                placeholder="87868.08"
+                onChange={(event) => setAmount(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="manual-reason">Основание</Label>
+              <Input
+                id="manual-reason"
+                value={reason}
+                placeholder="Выписка эквайринга за 31.07, зачисление 01.08"
+                onChange={(event) => setReason(event.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="manual-document">Документ</Label>
+              <Input
+                id="manual-document"
+                value={document}
+                placeholder="необязательно"
+                onChange={(event) => setDocument(event.target.value)}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Значение относится к одной дате среза. На следующий месяц оно не переносится: величина
+              без регистра там может быть другой, и подставить прошлую значило бы выдать её за
+              свежую.
+            </p>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpen(false)}
+                disabled={saving}
+              >
+                Отмена
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Сохраняем…" : "Сохранить"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function LineRows({
+  line,
+  asOf,
+  onSaved,
+}: {
+  line: BalanceLine;
+  asOf: string;
+  onSaved: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const parts = linePartsOf(line);
   const muted = line.kind === "memo";
+  // Ручная строка узнаётся по источнику, а не по пустоте: уже введённую величину тоже надо
+  // уметь поправить, а её статус — `manual`, не `missing`.
+  const handEntered = line.source_kind === "manual";
   return (
     <>
       <tr className={`border-b last:border-0 ${muted ? "text-muted-foreground" : ""}`}>
@@ -335,6 +487,11 @@ function LineRows({ line }: { line: BalanceLine }) {
           <LineAmount line={line} />
           {line.status !== "ok" && line.amount !== null ? (
             <div className="text-muted-foreground text-xs">{STATUS_LABEL[line.status] ?? ""}</div>
+          ) : null}
+          {handEntered ? (
+            <div className="mt-0.5">
+              <ManualValueDialog line={line} asOf={asOf} onSaved={onSaved} />
+            </div>
           ) : null}
         </td>
       </tr>
@@ -372,11 +529,15 @@ function SideTable({
   total,
   groups,
   note,
+  asOf,
+  onSaved,
 }: {
   title: string;
   total: string;
   groups: { group: string; lines: BalanceLine[]; total: number }[];
   note?: string;
+  asOf: string;
+  onSaved: () => void;
 }) {
   return (
     <Card className="overflow-hidden">
@@ -403,7 +564,7 @@ function SideTable({
                 </td>
               </tr>
               {group.lines.map((line) => (
-                <LineRows key={line.line_code} line={line} />
+                <LineRows key={line.line_code} line={line} asOf={asOf} onSaved={onSaved} />
               ))}
             </Fragment>
           ))}
@@ -531,8 +692,8 @@ export function BalanceRoute() {
           </h1>
           <p className="text-muted-foreground text-sm">
             Состояние на конец дня — то есть итог месяца, а не его начало. Капитал выводится как
-            актив минус обязательства, поэтому равенство сторон здесь не проверка — проверяет
-            сверка приращения.
+            актив минус обязательства, поэтому равенство сторон здесь не проверка — проверяет сверка
+            приращения.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -567,12 +728,7 @@ export function BalanceRoute() {
           {/* Расхождение — ПЕРЕД цифрами: узнать, что смотришь на устаревшее, надо до того,
               как поверишь итогам, а не после. */}
           {drift.length ? (
-            <DriftCard
-              rows={drift}
-              status={view.status}
-              onRebuild={onFreeze}
-              busy={freezing}
-            />
+            <DriftCard rows={drift} status={view.status} onRebuild={onFreeze} busy={freezing} />
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -609,11 +765,19 @@ export function BalanceRoute() {
           ) : null}
 
           <div className="grid items-start gap-3 lg:grid-cols-2">
-            <SideTable title="Актив" total={view.asset_total} groups={assetGroups} />
+            <SideTable
+              title="Актив"
+              total={view.asset_total}
+              groups={assetGroups}
+              asOf={asOf}
+              onSaved={() => void load(asOf)}
+            />
             <SideTable
               title="Пассив"
               total={liabilitySideTotal}
               groups={liabilityGroups}
+              asOf={asOf}
+              onSaved={() => void load(asOf)}
               note={
                 "Пассив = обязательства + капитал, а капитал выведен как актив минус " +
                 "обязательства. Поэтому итоги сторон совпадают всегда — это следствие " +
