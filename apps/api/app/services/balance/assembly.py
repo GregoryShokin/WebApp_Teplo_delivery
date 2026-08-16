@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -33,6 +33,7 @@ from app.models import (
     Counterparty,
     IikoProduct,
     PnlIikoStockFact,
+    PnlProductMonthlyDecision,
     PnlProductWhitelist,
 )
 from app.services import (
@@ -298,7 +299,16 @@ async def _stock_line(
             ],
         )
 
+    # Запас — это товар по типу ИЛИ то, что владелец явно поставил на складской учёт. Второе
+    # слагаемое — страховка от ошибки справочника: у «Палочек» карточка типа DISH, хотя это
+    # упаковка со складским правилом, и по одному типу позиция выпала бы из актива. Whitelist
+    # здесь умеет только ДОБАВЛЯТЬ: списком, который ведут руками, запас не ограничивается —
+    # ровно от этого модуль уходил, когда строка показывала 291 354,87 вместо 851 715,18.
     goods = select(IikoProduct.iiko_id).where(IikoProduct.type == cat.STOCK_PRODUCT_TYPE)
+    stocked = select(PnlProductWhitelist.iiko_product_guid).where(
+        PnlProductWhitelist.source_kind == cat.STOCKED_SOURCE,
+        PnlProductWhitelist.include_status == cat.STOCKED_STATUS,
+    )
     # Расходники: товар есть, склада по нему нет — расход признан при покупке.
     expensed = select(PnlProductWhitelist.iiko_product_guid).where(
         PnlProductWhitelist.source_kind == cat.EXPENSED_ON_PURCHASE_SOURCE,
@@ -310,10 +320,15 @@ async def _stock_line(
                 PnlIikoStockFact.product_name,
                 PnlIikoStockFact.closing_quantity,
                 PnlIikoStockFact.closing_amount,
+                IikoProduct.deleted,
             )
+            .outerjoin(IikoProduct, IikoProduct.iiko_id == PnlIikoStockFact.iiko_product_guid)
             .where(
                 PnlIikoStockFact.period_month == month,
-                PnlIikoStockFact.iiko_product_guid.in_(goods),
+                or_(
+                    PnlIikoStockFact.iiko_product_guid.in_(goods),
+                    PnlIikoStockFact.iiko_product_guid.in_(stocked),
+                ),
                 PnlIikoStockFact.iiko_product_guid.not_in(expensed),
             )
             .order_by(PnlIikoStockFact.closing_amount.desc())
@@ -321,6 +336,10 @@ async def _stock_line(
     ).all()
     total = _money(sum((row[2] for row in counted), _ZERO))
     fact_count = len(counted)
+    # Карточка, помеченная в iiko удалённой, остатка не отменяет: вещь на полке лежит, и
+    # выкидывать её из актива значило бы списать деньги в капитал за то, что справочник
+    # прибрали. Но факт называем — расход по такой позиции признавать будет нечем.
+    deleted_rows = [row for row in counted if row[3]]
     # Отрицательный остаток попадает в состав как есть и виден сразу: он означает, что продали
     # больше, чем оприходовали, — то есть приходной накладной нет. Прятать такую позицию
     # значило бы прятать дыру в первичке.
@@ -358,6 +377,12 @@ async def _stock_line(
     # Товар, по которому владелец ещё не решил, расходник он или запас. Считаем запасом —
     # склад по умолчанию, расходником вещь становится решением, — но говорим об этом: если
     # решение окажется «расходник», строка на эту величину завышена.
+    #
+    # ИСТОЧНИК РАЗМЕТКИ ЗДЕСЬ НЕ ВАЖЕН, и раньше запрос требовал накладную. Из строки «не
+    # решено» владелец волен переключить источник на накладную и выбрать статью — то есть
+    # ЛЮБОЕ незакрытое решение способно снять товар с баланса, а не только уже указывающее
+    # на накладную. Складское «не знаю» молчало, хотя UI его штатно создаёт при смене
+    # источника до выбора статьи.
     undecided = (
         await session.execute(
             select(PnlIikoStockFact.product_name, PnlIikoStockFact.closing_amount)
@@ -369,8 +394,7 @@ async def _stock_line(
             .where(
                 PnlIikoStockFact.period_month == month,
                 IikoProduct.type == cat.STOCK_PRODUCT_TYPE,
-                PnlProductWhitelist.source_kind == cat.EXPENSED_ON_PURCHASE_SOURCE,
-                PnlProductWhitelist.include_status == "requires_owner_review",
+                PnlProductWhitelist.include_status == cat.UNDECIDED_STATUS,
             )
             .order_by(PnlIikoStockFact.closing_amount.desc())
         )
@@ -391,6 +415,86 @@ async def _stock_line(
                 rows=[
                     {"product": row[0] or "—", "amount": str(_money(row[1]))} for row in undecided
                 ],
+            )
+        )
+
+    # Товар, вычеркнутый из товарного контура ОПиУ. СУММУ НЕ ТРОГАЕМ: статус говорит про
+    # строку отчёта, а не про наличие вещи на складе, и читать «не в товарных расходах» как
+    # «товара нет» баланс не вправе — это молча списало бы актив в капитал. Но у такой
+    # позиции нет канала признания расхода вообще: ни складского, ни по накладной. Когда
+    # товар двинется, актив уменьшится, а расхода не появится нигде.
+    excluded = (
+        await session.execute(
+            select(PnlIikoStockFact.product_name, PnlIikoStockFact.closing_amount)
+            .join(IikoProduct, IikoProduct.iiko_id == PnlIikoStockFact.iiko_product_guid)
+            .join(
+                PnlProductWhitelist,
+                PnlProductWhitelist.iiko_product_guid == PnlIikoStockFact.iiko_product_guid,
+            )
+            .where(
+                PnlIikoStockFact.period_month == month,
+                IikoProduct.type == cat.STOCK_PRODUCT_TYPE,
+                PnlProductWhitelist.include_status == cat.EXCLUDED_STATUS,
+            )
+            .order_by(PnlIikoStockFact.closing_amount.desc())
+        )
+    ).all()
+    if excluded:
+        flags.append(
+            AssembledFlag(
+                code="stock_expense_channel_missing",
+                severity="warning",
+                title="Товар исключён из расходов, но остался запасом",
+                explanation=(
+                    "По этим позициям выбрано «не учитывать в товарных расходах». В запасах "
+                    "они остаются — статус говорит про строку отчёта, а не про наличие товара "
+                    "на складе. Но признать их расход теперь негде: когда товар израсходуют, "
+                    "актив уменьшится, а расход не появится ни в одной строке."
+                ),
+                count=len(excluded),
+                amount=_money(sum((row[1] for row in excluded), _ZERO)),
+                rows=[
+                    {"product": row[0] or "—", "amount": str(_money(row[1]))} for row in excluded
+                ],
+            )
+        )
+
+    # Товар в проработке: временное решение на ОДИН месяц, живущее своей таблицей. Правил
+    # разметки у него не остаётся вовсе (``save_goods_classification`` их удаляет), поэтому
+    # по whitelist баланс не отличил бы его от обычного складского — читаем решение напрямую.
+    # Расход по нему признаёт АКТ СПИСАНИЯ, а не складской контур: строка «Проработка» в ОПиУ
+    # справочная (memo) и в прибыль не входит. Пока акта нет, товар честно стоит активом.
+    workup = (
+        await session.execute(
+            select(PnlIikoStockFact.product_name, PnlIikoStockFact.closing_amount)
+            .join(IikoProduct, IikoProduct.iiko_id == PnlIikoStockFact.iiko_product_guid)
+            .join(
+                PnlProductMonthlyDecision,
+                PnlProductMonthlyDecision.iiko_product_guid == PnlIikoStockFact.iiko_product_guid,
+            )
+            .where(
+                PnlIikoStockFact.period_month == month,
+                IikoProduct.type == cat.STOCK_PRODUCT_TYPE,
+                PnlProductMonthlyDecision.period_month == month,
+                PnlProductMonthlyDecision.decision_kind == cat.WORKUP_DECISION,
+            )
+            .order_by(PnlIikoStockFact.closing_amount.desc())
+        )
+    ).all()
+    if workup:
+        flags.append(
+            AssembledFlag(
+                code="stock_workup_pending",
+                severity="info",
+                title="Товар в проработке — ждёт акта списания",
+                explanation=(
+                    "Решение принято на один месяц: закупка показана в ОПиУ справочной строкой "
+                    "и в прибыль не входит. Расход признает акт списания — до него товар стоит "
+                    "запасом. Акта не будет — расход не появится нигде."
+                ),
+                count=len(workup),
+                amount=_money(sum((row[1] for row in workup), _ZERO)),
+                rows=[{"product": row[0] or "—", "amount": str(_money(row[1]))} for row in workup],
             )
         )
 
@@ -437,6 +541,8 @@ async def _stock_line(
             "positions": fact_count,
             "positions_in_snapshot": run_count,
             "excluded_amount": str(_money(run_total - total)),
+            "deleted_positions": len(deleted_rows),
+            "deleted_amount": str(_money(sum((row[2] for row in deleted_rows), _ZERO))),
             "synced_at": synced_at.isoformat() if synced_at else None,
             "parts": positions,
         },

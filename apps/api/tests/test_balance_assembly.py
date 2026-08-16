@@ -28,6 +28,7 @@ from app.models import (  # noqa: E402
     CashflowTransaction,
     IikoProduct,
     PnlIikoStockFact,
+    PnlProductMonthlyDecision,
     PnlProductWhitelist,
 )
 from app.services.balance import catalog as cat  # noqa: E402
@@ -70,12 +71,16 @@ async def _stock_fact(
     name: str = "Упаковка",
     kind: str | None = "GOODS",
     expensed: str | None = None,
+    source_kind: str | None = None,
+    workup: bool = False,
+    deleted: bool = False,
 ) -> str:
     """Складской факт месяца плюс карточка номенклатуры iiko.
 
     Снимок приносит остатки по ВСЕМУ справочнику, а запасом является только товар, поэтому у
     хелпера есть ``kind``: ``GOODS`` (по умолчанию), любой другой тип — или ``None``, если
-    карточки в справочнике нет вовсе. ``expensed`` помечает товар расходником в разметке ОПиУ.
+    карточки в справочнике нет вовсе. ``expensed`` задаёт статус разметки ОПиУ, ``source_kind``
+    — её источник (по умолчанию накладная), ``workup`` кладёт временное решение месяца.
     """
     guid = str(uuid.uuid4())
     session.add(
@@ -93,14 +98,32 @@ async def _stock_fact(
         )
     )
     if kind is not None:
-        session.add(IikoProduct(iiko_id=guid, name=name, type=kind, unit="шт", synced_at=synced_at))
+        session.add(
+            IikoProduct(
+                iiko_id=guid,
+                name=name,
+                type=kind,
+                unit="шт",
+                synced_at=synced_at,
+                deleted=deleted,
+            )
+        )
     if expensed is not None:
         session.add(
             PnlProductWhitelist(
                 iiko_product_guid=guid,
-                source_kind=cat.EXPENSED_ON_PURCHASE_SOURCE,
+                source_kind=source_kind or cat.EXPENSED_ON_PURCHASE_SOURCE,
                 include_status=expensed,
                 product_name=name,
+            )
+        )
+    if workup:
+        session.add(
+            PnlProductMonthlyDecision(
+                period_month=month,
+                iiko_product_guid=guid,
+                source_kind=cat.EXPENSED_ON_PURCHASE_SOURCE,
+                decision_kind=cat.WORKUP_DECISION,
             )
         )
     await session.flush()
@@ -943,3 +966,143 @@ def test_the_approximation_is_shown_by_one_card_not_by_each_part() -> None:
     assert assembly_module._approximate_flag(
         Decimal("0.00"), staff=Decimal("0.00"), settlements=Decimal("0.00")
     ) is None
+
+
+async def test_every_undecided_good_speaks_up_whatever_its_source(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Не решено» обязано сигналить при ЛЮБОМ источнике разметки, не только при накладной.
+
+    Запрос требовал ``incoming_invoice``, и складское «не знаю» молчало — при том, что UI
+    создаёт это состояние штатно: владелец переключает источник на складской остаток, статью
+    выбрать ещё не успел. Товар сидел в сумме запаса, а повод для сомнения не назывался.
+
+    Ошибиться источником тут дорого ровно потому, что из «не решено» владелец волен уйти в
+    накладную: любое незакрытое решение способно снять товар с баланса.
+    """
+    synced = datetime(2026, 8, 1, 3, tzinfo=UTC)
+    async with async_session_factory() as session:
+        await _stock_fact(
+            session,
+            month=JULY,
+            amount="4000.00",
+            synced_at=synced,
+            name="Подвешено на складе",
+            expensed=cat.UNDECIDED_STATUS,
+            source_kind=cat.STOCKED_SOURCE,
+        )
+        await _stock_fact(
+            session,
+            month=JULY,
+            amount="1500.00",
+            synced_at=synced,
+            name="Подвешено на накладной",
+            expensed=cat.UNDECIDED_STATUS,
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=JULY_END)
+        pending = _flag(assembled, "stock_expense_decision_pending")
+        assert pending is not None
+        assert pending.amount == Decimal("5500.00"), "складское «не знаю» снова потерялось"
+        assert {row["product"] for row in pending.rows} == {
+            "Подвешено на складе",
+            "Подвешено на накладной",
+        }
+
+
+async def test_an_excluded_good_stays_in_stock_and_says_why(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Не учитывать в товарных расходах» НЕ означает «товара нет» — сумму не трогаем, но говорим.
+
+    Статус говорит про строку ОПиУ, а не про наличие вещи на складе: прочитать его как
+    отсутствие товара значило бы молча списать актив в капитал. Зато канала признания расхода
+    у такой позиции не остаётся вовсе — ни складского, ни по накладной, — и когда товар
+    израсходуют, актив уменьшится, а расход не появится ни в одной строке. Об этом и сигнал.
+    """
+    synced = datetime(2026, 8, 1, 3, tzinfo=UTC)
+    async with async_session_factory() as session:
+        before = (await assemble(session, as_of=JULY_END)).asset_total
+        await _stock_fact(
+            session,
+            month=JULY,
+            amount="5306.00",
+            synced_at=synced,
+            name="Пакет вакуум 160/200",
+            expensed=cat.EXCLUDED_STATUS,
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=JULY_END)
+        assert assembled.asset_total == before + Decimal("5306.00"), (
+            "исключение из товарных расходов вычло товар из актива — это списание втихую"
+        )
+        orphan = _flag(assembled, "stock_expense_channel_missing")
+        assert orphan is not None
+        assert orphan.severity == "warning"
+        assert orphan.amount == Decimal("5306.00")
+
+
+async def test_a_good_in_workup_is_named_even_though_its_rule_was_deleted(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Товар в проработке виден балансу, хотя разметки у него не осталось.
+
+    Сохраняя «проработку», ОПиУ УДАЛЯЕТ правила товара — по whitelist он неотличим от обычного
+    складского. Поэтому решение читается из своей таблицы. Запасом он остаётся правильно:
+    строка «Проработка» в ОПиУ справочная и в прибыль не входит, расход признаёт акт списания.
+    Но если акта не будет, расход не появится нигде — это и надо сказать вслух.
+    """
+    synced = datetime(2026, 8, 1, 3, tzinfo=UTC)
+    async with async_session_factory() as session:
+        before = (await assemble(session, as_of=JULY_END)).asset_total
+        await _stock_fact(
+            session,
+            month=JULY,
+            amount="2200.00",
+            synced_at=synced,
+            name="Новый соус на пробу",
+            workup=True,
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=JULY_END)
+        assert assembled.asset_total == before + Decimal("2200.00")
+        pending = _flag(assembled, "stock_workup_pending")
+        assert pending is not None
+        assert pending.amount == Decimal("2200.00")
+
+
+async def test_an_explicitly_stocked_good_survives_a_wrong_card_type(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Явная постановка на складской учёт сильнее ошибки в типе карточки.
+
+    У «Палочек» карточка типа ``DISH``, хотя это упаковка со складским правилом: по одному
+    типу позиция выпала бы из актива молча. Whitelist здесь умеет только ДОБАВЛЯТЬ — запас не
+    ограничивается списком, который ведут руками, иначе вернулась бы прежняя беда, когда
+    строка показывала четверть настоящего склада.
+    """
+    synced = datetime(2026, 8, 1, 3, tzinfo=UTC)
+    async with async_session_factory() as session:
+        before = (await assemble(session, as_of=JULY_END)).asset_total
+        await _stock_fact(
+            session,
+            month=JULY,
+            amount="900.00",
+            synced_at=synced,
+            name="Палочки",
+            kind="DISH",
+            expensed=cat.STOCKED_STATUS,
+            source_kind=cat.STOCKED_SOURCE,
+        )
+        # Блюдо без складского правила по-прежнему не запас — правило добавляет, а не
+        # отменяет критерий типа.
+        await _stock_fact(
+            session, month=JULY, amount="700.00", synced_at=synced, name="Ролл", kind="DISH"
+        )
+        await session.commit()
+
+        assembled = await assemble(session, as_of=JULY_END)
+        assert assembled.asset_total == before + Decimal("900.00")
