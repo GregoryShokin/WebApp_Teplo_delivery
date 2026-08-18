@@ -1223,6 +1223,106 @@ async def test_carryover_suggestion_from_prior_surplus(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
+async def test_carryover_ignores_surplus_consumed_by_prior_swap_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    salmon_sm = position_for("chefs", swap_group="salmon")
+    salmon_hk = position_for("chefs", swap_group="salmon")
+    prior_audit = SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                position_id=salmon_hk.id,
+                position=salmon_hk,
+                amount=Decimal("-10543"),
+            ),
+            SimpleNamespace(
+                position_id=salmon_sm.id,
+                position=salmon_sm,
+                amount=Decimal("9895"),
+            ),
+        ]
+    )
+    current_item = detail_item("1500", "chefs", active=True, name="Семга с/м")
+    current_item.position_id = salmon_sm.id
+    audit = audit_detail_obj([current_item])
+
+    async def fake_prev(_session: Any, _business_date: date) -> date:
+        return date(2026, 5, 19)
+
+    class CarryoverSession:
+        async def scalar(self, _query: Any) -> SimpleNamespace:
+            return prior_audit
+
+    monkeypatch.setattr(inventory_audit_service, "_previous_audit_date", fake_prev)
+
+    suggestions = await inventory_audit_service.carryover_suggestions(
+        CarryoverSession(),  # type: ignore[arg-type]
+        audit,
+    )
+
+    assert current_item.id not in suggestions
+
+
+@pytest.mark.asyncio
+async def test_carryover_uses_only_positive_prior_swap_group_remainder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    salmon_sm = position_for("chefs", swap_group="salmon")
+    salmon_hk = position_for("chefs", swap_group="salmon")
+    prior_audit = SimpleNamespace(
+        items=[
+            SimpleNamespace(
+                position_id=salmon_hk.id,
+                position=salmon_hk,
+                amount=Decimal("-1000"),
+            ),
+            SimpleNamespace(
+                position_id=salmon_sm.id,
+                position=salmon_sm,
+                amount=Decimal("1500"),
+            ),
+        ]
+    )
+    current_item = detail_item("800", "chefs", active=True, name="Семга с/м")
+    current_item.position_id = salmon_sm.id
+    audit = audit_detail_obj([current_item])
+
+    async def fake_prev(_session: Any, _business_date: date) -> date:
+        return date(2026, 5, 19)
+
+    class CarryoverSession:
+        async def scalar(self, _query: Any) -> SimpleNamespace:
+            return prior_audit
+
+    monkeypatch.setattr(inventory_audit_service, "_previous_audit_date", fake_prev)
+
+    suggestions = await inventory_audit_service.carryover_suggestions(
+        CarryoverSession(),  # type: ignore[arg-type]
+        audit,
+    )
+
+    assert suggestions[current_item.id]["prior_amount"] == "500.00"
+    assert suggestions[current_item.id]["suggested_reduction"] == "500.00"
+
+
+def test_carryover_distributes_swap_remainder_between_surplus_positions() -> None:
+    first = position_for("chefs", swap_group="seafood")
+    second = position_for("chefs", swap_group="seafood")
+    shortage = position_for("chefs", swap_group="seafood")
+
+    available = inventory_audit_service._carryover_surplus_by_position(
+        [
+            SimpleNamespace(position_id=first.id, position=first, amount=Decimal("1000")),
+            SimpleNamespace(position_id=second.id, position=second, amount=Decimal("500")),
+            SimpleNamespace(position_id=shortage.id, position=shortage, amount=Decimal("-1200")),
+        ]
+    )
+
+    assert available == {first.id: Decimal("200.00"), second.id: Decimal("100.00")}
+    assert sum(available.values(), Decimal("0")) == Decimal("300.00")
+
+
+@pytest.mark.asyncio
 async def test_apply_creates_adjustment_with_next_day_work_date(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

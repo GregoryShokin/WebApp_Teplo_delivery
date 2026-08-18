@@ -4,7 +4,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -896,18 +896,13 @@ async def carryover_suggestions(
         return {}
     prior = await session.scalar(
         select(InventoryAudit)
-        .options(selectinload(InventoryAudit.items))
+        .options(selectinload(InventoryAudit.items).selectinload(InventoryAuditItem.position))
         .where(InventoryAudit.business_date == prior_date)
     )
     if prior is None:
         return {}
 
-    prior_signed_by_position: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
-    for prior_item in prior.items:
-        position_id = getattr(prior_item, "position_id", None)
-        if position_id is None:
-            continue
-        prior_signed_by_position[position_id] += item_signed_amount(prior_item)
+    prior_surplus_by_position = _carryover_surplus_by_position(prior.items)
 
     suggestions: dict[uuid.UUID, dict[str, Any]] = {}
     for item in audit.items:
@@ -917,7 +912,7 @@ async def carryover_suggestions(
         shortage = item_raw_shortage_amount(item)
         if shortage <= 0:
             continue
-        prior_surplus = _money(prior_signed_by_position.get(position_id, Decimal("0")))
+        prior_surplus = prior_surplus_by_position.get(position_id, Decimal("0"))
         if prior_surplus <= 0:
             continue
         suggested = _money(min(prior_surplus, shortage))
@@ -930,6 +925,70 @@ async def carryover_suggestions(
             "suggested_reduction": decimal_string(suggested),
         }
     return suggestions
+
+
+def _carryover_surplus_by_position(items: list[Any]) -> dict[uuid.UUID, Decimal]:
+    """Return only prior surplus that was not consumed by a swap-group shortage.
+
+    Standalone positions keep their positive signed balance. For a swap group, only its
+    positive net balance remains available after offsetting shortages. When several positions
+    contributed surplus, the remainder is attributed proportionally so the total available
+    carryover can never exceed the group's net balance.
+    """
+    standalone_by_position: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
+    swap_by_group: dict[str, dict[uuid.UUID, Decimal]] = defaultdict(
+        lambda: defaultdict(lambda: Decimal("0"))
+    )
+    for item in items:
+        position_id = getattr(item, "position_id", None)
+        if position_id is None:
+            continue
+        signed_amount = item_signed_amount(item)
+        swap_group = item_effective_swap_group(item)
+        if swap_group:
+            swap_by_group[swap_group][position_id] += signed_amount
+        else:
+            standalone_by_position[position_id] += signed_amount
+
+    available: dict[uuid.UUID, Decimal] = {
+        position_id: _money(amount)
+        for position_id, amount in standalone_by_position.items()
+        if amount > 0
+    }
+    for position_amounts in swap_by_group.values():
+        group_net = _money(sum(position_amounts.values(), Decimal("0")))
+        if group_net <= 0:
+            continue
+        positive_amounts = {
+            position_id: _money(amount)
+            for position_id, amount in position_amounts.items()
+            if amount > 0
+        }
+        positive_total = sum(positive_amounts.values(), Decimal("0"))
+        if positive_total <= 0:
+            continue
+
+        # Allocate whole kopecks by largest remainder. This keeps the attribution stable and
+        # makes its exact sum equal to group_net even for several surplus positions.
+        shares: dict[uuid.UUID, Decimal] = {}
+        remainders: list[tuple[Decimal, str, uuid.UUID]] = []
+        for position_id, amount in positive_amounts.items():
+            raw_share = group_net * amount / positive_total
+            share = raw_share.quantize(MONEY, rounding=ROUND_DOWN)
+            shares[position_id] = share
+            remainders.append((raw_share - share, str(position_id), position_id))
+        undistributed = int(
+            ((group_net - sum(shares.values(), Decimal("0"))) / MONEY).to_integral_value()
+        )
+        for _remainder, _position_key, position_id in sorted(remainders, reverse=True)[
+            :undistributed
+        ]:
+            shares[position_id] += MONEY
+
+        for position_id, share in shares.items():
+            if share > 0:
+                available[position_id] = _money(available.get(position_id, Decimal("0")) + share)
+    return available
 
 
 def build_penalty_computation(
