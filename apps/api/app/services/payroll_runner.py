@@ -38,6 +38,8 @@ from app.services.deferred_audit_charge_service import (
     collapse_deferred_charges_on_dismissal,
 )
 from app.services.deposit_schedule import (
+    DepositPayoutConflictError,
+    assert_run_has_no_standalone_deposit_drafts,
     is_scheduled_payout_enabled,
     load_pending_schedules,
     load_period_schedules,
@@ -1298,6 +1300,11 @@ async def finalize_payroll_run(
             "Ведомость устарела: отпускные изменились после расчёта. "
             "Пересчитайте ведомость перед финализацией."
         )
+
+    try:
+        await assert_run_has_no_standalone_deposit_drafts(session, run.id)
+    except DepositPayoutConflictError as exc:
+        raise PayrollConflictError(str(exc)) from exc
 
     now = datetime.now(UTC)
     previous_run_status = run.status

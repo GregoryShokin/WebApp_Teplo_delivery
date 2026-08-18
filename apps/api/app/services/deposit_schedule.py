@@ -18,13 +18,26 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AppSetting, DepositPayoutSchedule
+from app.models import (
+    AppSetting,
+    DepositBankDraft,
+    DepositPayoutSchedule,
+    Employee,
+    PayrollLine,
+    PayrollRun,
+)
 
 DEPOSIT_SCHEDULED_PAYOUT_ENABLED_KEY = "payroll.deposit_scheduled_payout_enabled"
 SCHEDULE_ACCOUNT_CHOICES = frozenset({"safe", "cash_tk", "bank_draft", "bank_draft_sber"})
+ACTIVE_DEPOSIT_DRAFT_STATUSES = ("created", "updated", "paid")
+ACTIVE_PAYROLL_RUN_STATUSES = ("running", "blocked", "completed")
+
+
+class DepositPayoutConflictError(RuntimeError):
+    pass
 
 
 def _truthy(value: Any) -> bool:
@@ -83,6 +96,18 @@ async def create_or_replace_schedule(
     задаёт конкретную ведомость (увольнение «через ведомость»); ``None`` — плавающий план,
     берётся в ближайший расчёт. ``target_run_id`` заполняется при финализации.
     """
+    await _lock_employee(session, employee_id)
+    active_draft = await session.scalar(
+        select(DepositBankDraft.id).where(
+            DepositBankDraft.employee_id == employee_id,
+            DepositBankDraft.status.in_(ACTIVE_DEPOSIT_DRAFT_STATUSES),
+        )
+    )
+    if active_draft is not None:
+        raise DepositPayoutConflictError(
+            "По сотруднику уже отправлен отдельный банковский платёж депозита. "
+            "Отмените его перед выдачей депозита через зарплатную ведомость."
+        )
     if account_choice not in SCHEDULE_ACCOUNT_CHOICES:
         account_choice = "safe"
     existing = await get_pending_schedule(session, employee_id)
@@ -109,6 +134,93 @@ async def create_or_replace_schedule(
     session.add(schedule)
     await session.flush()
     return schedule
+
+
+async def assert_no_payroll_deposit_payout(
+    session: AsyncSession,
+    employee_id: uuid.UUID,
+) -> None:
+    """Block a standalone payout while payroll already owns the same deposit amount.
+
+    The employee row is locked so a concurrent schedule and standalone bank draft cannot both
+    pass their checks and commit into different tables.
+    """
+    await _lock_employee(session, employee_id)
+    pending_schedule = await session.scalar(
+        select(DepositPayoutSchedule.id).where(
+            DepositPayoutSchedule.employee_id == employee_id,
+            DepositPayoutSchedule.status == "pending",
+        )
+    )
+    active_line_amount = await session.scalar(
+        select(func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0))
+        .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+        .where(
+            PayrollLine.employee_id == employee_id,
+            PayrollLine.deposit_payout_scheduled > 0,
+            PayrollRun.status.in_(ACTIVE_PAYROLL_RUN_STATUSES),
+        )
+    )
+    if pending_schedule is not None or Decimal(str(active_line_amount or 0)) > 0:
+        raise DepositPayoutConflictError(
+            "Депозит уже включён или запланирован в зарплатной ведомости. "
+            "Отмените выдачу через ведомость и пересчитайте её перед отдельной выплатой."
+        )
+
+
+async def assert_run_has_no_standalone_deposit_drafts(
+    session: AsyncSession,
+    run_id: uuid.UUID,
+) -> None:
+    """Block payroll finalization/bank draft if an included deposit has its own bank draft."""
+    employee_ids = sorted(
+        set(
+            (
+                await session.scalars(
+                    select(PayrollLine.employee_id).where(
+                        PayrollLine.run_id == run_id,
+                        PayrollLine.deposit_payout_scheduled > 0,
+                    )
+                )
+            ).all()
+        ),
+        key=str,
+    )
+    if not employee_ids:
+        return
+
+    # Same lock as create_or_replace_schedule/assert_no_payroll_deposit_payout. Holding it until
+    # the payroll operation commits closes the cross-table race with a standalone bank draft.
+    (
+        await session.scalars(
+            select(Employee.id)
+            .where(Employee.id.in_(employee_ids))
+            .order_by(Employee.id)
+            .with_for_update()
+        )
+    ).all()
+    rows = (
+        await session.execute(
+            select(Employee.full_name, DepositBankDraft.amount)
+            .join(DepositBankDraft, DepositBankDraft.employee_id == Employee.id)
+            .where(
+                Employee.id.in_(employee_ids),
+                DepositBankDraft.status.in_(ACTIVE_DEPOSIT_DRAFT_STATUSES),
+            )
+            .order_by(Employee.full_name)
+        )
+    ).all()
+    if not rows:
+        return
+    details = ", ".join(f"{name} — {Decimal(str(amount)):.2f} ₽" for name, amount in rows)
+    raise DepositPayoutConflictError(
+        "В ведомость уже включён депозит, по которому существует отдельный банковский платёж: "
+        f"{details}. Отмените один из способов выплаты."
+    )
+
+
+async def _lock_employee(session: AsyncSession, employee_id: uuid.UUID) -> None:
+    await session.scalar(select(Employee.id).where(Employee.id == employee_id).with_for_update())
 
 
 async def load_period_schedules(

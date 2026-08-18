@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import DepositTransaction, Wallet
 from app.services import deposit_service
+from app.services.deposit_schedule import assert_no_payroll_deposit_payout
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ async def execute_deposit_payout(
 
     Баланс счёта вызывающий обнуляет сам — см. докстринг модуля.
     """
+    await assert_no_payroll_deposit_payout(session, employee_id)
     transaction = deposit_service.add_transaction(
         session,
         employee_id=employee_id,

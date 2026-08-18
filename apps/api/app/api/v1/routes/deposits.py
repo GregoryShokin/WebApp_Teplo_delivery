@@ -346,6 +346,11 @@ async def payout_deposit(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="У сотрудника уже есть активный банк-черновик выдачи депозита",
             ) from None
+        except deposit_schedule.DepositPayoutConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
         after = deposit_service.deposit_account_snapshot(account) | {
             "bank_draft": {
                 "id": str(draft.id),
@@ -401,6 +406,11 @@ async def payout_deposit(
         except ValueError as exc:  # перерезервирование Сейфа / нет кошелька
             await session.rollback()
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except deposit_schedule.DepositPayoutConflictError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
         except IntegrityError:
             await session.rollback()
             raise HTTPException(
@@ -446,16 +456,19 @@ async def payout_deposit(
     account = deposit_service.ensure_account(session, employee_id, account, now)
     account.balance = balance - amount
     account.last_updated = now
-    payout = await execute_deposit_payout(
-        session,
-        employee_id=employee_id,
-        employee_full_name=employee.full_name,
-        amount=amount,
-        payout_method=payload.payout_method,
-        transaction_type="payout",
-        now=now,
-        comment=payload.comment,
-    )
+    try:
+        payout = await execute_deposit_payout(
+            session,
+            employee_id=employee_id,
+            employee_full_name=employee.full_name,
+            amount=amount,
+            payout_method=payload.payout_method,
+            transaction_type="payout",
+            now=now,
+            comment=payload.comment,
+        )
+    except deposit_schedule.DepositPayoutConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     transaction = payout.transaction
     payout_wallet = payout.payout_wallet
     after = deposit_service.deposit_account_snapshot(account) | {
@@ -545,13 +558,16 @@ async def schedule_deposit_payout(
             detail="Отложенная выдача депозита выключена",
         )
     await _get_employee_or_404(session, employee_id)
-    schedule = await deposit_schedule.create_or_replace_schedule(
-        session,
-        employee_id,
-        requested_amount=decimal(payload.amount) if payload.amount is not None else None,
-        account_choice=payload.account_choice,
-        created_by_user_id=actor.user_id,
-    )
+    try:
+        schedule = await deposit_schedule.create_or_replace_schedule(
+            session,
+            employee_id,
+            requested_amount=decimal(payload.amount) if payload.amount is not None else None,
+            account_choice=payload.account_choice,
+            created_by_user_id=actor.user_id,
+        )
+    except deposit_schedule.DepositPayoutConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     await session.refresh(schedule)
     return _schedule_payload(schedule)

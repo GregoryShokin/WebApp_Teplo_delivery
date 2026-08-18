@@ -72,7 +72,7 @@ from app.schemas.payroll import (
     RecoveryOverridesRequest,
 )
 from app.schemas.payroll_config import PayrollRoleCategoryOptionRead
-from app.services import accounting_periods
+from app.services import accounting_periods, deposit_schedule
 from app.services.banking import BankCredentialsError, BankFetchError
 from app.services.deferred_audit_charge_service import (
     DeferredChargeConflictError,
@@ -788,6 +788,7 @@ async def post_run_bank_draft(
     # Формирование банк-черновика требует права на канал «банк-черновик» (то же право для Сбера).
     ensure_permission(actor, "finance.payout_channel.bank_draft")
     try:
+        await deposit_schedule.assert_run_has_no_standalone_deposit_drafts(session, run_id)
         return await create_or_update_run_draft(
             session,
             run_id,
@@ -797,6 +798,8 @@ async def post_run_bank_draft(
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except deposit_schedule.DepositPayoutConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except BankCredentialsError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
@@ -931,6 +934,7 @@ async def post_payout_drafts(
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollPayoutDraftsResponse:
     try:
+        await deposit_schedule.assert_run_has_no_standalone_deposit_drafts(session, run_id)
         drafts_count = await create_or_update_drafts(
             session,
             run_id,
@@ -939,6 +943,8 @@ async def post_payout_drafts(
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except deposit_schedule.DepositPayoutConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except BankCredentialsError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc

@@ -10,19 +10,25 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
     AppSetting,
     DepositAccount,
+    DepositBankDraft,
     DepositPayoutSchedule,
     Employee,
+    PayrollLine,
     PayrollPeriod,
     PayrollRun,
 )
 from app.services.deposit_schedule import (
     DEPOSIT_SCHEDULED_PAYOUT_ENABLED_KEY,
+    DepositPayoutConflictError,
+    assert_no_payroll_deposit_payout,
+    assert_run_has_no_standalone_deposit_drafts,
     cancel_pending_schedule,
     create_or_replace_schedule,
     is_scheduled_payout_enabled,
@@ -138,6 +144,112 @@ async def test_create_replace_and_cancel_schedule(
         assert await load_pending_schedules(session, [employee.id]) == {}
 
 
+async def test_schedule_rejects_active_standalone_bank_draft(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _seed_employee(session)
+        session.add(
+            DepositBankDraft(
+                id=uuid.uuid4(),
+                recipient_kind="production",
+                employee_id=employee.id,
+                document_id=f"teplo-deposit-{uuid.uuid4()}",
+                amount=Decimal("10000"),
+                status="created",
+                bank_provider="tbank",
+                payload={},
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(DepositPayoutConflictError, match="отдельный банковский платёж"):
+            await create_or_replace_schedule(
+                session,
+                employee.id,
+                requested_amount=Decimal("10000"),
+                account_choice="safe",
+                created_by_user_id=None,
+            )
+
+
+async def test_standalone_payout_rejects_pending_payroll_schedule(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _seed_employee(session)
+        await create_or_replace_schedule(
+            session,
+            employee.id,
+            requested_amount=Decimal("10000"),
+            account_choice="safe",
+            created_by_user_id=None,
+        )
+
+        with pytest.raises(DepositPayoutConflictError, match="зарплатной ведомости"):
+            await assert_no_payroll_deposit_payout(session, employee.id)
+
+
+async def test_standalone_payout_rejects_deposit_already_baked_into_active_run(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _seed_employee(session)
+        run = await _seed_run(session)
+        run.status = "completed"
+        session.add(
+            PayrollLine(
+                id=uuid.uuid4(),
+                run_id=run.id,
+                employee_id=employee.id,
+                role="Повар",
+                total_payable=Decimal("48207.27"),
+                deposit_payout_scheduled=Decimal("10000"),
+                components={},
+            )
+        )
+        await session.flush()
+
+        with pytest.raises(DepositPayoutConflictError, match="зарплатной ведомости"):
+            await assert_no_payroll_deposit_payout(session, employee.id)
+
+
+async def test_payroll_run_rejects_deposit_with_active_standalone_draft(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _seed_employee(session)
+        run = await _seed_run(session)
+        run.status = "completed"
+        session.add_all(
+            [
+                PayrollLine(
+                    id=uuid.uuid4(),
+                    run_id=run.id,
+                    employee_id=employee.id,
+                    role="Повар",
+                    total_payable=Decimal("48207.27"),
+                    deposit_payout_scheduled=Decimal("10000"),
+                    components={},
+                ),
+                DepositBankDraft(
+                    id=uuid.uuid4(),
+                    recipient_kind="production",
+                    employee_id=employee.id,
+                    document_id=f"teplo-deposit-{uuid.uuid4()}",
+                    amount=Decimal("10000"),
+                    status="paid",
+                    bank_provider="tbank",
+                    payload={},
+                ),
+            ]
+        )
+        await session.flush()
+
+        with pytest.raises(DepositPayoutConflictError, match=employee.full_name):
+            await assert_run_has_no_standalone_deposit_drafts(session, run.id)
+
+
 async def test_processed_and_reverted_lifecycle(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -156,9 +268,7 @@ async def test_processed_and_reverted_lifecycle(
         processed = await mark_schedules_processed_for_run(session, run.id, [employee.id])
         assert processed == 1
         schedule = await session.scalar(
-            select(DepositPayoutSchedule).where(
-                DepositPayoutSchedule.employee_id == employee.id
-            )
+            select(DepositPayoutSchedule).where(DepositPayoutSchedule.employee_id == employee.id)
         )
         assert schedule.status == "processed"
         assert schedule.target_run_id == run.id

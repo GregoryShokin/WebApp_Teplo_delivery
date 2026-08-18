@@ -1414,13 +1414,16 @@ async def dismiss_employee(
     if deposit_decision.action == DepositDismissAction.SCHEDULE_PAYOUT and isinstance(
         session, AsyncSession
     ):
-        await deposit_schedule.create_or_replace_schedule(
-            session,
-            employee.id,
-            requested_amount=None,
-            account_choice="safe",
-            created_by_user_id=actor.user_id,
-        )
+        try:
+            await deposit_schedule.create_or_replace_schedule(
+                session,
+                employee.id,
+                requested_amount=None,
+                account_choice="safe",
+                created_by_user_id=actor.user_id,
+            )
+        except deposit_schedule.DepositPayoutConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await forfeit_active_fund_on_dismiss(session, employee, fire_date=fire_date, now=now)
 
     # Если по сотруднику вообще нет открытых расчётов — сразу завершаем увольнение
@@ -3989,29 +3992,39 @@ async def _apply_dismiss_deposit_decision(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="У сотрудника уже есть активный банк-черновик выдачи депозита",
                 )
-            bank_draft = await create_deposit_payout_draft(
-                session,
-                recipient_kind="production",
-                amount=decision.payout_amount,
-                purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
-                provider=provider,
-                employee_id=employee_id,
-            )
+            try:
+                bank_draft = await create_deposit_payout_draft(
+                    session,
+                    recipient_kind="production",
+                    amount=decision.payout_amount,
+                    purpose=f"Выдача депозита {employee_full_name} (через Сейф)",
+                    provider=provider,
+                    employee_id=employee_id,
+                )
+            except deposit_schedule.DepositPayoutConflictError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+                ) from exc
             bank_draft_pending = True
             bank_draft_id = bank_draft.id
         else:
             # НАЛИЧНЫЙ канал: реальная выдача денег — леджер + расход в ДДС сразу.
             # Тип операции — dismissal_payout.
-            payout = await execute_deposit_payout(
-                session,
-                employee_id=employee_id,
-                employee_full_name=employee_full_name,
-                amount=decision.payout_amount,
-                payout_method=method.value,
-                transaction_type="dismissal_payout",
-                now=now,
-                comment=comment,
-            )
+            try:
+                payout = await execute_deposit_payout(
+                    session,
+                    employee_id=employee_id,
+                    employee_full_name=employee_full_name,
+                    amount=decision.payout_amount,
+                    payout_method=method.value,
+                    transaction_type="dismissal_payout",
+                    now=now,
+                    comment=comment,
+                )
+            except deposit_schedule.DepositPayoutConflictError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+                ) from exc
             payout_tx = payout.transaction
             transactions.append(payout_tx)
             payout_effect = DismissDepositPayoutEffect(
@@ -4025,14 +4038,17 @@ async def _apply_dismiss_deposit_decision(
     elif via_payroll:
         # Выдача через зарплатную ведомость: деньги сейчас не двигаем — планируем выдачу в
         # выбранной ведомости (выплатится при её финализации, через Сейф-контур, как остальная ЗП).
-        schedule = await deposit_schedule.create_or_replace_schedule(
-            session,
-            employee_id,
-            requested_amount=decision.payout_amount,
-            account_choice="safe",
-            created_by_user_id=actor.user_id,
-            target_period_id=decision.period_id,
-        )
+        try:
+            schedule = await deposit_schedule.create_or_replace_schedule(
+                session,
+                employee_id,
+                requested_amount=decision.payout_amount,
+                account_choice="safe",
+                created_by_user_id=actor.user_id,
+                target_period_id=decision.period_id,
+            )
+        except deposit_schedule.DepositPayoutConflictError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         schedule_id = schedule.id
     if decision.writeoff_amount > 0:
         transactions.append(
