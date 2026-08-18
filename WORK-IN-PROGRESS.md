@@ -25,6 +25,15 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-depositdedupe — ветка `agent/depositdedupe-deposit-payroll-double-payout`
+- worktree: `../Teplo-agent-depositdedupe`
+- compose: стенд не поднимаю; отдельная временная test-БД
+- трогает: взаимные гарды выдачи депозита через ведомость и отдельный банк-черновик в
+  `deposit_schedule.py`, `deposit_bank_draft.py`, `routes/deposits.py`, `routes/employees.py`,
+  `payroll_runner.py` и связанных тестах
+- НЕ трогать другим: эти депозитные гарды до завершения задачи
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
