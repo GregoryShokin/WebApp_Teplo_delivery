@@ -25,6 +25,14 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-carryoverresidual — ветка `agent/carryoverresidual-inventory-swap-carryover`
+- worktree: `../Teplo-agent-carryoverresidual`
+- compose: стенд не поднимаю; только изолированные unit-тесты без БД
+- трогает: `apps/api/app/services/inventory_audit_service.py`,
+  `apps/api/tests/test_inventory_audit.py` — перенос только неиспользованного остатка пересорта
+- НЕ трогать другим: логика `carryover_suggestions` до завершения задачи
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
