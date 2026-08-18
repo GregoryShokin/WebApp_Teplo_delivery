@@ -25,6 +25,14 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-depositdedupe — ветка `agent/depositdedupe-deposit-payroll-double-payout`
+- worktree: `../Teplo-agent-depositdedupe`
+- compose: отдельная временная test-БД
+- трогает: синхронизацию статуса удалённого депозитного банк-черновика в
+  `deposit_bank_draft.py`, `scheduler.py` и связанные тесты
+- НЕ трогать другим: обработку статуса `deleted` депозитных черновиков до завершения
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
