@@ -58,6 +58,7 @@ from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.safe_allocations import create_allocation, safe_reserved_total
 from app.services.banking.tbank import build_payment_draft_api_payload
+from app.services.deposit_schedule import assert_no_payroll_deposit_payout
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
@@ -317,6 +318,8 @@ async def create_deposit_payout_draft(
     ``CourierDepositTransaction.created_by`` NOT NULL, а транзакция создаётся лишь при выдаче.
     """
     amount = _money(amount)
+    if recipient_kind == "production" and employee_id is not None:
+        await assert_no_payroll_deposit_payout(session, employee_id)
     draft_id = uuid.uuid4()
     document_id = f"teplo-deposit-{draft_id}"
     bank_purpose = owner_card_payment_purpose(document_id)
@@ -402,6 +405,8 @@ async def create_deposit_cash_reserve(
     остаток (перерезервирование → ValueError); для кассы — нет (деньги физически в ящике).
     """
     amount = _money(amount)
+    if recipient_kind == "production":
+        await assert_no_payroll_deposit_payout(session, employee_id)
     location = CASH_RESERVE_CHANNELS[channel]
     article_id = await session.scalar(
         select(DdsArticle.id).where(DdsArticle.code == DEPOSIT_PAYOUT_ARTICLE_CODE)
