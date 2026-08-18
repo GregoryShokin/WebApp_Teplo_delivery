@@ -483,9 +483,13 @@ async def apply_deposit_draft_status(
         ):
             draft.status = "paid"
             draft.synced_at = datetime.now(UTC)
-    elif outcome == "failed" and draft.status in ("created", "updated"):
-        draft.status = "failed"
-        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+    elif outcome in ("failed", "deleted") and draft.status in ("created", "updated"):
+        draft.status = outcome
+        draft.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
         draft.synced_at = datetime.now(UTC)
 
     if commit:

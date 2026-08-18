@@ -413,7 +413,7 @@ async def run_payment_status_poll(
         )
         if deposit_status == "paid":
             result["paid"] += 1
-        elif deposit_status == "failed":
+        elif deposit_status in ("failed", "deleted"):
             result["failed"] += 1
 
     # Те же статусы для разовых выплат сотрудникам (окно «Новый платёж», ЗП собственника):
