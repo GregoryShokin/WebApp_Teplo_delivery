@@ -7,8 +7,9 @@
 
 Предикаты заземлены на существующие механизмы:
 - депозит: ``DepositAccount.balance`` + отсутствие pending ``DepositPayoutSchedule``;
-- ЗП: нет финализированной ведомости с неоплаченной выплатой и нет отработанных дней
-  вне финализированной ведомости (``ShiftLedgerEntry`` vs период финализированного прогона);
+- ЗП: нет ЖИВОЙ (не ``is_imported_legacy``) финализированной ведомости с неоплаченной
+  выплатой и нет отработанных дней вне финализированной ведомости — тут легаси считается
+  покрытием (``ShiftLedgerEntry`` vs период финализированного прогона);
 - займы/авансы: ``SalaryAdvance`` с непогашенным остатком (kind loan/advance);
 - ревизия: ``DeferredAuditCharge`` со статусом pending/partially_applied по сотруднику.
 
@@ -117,12 +118,19 @@ async def _deposit_settled(session: AsyncSession, employee_id: uuid.UUID) -> boo
 
 async def _payroll_settled(session: AsyncSession, employee_id: uuid.UUID) -> bool:
     # 1) Нет финализированной ведомости с положительным нетто и неоплаченной выплатой.
+    #    ``is_imported_legacy=False``: легаси-заливка выплачена вне системы и записей
+    #    ``PayrollPayment`` не имеет by design — ``payroll_payouts._get_payout_run`` прямо
+    #    отказывается их создавать («Импортированная ведомость — выплаты не отмечаются»).
+    #    Без фильтра любой сотрудник, чья история попала в заливку, застревает в
+    #    ``dismissing`` навсегда: закрыть такую ведомость нечем. Тот же фильтр и по той же
+    #    причине стоит в ``staff_balance_as_of`` и в кредиторке ``accounting_suppliers``.
     run_nets = (
         await session.execute(
             select(PayrollLine.run_id, PayrollLine.total_payable)
             .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
             .where(
                 PayrollRun.status == "finalized",
+                PayrollRun.is_imported_legacy.is_(False),
                 PayrollLine.employee_id == employee_id,
             )
         )
@@ -144,6 +152,9 @@ async def _payroll_settled(session: AsyncSession, employee_id: uuid.UUID) -> boo
 
     # 2) Нет отработанных дней вне периода финализированного прогона (заработанное,
     #    что ещё не попало ни в одну финализированную ведомость).
+    #    Здесь легаси-прогоны, наоборот, НУЖНЫ: они закрывают старые смены. Поставь фильтр
+    #    ``is_imported_legacy`` и сюда — и работа за весь период заливки станет «непокрытой»,
+    #    заменив одну вечную блокировку на другую.
     covered_by_finalized = (
         select(1)
         .select_from(PayrollRun)
