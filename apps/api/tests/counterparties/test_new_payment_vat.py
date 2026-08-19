@@ -53,6 +53,21 @@ def test_vat_is_extracted_from_the_total_not_added_on_top() -> None:
     assert vat_amount_for_rate(Decimal("1000.00"), "0") == Decimal("0.00")
 
 
+def test_half_kopeck_rounds_up_and_matches_the_form() -> None:
+    """Ровная половина копейки идёт ВВЕРХ — и ровно так же считает предпросмотр в окне.
+
+    3,33 ₽ по ставке 20 % — это ровно 0,555 ₽ налога. Здесь Decimal даёт 0,56, а наивная
+    формула в double (`Math.round(total * p / (100 + p) * 100) / 100`) — 0,55: окно обещало бы
+    одну цифру, а в банк уходила бы другая. Фронт (`VatRateField.vatAmountFor`) поэтому считает
+    в копейках целыми; эти суммы держат обе стороны вместе — правя одну, поправь и вторую.
+    """
+    assert vat_amount_for_rate(Decimal("3.33"), "20") == Decimal("0.56")
+    assert vat_amount_for_rate(Decimal("6.15"), "20") == Decimal("1.03")
+    assert vat_amount_for_rate(Decimal("615.00"), "20") == Decimal("102.50")
+    # Крупная сумма того же класса: расхождение не зависит от масштаба.
+    assert vat_amount_for_rate(Decimal("3647226.45"), "20") == Decimal("607871.08")
+
+
 def test_rate_normalisation_and_validation() -> None:
     assert normalize_vat_rate("22 %") == "22"
     assert normalize_vat_rate("  ") == ""

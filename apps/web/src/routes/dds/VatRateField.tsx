@@ -16,11 +16,25 @@ import { cn } from "@/lib/utils";
 /** Ставки, из которых даём выбрать. Ровно те же, что принимает бэк (``app/services/vat.py``). */
 export const VAT_RATES = ["22", "20", "10", "7", "5"] as const;
 
-/** Налог «в том числе» из итоговой суммы: сумма × ставка / (100 + ставка). */
+/**
+ * Налог «в том числе» из итоговой суммы: сумма × ставка / (100 + ставка).
+ *
+ * Считаем В КОПЕЙКАХ целыми числами, а не долями рубля. Бэк работает на ``Decimal`` с
+ * ROUND_HALF_UP, и наивное `Math.round(total * p / (100 + p) * 100) / 100` расходится с ним
+ * на ровных половинках: 3,33 ₽ по ставке 20 % дают ровно 0,555, но в double это
+ * 0,5549999999999999 — предпросмотр показывал 0,55, а банк получал 0,56. Поле, которое
+ * существует ради сверки результата, обязано считать ровно то же, что и бэк.
+ */
 export function vatAmountFor(total: number, rate: string): number {
   const percent = Number(rate);
   if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(percent) || percent <= 0) return 0;
-  return Math.round(((total * percent) / (100 + percent)) * 100) / 100;
+  const kopecks = Math.round(total * 100);
+  const numerator = kopecks * percent;
+  const denominator = 100 + percent;
+  const whole = Math.floor(numerator / denominator);
+  const remainder = numerator - whole * denominator;
+  // Половина и больше — вверх (ROUND_HALF_UP), сравнение целыми, без деления.
+  return (remainder * 2 >= denominator ? whole + 1 : whole) / 100;
 }
 
 /** Строка НДС ровно в том виде, в каком её соберёт бэк (``counterparty_payments._vat_suffix``). */
