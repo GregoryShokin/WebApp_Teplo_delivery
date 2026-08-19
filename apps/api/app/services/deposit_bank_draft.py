@@ -465,7 +465,9 @@ async def apply_deposit_draft_status(
     случится при фактической выдаче (оплата резерва). Идемпотентно: row-lock сериализует
     гонку, переход только из created/updated. В ``paid`` переходим ТОЛЬКО если транзит+резерв
     реально заведены — иначе (кошельки не настроены) черновик остаётся created, поллинг
-    повторит, и «Выплатить» не окажется навсегда заблокированным без резерва.
+    повторит, и «Выплатить» не окажется навсегда заблокированным без резерва. ``deleted``
+    (черновик стёрли в интернет-банке) снимает строку с «Отправлен в банк» — зеркало
+    ``apply_payroll_draft_status``.
     """
     outcome = classify_payment_status(raw_status)
     draft = await session.get(DepositBankDraft, draft.id, with_for_update=True)
@@ -478,9 +480,17 @@ async def apply_deposit_draft_status(
         ):
             draft.status = "paid"
             draft.synced_at = datetime.now(UTC)
-    elif outcome == "failed" and draft.status in ("created", "updated"):
-        draft.status = "failed"
-        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+    elif outcome in ("failed", "deleted") and draft.status in ("created", "updated"):
+        # Удалённый в интернет-банке черновик (владелец не подписал платёж, а стёр его) не
+        # должен навсегда висеть «Отправлен в банк»: денег он не двигал, депозит-счёт цел.
+        # Пока статус не снят, `_deposit_settled` держит сотрудника в `dismissing`, а гард
+        # `deposit_in_flight_amount` не даёт выписать выдачу заново.
+        draft.status = outcome
+        draft.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
         draft.synced_at = datetime.now(UTC)
 
     if commit:

@@ -44,6 +44,7 @@ from app.services.deposit_bank_draft import (
     sync_deposit_after_allocation_change,
 )
 from app.services.dismissal_reconciliation_service import _deposit_settled
+from app.services.payments_aggregator import list_payments
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
@@ -228,6 +229,94 @@ async def test_paid_without_safe_wallet_keeps_draft_created(
         assert status_after == "created"
         await session.refresh(draft)
         assert draft.safe_allocation_id is None
+
+
+async def test_deleted_in_bank_draft_leaves_active_payments(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик стёрли в интернет-банке → строка уходит из «Отправлен в банк», выдача свободна.
+
+    Банк на удалённый документ отвечает ``PAYMENT_NOT_FOUND`` → ``deleted``. Раньше такой
+    статус игнорировался: черновик навсегда оставался ``created``, висел в «Активных платежах»,
+    держал сотрудника в ``dismissing`` и блокировал повторную выдачу гардом in-flight.
+    """
+    async with async_session_factory() as session:
+        await _seed_bank_and_articles(session)
+        employee = await _seed_employee_with_deposit(session, Decimal("10000"))
+
+        draft = await create_deposit_payout_draft(
+            session,
+            recipient_kind="production",
+            amount=Decimal("10000"),
+            purpose="Выдача депозита — тест",
+            provider="tbank",
+            employee_id=employee.id,
+            bank_client=RecordingBankClient(),
+        )
+        assert draft.status == "created"
+        assert await deposit_in_flight_amount(session, employee.id) == Decimal("10000")
+
+        status_after = await apply_deposit_draft_status(
+            session, draft=draft, raw_status="DELETED", commit=False
+        )
+        assert status_after == "deleted"
+        assert draft.last_error == "Черновик удалён в банке"
+        # Денег черновик не двигал: ни транзита, ни резерва, депозит-счёт цел.
+        assert draft.safe_allocation_id is None
+        account = await session.scalar(
+            select(DepositAccount).where(DepositAccount.employee_id == employee.id)
+        )
+        assert account.balance == Decimal("10000")
+
+        # Гард in-flight отпустил сумму — выдачу можно выписать заново.
+        assert await deposit_in_flight_amount(session, employee.id) == Decimal("0")
+        await session.commit()
+
+        active = [
+            item
+            for item in await list_payments(session, scope="active")
+            if item.source == "deposit_draft"
+        ]
+        assert active == []
+        history = {
+            item.ref_id: item for item in await list_payments(session, scope="all")
+        }
+        assert history[draft.id].state == "deleted"
+        assert history[draft.id].bucket is None
+
+
+async def test_deleted_draft_unblocks_dismissal_reconcile(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Депозит выдан другим каналом (balance=0) + черновик удалён → расчёт закрыт.
+
+    Прод-кейс 18.08.2026: депозит выдали ведомостью, черновик стёрли в банке — но
+    ``_deposit_settled`` видел активный черновик и держал сотрудника в ``dismissing``.
+    """
+    async with async_session_factory() as session:
+        await _seed_bank_and_articles(session)
+        employee = await _seed_employee_with_deposit(session, Decimal("10000"))
+        draft = await create_deposit_payout_draft(
+            session,
+            recipient_kind="production",
+            amount=Decimal("10000"),
+            purpose="Выдача депозита — тест",
+            provider="tbank",
+            employee_id=employee.id,
+            bank_client=RecordingBankClient(),
+        )
+        # Депозит выдан мимо черновика (ведомость): счёт обнулён, черновик остался висеть.
+        account = await session.scalar(
+            select(DepositAccount).where(DepositAccount.employee_id == employee.id)
+        )
+        account.balance = Decimal("0")
+        await session.flush()
+        assert await _deposit_settled(session, employee.id) is False
+
+        await apply_deposit_draft_status(
+            session, draft=draft, raw_status="DELETED", commit=False
+        )
+        assert await _deposit_settled(session, employee.id) is True
 
 
 async def test_cash_safe_reserve_full_cycle_r1(

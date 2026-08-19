@@ -1423,13 +1423,14 @@ class SalaryAdvanceBankDraft(Base):
 
     status: ``created``/``updated`` (в банке) → ``paid`` (исполнен, деньги в Сейфе как
     резерв) → ``disbursed`` (выдан сотруднику); ``failed`` — отклонён банком;
-    ``cancelled`` — отменён до выдачи.
+    ``deleted`` — удалён в интернет-банке; ``cancelled`` — отменён до выдачи.
     """
 
     __tablename__ = "salary_advance_bank_draft"
     __table_args__ = (
         CheckConstraint(
-            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', 'cancelled')",
+            "status in ('created', 'updated', 'paid', 'disbursed', 'failed', "
+            "'deleted', 'cancelled')",
             name="ck_salary_advance_bank_draft_status",
         ),
         UniqueConstraint("advance_id", name="uq_salary_advance_bank_draft_advance_id"),

@@ -376,6 +376,8 @@ async def run_payment_status_poll(
             result["paid"] += 1
         elif advance_status == "failed":
             result["failed"] += 1
+        elif advance_status == "deleted":
+            result["deleted"] += 1
 
     # Те же статусы для банк-выдачи депозитов: при «исполнен» — транзит р/с→Сейф + резерв Сейфа
     # (депозит-счёт списывается лишь при фактической выдаче резерва). Для Сбера это единственный
@@ -415,6 +417,8 @@ async def run_payment_status_poll(
             result["paid"] += 1
         elif deposit_status == "failed":
             result["failed"] += 1
+        elif deposit_status == "deleted":
+            result["deleted"] += 1
 
     # Те же статусы для разовых выплат сотрудникам (окно «Новый платёж», ЗП собственника):
     # при «исполнен» — транзит р/с→Сейф + резерв Сейфа под выдачу. Провайдер берётся по СЧЁТУ

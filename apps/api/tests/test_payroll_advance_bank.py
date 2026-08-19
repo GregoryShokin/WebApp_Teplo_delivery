@@ -36,6 +36,7 @@ from app.services.banking.classifier import (
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.safe_allocations import SAFE_PAYOUT_SOURCE_KIND, pay_allocation
+from app.services.payments_aggregator import list_payments
 from app.services.payroll_advance_service import (
     ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
     apply_advance_draft_status,
@@ -213,6 +214,42 @@ async def test_bank_advance_paid_books_transit_and_reserve(
     assert await _cashflows(
         async_session_factory, source_kind=SAFE_PAYOUT_SOURCE_KIND, source_id=allocation.id
     ) == []
+
+
+async def test_deleted_in_bank_advance_draft_leaves_active_payments(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Черновик выдачи стёрли в интернет-банке → строка уходит из «Отправлен в банк».
+
+    Банк отдаёт удалённый документ как ``PAYMENT_NOT_FOUND`` → ``deleted``. Аванс при этом
+    остаётся ``awaiting_payout``: деньги не двигались, выдачу можно отменить или повторить.
+    """
+    async with async_session_factory() as session:
+        wallet = await _make_bank_wallet(session)
+        advance = await _issue_bank_advance(session, wallet=wallet)
+
+    draft = await _draft(async_session_factory, advance.id)
+    async with async_session_factory() as session:
+        status = await apply_advance_draft_status(
+            session, draft=draft, raw_status="DELETED", commit=True
+        )
+    assert status == "deleted"
+
+    draft = await _draft(async_session_factory, advance.id)
+    assert draft.last_error == "Черновик удалён в банке"
+    assert draft.safe_allocation_id is None
+    async with async_session_factory() as session:
+        refreshed = await session.get(SalaryAdvance, advance.id)
+        assert refreshed.status == "awaiting_payout"
+        active = [
+            item
+            for item in await list_payments(session, scope="active")
+            if item.source == "advance_draft"
+        ]
+        assert active == []
+        history = {item.ref_id: item for item in await list_payments(session, scope="all")}
+        assert history[draft.id].state == "deleted"
+        assert history[draft.id].bucket is None
 
 
 async def test_disburse_bank_advance_books_expense_and_forms_debt(

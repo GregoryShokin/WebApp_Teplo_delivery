@@ -778,6 +778,7 @@ async def _advance_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
         "paid": "paid",
         "disbursed": "paid",
         "failed": "failed",
+        "deleted": "deleted",
         "cancelled": "cancelled",
     }
     items: list[PaymentItem] = []

@@ -1164,6 +1164,7 @@ async def apply_advance_draft_status(
     (из вебхука «операция по счёту»), которой датируется транзит; без неё (поллинг) — текущая
     дата. Идемпотентно: блокировка строки сериализует гонку, переход только из created/updated.
     Аванс остаётся ``awaiting_payout`` — долг формируется лишь при фактической выдаче.
+    ``deleted`` (черновик стёрли в интернет-банке) снимает строку с «Отправлен в банк».
     """
     outcome = classify_payment_status(raw_status)
     draft = await session.get(SalaryAdvanceBankDraft, draft.id, with_for_update=True)
@@ -1186,9 +1187,16 @@ async def apply_advance_draft_status(
         ):
             draft.status = "paid"
             draft.synced_at = datetime.now(UTC)
-    elif outcome == "failed" and draft.status in ("created", "updated"):
-        draft.status = "failed"
-        draft.last_error = f"Платёж отклонён банком: {raw_status}"[:500]
+    elif outcome in ("failed", "deleted") and draft.status in ("created", "updated"):
+        # Черновик стёрт в интернет-банке: деньги не ушли, аванс остаётся `awaiting_payout`
+        # (его можно отменить или выдать другим каналом). Без этого перехода строка вечно
+        # висела бы в «Активных платежах» как «Отправлен в банк».
+        draft.status = outcome
+        draft.last_error = (
+            "Черновик удалён в банке"
+            if outcome == "deleted"
+            else f"Платёж отклонён банком: {raw_status}"
+        )[:500]
         draft.synced_at = datetime.now(UTC)
 
     if commit:
