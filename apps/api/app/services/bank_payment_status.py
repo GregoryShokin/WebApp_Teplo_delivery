@@ -51,7 +51,7 @@ from app.services.counterparty_matching import (
     _invoice_remaining,
     _recompute_status,
 )
-from app.services.counterparty_payments import strip_match_marker
+from app.services.counterparty_payments import strip_bank_only_tail
 from app.services.wallets import (
     DDS_ARTICLE_TRANSFER_IN_CODE,
     DDS_ARTICLE_TRANSFER_OUT_CODE,
@@ -149,9 +149,12 @@ async def _settle_draft_via_safe(
         )
         return
 
+    # У транша ``target_purpose`` пуст (разбивка живёт в строках), и назначение приходится
+    # брать из банковского текста — а он несёт долю НДС и техметку. В журнал ДДС ни то, ни
+    # другое не идёт: это проводка перевода между своими счетами.
     purpose = (
         (draft.target_purpose or "").strip()
-        or strip_match_marker(str((draft.payload or {}).get("paymentPurpose") or ""))
+        or strip_bank_only_tail(str((draft.payload or {}).get("paymentPurpose") or ""))
         or "Закуп у неофициального поставщика"
     )
 

@@ -12,18 +12,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import uuid
 from decimal import Decimal
 
 import pytest
 from cp_helpers import make_counterparty
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_new_payment_window import _free_expense_article
 
+from app.models import CounterpartyPaymentDraft
 from app.services.counterparty_payments import (
     ExpenseLineInput,
     create_expense_payment_draft,
     create_standalone_payment_draft,
+    strip_bank_only_tail,
 )
 from app.services.vat import (
     VAT_RATES,
@@ -126,6 +131,29 @@ async def test_expense_draft_without_rate_says_no_vat(
         assert draft.vat_amount is None
 
 
+async def test_zero_rounding_tax_leaves_no_vat_claim_at_all(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Копеечный платёж: налог округляется в ноль — и в тексте, и в записи черновика.
+
+    0,02 ₽ по ставке 22 % дают 0,0036 ₽ налога, то есть 0,00 после округления. Платёжка
+    честно говорит «Без НДС.», и черновик обязан говорить то же: запись «ставка 22 %, суммы
+    налога нет» противоречила бы тексту, который человек отправил в банк.
+    """
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        draft = await create_expense_payment_draft(
+            session,
+            article_id=article.id,
+            amount=Decimal("0.02"),
+            purpose="Копейки",
+            vat_rate="22",
+        )
+        assert "Без НДС." in draft.payload["paymentPurpose"]
+        assert draft.vat_rate is None
+        assert draft.vat_amount is None
+
+
 async def test_expense_purpose_keeps_vat_when_description_is_long(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -214,11 +242,134 @@ async def test_vat_columns_are_persisted(
         draft_id = draft.id
 
     async with async_session_factory() as session:
-        from app.models import CounterpartyPaymentDraft
-
         stored = await session.scalar(
             select(CounterpartyPaymentDraft).where(CounterpartyPaymentDraft.id == draft_id)
         )
         assert stored is not None
         assert stored.vat_rate == "22"
         assert stored.vat_amount == Decimal("396.72")
+
+
+async def test_direct_requisites_payment_carries_vat(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Платёж ПО РЕКВИЗИТАМ контрагента — тот маршрут, где налог обязателен по-настоящему.
+
+    Деньги уходят внешнему юрлицу, а не на собственную карту ИП: именно это назначение банк
+    и налоговая читают как утверждение о налоге. Черновик прямого платежа выписывается одной
+    строкой на одного контрагента (``direct_recipient``), и НДС на нём проверяется отдельно
+    от via-safe маршрута — ветки разные.
+    """
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        supplier = await make_counterparty(
+            session,
+            name="ООО Прямой",
+            inn="7701234567",
+            requisites=SUPPLIER_REQUISITES,
+            requisites_verified=True,
+        )
+        await session.commit()
+
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(
+                    article_id=article.id,
+                    amount=Decimal("7984.90"),
+                    purpose="Услуги доставки",
+                    counterparty_id=supplier.id,
+                )
+            ],
+            vat_rate="22",
+        )
+        # Прямой платёж: получатель — контрагент, а не карта ИП.
+        assert draft.pays_via_safe is False
+        assert draft.counterparty_id == supplier.id
+        assert draft.payload["paymentPurpose"] == (
+            f"Услуги доставки. В т.ч. НДС: 22% - 1439,90 руб. [TPL-{draft.id.hex[:12].upper()}]"
+        )
+        assert draft.vat_amount == Decimal("1439.90")
+
+
+async def test_tranche_keeps_vat_out_of_the_dds_journal(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Транзит р/с→Сейф в журнале ДДС описывает трату, а не реквизиты платёжки.
+
+    У транша ``target_purpose`` пуст (разбивка живёт в строках), и назначение проводки
+    приходится брать из банковского текста. Оттуда снимаются ОБА банковских хвоста —
+    техметка и доля НДС: одиночный платёж пишет в журнал чистое описание, и транш обязан
+    вести себя так же, иначе одна и та же операция подписана по-разному от числа строк.
+    """
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        draft = await create_expense_payment_draft(
+            session,
+            lines=[
+                ExpenseLineInput(article_id=article.id, amount=Decimal("600.00"), purpose="Раз"),
+                ExpenseLineInput(article_id=article.id, amount=Decimal("500.00"), purpose="Два"),
+            ],
+            vat_rate="10",
+        )
+        assert draft.target_purpose is None
+        bank_text = draft.payload["paymentPurpose"]
+        assert "В т.ч. НДС: 10% - 100,00 руб." in bank_text
+        # То, что уйдёт в назначение проводок (bank_payment_status._book_via_safe).
+        assert strip_bank_only_tail(bank_text) == "Транш 2 платежей: Раз; Два."
+
+
+def test_expense_draft_endpoint_passes_vat_rate(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Связка «HTTP → сервис»: ставка из формы доезжает до платёжки, а не теряется в схеме.
+
+    Схемы окна объявлены с ``extra="forbid"``, поэтому забытое поле — это не «НДС не
+    применился», а 422 на всю кнопку. Тест сервиса такого не поймает.
+    """
+    articles = client.get(
+        "/api/v1/dds/new-payment/context", headers={"X-User-Role": "owner"}
+    ).json()["articles"]
+    article = next(
+        item
+        for item in articles
+        if item["flow"] == "expense"
+        and not item["location_required"]
+        and not item["asset_link_kind"]
+    )
+
+    response = client.post(
+        "/api/v1/dds/new-payment/expense-draft",
+        headers={"X-User-Role": "owner"},
+        json={
+            "lines": [{"article_id": article["id"], "amount": 7984.90, "purpose": "Услуги"}],
+            "vat_rate": "22",
+        },
+    )
+    assert response.status_code == 201, response.text
+    draft_id = uuid.UUID(response.json()["id"])
+
+    async def _stored() -> CounterpartyPaymentDraft | None:
+        async with async_session_factory() as session:
+            return await session.scalar(
+                select(CounterpartyPaymentDraft).where(CounterpartyPaymentDraft.id == draft_id)
+            )
+
+    draft = asyncio.run(_stored())
+    assert draft is not None
+    assert draft.vat_rate == "22"
+    assert draft.vat_amount == Decimal("1439.90")
+    assert "В т.ч. НДС: 22% - 1439,90 руб." in draft.payload["paymentPurpose"]
+
+
+def test_expense_draft_endpoint_rejects_impossible_rate(client: TestClient) -> None:
+    """Ставка ≥ 100 % — ошибка ввода, а не платёж: столько налога в сумме не бывает."""
+    response = client.post(
+        "/api/v1/dds/new-payment/expense-draft",
+        headers={"X-User-Role": "owner"},
+        json={
+            "lines": [{"article_id": str(uuid.uuid4()), "amount": 100, "purpose": "x"}],
+            "vat_rate": "122",
+        },
+    )
+    assert response.status_code == 422, response.text

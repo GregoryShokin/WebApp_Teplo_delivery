@@ -204,11 +204,25 @@ def _purpose_with_match_marker(purpose: str, draft_id: uuid.UUID) -> str:
 
 _MATCH_MARKER_RE = re.compile(r"\s*\[TPL-[0-9A-F]{12}\]", re.IGNORECASE)
 
+# Хвост НДС ровно в том виде, в каком его ставит ``_with_vat_suffix``, и только в конце строки.
+_VAT_SUFFIX_RE = re.compile(r"\s*(?:Без НДС\.|В т\.ч\. НДС:.*?руб\.)\s*$")
+
 
 def strip_match_marker(purpose: str) -> str:
     """Срезать метку ``[TPL-…]`` там, где назначение идёт людям (проводки, резервы),
     а не в банк: техметка нужна только для матча черновика с операцией выписки."""
     return _MATCH_MARKER_RE.sub("", purpose).strip()
+
+
+def strip_bank_only_tail(purpose: str) -> str:
+    """Оставить от банковского назначения только человеческую часть.
+
+    Банковский текст несёт два хвоста, которых в журнале ДДС быть не должно: техметку
+    ``[TPL-…]`` и долю НДС. Налог — реквизит платёжного поручения, а не описание траты:
+    в проводке «Перевод на Сейф — …» он говорит о переводе между своими счетами то, чего
+    про него никто не утверждал. Срезаем оба.
+    """
+    return _VAT_SUFFIX_RE.sub("", strip_match_marker(purpose)).strip()
 
 
 async def _ip_card_requisites(session: AsyncSession) -> dict[str, Any]:
@@ -513,7 +527,10 @@ async def create_standalone_payment_draft(
         status="created",
         creates_prepayment=True,
         prepayment_article_id=article_id,
-        vat_rate=vat_rate_clean or None,
+        # Ставка помнится только вместе с ненулевым налогом: на копеечной сумме
+        # (0,02 ₽ × 22 %) налог округляется в ноль, платёжка честно говорит «Без НДС.», и
+        # запись «ставка 22 %, налога нет» противоречила бы тексту, который ушёл в банк.
+        vat_rate=vat_rate_clean if vat_value > 0 else None,
         vat_amount=vat_value if vat_value > 0 else None,
         created_by_user_id=actor_user_id,
     )
@@ -795,7 +812,10 @@ async def create_expense_payment_draft(
         target_purpose=prepared[0].purpose if single else None,
         service_period_start=draft_period[0],
         service_period_end=draft_period[1],
-        vat_rate=vat_rate_clean or None,
+        # Ставка помнится только вместе с ненулевым налогом: на копеечной сумме
+        # (0,02 ₽ × 22 %) налог округляется в ноль, платёжка честно говорит «Без НДС.», и
+        # запись «ставка 22 %, налога нет» противоречила бы тексту, который ушёл в банк.
+        vat_rate=vat_rate_clean if vat_value > 0 else None,
         vat_amount=vat_value if vat_value > 0 else None,
         created_by_user_id=actor_user_id,
     )

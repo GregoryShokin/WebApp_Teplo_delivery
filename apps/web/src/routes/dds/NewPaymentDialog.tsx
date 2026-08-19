@@ -80,7 +80,7 @@ import {
   formatDdsMoney,
   locationOptionsQuery,
 } from "@/routes/dds/shared";
-import { VatRateField } from "@/routes/dds/VatRateField";
+import { VatRateField, kopecksOf } from "@/routes/dds/VatRateField";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
@@ -1379,10 +1379,14 @@ function ExpenseForm({
     return kind === "purchase" ? "нужен объект основных средств" : "нужен объект — что ремонтируем";
   };
 
-  const total = rows.reduce(
-    (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
-    0,
-  );
+  // Итог складываем В КОПЕЙКАХ и по строкам, как бэк: он округляет КАЖДУЮ строку
+  // (`_money(line.amount)`) и только потом суммирует. Складывать сырые доли рубля значит
+  // показывать не тот итог, который спишет банк, — и считать налог не с той суммы.
+  const total =
+    rows.reduce(
+      (sum, row) => sum + (amountOf(row.amount) > 0 ? kopecksOf(amountOf(row.amount)) : 0),
+      0,
+    ) / 100;
   // Описательная часть назначения — ровно как её соберёт бэк: одиночный платёж берёт
   // назначение строки (пустое → имя статьи), транш — сводку по строкам. Нужна только для
   // предпросмотра под полем НДС: человеку надо видеть строку, которую прочитает банк.
@@ -2131,6 +2135,8 @@ function PrepaymentForm({
   const selected = counterparties.find((item) => item.counterparty_id === counterpartyId) ?? null;
   const cpName = selected ? shortName(selected.name) : null;
   const isInformal = selected?.relationship === "informal";
+  // Сумма в том виде, в каком её округлит бэк (`_money`): и итог, и налог считаем с неё.
+  const normalizedAmount = amountOf(amount) > 0 ? kopecksOf(amountOf(amount)) / 100 : 0;
   // Неофициальный поставщик: банк-черновик запрещён, наличными — можно.
   const informalBlocked = isInformal && !isCashSource;
   const canSubmit =
@@ -2292,14 +2298,14 @@ function PrepaymentForm({
         {/* НДС — только у банковского черновика: наличная предоплата в банк не уходит. */}
         {!isCashSource ? (
           <VatRateField
-            total={amountOf(amount) > 0 ? amountOf(amount) : 0}
+            total={normalizedAmount}
             value={vatRate}
             onChange={setVatRate}
             purposeBase={`Предоплата поставщику ${selected?.name ?? "…"}`}
           />
         ) : null}
 
-        <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
+        <SummaryPanel tone={tone} total={normalizedAmount}>
           {summary}
         </SummaryPanel>
       </div>
