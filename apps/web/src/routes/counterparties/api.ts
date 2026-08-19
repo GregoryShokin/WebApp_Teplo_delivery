@@ -303,6 +303,9 @@ export type BankPrepaymentDraftPayload = {
   counterparty_id: string;
   amount: number;
   article_id?: string | null;
+  // Ставка НДС аванса («22», «10», …) — налог выделяется из суммы «в том числе» и уходит
+  // хвостом назначения платежа. null/пусто → «Без НДС.».
+  vat_rate?: string | null;
 };
 
 // «Банк по реквизитам»: standalone-черновик в банк; при оплате превращается в предоплату.

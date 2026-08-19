@@ -678,6 +678,7 @@ async def post_new_payment_expense_draft(
         return await create_expense_payment_draft(
             session,
             lines=lines,
+            vat_rate=payload.vat_rate,
             channel=payload.channel,
             allow_official_via_safe=payload.allow_official_via_safe,
             actor_user_id=actor.user_id,

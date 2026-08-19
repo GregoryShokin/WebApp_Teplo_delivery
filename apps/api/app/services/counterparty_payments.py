@@ -53,6 +53,7 @@ from app.services.location_analytics import (
 )
 from app.services.new_payment import ensure_expense_article_allowed
 from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
+from app.services.vat import normalize_vat_rate, vat_amount_for_rate
 
 MOCK_PAYER_ACCOUNT = "00000000000000000000"
 DRAFTABLE_STATUSES = frozenset({"unpaid", "partially_paid"})
@@ -123,21 +124,52 @@ def _vat_suffix(vat: dict[str, Decimal]) -> str:
     return "В т.ч. НДС: " + "; ".join(parts)
 
 
+def vat_suffix_for_rate(total: Decimal, rate: str | None) -> str:
+    """Хвост назначения по ставке: «В т.ч. НДС: 22% - 1439,90 руб.» либо «Без НДС.».
+
+    Тот же формат, что у платёжки по счёту (``_vat_suffix``): банк и налоговая читают
+    строку одинаково, откуда бы платёж ни пришёл — из счёта или из окна «Новый платёж».
+    """
+    amount = vat_amount_for_rate(total, rate)
+    if amount <= 0:
+        return _vat_suffix({})
+    return _vat_suffix({normalize_vat_rate(rate): amount})
+
+
+# Место, которое занимает метка связи черновика с выпиской: « [TPL-0123456789AB]».
+MATCH_MARKER_BUDGET = len(" [TPL-") + 12 + len("]")
+
+
+def _with_vat_suffix(base: str, suffix: str, *, reserve: int = 0) -> str:
+    """Пристыковать НДС-хвост к назначению, ни при каких длинах его не срезая.
+
+    Налог юридически значим, описательная часть — нет: в лимит платёжки (210 символов)
+    ужимается именно она. Хвост стоит последним и заканчивается точкой.
+
+    ``reserve`` — сколько символов оставить следующему хвосту (метке ``[TPL-…]``).
+    Без него длинное описание вместе с НДС занимало все 210, и
+    ``_purpose_with_match_marker`` молча выбрасывал метку — второй независимый признак
+    матча черновика с операцией выписки. Ужимать надо описание, а не терять признак.
+    """
+    base = " ".join(base.split())
+    budget = 210 - len(suffix) - 2 - reserve
+    if budget <= 0:
+        return suffix[:210]
+    # rstrip(" ."): назначение из окна человек часто заканчивает точкой сам — иначе
+    # получилось бы «Оплата связи.. Без НДС.».
+    return f"{base[:budget].rstrip(' .')}. {suffix}"[: 210 - reserve]
+
+
 def _payment_purpose(
     counterparty: Counterparty, invoices: Sequence[SupplierInvoice], vat: dict[str, Decimal]
 ) -> str:
     # VAT info is legally required and never truncated; fit the descriptive base
     # into the remaining budget so the whole purpose stays within 210 chars.
-    suffix = _vat_suffix(vat)
     numbers = ", ".join(inv.number for inv in invoices if inv.number)
     base = f"Оплата поставщику {counterparty.name}"
     if numbers:
         base = f"{base} по счетам {numbers}"
-    base = " ".join(base.split())
-    budget = 210 - len(suffix) - 2
-    if budget <= 0:
-        return suffix[:210]
-    return f"{base[:budget].rstrip()}. {suffix}"[:210]
+    return _with_vat_suffix(base, _vat_suffix(vat))
 
 
 def _informal_payment_purpose(
@@ -419,6 +451,7 @@ async def create_standalone_payment_draft(
     counterparty_id: uuid.UUID,
     amount: Decimal,
     prepayment_article_id: uuid.UUID | None = None,
+    vat_rate: str | None = None,
     actor_user_id: uuid.UUID | None = None,
     bank_client: BankClient | None = None,
 ) -> CounterpartyPaymentDraft:
@@ -426,6 +459,10 @@ async def create_standalone_payment_draft(
 
     Шлёт платёж в банк по реквизитам контрагента; при статусе «исполнен»
     (``apply_payment_status``) создаёт supplier_prepayment (дебиторку), а не гасит накладные.
+
+    ``vat_rate`` — ставка НДС аванса; налог выделяется из суммы «в том числе» и уходит хвостом
+    назначения. Пустая ставка даёт «Без НДС.» — до этого назначение аванса молчало о налоге
+    вовсе, хотя платёж уходит внешнему получателю по реквизитам.
     """
     total = _money(amount)
     if total <= 0:
@@ -460,7 +497,13 @@ async def create_standalone_payment_draft(
 
     settings = get_settings()
     payer_account = _payer_account(settings)
-    purpose = f"Предоплата поставщику {counterparty.name}"[:210]
+    vat_rate_clean = normalize_vat_rate(vat_rate)
+    vat_value = vat_amount_for_rate(total, vat_rate_clean)
+    purpose = _with_vat_suffix(
+        f"Предоплата поставщику {counterparty.name}",
+        vat_suffix_for_rate(total, vat_rate_clean),
+        reserve=MATCH_MARKER_BUDGET,
+    )
 
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
@@ -470,6 +513,8 @@ async def create_standalone_payment_draft(
         status="created",
         creates_prepayment=True,
         prepayment_article_id=article_id,
+        vat_rate=vat_rate_clean or None,
+        vat_amount=vat_value if vat_value > 0 else None,
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
@@ -566,6 +611,7 @@ async def create_expense_payment_draft(
     article_id: uuid.UUID | None = None,
     amount: Decimal | None = None,
     purpose: str | None = None,
+    vat_rate: str | None = None,
     channel: str | None = None,
     allow_official_via_safe: bool = False,
     actor_user_id: uuid.UUID | None = None,
@@ -579,6 +625,10 @@ async def create_expense_payment_draft(
     позволяет обойти проверку уже указанных реквизитов. Банковский документ с прямым
     получателем имеет одну строку. Неофициальные контрагенты и строки без получателя
     сохраняют прежний маршрут: один транш на карту ИП → Сейф с целёвками по строкам.
+
+    ``vat_rate`` — ставка НДС платежа («22», «10», …) или пусто. Налог выделяется из итоговой
+    суммы черновика («в том числе») и уходит хвостом назначения; пустая ставка даёт «Без НДС.».
+    Ставка и вычисленная сумма запоминаются на черновике — платёжку потом читает не только банк.
 
     ``channel`` выбирает банк-плательщика: ``bank_draft`` (по умолчанию, Т-Банк) или
     ``bank_draft_sber`` (Сбер). Черновик выписывается тем же интерфейсом (``BankClient``),
@@ -729,6 +779,8 @@ async def create_expense_payment_draft(
 
     single = len(prepared) == 1
     draft_period = next(iter(period_keys)) if period_keys else (None, None)
+    vat_rate_clean = normalize_vat_rate(vat_rate)
+    vat_value = vat_amount_for_rate(total, vat_rate_clean)
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
         counterparty_id=direct_recipient[0].id if direct_recipient else None,
@@ -743,16 +795,22 @@ async def create_expense_payment_draft(
         target_purpose=prepared[0].purpose if single else None,
         service_period_start=draft_period[0],
         service_period_end=draft_period[1],
+        vat_rate=vat_rate_clean or None,
+        vat_amount=vat_value if vat_value > 0 else None,
         created_by_user_id=actor_user_id,
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
     # Назначение в банк (лимит платёжки): одиночный — назначение строки, транш — сводка.
+    # НДС-хвост общий на черновик: банк списывает одну сумму, из неё налог и выделяется.
     if single:
-        bank_purpose = prepared[0].purpose[:210]
+        bank_purpose = prepared[0].purpose
     else:
         summary = "; ".join(line.purpose for line in prepared)
-        bank_purpose = f"Транш {len(prepared)} платежей: {summary}"[:210]
+        bank_purpose = f"Транш {len(prepared)} платежей: {summary}"
+    bank_purpose = _with_vat_suffix(
+        bank_purpose, vat_suffix_for_rate(total, vat_rate_clean), reserve=MATCH_MARKER_BUDGET
+    )
     bank_purpose = _purpose_with_match_marker(bank_purpose, draft.id)
 
     try:

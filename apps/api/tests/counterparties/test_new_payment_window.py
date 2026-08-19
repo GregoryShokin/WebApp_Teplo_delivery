@@ -156,10 +156,10 @@ async def test_expense_draft_targets_ip_card(
             select(AppSetting).where(AppSetting.key == "payroll.bank_payout_requisites")
         )
         assert draft.payload["recipientName"] == payout_setting.value["recipientName"]
-        # В банк назначение уходит с меткой связи черновик↔операция; человеческое
-        # target_purpose остаётся чистым.
+        # В банк назначение уходит с меткой связи черновик↔операция и с НДС-хвостом
+        # (ставку не задавали → «Без НДС.»); человеческое target_purpose остаётся чистым.
         marker = f"[TPL-{draft.id.hex[:12].upper()}]"
-        assert draft.payload["paymentPurpose"] == f"Аренда помещения за июль {marker}"
+        assert draft.payload["paymentPurpose"] == f"Аренда помещения за июль. Без НДС. {marker}"
         # Регрессия: контрагентские схемы переваривают черновик без контрагента
         # (GET /counterparties/drafts/list гоняет все черновики через DraftRead).
         assert DraftRead.model_validate(draft).counterparty_id is None
@@ -595,7 +595,7 @@ async def test_expense_optional_purpose_defaults_to_article_name(
         )
         assert draft.target_purpose == article.name
         assert draft.payload["paymentPurpose"] == (
-            f"{article.name} [TPL-{draft.id.hex[:12].upper()}]"
+            f"{article.name}. Без НДС. [TPL-{draft.id.hex[:12].upper()}]"
         )
         # Нулевая/отрицательная сумма всё так же запрещена.
         with pytest.raises(CounterpartyPaymentError, match="больше нуля"):

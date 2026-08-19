@@ -80,6 +80,7 @@ import {
   formatDdsMoney,
   locationOptionsQuery,
 } from "@/routes/dds/shared";
+import { VatRateField } from "@/routes/dds/VatRateField";
 
 /**
  * Окно «Новый платёж» — единая точка создания всех исходящих денег («статья решает всё»):
@@ -1274,6 +1275,9 @@ function ExpenseForm({
   const queryClient = useQueryClient();
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"reserve" | "now" | "move">("reserve");
+  // Ставка НДС платежа («22», «10», …) или «» — без НДС. По умолчанию без НДС: утверждение
+  // о налоге делается осознанно, а не потому что галку забыли снять.
+  const [vatRate, setVatRate] = useState("");
   // Какая строка сейчас правит период услуги (ключ строки, а не индекс — строки удаляют).
   const [periodRowKey, setPeriodRowKey] = useState<string | null>(null);
   const [officialViaSafeConsent, setOfficialViaSafeConsent] = useState<string | null>(null);
@@ -1379,6 +1383,18 @@ function ExpenseForm({
     (sum, row) => sum + (amountOf(row.amount) > 0 ? amountOf(row.amount) : 0),
     0,
   );
+  // Описательная часть назначения — ровно как её соберёт бэк: одиночный платёж берёт
+  // назначение строки (пустое → имя статьи), транш — сводку по строкам. Нужна только для
+  // предпросмотра под полем НДС: человеку надо видеть строку, которую прочитает банк.
+  const bankPurposeBase = (() => {
+    const parts = rows.map(
+      (row) => row.purpose.trim() || articleById.get(row.articleId)?.name || "",
+    );
+    if (parts.length === 0) return "";
+    // Формулировка транша дословно повторяет бэк (`create_expense_payment_draft`) — иначе
+    // предпросмотр обещал бы одно, а в банк ушло бы другое.
+    return parts.length === 1 ? parts[0] : `Транш ${parts.length} платежей: ${parts.join("; ")}`;
+  })();
   const selectedCounterparties = rows.flatMap((row) => {
     const article = articleById.get(row.articleId);
     // Арендная статья: получатель — арендодатель договора. Его реквизитный контур ведём через
@@ -1492,6 +1508,7 @@ function ExpenseForm({
         ? createExpenseCashReserves({ wallet_id: walletId, lines, pay_now: payNow })
         : createNewPaymentExpenseDraft({
             lines,
+            vat_rate: vatRate || null,
             channel,
             allow_official_via_safe: allowOfficialViaSafe,
           });
@@ -1795,6 +1812,17 @@ function ExpenseForm({
           </Button>
         </div>
 
+        {/* НДС — только у банковского платежа: наличный резерв в банк не уходит, и его
+            назначение читает наш же журнал, а не платёжное поручение. */}
+        {!isCashSource ? (
+          <VatRateField
+            total={total}
+            value={vatRate}
+            onChange={setVatRate}
+            hint={bankPurposeBase ? `${bankPurposeBase.replace(/\s*\.*$/, "")}.` : undefined}
+          />
+        ) : null}
+
         <SummaryPanel tone={tone} total={total}>
           {summary}
         </SummaryPanel>
@@ -2048,6 +2076,8 @@ function PrepaymentForm({
   const [amount, setAmount] = useState("");
   const [walletId, setWalletId] = useState("");
   const [act, setAct] = useState<"pay" | "reserve" | "move">("reserve");
+  // Ставка НДС аванса («22», «10», …) или «» — без НДС. Уходит в назначение платёжки.
+  const [vatRate, setVatRate] = useState("");
 
   const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
   useEffect(() => {
@@ -2121,6 +2151,7 @@ function PrepaymentForm({
         counterparty_id: counterpartyId,
         amount: amountOf(amount),
         article_id: article.id,
+        vat_rate: vatRate || null,
       });
     },
     onSuccess: async () => {
@@ -2257,6 +2288,16 @@ function PrepaymentForm({
             value={amount}
           />
         </Label>
+
+        {/* НДС — только у банковского черновика: наличная предоплата в банк не уходит. */}
+        {!isCashSource ? (
+          <VatRateField
+            total={amountOf(amount) > 0 ? amountOf(amount) : 0}
+            value={vatRate}
+            onChange={setVatRate}
+            hint={`Предоплата поставщику ${selected?.name ?? "…"}.`}
+          />
+        ) : null}
 
         <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
           {summary}

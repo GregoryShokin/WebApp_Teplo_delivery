@@ -1,0 +1,78 @@
+# Изолированный стек агента vatpurpose (НДС в назначении платежа), слот 13.
+# Порты: web 5303 / api 8130 / pg 5562. БД тестов — teplo_test_vat (своя, не общая).
+#
+#   docker compose -p teplo-vat -f docker-compose.agent-vat.yml up -d
+#   docker exec -w /app/apps/api teplo-api-vat alembic upgrade head
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: teplo-postgres-vat
+    environment:
+      POSTGRES_DB: teplo
+      POSTGRES_USER: teplo
+      POSTGRES_PASSWORD: teplo
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off"]
+    ports:
+      - "5562:5432"
+    volumes:
+      - teplo_pgdata_vat:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teplo -d teplo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    container_name: teplo-api-vat
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo
+      TEPLO_TEST_DATABASE_URL: postgresql+asyncpg://teplo:teplo@postgres:5432/teplo_test_vat
+      ENVIRONMENT: local
+      SCHEDULER_ENABLED: "false"
+      EMPLOYEE_SYNC_ENABLED: "false"
+      COUNTERPARTY_INVOICE_SYNC_ENABLED: "false"
+      SBIS_SYNC_ENABLED: "false"
+      MAIL_POLL_ENABLED: "false"
+      # В ../.env лежит live-режим с боевыми кредами: без этой строки стенд выпишет
+      # настоящий платёж в T-Bank. environment перебивает env_file — не убирать.
+      TEPLO_BANK_CLIENT_MODE: mock
+      # Заглушка iiko: без переменной IikoClient.__init__ бросает SystemExit и роняет uvicorn.
+      IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      TEPLO_ADMIN_EMAIL: admin1@teplo.local
+      TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
+      JWT_SECRET_KEY: change-me-in-local-env-change-me
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 90
+      BACKEND_CORS_ORIGINS: '["http://localhost:5303","http://127.0.0.1:5303"]'
+    ports:
+      - "8130:8000"
+    volumes:
+      - ./api:/app/apps/api
+      - ../integrations:/app/integrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    container_name: teplo-web-vat
+    environment:
+      VITE_API_BASE_URL: http://localhost:8130
+    ports:
+      - "5303:5173"
+    volumes:
+      - ./web:/app/apps/web
+      - /app/apps/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  teplo_pgdata_vat:

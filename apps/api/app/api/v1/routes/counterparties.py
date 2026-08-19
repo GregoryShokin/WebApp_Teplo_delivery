@@ -15,7 +15,7 @@ from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +53,7 @@ from app.services.counterparty_invoice_sync import (
     list_unlinked_iiko_suppliers,
     sync_counterparty_invoices,
 )
+from app.services.vat import validate_vat_rate
 from app.services.warehouse_invoices import invoice_permission_kind
 
 router = APIRouter()
@@ -379,6 +380,14 @@ class BankPrepaymentDraftRequest(BaseModel):
     counterparty_id: uuid.UUID
     amount: Decimal = Field(gt=0)
     article_id: uuid.UUID | None = None
+    # Ставка НДС аванса («22», «10», …): налог выделяется из суммы «в том числе» и уходит
+    # хвостом назначения. Пусто → «Без НДС.».
+    vat_rate: str | None = None
+
+    @field_validator("vat_rate")
+    @classmethod
+    def _check_vat_rate(cls, value: str | None) -> str | None:
+        return validate_vat_rate(value)
 
 
 class WalletRead(BaseModel):
@@ -925,6 +934,7 @@ async def post_prepayment_bank_draft(
             counterparty_id=payload.counterparty_id,
             amount=payload.amount,
             prepayment_article_id=payload.article_id,
+            vat_rate=payload.vat_rate,
             actor_user_id=actor.user_id,
         )
     except payments.CounterpartyPaymentError as exc:

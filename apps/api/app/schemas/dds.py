@@ -5,7 +5,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.services.vat import validate_vat_rate
 
 
 class BankOperationRead(BaseModel):
@@ -764,12 +766,20 @@ class NewPaymentExpenseDraftCreate(BaseModel):
     article_id: uuid.UUID | None = None
     amount: Decimal | None = Field(default=None, gt=0)
     purpose: str | None = Field(default=None, max_length=210)
+    # Ставка НДС платежа («22», «10», …) — общая на весь черновик: банк списывает одну сумму,
+    # из неё налог и выделяется «в том числе». Пусто/None → в назначение уйдёт «Без НДС.».
+    vat_rate: str | None = None
     # Банк-плательщик черновика: bank_draft (Т-Банк, по умолчанию) или bank_draft_sber (Сбер).
     # Сбер доступен только для свободного расхода — прочие маршруты остаются в Т-Банке.
     channel: Literal["bank_draft", "bank_draft_sber"] = "bank_draft"
     # Явное подтверждение fallback-маршрута: официальный контрагент без реквизитов
     # оплачивается через карту ИП → Сейф. Если реквизиты есть, флаг их не обходит.
     allow_official_via_safe: bool = False
+
+    @field_validator("vat_rate")
+    @classmethod
+    def _check_vat_rate(cls, value: str | None) -> str | None:
+        return validate_vat_rate(value)
 
     @model_validator(mode="after")
     def _require_lines_or_single(self) -> NewPaymentExpenseDraftCreate:

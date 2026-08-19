@@ -314,6 +314,13 @@ class CounterpartyPaymentDraft(Base):
     # и тогда поле остаётся пустым — общего периода у такого платежа нет.
     service_period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     service_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # НДС платежа, заданный человеком в окне «Новый платёж»: ставка голыми цифрами («22») и
+    # выделенная из итога сумма налога. NULL в обоих — платёж без НДС (в банк уходит
+    # «Без НДС.»). Хранится не ради учёта, а ради разбора задним числом: назначение уже
+    # ушло в банк, и по нему потом спрашивают, откуда взялась цифра. У платёжки по счёту
+    # налог живёт на самой накладной (``vat_total``/``vat_breakdown``), здесь счёта нет.
+    vat_rate: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    vat_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
