@@ -133,22 +133,20 @@ class PayableObligation:
     is_projection: bool = False
 
 
-# Месячные периоды ('YYYY-MM') появились у травматизма: до августа 2026 такие строки в
-# «Активные платежи» не доезжали, и заголовок печатал сырой код «2026-08».
-_MONTH_NAMES_RU: tuple[str, ...] = (
-    "январь", "февраль", "март", "апрель", "май", "июнь",
-    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
-)
-
-
 def _month_title(period: str) -> str | None:
-    """'2026-08' → 'август 2026'. Не месяц — None, дальше решает вызывающий."""
+    """'2026-08' → 'август 2026'. Не месяц — None, дальше решает вызывающий.
+
+    Месячные периоды появились у травматизма: до августа 2026 такие строки в «Активные
+    платежи» не доезжали, и заголовок печатал сырой код «2026-08».
+    """
+    from app.services.taxes.reconcile import _MONTHS_RU_GENITIVE
+
     if len(period) != 7 or period[4] != "-":
         return None
     year, _, month = period.partition("-")
     if not (year.isdigit() and month.isdigit() and 1 <= int(month) <= 12):
         return None
-    return f"{_MONTH_NAMES_RU[int(month) - 1]} {year}"
+    return f"{_MONTHS_RU_GENITIVE[int(month) - 1]} {year}"
 
 
 def _title(kind: str, period: str | None) -> str:

@@ -250,7 +250,8 @@ export type TaxRecognition = {
   amount?: Money | null;
   due_date?: string | null;
   period_hint?: string | null;
-  /** Откуда взят период: 'document' — прочитан в документе, 'letter' — выведен по месяцу письма. */
+  /** Откуда взят период: 'document' — прочитан в документе, 'filename' — выведен по сроку
+   *  в имени файла, 'letter' — по месяцу письма, 'manual' — задан владельцем. */
   period_source?: string | null;
   kbk?: string | null;
   recipient?: string | null;

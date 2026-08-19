@@ -59,7 +59,7 @@ import { EmptyState } from "@/components/ui-app/EmptyState";
 import { InfoHint } from "@/components/ui-app/InfoHint";
 import { PageHeader } from "@/components/ui-app/PageHeader";
 import { apiErrorMessage } from "@/lib/api";
-import { todayIso } from "@/lib/date";
+import { toIsoDate, todayIso } from "@/lib/date";
 import { usePermissions } from "@/lib/permissions";
 import {
   aiApplyTaxProposal,
@@ -1503,6 +1503,19 @@ function ReviewPaymentDialog({
 }) {
   const queryClient = useQueryClient();
   const recognition = row.recognition ?? {};
+  // Двенадцать месяцев, заканчивая месяцем письма. Меньше нельзя: извещение за август,
+  // пришедшее 2 сентября, каскад пометит сентябрём, и владельцу нужен именно август.
+  // Больше не нужно: документы старше года бухгалтер не досылает.
+  const monthOptions = useMemo(() => {
+    const anchor = row.received_at ? new Date(row.received_at) : new Date();
+    const codes: string[] = [];
+    for (let back = 0; back < 12; back += 1) {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - back, 1);
+      codes.push(toIsoDate(d).slice(0, 7));
+    }
+    return codes;
+  }, [row.received_at]);
+
   const [taxKind, setTaxKind] = useState(recognition.tax_kind ?? "");
   const [amount, setAmount] = useState(
     recognition.amount !== undefined && recognition.amount !== null
@@ -1532,6 +1545,22 @@ function ReviewPaymentDialog({
 
   const fieldLabel = "text-sm font-medium";
   const missing = (recognition.review_reasons ?? []).join("; ");
+
+  /** Взнос на травматизм за месяц N платится до 15 числа N+1 (125-ФЗ, ст. 22). */
+  function injuryDueFor(monthCode: string): string | null {
+    const [year, month] = monthCode.split("-").map(Number);
+    if (!year || !month) return null;
+    return toIsoDate(new Date(year, month, 15));  // month без -1 = уже следующий месяц
+  }
+
+  // Меняя месяц, двигаем и срок: сохранить период августа со сроком сентябрьского
+  // обязательства — это ровно та рассинхронизация, из-за которой платёж уезжает мимо сверки.
+  function onPeriodChange(next: string) {
+    setPeriod(next);
+    if (taxKind !== "contrib_injury") return;
+    const legal = next.includes("-") ? injuryDueFor(next) : null;
+    if (legal) setDue(legal);
+  }
 
   return (
     <Dialog
@@ -1604,16 +1633,26 @@ function ReviewPaymentDialog({
             <select
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
               id="rev-period"
-              onChange={(event) => setPeriod(event.target.value)}
+              onChange={(event) => onPeriodChange(event.target.value)}
               value={period}
             >
               <option value="">— не указан —</option>
-              {Object.entries(PERIOD_TITLES).map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-              {period && !(period in PERIOD_TITLES) ? (
+              {/* Месяцы — первыми: травматизм платится помесячно, и правят чаще всего его. */}
+              <optgroup label="Месяц">
+                {monthOptions.map((code) => (
+                  <option key={code} value={code}>
+                    {periodTitle(code)}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Квартал / год">
+                {Object.entries(PERIOD_TITLES).map(([code, label]) => (
+                  <option key={code} value={code}>
+                    {label}
+                  </option>
+                ))}
+              </optgroup>
+              {period && !(period in PERIOD_TITLES) && !monthOptions.includes(period) ? (
                 <option value={period}>{periodTitle(period)}</option>
               ) : null}
             </select>
@@ -1990,7 +2029,10 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 <InfoHint label="месяц выведен, а не прочитан">
                   В документе нет поля налогового периода, поэтому месяц начисления выведен:
                   по дате письма (бухгалтер выписывает извещение в том же месяце) или по сроку
-                  в имени файла. Если месяц другой — кнопка «Уточнить месяц…» рядом.
+                  в имени файла.{" "}
+                  {canRefinePeriod
+                    ? "Если месяц другой — кнопка «Уточнить месяц…» рядом."
+                    : "Месяц уже зафиксирован в обязательстве — поправить его можно только там."}
                 </InfoHint>
               </Badge>
             ) : null}
@@ -2063,7 +2105,11 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
                 {row.document_type === "payment_order" ? "Проверить…" : "Проверено"}
               </Button>
             ) : null}
-            {/* Разбор уже есть — кнопка открывает окно; нет — запускает модель. */}
+            {/* Разбор уже есть — кнопка открывает окно; нет — запускает модель.
+                Условие повторяет прежнее условие всего блока: у распознанного документа,
+                который попал сюда только ради «Уточнить месяц…», разбирать нечего, а вызов
+                модели платный. */}
+            {needsAttention || recognition.ai_review ? (
             <Button
               className={recognition.ai_review ? "text-violet-700" : undefined}
               disabled={aiMutation.isPending}
@@ -2085,6 +2131,7 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
               )}
               {recognition.ai_review ? "Разбор ИИ" : "ИИ-разбор"}
             </Button>
+            ) : null}
             {needsReview ? (
               <Button
                 disabled={reviewMutation.isPending}

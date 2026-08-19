@@ -404,6 +404,11 @@ def parse_injury_payment(
     period_source = "document" if period_month else None
     if period_month is None:
         pp_date = _parse_due_date(text, filename, year)
+        # Год в «до 15.01» не пишут, и _parse_due_date подставляет год ПИСЬМА: у декабрьского
+        # письма «до 15.01» становилось 15.01 того же года, месяц начисления уезжал в прошлый
+        # декабрь, а обязательство — в чужой налоговый год. Срок не может быть раньше письма.
+        if pp_date is not None and received_on is not None and pp_date < received_on:
+            pp_date = pp_date.replace(year=pp_date.year + 1)
         if pp_date is not None:
             period_year, period_month = _month_before(pp_date.year, pp_date.month)
             period_source = "filename"
@@ -412,11 +417,9 @@ def parse_injury_payment(
         period_source = "letter"
     if period_month is None:
         reasons.append("не распознан месяц начисления")
-    due = (
-        _injury_due(period_year, period_month)
-        if period_year and period_month
-        else _parse_due_date(text, filename, year)
-    )
+    # Без месяца срока нет: единственный его источник — _parse_due_date — на этой ветке
+    # уже вернул None, иначе месяц бы нашёлся ступенью 2.
+    due = _injury_due(period_year, period_month) if period_year and period_month else None
 
     return PaymentOrderDoc(
         amount=amount,

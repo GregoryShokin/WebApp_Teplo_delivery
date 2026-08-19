@@ -366,6 +366,26 @@ def test_injury_period_from_filename_deadline_is_month_before() -> None:
     assert rec["period_source"] == "filename"  # выведено из имени, а не прочитано в документе
 
 
+def test_injury_filename_deadline_crossing_new_year_keeps_own_year() -> None:
+    """«до 15.01» в декабрьском письме — это ЯНВАРЬ СЛЕДУЮЩЕГО года, а не прошедший.
+
+    _parse_due_date подставляет год письма, поэтому срок получался прошлым (15.01.2026 при
+    письме от 18.12.2026), месяц начисления уезжал в декабрь 2025, а обязательство — в чужой
+    налоговый год, где уже стоит плановая строка за декабрь 2025.
+    """
+    from dataclasses import replace
+
+    att = replace(
+        _pd_att(period_cell=None, received=datetime(2026, 12, 18, tzinfo=UTC)),
+        filename="0,2 % до 15.01.xls",
+    )
+    _, status, rec, _ = parse_attachment(att)
+
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-12"
+    assert rec["due_date"] == "2027-01-15"
+
+
 def test_injury_without_any_period_source_needs_review() -> None:
     """Каскад исчерпан (нет поля периода и нет даты письма) — документ владельцу, не молча.
 
