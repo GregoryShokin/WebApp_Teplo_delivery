@@ -331,6 +331,11 @@ def _injury_period_month(cells: list[str]) -> tuple[int, int] | None:
     return None
 
 
+def _month_before(year: int, month: int) -> tuple[int, int]:
+    """Предыдущий месяц — обратная операция к :func:`_injury_due`."""
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
 def _injury_due(year: int, month: int) -> date:
     """Срок уплаты взноса на травматизм за месяц N — 15 число N+1 (125-ФЗ, ст. 22)."""
     return date(year + 1, 1, 15) if month == 12 else date(year, month + 1, 15)
@@ -380,7 +385,10 @@ def parse_injury_payment(
     #
     # КАСКАД определения месяца — три ступени, сверху вниз:
     #   1. поле периода «МС.MM.YYYY» в самом документе — единственный достоверный источник;
-    #   2. «до DD.MM» в имени файла или тексте — бухгалтер иногда пишет срок именем файла;
+    #   2. «до DD.MM» в имени файла или тексте — это СРОК, а не месяц начисления: по 125-ФЗ
+    #      срок стоит на месяц позже начисления, поэтому месяц берём минус один. Раньше срок
+    #      клали прямо в период, и _injury_due прибавлял ещё месяц — обязательство уезжало на
+    #      месяц вперёд («до 15.09» давало период 2026-09 и срок 15.10, то есть пени);
     #   3. МЕСЯЦ ПИСЬМА. С апреля 2026 форма ПД приходит без поля периода (ячейка пуста), а
     #      файлы разных месяцев побайтно неразличимы по ячейкам — читать больше нечего.
     #      По всей истории, где поле было (дек-2025 … мар-2026, 5 из 5), месяц начисления
@@ -397,8 +405,8 @@ def parse_injury_payment(
     if period_month is None:
         pp_date = _parse_due_date(text, filename, year)
         if pp_date is not None:
-            period_year, period_month = pp_date.year, pp_date.month
-            period_source = "document"
+            period_year, period_month = _month_before(pp_date.year, pp_date.month)
+            period_source = "filename"
     if period_month is None and received_on is not None:
         period_year, period_month = received_on.year, received_on.month
         period_source = "letter"
@@ -417,10 +425,12 @@ def parse_injury_payment(
         tax_kind="contrib_injury",
         due_date=due,
         purpose="Страховые взносы на травматизм (в СФР)",
+        # Каскад исчерпан — период ПУСТОЙ, а не «какой-нибудь». _period_hint здесь
+        # возвращал 'year' из подстроки «ГОД» в «ВОЛГОДОНСК» (адрес плательщика) — и
+        # документ снова получал вырожденное распознанное, совпадающее с прошлыми
+        # извещениями на ту же сумму. Пустой период честнее: документ уйдёт владельцу.
         period_hint=(
-            f"{period_year}-{period_month:02d}"
-            if period_year and period_month
-            else _period_hint(filename, text)
+            f"{period_year}-{period_month:02d}" if period_year and period_month else None
         ),
         needs_review=bool(reasons),
         review_reasons=reasons,

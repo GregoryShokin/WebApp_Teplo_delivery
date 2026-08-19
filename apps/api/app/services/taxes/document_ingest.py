@@ -255,7 +255,9 @@ _VOLATILE_RECOGNITION_KEYS = frozenset(
     {"review_reasons", "duplicate_of", "manually_reviewed", "period_source"}
 )
 # Статусы, при которых распознанное содержательно и годится для сравнения документов.
-_COMPARABLE_STATUSES = frozenset({"parsed", "needs_review"})
+# Только ``parsed``: документ, отправленный владельцу на проверку, не гасим автоматически —
+# у него распознано не всё, отпечаток вырожден, и «дубль» по нему может оказаться ложным.
+_COMPARABLE_STATUSES = frozenset({"parsed"})
 
 
 def _content_key(recognition: dict) -> str:
@@ -342,6 +344,9 @@ async def set_intake_review(
             if value is None:
                 continue
             updated[key] = str(value)
+        # Период задал человек — бейдж «месяц по дате письма» больше не про этот документ.
+        if overrides.get("period_hint") is not None:
+            updated["period_source"] = "manual"
         updated["review_reasons"] = []
         updated["manually_reviewed"] = True
         intake.recognition = updated

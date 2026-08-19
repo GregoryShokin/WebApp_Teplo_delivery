@@ -346,14 +346,92 @@ def test_injury_december_letter_rolls_due_date_into_january() -> None:
     assert rec["due_date"] == "2027-01-15"
 
 
+def test_injury_period_from_filename_deadline_is_month_before() -> None:
+    """Ступень 2: «до 15.09» в имени — это СРОК, значит начислено за август, а не за сентябрь.
+
+    Раньше срок клали прямо в период, и _injury_due прибавлял ещё месяц: обязательство
+    уезжало на 15.10 — просрочка и пени на ровном месте (125-ФЗ, ст. 22).
+    """
+    from dataclasses import replace
+
+    att = replace(
+        _pd_att(period_cell=None, received=datetime(2026, 8, 19, tzinfo=UTC)),
+        filename="0,2 % до 15.09.xls",
+    )
+    _, status, rec, _ = parse_attachment(att)
+
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-08"
+    assert rec["due_date"] == "2026-09-15"
+    assert rec["period_source"] == "filename"  # выведено из имени, а не прочитано в документе
+
+
 def test_injury_without_any_period_source_needs_review() -> None:
-    """Каскад исчерпан (нет поля периода и нет даты письма) — документ владельцу, не молча."""
+    """Каскад исчерпан (нет поля периода и нет даты письма) — документ владельцу, не молча.
+
+    Период при этом ПУСТОЙ, а не «какой-нибудь»: _period_hint возвращал здесь 'year' из
+    подстроки «ГОД» в «ВОЛГОДОНСК», и распознанное снова вырождалось до пары (сумма, КБК) —
+    то есть совпадало с прошлыми извещениями на ту же сумму.
+    """
     att = _pd_att(period_cell=None, received=None)
     _, status, rec, _ = parse_attachment(att)
 
     assert status == "needs_review"
     assert "не распознан месяц начисления" in rec["review_reasons"]
     assert rec["period_source"] is None
+    assert rec["period_hint"] is None, "пустой период честнее выдуманного «года»"
+
+
+async def test_ingest_does_not_ignore_document_waiting_for_owner(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ в «нужна проверка» не гасится как дубль — у него распознано не всё.
+
+    Два извещения с исчерпанным каскадом дают одинаково бедное распознанное; если гасить
+    такие по совпадению, второе исчезнет молча, ни разу не показавшись владельцу.
+    """
+    first = _pd_att(period_cell=None, received=None)
+    second = _pd_att(period_cell=None, received=None, sheet_name="стр.1")
+    assert first.sha256 != second.sha256
+
+    async with async_session_factory() as session:
+        result = await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([first, second]),
+            accounts=_TEST_ACCOUNTS,
+        )
+
+    assert result["needs_review"] == 2, result
+    assert result.get("ignored", 0) == 0, result
+
+
+async def test_manual_period_override_clears_derived_mark(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Владелец поправил месяц — бейдж «месяц по дате письма» больше не про этот документ."""
+    att = _pd_att(period_cell=None, received=datetime(2026, 8, 19, tzinfo=UTC))
+    async with async_session_factory() as session:
+        await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([att]),
+            accounts=_TEST_ACCOUNTS,
+        )
+        intake = (
+            await session.execute(select(TaxDocumentIntake))
+        ).scalars().one()
+        assert intake.recognition["period_source"] == "letter"
+
+        await set_intake_review(
+            session,
+            intake,
+            status="parsed",
+            overrides={"period_hint": "2026-07", "due_date": "2026-08-15"},
+        )
+
+    assert intake.recognition["period_hint"] == "2026-07"
+    assert intake.recognition["period_source"] == "manual"
 
 
 async def test_ingest_two_months_of_injury_do_not_collapse(

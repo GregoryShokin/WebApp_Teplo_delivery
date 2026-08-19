@@ -1837,6 +1837,13 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
 
   const reasons = recognition.review_reasons ?? [];
   const needsReview = row.status === "needs_review";
+  // Месяц выведен автоматикой, а не прочитан в документе: по дате письма или по «до DD.MM»
+  // в имени файла. Такой документ проходит как распознанный, но месяц у него — допущение,
+  // поэтому владелец должен и видеть его, и уметь поправить.
+  const derivedPeriod =
+    recognition.period_source === "letter" || recognition.period_source === "filename";
+  const canRefinePeriod =
+    derivedPeriod && row.status === "parsed" && row.document_type === "payment_order";
   // ИИ-разбор доступен и там, где автоматика сдалась совсем (ошибка/неподдержанный формат).
   const needsAttention =
     needsReview || row.status === "error" || row.status === "unsupported";
@@ -1972,16 +1979,18 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             {/* Месяц выведен, а не прочитан: с апреля 2026 форма ПД по травматизму приходит
                 без поля периода, и каскад подставляет месяц письма. Показываем явно — это
                 допущение, владелец должен видеть его и уметь поправить. */}
-            {recognition.period_source === "letter" ? (
+            {derivedPeriod ? (
               <Badge
                 className="border-amber-200 bg-amber-50 font-normal text-amber-800"
                 variant="outline"
               >
-                месяц по дате письма
-                <InfoHint label="месяц выведен по дате письма">
-                  В документе нет поля налогового периода, поэтому месяц начисления взят из
-                  даты письма — так бухгалтер выписывает извещение в том же месяце. Если это
-                  не так, поправьте период вручную в разборе документа.
+                {recognition.period_source === "letter"
+                  ? "месяц по дате письма"
+                  : "месяц по имени файла"}
+                <InfoHint label="месяц выведен, а не прочитан">
+                  В документе нет поля налогового периода, поэтому месяц начисления выведен:
+                  по дате письма (бухгалтер выписывает извещение в том же месяце) или по сроку
+                  в имени файла. Если месяц другой — кнопка «Уточнить месяц…» рядом.
                 </InfoHint>
               </Badge>
             ) : null}
@@ -2023,8 +2032,21 @@ function DocumentRow({ row }: { row: TaxDocumentRow }) {
             {recognition.reason}
           </div>
         ) : null}
-        {(needsAttention || recognition.ai_review) && canManage ? (
+        {(needsAttention || recognition.ai_review || canRefinePeriod) && canManage ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
+            {/* Месяц — допущение автоматики; без этой кнопки бейдж обещал правку, которой
+                у распознанного документа не было: блок кнопок рисовался только для
+                «нужна проверка». Продвинутый документ уже не правится — там поздно. */}
+            {canRefinePeriod ? (
+              <Button
+                disabled={reviewMutation.isPending}
+                onClick={() => setReviewOpen(true)}
+                size="sm"
+                variant="outline"
+              >
+                Уточнить месяц…
+              </Button>
+            ) : null}
             {needsReview ? (
               <Button
                 disabled={reviewMutation.isPending}
