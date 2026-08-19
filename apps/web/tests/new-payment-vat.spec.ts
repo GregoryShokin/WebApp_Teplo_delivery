@@ -18,6 +18,22 @@ const ARTICLE_ID = "11111111-1111-1111-1111-111111111111";
 const PREPAYMENT_ARTICLE_ID = "22222222-2222-2222-2222-222222222222";
 const SUPPLIER_ID = "33333333-3333-3333-3333-333333333333";
 
+// Получатель с подтверждёнными реквизитами: только его платёж уходит НАРУЖУ, и только у него
+// в назначении есть о чём заявлять налог. Без выбранного получателя тот же расход уезжает
+// траншем на собственную карту ИП, и блока НДС в форме нет вовсе.
+const SUPPLIER = {
+  counterparty_id: SUPPLIER_ID,
+  name: "ООО Поставщик",
+  inn: "7701234567",
+  relationship: "official",
+  has_requisites: true,
+  requisites_verified: true,
+  service_period_required: false,
+  default_service_period_offset_months: null,
+  default_dds_article_id: null,
+  confirm_no_dds_article: false,
+};
+
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
     status: 200,
@@ -88,6 +104,7 @@ test.beforeEach(async ({ page }) => {
           location: "safe",
         },
       ],
+      counterparties: [SUPPLIER],
       employees: [],
     }),
   );
@@ -124,8 +141,9 @@ function vatPreview(dialog: Dialog) {
   return dialog.locator("p[aria-live='polite']").filter({ visible: true });
 }
 
-/** Открыть «Новый платёж», выбрать свободную статью и вписать сумму. */
-async function openExpense(page: Page) {
+/** Открыть «Новый платёж», выбрать свободную статью, вписать сумму и (по умолчанию)
+ *  получателя с реквизитами — иначе платёж пойдёт на карту ИП и НДС не спросят. */
+async function openExpense(page: Page, { recipient = true }: { recipient?: boolean } = {}) {
   await page.goto("/");
   await page.getByRole("button", { name: "Активные платежи" }).click();
 
@@ -138,6 +156,10 @@ async function openExpense(page: Page) {
   // Формы окна остаются смонтированными рядом, поэтому имя поля берём точным: у строки
   // расхода это ровно «Сумма», у предоплаты — «Сумма, ₽».
   await amountBox(dialog).fill("7984,90");
+  if (recipient) {
+    await dialog.getByLabel("Кому платим").click();
+    await dialog.getByRole("button", { name: /ООО Поставщик/ }).click();
+  }
   return dialog;
 }
 
@@ -186,7 +208,7 @@ test("итог транша складывается построчно в ко�
   // Бэк округляет КАЖДУЮ строку (`_money(line.amount)`) и только потом суммирует: две строки
   // по 1,005 дают 2,02, а не 2,01. Сложение сырых долей рубля показало бы не тот итог,
   // который спишет банк.
-  const dialog = await openExpense(page);
+  const dialog = await openExpense(page, { recipient: false });
   await amountBox(dialog).fill("1,005");
   await dialog.getByRole("button", { name: "Добавить строку" }).click();
   await dialog.getByRole("button", { name: "SEO-оптимизация" }).nth(1).click();
@@ -248,13 +270,51 @@ test("ставка выбрана раньше суммы — назначени
   await expect(dialog.getByText("SEO-оптимизация.")).toBeVisible();
 });
 
-test("у наличного счёта блока НДС нет — платёж в банк не уходит", async ({ page }) => {
-  const dialog = await openExpense(page);
-  await expect(dialog.getByText("SEO-оптимизация. Без НДС.")).toBeVisible();
+test("на транше на карту ИП блока НДС нет — это перевод себе", async ({ page }) => {
+  // Решение владельца 19.08.2026. Без выбранного получателя расход уходит траншем на
+  // собственную карту ИП → Сейф; заявлять налог по переводу самому себе не о чем, и вопрос
+  // об НДС в форме не должен даже возникать.
+  const dialog = await openExpense(page, { recipient: false });
+  await expect(vatGroup(dialog)).toHaveCount(0);
+  await expect(vatPreview(dialog)).toHaveCount(0);
 
+  // Стоит выбрать получателя с подтверждёнными реквизитами — платёж уходит наружу, и блок есть.
+  await dialog.getByLabel("Кому платим").click();
+  await dialog.getByRole("button", { name: /ООО Поставщик/ }).click();
+  await expect(vatGroup(dialog)).toBeVisible();
+});
+
+test("у наличного счёта блока НДС нет — платёж в банк не уходит", async ({ page }) => {
+  const dialog = await openExpense(page, { recipient: false });
   await dialog.getByRole("button", { name: "Сейф", exact: true }).click();
   await expect(vatGroup(dialog)).toHaveCount(0);
   await expect(vatPreview(dialog)).toHaveCount(0);
+});
+
+test("ставка не уезжает с платежом, если получателя сменили после выбора", async ({ page }) => {
+  // Состояние формы живёт дольше блока: выбрал 22 %, потом убрал получателя — блок исчез, а
+  // ставка осталась бы в стейте и уехала бы в банк вместе с траншем на карту ИП.
+  const dialog = await openExpense(page);
+  await dialog.getByRole("button", { name: "22%", exact: true }).click();
+  await dialog.getByLabel("Кому платим").click();
+  await dialog.getByRole("button", { name: "Кому платим: не указан" }).click();
+  await expect(vatGroup(dialog)).toHaveCount(0);
+
+  let sent: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/dds/new-payment/expense-draft", (route) => {
+    sent = route.request().postDataJSON();
+    return fulfillJson(route, {
+      id: "draft-3",
+      amount: 7984.9,
+      status: "created",
+      provider_ref: "mock",
+      last_error: null,
+      created_at: "2026-08-19T09:00:00Z",
+    });
+  });
+  await dialog.getByRole("button", { name: "Отправить в банк" }).click();
+  await expect.poll(() => sent).not.toBeNull();
+  expect(sent!.vat_rate).toBeNull();
 });
 
 /** Открыть форму предоплаты поставщику с выбранным получателем и суммой. */

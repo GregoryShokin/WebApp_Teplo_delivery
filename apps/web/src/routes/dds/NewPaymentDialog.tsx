@@ -1465,6 +1465,11 @@ function ExpenseForm({
     return Boolean(article?.lease_bound) && cap > 0 && amountOf(row.amount) > cap;
   });
   const requiresRequisites = Boolean(requisitesRecipient);
+  // НДС спрашиваем ТОЛЬКО у платежа по реквизитам получателя. Транш на карту ИП → Сейф —
+  // перевод собственных средств себе: заявлять по нему налог не о чем, и «в т.ч. НДС» в
+  // назначении такого платежа было бы утверждением, которого никто не делал. Ровно по этой
+  // же причине НДС-блока нет у informal-закупа (`_informal_payment_purpose` на бэке).
+  const vatApplies = !isCashSource && requiresRequisites;
   const directRouteBlocked =
     requiresRequisites &&
     (rows.length !== 1 || isCashSource || !requisitesRecipient?.requisites_verified);
@@ -1512,7 +1517,9 @@ function ExpenseForm({
         ? createExpenseCashReserves({ wallet_id: walletId, lines, pay_now: payNow })
         : createNewPaymentExpenseDraft({
             lines,
-            vat_rate: vatRate || null,
+            // Ставка, выбранная до смены получателя, не должна уехать с траншем на карту ИП:
+            // блок к тому моменту уже скрыт, а состояние формы живёт.
+            vat_rate: (vatApplies && vatRate) || null,
             channel,
             allow_official_via_safe: allowOfficialViaSafe,
           });
@@ -1816,9 +1823,9 @@ function ExpenseForm({
           </Button>
         </div>
 
-        {/* НДС — только у банковского платежа: наличный резерв в банк не уходит, и его
-            назначение читает наш же журнал, а не платёжное поручение. */}
-        {!isCashSource ? (
+        {/* НДС — только у платежа по реквизитам получателя: наличный резерв в банк не уходит
+            вовсе, а транш на карту ИП — перевод себе, налога в нём нет. */}
+        {vatApplies ? (
           <VatRateField
             total={total}
             value={vatRate}

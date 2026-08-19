@@ -797,6 +797,16 @@ async def create_expense_payment_draft(
     single = len(prepared) == 1
     draft_period = next(iter(period_keys)) if period_keys else (None, None)
     vat_rate_clean = normalize_vat_rate(vat_rate)
+    # Налог заявляется только в платеже ПО РЕКВИЗИТАМ получателя. Маршрут через карту ИП →
+    # Сейф — перевод собственных средств себе: «в т.ч. НДС» там утверждало бы то, чего никто
+    # не утверждал. Тот же принцип у informal-закупа (``_informal_payment_purpose`` без
+    # НДС-блока) и у пополнения Сейфа. Форма ставку в этом случае не спрашивает и не шлёт —
+    # запрет держит правило для всех остальных вызовов ручки.
+    if vat_rate_clean and not is_direct:
+        raise CounterpartyPaymentError(
+            "НДС указывается только в платеже по реквизитам получателя: "
+            "на карту ИП деньги уходят переводом себе"
+        )
     vat_value = vat_amount_for_rate(total, vat_rate_clean)
     draft = CounterpartyPaymentDraft(
         id=uuid.uuid4(),
