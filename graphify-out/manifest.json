@@ -11050,14 +11050,14 @@
     "semantic_hash": "531f731ba3068603c4bbf6ba24fae1ce"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/document_ingest.py": {
-    "mtime": 1785182247.1601505,
-    "ast_hash": "b692e96bc394eb377e33336bcb92f519",
-    "semantic_hash": "b692e96bc394eb377e33336bcb92f519"
+    "mtime": 1787144056.0592468,
+    "ast_hash": "160cfcda8ad1c488ecbfad8a785d66f8",
+    "semantic_hash": "160cfcda8ad1c488ecbfad8a785d66f8"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/document_parser.py": {
-    "mtime": 1785182247.1606858,
-    "ast_hash": "ffbad3677efe9ffe0e7f4c29500a86b0",
-    "semantic_hash": "ffbad3677efe9ffe0e7f4c29500a86b0"
+    "mtime": 1787144056.059588,
+    "ast_hash": "379ac7f89cb2dcfb944f2e2479a4fd27",
+    "semantic_hash": "379ac7f89cb2dcfb944f2e2479a4fd27"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/engine.py": {
     "mtime": 1785173434.897318,
@@ -11080,9 +11080,9 @@
     "semantic_hash": "d73f71047099ac5068a5c65f9cebc674"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/obligations.py": {
-    "mtime": 1785175813.2105386,
-    "ast_hash": "31f8745e7c8e209ccc4afae8dee65b49",
-    "semantic_hash": "31f8745e7c8e209ccc4afae8dee65b49"
+    "mtime": 1787144056.060005,
+    "ast_hash": "89485e23e43616e1f71e4f905b3fcebc",
+    "semantic_hash": "89485e23e43616e1f71e4f905b3fcebc"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/official_payroll.py": {
     "mtime": 1785173434.8989666,
@@ -12530,9 +12530,9 @@
     "semantic_hash": "5fb12533e4e527ad817615c7e788c331"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_taxes_document_ingest.py": {
-    "mtime": 1785182247.1626585,
-    "ast_hash": "14f5dc356c7fdf19c0c34d05f1c63eb6",
-    "semantic_hash": "14f5dc356c7fdf19c0c34d05f1c63eb6"
+    "mtime": 1787144056.0602837,
+    "ast_hash": "fb873020c4fb2d46884d63cacb10b8a4",
+    "semantic_hash": "fb873020c4fb2d46884d63cacb10b8a4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_taxes_document_parser.py": {
     "mtime": 1785182247.1632981,
@@ -13540,14 +13540,14 @@
     "semantic_hash": "407a3785e3974e6acd3ebd8b2dd845e2"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/taxes/api.ts": {
-    "mtime": 1785439300.066594,
-    "ast_hash": "9ce7b6875a6ad07f87e1feda3cc041b9",
-    "semantic_hash": "9ce7b6875a6ad07f87e1feda3cc041b9"
+    "mtime": 1787144056.0606778,
+    "ast_hash": "967ed05d7e0286a11ae5d85cb428fd65",
+    "semantic_hash": "967ed05d7e0286a11ae5d85cb428fd65"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/taxes/index.tsx": {
-    "mtime": 1785439300.0671992,
-    "ast_hash": "6bcd1b323355c59ae43efd3f05ac827b",
-    "semantic_hash": "6bcd1b323355c59ae43efd3f05ac827b"
+    "mtime": 1787144056.0610626,
+    "ast_hash": "e2c76fa8e7abf2b5511d283fc68f25fb",
+    "semantic_hash": "e2c76fa8e7abf2b5511d283fc68f25fb"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/web/src/routes/warehouse/BarterTab.tsx": {
     "mtime": 1784562714.847346,
