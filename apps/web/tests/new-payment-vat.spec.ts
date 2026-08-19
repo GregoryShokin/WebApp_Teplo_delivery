@@ -110,6 +110,21 @@ test("форма показывает строку назначения, кот�
   await expect(dialog.getByText(/Итого\s*7\s*984,90/)).toBeVisible();
 });
 
+test("длинное назначение ужимается, налог в предпросмотре остаётся целым", async ({ page }) => {
+  // Лимит платёжки (210 символов) съедает ОПИСАНИЕ, а не налог, и предпросмотр обязан
+  // показывать именно то, что поместится: обещать строку, которая в банк не влезет, —
+  // то же самое, что молчать про обрезку.
+  const dialog = await openExpense(page);
+  await dialog.getByPlaceholder("Назначение (необязательно)").fill("Услуги доставки ".repeat(20));
+  await dialog.getByRole("button", { name: "22%", exact: true }).click();
+
+  const preview = dialog.getByText(/^В назначение платежа уйдёт:/);
+  await expect(preview).toContainText("В т.ч. НДС: 22% - 1439,90 руб.");
+  const text = ((await preview.textContent()) ?? "").replace("В назначение платежа уйдёт: ", "");
+  // 210 минус место под техметку [TPL-…], которую добавит бэк.
+  expect(text.length).toBeLessThanOrEqual(210 - " [TPL-000000000000]".length);
+});
+
 test("ставка доезжает до запроса, а не остаётся украшением формы", async ({ page }) => {
   const dialog = await openExpense(page);
   await dialog.getByRole("button", { name: "10%", exact: true }).click();

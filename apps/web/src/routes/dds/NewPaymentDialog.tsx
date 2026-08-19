@@ -1819,7 +1819,7 @@ function ExpenseForm({
             total={total}
             value={vatRate}
             onChange={setVatRate}
-            hint={bankPurposeBase ? `${bankPurposeBase.replace(/\s*\.*$/, "")}.` : undefined}
+            purposeBase={bankPurposeBase}
           />
         ) : null}
 
@@ -2295,7 +2295,7 @@ function PrepaymentForm({
             total={amountOf(amount) > 0 ? amountOf(amount) : 0}
             value={vatRate}
             onChange={setVatRate}
-            hint={`Предоплата поставщику ${selected?.name ?? "…"}.`}
+            purposeBase={`Предоплата поставщику ${selected?.name ?? "…"}`}
           />
         ) : null}
 

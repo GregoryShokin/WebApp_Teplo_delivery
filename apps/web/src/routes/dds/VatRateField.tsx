@@ -30,21 +30,43 @@ export function vatSuffixForRate(total: number, rate: string): string {
   return `В т.ч. НДС: ${rate}% - ${amount.toFixed(2).replace(".", ",")} руб.`;
 }
 
+/** Лимит назначения платёжного поручения и место под техметку `[TPL-…]` — как на бэке. */
+const PURPOSE_LIMIT = 210;
+const MATCH_MARKER_BUDGET = " [TPL-".length + 12 + "]".length;
+
+/**
+ * Назначение целиком — так, как его соберёт бэк (``_with_vat_suffix``), без техметки.
+ *
+ * Лимит платёжки съедает ОПИСАНИЕ, а не налог: НДС юридически значим, описание — нет.
+ * Считаем это здесь, а не показываем сырой ввод: смысл поля в том, чтобы человек сверял
+ * РЕЗУЛЬТАТ, и обещать строку, которая в банк не поместится, — то же самое, что молчать.
+ */
+export function bankPurposePreview(base: string, total: number, rate: string): string {
+  const suffix = vatSuffixForRate(total, rate);
+  const clean = base.split(/\s+/).filter(Boolean).join(" ");
+  const budget = PURPOSE_LIMIT - suffix.length - 2 - MATCH_MARKER_BUDGET;
+  if (!clean || budget <= 0) return suffix;
+  return `${clean.slice(0, budget).replace(/[\s.]+$/, "")}. ${suffix}`.slice(
+    0,
+    PURPOSE_LIMIT - MATCH_MARKER_BUDGET,
+  );
+}
+
 export function VatRateField({
   total,
   value,
   onChange,
-  hint,
+  purposeBase,
 }: {
   /** Итоговая сумма платежа — из неё выделяется налог. */
   total: number;
   /** Ставка голыми цифрами («22») или «» — платёж без НДС. */
   value: string;
   onChange: (rate: string) => void;
-  /** Чем закончится назначение до НДС-хвоста — чтобы человек видел строку целиком. */
-  hint?: string;
+  /** Описательная часть назначения — чтобы человек видел строку банка целиком. */
+  purposeBase?: string;
 }) {
-  const suffix = vatSuffixForRate(total, value);
+  const preview = bankPurposePreview(purposeBase ?? "", total, value);
   // Ставка выбрана, а суммы ещё нет: налог посчитать не из чего. Молчать нельзя — человек
   // уже сказал «с НДС», и пустая строка «Без НДС.» под ней выглядела бы как отказ.
   const awaitingAmount = value !== "" && total <= 0;
@@ -80,8 +102,7 @@ export function VatRateField({
         ) : (
           <>
             В назначение платежа уйдёт:{" "}
-            {hint ? <span className="text-muted-foreground">{hint} </span> : null}
-            <span className="font-medium text-foreground">{suffix}</span>
+            <span className="font-medium text-foreground">{preview}</span>
           </>
         )}
       </p>
