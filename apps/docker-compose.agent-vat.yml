@@ -12,7 +12,20 @@ services:
       POSTGRES_DB: teplo
       POSTGRES_USER: teplo
       POSTGRES_PASSWORD: teplo
-    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off"]
+    # max_connections=800 — НЕ тюнинг, а условие осмысленных цифр в pytest: на дефолтной
+    # сотне полный прогон даёт сотни ФАЛЬШИВЫХ падений (TooManyConnectionsError из модульного
+    # engine app/db/session.py, который держит соединения мёртвых event loop'ов).
+    # fsync=off — тестовая база одноразовая, терять там нечего.
+    command:
+      - postgres
+      - "-c"
+      - "max_connections=800"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "fsync=off"
+      - "-c"
+      - "synchronous_commit=off"
     ports:
       - "5562:5432"
     volumes:
@@ -44,6 +57,9 @@ services:
       TEPLO_BANK_CLIENT_MODE: mock
       # Заглушка iiko: без переменной IikoClient.__init__ бросает SystemExit и роняет uvicorn.
       IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
+      # Боевой токен из ../.env превращает tests/test_cloud_shift_webhook.py в 5 фальшивых
+      # красных (401 вместо 200): тесты стучат в вебхук без заголовка. На стенде токен не нужен.
+      IIKO_WEBHOOK_TOKEN: ""
       TEPLO_ADMIN_EMAIL: admin1@teplo.local
       TEPLO_ADMIN_PASSWORD: admin-password-for-smoke
       JWT_SECRET_KEY: change-me-in-local-env-change-me
@@ -55,6 +71,8 @@ services:
     volumes:
       - ./api:/app/apps/api
       - ../integrations:/app/integrations:ro
+      # Без deploy/ семь тестов контрактов секретов падают на FileNotFoundError — не на коде.
+      - ../deploy:/app/deploy:ro
     depends_on:
       postgres:
         condition: service_healthy
