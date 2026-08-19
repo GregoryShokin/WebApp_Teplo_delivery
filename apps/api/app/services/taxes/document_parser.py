@@ -62,6 +62,10 @@ class PaymentOrderDoc:
     needs_review: bool
     review_reasons: list[str] = field(default_factory=list)
     source_filename: str | None = None
+    # Откуда взят период: 'document' — из самого документа, 'letter' — подставлен по месяцу
+    # письма (каскад), None — не определялся. Владелец должен видеть, что месяц выведен,
+    # а не прочитан: подставленный месяц — допущение, и в спорном случае его правят руками.
+    period_source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -333,13 +337,19 @@ def _injury_due(year: int, month: int) -> date:
 
 
 def parse_injury_payment(
-    data: bytes, *, filename: str = "", default_year: int | None = None
+    data: bytes,
+    *,
+    filename: str = "",
+    default_year: int | None = None,
+    received_on: date | None = None,
 ) -> PaymentOrderDoc:
     """Разобрать платёжку взноса на травматизм — «Форма ПД (налог)» (.xls) в СФР.
 
     Это единая платёжка «0,2 %» по всем сотрудникам (не ведомость Т-53 и не форма 0401060):
     внутри — сумма, КБК травматизма (797…), получатель ОСФР по региону. Раньше такой .xls
     молча уходил в Т-53-парсер, где «не находил сотрудников» и вис в «нужна проверка».
+
+    ``received_on`` — дата письма; последняя ступень каскада определения месяца (см. ниже).
     """
     wb = open_workbook(data)
     cells: list[str] = []
@@ -365,15 +375,35 @@ def parse_injury_payment(
         reasons.append("не распознан КБК травматизма")
 
     # Срока уплаты в форме ПД нет — его задаёт закон: до 15 числа месяца, следующего за
-    # месяцем начисления (125-ФЗ, ст. 22). Месяц берём из поля периода «МС.MM.YYYY», иначе
-    # из даты платёжки (бухгалтер выписывает её в том же месяце). Без этого обязательство
-    # получало «срок» = дата письма и на следующий день краснело просрочкой.
+    # месяцем начисления (125-ФЗ, ст. 22). Без месяца обязательство получало «срок» = дата
+    # письма и на следующий день краснело просрочкой.
+    #
+    # КАСКАД определения месяца — три ступени, сверху вниз:
+    #   1. поле периода «МС.MM.YYYY» в самом документе — единственный достоверный источник;
+    #   2. «до DD.MM» в имени файла или тексте — бухгалтер иногда пишет срок именем файла;
+    #   3. МЕСЯЦ ПИСЬМА. С апреля 2026 форма ПД приходит без поля периода (ячейка пуста), а
+    #      файлы разных месяцев побайтно неразличимы по ячейкам — читать больше нечего.
+    #      По всей истории, где поле было (дек-2025 … мар-2026, 5 из 5), месяц начисления
+    #      совпадал с месяцем письма: агент выписывает извещение в том же месяце, 17-26 числа.
+    #      Это ДОПУЩЕНИЕ, а не факт из документа, поэтому помечаем ``period_source='letter'``
+    #      — владелец видит бейдж и может поправить месяц руками.
+    #
+    # Зачем каскад вообще: без месяца распознанное вырождается в пару (сумма, КБК) —
+    # одинаковую у всех извещений на 100 ₽, — и контентный дедуп приёмника (_duplicate_intake_id)
+    # гасит свежий документ как повтор прошлого. Так 19.08.2026 потерялся август.
     month = _injury_period_month(cells)
     period_year, period_month = month if month else (None, None)
+    period_source = "document" if period_month else None
     if period_month is None:
         pp_date = _parse_due_date(text, filename, year)
         if pp_date is not None:
             period_year, period_month = pp_date.year, pp_date.month
+            period_source = "document"
+    if period_month is None and received_on is not None:
+        period_year, period_month = received_on.year, received_on.month
+        period_source = "letter"
+    if period_month is None:
+        reasons.append("не распознан месяц начисления")
     due = (
         _injury_due(period_year, period_month)
         if period_year and period_month
@@ -395,6 +425,7 @@ def parse_injury_payment(
         needs_review=bool(reasons),
         review_reasons=reasons,
         source_filename=filename or None,
+        period_source=period_source,
     )
 
 

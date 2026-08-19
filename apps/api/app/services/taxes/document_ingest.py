@@ -65,6 +65,15 @@ def _received_year(att: FetchedAttachment) -> int:
     return att.received_at.year if att.received_at else date.today().year
 
 
+def _received_date(att: FetchedAttachment):
+    """Дата письма — последняя ступень каскада определения месяца у формы ПД (травматизм).
+
+    Письма без заголовка Date не бывают, но заголовок бьётся: тогда каскад обрывается на
+    предыдущей ступени и документ уходит владельцу с причиной «не распознан месяц».
+    """
+    return att.received_at.date() if att.received_at else None
+
+
 def _classify_document(filename: str) -> str:
     """Тип документа по имени файла, до разбора содержимого."""
     low = (filename or "").lower()
@@ -102,6 +111,7 @@ def _payment_order_recognition(doc: PaymentOrderDoc) -> dict:
         "tax_kind": doc.tax_kind,
         "due_date": doc.due_date.isoformat() if doc.due_date else None,
         "period_hint": doc.period_hint,
+        "period_source": doc.period_source,
         "purpose": doc.purpose,
         "review_reasons": doc.review_reasons,
     }
@@ -198,7 +208,10 @@ def parse_attachment(att: FetchedAttachment) -> tuple[str, str, dict, str | None
             if name.endswith((".xls", ".xlsx")):
                 # .xls-платёжка среди платёжек — это ПД-налог взноса на травматизм.
                 doc = parse_injury_payment(
-                    att.content, filename=att.filename or "", default_year=year
+                    att.content,
+                    filename=att.filename or "",
+                    default_year=year,
+                    received_on=_received_date(att),
                 )
             else:
                 doc = parse_payment_order(
@@ -238,7 +251,9 @@ def _sender_matches(from_addr: str | None, senders: tuple[str, ...]) -> bool:
 
 
 # Служебные поля распознанного, не относящиеся к содержанию документа.
-_VOLATILE_RECOGNITION_KEYS = frozenset({"review_reasons", "duplicate_of", "manually_reviewed"})
+_VOLATILE_RECOGNITION_KEYS = frozenset(
+    {"review_reasons", "duplicate_of", "manually_reviewed", "period_source"}
+)
 # Статусы, при которых распознанное содержательно и годится для сравнения документов.
 _COMPARABLE_STATUSES = frozenset({"parsed", "needs_review"})
 

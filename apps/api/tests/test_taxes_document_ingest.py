@@ -272,6 +272,124 @@ def test_xlsx_injury_payment_parsed() -> None:
     assert err is None
 
 
+# ── каскад определения месяца у формы ПД (травматизм) ────────────────────────
+
+# Сетка реального извещения «Форма ПД (налог)», ФИО/ИНН обезличены. Адрес оставлен
+# волгодонским намеренно: подстрока «ГОД» внутри «ВОЛГОДОНСК» — та самая ловушка
+# _period_hint, из-за которой месячный взнос выглядел годовым платежом.
+_PD_GRID: list[list[object]] = [
+    ["Рег. № ФСС:6118015592", "Статус", "08", "Форма №  ПД (налог)"],
+    ["Извещение", "ФИО", "Адрес"],
+    ["ИВАНОВА ИРИНА ИВАНОВНА", "Г. ВОЛГОДОНСК, ЦВЕТОЧНЫЙ Б-Р, 33"],
+    ["ИНН", "000000000000", "Сумма", "100.0"],
+    ["Получатель", "УФК по Ростовской области (ОСФР по Ростовской области)"],
+    ["ИНН", "6163013494", "КПП", "616301001", "Страх.взносы от несчастных случаев"],
+    ["79710212000061000160"],
+]
+
+
+def _pd_att(
+    *, period_cell: str | None, received: datetime | None, sheet_name: str = "стр.001"
+) -> FetchedAttachment:
+    """Вложение с извещением ПД: с полем периода «МС.MM.YYYY» или без него.
+
+    ``sheet_name`` разводит БАЙТЫ двух вложений, не трогая ни одной читаемой ячейки — так
+    в жизни отличаются файлы разных месяцев (метаданные OLE при одинаковой сетке).
+    """
+    from dataclasses import replace
+
+    grid = [list(row) for row in _PD_GRID]
+    grid.append([period_cell, "0"] if period_cell else ["0"])
+    return replace(
+        _att("oborotka_07.xls", "0,2 %.xls"),
+        content=_xlsx_bytes(grid, sheet_name=sheet_name),
+        received_at=received,
+    )
+
+
+def test_injury_period_read_from_document_wins_over_letter() -> None:
+    """Ступень 1 каскада: поле «МС.MM.YYYY» в документе сильнее даты письма."""
+    att = _pd_att(period_cell="МС.03.2026", received=datetime(2026, 8, 19, tzinfo=UTC))
+    _, status, rec, err = parse_attachment(att)
+
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-03"
+    assert rec["due_date"] == "2026-04-15"  # 15 число месяца, следующего за начислением
+    assert rec["period_source"] == "document"
+    assert err is None
+
+
+def test_injury_period_falls_back_to_letter_month() -> None:
+    """Ступень 3: поля периода нет (так с апреля 2026) — месяц берём из даты письма.
+
+    Инцидент 19.08.2026: без этой ступени распознанное вырождалось в пару (сумма, КБК),
+    контентный дедуп признавал августовское извещение повтором апрельского и гасил его,
+    а взнос за август пропадал из «Налогов» целиком.
+    """
+    att = _pd_att(period_cell=None, received=datetime(2026, 8, 19, tzinfo=UTC))
+    _, status, rec, err = parse_attachment(att)
+
+    assert status == "parsed"
+    assert rec["period_hint"] == "2026-08"
+    assert rec["due_date"] == "2026-09-15"
+    assert rec["period_source"] == "letter"  # месяц выведен — владелец видит бейдж
+    assert rec["review_reasons"] == []
+    assert err is None
+
+
+def test_injury_december_letter_rolls_due_date_into_january() -> None:
+    """Декабрьское начисление платится до 15 января следующего года (125-ФЗ, ст. 22)."""
+    att = _pd_att(period_cell=None, received=datetime(2026, 12, 18, tzinfo=UTC))
+    _, _, rec, _ = parse_attachment(att)
+
+    assert rec["period_hint"] == "2026-12"
+    assert rec["due_date"] == "2027-01-15"
+
+
+def test_injury_without_any_period_source_needs_review() -> None:
+    """Каскад исчерпан (нет поля периода и нет даты письма) — документ владельцу, не молча."""
+    att = _pd_att(period_cell=None, received=None)
+    _, status, rec, _ = parse_attachment(att)
+
+    assert status == "needs_review"
+    assert "не распознан месяц начисления" in rec["review_reasons"]
+    assert rec["period_source"] is None
+
+
+async def test_ingest_two_months_of_injury_do_not_collapse(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Два извещения на одну сумму в разные месяцы — два документа, а не «повтор».
+
+    Регрессия 19.08.2026: апрельское и августовское извещения на 100 ₽ давали побайтно
+    одинаковое распознанное, и второе уходило в ``ignored`` с ссылкой на первое.
+    """
+    april = _pd_att(period_cell=None, received=datetime(2026, 4, 17, tzinfo=UTC))
+    august = _pd_att(
+        period_cell=None, received=datetime(2026, 8, 19, tzinfo=UTC), sheet_name="стр.1"
+    )
+    assert april.sha256 != august.sha256, "SHA-дедуп не должен схлопнуть их раньше времени"
+
+    async with async_session_factory() as session:
+        result = await ingest_tax_documents(
+            session,
+            settings=get_settings(),
+            fetch=_fetch_stub([april, august]),
+            accounts=_TEST_ACCOUNTS,
+        )
+
+    assert result["parsed"] == 2, result
+    assert result.get("ignored", 0) == 0, result
+    async with async_session_factory() as session:
+        rows = (
+            await session.execute(
+                select(TaxDocumentIntake.status, TaxDocumentIntake.recognition)
+            )
+        ).all()
+    assert sorted(r.recognition["period_hint"] for r in rows) == ["2026-04", "2026-08"]
+    assert all("duplicate_of" not in r.recognition for r in rows)
+
+
 def test_xlsx_turnover_statement_parsed_same_as_xls() -> None:
     """Оборотка в .xlsx даёт ту же раскладку, что и .xls (общий интерфейс книги)."""
     from dataclasses import replace
