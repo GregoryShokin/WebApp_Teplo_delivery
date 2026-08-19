@@ -11055,9 +11055,9 @@
     "semantic_hash": "160cfcda8ad1c488ecbfad8a785d66f8"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/document_parser.py": {
-    "mtime": 1787144056.059588,
-    "ast_hash": "379ac7f89cb2dcfb944f2e2479a4fd27",
-    "semantic_hash": "379ac7f89cb2dcfb944f2e2479a4fd27"
+    "mtime": 1787151618.3515213,
+    "ast_hash": "cbe753f8f23ee286842b1539c7527c86",
+    "semantic_hash": "cbe753f8f23ee286842b1539c7527c86"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/app/services/taxes/engine.py": {
     "mtime": 1785173434.897318,
@@ -12535,9 +12535,9 @@
     "semantic_hash": "fb873020c4fb2d46884d63cacb10b8a4"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_taxes_document_parser.py": {
-    "mtime": 1785182247.1632981,
-    "ast_hash": "6a2b274ea521df724b030fc6a7c0f23e",
-    "semantic_hash": "6a2b274ea521df724b030fc6a7c0f23e"
+    "mtime": 1787151618.3528507,
+    "ast_hash": "c3d52f5e2a8900bfd8f84a7a915b6552",
+    "semantic_hash": "c3d52f5e2a8900bfd8f84a7a915b6552"
   },
   "/Users/grigorii/Developer/Projects/Teplo-all-for-business/apps/api/tests/test_taxes_engine.py": {
     "mtime": 1785173434.9064429,
