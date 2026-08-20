@@ -30,9 +30,9 @@ import {
 import { ShiftDetailDialog } from "@/routes/kassa/ShiftDetailDialog";
 import {
   PayoutCategoryBadge,
+  ShiftFloatBadge,
   ShiftPenaltyBadge,
   ShiftPostedBadge,
-  ShiftUncollectedBadge,
 } from "@/routes/kassa/shared";
 
 export function ShiftCloseTab({
@@ -63,15 +63,19 @@ export function ShiftCloseTab({
     retry: false,
   });
 
-  // Смены, где наличка зависла в ящике: инкассацию забыли или инкассировали не всю.
+  // Две беды с разных сторон нормы размена: сверху деньги не доехали в Главную кассу,
+  // снизу разменом бедно — утром нечем давать сдачу.
   const uncollected = useMemo(
     () =>
-      (shiftsQuery.data ?? []).filter((shift) => (shift.uncollected_status ?? "none") !== "none"),
+      (shiftsQuery.data ?? []).filter((shift) =>
+        ["missing", "partial"].includes(shift.float_status ?? "ok"),
+      ),
     [shiftsQuery.data],
   );
-  const uncollectedTotal = uncollected.reduce(
-    (sum, shift) => sum + (shift.uncollected_cash ?? 0),
-    0,
+  const uncollectedTotal = uncollected.reduce((sum, shift) => sum + (shift.cash_over_norm ?? 0), 0);
+  const shortFloat = useMemo(
+    () => (shiftsQuery.data ?? []).filter((shift) => shift.float_status === "short"),
+    [shiftsQuery.data],
   );
 
   const totals = useMemo(
@@ -134,6 +138,28 @@ export function ShiftCloseTab({
               размена и порог, ниже которого сигнала нет, — настраиваются в «Настройки →
               Касса». Деньги не теряются: их инкассируют следующей сменой, но приход в ДДС
               встанет датой ТОЙ смены, а не этой.
+            </InfoHint>
+          </div>
+        </div>
+      ) : null}
+
+      {shortFloat.length > 0 ? (
+        <div className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <div>
+            <span className="font-medium">
+              Мало размена{" "}
+              {shortFloat.length === 1 ? "в смене" : "в сменах"}{" "}
+              {shortFloat.map((shift) => `№ ${shift.session_number ?? "—"}`).join(", ")}:{" "}
+              {shortFloat.map((shift) => formatDdsMoney(shift.cash_remain)).join(", ")}.
+            </span>{" "}
+            С этими деньгами касса откроется на следующий день — сдачу давать будет нечем.
+            <InfoHint label="Мало размена в кассе">
+              Порог — настройка «Минимальный размен в кассе» (Настройки → Касса). Считается по
+              остатку смены на закрытии: именно с ним касса откроется наутро. Причина бывает
+              любая — слишком щедрая инкассация, крупные выдачи курьерам или партнёру, слабая
+              наличная выручка. Лечится не в системе, а деньгами: довнести размен в ящик или
+              оставить в нём часть наличной выручки.
             </InfoHint>
           </div>
         </div>
@@ -232,7 +258,9 @@ export function ShiftCloseTab({
                   <TableCell
                     className={cn(
                       "text-right tabular-nums",
-                      (shift.uncollected_status ?? "none") !== "none" && "font-medium text-amber-700",
+                      ["missing", "partial"].includes(shift.float_status ?? "ok") &&
+                        "font-medium text-amber-700",
+                      shift.float_status === "short" && "font-medium text-sky-700",
                     )}
                   >
                     {formatDdsMoney(shift.cash_remain)}
@@ -247,7 +275,7 @@ export function ShiftCloseTab({
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col items-start gap-1">
-                      <ShiftUncollectedBadge status={shift.uncollected_status} />
+                      <ShiftFloatBadge status={shift.float_status} />
                       <ShiftPenaltyBadge status={shift.penalty_status} />
                     </div>
                   </TableCell>
@@ -357,7 +385,7 @@ function OpenShiftCard({
                 ? null
                 : shift.cash_over_norm > 0
                   ? `сверх размена ${formatDdsMoney(shift.cash_over_norm)}`
-                  : "размена в ящике не больше нормы"
+                  : `до нормы размена не хватает ${formatDdsMoney(-shift.cash_over_norm)}`
             }
           />
         </div>
@@ -368,6 +396,16 @@ function OpenShiftCard({
             <span>
               Инкассации в этой смене ещё не было. Если наличка сверх размена останется в ящике
               к закрытию — она не доедет в Главную кассу и завтра сюда придёт сигнал.
+            </span>
+          </div>
+        ) : null}
+
+        {shift.float_is_short ? (
+          <div className="flex items-start gap-2 text-sm text-sky-900">
+            <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <span>
+              Разменом бедно: в ящике меньше {formatDdsMoney(shift.cash_float_min)}. Пока смена
+              идёт, наличные можно довнести — утром сдачу давать будет нечем.
             </span>
           </div>
         ) : null}

@@ -1,14 +1,20 @@
-"""Касса: норма размена и порог «зависшей налички» — сигнал о забытой инкассации.
+"""Касса: норма размена и два сигнала по денежному ящику смены.
 
-Две настройки, обе в рублях (в отличие от процентного ``shortage_penalty_threshold_pct``:
-зависшая наличка — абсолютная сумма, не доехавшая в Главную кассу):
+Три настройки, все в рублях (в отличие от процентного ``shortage_penalty_threshold_pct``:
+здесь речь про абсолютные суммы в ящике):
 
 1. ``kassa.cash_float_norm_rub`` (дефолт 5000) — сколько наличных положено оставлять в
    денежном ящике на размен. За два месяца прода (61 смена, 20.06–19.08.2026) ящик
    открывался ровно с 5 000 с копейками 35 раз — это фактическая практика, а не догадка.
 2. ``kassa.stuck_cash_threshold_rub`` (дефолт 1000) — насколько выше нормы смена может
    закрыться без сигнала. Обычный хвост размена держался в 265–914 ₽, а пропущенная
-   инкассация 19.08.2026 дала 2 821,83 ₽.
+   инкассация 19.08.2026 дала 2 822,33 ₽ сверх нормы.
+3. ``kassa.cash_float_min_rub`` (дефолт 3000) — ниже этого остатка размена не хватает,
+   утром нечем давать сдачу. Задан абсолютной суммой, а не отступом от нормы: снизу важен
+   сам остаток, а не отклонение. Граница видна в данных — провалы 795, 1 163 и 1 709 ₽,
+   а следующий по величине остаток уже 3 426 ₽, с которым назавтра отработали нормально.
+   Причину сигнал не называет: во всех трёх провалах (05–07.08.2026) инкассации не было
+   вовсе — наличку выбрали курьеры и партнёр.
 
 Почему меряем от нормы, а не от остатка на открытие смены (решение владельца 20.08.2026):
 разностное правило ошибается в обе стороны. 08.08.2026 ящик просел до 1 709 ₽ и за смену
@@ -34,6 +40,9 @@ depends_on = None
 
 NORM_SETTING_ID = "6c2b81f4-9d13-4a75-b60e-27c9f5e18a34"
 NORM_SETTING_KEY = "kassa.cash_float_norm_rub"
+
+MIN_SETTING_ID = "b48d0a37-1e56-4c92-8f13-6ad7e0c4b295"
+MIN_SETTING_KEY = "kassa.cash_float_min_rub"
 
 THRESHOLD_SETTING_ID = "3a6f5c9d-2e71-4b83-9c0a-5d4e7f8a1b62"
 THRESHOLD_SETTING_KEY = "kassa.stuck_cash_threshold_rub"
@@ -70,9 +79,27 @@ def upgrade() -> None:
         WHERE NOT EXISTS (SELECT 1 FROM app_setting WHERE key = '{THRESHOLD_SETTING_KEY}')
         """
     )
+    op.execute(
+        f"""
+        INSERT INTO app_setting (
+            id, key, value, value_type, category, display_name,
+            description, widget_type, widget_options, unit, updated_at
+        )
+        SELECT '{MIN_SETTING_ID}', '{MIN_SETTING_KEY}', '3000'::jsonb, 'number',
+               'kassa', 'Минимальный размен в кассе',
+               'Смена помечается «мало размена», если после закрытия в ящике осталось меньше '
+               'этой суммы: именно с ней касса откроется наутро, и сдачу давать будет нечем. '
+               'Причина бывает любая — щедрая инкассация, крупные выдачи курьерам или '
+               'партнёру, слабая наличная выручка.',
+               'number', null, '₽', now()
+        WHERE NOT EXISTS (SELECT 1 FROM app_setting WHERE key = '{MIN_SETTING_KEY}')
+        """
+    )
 
 
 def downgrade() -> None:
     op.execute(
-        f"DELETE FROM app_setting WHERE key in ('{NORM_SETTING_KEY}', '{THRESHOLD_SETTING_KEY}')"
+        f"""DELETE FROM app_setting WHERE key in (
+            '{NORM_SETTING_KEY}', '{THRESHOLD_SETTING_KEY}', '{MIN_SETTING_KEY}'
+        )"""
     )

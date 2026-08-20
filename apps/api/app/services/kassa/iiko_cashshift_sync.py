@@ -20,9 +20,11 @@
   ``status=OPEN`` отдаёт открытую смену, а ``payments/list`` по ней — её изъятия. Читаем
   их напрямую, чтобы в течение дня было видно, проводили инкассацию или нет; в ДДС
   по-прежнему книжится только закрытая смена (иначе задвоение с ``posted``-контуром).
-* ``compute_uncollected_cash`` — сигнал «деньги зависли в ящике»: закрытая смена оставила
-  остаток выше НОРМЫ размена. Так выглядит забытая (или неполная) инкассация — инцидент
-  19.08.2026, смена 1206: 2 821,83 ₽ сверх нормы остались на ночь в кассе.
+* ``float_status`` — состояние денежного ящика закрытой смены. Сверху от нормы размена
+  ловим забытую (или неполную) инкассацию: инцидент 19.08.2026, смена 1206 — 2 822,33 ₽
+  сверх нормы остались на ночь в кассе. Снизу — нехватку размена: 06.08.2026 смена 1193
+  закрылась с 795 ₽, и утром сдачу давать было нечем. Причину сигнал не называет: в трёх
+  провалах 05–07.08.2026 инкассации не было вовсе, наличку выбрали курьеры и партнёр.
 """
 
 from __future__ import annotations
@@ -105,18 +107,20 @@ PENALTY_STATUS_APPLIED = "applied"
 PENALTY_STATUS_WAIVED = "waived"
 PENALTY_STATUS_MANUAL_REVIEW = "manual_review"
 
-# --- сигнал «наличка зависла в ящике» (забытая/неполная инкассация) --------------
-# Сколько наличных положено оставлять в ящике на размен. Обе величины — настройки
-# (Настройки → Касса): норма задаёт «сколько должно остаться», порог — насколько выше
-# нормы можно закрыться, не поднимая тревогу (округления при выдаче).
-CASH_FLOAT_NORM_KEY = "kassa.cash_float_norm_rub"
+# --- сигналы по размену в денежном ящике ----------------------------------------
+# Три настройки (Настройки → Касса), все в рублях:
+CASH_FLOAT_NORM_KEY = "kassa.cash_float_norm_rub"  # сколько положено оставлять на размен
 DEFAULT_CASH_FLOAT_NORM = Decimal("5000")
-STUCK_CASH_THRESHOLD_KEY = "kassa.stuck_cash_threshold_rub"
+STUCK_CASH_THRESHOLD_KEY = "kassa.stuck_cash_threshold_rub"  # сверх нормы — уже тревога
 DEFAULT_STUCK_CASH_THRESHOLD = Decimal("1000")
-# Итог проверки инкассации по смене (вычисляемое поле витрины, в БД не хранится).
-UNCOLLECTED_NONE = "none"  # ящик закрыли на норме размена — всё, что следовало, вынесли
-UNCOLLECTED_PARTIAL = "partial"  # инкассация была, но сверх нормы всё равно осталось > порога
-UNCOLLECTED_MISSING = "missing"  # инкассации не было вовсе, а деньги сверх нормы остались
+CASH_FLOAT_MIN_KEY = "kassa.cash_float_min_rub"  # ниже — сдачу давать нечем
+DEFAULT_CASH_FLOAT_MIN = Decimal("3000")
+# Итог проверки денежного ящика смены (вычисляемое поле витрины, в БД не хранится).
+# Состояния взаимоисключающие: остаток не может быть одновременно выше нормы и ниже минимума.
+FLOAT_OK = "ok"  # ящик закрыли в норме
+FLOAT_PARTIAL = "partial"  # инкассация была, но сверх нормы всё равно осталось > порога
+FLOAT_MISSING = "missing"  # инкассации не было вовсе, а деньги сверх нормы остались
+FLOAT_SHORT = "short"  # размена меньше минимума — утром нечем давать сдачу
 
 
 @dataclass(slots=True)
@@ -540,6 +544,7 @@ async def fetch_open_shift(session: AsyncSession) -> dict[str, Any] | None:
     сменам, здесь не меряем: в середине дня выручка в ящике — это норма, а не проблема.
     """
     float_norm = await _cash_float_norm(session)
+    float_min = await _cash_float_min(session)
     payload = await anyio.to_thread.run_sync(_open_shift_raw)
     if payload is None:
         return None
@@ -594,7 +599,11 @@ async def fetch_open_shift(session: AsyncSession) -> dict[str, Any] | None:
         "pay_out": pay_out,
         "cash_in_drawer": cash_in_drawer,
         "cash_float_norm": float_norm,
+        "cash_float_min": float_min,
         "cash_over_norm": cash_over_norm,
+        # Разменом уже бедно прямо сейчас — видно до закрытия смены, когда ещё можно
+        # довнести наличных, а не назавтра утром у кассы.
+        "float_is_short": cash_in_drawer is not None and cash_in_drawer < float_min,
         "collected_cash": collected,
         "payouts": payouts,
         "fetched_at": datetime.now(tz=MOSCOW_TZ),
@@ -1003,7 +1012,12 @@ async def _stuck_cash_threshold(session: AsyncSession) -> Decimal:
     return await _money_setting(session, STUCK_CASH_THRESHOLD_KEY, DEFAULT_STUCK_CASH_THRESHOLD)
 
 
-def compute_uncollected_cash(shift: IikoCashShift, float_norm: Decimal) -> Decimal | None:
+async def _cash_float_min(session: AsyncSession) -> Decimal:
+    """Минимальный размен: ниже этого остатка утром нечем давать сдачу."""
+    return await _money_setting(session, CASH_FLOAT_MIN_KEY, DEFAULT_CASH_FLOAT_MIN)
+
+
+def compute_cash_over_norm(shift: IikoCashShift, float_norm: Decimal) -> Decimal | None:
     """Наличные, оставшиеся в ящике смены сверх НОРМЫ размена.
 
     Инкассация — единственный штатный способ вынуть выручку из денежного ящика в Главную
@@ -1019,19 +1033,38 @@ def compute_uncollected_cash(shift: IikoCashShift, float_norm: Decimal) -> Decim
     13 390 ₽; и наоборот, ежедневный хвост по 265–847 ₽ (12–18.08) не пробивал порог ни
     разу, хотя ящик за неделю распух с 3 426 до 5 000 ₽. От нормы оба случая читаются верно.
 
-    Отрицательное значение — в ящике МЕНЬШЕ нормы, размена не хватает. Сигналом это не
-    считаем (отдельная история), но величину отдаём в витрину как есть.
+    Отрицательное значение — в ящике МЕНЬШЕ нормы; насколько это уже проблема, решает
+    отдельный минимум размена (``float_status`` → ``short``).
     """
     if shift.cash_remain is None:
         return None
     return shift.cash_remain - float_norm
 
 
-def uncollected_status(uncollected: Decimal | None, collected: Decimal, threshold: Decimal) -> str:
-    """Итог проверки инкассации смены: ``none`` / ``partial`` / ``missing``."""
-    if uncollected is None or uncollected <= threshold:
-        return UNCOLLECTED_NONE
-    return UNCOLLECTED_MISSING if collected <= 0 else UNCOLLECTED_PARTIAL
+def float_status(
+    shift: IikoCashShift,
+    over_norm: Decimal | None,
+    collected: Decimal,
+    *,
+    threshold: Decimal,
+    float_min: Decimal,
+) -> str:
+    """Итог по денежному ящику смены: ``ok`` / ``partial`` / ``missing`` / ``short``.
+
+    Две беды с разных сторон нормы, и меряются они разными величинами. Сверху — деньги,
+    не доехавшие в Главную кассу: тут важно НАСКОЛЬКО выше нормы закрылись, поэтому порог
+    задан отступом от неё. Снизу — операционный риск «утром нечем дать сдачу»: тут важен
+    сам остаток, а не его отклонение, поэтому минимум задан абсолютной суммой. По данным
+    прода за 20.06–19.08.2026 граница видна: провалы — 795, 1 163 и 1 709 ₽, а следующий
+    по величине остаток уже 3 426 ₽, с которым назавтра отработали смену без проблем.
+    """
+    if over_norm is None or shift.cash_remain is None:
+        return FLOAT_OK
+    if over_norm > threshold:
+        return FLOAT_MISSING if collected <= 0 else FLOAT_PARTIAL
+    if shift.cash_remain < float_min:
+        return FLOAT_SHORT
+    return FLOAT_OK
 
 
 async def _collected_totals(
@@ -1058,6 +1091,7 @@ async def _shift_summary(
     collected: Decimal | None = None,
     float_norm: Decimal | None = None,
     stuck_threshold: Decimal | None = None,
+    float_min: Decimal | None = None,
 ) -> dict[str, Any]:
     if collected is None:
         collected = (await _collected_totals(session, [shift.id])).get(shift.id, Decimal("0.00"))
@@ -1065,7 +1099,9 @@ async def _shift_summary(
         float_norm = await _cash_float_norm(session)
     if stuck_threshold is None:
         stuck_threshold = await _stuck_cash_threshold(session)
-    uncollected = compute_uncollected_cash(shift, float_norm)
+    if float_min is None:
+        float_min = await _cash_float_min(session)
+    over_norm = compute_cash_over_norm(shift, float_norm)
     return {
         "id": shift.id,
         "iiko_session_id": shift.iiko_session_id,
@@ -1085,8 +1121,10 @@ async def _shift_summary(
         "cash_diff": shift.cash_diff,
         "real_cash_diff": await compute_real_cash_diff(session, shift),
         "collected_cash": collected,
-        "uncollected_cash": uncollected,
-        "uncollected_status": uncollected_status(uncollected, collected, stuck_threshold),
+        "cash_over_norm": over_norm,
+        "float_status": float_status(
+            shift, over_norm, collected, threshold=stuck_threshold, float_min=float_min
+        ),
         "posted": shift.posted,
         "penalty_status": shift.penalty_status,
         "synced_at": shift.synced_at,
@@ -1115,6 +1153,7 @@ async def list_shifts(
     # Настройки и суммы инкассации берём разом на весь список — иначе три запроса на смену.
     float_norm = await _cash_float_norm(session)
     stuck_threshold = await _stuck_cash_threshold(session)
+    float_min = await _cash_float_min(session)
     collected = await _collected_totals(session, [shift.id for shift in shifts])
     return [
         await _shift_summary(
@@ -1123,6 +1162,7 @@ async def list_shifts(
             collected=collected.get(shift.id, Decimal("0.00")),
             float_norm=float_norm,
             stuck_threshold=stuck_threshold,
+            float_min=float_min,
         )
         for shift in shifts
     ]
@@ -1141,6 +1181,7 @@ async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any
     ).all()
     float_norm = await _cash_float_norm(session)
     stuck_threshold = await _stuck_cash_threshold(session)
+    float_min = await _cash_float_min(session)
     payload = await _shift_summary(
         session,
         shift,
@@ -1150,9 +1191,11 @@ async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any
         ),
         float_norm=float_norm,
         stuck_threshold=stuck_threshold,
+        float_min=float_min,
     )
-    payload["uncollected_norm"] = float_norm
-    payload["uncollected_threshold"] = stuck_threshold
+    payload["cash_float_norm"] = float_norm
+    payload["cash_float_threshold"] = stuck_threshold
+    payload["cash_float_min"] = float_min
     payload["payouts"] = [
         {
             "id": payout.id,

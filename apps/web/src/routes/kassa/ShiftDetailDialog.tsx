@@ -27,7 +27,7 @@ import {
   PayoutCategoryBadge,
   ShiftPenaltyBadge,
   ShiftPostedBadge,
-  ShiftUncollectedBadge,
+  ShiftFloatBadge,
 } from "@/routes/kassa/shared";
 
 type ShiftDetailDialogProps = {
@@ -78,7 +78,7 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
             {shift ? (
               <span className="ml-2 inline-flex gap-2 align-middle">
                 <ShiftPostedBadge posted={shift.posted} />
-                <ShiftUncollectedBadge status={shift.uncollected_status} />
+                <ShiftFloatBadge status={shift.float_status} />
               </span>
             ) : null}
           </DialogTitle>
@@ -102,8 +102,8 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
               <Metric label="Остаток в кассе" value={formatDdsMoney(shift.cash_remain)} />
               <Metric
                 label="Сверх нормы размена"
-                value={formatDdsMoney(shift.uncollected_cash)}
-                warn={(shift.uncollected_status ?? "none") !== "none"}
+                value={formatDdsMoney(shift.cash_over_norm)}
+                warn={(shift.float_status ?? "ok") !== "ok"}
               />
               <Metric
                 label="Расхождение кассы"
@@ -112,19 +112,32 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
               />
             </div>
 
-            {(shift.uncollected_status ?? "none") !== "none" ? (
+            {shift.float_status === "missing" || shift.float_status === "partial" ? (
               <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
                 <div>
                   <span className="font-medium">
-                    {shift.uncollected_status === "missing"
+                    {shift.float_status === "missing"
                       ? "Инкассацию в этой смене не проводили."
                       : "Инкассировали не всю наличку."}
                   </span>{" "}
-                  В ящике осталось {formatDdsMoney(shift.uncollected_cash)} сверх нормы размена
-                  ({formatDdsMoney(shift.uncollected_norm)}) — при пороге{" "}
-                  {formatDdsMoney(shift.uncollected_threshold)}. Деньги доедут в Главную кассу
+                  В ящике осталось {formatDdsMoney(shift.cash_over_norm)} сверх нормы размена (
+                  {formatDdsMoney(shift.cash_float_norm)}) — при пороге{" "}
+                  {formatDdsMoney(shift.cash_float_threshold)}. Деньги доедут в Главную кассу
                   следующей инкассацией, и приход в ДДС встанет датой ТОЙ смены.
+                </div>
+              </div>
+            ) : null}
+
+            {shift.float_status === "short" ? (
+              <div className="flex items-start gap-3 rounded-md border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+                <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-medium">Размена в кассе не хватает.</span> Смена закрылась
+                  с {formatDdsMoney(shift.cash_remain)} при минимуме{" "}
+                  {formatDdsMoney(shift.cash_float_min)} — с этой суммой касса откроется на
+                  следующий день, и сдачу давать будет нечем. Смотрите изъятия смены: наличку
+                  выбрали инкассацией, курьерами или партнёром, а на размен не оставили.
                 </div>
               </div>
             ) : null}

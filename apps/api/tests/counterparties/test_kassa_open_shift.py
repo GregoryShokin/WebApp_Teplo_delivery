@@ -24,13 +24,15 @@ import app.services.kassa.iiko_cashshift_sync as sync_mod
 from app.models import AppSetting, IikoCashShift
 from app.services.kassa.iiko_cashshift_sync import (
     ALISA_ACCOUNT_ID,
+    CASH_FLOAT_MIN_KEY,
     CASH_FLOAT_NORM_KEY,
     COURIER_SALARY_ACCOUNT_ID,
+    FLOAT_MISSING,
+    FLOAT_OK,
+    FLOAT_PARTIAL,
+    FLOAT_SHORT,
     MAIN_CASH_ACCOUNT_ID,
     STUCK_CASH_THRESHOLD_KEY,
-    UNCOLLECTED_MISSING,
-    UNCOLLECTED_NONE,
-    UNCOLLECTED_PARTIAL,
     fetch_open_shift,
     get_shift,
     list_shifts,
@@ -106,7 +108,9 @@ async def test_fetch_open_shift_builds_showcase(monkeypatch, async_session_facto
     assert payload["collected_cash"] == Decimal("2822")
     # Сверх нормы размена (5000) — 320,33: столько ещё предстоит инкассировать.
     assert payload["cash_float_norm"] == Decimal("5000")
+    assert payload["cash_float_min"] == Decimal("3000")
     assert payload["cash_over_norm"] == Decimal("320.33")
+    assert payload["float_is_short"] is False
     assert [item["category"] for item in payload["payouts"]] == ["main_cash"]
     assert payload["payouts"][0]["account_name"] == "Главная касса"
     assert payload["payouts"][0]["comment"] == "за 19.08"
@@ -257,8 +261,8 @@ async def test_forgotten_collection_is_flagged_missing(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("2822.33")  # 7822.33 − норма 5000
-        assert row["uncollected_status"] == UNCOLLECTED_MISSING
+        assert row["cash_over_norm"] == Decimal("2822.33")  # 7822.33 − норма 5000
+        assert row["float_status"] == FLOAT_MISSING
         assert row["collected_cash"] == Decimal("0.00")
         # Недостачи при этом НЕТ: формула сверки сокращает невынутые деньги.
         assert row["real_cash_diff"] == Decimal("0.00")
@@ -281,8 +285,8 @@ async def test_partial_collection_is_flagged_partial(
 
         row = await _row(session)
         assert row["collected_cash"] == Decimal("1000")
-        assert row["uncollected_cash"] == Decimal("1822.33")
-        assert row["uncollected_status"] == UNCOLLECTED_PARTIAL
+        assert row["cash_over_norm"] == Decimal("1822.33")
+        assert row["float_status"] == FLOAT_PARTIAL
 
 
 async def test_closing_at_norm_gives_no_signal(
@@ -300,8 +304,8 @@ async def test_closing_at_norm_gives_no_signal(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("0.50")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] == Decimal("0.50")
+        assert row["float_status"] == FLOAT_OK
 
 
 async def test_restoring_drained_float_is_not_a_signal(
@@ -324,8 +328,8 @@ async def test_restoring_drained_float_is_not_a_signal(
 
         row = await _row(session)
         assert row["collected_cash"] == Decimal("13390")
-        assert row["uncollected_cash"] == Decimal("0.50")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] == Decimal("0.50")
+        assert row["float_status"] == FLOAT_OK
 
 
 async def test_slow_drift_above_norm_is_caught(
@@ -345,8 +349,8 @@ async def test_slow_drift_above_norm_is_caught(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("1800")
-        assert row["uncollected_status"] == UNCOLLECTED_MISSING
+        assert row["cash_over_norm"] == Decimal("1800")
+        assert row["float_status"] == FLOAT_MISSING
 
 
 async def test_small_leftover_is_below_threshold(
@@ -363,27 +367,97 @@ async def test_small_leftover_is_below_threshold(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("265.50")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] == Decimal("265.50")
+        assert row["float_status"] == FLOAT_OK
 
 
-async def test_float_below_norm_is_negative_and_silent(
+async def test_drained_float_is_flagged_short(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """В ящике МЕНЬШЕ нормы — размена не хватает. Величину отдаём, сигнал не поднимаем."""
-    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 19244.33))
-    _patch_closed(
-        monkeypatch,
-        [_closed_shift(pay_out=19244.33, cash_remain=1200.50)],
-        payments,
-    )
+    """Смена 1193 (06.08.2026): инкассировали всё, в ящике осталось 795 ₽.
+
+    Утром касса откроется с этой суммой, и сдачу давать будет нечем — обратный сигнал.
+    """
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 19649.83))
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=19649.83, cash_remain=795)], payments)
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("-3799.50")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] == Decimal("-4205.00")
+        assert row["float_status"] == FLOAT_SHORT
+
+
+async def test_below_norm_but_above_minimum_is_silent(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Смена 1198 (11.08.2026): 3 426,50 ₽ — ниже нормы, но сдачу давать есть чем.
+
+    Ровно тот случай, из-за которого минимум задан отдельной суммой, а не симметричным
+    допуском от нормы: при допуске 1000 эта смена звенела бы впустую.
+    """
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 17018.33))
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=17018.33, cash_remain=3426.50)], payments)
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        row = await _row(session)
+        assert row["cash_over_norm"] == Decimal("-1573.50")
+        assert row["float_status"] == FLOAT_OK
+
+
+async def test_exactly_at_minimum_is_silent(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Ровно минимум — ещё не сигнал: границу считаем допустимой."""
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 17444.83))
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=17444.83, cash_remain=3000)], payments)
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        assert (await _row(session))["float_status"] == FLOAT_OK
+
+
+async def test_minimum_setting_overrides_default(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Подняли минимум до 4000 — смена с 3 426,50 ₽ начинает считаться бедной разменом."""
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 17018.33))
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=17018.33, cash_remain=3426.50)], payments)
+    async with async_session_factory() as session:
+        setting = await session.scalar(
+            select(AppSetting).where(AppSetting.key == CASH_FLOAT_MIN_KEY)
+        )
+        assert setting is not None, "миграция 0276 должна засеять минимальный размен"
+        assert setting.value == 3000  # дефолт из миграции
+        setting.value = 4000
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        assert (await _row(session))["float_status"] == FLOAT_SHORT
+
+
+async def test_stuck_cash_wins_over_short(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Состояния взаимоисключающие: остаток не бывает разом выше нормы и ниже минимума."""
+    _patch_closed(
+        monkeypatch,
+        [_closed_shift(pay_out=12623, cash_remain=7822.33)],
+        PAYOUTS_NO_COLLECTION,
+    )
+    async with async_session_factory() as session:
+        setting = await session.scalar(
+            select(AppSetting).where(AppSetting.key == CASH_FLOAT_MIN_KEY)
+        )
+        setting.value = 9000  # заведомо выше остатка — но сверху беда важнее
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        assert (await _row(session))["float_status"] == FLOAT_MISSING
 
 
 async def test_norm_setting_overrides_default(
@@ -406,8 +480,8 @@ async def test_norm_setting_overrides_default(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] == Decimal("-2177.67")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] == Decimal("-2177.67")
+        assert row["float_status"] == FLOAT_OK
 
 
 async def test_threshold_setting_overrides_default(
@@ -430,7 +504,7 @@ async def test_threshold_setting_overrides_default(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["float_status"] == FLOAT_OK
 
 
 async def test_shift_detail_carries_norm_and_threshold(
@@ -451,10 +525,11 @@ async def test_shift_detail_carries_norm_and_threshold(
         payload = await get_shift(session, shift.id)
 
         assert payload is not None
-        assert payload["uncollected_status"] == UNCOLLECTED_MISSING
-        assert payload["uncollected_cash"] == Decimal("2822.33")
-        assert payload["uncollected_norm"] == Decimal("5000")
-        assert payload["uncollected_threshold"] == Decimal("1000")
+        assert payload["float_status"] == FLOAT_MISSING
+        assert payload["cash_over_norm"] == Decimal("2822.33")
+        assert payload["cash_float_norm"] == Decimal("5000")
+        assert payload["cash_float_threshold"] == Decimal("1000")
+        assert payload["cash_float_min"] == Decimal("3000")
 
 
 async def test_missing_remainder_gives_no_signal(
@@ -475,8 +550,22 @@ async def test_missing_remainder_gives_no_signal(
         await session.commit()
 
         row = await _row(session)
-        assert row["uncollected_cash"] is None
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        assert row["cash_over_norm"] is None
+        assert row["float_status"] == FLOAT_OK
+
+
+async def test_open_shift_reports_short_float_live(monkeypatch, async_session_factory) -> None:
+    """Разменом бедно прямо сейчас — видно, пока смена идёт и можно довнести наличных."""
+    _patch_open(monkeypatch, [{**OPEN_ROW, "sessionStartCash": 795, "payOut": 0}])
+    monkeypatch.setattr(
+        sync_mod, "_fetch_shift_payments", lambda token, sid: {"payOutsRecords": []}
+    )
+    async with async_session_factory() as session:
+        payload = await fetch_open_shift(session)
+
+    assert payload is not None
+    assert payload["cash_in_drawer"] == Decimal("1115")  # 795 + 320 выручки
+    assert payload["float_is_short"] is True
 
 
 async def test_open_shift_fetched_at_is_moscow_aware(monkeypatch, async_session_factory) -> None:

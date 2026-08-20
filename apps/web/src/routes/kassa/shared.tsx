@@ -66,24 +66,27 @@ export const penaltyStatusLabels: Record<string, string> = {
   manual_review: "Ручной разбор",
 };
 
-// Итог проверки инкассации смены (поле uncollected_status): деньги сверх стартового
-// флоута остались в ящике — инкассацию забыли или провели не на всю наличку.
-export const uncollectedStatusLabels: Record<string, string> = {
+// Итог по денежному ящику смены (поле float_status). Сверху от нормы размена — деньги не
+// доехали в Главную кассу; снизу — размена не хватает, утром нечем давать сдачу.
+export const floatStatusLabels: Record<string, string> = {
   missing: "Без инкассации",
   partial: "Инкассация не вся",
+  short: "Мало размена",
 };
 
-export function ShiftUncollectedBadge({ status }: { status: string | null }) {
-  if (!status || status === "none") {
+export function ShiftFloatBadge({ status }: { status: string | null }) {
+  if (!status || status === "ok") {
     return null;
   }
   const className =
     status === "missing"
       ? "border-red-200 bg-red-50 text-red-700"
-      : "border-amber-200 bg-amber-50 text-amber-700";
+      : status === "short"
+        ? "border-sky-200 bg-sky-50 text-sky-700"
+        : "border-amber-200 bg-amber-50 text-amber-700";
   return (
     <Badge className={className} variant="outline">
-      {uncollectedStatusLabels[status] ?? status}
+      {floatStatusLabels[status] ?? status}
     </Badge>
   );
 }
