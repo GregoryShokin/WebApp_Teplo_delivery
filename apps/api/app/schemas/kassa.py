@@ -177,7 +177,8 @@ class KassaShiftRead(BaseModel):
     cash_diff: float | None = None  # сырое поле iiko (= 2× остаток, артефакт)
     real_cash_diff: float | None = None  # сверка ящика: положит. = недостача/неучтённое изъятие
     collected_cash: float | None = None  # Σ инкассации смены (изъятия в Главную кассу)
-    # Остаток сверх стартового флоута = деньги, не доехавшие в Главную кассу.
+    # Остаток сверх НОРМЫ размена = деньги, не доехавшие в Главную кассу.
+    # Отрицательное — в ящике меньше нормы, размена не хватает (сигналом не считается).
     uncollected_cash: float | None = None
     # Итог проверки инкассации: none / partial / missing (см. iiko_cashshift_sync).
     uncollected_status: str | None = None
@@ -217,7 +218,8 @@ class KassaShiftDetailRead(KassaShiftRead):
     shortage_threshold_pct: float | None = None  # порог, % выручки
     shortage_threshold_amount: float | None = None  # порог в рублях
     shortage_pct_of_revenue: float | None = None  # фактическая недостача, % выручки
-    uncollected_threshold: float | None = None  # порог зависшей налички, ₽ сверх флоута
+    uncollected_norm: float | None = None  # норма размена, ₽
+    uncollected_threshold: float | None = None  # порог сигнала, ₽ сверх нормы
     penalties: list[KassaShiftPenaltyRead] = Field(default_factory=list)
 
 
@@ -251,6 +253,8 @@ class KassaOpenShiftRead(BaseModel):
     # Расчётный остаток ящика: старт + наличная выручка + внесения − изъятия
     # (cashRemain у открытой смены iiko не отдаёт).
     cash_in_drawer: float | None = None
+    cash_float_norm: float | None = None  # норма размена, ₽
+    cash_over_norm: float | None = None  # сколько сейчас в ящике сверх нормы размена
     collected_cash: float | None = None  # Σ инкассации смены на текущий момент
     payouts: list[KassaOpenShiftPayoutRead] = Field(default_factory=list)
     fetched_at: datetime

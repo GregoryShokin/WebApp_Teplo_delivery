@@ -1,13 +1,20 @@
-"""Касса: порог «зависшей налички» — сигнал о забытой инкассации.
+"""Касса: норма размена и порог «зависшей налички» — сигнал о забытой инкассации.
 
-Настройка ``kassa.stuck_cash_threshold_rub`` (дефолт 1000 ₽): сколько рублей сверх
-стартового флоута может остаться в ящике ЗАКРЫТОЙ смены, прежде чем витрина пометит
-смену как «инкассацию забыли / инкассировали не всю наличку».
+Две настройки, обе в рублях (в отличие от процентного ``shortage_penalty_threshold_pct``:
+зависшая наличка — абсолютная сумма, не доехавшая в Главную кассу):
 
-Порог в рублях, а не в процентах выручки (в отличие от ``shortage_penalty_threshold_pct``):
-зависшая наличка — это абсолютная сумма, не доехавшая в Главную кассу. Дефолт 1000 выбран
-по факту: за месяц до 19.08.2026 обычный «хвост» в ящике держался в пределах 265–914 ₽
-(округление размена), а пропущенная инкассация 19.08 дала 2 821,83 ₽.
+1. ``kassa.cash_float_norm_rub`` (дефолт 5000) — сколько наличных положено оставлять в
+   денежном ящике на размен. За два месяца прода (61 смена, 20.06–19.08.2026) ящик
+   открывался ровно с 5 000 с копейками 35 раз — это фактическая практика, а не догадка.
+2. ``kassa.stuck_cash_threshold_rub`` (дефолт 1000) — насколько выше нормы смена может
+   закрыться без сигнала. Обычный хвост размена держался в 265–914 ₽, а пропущенная
+   инкассация 19.08.2026 дала 2 821,83 ₽.
+
+Почему меряем от нормы, а не от остатка на открытие смены (решение владельца 20.08.2026):
+разностное правило ошибается в обе стороны. 08.08.2026 ящик просел до 1 709 ₽ и за смену
+был поднят обратно до нормы — прибавка 3 291,50 ₽ дала бы ложную тревогу при честной
+инкассации на 13 390 ₽. И наоборот, хвост по 265–847 ₽ каждый день (12–18.08) не пробивал
+порог ни разу, хотя ящик за неделю распух с 3 426 до 5 000 ₽.
 
 Новых прав не заводит: сигнал — вычисляемое поле витрины смены под ``kassa.shifts.read``.
 
@@ -25,8 +32,11 @@ down_revision = "0275_payment_draft_vat"
 branch_labels = None
 depends_on = None
 
-SETTING_ID = "3a6f5c9d-2e71-4b83-9c0a-5d4e7f8a1b62"
-SETTING_KEY = "kassa.stuck_cash_threshold_rub"
+NORM_SETTING_ID = "6c2b81f4-9d13-4a75-b60e-27c9f5e18a34"
+NORM_SETTING_KEY = "kassa.cash_float_norm_rub"
+
+THRESHOLD_SETTING_ID = "3a6f5c9d-2e71-4b83-9c0a-5d4e7f8a1b62"
+THRESHOLD_SETTING_KEY = "kassa.stuck_cash_threshold_rub"
 
 
 def upgrade() -> None:
@@ -36,16 +46,33 @@ def upgrade() -> None:
             id, key, value, value_type, category, display_name,
             description, widget_type, widget_options, unit, updated_at
         )
-        SELECT '{SETTING_ID}', '{SETTING_KEY}', '1000'::jsonb, 'number',
+        SELECT '{NORM_SETTING_ID}', '{NORM_SETTING_KEY}', '5000'::jsonb, 'number',
+               'kassa', 'Норма размена в кассе',
+               'Сколько наличных положено оставлять в денежном ящике на размен. От этой '
+               'суммы считается, сколько выручки не доехало в Главную кассу: всё, что выше '
+               'нормы, должно было уйти инкассацией.',
+               'number', null, '₽', now()
+        WHERE NOT EXISTS (SELECT 1 FROM app_setting WHERE key = '{NORM_SETTING_KEY}')
+        """
+    )
+    op.execute(
+        f"""
+        INSERT INTO app_setting (
+            id, key, value, value_type, category, display_name,
+            description, widget_type, widget_options, unit, updated_at
+        )
+        SELECT '{THRESHOLD_SETTING_ID}', '{THRESHOLD_SETTING_KEY}', '1000'::jsonb, 'number',
                'kassa', 'Порог зависшей налички в кассе',
                'Смена помечается «инкассацию забыли», если после закрытия в ящике осталось '
-               'больше этой суммы сверх стартового флоута. Меньше порога — обычный остаток '
+               'больше этой суммы сверх нормы размена. Меньше порога — обычный остаток '
                'размена, сигнала нет.',
                'number', null, '₽', now()
-        WHERE NOT EXISTS (SELECT 1 FROM app_setting WHERE key = '{SETTING_KEY}')
+        WHERE NOT EXISTS (SELECT 1 FROM app_setting WHERE key = '{THRESHOLD_SETTING_KEY}')
         """
     )
 
 
 def downgrade() -> None:
-    op.execute(f"DELETE FROM app_setting WHERE key = '{SETTING_KEY}'")
+    op.execute(
+        f"DELETE FROM app_setting WHERE key in ('{NORM_SETTING_KEY}', '{THRESHOLD_SETTING_KEY}')"
+    )

@@ -128,12 +128,12 @@ export function ShiftCloseTab({
             Инкассацию не проводили или инкассировали не всю наличку — деньги остались в ящике
             и в Главную кассу не доехали.
             <InfoHint tone="alert" label="Зависшая наличка в кассе">
-              Считаем как остаток смены минус флоут, которым её открыли: из денежного ящика
-              штатно уходят только инкассация в Главную кассу, ЗП курьеров и наличные Алисы,
-              поэтому остаток выше стартового размена означает пропущенную инкассацию. Порог
-              сигнала — настройка «Порог зависшей налички в кассе» (Настройки → Касса).
-              Деньги не теряются: их инкассируют следующей сменой, но приход в ДДС встанет
-              датой ТОЙ смены, а не этой.
+              Считаем как остаток смены минус норма размена: из денежного ящика штатно уходят
+              только инкассация в Главную кассу, ЗП курьеров и наличные Алисы, поэтому всё,
+              что осталось выше нормы, должно было уехать инкассацией. Обе величины — норма
+              размена и порог, ниже которого сигнала нет, — настраиваются в «Настройки →
+              Касса». Деньги не теряются: их инкассируют следующей сменой, но приход в ДДС
+              встанет датой ТОЙ смены, а не этой.
             </InfoHint>
           </div>
         </div>
@@ -349,15 +349,25 @@ function OpenShiftCard({
           <OpenShiftMetric label="Нал. выручка" value={shift.cash_sales} />
           <OpenShiftMetric label="Изъятия" value={shift.pay_out} />
           <OpenShiftMetric label="Из них инкассация" value={shift.collected_cash} />
-          <OpenShiftMetric label="В ящике сейчас" value={shift.cash_in_drawer} />
+          <OpenShiftMetric
+            label="В ящике сейчас"
+            value={shift.cash_in_drawer}
+            note={
+              shift.cash_over_norm == null
+                ? null
+                : shift.cash_over_norm > 0
+                  ? `сверх размена ${formatDdsMoney(shift.cash_over_norm)}`
+                  : "размена в ящике не больше нормы"
+            }
+          />
         </div>
 
         {collected <= 0 ? (
           <div className="flex items-start gap-2 text-sm text-amber-800">
             <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
             <span>
-              Инкассации в этой смене ещё не было. Если наличка останется в ящике к закрытию —
-              она не доедет в Главную кассу и завтра сюда придёт сигнал.
+              Инкассации в этой смене ещё не было. Если наличка сверх размена останется в ящике
+              к закрытию — она не доедет в Главную кассу и завтра сюда придёт сигнал.
             </span>
           </div>
         ) : null}
@@ -395,13 +405,22 @@ function OpenShiftCard({
   );
 }
 
-function OpenShiftMetric({ label, value }: { label: string; value: number | null }) {
+function OpenShiftMetric({
+  label,
+  value,
+  note,
+}: {
+  label: string;
+  value: number | null;
+  note?: string | null;
+}) {
   return (
     <div className="rounded-md border bg-background p-3">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="mt-1 text-xl font-semibold tabular-nums">
         {value == null ? "—" : formatDdsMoney(value)}
       </div>
+      {note ? <div className="mt-0.5 text-xs text-muted-foreground">{note}</div> : null}
     </div>
   );
 }

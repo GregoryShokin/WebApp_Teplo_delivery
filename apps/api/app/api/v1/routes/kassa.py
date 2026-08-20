@@ -349,7 +349,9 @@ async def list_shifts_endpoint(
 @router.get(
     "/shifts/open", response_model=KassaOpenShiftRead | None, dependencies=KASSA_SHIFTS_READ
 )
-async def get_open_shift_endpoint() -> dict | None:
+async def get_open_shift_endpoint(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict | None:
     """Текущая незакрытая смена iiko («идёт»): изъятия и остаток ящика на текущий момент.
 
     Только чтение из iiko: в БД ничего не пишется, в ДДС ничего не книжится — наличный
@@ -358,7 +360,7 @@ async def get_open_shift_endpoint() -> dict | None:
     Объявлен ВЫШЕ ``/shifts/{shift_id}``: иначе FastAPI попробует разобрать «open» как UUID.
     """
     try:
-        return await fetch_open_shift()
+        return await fetch_open_shift(session)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Ошибка iiko: {exc}"

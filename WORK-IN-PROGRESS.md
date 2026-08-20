@@ -38,8 +38,8 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
     отдают новые поля), `app/api/v1/routes/kassa.py` (`GET /shifts/open`),
     `app/schemas/kassa.py`, миграция `0276_kassa_stuck_cash_threshold`
   - front: `routes/kassa/tabs/shift-close.tsx`, `ShiftDetailDialog.tsx`, `shared.tsx`, `api.ts`
-- НЕ трогать другим: миграция `0276` (head), настройка `kassa.stuck_cash_threshold_rub`,
-  сигнатура `_shift_summary`
+- НЕ трогать другим: миграция `0276` (head), настройки `kassa.cash_float_norm_rub` и
+  `kassa.stuck_cash_threshold_rub`, сигнатуры `_shift_summary` / `fetch_open_shift`
 - **ВНИМАНИЕ соседям:** `payments/list/{sessionId}` по ЗАКРЫТОЙ смене отвечает только с
   прод-адреса — с ноутбука запрос висит 120 с и падает по таймауту (по открытой смене
   отвечает за 0,4 с). Синк смен локально без дампа изъятий не прогнать.

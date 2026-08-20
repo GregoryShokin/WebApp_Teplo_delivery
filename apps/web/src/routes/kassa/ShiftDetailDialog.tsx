@@ -101,7 +101,7 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
               <Metric label="Изъятия / инкассация" value={formatDdsMoney(shift.pay_out)} />
               <Metric label="Остаток в кассе" value={formatDdsMoney(shift.cash_remain)} />
               <Metric
-                label="Зависло сверх флоута"
+                label="Сверх нормы размена"
                 value={formatDdsMoney(shift.uncollected_cash)}
                 warn={(shift.uncollected_status ?? "none") !== "none"}
               />
@@ -121,10 +121,10 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
                       ? "Инкассацию в этой смене не проводили."
                       : "Инкассировали не всю наличку."}
                   </span>{" "}
-                  В ящике осталось {formatDdsMoney(shift.uncollected_cash)} сверх стартового
-                  флоута — при пороге {formatDdsMoney(shift.uncollected_threshold)}. Деньги
-                  доедут в Главную кассу следующей инкассацией, и приход в ДДС встанет датой
-                  ТОЙ смены.
+                  В ящике осталось {formatDdsMoney(shift.uncollected_cash)} сверх нормы размена
+                  ({formatDdsMoney(shift.uncollected_norm)}) — при пороге{" "}
+                  {formatDdsMoney(shift.uncollected_threshold)}. Деньги доедут в Главную кассу
+                  следующей инкассацией, и приход в ДДС встанет датой ТОЙ смены.
                 </div>
               </div>
             ) : null}

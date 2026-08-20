@@ -178,7 +178,8 @@ export type KassaShift = {
   cash_diff: number | null;
   real_cash_diff: number | null;
   collected_cash: number | null;
-  // Остаток сверх стартового флоута — деньги, не доехавшие в Главную кассу.
+  // Остаток сверх НОРМЫ размена — деньги, не доехавшие в Главную кассу.
+  // Отрицательное — в ящике меньше нормы, размена не хватает.
   uncollected_cash: number | null;
   uncollected_status: KassaUncollectedStatus | null;
   posted: boolean;
@@ -210,6 +211,7 @@ export type KassaShiftDetail = KassaShift & {
   shortage_threshold_pct: number | null;
   shortage_threshold_amount: number | null;
   shortage_pct_of_revenue: number | null;
+  uncollected_norm: number | null;
   uncollected_threshold: number | null;
   penalties: KassaShiftPenalty[];
 };
@@ -236,6 +238,9 @@ export type KassaOpenShift = {
   pay_out: number | null;
   // Расчётный остаток ящика (cashRemain у открытой смены iiko не отдаёт).
   cash_in_drawer: number | null;
+  cash_float_norm: number | null;
+  // Сколько в ящике сверх нормы размена сейчас = сколько ещё предстоит инкассировать.
+  cash_over_norm: number | null;
   collected_cash: number | null;
   payouts: KassaOpenShiftPayout[];
   fetched_at: string;

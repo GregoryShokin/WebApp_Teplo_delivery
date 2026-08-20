@@ -24,6 +24,7 @@ import app.services.kassa.iiko_cashshift_sync as sync_mod
 from app.models import AppSetting, IikoCashShift
 from app.services.kassa.iiko_cashshift_sync import (
     ALISA_ACCOUNT_ID,
+    CASH_FLOAT_NORM_KEY,
     COURIER_SALARY_ACCOUNT_ID,
     MAIN_CASH_ACCOUNT_ID,
     STUCK_CASH_THRESHOLD_KEY,
@@ -92,9 +93,10 @@ def _patch_open(monkeypatch, rows: list[dict], payments: dict | None = None) -> 
     )
 
 
-async def test_fetch_open_shift_builds_showcase(monkeypatch) -> None:
+async def test_fetch_open_shift_builds_showcase(monkeypatch, async_session_factory) -> None:
     _patch_open(monkeypatch, [OPEN_ROW])
-    payload = await fetch_open_shift()
+    async with async_session_factory() as session:
+        payload = await fetch_open_shift(session)
 
     assert payload is not None
     assert payload["session_number"] == 1207
@@ -102,36 +104,49 @@ async def test_fetch_open_shift_builds_showcase(monkeypatch) -> None:
     # Остаток ящика считаем сами: 7822.33 + 320 + 0 − 2822 (iiko у открытой смены не отдаёт).
     assert payload["cash_in_drawer"] == Decimal("5320.33")
     assert payload["collected_cash"] == Decimal("2822")
+    # Сверх нормы размена (5000) — 320,33: столько ещё предстоит инкассировать.
+    assert payload["cash_float_norm"] == Decimal("5000")
+    assert payload["cash_over_norm"] == Decimal("320.33")
     assert [item["category"] for item in payload["payouts"]] == ["main_cash"]
     assert payload["payouts"][0]["account_name"] == "Главная касса"
     assert payload["payouts"][0]["comment"] == "за 19.08"
 
 
-async def test_fetch_open_shift_returns_none_without_open_shift(monkeypatch) -> None:
+async def test_fetch_open_shift_returns_none_without_open_shift(
+    monkeypatch, async_session_factory
+) -> None:
     _patch_open(monkeypatch, [])
-    assert await fetch_open_shift() is None
+    async with async_session_factory() as session:
+        assert await fetch_open_shift(session) is None
 
 
-async def test_fetch_open_shift_ignores_closed_row(monkeypatch) -> None:
+async def test_fetch_open_shift_ignores_closed_row(monkeypatch, async_session_factory) -> None:
     """Смена с closeDate — уже забота синка; витрина «идёт» её не показывает."""
     _patch_open(monkeypatch, [{**OPEN_ROW, "closeDate": "2026-08-19T22:00:00"}])
-    assert await fetch_open_shift() is None
+    async with async_session_factory() as session:
+        assert await fetch_open_shift(session) is None
 
 
-async def test_fetch_open_shift_without_olap_hides_drawer(monkeypatch) -> None:
+async def test_fetch_open_shift_without_olap_hides_drawer(
+    monkeypatch, async_session_factory
+) -> None:
     """Нет выручки из OLAP — остаток не показываем, а не показываем приблизительный."""
     _patch_open(monkeypatch, [OPEN_ROW])
     monkeypatch.setattr(sync_mod, "_fetch_cash_sales_by_day", lambda token, df, dt: ({}, {}))
-    payload = await fetch_open_shift()
+    async with async_session_factory() as session:
+        payload = await fetch_open_shift(session)
 
     assert payload is not None
     assert payload["cash_sales"] is None
     assert payload["cash_in_drawer"] is None
+    assert payload["cash_over_norm"] is None
     # Изъятия при этом видны — ради них витрина и нужна.
     assert payload["collected_cash"] == Decimal("2822")
 
 
-async def test_fetch_open_shift_resolves_unknown_account(monkeypatch) -> None:
+async def test_fetch_open_shift_resolves_unknown_account(
+    monkeypatch, async_session_factory
+) -> None:
     """Незнакомый счёт назначения — единственный повод сходить за справочником счетов."""
     _patch_open(
         monkeypatch,
@@ -143,7 +158,8 @@ async def test_fetch_open_shift_resolves_unknown_account(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(sync_mod, "_fetch_accounts_map", lambda token: {"acc-unknown": "Прочее"})
-    payload = await fetch_open_shift()
+    async with async_session_factory() as session:
+        payload = await fetch_open_shift(session)
 
     assert payload is not None
     assert payload["payouts"][0]["category"] == "unknown"
@@ -152,6 +168,10 @@ async def test_fetch_open_shift_resolves_unknown_account(monkeypatch) -> None:
 
 
 # --- сигнал «наличка зависла в ящике» ------------------------------------------
+#
+# Меряем от НОРМЫ размена (5000 ₽ по умолчанию), а не от остатка на открытие смены.
+# Кейсы взяты с прода: 19.08 — настоящий пропуск, 08.08 — восстановление просевшего
+# размена при честной инкассации (разностное правило дало бы здесь ложную тревогу).
 
 
 def _closed_shift(
@@ -202,26 +222,31 @@ def _patch_closed(monkeypatch, shifts: list[dict], payments: dict) -> None:
     )
 
 
+def _payouts(*records: tuple[str, str, float]) -> dict:
+    return {
+        "payOutsRecords": [
+            {"info": {"id": pid, "accountId": account, "sum": amount, "comment": ""}}
+            for pid, account, amount in records
+        ]
+    }
+
+
 # Разнос изъятий смены 1206: курьеры + Алиса, инкассации нет.
-PAYOUTS_NO_COLLECTION = {
-    "payOutsRecords": [
-        {
-            "info": {
-                "id": "p1",
-                "accountId": COURIER_SALARY_ACCOUNT_ID,
-                "sum": 8074,
-                "comment": "зп",
-            }
-        },
-        {"info": {"id": "p2", "accountId": ALISA_ACCOUNT_ID, "sum": 4549, "comment": ""}},
-    ]
-}
+PAYOUTS_NO_COLLECTION = _payouts(
+    ("p1", COURIER_SALARY_ACCOUNT_ID, 8074),
+    ("p2", ALISA_ACCOUNT_ID, 4549),
+)
+
+
+async def _row(session: AsyncSession) -> dict:
+    rows = await list_shifts(session, date_from=DF, date_to=DT)
+    return next(item for item in rows if item["session_number"] == 1206)
 
 
 async def test_forgotten_collection_is_flagged_missing(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Инцидент 19.08.2026: инкассацию забыли, 2 821,83 ₽ остались в ящике."""
+    """Инцидент 19.08.2026: инкассацию забыли, в ящике осталось 7 822,33 при норме 5 000."""
     _patch_closed(
         monkeypatch,
         [_closed_shift(pay_out=12623, cash_remain=7822.33)],
@@ -231,9 +256,8 @@ async def test_forgotten_collection_is_flagged_missing(
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
-        assert row["uncollected_cash"] == Decimal("2821.83")
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("2822.33")  # 7822.33 − норма 5000
         assert row["uncollected_status"] == UNCOLLECTED_MISSING
         assert row["collected_cash"] == Decimal("0.00")
         # Недостачи при этом НЕТ: формула сверки сокращает невынутые деньги.
@@ -244,76 +268,85 @@ async def test_forgotten_collection_is_flagged_missing(
 async def test_partial_collection_is_flagged_partial(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Инкассация была, но забрали не всё — сигнал мягче, но он есть."""
-    payments = {
-        "payOutsRecords": [
-            *PAYOUTS_NO_COLLECTION["payOutsRecords"],
-            {"info": {"id": "p3", "accountId": MAIN_CASH_ACCOUNT_ID, "sum": 1000, "comment": ""}},
-        ]
-    }
-    _patch_closed(
-        monkeypatch,
-        [_closed_shift(pay_out=13623, cash_remain=6822.33)],
-        payments,
+    """Инкассация была, но сверх нормы всё равно осталось больше порога."""
+    payments = _payouts(
+        ("p1", COURIER_SALARY_ACCOUNT_ID, 8074),
+        ("p2", ALISA_ACCOUNT_ID, 4549),
+        ("p3", MAIN_CASH_ACCOUNT_ID, 1000),
     )
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=13623, cash_remain=6822.33)], payments)
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
+        row = await _row(session)
         assert row["collected_cash"] == Decimal("1000")
-        assert row["uncollected_cash"] == Decimal("1821.83")
+        assert row["uncollected_cash"] == Decimal("1822.33")
         assert row["uncollected_status"] == UNCOLLECTED_PARTIAL
 
 
-async def test_full_collection_gives_no_signal(
+async def test_closing_at_norm_gives_no_signal(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Ящик закрыт на флоуте — инкассацию провели полностью, сигнала нет."""
-    payments = {
-        "payOutsRecords": [
-            *PAYOUTS_NO_COLLECTION["payOutsRecords"],
-            {"info": {"id": "p3", "accountId": MAIN_CASH_ACCOUNT_ID, "sum": 2821.83}},
-        ]
-    }
+    """Ящик закрыт на норме размена — инкассировали всё, что следовало."""
+    payments = _payouts(
+        ("p1", COURIER_SALARY_ACCOUNT_ID, 8074),
+        ("p2", ALISA_ACCOUNT_ID, 4549),
+        ("p3", MAIN_CASH_ACCOUNT_ID, 2821.83),
+    )
+    _patch_closed(monkeypatch, [_closed_shift(pay_out=15444.83, cash_remain=5000.50)], payments)
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("0.50")
+        assert row["uncollected_status"] == UNCOLLECTED_NONE
+
+
+async def test_restoring_drained_float_is_not_a_signal(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Смена 1195 (08.08.2026): ящик просел до 1 709 ₽ и был поднят обратно до нормы.
+
+    Прибавка за смену — 3 291,50 ₽, и разностное правило подняло бы тревогу, хотя
+    инкассацию провели честно (13 390 ₽). От нормы кейс читается верно: сигнала нет.
+    """
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 13390))
     _patch_closed(
         monkeypatch,
-        [_closed_shift(pay_out=15444.83, cash_remain=5000.50)],
+        [_closed_shift(start_cash=1709, pay_out=13390, cash_remain=5000.50)],
         payments,
     )
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
-        assert row["uncollected_cash"] == Decimal("0.00")
+        row = await _row(session)
+        assert row["collected_cash"] == Decimal("13390")
+        assert row["uncollected_cash"] == Decimal("0.50")
         assert row["uncollected_status"] == UNCOLLECTED_NONE
 
 
-async def test_unloaded_drawer_is_not_a_signal(
+async def test_slow_drift_above_norm_is_caught(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Следующий день после пропуска: ящик разгрузили, остаток УПАЛ — это норма."""
-    payments = {
-        "payOutsRecords": [
-            {"info": {"id": "p1", "accountId": MAIN_CASH_ACCOUNT_ID, "sum": 2822}},
-        ]
-    }
+    """Ящик распух понемногу: за смену прибавилось всего 300 ₽, но норму он уже перерос.
+
+    Разностное правило такую смену пропускало (300 < порога), от нормы она видна.
+    """
     _patch_closed(
         monkeypatch,
-        [_closed_shift(start_cash=7822.33, pay_out=18266.83, cash_remain=5000.50)],
-        payments,
+        [_closed_shift(start_cash=6500, pay_out=12623, cash_remain=6800)],
+        PAYOUTS_NO_COLLECTION,
     )
     async with async_session_factory() as session:
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
-        assert row["uncollected_cash"] == Decimal("-2821.83")
-        assert row["uncollected_status"] == UNCOLLECTED_NONE
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("1800")
+        assert row["uncollected_status"] == UNCOLLECTED_MISSING
 
 
 async def test_small_leftover_is_below_threshold(
@@ -329,41 +362,81 @@ async def test_small_leftover_is_below_threshold(
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
-        assert row["uncollected_cash"] == Decimal("265.00")
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("265.50")
         assert row["uncollected_status"] == UNCOLLECTED_NONE
 
 
-async def test_threshold_setting_overrides_default(
+async def test_float_below_norm_is_negative_and_silent(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Порог берётся из настройки: подняли до 5000 — сигнал по 2 821,83 гаснет."""
+    """В ящике МЕНЬШЕ нормы — размена не хватает. Величину отдаём, сигнал не поднимаем."""
+    payments = _payouts(("p1", MAIN_CASH_ACCOUNT_ID, 19244.33))
+    _patch_closed(
+        monkeypatch,
+        [_closed_shift(pay_out=19244.33, cash_remain=1200.50)],
+        payments,
+    )
+    async with async_session_factory() as session:
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("-3799.50")
+        assert row["uncollected_status"] == UNCOLLECTED_NONE
+
+
+async def test_norm_setting_overrides_default(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Подняли норму размена до 10 000 — та же смена перестаёт быть сигналом."""
     _patch_closed(
         monkeypatch,
         [_closed_shift(pay_out=12623, cash_remain=7822.33)],
         PAYOUTS_NO_COLLECTION,
     )
     async with async_session_factory() as session:
-        # Настройку засеяла миграция 0276 — правим значение, а не вставляем второй раз.
+        setting = await session.scalar(
+            select(AppSetting).where(AppSetting.key == CASH_FLOAT_NORM_KEY)
+        )
+        assert setting is not None, "миграция 0276 должна засеять норму размена"
+        assert setting.value == 5000  # дефолт из миграции
+        setting.value = 10000
+        await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
+        await session.commit()
+
+        row = await _row(session)
+        assert row["uncollected_cash"] == Decimal("-2177.67")
+        assert row["uncollected_status"] == UNCOLLECTED_NONE
+
+
+async def test_threshold_setting_overrides_default(
+    monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Порог берётся из настройки: подняли до 5000 — сигнал по 2 822,33 гаснет."""
+    _patch_closed(
+        monkeypatch,
+        [_closed_shift(pay_out=12623, cash_remain=7822.33)],
+        PAYOUTS_NO_COLLECTION,
+    )
+    async with async_session_factory() as session:
         setting = await session.scalar(
             select(AppSetting).where(AppSetting.key == STUCK_CASH_THRESHOLD_KEY)
         )
-        assert setting is not None, "миграция 0276 должна засеять порог зависшей налички"
+        assert setting is not None, "миграция 0276 должна засеять порог"
         assert setting.value == 1000  # дефолт из миграции
         setting.value = 5000
         await sync_iiko_cashshifts(session, date_from=DF, date_to=DT)
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
+        row = await _row(session)
         assert row["uncollected_status"] == UNCOLLECTED_NONE
 
 
-async def test_shift_detail_carries_threshold(
+async def test_shift_detail_carries_norm_and_threshold(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Деталь смены отдаёт порог — витрина объясняет пользователю, откуда сигнал."""
+    """Деталь смены отдаёт обе величины — витрина объясняет, откуда взялся сигнал."""
     _patch_closed(
         monkeypatch,
         [_closed_shift(pay_out=12623, cash_remain=7822.33)],
@@ -379,14 +452,15 @@ async def test_shift_detail_carries_threshold(
 
         assert payload is not None
         assert payload["uncollected_status"] == UNCOLLECTED_MISSING
-        assert payload["uncollected_cash"] == Decimal("2821.83")
+        assert payload["uncollected_cash"] == Decimal("2822.33")
+        assert payload["uncollected_norm"] == Decimal("5000")
         assert payload["uncollected_threshold"] == Decimal("1000")
 
 
 async def test_missing_remainder_gives_no_signal(
     monkeypatch, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Нет остатка или старта — сигнал не выдумываем (тот же принцип, что у недостачи)."""
+    """Нет остатка — сигнал не выдумываем (тот же принцип, что у недостачи)."""
     _patch_closed(
         monkeypatch,
         [_closed_shift(pay_out=12623, cash_remain=7822.33)],
@@ -400,16 +474,16 @@ async def test_missing_remainder_gives_no_signal(
         shift.cash_remain = None
         await session.commit()
 
-        rows = await list_shifts(session, date_from=DF, date_to=DT)
-        row = next(item for item in rows if item["session_number"] == 1206)
+        row = await _row(session)
         assert row["uncollected_cash"] is None
         assert row["uncollected_status"] == UNCOLLECTED_NONE
 
 
-async def test_open_shift_fetched_at_is_moscow_aware(monkeypatch) -> None:
+async def test_open_shift_fetched_at_is_moscow_aware(monkeypatch, async_session_factory) -> None:
     """Метка времени витрины — с таймзоной: фронт печатает её локальным форматтером."""
     _patch_open(monkeypatch, [OPEN_ROW])
-    payload = await fetch_open_shift()
+    async with async_session_factory() as session:
+        payload = await fetch_open_shift(session)
 
     assert payload is not None
     fetched_at = payload["fetched_at"]
