@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -23,10 +23,23 @@ from app.services.counterparty_iiko_payment import (
 from app.services.iiko_payment_verify import (
     MAX_RESENDS,
     VERIFY_ATTEMPTS_BEFORE_RESEND,
+    VERIFY_GRACE,
+    VERIFY_MAX_AGE,
     verify_mirrored_payments,
 )
 
-SENT_AT = datetime(2026, 7, 20, 19, 30, tzinfo=UTC)
+# Возраст «отправлено давно»: строка уже вышла из grace-окна, но ещё не выпала из VERIFY_MAX_AGE.
+# Считать его НАДО от текущего момента: абсолютная дата здесь протухает молча. Константа
+# datetime(2026, 7, 20) прожила ровно 31 день — 20.08.2026 разница с ``now`` перевалила за
+# VERIFY_MAX_AGE, выборка опустела, и девять тестов легли с `assert 0 == 1`, ничего не проверив.
+SENT_AGE = VERIFY_GRACE + timedelta(hours=1)
+# Возраст «только что отправлено»: внутри grace-окна — такую строку сверка судить не должна.
+FRESH_AGE = VERIFY_GRACE / 2
+
+
+def _sent_at() -> datetime:
+    """Момент отправки для бэкдейта ``created_at`` — всегда внутри окна выборки сверки."""
+    return datetime.now(UTC) - SENT_AGE
 
 
 async def _paid_invoice(session: AsyncSession, *, number: str, amount: str) -> SupplierInvoice:
@@ -70,7 +83,7 @@ async def _push_row(
     session.add(row)
     await session.flush()
     # created_at проставляет БД — сдвигаем в прошлое, иначе строка не выйдет из grace-окна.
-    row.created_at = SENT_AT
+    row.created_at = _sent_at()
     await session.commit()
     return row
 
@@ -99,16 +112,22 @@ async def test_verify_marks_payment_confirmed(
         assert row.status == "ok"
 
 
+@pytest.mark.parametrize("reported", ["3320.02", "3319.98"])
 @pytest.mark.asyncio
 async def test_verify_tolerates_kopeck_difference(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    reported: str,
 ) -> None:
-    """Проводка на копейку разошлась с нашей суммой — это та же оплата, а не потеря."""
+    """Проводка на копейку разошлась с нашей суммой — это та же оплата, а не потеря.
+
+    Обе стороны расхождения обязательны. Проводка чуть БОЛЬШЕ нашей суммы проходит по самому
+    сравнению «покрыто» и допуска не требует — на ней одной AMOUNT_TOLERANCE не проверяется
+    вовсе (обнули константу — тест этого не заметит). Копейку НЕДОБОРА терпит только допуск."""
     async with async_session_factory() as session:
         invoice = await _paid_invoice(session, number="42", amount="3320.00")
         row = await _push_row(session, invoice, amount="3320.00")
-        _patch_olap(monkeypatch, [("42", Decimal("3320.02"))])
+        _patch_olap(monkeypatch, [("42", Decimal(reported))])
 
         result = await verify_mirrored_payments(session)
 
@@ -241,6 +260,9 @@ async def test_verify_skips_fresh_and_exhausted_rows(
             status="ok",
         )
         session.add(fresh)
+        await session.flush()
+        # Возраст задаём явно: строка моложе grace-окна, проводка ещё имеет право не доехать.
+        fresh.created_at = datetime.now(UTC) - FRESH_AGE
         exhausted_invoice = await _paid_invoice(session, number="47", amount="800.00")
         exhausted = await _push_row(
             session, exhausted_invoice, amount="800.00", resend_count=MAX_RESENDS
@@ -254,6 +276,30 @@ async def test_verify_skips_fresh_and_exhausted_rows(
         await session.refresh(exhausted)
         assert fresh.verify_attempts == 0
         assert exhausted.verify_attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_verify_skips_rows_older_than_max_age(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Верхняя граница окна: древние отправки не судим — OLAP-окно ограничено, разбор ручной.
+
+    Заодно это страховка тестов от самих себя: пока возраст строк задавался абсолютной датой,
+    вся выборка однажды уехала за эту границу, и файл проверял пустоту вместо машины состояний."""
+    async with async_session_factory() as session:
+        invoice = await _paid_invoice(session, number="50", amount="900.00")
+        row = await _push_row(session, invoice, amount="900.00")
+        row.created_at = datetime.now(UTC) - VERIFY_MAX_AGE - timedelta(hours=1)
+        await session.commit()
+        _patch_olap(monkeypatch, [])
+
+        result = await verify_mirrored_payments(session)
+
+        await session.refresh(row)
+        assert result["checked"] == 0
+        assert row.verify_attempts == 0
+        assert row.status == "ok"
 
 
 @pytest.mark.asyncio
@@ -317,7 +363,7 @@ async def _rate_limited_row(
     )
     session.add(row)
     await session.flush()
-    row.created_at = SENT_AT
+    row.created_at = _sent_at()
     await session.commit()
     return row
 
