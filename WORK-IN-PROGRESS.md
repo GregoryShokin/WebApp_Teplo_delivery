@@ -25,27 +25,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
-### agent-kassaopen — ветка `agent/kassaopen-kassa-open-shift-signal`
-- worktree: `../Teplo-agent-kassaopen`
-- compose: своего стека нет. Postgres — контейнер `teplo-pg-kassaopen` (порт **5522**), тестовая
-  база `teplo_test_kassaopen`; превью поднято процессами с хоста (api 8090 / web 5263).
-- задача: «Касса → Смены» — витрина ТЕКУЩЕЙ незакрытой смены iiko + два сигнала по
-  денежному ящику: сверху нормы размена «наличка зависла» (забытая/неполная инкассация),
-  снизу «мало размена». Всё только читает: в ДДС по-прежнему книжится ТОЛЬКО закрытая смена.
-- трогает:
-  - back: `app/services/kassa/iiko_cashshift_sync.py` (новые `fetch_open_shift`,
-    `compute_uncollected_cash`, `_collected_totals`; `_shift_summary`/`list_shifts`/`get_shift`
-    отдают новые поля), `app/api/v1/routes/kassa.py` (`GET /shifts/open`),
-    `app/schemas/kassa.py`, миграция `0276_kassa_stuck_cash_threshold`
-  - front: `routes/kassa/tabs/shift-close.tsx`, `ShiftDetailDialog.tsx`, `shared.tsx`, `api.ts`
-- НЕ трогать другим: миграция `0276` (head), настройки `kassa.cash_float_norm_rub`,
-  `kassa.stuck_cash_threshold_rub` и `kassa.cash_float_min_rub`, сигнатуры `_shift_summary` /
-  `fetch_open_shift` / `float_status`
-- **ВНИМАНИЕ соседям:** `payments/list/{sessionId}` по ЗАКРЫТОЙ смене отвечает только с
-  прод-адреса — с ноутбука запрос висит 120 с и падает по таймауту (по открытой смене
-  отвечает за 0,4 с). Синк смен локально без дампа изъятий не прогнать.
-- статус: сделано, тесты зелёные; ждёт решения владельца по выкатке
-
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
