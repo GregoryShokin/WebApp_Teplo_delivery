@@ -32,6 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 import anyio
 from sqlalchemy import or_, select
@@ -75,6 +76,8 @@ IIKO_SOURCE = "iiko"
 
 # Паузы между попытками при лимите частоты Cloud, сек. Короче, чем у ночного реверс-синка
 # (2/5/10/20/40 ≈ 77 с): пуш интерактивный — пользователь ждёт ответа на «Отправить в iiko».
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
 _RATE_LIMIT_RETRY_DELAYS = (1.0, 3.0, 7.0)
 _RATE_LIMIT_MESSAGE = "iiko ограничил частоту запросов (429) — попробуйте отправить ещё раз"
 
@@ -82,6 +85,17 @@ _RATE_LIMIT_MESSAGE = "iiko ограничил частоту запросов (
 # на трёх iiko отказывает («sum must be equal…»), на шести принимает — проверено живой пробой
 # на Cloud API 06.08.2026.
 _IIKO_PRICE_SCALE = 6
+
+
+def _to_moscow_wall_clock(value: datetime) -> datetime:
+    """Наивные московские цифры для iiko: он ждёт стенное время точки, а не UTC.
+
+    Наивное значение считаем уже московским (так его кладут фолбэки от ``invoice_date``),
+    tz-aware — переводим в МСК и снимаем зону.
+    """
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(MOSCOW_TZ).replace(tzinfo=None)
 
 
 def _is_rate_limited(status: int, response: dict | list | None) -> bool:
@@ -277,15 +291,24 @@ async def prepare_push(session: AsyncSession, invoice: SupplierInvoice) -> Prepa
         dt = datetime.combine(invoice.invoice_date, time())
     if dt is None:
         return PreparedPush(None, skip_reason="Нет даты накладной")
+    # В iiko уходит МОСКОВСКОЕ стенное время. Раньше здесь просто снимали tz с ``issued_at``, и
+    # это работало лишь потому, что сам ``issued_at`` хранился неверно: набранные оператором
+    # московские цифры лежали в базе с меткой UTC, так что «снять tz» случайно давало нужное.
+    # После починки ввода (``as_moscow``) инстант стал правильным — и наивные цифры UTC уехали бы
+    # в iiko на три часа назад. Переводим в МСК явно.
+    dt = _to_moscow_wall_clock(dt)
+    # Дату прихода шлём ПОЛДНЕМ, а не полуночью. iiko кладёт наши документы на три часа раньше
+    # присланного (сверено 20.08.2026: его собственный ``dateCreated`` совпадает с нашим
+    # ``created_at`` до секунды, а наш ``date`` приходит на три часа раньше набранного). Полночь
+    # минус три часа = предыдущий день — так документы и оказывались в iiko вчерашним числом.
+    # Полдень тот же сдвиг переживает, оставаясь в своих сутках.
     incoming_date = (
-        datetime.combine(dt.date(), time()) if invoice.direction == "payable" else None
+        datetime.combine(dt.date(), time(12, 0)) if invoice.direction == "payable" else None
     )
-    # Как в легаси: шлём наивный wall-clock (iiko трактует как МСК); tz снимаем, чтобы инстант не
-    # сдвигался и дата документа совпадала с датой RMS-версии (никакого изменения поведения).
     doc = CloudInvoiceDoc(
         direction=invoice.direction,
         counteragent=partner_guid,
-        date=dt.replace(tzinfo=None),
+        date=dt,
         lines=lines,
         number=invoice.number or None,
         default_store=store_guid,
@@ -776,7 +799,9 @@ async def book_correction_in_iiko(
         if invoice.invoice_date
         else datetime.now(UTC)
     )
-    date_naive = dt.replace(tzinfo=None)
+    # Тот же перевод в московское стенное время, что и в prepare_push: коррекция обязана лечь
+    # в iiko той же датой, что и исходный документ.
+    date_naive = _to_moscow_wall_clock(dt)
 
     from app.services.iiko_sync import _load_source_credential_env
 

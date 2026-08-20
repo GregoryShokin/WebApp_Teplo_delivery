@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.types import MoscowDateTime
+
 # Узкие read-схемы справочников модуля «Касса». Дают кассиру ровно то, что нужно для
 # выбора статьи ДДС / счёта / контрагента при создании чека, не открывая полный ДДС
 # (finance.cashflow/wallets/counterparties кассиру не положены — см. permissions.py).
@@ -103,7 +105,7 @@ class ChequeCreate(BaseModel):
     # Статья на уровне чека — опциональный фолбэк для позиций без своей статьи
     # (для местного закупа статья ставится в каждой строке).
     article_id: uuid.UUID | None = None
-    issued_at: datetime
+    issued_at: MoscowDateTime
     bank_parts: list[ChequeBankPartCreate] = Field(default_factory=list)
     cash_amount: Decimal | None = None
     # Ручной ввод суммы чека, когда банк ещё не передал card-операцию (выходные/задержка

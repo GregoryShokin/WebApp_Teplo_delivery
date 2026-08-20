@@ -25,6 +25,23 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-invdate — ветка `agent/invdate-invoice-date-tz`
+- worktree: `../Teplo-agent-invdate`
+- compose: своего стека нет. Postgres — контейнер `teplo-pg-invdate` (порт **5532**), тестовая
+  база `teplo_test_invdate`.
+- задача: время накладных и чеков пишется по Гринвичу вместо Москвы (`issued_at` +3 часа), а
+  дату документа обратный синк перетирал датой из iiko, съезжавшей на сутки назад.
+- трогает:
+  - back: новый `app/schemas/types.py` (`MoscowDateTime`), `app/services/clock.py`
+    (`as_moscow`), `app/api/v1/routes/warehouse.py` (3 payload'а), `app/schemas/kassa.py`
+    (`ChequeCreate`), `app/services/warehouse_invoice_push.py` (московское стенное время +
+    дата прихода полднем), `app/services/counterparty_invoice_sync.py` (ветка own_pushed
+    больше не берёт дату из iiko), скрипт `app/scripts/fix_invoice_issued_at_tz.py`
+  - фронт НЕ трогаю: он и так шлёт набранные цифры, чинится приём на бэке
+- НЕ трогать другим: ветка `own_pushed` в `counterparty_invoice_sync`, `_to_moscow_wall_clock`
+  и `incoming_date` в `warehouse_invoice_push`, аннотация `MoscowDateTime`
+- статус: сделано, тесты зелёные; после выкатки — разовый бэкфилл 191 строки
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)

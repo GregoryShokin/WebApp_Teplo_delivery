@@ -671,3 +671,29 @@ async def test_delete_in_iiko_returns_error_text(
 
         error = await delete_invoice_in_iiko(invoice)
         assert error is not None and "проводки оплаты" in error
+
+
+async def test_prepare_push_sends_moscow_wall_clock_and_midday_incoming(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """В iiko уходят московские цифры, а дата прихода — полднем, а не полуночью.
+
+    Прод-баг 20.08.2026: iiko кладёт наши документы на три часа раньше присланного (его
+    собственный ``dateCreated`` совпадает с нашим ``created_at`` до секунды, а присланный нами
+    ``date`` возвращается на три часа раньше). Полночь минус три часа = предыдущий день —
+    так документы и оказывались в iiko вчерашним числом. Полдень тот же сдвиг переживает.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name="Поставщик", inn="7710000051", iiko_guid="SUP-GUID-2"
+        )
+        invoice = await _invoice_with_lines(session, cp.id, store_guid="ST-1", staff_second=False)
+        # 15:16 МСК = 12:16 UTC: в базе инстант, в iiko должны уйти московские цифры.
+        invoice.issued_at = datetime(2026, 8, 20, 12, 16, tzinfo=UTC)
+        await session.commit()
+
+        prepared = await prepare_push(session, invoice)
+
+        assert prepared.doc is not None
+        assert prepared.doc.date == datetime(2026, 8, 20, 15, 16)  # МСК, без зоны
+        assert prepared.doc.incoming_date == datetime(2026, 8, 20, 12, 0)  # полдень тех же суток

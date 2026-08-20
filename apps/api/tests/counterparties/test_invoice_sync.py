@@ -770,3 +770,37 @@ async def test_ingest_outgoing_is_idempotent(
         assert second.receivables_created == 0
         assert second.receivables_updated == 1
         assert await _count(session, SupplierInvoice) == 1
+
+
+async def test_reverse_sync_never_moves_own_pushed_invoice_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Дата НАШЕГО документа из iiko больше не подтягивается — она оттуда приходит сдвинутой.
+
+    Прод-баг 20.08.2026: ``incomingDate`` мы шлём полночью, iiko возвращает её на три часа
+    раньше (2026-08-20T00:00 → 2026-08-19T21:00+03:00), парсер берёт первые 10 символов и
+    получает вчера. Полночь минус три часа = предыдущий день, поэтому в списке накладных дата
+    отставала на сутки от даты в карточке. Здесь iiko отдаёт 2026-05-31 — наша дата обязана
+    остаться 2026-06-01, при этом сумма из iiko подтянуться должна.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="ИП Карпов", inn="7701234567")
+        inv = await make_invoice(
+            session, counterparty_id=cp.id, amount="300.00", number="СЧ-001",
+            source="kassa_invoice", external_id="doc-1", payment_status="unpaid",
+            invoice_date=date(2026, 6, 1),
+        )
+        await session.commit()
+        inv_id = inv.id
+
+        result = await ingest_iiko_payables(
+            session,
+            suppliers_xml=_one_supplier(),
+            incoming_docs=cloud_invoice_docs([_doc(incoming_date="2026-05-31")]),
+        )
+        await session.commit()
+
+        refreshed = await session.get(SupplierInvoice, inv_id)
+        assert refreshed.invoice_date == date(2026, 6, 1)  # наша дата не сдвинулась
+        assert refreshed.amount == Decimal("232.00")  # сумма подтянулась
+        assert result.own_pushed_updated == 1

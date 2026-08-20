@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any
 
@@ -28,6 +28,7 @@ from app.api.deps import (
 )
 from app.db.session import get_session
 from app.models import IikoProduct, SupplierInvoice, SupplierInvoiceTombstone, Wallet
+from app.schemas.types import MoscowDateTime
 from app.services.counterparty_bank_match import (
     TimeMatchSuggestion,
     confirm_invoice_match,
@@ -119,7 +120,7 @@ class LineCreate(BaseModel):
 
 class InvoiceCreate(BaseModel):
     counterparty_id: uuid.UUID
-    issued_at: datetime
+    issued_at: MoscowDateTime
     # "normal" — обычная приходная; "loan" — бартер-займ (we_lend: мы выдаём / нам выдают).
     mode: str = "normal"
     we_lend: bool = True
@@ -139,7 +140,7 @@ class InvoiceCreate(BaseModel):
 class InvoiceUpdate(BaseModel):
     # Правка позиций неоплаченной накладной (товар + персонал). Режим (обычная/бартер) не меняем.
     lines: list[LineCreate] = Field(min_length=1)
-    issued_at: datetime | None = None
+    issued_at: MoscowDateTime | None = None
     number: str | None = None
     # Смена поставщика при правке (только неоплаченная, путь put_invoice). None → поставщик не
     # трогаем. В adjust-paid (оплаченная) поле игнорируется — там контрагента менять нельзя.
@@ -154,7 +155,7 @@ class ReturnLineCreate(BaseModel):
 
 class ReturnCreate(BaseModel):
     loan_id: uuid.UUID
-    issued_at: datetime
+    issued_at: MoscowDateTime
     number: str | None = None
     returns: list[ReturnLineCreate] = Field(min_length=1)
     # Вернули меньше выданного: True — простить хвост долга и закрыть заём, False — оставить

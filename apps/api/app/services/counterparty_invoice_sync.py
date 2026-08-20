@@ -544,11 +544,22 @@ async def _ingest_documents(
             continue
         # Our own invoice pushed into iiko (source='manual' from Склад or 'kassa_invoice' from
         # Касса): skip so the reverse sync doesn't clone it as a second iiko obligation or clobber
-        # our fields (issued_at, staff_amount, push_doc_id, normalized lines). Primary key is
-        # external_id (= the iiko doc id). But if the post-push id lookup failed (replica lag /
-        # export error), external_id is still NULL — fall back to matching by documentNumber and
-        # BACKFILL external_id, so this branch (and all future syncs) dedupe correctly. Match on
-        # BOTH our authored sources: kassa_invoice was missing here → round-trip clones.
+        # our fields (issued_at, invoice_date, staff_amount, push_doc_id, normalized lines).
+        # ДАТУ ДОКУМЕНТА ОТСЮДА БОЛЬШЕ НЕ БЕРЁМ. Раньше брали — и она уезжала на день назад:
+        # ``incomingDate`` мы шлём полночью, а iiko возвращает нашу же присланную дату на три
+        # часа раньше (проверено 20.08.2026: послали 2026-08-20T00:00, получили
+        # 2026-08-19T21:00+03:00), парсер берёт первые 10 символов и получает вчера. Полночь
+        # минус три часа = предыдущий день, поэтому сдвиг был всегда ровно −1 и только у наших
+        # накладных: документы, рождённые в самом iiko, приходят с чистой полночью (83 из 84).
+        # Задевало только неоплаченные (ветка ниже правит их, оплаченные пропускает) — то есть
+        # ровно вкладку «К оплате»: на проде разъехались все 14 неоплаченных из 14.
+        # Источник истины по дате нашего документа — мы: его создали здесь, а не в iiko.
+        #
+        # Primary key is external_id (= the iiko doc id). But if the post-push id lookup
+        # failed (replica lag / export error), external_id is still NULL — fall back to
+        # matching by documentNumber and BACKFILL external_id, so this branch (and all future
+        # syncs) dedupe correctly. Match on BOTH our authored sources: kassa_invoice was
+        # missing here → round-trip clones.
         # 1) Точное совпадение по external_id — наша уже привязанная к этому iiko-документу
         #    накладная. Приоритет именно ему: иначе fallback по номеру мог бы зацепить ДРУГУЮ
         #    нашу накладную с тем же номером (у Кассо-накладных номер часто общий, напр. «4»).
@@ -612,16 +623,9 @@ async def _ingest_documents(
                     new_amount = iiko_amount + await _excluded_push_line_sum(
                         session, own_pushed.id
                     )
-                    iiko_date = _parse_iiko_date(
-                        doc.get("incomingDate") or doc.get("date")
-                    )
                     vat_total, vat_breakdown = _invoice_vat(doc)
-                    if own_pushed.amount != new_amount or (
-                        iiko_date is not None and own_pushed.invoice_date != iiko_date
-                    ):
+                    if own_pushed.amount != new_amount:
                         own_pushed.amount = new_amount
-                        if iiko_date is not None:
-                            own_pushed.invoice_date = iiko_date
                         own_pushed.vat_total = vat_total
                         own_pushed.vat_breakdown = vat_breakdown
                         result.own_pushed_updated += 1
