@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle } from "lucide-react";
+import { AlertTriangle, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   PayoutCategoryBadge,
   ShiftPenaltyBadge,
   ShiftPostedBadge,
+  ShiftUncollectedBadge,
 } from "@/routes/kassa/shared";
 
 type ShiftDetailDialogProps = {
@@ -74,7 +75,12 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
         <DialogHeader>
           <DialogTitle>
             Смена № {shift?.session_number ?? "—"}
-            {shift ? <span className="ml-2 align-middle">{<ShiftPostedBadge posted={shift.posted} />}</span> : null}
+            {shift ? (
+              <span className="ml-2 inline-flex gap-2 align-middle">
+                <ShiftPostedBadge posted={shift.posted} />
+                <ShiftUncollectedBadge status={shift.uncollected_status} />
+              </span>
+            ) : null}
           </DialogTitle>
           <DialogDescription>
             {shift?.open_date ? `Открыта ${formatDateTime(shift.open_date)}` : "Детали смены"}
@@ -95,11 +101,33 @@ export function ShiftDetailDialog({ shiftId, canWaive, onClose }: ShiftDetailDia
               <Metric label="Изъятия / инкассация" value={formatDdsMoney(shift.pay_out)} />
               <Metric label="Остаток в кассе" value={formatDdsMoney(shift.cash_remain)} />
               <Metric
+                label="Зависло сверх флоута"
+                value={formatDdsMoney(shift.uncollected_cash)}
+                warn={(shift.uncollected_status ?? "none") !== "none"}
+              />
+              <Metric
                 label="Расхождение кассы"
                 value={formatDdsMoney(shift.real_cash_diff)}
                 warn={(shift.real_cash_diff ?? 0) > 0}
               />
             </div>
+
+            {(shift.uncollected_status ?? "none") !== "none" ? (
+              <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-medium">
+                    {shift.uncollected_status === "missing"
+                      ? "Инкассацию в этой смене не проводили."
+                      : "Инкассировали не всю наличку."}
+                  </span>{" "}
+                  В ящике осталось {formatDdsMoney(shift.uncollected_cash)} сверх стартового
+                  флоута — при пороге {formatDdsMoney(shift.uncollected_threshold)}. Деньги
+                  доедут в Главную кассу следующей инкассацией, и приход в ДДС встанет датой
+                  ТОЙ смены.
+                </div>
+              </div>
+            ) : null}
 
             <div className="rounded-lg border p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">

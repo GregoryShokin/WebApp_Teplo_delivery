@@ -176,6 +176,11 @@ class KassaShiftRead(BaseModel):
     cash_remain: float | None = None
     cash_diff: float | None = None  # сырое поле iiko (= 2× остаток, артефакт)
     real_cash_diff: float | None = None  # сверка ящика: положит. = недостача/неучтённое изъятие
+    collected_cash: float | None = None  # Σ инкассации смены (изъятия в Главную кассу)
+    # Остаток сверх стартового флоута = деньги, не доехавшие в Главную кассу.
+    uncollected_cash: float | None = None
+    # Итог проверки инкассации: none / partial / missing (см. iiko_cashshift_sync).
+    uncollected_status: str | None = None
     posted: bool
     # Итог авто-штрафа: none / applied / waived / manual_review (см. iiko_cashshift_sync).
     penalty_status: str | None = None
@@ -212,7 +217,43 @@ class KassaShiftDetailRead(KassaShiftRead):
     shortage_threshold_pct: float | None = None  # порог, % выручки
     shortage_threshold_amount: float | None = None  # порог в рублях
     shortage_pct_of_revenue: float | None = None  # фактическая недостача, % выручки
+    uncollected_threshold: float | None = None  # порог зависшей налички, ₽ сверх флоута
     penalties: list[KassaShiftPenaltyRead] = Field(default_factory=list)
+
+
+class KassaOpenShiftPayoutRead(BaseModel):
+    """Изъятие текущей незакрытой смены. Строки в БД нет — id только iiko-шный."""
+
+    iiko_payout_id: str | None = None
+    account_id_iiko: str
+    account_name: str | None = None
+    category: str
+    amount: float
+    comment: str | None = None
+
+
+class KassaOpenShiftRead(BaseModel):
+    """Текущая НЕзакрытая смена iiko — витрина «идёт», читается напрямую из iiko.
+
+    В БД не сохраняется и в ДДС не книжится: наличный контур по-прежнему проводит только
+    закрытую смену. Смысл витрины — видеть инкассацию в течение дня, а не назавтра.
+    """
+
+    iiko_session_id: str
+    session_number: int | None = None
+    point_of_sale_id: str | None = None
+    open_date: datetime | None = None
+    session_status: str | None = None
+    session_start_cash: float | None = None
+    cash_sales: float | None = None  # наличная выручка дня «на сейчас» (OLAP)
+    pay_in: float | None = None
+    pay_out: float | None = None
+    # Расчётный остаток ящика: старт + наличная выручка + внесения − изъятия
+    # (cashRemain у открытой смены iiko не отдаёт).
+    cash_in_drawer: float | None = None
+    collected_cash: float | None = None  # Σ инкассации смены на текущий момент
+    payouts: list[KassaOpenShiftPayoutRead] = Field(default_factory=list)
+    fetched_at: datetime
 
 
 class KassaShiftSyncReport(BaseModel):

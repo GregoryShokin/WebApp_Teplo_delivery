@@ -156,6 +156,9 @@ export async function createCheque(payload: CreateChequePayload): Promise<Cheque
 // Итог авто-штрафа смены за недостачу.
 export type KassaPenaltyStatus = "none" | "applied" | "waived" | "manual_review";
 
+// Итог проверки инкассации смены: деньги сверх стартового флоута остались в ящике.
+export type KassaUncollectedStatus = "none" | "partial" | "missing";
+
 export type KassaShift = {
   id: string;
   iiko_session_id: string;
@@ -174,6 +177,10 @@ export type KassaShift = {
   cash_remain: number | null;
   cash_diff: number | null;
   real_cash_diff: number | null;
+  collected_cash: number | null;
+  // Остаток сверх стартового флоута — деньги, не доехавшие в Главную кассу.
+  uncollected_cash: number | null;
+  uncollected_status: KassaUncollectedStatus | null;
   posted: boolean;
   penalty_status: KassaPenaltyStatus | null;
   synced_at: string;
@@ -203,7 +210,35 @@ export type KassaShiftDetail = KassaShift & {
   shortage_threshold_pct: number | null;
   shortage_threshold_amount: number | null;
   shortage_pct_of_revenue: number | null;
+  uncollected_threshold: number | null;
   penalties: KassaShiftPenalty[];
+};
+
+// Текущая НЕзакрытая смена: читается напрямую из iiko, в БД её нет.
+export type KassaOpenShiftPayout = {
+  iiko_payout_id: string | null;
+  account_id_iiko: string;
+  account_name: string | null;
+  category: string;
+  amount: number;
+  comment: string | null;
+};
+
+export type KassaOpenShift = {
+  iiko_session_id: string;
+  session_number: number | null;
+  point_of_sale_id: string | null;
+  open_date: string | null;
+  session_status: string | null;
+  session_start_cash: number | null;
+  cash_sales: number | null;
+  pay_in: number | null;
+  pay_out: number | null;
+  // Расчётный остаток ящика (cashRemain у открытой смены iiko не отдаёт).
+  cash_in_drawer: number | null;
+  collected_cash: number | null;
+  payouts: KassaOpenShiftPayout[];
+  fetched_at: string;
 };
 
 export type KassaShiftSyncReport = {
@@ -221,6 +256,11 @@ export async function getKassaShifts(params?: {
   date_to?: string;
 }): Promise<KassaShift[]> {
   const response = await api.get<KassaShift[]>(`${BASE}/shifts`, { params });
+  return response.data;
+}
+
+export async function getKassaOpenShift(): Promise<KassaOpenShift | null> {
+  const response = await api.get<KassaOpenShift | null>(`${BASE}/shifts/open`);
   return response.data;
 }
 

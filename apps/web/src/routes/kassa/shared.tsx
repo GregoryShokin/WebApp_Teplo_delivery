@@ -66,6 +66,28 @@ export const penaltyStatusLabels: Record<string, string> = {
   manual_review: "Ручной разбор",
 };
 
+// Итог проверки инкассации смены (поле uncollected_status): деньги сверх стартового
+// флоута остались в ящике — инкассацию забыли или провели не на всю наличку.
+export const uncollectedStatusLabels: Record<string, string> = {
+  missing: "Без инкассации",
+  partial: "Инкассация не вся",
+};
+
+export function ShiftUncollectedBadge({ status }: { status: string | null }) {
+  if (!status || status === "none") {
+    return null;
+  }
+  const className =
+    status === "missing"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : "border-amber-200 bg-amber-50 text-amber-700";
+  return (
+    <Badge className={className} variant="outline">
+      {uncollectedStatusLabels[status] ?? status}
+    </Badge>
+  );
+}
+
 export function ShiftPenaltyBadge({ status }: { status: string | null }) {
   if (!status || status === "none") {
     return null;

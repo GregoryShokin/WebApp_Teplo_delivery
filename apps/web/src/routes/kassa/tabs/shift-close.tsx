@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { AlertTriangle, LoaderCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,12 +16,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { InfoHint } from "@/components/ui-app/InfoHint";
 import { apiErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatDdsMoney, isoDateDaysAgo, toIsoDate } from "@/routes/dds/shared";
-import { getKassaShifts, postKassaShift, syncKassaShifts } from "@/routes/kassa/api";
+import {
+  getKassaOpenShift,
+  getKassaShifts,
+  postKassaShift,
+  syncKassaShifts,
+  type KassaOpenShift,
+} from "@/routes/kassa/api";
 import { ShiftDetailDialog } from "@/routes/kassa/ShiftDetailDialog";
-import { ShiftPenaltyBadge, ShiftPostedBadge } from "@/routes/kassa/shared";
+import {
+  PayoutCategoryBadge,
+  ShiftPenaltyBadge,
+  ShiftPostedBadge,
+  ShiftUncollectedBadge,
+} from "@/routes/kassa/shared";
 
 export function ShiftCloseTab({
   canSync,
@@ -42,6 +55,25 @@ export function ShiftCloseTab({
   });
   const shifts = shiftsQuery.data ?? [];
 
+  // Текущая незакрытая смена: синк её не видит (тянет только закрытые), читаем из iiko
+  // напрямую — чтобы инкассацию было видно днём, а не после вечернего закрытия смены.
+  const openShiftQuery = useQuery({
+    queryKey: ["kassa", "shift-open"],
+    queryFn: getKassaOpenShift,
+    retry: false,
+  });
+
+  // Смены, где наличка зависла в ящике: инкассацию забыли или инкассировали не всю.
+  const uncollected = useMemo(
+    () =>
+      (shiftsQuery.data ?? []).filter((shift) => (shift.uncollected_status ?? "none") !== "none"),
+    [shiftsQuery.data],
+  );
+  const uncollectedTotal = uncollected.reduce(
+    (sum, shift) => sum + (shift.uncollected_cash ?? 0),
+    0,
+  );
+
   const totals = useMemo(
     () =>
       (shiftsQuery.data ?? []).reduce(
@@ -60,6 +92,7 @@ export function ShiftCloseTab({
     onSuccess: async (report) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["kassa", "shifts"] }),
+        queryClient.invalidateQueries({ queryKey: ["kassa", "shift-open"] }),
         queryClient.invalidateQueries({ queryKey: ["dds", "cashflow"] }),
         queryClient.invalidateQueries({ queryKey: ["dds", "wallets"] }),
       ]);
@@ -83,6 +116,35 @@ export function ShiftCloseTab({
 
   return (
     <div className="space-y-5">
+      {uncollected.length > 0 ? (
+        <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <AlertTriangle size={18} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <div>
+            <span className="font-medium">
+              В кассе зависло {formatDdsMoney(uncollectedTotal)} по{" "}
+              {uncollected.length === 1 ? "смене" : "сменам"}{" "}
+              {uncollected.map((shift) => `№ ${shift.session_number ?? "—"}`).join(", ")}.
+            </span>{" "}
+            Инкассацию не проводили или инкассировали не всю наличку — деньги остались в ящике
+            и в Главную кассу не доехали.
+            <InfoHint tone="alert" label="Зависшая наличка в кассе">
+              Считаем как остаток смены минус флоут, которым её открыли: из денежного ящика
+              штатно уходят только инкассация в Главную кассу, ЗП курьеров и наличные Алисы,
+              поэтому остаток выше стартового размена означает пропущенную инкассацию. Порог
+              сигнала — настройка «Порог зависшей налички в кассе» (Настройки → Касса).
+              Деньги не теряются: их инкассируют следующей сменой, но приход в ДДС встанет
+              датой ТОЙ смены, а не этой.
+            </InfoHint>
+          </div>
+        </div>
+      ) : null}
+
+      <OpenShiftCard
+        shift={openShiftQuery.data ?? null}
+        isLoading={openShiftQuery.isLoading}
+        error={openShiftQuery.error}
+      />
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1.5">
           <Label htmlFor="ks-from">С</Label>
@@ -137,7 +199,7 @@ export function ShiftCloseTab({
               <TableHead className="text-right">Изъятия</TableHead>
               <TableHead className="text-right">Остаток</TableHead>
               <TableHead className="text-right">Расхожд.</TableHead>
-              <TableHead>Штраф</TableHead>
+              <TableHead>Сигналы</TableHead>
               <TableHead>В ДДС</TableHead>
               <TableHead />
             </TableRow>
@@ -167,7 +229,12 @@ export function ShiftCloseTab({
                   <TableCell className="text-right tabular-nums">
                     {formatDdsMoney(shift.pay_out)}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell
+                    className={cn(
+                      "text-right tabular-nums",
+                      (shift.uncollected_status ?? "none") !== "none" && "font-medium text-amber-700",
+                    )}
+                  >
                     {formatDdsMoney(shift.cash_remain)}
                   </TableCell>
                   <TableCell
@@ -179,7 +246,10 @@ export function ShiftCloseTab({
                     {formatDdsMoney(shift.real_cash_diff)}
                   </TableCell>
                   <TableCell>
-                    <ShiftPenaltyBadge status={shift.penalty_status} />
+                    <div className="flex flex-col items-start gap-1">
+                      <ShiftUncollectedBadge status={shift.uncollected_status} />
+                      <ShiftPenaltyBadge status={shift.penalty_status} />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <ShiftPostedBadge posted={shift.posted} />
@@ -211,6 +281,127 @@ export function ShiftCloseTab({
         canWaive={canWaive}
         onClose={() => setSelectedShiftId(null)}
       />
+    </div>
+  );
+}
+
+/** Текущая незакрытая смена: что уже продали, что уже вынули, сколько лежит в ящике.
+ *
+ * Витрина только смотрит: в ДДС смена попадёт вечером, при закрытии (иначе задвоение с
+ * авто-проводкой). Ценность в другом — видно, инкассировали сегодня или ещё нет. */
+function OpenShiftCard({
+  shift,
+  isLoading,
+  error,
+}: {
+  shift: KassaOpenShift | null;
+  isLoading: boolean;
+  error: unknown;
+}) {
+  if (error) {
+    // Молчать нельзя: пустое место читается как «смены нет», а на деле iiko недоступен.
+    return (
+      <Card>
+        <CardContent className="flex items-start gap-2 p-4 text-sm text-muted-foreground">
+          <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>
+            Текущую смену показать не удалось: {apiErrorMessage(error, "iiko не ответил")}. На
+            закрытые смены ниже это не влияет.
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+          <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
+          Смотрим текущую смену в iiko…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (shift === null) {
+    return null;
+  }
+  const collected = shift.collected_cash ?? 0;
+  return (
+    <Card className="border-sky-200 bg-sky-50/40">
+      <CardContent className="space-y-4 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">Смена № {shift.session_number ?? "—"} идёт</span>
+          <Badge className="border-sky-200 bg-sky-50 text-sky-700" variant="outline">
+            Не закрыта
+          </Badge>
+          <span className="text-sm text-muted-foreground">
+            {shift.open_date ? `открыта ${formatDateTime(shift.open_date)}` : null}
+          </span>
+          <InfoHint label="Текущая смена">
+            Читается из iiko напрямую при открытии вкладки. В систему смена попадёт только
+            после закрытия — тогда же наличный контур будет проведён в ДДС. Остаток в ящике
+            считаем сами (iiko у открытой смены его не отдаёт): стартовый флоут + наличная
+            выручка + внесения − изъятия.
+          </InfoHint>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <OpenShiftMetric label="Нал. выручка" value={shift.cash_sales} />
+          <OpenShiftMetric label="Изъятия" value={shift.pay_out} />
+          <OpenShiftMetric label="Из них инкассация" value={shift.collected_cash} />
+          <OpenShiftMetric label="В ящике сейчас" value={shift.cash_in_drawer} />
+        </div>
+
+        {collected <= 0 ? (
+          <div className="flex items-start gap-2 text-sm text-amber-800">
+            <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <span>
+              Инкассации в этой смене ещё не было. Если наличка останется в ящике к закрытию —
+              она не доедет в Главную кассу и завтра сюда придёт сигнал.
+            </span>
+          </div>
+        ) : null}
+
+        {shift.payouts.length > 0 ? (
+          <div className="rounded-md border bg-background">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Изъятие</TableHead>
+                  <TableHead>Комментарий</TableHead>
+                  <TableHead className="text-right">Сумма</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shift.payouts.map((payout, index) => (
+                  <TableRow key={payout.iiko_payout_id ?? `${payout.account_id_iiko}-${index}`}>
+                    <TableCell>
+                      <PayoutCategoryBadge category={payout.category} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {payout.comment ?? payout.account_name ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatDdsMoney(payout.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OpenShiftMetric({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">
+        {value == null ? "—" : formatDdsMoney(value)}
+      </div>
     </div>
   );
 }

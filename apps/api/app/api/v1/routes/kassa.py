@@ -27,6 +27,7 @@ from app.schemas.kassa import (
     KassaFreelancerShiftVoidRequest,
     KassaFreelancerSyncReport,
     KassaJournalRead,
+    KassaOpenShiftRead,
     KassaPayinCreate,
     KassaPayinPresetArticleRead,
     KassaPayinPresetCounterpartyRead,
@@ -67,6 +68,7 @@ from app.services.kassa.cheque import (
 )
 from app.services.kassa.cheque_payout_push import post_kassa_payment_to_iiko
 from app.services.kassa.iiko_cashshift_sync import (
+    fetch_open_shift,
     get_shift,
     list_shifts,
     post_shift_adjustment,
@@ -342,6 +344,25 @@ async def list_shifts_endpoint(
     date_to: date | None = None,
 ) -> list:
     return await list_shifts(session, date_from=date_from, date_to=date_to)
+
+
+@router.get(
+    "/shifts/open", response_model=KassaOpenShiftRead | None, dependencies=KASSA_SHIFTS_READ
+)
+async def get_open_shift_endpoint() -> dict | None:
+    """Текущая незакрытая смена iiko («идёт»): изъятия и остаток ящика на текущий момент.
+
+    Только чтение из iiko: в БД ничего не пишется, в ДДС ничего не книжится — наличный
+    контур по-прежнему проводится при закрытии смены. ``null`` — открытой смены нет.
+
+    Объявлен ВЫШЕ ``/shifts/{shift_id}``: иначе FastAPI попробует разобрать «open» как UUID.
+    """
+    try:
+        return await fetch_open_shift()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Ошибка iiko: {exc}"
+        ) from exc
 
 
 @router.get(

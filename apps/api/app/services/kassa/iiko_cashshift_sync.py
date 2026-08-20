@@ -11,6 +11,18 @@
 через ``http.client`` напрямую (legacy IikoClient блокируется iiko WAF в части окружений),
 по образцу ``couriers/iiko_olap_sync``. Смену сохраняем по наличию ``closeDate``, а НЕ по
 ``sessionStatus`` — в проде закрытые смены приходят со статусом ``UNACCEPTED``.
+
+Рядом с синком живут два наблюдателя за инкассацией, которые в БД ничего не пишут:
+
+* ``fetch_open_shift`` — витрина ТЕКУЩЕЙ незакрытой смены. Синк её не видит (запрос идёт
+  со ``status=CLOSED``), поэтому инкассация появляется в системе только вечером, после
+  закрытия смены. Живая проверка 20.08.2026 на боевом iiko: ``/v2/cashshifts/list`` со
+  ``status=OPEN`` отдаёт открытую смену, а ``payments/list`` по ней — её изъятия. Читаем
+  их напрямую, чтобы в течение дня было видно, проводили инкассацию или нет; в ДДС
+  по-прежнему книжится только закрытая смена (иначе задвоение с ``posted``-контуром).
+* ``compute_uncollected_cash`` — сигнал «деньги зависли в ящике»: закрытая смена оставила
+  остаток больше флоута, которым её открыли. Так выглядит забытая (или неполная)
+  инкассация — инцидент 19.08.2026, смена 1206: 2 821,83 ₽ остались на ночь в кассе.
 """
 
 from __future__ import annotations
@@ -28,7 +40,8 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, select
+import anyio.to_thread
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -60,6 +73,13 @@ _CATEGORY_BY_ACCOUNT = {
     COURIER_SALARY_ACCOUNT_ID: "courier_salary",
     ALISA_ACCOUNT_ID: "alisa",
 }
+# Имена трёх известных счетов — чтобы витрина открытой смены не ходила за справочником
+# счетов ради подписи (лишний запрос к iiko на каждое открытие вкладки).
+_ACCOUNT_NAME_BY_ID = {
+    MAIN_CASH_ACCOUNT_ID: "Главная касса",
+    COURIER_SALARY_ACCOUNT_ID: "Зарплата курьеров",
+    ALISA_ACCOUNT_ID: "Алиса наличные",
+}
 
 # Кошелёк наличного контура и статьи ДДС (резолвятся по ИМЕНИ — code/uuid различны dev/prod).
 CASH_WALLET_CODE = "tk_chernikova"
@@ -84,6 +104,16 @@ PENALTY_STATUS_NONE = "none"
 PENALTY_STATUS_APPLIED = "applied"
 PENALTY_STATUS_WAIVED = "waived"
 PENALTY_STATUS_MANUAL_REVIEW = "manual_review"
+
+# --- сигнал «наличка зависла в ящике» (забытая/неполная инкассация) --------------
+# Сколько рублей сверх стартового флоута может остаться в кассе закрытой смены, прежде
+# чем это считается пропущенной инкассацией. Настройка (Настройки → Касса).
+STUCK_CASH_THRESHOLD_KEY = "kassa.stuck_cash_threshold_rub"
+DEFAULT_STUCK_CASH_THRESHOLD = Decimal("1000")
+# Итог проверки инкассации по смене (вычисляемое поле витрины, в БД не хранится).
+UNCOLLECTED_NONE = "none"  # ящик закрыли на флоуте — инкассировать было нечего или всё вынесли
+UNCOLLECTED_PARTIAL = "partial"  # инкассация была, но сверх флоута всё равно осталось > порога
+UNCOLLECTED_MISSING = "missing"  # инкассации не было вовсе, а деньги в ящике остались
 
 
 @dataclass(slots=True)
@@ -171,6 +201,24 @@ def _fetch_cashshifts_list(token: str, date_from: date, date_to: date) -> list[d
             "openDateFrom": date_from.isoformat(),
             "openDateTo": date_to.isoformat(),
             "status": "CLOSED",
+        },
+    )
+    return data if isinstance(data, list) else []
+
+
+def _fetch_open_cashshifts(token: str, date_from: date, date_to: date) -> list[dict[str, Any]]:
+    """Открытые (ещё не закрытые) смены. Тот же эндпоинт, что и у синка, но ``status=OPEN``.
+
+    Параметр ``status`` у iiko обязателен: с пустым значением ручка отвечает 409
+    «Параметр 'status' не может быть пустым» (проверено на боевом сервере 20.08.2026).
+    """
+    data = _iiko_get(
+        token,
+        "/resto/api/v2/cashshifts/list",
+        {
+            "openDateFrom": date_from.isoformat(),
+            "openDateTo": date_to.isoformat(),
+            "status": "OPEN",
         },
     )
     return data if isinstance(data, list) else []
@@ -425,6 +473,121 @@ async def _sync_shift_payouts(
             )
         )
     report.payouts += len(payouts)
+
+
+# --- витрина ТЕКУЩЕЙ (незакрытой) смены ----------------------------------------
+
+
+def _open_shift_raw() -> dict[str, Any] | None:
+    """Синхронная часть витрины открытой смены: смена, её изъятия и выручка дня.
+
+    Все запросы к iiko собраны в одну функцию, чтобы уйти в поток одним прыжком
+    (``anyio.to_thread``): ``http.client`` блокирующий, а ручка дёргается на каждое
+    открытие вкладки «Смены», а не раз в 20 минут, как синк.
+
+    Справочник счетов (`/v2/entities/accounts/list`) тянем ТОЛЬКО если среди изъятий
+    попался незнакомый счёт: три штатных назначения подписываются из ``_ACCOUNT_NAME_BY_ID``.
+    """
+    token = _auth_token()
+    today = datetime.now(tz=MOSCOW_TZ).date()
+    # Смена открывается утром и закрывается вечером того же дня, но окно берём с запасом
+    # в сутки в обе стороны — на случай ночного закрытия и расхождения часовых поясов.
+    rows = _fetch_open_cashshifts(token, today - timedelta(days=1), today + timedelta(days=1))
+    row = next(
+        (item for item in rows if item.get("id") and not item.get("closeDate")),
+        None,
+    )
+    if row is None:
+        return None
+    payments = _fetch_shift_payments(token, str(row["id"]))
+    records = payments.get("payOutsRecords") or []
+    accounts: dict[str, str] = {}
+    if any(
+        _payout_category(str((record.get("info") or {}).get("accountId") or "")) == "unknown"
+        for record in records
+    ):
+        accounts = _fetch_accounts_map(token)
+    open_date = _parse_dt(row.get("openDate"))
+    day = open_date.date() if open_date is not None else today
+    # Наличная выручка «на сейчас» — из OLAP по дню открытия, как и у закрытых смен
+    # (salesCash смены завышен зачтёнными предоплатами).
+    cash_by_day, _ = _fetch_cash_sales_by_day(token, day, day)
+    return {
+        "row": row,
+        "records": records,
+        "accounts": accounts,
+        "cash_sales": cash_by_day.get(day),
+    }
+
+
+async def fetch_open_shift() -> dict[str, Any] | None:
+    """Текущая незакрытая смена iiko для витрины «идёт». ``None`` — открытой смены нет.
+
+    Только чтение: ни строки в БД, ни движения ДДС. Смысл — видеть в течение дня, сколько
+    налички в ящике и проводили ли инкассацию, не дожидаясь вечернего закрытия смены.
+
+    ``cash_in_drawer`` считаем сами, потому что ``cashRemain`` у открытой смены iiko не
+    отдаёт (приходит ``null``). Формула — тождество, которое iiko выдерживает на закрытых
+    сменах: ``старт + наличная выручка + внесения − изъятия`` (сверено на сменах 1200–1206
+    прода: сходится копейка-в-копейку). Без выручки из OLAP остаток не считаем — врать
+    приблизительной цифрой в кассовой витрине нельзя.
+    """
+    payload = await anyio.to_thread.run_sync(_open_shift_raw)
+    if payload is None:
+        return None
+
+    row: dict[str, Any] = payload["row"]
+    accounts: dict[str, str] = payload["accounts"]
+    payouts: list[dict[str, Any]] = []
+    for record in payload["records"]:
+        info = record.get("info") or {}
+        account_id = str(info.get("accountId") or "")
+        amount = _dec(record.get("actualSum"))
+        if amount is None:
+            amount = _dec(info.get("sum")) or Decimal("0.00")
+        payouts.append(
+            {
+                "iiko_payout_id": info.get("id"),
+                "account_id_iiko": account_id,
+                "account_name": accounts.get(account_id) or _ACCOUNT_NAME_BY_ID.get(account_id),
+                "category": _payout_category(account_id),
+                "amount": amount,
+                "comment": info.get("comment") or None,
+            }
+        )
+    payouts.sort(key=lambda item: item["amount"], reverse=True)
+
+    start_cash = _dec(row.get("sessionStartCash"))
+    pay_in = _dec(row.get("payIn")) or Decimal("0.00")
+    # Итог изъятий берём у iiko, а не суммой строк: если в смене окажется изъятие,
+    # которого нет в payOutsRecords, остаток ящика должен остаться правдой.
+    pay_out = _dec(row.get("payOut"))
+    if pay_out is None:
+        pay_out = sum((item["amount"] for item in payouts), Decimal("0.00"))
+    cash_sales: Decimal | None = payload["cash_sales"]
+    cash_in_drawer = (
+        start_cash + cash_sales + pay_in - pay_out
+        if start_cash is not None and cash_sales is not None
+        else None
+    )
+    collected = sum(
+        (item["amount"] for item in payouts if item["category"] == "main_cash"), Decimal("0.00")
+    )
+    return {
+        "iiko_session_id": str(row["id"]),
+        "session_number": row.get("sessionNumber"),
+        "point_of_sale_id": row.get("pointOfSaleId"),
+        "open_date": _parse_dt(row.get("openDate")),
+        "session_status": row.get("sessionStatus"),
+        "session_start_cash": start_cash,
+        "cash_sales": cash_sales,
+        "pay_in": pay_in,
+        "pay_out": pay_out,
+        "cash_in_drawer": cash_in_drawer,
+        "collected_cash": collected,
+        "payouts": payouts,
+        "fetched_at": datetime.now(tz=MOSCOW_TZ),
+    }
 
 
 # --- проводка наличного контура в ДДС ------------------------------------------
@@ -805,7 +968,74 @@ async def compute_real_cash_diff(session: AsyncSession, shift: IikoCashShift) ->
     return shift.cash_sales + pay_in - shift.pay_out - float_change
 
 
-async def _shift_summary(session: AsyncSession, shift: IikoCashShift) -> dict[str, Any]:
+# --- сигнал «наличка зависла в ящике» ------------------------------------------
+
+
+async def _stuck_cash_threshold(session: AsyncSession) -> Decimal:
+    """Порог зависшей налички (₽ сверх стартового флоута) из настройки, с дефолтом."""
+    raw = await session.scalar(
+        select(AppSetting.value).where(AppSetting.key == STUCK_CASH_THRESHOLD_KEY)
+    )
+    if raw is None:
+        return DEFAULT_STUCK_CASH_THRESHOLD
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return DEFAULT_STUCK_CASH_THRESHOLD
+
+
+def compute_uncollected_cash(shift: IikoCashShift) -> Decimal | None:
+    """Наличные, оставшиеся в ящике смены сверх флоута, которым её открыли.
+
+    Инкассация — единственный штатный способ вынуть выручку из денежного ящика в Главную
+    кассу (см. правило владельца в ``project_dds_iiko_cash_circuit``: из торговой кассы
+    платят только курьерам). Поэтому остаток выше стартового флоута читается однозначно:
+    инкассацию либо забыли, либо провели не на всю наличку.
+
+    Отрицательное значение — ящик, наоборот, разгрузили (вынесли вчерашний хвост); это не
+    сигнал, а норма следующего дня после пропуска.
+    """
+    if shift.cash_remain is None or shift.session_start_cash is None:
+        return None
+    return shift.cash_remain - shift.session_start_cash
+
+
+def uncollected_status(uncollected: Decimal | None, collected: Decimal, threshold: Decimal) -> str:
+    """Итог проверки инкассации смены: ``none`` / ``partial`` / ``missing``."""
+    if uncollected is None or uncollected <= threshold:
+        return UNCOLLECTED_NONE
+    return UNCOLLECTED_MISSING if collected <= 0 else UNCOLLECTED_PARTIAL
+
+
+async def _collected_totals(
+    session: AsyncSession, shift_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
+    """Σ инкассации (``main_cash``) по сменам — одним запросом на весь список."""
+    if not shift_ids:
+        return {}
+    rows = await session.execute(
+        select(IikoCashShiftPayout.shift_id, func.sum(IikoCashShiftPayout.amount))
+        .where(
+            IikoCashShiftPayout.shift_id.in_(shift_ids),
+            IikoCashShiftPayout.category == "main_cash",
+        )
+        .group_by(IikoCashShiftPayout.shift_id)
+    )
+    return {shift_id: total or Decimal("0.00") for shift_id, total in rows.all()}
+
+
+async def _shift_summary(
+    session: AsyncSession,
+    shift: IikoCashShift,
+    *,
+    collected: Decimal | None = None,
+    stuck_threshold: Decimal | None = None,
+) -> dict[str, Any]:
+    if collected is None:
+        collected = (await _collected_totals(session, [shift.id])).get(shift.id, Decimal("0.00"))
+    if stuck_threshold is None:
+        stuck_threshold = await _stuck_cash_threshold(session)
+    uncollected = compute_uncollected_cash(shift)
     return {
         "id": shift.id,
         "iiko_session_id": shift.iiko_session_id,
@@ -824,6 +1054,9 @@ async def _shift_summary(session: AsyncSession, shift: IikoCashShift) -> dict[st
         "cash_remain": shift.cash_remain,
         "cash_diff": shift.cash_diff,
         "real_cash_diff": await compute_real_cash_diff(session, shift),
+        "collected_cash": collected,
+        "uncollected_cash": uncollected,
+        "uncollected_status": uncollected_status(uncollected, collected, stuck_threshold),
         "posted": shift.posted,
         "penalty_status": shift.penalty_status,
         "synced_at": shift.synced_at,
@@ -849,7 +1082,18 @@ async def list_shifts(
             select(IikoCashShift).where(*conditions).order_by(IikoCashShift.close_date.desc())
         )
     ).all()
-    return [await _shift_summary(session, shift) for shift in shifts]
+    # Порог и суммы инкассации берём разом на весь список — иначе два запроса на смену.
+    stuck_threshold = await _stuck_cash_threshold(session)
+    collected = await _collected_totals(session, [shift.id for shift in shifts])
+    return [
+        await _shift_summary(
+            session,
+            shift,
+            collected=collected.get(shift.id, Decimal("0.00")),
+            stuck_threshold=stuck_threshold,
+        )
+        for shift in shifts
+    ]
 
 
 async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any] | None:
@@ -863,7 +1107,17 @@ async def get_shift(session: AsyncSession, shift_id: uuid.UUID) -> dict[str, Any
             .order_by(IikoCashShiftPayout.amount.desc())
         )
     ).all()
-    payload = await _shift_summary(session, shift)
+    stuck_threshold = await _stuck_cash_threshold(session)
+    payload = await _shift_summary(
+        session,
+        shift,
+        collected=sum(
+            (payout.amount for payout in payouts if payout.category == "main_cash"),
+            Decimal("0.00"),
+        ),
+        stuck_threshold=stuck_threshold,
+    )
+    payload["uncollected_threshold"] = stuck_threshold
     payload["payouts"] = [
         {
             "id": payout.id,
