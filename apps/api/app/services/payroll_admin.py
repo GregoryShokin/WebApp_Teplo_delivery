@@ -1220,6 +1220,7 @@ async def list_dishwasher_employees(session: AsyncSession) -> list[Employee]:
         select(Employee)
         .where(
             Employee.position.in_(dishwasher_positions()),
+            Employee.status == "active",
             Employee.admin_payroll_excluded.is_(False),
         )
         .order_by(Employee.full_name)

@@ -24,6 +24,7 @@ from app.services.payroll_admin import (
     create_included_payout,
     get_dishwasher_shift_rate,
     latest_admin_period_dates,
+    list_dishwasher_employees,
     next_admin_period_dates,
     okladnik_earned_to_date,
     run_admin_payroll,
@@ -126,6 +127,22 @@ async def _set_oklad(
         )
     )
     await session.flush()
+
+
+async def test_dishwasher_schedule_lists_only_active_staff(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        active = await _make_admin_employee(session, position="Посудомойка")
+        inactive = await _make_admin_employee(session, position="Посудомойка")
+        inactive.full_name = "Уволенная мойщица"
+        inactive.status = "inactive"
+        inactive.fire_date = date(2026, 4, 30)
+        await session.commit()
+
+        employees = await list_dishwasher_employees(session)
+
+        assert [employee.id for employee in employees] == [active.id]
 
 
 async def _make_period(session: AsyncSession) -> PayrollPeriod:
