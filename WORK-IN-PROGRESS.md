@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### agent-botnotify — ветка `agent/botnotify-telegram-processing-status`
+- worktree: `../Teplo-agent-botnotify`
+- compose: стенд не поднимаю; тесты без общей БД либо на отдельной test-БД
+- трогает: `apps/api/app/services/telegram_intake.py`, тесты Telegram-приёмки
+- НЕ трогать другим: жизненный цикл уведомлений бота при получении и обработке файла
+- статус: в работе
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
