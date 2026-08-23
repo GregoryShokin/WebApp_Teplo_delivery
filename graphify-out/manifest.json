@@ -1955,9 +1955,9 @@
     "semantic_hash": "1b79e49f53fbd1da26bc4ae81b70919d"
   },
   "apps/api/app/services/supplier_prepayments.py": {
-    "mtime": 1786122727.6489542,
-    "ast_hash": "a235b0cb8c151c0bbd38e9c5f026aab9",
-    "semantic_hash": "a235b0cb8c151c0bbd38e9c5f026aab9"
+    "mtime": 1787475800.8242688,
+    "ast_hash": "cf17623471d7ea283d728f7186777895",
+    "semantic_hash": ""
   },
   "apps/api/app/services/vacation_service.py": {
     "mtime": 1785680736.2395546,
@@ -7220,9 +7220,9 @@
     "semantic_hash": "298d7d52959c4e17fc7258dd31072871"
   },
   "apps/api/app/services/utility_charges.py": {
-    "mtime": 1785765902.6820455,
-    "ast_hash": "3245f70c3dfc94e343f44a17bbf26270",
-    "semantic_hash": "3245f70c3dfc94e343f44a17bbf26270"
+    "mtime": 1787475800.8249285,
+    "ast_hash": "a3ddcb6af6f15b94aac1bfccdbbbb0b5",
+    "semantic_hash": ""
   },
   "apps/api/app/services/utility_images.py": {
     "mtime": 1785761206.1035736,
@@ -7230,9 +7230,9 @@
     "semantic_hash": "f3702ca44d66b266f0c3005989f0b4d1"
   },
   "apps/api/app/services/utility_intake.py": {
-    "mtime": 1787469562.6402042,
-    "ast_hash": "3135c9ae95721d7fa8dc508069bbb0e5",
-    "semantic_hash": "3135c9ae95721d7fa8dc508069bbb0e5"
+    "mtime": 1787475800.8253217,
+    "ast_hash": "c6e1ad9340387c2d5132698ab3c8e5bb",
+    "semantic_hash": ""
   },
   "apps/api/app/services/utility_ocr.py": {
     "mtime": 1785706625.5452695,
@@ -7240,9 +7240,9 @@
     "semantic_hash": "a183ae36a44725f8bb21ba511d8ab8c7"
   },
   "apps/api/app/services/utility_recognition.py": {
-    "mtime": 1785706625.5463467,
-    "ast_hash": "6f5671cfc7e71c869ca0a1275d4f2109",
-    "semantic_hash": "6f5671cfc7e71c869ca0a1275d4f2109"
+    "mtime": 1787475800.8256633,
+    "ast_hash": "6ad5bd35290b877b60dd293750cb4702",
+    "semantic_hash": ""
   },
   "apps/api/tests/counterparties/test_landlord_agreement_guard.py": {
     "mtime": 1785706625.5479193,
@@ -7270,9 +7270,9 @@
     "semantic_hash": "bded5517f709ea896d947c020ea30af5"
   },
   "apps/api/tests/counterparties/test_utility_charges.py": {
-    "mtime": 1785765902.6855965,
-    "ast_hash": "78773dbff30d71d8a8aeebf877457306",
-    "semantic_hash": "78773dbff30d71d8a8aeebf877457306"
+    "mtime": 1787475800.8260837,
+    "ast_hash": "26aac94eb6a9af68eecd126643c6fc7c",
+    "semantic_hash": ""
   },
   "apps/api/tests/counterparties/test_utility_intake.py": {
     "mtime": 1787469562.6410675,
@@ -7285,9 +7285,9 @@
     "semantic_hash": "d909c365dc7af0c6406f715f2432749f"
   },
   "apps/api/tests/counterparties/test_utility_recognition.py": {
-    "mtime": 1785706625.5532434,
-    "ast_hash": "840885a7c5dd2773eb32669877f9e0a0",
-    "semantic_hash": "840885a7c5dd2773eb32669877f9e0a0"
+    "mtime": 1787475800.8263488,
+    "ast_hash": "7e89e7987194ed940f829a1c089837b3",
+    "semantic_hash": ""
   },
   "apps/api/tests/counterparties/test_utility_upload_api.py": {
     "mtime": 1785706625.553691,
