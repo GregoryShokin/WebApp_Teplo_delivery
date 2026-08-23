@@ -298,6 +298,33 @@ async def test_text_without_file_is_answered_not_ignored(
         assert "квитанции" in reply["text"]
 
 
+async def test_notification_retries_safe_connect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сетевой сбой до отправки запроса не превращает успешный OCR в молчание бота."""
+
+    class FlakyTelegram(FakeTelegram):
+        send_attempts = 0
+
+        def handler(self, request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/sendMessage"):
+                self.send_attempts += 1
+                if self.send_attempts < 3:
+                    raise httpx.ConnectTimeout("telegram route unavailable", request=request)
+            return super().handler(request)
+
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(telegram_intake.asyncio, "sleep", no_wait)
+    telegram = FlakyTelegram([], {})
+    async with telegram.client() as client:
+        await telegram_intake._notify(client, TOKEN, OWNER_CHAT, "Готово")
+
+    assert telegram.send_attempts == 3
+    assert telegram.sent == [{"chat_id": OWNER_CHAT, "text": "Готово"}]
+
+
 async def test_same_photo_twice_creates_one_row(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

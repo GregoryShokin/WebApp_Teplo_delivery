@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import UTC, datetime
@@ -45,6 +46,8 @@ API_BASE = "https://api.telegram.org"
 # Телеграм отдаёт файл только через getFile и не больше 20 МБ — свой предел приёмки (25 МБ)
 # сюда не достаёт, и упереться в него можно лишь документом, который бот и не получит.
 _HTTP_TIMEOUT = 60.0
+_CONNECT_TIMEOUT = 8.0
+_NOTIFY_CONNECT_ATTEMPTS = 3
 
 # Курсор подтверждения. В памяти процесса намеренно: источник правды — сам Телеграм, он
 # удаляет обновления, подтверждённые следующим ``offset``. Перезапуск приложения приводит к
@@ -125,7 +128,10 @@ for _name in ("httpx", "httpcore"):
 
 def _make_client() -> httpx.AsyncClient:
     """Точка, которую подменяет тест. Своей роли, кроме этой, у обёртки нет."""
-    return httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+    # Long polling вправе ждать ответ дольше 25 секунд, но само TCP-соединение столько ждать
+    # не должно: у Telegram на нашем хостинге один адрес периодически недоступен. Короткий
+    # connect timeout позволяет повторить именно безопасный этап до отправки запроса.
+    return httpx.AsyncClient(timeout=httpx.Timeout(_HTTP_TIMEOUT, connect=_CONNECT_TIMEOUT))
 
 
 async def _call(client: httpx.AsyncClient, token: str, method: str, **params: Any) -> Any:
@@ -144,10 +150,33 @@ async def _notify(client: httpx.AsyncClient, token: str, chat_id: Any, text: str
     Ответ важен, но он вторичен: документ к этому моменту уже заведён, и падать из-за того, что
     собеседник заблокировал бота, — значит откатывать сделанную работу и требовать её заново.
     """
-    try:
-        await _call(client, token, "sendMessage", chat_id=chat_id, text=text)
-    except Exception:  # noqa: BLE001 — недоставленный ответ не отменяет заведённый документ
-        logger.warning("telegram_intake: ответ в чат %s не доставлен", chat_id, exc_info=True)
+    for attempt in range(1, _NOTIFY_CONNECT_ATTEMPTS + 1):
+        try:
+            await _call(client, token, "sendMessage", chat_id=chat_id, text=text)
+            return
+        except (httpx.ConnectTimeout, httpx.ConnectError):
+            # На connect timeout запрос ещё не ушёл в Telegram, поэтому повтор не создаст
+            # двойное сообщение. ReadTimeout намеренно не повторяем: сервер мог уже принять
+            # sendMessage, а потерялся только ответ — тогда повтор породил бы дубль.
+            if attempt < _NOTIFY_CONNECT_ATTEMPTS:
+                logger.warning(
+                    "telegram_intake: соединение для ответа в чат %s не установлено, повтор %s/%s",
+                    chat_id,
+                    attempt + 1,
+                    _NOTIFY_CONNECT_ATTEMPTS,
+                )
+                await asyncio.sleep(attempt)
+                continue
+            logger.warning(
+                "telegram_intake: ответ в чат %s не доставлен после %s попыток",
+                chat_id,
+                _NOTIFY_CONNECT_ATTEMPTS,
+                exc_info=True,
+            )
+            return
+        except Exception:  # noqa: BLE001 — недоставленный ответ не отменяет заведённый документ
+            logger.warning("telegram_intake: ответ в чат %s не доставлен", chat_id, exc_info=True)
+            return
 
 
 async def _download(client: httpx.AsyncClient, token: str, file_path: str) -> bytes:

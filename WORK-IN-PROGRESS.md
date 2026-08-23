@@ -16,13 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### agent-botretry — ветка `agent/botretry-telegram-notify-connect-retry`
-- worktree: `../Teplo-agent-botretry`
-- compose: стенд не поднимаю; тесты Telegram изолированы моками
-- трогает: `telegram_intake.py` и его тесты
-- НЕ трогать другим: таймауты и повтор доставки ответов Telegram
-- статус: в работе
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
