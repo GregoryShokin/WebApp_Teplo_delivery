@@ -2005,6 +2005,8 @@ async def auto_settle_invoice_from_open_prepayments(
     invoice: SupplierInvoice,
     *,
     actor_user_id: uuid.UUID | None = None,
+    allowed_prepayment_ids: set[uuid.UUID] | None = None,
+    max_amount: Decimal | None = None,
 ) -> Decimal:
     """Авто-гашение финансового закрывающего документа из предоплат (FIFO), без коммита.
 
@@ -2024,15 +2026,23 @@ async def auto_settle_invoice_from_open_prepayments(
         return Decimal("0.00")
     total = Decimal("0.00")
     candidates = await _settlement_candidates(session, invoice)
+    if allowed_prepayment_ids is not None:
+        candidates = [
+            item for item in candidates if item[0].id in allowed_prepayment_ids
+        ]
     used: list[tuple[SupplierPrepayment, str]] = []
     for prepayment, match_basis in candidates:
         inv_remaining = await _invoice_remaining(session, invoice)
         if inv_remaining <= 0:
             break
+        if max_amount is not None and total >= _money(max_amount):
+            break
         pre_remaining = _money(prepayment.amount) - _money(prepayment.amount_settled)
         if pre_remaining <= 0:
             continue
         alloc = min(inv_remaining, pre_remaining)
+        if max_amount is not None:
+            alloc = min(alloc, _money(max_amount) - total)
         await _allocate_invoice_from_prepayment(
             session,
             invoice=invoice,
@@ -2131,6 +2141,8 @@ async def apply_closing_document(
     *,
     actor_user_id: uuid.UUID | None = None,
     as_of: date | None = None,
+    allowed_prepayment_ids: set[uuid.UUID] | None = None,
+    prepayment_limit: Decimal | None = None,
 ) -> Decimal:
     """Провести закрывающий документ (УПД/акт/приходную/чек) по канону ДЗ/КЗ (владелец 17.07).
 
@@ -2182,7 +2194,11 @@ async def apply_closing_document(
     # дебиторку — иначе период закрылся бы дважды и расход в P&L удвоился.
     await subscription_accruals.supersede_self_billed(session, invoice)
     return await auto_settle_invoice_from_open_prepayments(
-        session, invoice, actor_user_id=actor_user_id
+        session,
+        invoice,
+        actor_user_id=actor_user_id,
+        allowed_prepayment_ids=allowed_prepayment_ids,
+        max_amount=prepayment_limit,
     )
 
 

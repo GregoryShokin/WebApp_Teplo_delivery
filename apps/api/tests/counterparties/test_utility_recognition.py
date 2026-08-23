@@ -420,6 +420,7 @@ def test_real_july_pair_continues_the_cycle() -> None:
     assert actual is not None and advance is not None
     assert actual.raw["electricity_period_amount"] == "95402.00"
     assert actual.raw["electricity_paid_advance_amount"] == "65000.00"
+    assert actual.raw["electricity_paid_advance_date"] == "2026-06-20"
     assert actual.amount == Decimal("30402.00")
     assert (actual.period_start, actual.period_end) == (date(2026, 6, 1), date(2026, 6, 30))
 

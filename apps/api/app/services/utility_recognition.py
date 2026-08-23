@@ -1319,6 +1319,16 @@ def find_electricity_paid_advance_amount(text: str) -> str:
     return fmt_money(amount) if amount > 0 else ""
 
 
+def find_electricity_paid_advance_date(text: str) -> str:
+    """Дата ранее внесённого аванса из строки фактического акта."""
+    match = re.search(
+        rf"Оплачено(?:\s+аванс)?[^\n]{{0,80}}?({DATE_PATTERN})",
+        text,
+        re.IGNORECASE,
+    )
+    return iso_date_from_ru(match.group(1)) if match else ""
+
+
 def find_electricity_actual_amounts(text: str) -> tuple[str, str, str, str, str]:
     """Суммы фактического акта: энергия, потери, итог периода, зачтённый аванс, к оплате.
 
@@ -1620,6 +1630,7 @@ class ElectricityActParser:
             paid_advance,
             amount_due,
         ) = find_electricity_actual_amounts(text)
+        paid_advance_date = find_electricity_paid_advance_date(text)
         advance_amount = find_electricity_advance_amount(text)
         if not kind:
             # Заголовки не сработали — судим по составу сумм: остаток и зачёт бывают
@@ -1658,6 +1669,7 @@ class ElectricityActParser:
                 "electricity_losses_amount": losses_amount,
                 "electricity_period_amount": "",
                 "electricity_paid_advance_amount": "",
+                "electricity_paid_advance_date": "",
                 "electricity_amount_due": "",
                 "electricity_advance_amount": "",
             }
@@ -1681,6 +1693,7 @@ class ElectricityActParser:
                     "amount": amount_due,
                     "electricity_period_amount": period_amount,
                     "electricity_paid_advance_amount": paid_advance,
+                    "electricity_paid_advance_date": paid_advance_date,
                     "electricity_amount_due": amount_due,
                     "payment_purpose_suggestion": build_electricity_actual_purpose(basis),
                     "requires_owner_review": True,

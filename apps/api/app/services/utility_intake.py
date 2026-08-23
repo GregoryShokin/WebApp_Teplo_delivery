@@ -125,6 +125,15 @@ def _decimal_or_none(raw: object) -> Decimal | None:
     return value
 
 
+def _date_or_none(raw: object) -> date | None:
+    if raw in (None, ""):
+        return None
+    try:
+        return date.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
 def _reason_labels(reasons: list[str]) -> list[str]:
     return [REVIEW_REASON_LABELS.get(reason, reason) for reason in reasons]
 
@@ -374,6 +383,7 @@ def _recognition_payload(
             "energy_amount": raw.get("electricity_energy_amount") or None,
             "losses_amount": raw.get("electricity_losses_amount") or None,
             "paid_advance_amount": raw.get("electricity_paid_advance_amount") or None,
+            "paid_advance_date": raw.get("electricity_paid_advance_date") or None,
             "ocr_method": ocr_method,
             "confidence": document.confidence,
             # Подсказки («ждём парный акт») и причины отказа лежат врозь: первые информируют,
@@ -435,6 +445,8 @@ async def _materialize(
     period_end: date,
     expense_amount: Decimal | None,
     payable_amount: Decimal,
+    paid_advance_amount: Decimal | None,
+    paid_advance_date: date | None,
     actor_user_id: uuid.UUID | None,
 ) -> None:
     """Завести по разобранному документу счёт и (если он несёт расход) закрывающий.
@@ -450,6 +462,8 @@ async def _materialize(
             period_end=period_end,
             expense_amount=expense_amount,
             payable_amount=payable_amount,
+            paid_advance_amount=paid_advance_amount,
+            paid_advance_date=paid_advance_date,
             actor_user_id=actor_user_id,
         )
     except utility_charges.UtilityMonthTakenError as exc:
@@ -603,6 +617,11 @@ async def ingest_document(
         ):
             intake.status = "needs_review"
         else:
+            utility_recognition = intake.recognition.get("utility") or {}
+            paid_advance_amount = _decimal_or_none(
+                utility_recognition.get("paid_advance_amount")
+            )
+            paid_advance_date = _date_or_none(utility_recognition.get("paid_advance_date"))
             await _materialize(
                 session,
                 intake,
@@ -611,6 +630,8 @@ async def ingest_document(
                 period_end=period_end,
                 expense_amount=expense_amount,
                 payable_amount=payable_amount,
+                paid_advance_amount=paid_advance_amount,
+                paid_advance_date=paid_advance_date,
                 actor_user_id=actor_user_id,
             )
         await session.flush()
@@ -689,6 +710,8 @@ async def confirm_utility_intake(
         period_end=period_end,
         expense_amount=expense_amount,
         payable_amount=payable_amount,
+        paid_advance_amount=_decimal_or_none(utility_block.get("paid_advance_amount")),
+        paid_advance_date=_date_or_none(utility_block.get("paid_advance_date")),
         actor_user_id=actor_user_id,
     )
     if intake.status == "needs_review" and intake.error:

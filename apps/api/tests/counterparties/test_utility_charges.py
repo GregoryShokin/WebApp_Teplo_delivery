@@ -348,6 +348,144 @@ async def test_paid_advance_is_credited_by_fact_act(
         await session.rollback()
 
 
+async def test_documented_electricity_advance_uses_exact_cash_fact_not_fifo(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Строка акта «оплачено 65 000» сильнее чужого аванса 50 000 по хронологии."""
+    async with async_session_factory() as session:
+        account = await _account(session, kind="electricity")
+        wallet = await make_wallet(session, name="Сейф")
+
+        unrelated_tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("50000.00"),
+            operation_date=date(2026, 7, 1),
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            source_kind="safe_payout",
+        )
+        session.add(unrelated_tx)
+        await session.flush()
+        unrelated = SupplierPrepayment(
+            counterparty_id=account.counterparty_id,
+            kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+            wallet_id=wallet.id,
+            amount=Decimal("50000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=unrelated_tx.id,
+            article_id=account.dds_article_id,
+        )
+        session.add(unrelated)
+
+        exact_tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("65000.00"),
+            operation_date=date(2026, 7, 19),
+            counterparty_id=None,
+            article_id=account.dds_article_id,
+            source_kind="safe_payout",
+            payment_purpose="Предоплата за Июль",
+            quality_status="final",
+        )
+        session.add(exact_tx)
+        await session.flush()
+
+        bill, closing = await utility_charges.build_utility_documents(
+            session,
+            account,
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 7, 31),
+            expense_amount=Decimal("112469.00"),
+            payable_amount=Decimal("47469.00"),
+            paid_advance_amount=Decimal("65000.00"),
+            paid_advance_date=date(2026, 7, 19),
+            as_of=date(2026, 8, 23),
+        )
+
+        assert closing is not None
+        allocations = list(
+            (
+                await session.scalars(
+                    select(InvoicePaymentAllocation).where(
+                        InvoicePaymentAllocation.invoice_id == closing.id
+                    )
+                )
+            ).all()
+        )
+        assert len(allocations) == 1
+        assert allocations[0].amount == Decimal("65000.00")
+        exact = await session.get(SupplierPrepayment, allocations[0].prepayment_id)
+        assert exact is not None
+        assert exact.cashflow_transaction_id == exact_tx.id
+        assert exact.status == "settled"
+        assert unrelated.status == "open" and unrelated.amount_settled == Decimal("0.00")
+        assert exact_tx.counterparty_id == account.counterparty_id
+        assert closing.payment_status == "partially_paid"
+        assert bill.amount == Decimal("47469.00") and bill.payment_status == "unpaid"
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == closing.id)
+        )
+        assert accrual is not None and accrual.amount == Decimal("112469.00")
+        await session.rollback()
+
+
+async def test_documented_advance_without_cash_fact_does_not_take_foreign_prepayment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Нет точного факта ДДС — оставляем видимый разрыв, но не закрываем долг чужими деньгами."""
+    async with async_session_factory() as session:
+        account = await _account(session, kind="electricity")
+        wallet = await make_wallet(session, name="Сейф")
+        wrong_tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("50000.00"),
+            operation_date=date(2026, 7, 1),
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            source_kind="safe_payout",
+        )
+        session.add(wrong_tx)
+        await session.flush()
+        wrong = SupplierPrepayment(
+            counterparty_id=account.counterparty_id,
+            kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+            wallet_id=wallet.id,
+            amount=Decimal("50000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=wrong_tx.id,
+            article_id=account.dds_article_id,
+        )
+        session.add(wrong)
+
+        _, closing = await utility_charges.build_utility_documents(
+            session,
+            account,
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 7, 31),
+            expense_amount=Decimal("112469.00"),
+            payable_amount=Decimal("47469.00"),
+            paid_advance_amount=Decimal("65000.00"),
+            paid_advance_date=date(2026, 7, 19),
+            as_of=date(2026, 8, 23),
+        )
+
+        assert closing is not None and closing.payment_status == "unpaid"
+        assert wrong.status == "open" and wrong.amount_settled == Decimal("0.00")
+        assert (
+            await session.scalar(
+                select(InvoicePaymentAllocation.id).where(
+                    InvoicePaymentAllocation.invoice_id == closing.id
+                )
+            )
+        ) is None
+        await session.rollback()
+
+
 async def test_month_is_taken_once(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

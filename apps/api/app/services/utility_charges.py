@@ -42,7 +42,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     UTILITY_KIND_LABELS,
+    CashflowTransaction,
+    InvoicePaymentAllocation,
     SupplierInvoice,
+    SupplierPrepayment,
     UtilityAccount,
 )
 from app.services import (
@@ -180,6 +183,8 @@ async def build_utility_documents(
     period_end: date,
     expense_amount: Decimal | None,
     payable_amount: Decimal,
+    paid_advance_amount: Decimal | None = None,
+    paid_advance_date: date | None = None,
     actor_user_id: uuid.UUID | None = None,
     as_of: date | None = None,
 ) -> tuple[SupplierInvoice, SupplierInvoice | None]:
@@ -280,8 +285,33 @@ async def build_utility_documents(
     session.add(closing)
     await session.flush()
 
+    documented_prepayment = None
+    if paid_advance_amount is not None and paid_advance_amount > 0:
+        documented_prepayment = await _documented_cash_advance(
+            session,
+            account=account,
+            amount=paid_advance_amount,
+            paid_on=paid_advance_date,
+            period_start=period_start,
+            period_end=period_end,
+            actor_user_id=actor_user_id,
+        )
+
     await supplier_prepayments.apply_closing_document(
-        session, closing, actor_user_id=actor_user_id, as_of=as_of
+        session,
+        closing,
+        actor_user_id=actor_user_id,
+        as_of=as_of,
+        # Если акт сам назвал зачтённый аванс, чужую ДЗ по общей хронологии брать нельзя.
+        # Либо найден ровно тот денежный факт, либо баланс честно оставляет разрыв видимым.
+        allowed_prepayment_ids=(
+            {documented_prepayment.id}
+            if documented_prepayment is not None
+            else set()
+            if paid_advance_amount is not None
+            else None
+        ),
+        prepayment_limit=paid_advance_amount,
     )
     # Замещение самоакта переклеивает его денежные аллокации на наш документ, а статуса не
     # трогает: документ остался бы «неоплаченным» с живыми деньгами на нём — и отзыв, который
@@ -293,6 +323,143 @@ async def build_utility_documents(
         session, closing, location_id=account.location_id
     )
     return bill, closing
+
+
+async def _documented_cash_advance(
+    session: AsyncSession,
+    *,
+    account: UtilityAccount,
+    amount: Decimal,
+    paid_on: date | None,
+    period_start: date,
+    period_end: date,
+    actor_user_id: uuid.UUID | None,
+) -> SupplierPrepayment | None:
+    """Связать строку «Оплачено аванс» с единственным существующим фактом ДДС.
+
+    Бумага не создаёт деньги: без точного и единственного совпадения по дате, сумме и статье
+    ничего не синтезируем. Так P&L остаётся полным расходом, а ДЗ/КЗ не закрывается чужим
+    авансом лишь потому, что он оказался первым по времени.
+    """
+    if paid_on is None:
+        return None
+
+    existing_candidates = list(
+        (
+            await session.scalars(
+                select(SupplierPrepayment).where(
+                    SupplierPrepayment.counterparty_id == account.counterparty_id,
+                    SupplierPrepayment.status.in_(("open", "partially_settled")),
+                )
+            )
+        ).all()
+    )
+    existing_matches: list[SupplierPrepayment] = []
+    for prepayment in existing_candidates:
+        if Decimal(prepayment.amount) - Decimal(prepayment.amount_settled) != amount:
+            continue
+        same_stream = prepayment.article_id == account.dds_article_id
+        same_period = (
+            prepayment.service_period_start is not None
+            and prepayment.service_period_end is not None
+            and prepayment.service_period_start <= period_end
+            and prepayment.service_period_end >= period_start
+        )
+        if not (same_stream or same_period):
+            continue
+        money_dates: set[date] = set()
+        if prepayment.cashflow_transaction_id is not None:
+            transaction = await session.get(
+                CashflowTransaction, prepayment.cashflow_transaction_id
+            )
+            if transaction is not None:
+                money_dates.add(transaction.operation_date)
+        if prepayment.bill_invoice_id is not None:
+            money_dates.update(
+                (
+                    await session.scalars(
+                        select(CashflowTransaction.operation_date)
+                        .join(
+                            InvoicePaymentAllocation,
+                            InvoicePaymentAllocation.cashflow_transaction_id
+                            == CashflowTransaction.id,
+                        )
+                        .where(
+                            InvoicePaymentAllocation.invoice_id
+                            == prepayment.bill_invoice_id
+                        )
+                    )
+                ).all()
+            )
+        if paid_on in money_dates:
+            existing_matches.append(prepayment)
+    if len(existing_matches) == 1:
+        return existing_matches[0]
+    if len(existing_matches) > 1:
+        return None
+
+    transactions = list(
+        (
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.direction == "out",
+                    CashflowTransaction.amount == amount,
+                    CashflowTransaction.operation_date == paid_on,
+                    CashflowTransaction.article_id == account.dds_article_id,
+                    CashflowTransaction.quality_status != "excluded",
+                    or_(
+                        CashflowTransaction.counterparty_id.is_(None),
+                        CashflowTransaction.counterparty_id == account.counterparty_id,
+                    ),
+                )
+            )
+        ).all()
+    )
+    available: list[CashflowTransaction] = []
+    for transaction in transactions:
+        existing = await session.scalar(
+            select(SupplierPrepayment).where(
+                SupplierPrepayment.cashflow_transaction_id == transaction.id
+            )
+        )
+        if existing is not None:
+            continue
+        allocation = await session.scalar(
+            select(InvoicePaymentAllocation.id)
+            .where(InvoicePaymentAllocation.cashflow_transaction_id == transaction.id)
+            .limit(1)
+        )
+        if allocation is None:
+            available.append(transaction)
+    if len(available) != 1:
+        return None
+
+    transaction = available[0]
+    prepayment = await session.scalar(
+        select(SupplierPrepayment).where(
+            SupplierPrepayment.cashflow_transaction_id == transaction.id
+        )
+    )
+    if prepayment is None:
+        transaction.counterparty_id = account.counterparty_id
+        prepayment = SupplierPrepayment(
+            counterparty_id=account.counterparty_id,
+            kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+            wallet_id=transaction.wallet_id,
+            amount=amount,
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=transaction.id,
+            article_id=account.dds_article_id,
+            service_period_start=period_start,
+            service_period_end=period_end,
+            service_period_status="ready",
+            note="Аванс подтверждён фактическим актом коммунальных услуг",
+            created_by_user_id=actor_user_id,
+        )
+        session.add(prepayment)
+        await session.flush()
+    return prepayment
 
 
 async def settle_utility_invoices_from_cash(
