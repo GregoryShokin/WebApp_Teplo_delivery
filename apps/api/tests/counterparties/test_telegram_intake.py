@@ -247,6 +247,39 @@ async def test_any_sender_is_accepted_and_remembered(
         assert "999" in row.from_addr
 
 
+async def test_two_electricity_photos_report_assembled_payment_pair(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    settings_with_bot,
+) -> None:
+    """После второго фото бот сообщает не «ждём», а готовую сумму общей платёжки."""
+    texts = iter(
+        [
+            (FIXTURE_ROOT / "electricity_real_20260717_actual.txt").read_text(encoding="utf-8"),
+            (FIXTURE_ROOT / "electricity_real_20260717_advance.txt").read_text(encoding="utf-8"),
+        ]
+    )
+
+    async def next_ocr(content, *, mime, settings):  # noqa: ANN001, ARG001
+        return next(texts), "vision"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", next_ocr)
+    telegram = FakeTelegram(
+        [[_photo_update(15, file_id="actual"), _photo_update(16, file_id="advance")]],
+        {"actual": JPEG + b"-actual", "advance": JPEG + b"-advance"},
+    )
+    monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
+
+    async with async_session_factory() as session:
+        await _flow(session)
+        result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
+
+        assert result.get("linked") == 2
+        assert len(telegram.sent) == 4, "на каждое фото нужны старт и завершение"
+        assert "Пара собрана" in telegram.sent[-1]["text"]
+        assert "95402.00" in telegram.sent[-1]["text"]
+
+
 async def test_text_without_file_is_answered_not_ignored(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,

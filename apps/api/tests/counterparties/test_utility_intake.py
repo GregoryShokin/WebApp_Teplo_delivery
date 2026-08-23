@@ -28,22 +28,33 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from cp_helpers import make_counterparty
+from cp_helpers import make_counterparty, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.models import (
+    CashflowTransaction,
     CounterpartyPaymentDraft,
     DdsArticle,
     EmailInvoiceIntake,
+    InvoicePaymentAllocation,
     Location,
     Organization,
     SupplierExpenseAccrual,
     SupplierInvoice,
+    SupplierPrepayment,
     UtilityAccount,
 )
-from app.services import email_invoice_ingest, utility_intake, utility_ocr
+from app.services import (
+    bank_payment_status,
+    email_invoice_ingest,
+    supplier_prepayments,
+    utility_intake,
+    utility_ocr,
+)
+from app.services.counterparty_balance_as_of import build_balance_as_of
+from app.services.pnl.sources.recognition import ORIGIN_UTILITY, build_recognition_layer
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "utility"
 
@@ -51,6 +62,11 @@ FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "utility"
 # Content-Type — иначе SVG со скриптом, названный картинкой, вернулся бы inline в origin
 # приложения. Хвост делает байты уникальными там, где тесту нужен «другой файл».
 JPEG_HEAD = b"\xff\xd8\xff"
+VERIFIED_REQUISITES = {
+    "bankAcnt": "40702810400000012345",
+    "bankBik": "044525225",
+    "recipientCorrAccountNumber": "30101810400000000225",
+}
 
 
 def _photo(tag: str) -> bytes:
@@ -109,13 +125,18 @@ async def _account(
     kind: str = "electricity",
     started_on: date = date(2026, 1, 1),
     is_active: bool = True,
+    relationship: str = "informal",
+    requisites: dict[str, str] | None = None,
+    requisites_verified: bool = False,
 ) -> UtilityAccount:
     landlord = await make_counterparty(
         session,
         name=f"Гордеев {uuid.uuid4().hex[:4]}",
         inn=f"6143{uuid.uuid4().int % 10**8:08d}",
         cp_type="individual",
-        relationship="informal",
+        relationship=relationship,
+        requisites=requisites,
+        requisites_verified=requisites_verified,
     )
     account = UtilityAccount(
         location_id=(await _location(session)).id,
@@ -152,6 +173,35 @@ async def _accruals(session: AsyncSession, *invoice_ids: uuid.UUID) -> list[Supp
             )
         ).all()
     )
+
+
+async def _pay_bill(
+    session: AsyncSession, bill: SupplierInvoice, *, on: date
+) -> CashflowTransaction:
+    """Оплатить счёт штатным чокпоинтом, чтобы его деньги стали дебиторкой."""
+    wallet = await make_wallet(session, name="Тестовый банк")
+    transaction = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=bill.amount,
+        operation_date=on,
+        counterparty_id=bill.counterparty_id,
+        source_kind="bank_feed",
+    )
+    session.add(transaction)
+    await session.flush()
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=bill.id,
+            source_kind="bank",
+            cashflow_transaction_id=transaction.id,
+            amount=bill.amount,
+        )
+    )
+    await session.flush()
+    await supplier_prepayments.reconcile_bill_prepayment(session, bill)
+    await session.flush()
+    return transaction
 
 
 async def test_actual_act_lands_in_payment_queue_with_both_amounts(
@@ -251,30 +301,57 @@ async def test_pair_of_photos_makes_two_payable_rows(
             Decimal("30402.00"),
             Decimal("65000.00"),
         ]
+        assert actual.recognition["utility"]["paired_intake_id"] == str(advance.id)
+        assert advance.recognition["utility"]["paired_intake_id"] == str(actual.id)
+        assert actual.recognition["utility"]["pair_payable_amount"] == "95402.00"
+        assert any("Пара собрана" in hint for hint in advance.recognition["utility"]["hints"])
         await session.rollback()
 
 
 async def test_pair_goes_to_bank_as_one_payment(
     async_session_factory: async_sessionmaker[AsyncSession],
     ocr_text,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Два акта одного визита уходят ОДНИМ платежом на 95 402 ₽ — как их и платят.
+    """Автопара проходит одним платежом через ДЗ/КЗ, ОПиУ и Баланс без смешения периодов.
 
-    Владелец делает один перевод (решение от 02.08.2026): дробить его ради учёта значит
-    заставлять человека врать банку. Периоды у счетов при этом разные — июнь и июль, — и это
-    нормально: период живёт на счёте, а не на платеже.
+    Предыдущий аванс июня закрывает часть июньского факта. Текущая пара — доплата июня и новый
+    аванс июля — уходит одним переводом: доплата закрывает КЗ, новый аванс остаётся ДЗ, а в
+    ОПиУ июня сохраняется полный расход 95 402 ₽ и ни рубля июльского аванса.
     """
     async with async_session_factory() as session:
-        await _account(session)
+        account = await _account(
+            session,
+            relationship="official",
+            requisites=VERIFIED_REQUISITES,
+            requisites_verified=True,
+        )
+
+        # Предыдущий визит: аванс за июнь уже уплачен и живёт дебиторкой до фактического акта.
+        ocr_text(_fixture("electricity_real_20260619_advance.txt"))
+        (previous_advance,) = await _ingest(session, _photo("аванс-июнь"))
+        previous_advance_bill = await session.get(SupplierInvoice, previous_advance.invoice_id)
+        assert previous_advance_bill is not None
+        await _pay_bill(session, previous_advance_bill, on=date(2026, 6, 20))
+
+        # Текущий визит: факт июня + аванс июля автоматически сшиваются по дате и периодам.
         ocr_text(_fixture("electricity_real_20260717_actual.txt"))
         (actual,) = await _ingest(session, _photo("факт-вместе"))
         ocr_text(_fixture("electricity_real_20260717_advance.txt"))
         (advance,) = await _ingest(session, _photo("аванс-вместе"))
-        await session.commit()
 
-        await email_invoice_ingest.send_intakes_to_bank(
-            session, [actual, advance], actor_user_id=None
+        before_payment = await build_balance_as_of(session, as_of=date(2026, 8, 31))
+        before_row = next(
+            row
+            for row in before_payment.rows
+            if row.counterparty_id == account.counterparty_id
         )
+        assert before_row.receivable == Decimal("0.00")
+        assert before_row.payable == Decimal("30402.00")
+
+        await session.commit()
+        # Нажимаем «В банк» только на ОДНОЙ строке: сохранённая связь сама добавляет парную.
+        await email_invoice_ingest.send_intake_to_bank(session, advance, actor_user_id=None)
 
         bills = [
             await session.get(SupplierInvoice, actual.invoice_id),
@@ -289,6 +366,69 @@ async def test_pair_goes_to_bank_as_one_payment(
         assert bills[0] is not None and bills[1] is not None
         assert bills[0].service_period_start == date(2026, 6, 1)
         assert bills[1].service_period_start == date(2026, 7, 1)
+
+        bank_wallet = await make_wallet(session, name="Расчётный счёт", wallet_type="bank")
+
+        async def resolved_wallet(session_arg, draft_arg):  # noqa: ANN001, ARG001
+            return bank_wallet
+
+        monkeypatch.setattr(bank_payment_status, "_resolve_payer_bank_wallet", resolved_wallet)
+        assert (
+            await bank_payment_status.apply_payment_status(
+                session,
+                draft=draft,
+                raw_status="executed",
+                operation_date=date(2026, 7, 17),
+            )
+            == "paid"
+        )
+
+        open_prepayments = (
+            await session.scalars(
+                select(SupplierPrepayment).where(
+                    SupplierPrepayment.counterparty_id == account.counterparty_id,
+                    SupplierPrepayment.status == "open",
+                )
+            )
+        ).all()
+        assert [(row.bill_invoice_id, row.amount) for row in open_prepayments] == [
+            (bills[1].id, Decimal("65000.00"))
+        ], "после оплаты открытой ДЗ остаётся только новый аванс июля"
+
+        after_payment = await build_balance_as_of(session, as_of=date(2026, 8, 31))
+        after_row = next(
+            row
+            for row in after_payment.rows
+            if row.counterparty_id == account.counterparty_id
+        )
+        assert after_row.payable == Decimal("0.00")
+        assert after_row.receivable == Decimal("65000.00")
+
+        june_pnl = await build_recognition_layer(
+            session, date(2026, 6, 1), date(2026, 6, 30)
+        )
+        assert june_pnl.total == Decimal("95402.00")
+        assert [detail.origin for detail in june_pnl.details] == [ORIGIN_UTILITY]
+        await session.rollback()
+
+
+async def test_same_periods_with_different_document_dates_are_not_paired(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    ocr_text,
+) -> None:
+    """Соседние периоды без общей даты актов — не доказанная пара, поэтому не угадываем."""
+    async with async_session_factory() as session:
+        await _account(session)
+        ocr_text(_fixture("electricity_real_20260717_actual.txt"))
+        (actual,) = await _ingest(session, _photo("факт-разные-даты"))
+        advance_text = _fixture("electricity_real_20260717_advance.txt").replace(
+            "17.07.2026", "18.07.2026"
+        )
+        ocr_text(advance_text)
+        (advance,) = await _ingest(session, _photo("аванс-разные-даты"))
+
+        assert not actual.recognition["utility"].get("paired_intake_id")
+        assert not advance.recognition["utility"].get("paired_intake_id")
         await session.rollback()
 
 

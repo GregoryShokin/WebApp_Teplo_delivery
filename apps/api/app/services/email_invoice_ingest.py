@@ -956,9 +956,31 @@ async def send_intake_to_bank(
     на подтверждение в банке. Бросает доменные ошибки ``payments.*`` / банковские — вызывающий
     решает, как показать. ``create_payment_draft_for_invoices`` коммитит сам; снятие плановой
     даты тоже коммитим, поэтому функция самодостаточна по транзакции."""
+    intakes = [intake]
+    utility = (intake.recognition or {}).get("utility") or {}
+    paired_id_raw = utility.get("paired_intake_id")
+    if paired_id_raw:
+        try:
+            paired_id = uuid.UUID(str(paired_id_raw))
+        except ValueError as exc:
+            raise payments.CounterpartyPaymentError(
+                "Связь парных актов повреждена — отправка остановлена"
+            ) from exc
+        paired = await session.get(EmailInvoiceIntake, paired_id)
+        paired_utility = (paired.recognition or {}).get("utility") if paired is not None else None
+        if (
+            paired is None
+            or not isinstance(paired_utility, dict)
+            or paired_utility.get("paired_intake_id") != str(intake.id)
+        ):
+            raise payments.CounterpartyPaymentError(
+                "Парный акт не найден — отправка остановлена, чтобы не заплатить половину суммы"
+            )
+        intakes.append(paired)
+
     await send_intakes_to_bank(
         session,
-        [intake],
+        intakes,
         actor_user_id=actor_user_id,
         allow_official_via_safe=allow_official_via_safe,
     )

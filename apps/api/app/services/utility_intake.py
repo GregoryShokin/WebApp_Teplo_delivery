@@ -90,6 +90,13 @@ REVIEW_REASON_LABELS: dict[str, str] = {
     "ocr_failed": "Не удалось прочитать текст со снимка",
 }
 
+_ELECTRICITY_PAIR_REASON_CODES = frozenset(
+    {"electricity_pair_waiting_for_advance", "electricity_pair_waiting_for_actual"}
+)
+_ELECTRICITY_PAIR_HINTS = frozenset(
+    REVIEW_REASON_LABELS[reason] for reason in _ELECTRICITY_PAIR_REASON_CODES
+)
+
 
 class UtilityIntakeError(RuntimeError):
     """Файл принять нельзя. Текст показывается человеку как есть."""
@@ -120,6 +127,130 @@ def _decimal_or_none(raw: object) -> Decimal | None:
 
 def _reason_labels(reasons: list[str]) -> list[str]:
     return [REVIEW_REASON_LABELS.get(reason, reason) for reason in reasons]
+
+
+def _electricity_pair_fields(intake: EmailInvoiceIntake) -> dict[str, Any] | None:
+    """Поля, по которым два снимка можно без догадки назвать одной парой актов."""
+    recognition = intake.recognition or {}
+    utility = recognition.get("utility") or {}
+    if (
+        intake.status != "linked"
+        or intake.utility_account_id is None
+        or utility.get("kind") != "electricity"
+        or utility.get("act_kind") not in ("actual", "advance")
+        or utility.get("paired_intake_id")
+    ):
+        return None
+    try:
+        period_start = date.fromisoformat(str(recognition.get("service_period_start") or ""))
+        period_end = date.fromisoformat(str(recognition.get("service_period_end") or ""))
+    except ValueError:
+        return None
+    document_date = str(utility.get("document_date") or "")
+    payable_amount = _decimal_or_none(utility.get("payable_amount"))
+    if not document_date or payable_amount is None or payable_amount <= 0:
+        return None
+    return {
+        "act_kind": str(utility["act_kind"]),
+        "document_date": document_date,
+        "period_start": period_start,
+        "period_end": period_end,
+        "payable_amount": payable_amount,
+    }
+
+
+def _is_electricity_pair(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Факт прошлого месяца + аванс следующего, выписанные в один день."""
+    if left["act_kind"] == right["act_kind"]:
+        return False
+    actual = left if left["act_kind"] == "actual" else right
+    advance = right if right["act_kind"] == "advance" else left
+    return bool(
+        actual["document_date"] == advance["document_date"]
+        and actual["period_end"] + date.resolution == advance["period_start"]
+    )
+
+
+def _mark_electricity_pair(
+    intake: EmailInvoiceIntake,
+    paired: EmailInvoiceIntake,
+    *,
+    total: Decimal,
+) -> None:
+    recognition = dict(intake.recognition or {})
+    utility = dict(recognition.get("utility") or {})
+    hints = [hint for hint in utility.get("hints") or [] if hint not in _ELECTRICITY_PAIR_HINTS]
+    pair_hint = f"Пара собрана — общий платёж {total.quantize(Decimal('0.01'))} ₽"
+    if pair_hint not in hints:
+        hints.append(pair_hint)
+    if utility.get("act_kind") == "advance":
+        lifecycle_hint = "Расход по этому авансу признает акт за факт за тот же месяц"
+        if lifecycle_hint not in hints:
+            hints.append(lifecycle_hint)
+    utility.update(
+        {
+            "hints": hints,
+            "raw_reasons": [
+                reason
+                for reason in utility.get("raw_reasons") or []
+                if reason not in _ELECTRICITY_PAIR_REASON_CODES
+            ],
+            "paired_intake_id": str(paired.id),
+            "pair_payable_amount": str(total.quantize(Decimal("0.01"))),
+            "pair_status": "ready",
+        }
+    )
+    recognition["utility"] = utility
+    intake.recognition = recognition
+
+
+async def _pair_electricity_intakes(
+    session: AsyncSession,
+    created: list[EmailInvoiceIntake],
+) -> None:
+    """Связать два последовательных фото одного визита, не смешивая месяцы и отправителей.
+
+    Совпадение по одному контрагенту недостаточно: у арендодателя одновременно живут аренда,
+    вода и электричество. Даже одного потока мало — июньский аванс и июльский факт относятся к
+    одному месяцу, но это документы РАЗНЫХ визитов. Поэтому пара считается доказанной только
+    при четырёх признаках: один поток, один отправитель, одна дата актов и соседние периоды
+    «факт → аванс». Если кандидатов несколько, не угадываем и оставляем обе строки раздельными.
+    """
+    for intake in created:
+        fields = _electricity_pair_fields(intake)
+        if fields is None:
+            continue
+        sender_filter = (
+            EmailInvoiceIntake.from_addr.is_(None)
+            if intake.from_addr is None
+            else EmailInvoiceIntake.from_addr == intake.from_addr
+        )
+        candidates = (
+            await session.scalars(
+                select(EmailInvoiceIntake)
+                .where(
+                    EmailInvoiceIntake.id != intake.id,
+                    EmailInvoiceIntake.mailbox == PHOTO_MAILBOX,
+                    EmailInvoiceIntake.status == "linked",
+                    EmailInvoiceIntake.utility_account_id == intake.utility_account_id,
+                    sender_filter,
+                )
+                .order_by(EmailInvoiceIntake.created_at.desc())
+                .limit(24)
+            )
+        ).all()
+        matches: list[tuple[EmailInvoiceIntake, dict[str, Any]]] = []
+        for candidate in candidates:
+            candidate_fields = _electricity_pair_fields(candidate)
+            if candidate_fields is not None and _is_electricity_pair(fields, candidate_fields):
+                matches.append((candidate, candidate_fields))
+        if len(matches) != 1:
+            continue
+        paired, paired_fields = matches[0]
+        total = fields["payable_amount"] + paired_fields["payable_amount"]
+        _mark_electricity_pair(intake, paired, total=total)
+        _mark_electricity_pair(paired, intake, total=total)
+        await session.flush()
 
 
 def _split_amounts(
@@ -487,6 +618,7 @@ async def ingest_document(
 
     if not created:
         raise UtilityIntakeError("Этот файл уже загружали — строка по нему есть в списке")
+    await _pair_electricity_intakes(session, created)
     return created
 
 
