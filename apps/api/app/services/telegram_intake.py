@@ -201,8 +201,17 @@ def _row_line(row: EmailInvoiceIntake) -> str:
 
 def _reply_text(rows: list[EmailInvoiceIntake]) -> str:
     if not rows:
-        return "Ничего не разобрал — откройте «Финансы → Платежи»"
-    head = "Принял документ" if len(rows) == 1 else f"Принял, документов в файле: {len(rows)}"
+        return "⚠️ Обработку закончил, но ничего не разобрал — откройте «Финансы → Платежи»"
+    if all(row.status == "linked" for row in rows):
+        head = (
+            "✅ Готово — документ обработан"
+            if len(rows) == 1
+            else f"✅ Готово — обработано документов в файле: {len(rows)}"
+        )
+    elif any(row.status not in ("linked", "duplicate") for row in rows):
+        head = "⚠️ Обработку закончил, но документ требует проверки"
+    else:
+        head = "Обработку закончил"
     return head + "\n" + "\n".join(_row_line(row) for row in rows)
 
 
@@ -229,6 +238,18 @@ async def _handle_message(
             "за электричество. Пересланное сообщение тоже подойдёт.",
         )
         return "no_file"
+
+    # Ответ отправляем ДО getFile, скачивания и OCR. Распознавание фотографии может ждать
+    # модель до двух минут, и без промежуточного сообщения человек видит молчащего бота и
+    # отправляет тот же документ повторно. Финальный ответ ниже придёт при любом штатном исходе,
+    # а общий обработчик poll_and_ingest отдельно сообщит о неожиданной ошибке.
+    await _notify(
+        client,
+        token,
+        chat_id,
+        "📥 Файл получил. Начинаю распознавание — это может занять пару минут. "
+        "По результату обязательно напишу.",
+    )
 
     file_id, filename = picked
     file_info = await _call(client, token, "getFile", file_id=file_id)

@@ -7,6 +7,8 @@
   имя приславшего — единственное, что отвечает на вопрос «чей это документ»;
 * человек получает ОТВЕТ с суммами. Переслать документ в тишину — то же самое, что потерять
   его: владелец не узнает ни что документ принят, ни какие числа система из него достала;
+* долгий OCR видим человеку. Сразу после получения файла бот подтверждает начало работы, а
+  затем отдельным сообщением сообщает успех или понятную проблему;
 * очередь не встаёт колом. Ссылка на файл в Телеграме живёт около часа, и сбойное сообщение,
   которое не подтвердили, блокировало бы все следующие документы навсегда;
 * вчерашний завал не вываливается в учёт. Телеграм держит неподтверждённое сутки и отдаёт
@@ -206,8 +208,12 @@ async def test_forwarded_photo_becomes_payable_row(
         assert row.mailbox == "photo"
         assert row.utility_account_id == account.id
 
-        (reply,) = telegram.sent
+        started, reply = telegram.sent
+        assert started["chat_id"] == OWNER_CHAT
+        assert "Файл получил" in started["text"]
+        assert "обязательно напишу" in started["text"]
         assert reply["chat_id"] == OWNER_CHAT
+        assert "Готово" in reply["text"]
         assert "30402.00" in reply["text"]
         assert "95402.00" in reply["text"], "расход периода обязан быть назван отдельно"
 
@@ -276,7 +282,7 @@ async def test_same_photo_twice_creates_one_row(
 
         assert result["updates"] == 2
         assert await _intake_count(session) == 1
-        assert "уже загружали" in telegram.sent[1]["text"]
+        assert "уже загружали" in telegram.sent[-1]["text"]
 
 
 async def test_cursor_moves_past_broken_message(
@@ -313,9 +319,35 @@ async def test_cursor_moves_past_broken_message(
         # Следующее сообщение того же прохода обработано, а не пропущено.
         assert result.get("linked") == 1
         assert await _intake_count(session) == 1
-        assert "пришлите его ещё раз" in telegram.sent[0]["text"]
+        texts = [message["text"] for message in telegram.sent]
+        assert "Файл получил" in texts[0]
+        assert any("пришлите его ещё раз" in text for text in texts)
         # Курсор ушёл за оба сообщения: следующий проход попросит уже 22.
         assert telegram_intake._next_offset == 22
+
+
+async def test_ocr_problem_is_reported_after_processing_started(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    settings_with_bot,
+) -> None:
+    """Если OCR не сработал, бот не зависает на «начал», а честно завершает разговор ошибкой."""
+
+    async def failed_ocr(content, *, mime, settings):  # noqa: ANN001, ARG001
+        return None, "vision_failed"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", failed_ocr)
+    telegram = FakeTelegram([[_photo_update(22)]], {"act": JPEG})
+    monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
+
+    async with async_session_factory() as session:
+        result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
+
+        assert result.get("needs_review") == 1
+        started, finished = telegram.sent
+        assert "Файл получил" in started["text"]
+        assert "Обработку закончил" in finished["text"]
+        assert "Не удалось прочитать текст со снимка" in finished["text"]
 
 
 def test_bot_token_never_reaches_the_log() -> None:
