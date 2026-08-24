@@ -20,15 +20,17 @@ MSK = ZoneInfo("Europe/Moscow")
 READ_ONLY_FIELDS = {"status", "productArticle", "priceWithoutVat", "sumWithoutVat", "producer"}
 
 
-def test_datetime_uses_dot_and_msk_offset() -> None:
+def test_datetime_compensates_cloud_shift_and_keeps_msk_offset() -> None:
     dt = datetime(2026, 6, 25, 16, 36, 0, tzinfo=MSK)
-    assert format_iiko_invoice_datetime(dt) == "2026-06-25T16:36:00.000+03:00"
+    # iiko Cloud вычитает +03:00 из самих цифр. 19:36+03 после его обработки станет
+    # требуемыми 16:36+03 в бэк-офисе.
+    assert format_iiko_invoice_datetime(dt) == "2026-06-25T19:36:00.000+03:00"
 
 
 def test_datetime_naive_treated_as_msk() -> None:
-    # Наивное время трактуется как МСК и получает offset +03:00 с ТОЧКОЙ перед мс.
+    # Наивное время трактуется как МСК; компенсация сохраняет московский offset.
     assert format_iiko_invoice_datetime(datetime(2026, 7, 9, 0, 0, 0)) == (
-        "2026-07-09T00:00:00.000+03:00"
+        "2026-07-09T03:00:00.000+03:00"
     )
 
 
@@ -68,8 +70,8 @@ def test_incoming_body_shape_and_dot_dates() -> None:
     body = build_invoice_body(_incoming_doc())
     assert body["organizationId"]
     assert body["counteragent"] == "7a867d7d-75c8-446a-83b2-04591efe7def"
-    assert body["date"] == "2026-06-25T16:36:00.000+03:00"
-    assert body["incomingDate"] == "2026-06-25T00:00:00.000+03:00"
+    assert body["date"] == "2026-06-25T19:36:00.000+03:00"
+    assert body["incomingDate"] == "2026-06-25T03:00:00.000+03:00"
     assert body["defaultStore"] == "8a55c561-2598-4150-ac28-1b03cf8a1835"
     assert body["number"] == "4-2"
     assert "documentId" not in body  # для create documentId не задаём

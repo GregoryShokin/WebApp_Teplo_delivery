@@ -6,7 +6,8 @@ c БД (резолвинг строк, гейт идемпотентности, 
 
 Контракт (проверен на живом API 09.07, спека ``/api-docs/docs``):
 - эндпоинты ``.../{incoming,outgoing}_invoice/{get,create,update,post,unpost,cancel,list}``;
-- даты ISO-8601 С ТОЧКОЙ (2026-06-25T16:36:00.000+03:00), НЕ запятая (не как в add_payment);
+- даты ISO-8601 С ТОЧКОЙ и московским offset. iiko Cloud ошибочно вычитает offset из цифр
+  времени, поэтому перед отправкой добавляем те же +03:00 (см. ``format_iiko_invoice_datetime``);
 - read-only поля (``status, productArticle, priceWithoutVat, sumWithoutVat, producer``) НЕ слать —
   ``create``/``update`` отвергают их 400; статусом рулят ``post``/``unpost``/``cancel``;
 - ``create`` возвращает ``documentId`` в теле ответа (легаси export-lookup больше не нужен);
@@ -20,7 +21,7 @@ from __future__ import annotations
 
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.services.iiko_cloud_client import iiko_cloud_call
@@ -41,12 +42,17 @@ def endpoint(direction: str, op: str) -> str:
 
 
 def format_iiko_invoice_datetime(dt: datetime) -> str:
-    """ISO-8601 с ТОЧКОЙ перед мс и offset — формат, который принимают эндпоинты накладных.
+    """Закодировать московское стенное время для дефектного datetime-контракта iiko Cloud.
 
-    Пример: ``2026-06-25T16:36:00.000+03:00``. Naive-время трактуем как МСК.
+    iiko не просто сохраняет присланное ``11:19+03:00``: оно вычитает offset и возвращает
+    ``08:19+03:00``. Чтобы в бэк-офисе осталось набранное оператором ``11:19``, передаём
+    ``14:19+03:00``. Наивное время считаем московским; aware-время сначала переводим в МСК.
+
+    Это не обычная конвертация часового пояса, а компенсация подтверждённого поведения Cloud.
+    Offset в payload остаётся московским. При смене контракта iiko эту компенсацию надо убрать.
     """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=_MSK)
+    dt = dt.replace(tzinfo=_MSK) if dt.tzinfo is None else dt.astimezone(_MSK)
+    dt += dt.utcoffset() or timedelta()
     base = dt.strftime("%Y-%m-%dT%H:%M:%S")
     millis = f"{dt.microsecond // 1000:03d}"
     offset = dt.strftime("%z")  # +0300

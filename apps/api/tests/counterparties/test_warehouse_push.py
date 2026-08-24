@@ -91,8 +91,9 @@ async def test_prepare_push_builds_incoming_cloud_body(
         body = build_invoice_body(prepared.doc)
         assert body["counteragent"] == "SUP-GUID-1"      # Cloud-поле партнёра (не <supplier>)
         assert body["defaultStore"] == "ST-1"
-        assert body["date"].endswith("+03:00") and "." in body["date"]   # ISO с точкой
-        assert body["incomingDate"].endswith("+03:00")
+        # 14:30 UTC = 17:30 МСК; шлём 20:30+03, потому что Cloud сам отнимет три часа.
+        assert body["date"] == "2026-06-15T20:30:00.000+03:00"
+        assert body["incomingDate"] == "2026-06-15T15:00:00.000+03:00"
         assert [it["product"] for it in body["items"]] == ["PROD-A"]
         # read-only полей нет
         assert READ_ONLY_FIELDS.isdisjoint(body.keys())
@@ -402,6 +403,14 @@ def _patch_transport(monkeypatch: pytest.MonkeyPatch) -> None:
 
 _RATE_LIMITED = (429, {"error": "TOO_MANY_REQUESTS"})
 _CREATE_BODY = {"number": "W-10", "date": "2026-06-15T14:30:00.000+03:00"}
+
+
+def test_probe_key_uses_business_day_when_timezone_compensation_crosses_midnight() -> None:
+    # Желаемые 23:30 МСК кодируются как 02:30+03 следующих суток; iiko после своего −03
+    # положит документ обратно на 24-е, и list должен искать именно там.
+    assert wip._probe_key(
+        {"number": "W-11", "date": "2026-08-25T02:30:00.000+03:00"}
+    ) == ("W-11", "2026-08-24")
 
 
 def test_post_document_accepts_processed_after_rate_limit(

@@ -359,7 +359,16 @@ def _probe_key(body: dict) -> tuple[str, str] | None:
     «``create`` не дошёл» от «дошёл, а ответ потерялся». Без номера (iiko нумерует сама) отличить
     нечем — и тогда повторять ``create`` нельзя вовсе."""
     number = str(body.get("number") or "")
-    day = str(body.get("date") or "")[:10]
+    raw_date = str(body.get("date") or "")
+    try:
+        # Форматтер добавляет московский offset к цифрам времени, потому что сам Cloud затем
+        # ошибочно вычитает его. Около полуночи дата payload уже следующая, а list искать надо
+        # по фактическому московскому дню документа. UTC-дата компенсированного значения как
+        # раз равна исходной дате стенного времени.
+        encoded = datetime.fromisoformat(raw_date)
+        day = encoded.astimezone(UTC).date().isoformat()
+    except ValueError:
+        day = raw_date[:10]
     return (number, day) if number and len(day) == 10 else None
 
 
