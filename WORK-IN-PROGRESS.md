@@ -25,6 +25,14 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-timezone — ветка `agent/timezone-iiko-moscow-time`
+- worktree: `../Teplo-agent-timezone`
+- compose: стенд не поднимаю; только точечные unit-тесты без общей БД
+- задача: исправить передачу времени чека «Местный закуп» в iiko с московским часовым поясом
+- трогает: `apps/api/app/services/iiko_invoice_cloud.py` и связанные точечные тесты накладных iiko
+- НЕ трогать другим: форматирование поля `date` исходящей накладной iiko Cloud
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
