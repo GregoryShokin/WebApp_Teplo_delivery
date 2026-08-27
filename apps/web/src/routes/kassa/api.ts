@@ -579,13 +579,14 @@ export async function cancelKassaAdvancePermission(advanceId: string): Promise<K
   return response.data;
 }
 
-// --- «Внесение в кассу» по пресетам ---------------------------------------------
+// --- «Внесение в кассу» по пресетам и разрешённым статьям ДДС -------------------
 
-/** Пресет внесения для формы кассира: имя + шаблон комментария (без статьи ДДС). */
+/** Вариант внесения: пресет либо приходная статья ДДС с флагом кассы. */
 export type KassaPayinPresetOption = {
   id: string;
   name: string;
   comment_template: string | null;
+  kind: "preset" | "article";
 };
 
 export type KassaPayinResult = {
@@ -599,7 +600,8 @@ export async function getKassaPayinPresets(): Promise<KassaPayinPresetOption[]> 
 }
 
 export async function createKassaPayin(payload: {
-  preset_id: string;
+  preset_id?: string;
+  article_id?: string;
   amount: number;
   comment?: string | null;
 }): Promise<KassaPayinResult> {

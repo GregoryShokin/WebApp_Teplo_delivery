@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.types import MoscowDateTime
 
@@ -495,19 +495,27 @@ class KassaPayoutResultRead(BaseModel):
 
 
 class KassaPayinPresetOptionRead(BaseModel):
-    """Пресет внесения для формы кассира: имя + шаблон комментария (без статьи ДДС)."""
+    """Вид внесения: именованный пресет или приходная статья, разрешённая в кассе."""
 
     id: uuid.UUID
     name: str
     comment_template: str | None = None
+    kind: str
 
 
 class KassaPayinCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    preset_id: uuid.UUID
+    preset_id: uuid.UUID | None = None
+    article_id: uuid.UUID | None = None
     amount: Decimal = Field(gt=0)
     comment: str | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_source(self) -> KassaPayinCreate:
+        if (self.preset_id is None) == (self.article_id is None):
+            raise ValueError("Нужно выбрать один вид внесения")
+        return self
 
 
 class KassaPayinUpdate(BaseModel):

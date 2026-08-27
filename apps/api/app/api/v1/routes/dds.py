@@ -154,6 +154,7 @@ from app.services.deposit_bank_draft import (
     allocation_deposit_draft,
     sync_deposit_after_allocation_change,
 )
+from app.services.kassa.payins import KassaPayinError, ensure_article_payin_eligible
 from app.services.kassa.payouts import (
     KassaPayoutError,
     ensure_article_kassa_eligible,
@@ -1158,12 +1159,15 @@ async def patch_article(
 
 
 def _ensure_kassa_flag_allowed(article: DdsArticle) -> None:
-    """Флаг «доступна в кассе» — только расходным статьям без своих контуров выдачи."""
+    """Флаг «доступна в кассе» — для ручных выплат и внесений без спецконтуров."""
     if not article.kassa_enabled:
         return
     try:
-        ensure_article_kassa_eligible(article)
-    except KassaPayoutError as exc:
+        if article.movement_type == "inflow":
+            ensure_article_payin_eligible(article)
+        else:
+            ensure_article_kassa_eligible(article)
+    except (KassaPayoutError, KassaPayinError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc

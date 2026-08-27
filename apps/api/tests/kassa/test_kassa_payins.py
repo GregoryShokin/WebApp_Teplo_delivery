@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
@@ -26,6 +26,7 @@ from app.services.kassa.payins import (
     ensure_article_payin_eligible,
     list_active_presets,
     list_all_presets,
+    list_payin_options,
     update_payin,
 )
 from app.services.kassa.payouts import (
@@ -49,13 +50,14 @@ async def _make_user(session: AsyncSession, *, name: str = "Кассир Тес�
 
 
 async def _make_inflow_article(
-    session: AsyncSession, *, activity_type: str = "operating"
+    session: AsyncSession, *, activity_type: str = "operating", kassa_enabled: bool = False
 ) -> DdsArticle:
     article = DdsArticle(
         code=f"prihod_test_{uuid.uuid4().hex[:6]}",
         name="Прочие поступления (тест)",
         movement_type="inflow",
         activity_type=activity_type,
+        kassa_enabled=kassa_enabled,
     )
     session.add(article)
     await session.flush()
@@ -145,6 +147,46 @@ async def test_payin_comment_falls_back_to_template(
         assert transaction is not None
         assert transaction.payment_purpose == "Плата за масло"
         assert transaction.counterparty_id is None
+
+
+async def test_kassa_enabled_inflow_article_is_direct_payin_option(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        user = await _make_user(session)
+        enabled = await _make_inflow_article(session, kassa_enabled=True)
+        disabled = await _make_inflow_article(session)
+        await session.commit()
+
+        options = await list_payin_options(session)
+        by_id = {item["id"]: item for item in options}
+        assert by_id[enabled.id]["kind"] == "article"
+        assert disabled.id not in by_id
+
+        result = await create_payin(
+            session,
+            article_id=enabled.id,
+            amount=Decimal("750"),
+            comment="Прямое внесение по статье",
+            actor_user_id=user.id,
+        )
+        transaction = await session.get(CashflowTransaction, result["transaction_id"])
+        assert transaction is not None
+        assert transaction.article_id == enabled.id
+        assert transaction.direction == "in"
+        assert transaction.payment_purpose == "Прямое внесение по статье"
+        assert result["preset_id"] is None
+
+
+async def test_direct_payin_rejects_article_without_kassa_flag(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        article = await _make_inflow_article(session)
+        await session.commit()
+
+        with pytest.raises(KassaPayinError, match="не разрешена"):
+            await create_payin(session, article_id=article.id, amount=Decimal("100"))
 
 
 # --------------------------------------------------------------------------- #

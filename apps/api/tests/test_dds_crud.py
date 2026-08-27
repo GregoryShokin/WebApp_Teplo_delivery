@@ -176,3 +176,33 @@ def test_articles_list_carries_asset_link_kind(client: TestClient) -> None:
     # И обратная сторона: обычная статья приходит с пустым признаком, а не с чужим.
     plain = next(item for item in listed.json() if item["code"] != "asset_kind_roundtrip")
     assert plain["asset_link_kind"] is None
+
+
+def test_inflow_article_can_be_enabled_in_kassa(client: TestClient) -> None:
+    headers = {"X-User-Role": "finance_manager"}
+    created = client.post(
+        "/api/v1/dds/articles",
+        headers=headers,
+        json={
+            "code": "cash_inflow_roundtrip",
+            "name": "Приход наличных (тест)",
+            "movement_type": "inflow",
+            "activity_type": "operating",
+            "kassa_enabled": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["kassa_enabled"] is True
+
+    technical = client.post(
+        "/api/v1/dds/articles",
+        headers=headers,
+        json={
+            "code": "cash_inflow_technical_rejected",
+            "name": "Служебный приход (тест)",
+            "movement_type": "inflow",
+            "activity_type": "technical",
+            "kassa_enabled": True,
+        },
+    )
+    assert technical.status_code == 422

@@ -441,16 +441,20 @@ function ArticleForm({
           <input
             checked={draft.kassa_enabled}
             className="h-4 w-4"
-            disabled={disabled || draft.movement_type !== "outflow"}
+            disabled={
+              disabled ||
+              (!draft.kassa_enabled &&
+                (draft.movement_type === "internal" ||
+                  (draft.movement_type === "inflow" && draft.activity_type === "technical")))
+            }
             onChange={(event) => setField("kassa_enabled", event.target.checked)}
             type="checkbox"
           />
           Доступна в кассе
         </label>
         <p className="text-xs text-muted-foreground">
-          Администратор сможет выдавать наличные по этой статье в форме «Выплата из кассы».
-          Только расходные статьи; статьям с собственными контурами выдачи (переводы, возврат
-          депозита курьера, зарплата) флаг не включить.
+          Расходная статья появится в форме «Выплата из кассы», приходная — в форме «Внести деньги».
+          Статьям с собственными контурами и служебным переводам флаг не включить.
         </p>
       </div>
     </div>

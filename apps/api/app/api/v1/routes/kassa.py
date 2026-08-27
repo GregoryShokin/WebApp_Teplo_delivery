@@ -82,8 +82,8 @@ from app.services.kassa.payins import (
     create_preset,
     delete_payin,
     delete_preset,
-    list_active_presets,
     list_all_presets,
+    list_payin_options,
     list_preset_articles,
     list_preset_counterparties,
     update_payin,
@@ -631,8 +631,8 @@ async def delete_payout_endpoint(
 async def list_payin_presets_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[dict]:
-    """Активные пресеты внесения для формы кассира (имя + шаблон комментария)."""
-    return await list_active_presets(session)
+    """Пресеты и разрешённые приходные статьи для формы внесения."""
+    return await list_payin_options(session)
 
 
 @router.post(
@@ -651,6 +651,7 @@ async def create_payin_endpoint(
         return await create_payin(
             session,
             preset_id=payload.preset_id,
+            article_id=payload.article_id,
             amount=payload.amount,
             comment=payload.comment,
             actor_user_id=actor.user_id,

@@ -1,9 +1,10 @@
-"""«Внесение в кассу» по именованным пресетам + каталог пресетов (ТК Черникова).
+"""«Внесение в кассу» по пресетам или разрешённым статьям ДДС (ТК Черникова).
 
-Кассир выбирает пресет по человеческому имени («Деньги за масло», «Приход от
-„В гостях у Алисы“»), а бэкенд подставляет статью ДДС, фиксированного контрагента и шаблон
-комментария и проводит приход на ТК Черникова (``CashflowTransaction`` с
-``direction='in'``, ``source_kind='kassa_payin'``). Никакой статьи ДДС кассир не видит.
+Кассир выбирает либо пресет по человеческому имени («Деньги за масло», «Приход от
+„В гостях у Алисы“»), либо приходную статью с флагом ``kassa_enabled``. Для пресета бэкенд
+подставляет статью ДДС, фиксированного контрагента и шаблон комментария. Оба варианта проводят
+приход на ТК Черникова (``CashflowTransaction`` с ``direction='in'``,
+``source_kind='kassa_payin'``).
 
 Пресеты v1 — контур ``income`` (голый приход по статье): просто приходная проводка, iiko
 и сверку смены НЕ трогаем. Каталог курирует владелец в «Настройках → Касса» (CRUD под
@@ -21,7 +22,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -136,6 +136,40 @@ async def list_active_presets(session: AsyncSession) -> list[dict[str, Any]]:
             "comment_template": preset.comment_template,
         }
         for preset in presets
+    ]
+
+
+async def list_payin_options(session: AsyncSession) -> list[dict[str, Any]]:
+    """Виды внесения для кассира: пресеты и разрешённые владельцем статьи ДДС.
+
+    Пресеты сохраняют расширенный сценарий с контрагентом и шаблоном комментария.
+    Приходная статья с ``kassa_enabled`` доступна напрямую — это симметрично списанию,
+    где тот же флаг показывает статью в форме выплаты.
+    """
+    presets = await list_active_presets(session)
+    articles = (
+        await session.scalars(
+            select(DdsArticle)
+            .where(
+                DdsArticle.kassa_enabled.is_(True),
+                DdsArticle.is_active.is_(True),
+                DdsArticle.movement_type == "inflow",
+                DdsArticle.activity_type != "technical",
+            )
+            .order_by(DdsArticle.name)
+        )
+    ).all()
+    return [
+        {**preset, "kind": "preset"}
+        for preset in presets
+    ] + [
+        {
+            "id": article.id,
+            "name": article.name,
+            "comment_template": None,
+            "kind": "article",
+        }
+        for article in articles
     ]
 
 
@@ -255,34 +289,41 @@ async def delete_preset(session: AsyncSession, *, preset_id: uuid.UUID) -> None:
 async def create_payin(
     session: AsyncSession,
     *,
-    preset_id: uuid.UUID,
+    preset_id: uuid.UUID | None = None,
+    article_id: uuid.UUID | None = None,
     amount: Decimal,
     comment: str | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    """Провести приход на ТК Черникова по пресету (дата — всегда сегодня).
+    """Провести приход на ТК Черникова по пресету или разрешённой статье.
 
-    Комментарий — введённый кассиром, иначе шаблон пресета. Статья ДДС и фиксированный
-    контрагент берутся из пресета; iiko и сверку смены не трогаем.
+    Комментарий — введённый кассиром, иначе шаблон пресета. У прямой статьи контрагента
+    и шаблона нет; iiko и сверку смены не трогаем. Дата — всегда сегодня.
     """
-    preset = await session.get(KassaPayinPreset, preset_id)
-    if preset is None or not preset.is_active:
+    if (preset_id is None) == (article_id is None):
+        raise KassaPayinError("Выберите один вид внесения")
+
+    preset = await session.get(KassaPayinPreset, preset_id) if preset_id is not None else None
+    if preset_id is not None and (preset is None or not preset.is_active):
         raise KassaPayinError("Пресет внесения не найден или выключен")
     amount = _money(amount)
     if amount <= 0:
         raise KassaPayinError("Сумма должна быть больше нуля")
-    # Статья пресета могла быть деактивирована владельцем после создания пресета.
-    await _validated_preset_article(session, preset.article_id)
+    resolved_article_id = preset.article_id if preset is not None else article_id
+    assert resolved_article_id is not None
+    article = await _validated_preset_article(session, resolved_article_id)
+    if preset is None and not article.kassa_enabled:
+        raise KassaPayinError("Статья не разрешена для внесения в кассу")
     wallet = await get_kassa_wallet(session)
-    purpose = (comment or "").strip() or preset.comment_template
+    purpose = (comment or "").strip() or (preset.comment_template if preset is not None else None)
 
     transaction = CashflowTransaction(
         wallet_id=wallet.id,
         direction="in",
         amount=amount,
         operation_date=kassa_today(),
-        article_id=preset.article_id,
-        counterparty_id=preset.counterparty_id,
+        article_id=resolved_article_id,
+        counterparty_id=preset.counterparty_id if preset is not None else None,
         source_kind=KASSA_PAYIN_SOURCE_KIND,
         payment_purpose=purpose,
         quality_status="final",
@@ -291,7 +332,10 @@ async def create_payin(
     session.add(transaction)
     await session.commit()
     await session.refresh(transaction)
-    return {"transaction_id": transaction.id, "preset_id": preset.id}
+    return {
+        "transaction_id": transaction.id,
+        "preset_id": preset.id if preset is not None else None,
+    }
 
 
 async def _own_today_payin(

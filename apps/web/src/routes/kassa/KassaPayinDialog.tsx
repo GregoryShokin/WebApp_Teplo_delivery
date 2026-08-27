@@ -43,11 +43,11 @@ type KassaPayinDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
-  /** null — новое внесение по пресету; иначе правка своей сегодняшней записи. */
+  /** null — новое внесение; иначе правка своей сегодняшней записи. */
   editTarget?: KassaPayinEditTarget | null;
 };
 
-/** Форма «Внести деньги»: кассир выбирает пресет по имени, бэкенд знает статью ДДС. */
+/** Форма «Внести деньги»: кассир выбирает пресет или разрешённую владельцем статью ДДС. */
 export function KassaPayinDialog({
   open,
   onOpenChange,
@@ -108,7 +108,9 @@ export function KassaPayinDialog({
         });
       }
       return createKassaPayin({
-        preset_id: presetId,
+        ...(preset?.kind === "article"
+          ? { article_id: preset.id }
+          : { preset_id: preset?.id ?? presetId }),
         amount: Number(amount),
         comment: trimmedComment,
       });
@@ -175,7 +177,8 @@ export function KassaPayinDialog({
               </Select>
               {!presetsQuery.isLoading && (presetsQuery.data ?? []).length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Виды внесений пока не заведены — их настраивает владелец в «Настройках → Касса».
+                  Нет доступных видов внесения — включите «Доступна в кассе» у приходной статьи ДДС
+                  или создайте пресет в «Настройках → Касса».
                 </p>
               ) : null}
             </div>
