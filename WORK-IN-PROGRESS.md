@@ -25,6 +25,16 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-loanpaydate — ветка `agent/loanpaydate-payroll-loan-dates`
+- worktree: `../Teplo-agent-loanpaydate`
+- compose: стенд пока не поднимаю; тестовая БД будет отдельной по свободному слоту
+- задача: исправить даты выдачи и первого удержания займа через зарплатную ведомость;
+  сделать сумму удержания, дату удержания, источник и дату выдачи обязательными без дефолтов
+- трогает: `apps/web/src/routes/payroll/advances-tab.tsx`, `apps/web/src/lib/api.ts`,
+  `apps/api/app/api/v1/routes/payroll_advances.py`, payroll advance services/tests
+- НЕ трогать другим: контракт создания займа и UI диалога «Авансы и займы»
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
