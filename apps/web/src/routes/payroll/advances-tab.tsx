@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, ChevronDown, CircleSlash, LoaderCircle, MoreHorizontal, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -64,12 +64,10 @@ export function PayrollAdvancesRoute() {
   const [kind, setKind] = useState<"advance" | "loan">("advance");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
-  // Выбранная ведомость для удержания займа «через ведомость» (индекс среди ближайших).
-  const [payslipIdx, setPayslipIdx] = useState(0);
   const [comment, setComment] = useState("");
   const [overrideCeiling, setOverrideCeiling] = useState(false);
-  const [issuedOn, setIssuedOn] = useState(todayIso);
-  const [walletId, setWalletId] = useState(PAYROLL_WALLET);
+  const [issuedOn, setIssuedOn] = useState("");
+  const [walletId, setWalletId] = useState("");
 
   const employeesQuery = useQuery({ queryKey: ["employees"], queryFn: () => getEmployees({}) });
   const employees = employeesQuery.data ?? [];
@@ -86,7 +84,7 @@ export function PayrollAdvancesRoute() {
   const availabilityQuery = useQuery({
     queryKey: ["payroll-advance-availability", issueEmployeeId, issuedOn],
     queryFn: () => getPayrollAdvanceAvailability(issueEmployeeId, issuedOn),
-    enabled: Boolean(issueEmployeeId) && dialogOpen,
+    enabled: Boolean(issueEmployeeId) && Boolean(issuedOn) && dialogOpen,
   });
   const availability = availabilityQuery.data ?? null;
   const available = availability?.available ?? 0;
@@ -98,7 +96,8 @@ export function PayrollAdvancesRoute() {
     enabled: dialogOpen,
   });
   const issueWallets = useMemo(() => issueWalletsQuery.data ?? [], [issueWalletsQuery.data]);
-  // Ведомости для удержания займа: все созданные нефинализированные и ближайшие по расписанию.
+  // Ведомости, через которые можно выдать заём: все созданные нефинализированные и
+  // ближайшие по расписанию. Выбранная дата выплаты становится датой выдачи займа.
   const payslipsQuery = useQuery({
     // Без сотрудника — недельное расписание по умолчанию (выплаты по вторникам); с
     // сотрудником — под его пайплайн (недельный/полумесячный).
@@ -106,12 +105,16 @@ export function PayrollAdvancesRoute() {
     queryFn: () => getUpcomingPayslips(issueEmployeeId || undefined),
     enabled: kind === "loan" && walletId === PAYROLL_WALLET && dialogOpen,
   });
-  const payslips = useMemo(() => payslipsQuery.data ?? [], [payslipsQuery.data]);
+  const payslips = useMemo(
+    () => (payslipsQuery.data ?? []).filter((payslip) => payslip.payout_date >= todayIso()),
+    [payslipsQuery.data],
+  );
   const amountNumber = numericAmount(amount);
   const overEarned = amountNumber > available;
   const isLoan = kind === "loan";
   const advanceOverEarned = kind === "advance" && overEarned;
-  const availabilityReady = Boolean(issueEmployeeId) && !availabilityQuery.isLoading;
+  const availabilityReady =
+    Boolean(issueEmployeeId) && Boolean(issuedOn) && !availabilityQuery.isLoading;
   // Заём в день выплаты: available уже 0, но справочно показываем полное заработанное.
   const earnedToDate = availability?.earned_to_date ?? 0;
   const loanReference = payoutReached ? earnedToDate : available;
@@ -119,38 +122,20 @@ export function PayrollAdvancesRoute() {
   // и не показываем payout-note про аванс при выбранном займе (к займу неприменима).
   const showAvailabilityNote =
     Boolean(availability?.note) && !(payoutReached && (isLoan || advanceOverEarned));
-  const isBackdated = issuedOn < todayIso();
+  const isBackdated = Boolean(issuedOn) && issuedOn < todayIso();
   const throughPayroll = walletId === PAYROLL_WALLET;
-  const selectedPayslip = payslips[payslipIdx] ?? payslips[0] ?? null;
+  const selectedPayslip = payslips.find((payslip) => payslip.payout_date === issuedOn) ?? null;
   // ТК Черникова сегодняшней датой = разрешение на выдачу через кассу (не мгновенно);
   // задним числом деньги уже выданы — остаётся мгновенная фиксация.
   const selectedWallet = issueWallets.find((wallet) => wallet.id === walletId) ?? null;
   const viaKassaPermission =
-    !throughPayroll && !isBackdated && selectedWallet?.code === KASSA_WALLET_CODE;
+    !throughPayroll && issuedOn === todayIso() && selectedWallet?.code === KASSA_WALLET_CODE;
 
-  // Аванс — это досрочная выдача уже заработанного ЖИВЫМИ деньгами (нал/банк). «Через
-  // ведомость» для аванса бессмысленно: деньги ушли бы вместе с ЗП в день выплаты, когда
-  // заработанное уже обнуляется выплатой. Поэтому канал «через ведомость» — только у займа;
-  // для аванса выбираем конкретный счёт (по умолчанию — первый доступный).
-  useEffect(() => {
-    if (kind === "advance" && walletId === PAYROLL_WALLET && issueWallets.length > 0) {
-      setWalletId(issueWallets[0].id);
-    }
-  }, [kind, walletId, issueWallets]);
-
-  // «Через ведомость»: выбор ведомости = с какой ЗП удерживать. Первая (ближайшая) →
-  // recovery_start пусто (с ближайшей); последующие → удержание с начала выбранного периода.
-  useEffect(() => {
-    if (!throughPayroll || payslips.length === 0) return;
-    const idx = payslipIdx < payslips.length ? payslipIdx : 0;
-    if (idx !== payslipIdx) setPayslipIdx(idx);
-    setRecoveryStartDate(idx === 0 ? "" : payslips[idx].period_start);
-  }, [throughPayroll, payslips, payslipIdx]);
-
-  // Дата ближайшей выплаты, из которой удержим (для «через ведомость» — выбранная).
-  const nearestPayoutLabel = throughPayroll
-    ? selectedPayslip
-      ? formatDate(selectedPayslip.payout_date)
+  // Для займа дата удержания задаётся независимо от даты/способа выдачи. Удержание
+  // попадёт в первую зарплату, дата выплаты которой не раньше выбранной даты.
+  const nearestPayoutLabel = isLoan
+    ? recoveryStartDate
+      ? formatDate(recoveryStartDate)
       : null
     : availability?.period_end
       ? formatDate(availability.period_end)
@@ -162,11 +147,10 @@ export function PayrollAdvancesRoute() {
     setKind("advance");
     setInstallmentAmount("");
     setRecoveryStartDate("");
-    setPayslipIdx(0);
     setComment("");
     setOverrideCeiling(false);
-    setIssuedOn(todayIso());
-    setWalletId(PAYROLL_WALLET);
+    setIssuedOn("");
+    setWalletId("");
   }
 
   const issueMutation = useMutation({
@@ -232,16 +216,24 @@ export function PayrollAdvancesRoute() {
     onError: (error) => toast.error(apiErrorMessage(error, "Не удалось списать")),
   });
 
-  // Будущей датой нельзя; прошлой — только с правом backdate.
-  const dateValid = issuedOn <= todayIso() && (canBackdate || !isBackdated);
-  // Задним числом деньги уже выданы — «через ведомость» недоступно, нужен конкретный счёт.
-  const walletValid = !isBackdated || !throughPayroll;
+  // Через ведомость допустима выбранная текущая/будущая дата зарплаты. С отдельного
+  // счёта будущей датой выдавать нельзя; прошлой — только с правом backdate.
+  const dateValid =
+    Boolean(issuedOn) &&
+    (throughPayroll ? !isBackdated : issuedOn <= todayIso()) &&
+    (canBackdate || !isBackdated);
+  const walletValid = throughPayroll ? selectedPayslip !== null : selectedWallet !== null;
+  const loanTermsValid =
+    numericAmount(installmentAmount) > 0 &&
+    Boolean(recoveryStartDate) &&
+    Boolean(issuedOn) &&
+    recoveryStartDate > issuedOn;
   const canSubmit =
     Boolean(issueEmployeeId) &&
     amountNumber > 0 &&
     dateValid &&
     walletValid &&
-    (isLoan ? canLoan : !overEarned);
+    (isLoan ? canLoan && loanTermsValid : !overEarned);
 
   const columns: Array<DataTableColumn<PayrollAdvance>> = [
     { key: "employee", header: "Сотрудник", cell: (row) => employeeName(row.employee_id) },
@@ -382,7 +374,13 @@ export function PayrollAdvancesRoute() {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setKind("advance")}
+                      onClick={() => {
+                        setKind("advance");
+                        if (walletId === PAYROLL_WALLET) {
+                          setWalletId("");
+                          setIssuedOn("");
+                        }
+                      }}
                       className={cn(
                         "rounded-md border py-2 text-center text-sm",
                         !isLoan
@@ -414,7 +412,11 @@ export function PayrollAdvancesRoute() {
                     placeholder="Сумма, ₽"
                   />
                   {issueEmployeeId ? (
-                    availabilityQuery.isLoading ? (
+                    !issuedOn ? (
+                      <span className="text-xs text-muted-foreground">
+                        Выберите счёт и дату выдачи, чтобы рассчитать заработанное.
+                      </span>
+                    ) : availabilityQuery.isLoading ? (
                       <span className="text-xs text-muted-foreground">Считаем заработанное…</span>
                     ) : (
                       // Сумма показывается ВСЕГДА, нота — пояснением под ней. Раньше нота
@@ -453,9 +455,7 @@ export function PayrollAdvancesRoute() {
                     <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Как удержать
                     </span>
-                    <div
-                      className={cn("grid gap-2", throughPayroll ? "grid-cols-1" : "grid-cols-2")}
-                    >
+                    <div className="grid grid-cols-2 gap-2">
                       <Label className="grid gap-1.5">
                         <span className="text-sm">Удержание за период</span>
                         <Input
@@ -463,21 +463,24 @@ export function PayrollAdvancesRoute() {
                           inputMode="decimal"
                           value={installmentAmount}
                           onChange={(event) => setInstallmentAmount(event.target.value)}
-                          placeholder="весь заём сразу"
+                          placeholder="Укажите сумму"
                         />
                       </Label>
-                      {/* «Через ведомость» задаёт старт удержания через выбор ведомости ниже. */}
-                      {throughPayroll ? null : (
-                        <Label className="grid gap-1.5">
-                          <span className="text-sm">Удерживать с</span>
-                          <Input
-                            type="date"
-                            value={recoveryStartDate}
-                            onChange={(event) => setRecoveryStartDate(event.target.value)}
-                          />
-                        </Label>
-                      )}
+                      <Label className="grid gap-1.5">
+                        <span className="text-sm">Удерживать с</span>
+                        <Input
+                          type="date"
+                          value={recoveryStartDate}
+                          min={issuedOn ? nextIsoDate(issuedOn) : undefined}
+                          onChange={(event) => setRecoveryStartDate(event.target.value)}
+                        />
+                      </Label>
                     </div>
+                    {issuedOn && recoveryStartDate && recoveryStartDate <= issuedOn ? (
+                      <div className="text-xs text-amber-600">
+                        Дата первого удержания должна быть позже даты выдачи.
+                      </div>
+                    ) : null}
                     {canLoan ? null : (
                       <div className="text-xs text-amber-600">У вас нет права на выдачу займов.</div>
                     )}
@@ -503,11 +506,13 @@ export function PayrollAdvancesRoute() {
                         <select
                           className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm disabled:opacity-50"
                           value={walletId}
-                          onChange={(event) => setWalletId(event.target.value)}
+                          onChange={(event) => {
+                            setWalletId(event.target.value);
+                            setIssuedOn("");
+                          }}
                         >
-                          {isLoan && !isBackdated ? (
-                            <option value={PAYROLL_WALLET}>Через ведомость</option>
-                          ) : null}
+                          <option value="">Выберите счёт</option>
+                          {isLoan ? <option value={PAYROLL_WALLET}>Через ведомость</option> : null}
                           {issueWallets.map((wallet) => (
                             <option key={wallet.id} value={wallet.id}>
                               {wallet.name}
@@ -523,26 +528,27 @@ export function PayrollAdvancesRoute() {
                     </Label>
                     {throughPayroll ? (
                       <Label className="grid gap-1.5">
-                        <span className="text-sm">Удержать из ЗП</span>
+                        <span className="text-sm">Дата выдачи</span>
                         <div className="relative">
                           <select
                             className="h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm disabled:opacity-50"
-                            value={payslipIdx}
-                            disabled={payslips.length === 0}
-                            onChange={(event) => setPayslipIdx(Number(event.target.value))}
+                            value={issuedOn}
+                            disabled={payslipsQuery.isLoading || payslips.length === 0}
+                            onChange={(event) => setIssuedOn(event.target.value)}
                           >
-                            {payslips.length === 0 ? (
-                              <option value={0}>
-                                {payslipsQuery.isLoading ? "Загрузка…" : "Нет ближайших ведомостей"}
+                            <option value="">
+                              {payslipsQuery.isLoading
+                                ? "Загрузка…"
+                                : payslips.length === 0
+                                  ? "Нет доступных ведомостей"
+                                  : "Выберите ведомость"}
+                            </option>
+                            {payslips.map((payslip, idx) => (
+                              <option key={payslip.payout_date} value={payslip.payout_date}>
+                                ЗП {formatDate(payslip.payout_date)}
+                                {idx === 0 ? " (ближайшая)" : ""}
                               </option>
-                            ) : (
-                              payslips.map((payslip, idx) => (
-                                <option key={payslip.payout_date} value={idx}>
-                                  ЗП {formatDate(payslip.payout_date)}
-                                  {idx === 0 ? " (ближайшая)" : ""}
-                                </option>
-                              ))
-                            )}
+                            ))}
                           </select>
                           <ChevronDown
                             className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -558,17 +564,7 @@ export function PayrollAdvancesRoute() {
                           value={issuedOn}
                           max={todayIso()}
                           min={canBackdate ? undefined : todayIso()}
-                          onChange={(event) => {
-                            const value = event.target.value || todayIso();
-                            setIssuedOn(value);
-                            if (
-                              value < todayIso() &&
-                              walletId === PAYROLL_WALLET &&
-                              issueWallets.length > 0
-                            ) {
-                              setWalletId(issueWallets[0].id);
-                            }
-                          }}
+                          onChange={(event) => setIssuedOn(event.target.value)}
                         />
                       </Label>
                     )}
@@ -632,12 +628,12 @@ export function PayrollAdvancesRoute() {
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-muted-foreground">Удержим из</span>
                         <span className="text-right">
-                          {nearestPayoutLabel ? `ЗП ${nearestPayoutLabel}` : "ближайшей ЗП"}
+                          {nearestPayoutLabel ? `ЗП ${nearestPayoutLabel}` : "—"}
                         </span>
                       </div>
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-muted-foreground">{isLoan ? "Оформлен" : "Выдан"}</span>
-                        <span className="text-right">{formatDate(issuedOn)}</span>
+                        <span className="text-right">{issuedOn ? formatDate(issuedOn) : "—"}</span>
                       </div>
                     </div>
                     {availabilityReady && advanceOverEarned ? (
@@ -682,6 +678,12 @@ export function PayrollAdvancesRoute() {
 function todayIso() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function nextIsoDate(value: string) {
+  const next = new Date(`${value}T00:00:00`);
+  next.setDate(next.getDate() + 1);
+  return new Date(next.getTime() - next.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 function formatMoney(value: number) {

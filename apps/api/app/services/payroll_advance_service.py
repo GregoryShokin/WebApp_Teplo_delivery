@@ -775,7 +775,7 @@ async def set_advance_recovery_deferral(
     """Отсрочить (или вернуть) удержание займа в конкретной ведомости.
 
     Отсрочка освобождает заём от удержания в этой выплате: `recovery_start_date`
-    сдвигается за конец периода ведомости, поэтому в текущей ведомости заём не
+    сдвигается за дату выплаты ведомости, поэтому в текущей ведомости заём не
     гасится, а догашение продолжается со следующей. «Вернуть» обнуляет дату.
     Вызывающий код обязан после этого пересчитать ведомость.
     """
@@ -802,7 +802,7 @@ async def set_advance_recovery_deferral(
     if (advance.role in admin_payroll_positions()) != admin:
         raise PayrollConflictError("Этот заём гасится в другой ведомости")
 
-    advance.recovery_start_date = (period.end_date + timedelta(days=1)) if defer else None
+    advance.recovery_start_date = (period.payroll_date + timedelta(days=1)) if defer else None
     session.add(
         PayrollRunEvent(
             run_id=run.id,
@@ -939,7 +939,7 @@ async def get_employee_recovery_detail(
     accrued = net + recovered_now
 
     advances_by_emp = await _outstanding_advances(
-        session, {employee_id}, admin=admin, period_end=period.end_date
+        session, {employee_id}, admin=admin, payout_date=period.payroll_date
     )
     advances = advances_by_emp.get(employee_id, [])
     overrides = await _recovery_overrides(session, period.id)

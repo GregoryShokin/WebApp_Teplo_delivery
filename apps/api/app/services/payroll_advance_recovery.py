@@ -46,7 +46,7 @@ async def _outstanding_advances(
     employee_ids: set[uuid.UUID],
     *,
     admin: bool,
-    period_end,
+    payout_date,
 ) -> dict[uuid.UUID, list[SalaryAdvance]]:
     if not employee_ids:
         return {}
@@ -56,7 +56,8 @@ async def _outstanding_advances(
             .where(
                 SalaryAdvance.employee_id.in_(employee_ids),
                 SalaryAdvance.status == "issued",
-                SalaryAdvance.issued_on <= period_end,
+                # Выданный вместе с этой зарплатой заём нельзя тут же удержать из неё.
+                SalaryAdvance.issued_on < payout_date,
             )
             .order_by(SalaryAdvance.issued_on, SalaryAdvance.created_at)
         )
@@ -68,8 +69,9 @@ async def _outstanding_advances(
             continue
         if decimal(advance.recovered_amount) >= decimal(advance.amount):
             continue
-        # Отложенное удержание: заём не гасится, пока ведомость раньше даты старта.
-        if advance.recovery_start_date is not None and advance.recovery_start_date > period_end:
+        # Дата старта относится к дате ВЫПЛАТЫ зарплаты, а не к концу оплачиваемого
+        # периода. Например, старт 08.09 включает ведомость с выплатой 08.09.
+        if advance.recovery_start_date is not None and advance.recovery_start_date > payout_date:
             continue
         by_emp[advance.employee_id].append(advance)
     return by_emp
@@ -103,7 +105,7 @@ async def apply_advance_recoveries(
         session,
         {line.employee_id for line in lines},
         admin=admin,
-        period_end=period.end_date,
+        payout_date=period.payroll_date,
     )
     if not advances_by_emp:
         return {"advance_recovery_count": 0, "advance_recovered_total": money(Decimal("0"))}
@@ -335,7 +337,7 @@ async def run_has_unaccounted_advances(
     candidates: dict[uuid.UUID, SalaryAdvance] = {}
     for group in (
         await _outstanding_advances(
-            session, employee_ids, admin=admin, period_end=period.end_date
+            session, employee_ids, admin=admin, payout_date=period.payroll_date
         ),
         await _payroll_advance_issuances(
             session, employee_ids, admin=admin, payout_date=period.payroll_date

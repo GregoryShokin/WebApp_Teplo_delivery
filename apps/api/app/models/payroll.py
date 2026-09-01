@@ -1219,7 +1219,8 @@ class SalaryAdvance(Base):
     Заём: `kind='loan'`, `installments_count=N`, `per_installment_amount≈amount/N`.
 
     Заём можно выдать и в пределах заработанного (явный выбор типа), и отложить
-    начало удержания через `recovery_start_date` (NULL = с ближайшей ведомости).
+    начало удержания через `recovery_start_date`: это первая допустимая дата
+    выплаты зарплаты, а не граница оплачиваемого периода.
     """
 
     __tablename__ = "salary_advance"
@@ -1245,7 +1246,7 @@ class SalaryAdvance(Base):
         ),
         CheckConstraint(
             "payout_method is null or payout_method in "
-            "('business_card', 'cash', 'transfer', 'other')",
+            "('business_card', 'cash', 'transfer', 'other', 'payroll')",
             name="ck_salary_advance_payout_method",
         ),
         Index("ix_salary_advance_employee_status", "employee_id", "status"),

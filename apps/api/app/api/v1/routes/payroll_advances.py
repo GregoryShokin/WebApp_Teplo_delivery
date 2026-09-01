@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -136,6 +136,28 @@ class AdvanceIssueRequest(BaseModel):
     comment: str | None = None
     # Превышение потолка займа (требует права B + подтверждения в UI).
     override_ceiling: bool = False
+
+    @model_validator(mode="after")
+    def validate_explicit_loan_terms(self) -> AdvanceIssueRequest:
+        """Явный заём нельзя создать с неявными условиями выдачи/погашения."""
+        if self.payout_method == "payroll" and self.kind != "loan":
+            raise ValueError("Через зарплатную ведомость можно выдать только явный заём")
+        if self.kind != "loan":
+            return self
+        if self.issued_on is None:
+            raise ValueError("Для займа укажите дату выдачи")
+        if self.installment_amount is None:
+            raise ValueError("Для займа укажите сумму удержания за период")
+        if self.recovery_start_date is None:
+            raise ValueError("Для займа укажите дату первого удержания")
+        if self.payout_method == "payroll":
+            if self.wallet_id is not None:
+                raise ValueError("Для выдачи через ведомость отдельный счёт не выбирается")
+        elif self.wallet_id is None:
+            raise ValueError("Для займа выберите счёт выдачи или выдачу через ведомость")
+        if self.recovery_start_date <= self.issued_on:
+            raise ValueError("Дата первого удержания должна быть позже даты выдачи")
+        return self
 
 
 class WriteOffRequest(BaseModel):
@@ -302,13 +324,30 @@ async def post_advance(
 ) -> AdvanceRead:
     employee = await _require_employee(session, payload.employee_id)
     today = datetime.now(_MOSCOW_TZ).date()
-    # Будущей датой нельзя никому; прошлой — только по отдельному праву backdate;
-    # сегодняшней/без даты — по обычному праву выдачи (проверяется ниже по пайплайну).
-    if payload.issued_on is not None and payload.issued_on > today:
+    # Будущая дата допустима только для займа, который будет выдан выбранной зарплатной
+    # ведомостью. Для отдельного счёта будущую выдачу проводить нельзя.
+    if (
+        payload.issued_on is not None
+        and payload.issued_on > today
+        and payload.payout_method != "payroll"
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Нельзя провести выдачу будущей датой",
         )
+    if payload.payout_method == "payroll" and payload.issued_on is not None:
+        if payload.issued_on < today:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Через ведомость нельзя выдать заём прошедшей датой",
+            )
+        payslips = await upcoming_payslips(session, employee, today, count=6)
+        payout_dates = {payout_date for _, _, payout_date in payslips}
+        if payload.issued_on not in payout_dates:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Выберите доступную зарплатную ведомость для выдачи займа",
+            )
     if payload.issued_on is not None and payload.issued_on < today:
         ensure_permission(actor, _BACKDATE)
     permission_date = payload.issued_on or today

@@ -303,6 +303,14 @@ function todayInput(): string {
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
+function nextDateInput(value: string): string {
+  const next = new Date(`${value}T00:00:00`);
+  next.setDate(next.getDate() + 1);
+  const month = String(next.getMonth() + 1).padStart(2, "0");
+  const day = String(next.getDate()).padStart(2, "0");
+  return `${next.getFullYear()}-${month}-${day}`;
+}
+
 export function NewPaymentDialog({
   open,
   onOpenChange,
@@ -2541,23 +2549,18 @@ function AdvanceForm({
   const [employeeId, setEmployeeId] = useState("");
   const [amount, setAmount] = useState("");
   const [walletId, setWalletId] = useState("");
+  const [issuedOn, setIssuedOn] = useState("");
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [recoveryStartDate, setRecoveryStartDate] = useState("");
   const [overrideCeiling, setOverrideCeiling] = useState(false);
   const [comment, setComment] = useState("");
 
-  const dirty = amountOf(amount) > 0 || Boolean(employeeId);
+  const dirty =
+    amountOf(amount) > 0 || Boolean(employeeId) || Boolean(walletId) || Boolean(issuedOn);
   useEffect(() => {
     onDirty(dirty);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty]);
-
-  const tbankWallet = wallets.find((wallet) => wallet.bank_code === "tbank") ?? null;
-  useEffect(() => {
-    if (!walletId && tbankWallet) {
-      setWalletId(tbankWallet.id);
-    }
-  }, [walletId, tbankWallet]);
 
   const employeeOptions: ComboboxOption[] = employees.map((employee) => ({
     value: employee.id,
@@ -2565,9 +2568,9 @@ function AdvanceForm({
   }));
 
   const availabilityQuery = useQuery({
-    queryKey: ["payroll-advance-availability", employeeId],
-    queryFn: () => getPayrollAdvanceAvailability(employeeId),
-    enabled: active && Boolean(employeeId),
+    queryKey: ["payroll-advance-availability", employeeId, issuedOn],
+    queryFn: () => getPayrollAdvanceAvailability(employeeId, issuedOn),
+    enabled: active && Boolean(employeeId) && Boolean(issuedOn),
   });
   const available = availabilityQuery.data?.available ?? 0;
   // День выплаты: available уже 0 и причина — не «больше заработанного», а наступивший
@@ -2583,7 +2586,19 @@ function AdvanceForm({
     numericAmount > available;
 
   const isLoan = kind === "loan";
-  const canSubmit = Boolean(employeeId) && Boolean(walletId) && numericAmount > 0 && !overAvailable;
+  const loanTermsValid =
+    amountOf(installmentAmount) > 0 &&
+    Boolean(recoveryStartDate) &&
+    Boolean(issuedOn) &&
+    recoveryStartDate > issuedOn;
+  const canSubmit =
+    Boolean(employeeId) &&
+    Boolean(walletId) &&
+    Boolean(issuedOn) &&
+    issuedOn <= todayInput() &&
+    numericAmount > 0 &&
+    !overAvailable &&
+    (!isLoan || (canLoan && loanTermsValid));
   const selectedWallet = wallets.find((wallet) => wallet.id === walletId) ?? null;
 
   const mutation = useMutation({
@@ -2593,6 +2608,7 @@ function AdvanceForm({
         // Та же нормализация, что в валидации: «5 000,50» → «5000.50».
         amount: amountStr(amount),
         kind,
+        issued_on: issuedOn,
         wallet_id: walletId,
         installment_amount:
           isLoan && installmentAmount.trim() ? amountStr(installmentAmount) : undefined,
@@ -2617,7 +2633,19 @@ function AdvanceForm({
   let summary: string;
   if (!selectedWallet) {
     tone = "warning";
-    summary = "Выберите счёт списания.";
+    summary = "Выберите счёт выдачи.";
+  } else if (!issuedOn) {
+    tone = "warning";
+    summary = "Укажите дату выдачи.";
+  } else if (isLoan && amountOf(installmentAmount) <= 0) {
+    tone = "warning";
+    summary = "Укажите сумму удержания за период.";
+  } else if (isLoan && !recoveryStartDate) {
+    tone = "warning";
+    summary = "Укажите дату первого удержания займа.";
+  } else if (isLoan && recoveryStartDate <= issuedOn) {
+    tone = "warning";
+    summary = "Первое удержание должно быть позже даты выдачи.";
   } else if (overAvailable) {
     tone = "warning";
     const loanHint = canLoan
@@ -2713,7 +2741,7 @@ function AdvanceForm({
         ) : null}
 
         <SourcePicker
-          label="Счёт списания"
+          label="Счёт выдачи"
           wallets={wallets}
           value={walletId}
           onChange={setWalletId}
@@ -2736,15 +2764,25 @@ function AdvanceForm({
             />
           </Label>
           <Label className="block space-y-1">
-            <span className="text-sm">Комментарий</span>
+            <span className="text-sm">Дата выдачи</span>
             <Input
-              maxLength={210}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Необязательно"
-              value={comment}
+              max={todayInput()}
+              onChange={(event) => setIssuedOn(event.target.value)}
+              type="date"
+              value={issuedOn}
             />
           </Label>
         </div>
+
+        <Label className="block space-y-1">
+          <span className="text-sm">Комментарий</span>
+          <Input
+            maxLength={210}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="Необязательно"
+            value={comment}
+          />
+        </Label>
 
         {isLoan ? (
           <>
@@ -2754,13 +2792,14 @@ function AdvanceForm({
                 <Input
                   inputMode="decimal"
                   onChange={(event) => setInstallmentAmount(event.target.value)}
-                  placeholder="Пусто — весь заём разом"
+                  placeholder="Укажите сумму"
                   value={installmentAmount}
                 />
               </Label>
               <Label className="block space-y-1">
                 <span className="text-sm">Удерживать с выплаты</span>
                 <Input
+                  min={issuedOn ? nextDateInput(issuedOn) : undefined}
                   onChange={(event) => setRecoveryStartDate(event.target.value)}
                   type="date"
                   value={recoveryStartDate}

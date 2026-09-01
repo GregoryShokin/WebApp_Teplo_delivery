@@ -508,7 +508,7 @@ export function PayrollAdminRunDetailRoute({ runId, onNavigate }: PayrollAdminRu
         isLoading={linesQuery.isLoading || runQuery.isLoading}
         lines={lines}
         loans={loans}
-        periodEnd={run?.period?.end_date}
+        payoutDate={run?.period?.payroll_date}
         periodLabel={run?.period ? formatPeriodRange(run.period) : ""}
         runId={runId}
       />
@@ -525,7 +525,7 @@ function AdminLinesTable({
   isLoading,
   lines,
   loans,
-  periodEnd,
+  payoutDate,
   periodLabel,
   runId,
 }: {
@@ -537,7 +537,7 @@ function AdminLinesTable({
   isLoading: boolean;
   lines: PayrollLine[];
   loans: PayrollAdvance[];
-  periodEnd?: string;
+  payoutDate?: string;
   periodLabel: string;
   runId: string;
 }) {
@@ -813,7 +813,7 @@ function AdminLinesTable({
           canDefer={canDeferLoans}
           line={row.line}
           loans={loansByEmployee.get(row.line.employee_id) ?? []}
-          periodEnd={periodEnd}
+          payoutDate={payoutDate}
           runId={runId}
         />
       ),
@@ -1076,13 +1076,13 @@ function LoanRecoveryCell({
   canDefer,
   line,
   loans,
-  periodEnd,
+  payoutDate,
   runId,
 }: {
   canDefer: boolean;
   line: PayrollLine;
   loans: PayrollAdvance[];
-  periodEnd?: string;
+  payoutDate?: string;
   runId: string;
 }) {
   const queryClient = useQueryClient();
@@ -1090,9 +1090,9 @@ function LoanRecoveryCell({
   // Удерживается всё (аванс + заём), но отсрочить можно только заём.
   const total = recoveries.reduce((sum, item) => sum + item.amount, 0);
   const loanRecoveries = recoveries.filter((item) => item.kind === "loan" && item.advanceId);
-  const deferredLoans = periodEnd
+  const deferredLoans = payoutDate
     ? loans.filter(
-        (loan) => loan.recovery_start_date !== null && loan.recovery_start_date > periodEnd,
+        (loan) => loan.recovery_start_date !== null && loan.recovery_start_date > payoutDate,
       )
     : [];
 
