@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Banknote,
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -53,10 +54,12 @@ import {
   cancelScheduledDepositPayout,
   createPayrollRun,
   createRunBankDraft,
+  deferPayrollAdvanceRecovery,
   finalizePayrollRun,
   getEmployees,
   getPayrollRun,
   getPayrollRunLines,
+  getPayrollAdvances,
   getRunBankDraft,
   getRunFundingSources,
   getRunPayoutAllocation,
@@ -73,6 +76,7 @@ import {
   type PayrollCashWalletCode,
   type PayrollFundingSource,
   type PayrollLine,
+  type PayrollAdvance,
   type PayrollPaymentMethod,
   type RunPayoutDelta,
 } from "@/lib/api";
@@ -89,7 +93,7 @@ import {
 } from "./runs";
 import { PayrollPayoutWalletCorrectionButton } from "./payout-wallet-correction-dialog";
 import { CashPayoutSourcePicker, type PayrollCashChannelPerms } from "./cash-payout-source-picker";
-import { extractPayrollRounding } from "./admin-payslip-utils";
+import { extractPayrollRounding, extractRecoveries } from "./admin-payslip-utils";
 
 type PayrollRunDetailRouteProps = {
   runId: string;
@@ -97,6 +101,7 @@ type PayrollRunDetailRouteProps = {
 };
 
 type PayrollLineRowModel = {
+  selectionKey: string;
   // Для двуролевого повара `line` — синтетическая объединённая строка (суммы сложены,
   // per-employee поля взяты один раз). `roles` — производственные роли для чипов.
   line: PayrollLine;
@@ -122,6 +127,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
   const permissions = usePermissions();
   const canRecalculate = permissions.canPerformAction("payroll.runs.recalculate");
   const canEditDeposits = permissions.hasPermission("payroll.production_deposits.edit");
+  const canDeferLoans = permissions.hasPermission("payroll.loans.issue");
+  const canReadAdvances = permissions.hasPermission("payroll.advances.read");
   const canFinalizeRuns = permissions.canPerformAction("payroll.runs.finalize");
   const canReopenRuns = permissions.canPerformAction("payroll.runs.reopen");
   const canMarkPaid = permissions.canPerformAction("payroll.runs.mark_paid");
@@ -273,7 +280,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
     // Ошибки финализации несут ДЕЙСТВИЕ («пересчитайте ведомость»), а axios отдаёт лишь
     // «Request failed with status code 409» — вытаскиваем detail, как везде в файле.
     onError: (mutationError) =>
-      toast.error(apiErrorMessage(mutationError, 'Не удалось финализировать ведомость')),
+      toast.error(apiErrorMessage(mutationError, "Не удалось финализировать ведомость")),
   });
 
   const unfinalizeMutation = useMutation({
@@ -624,6 +631,8 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
 
       <section className="space-y-3">
         <PayrollPaymentsTable
+          canDeferLoans={canDeferLoans && !isFinal && !isLegacyRun}
+          canReadAdvances={canReadAdvances}
           channelPerms={payoutChannelPerms}
           canManagePayments={canManagePayments}
           canEditDeposits={canEditDeposits}
@@ -635,6 +644,7 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
           lines={lines}
           onCancelDepositPayout={(employeeId) => cancelDepositPayoutMutation.mutate(employeeId)}
           periodLabel={run?.period ? formatPeriodRange(run.period) : ""}
+          payoutDate={run?.period?.payroll_date}
           runId={runId}
           runStatus={run?.status ?? ""}
         />
@@ -932,6 +942,8 @@ function PayoutSplitDialog({
 }
 
 function PayrollPaymentsTable({
+  canDeferLoans,
+  canReadAdvances,
   canManagePayments,
   canEditDeposits,
   cancelDepositPayoutPending,
@@ -941,9 +953,12 @@ function PayrollPaymentsTable({
   lines,
   onCancelDepositPayout,
   periodLabel,
+  payoutDate,
   runId,
   runStatus,
 }: {
+  canDeferLoans: boolean;
+  canReadAdvances: boolean;
   canManagePayments: boolean;
   canEditDeposits: boolean;
   cancelDepositPayoutPending: boolean;
@@ -953,12 +968,13 @@ function PayrollPaymentsTable({
   lines: PayrollLine[];
   onCancelDepositPayout: (employeeId: string) => void;
   periodLabel: string;
+  payoutDate?: string;
   runId: string;
   runStatus: string;
 }) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "partial" | "paid">("all");
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [selectedLineKey, setSelectedLineKey] = useState<string | null>(null);
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkWalletCode, setBulkWalletCode] = useState<PayrollCashWalletCode | null>(null);
@@ -987,6 +1003,7 @@ function PayrollPaymentsTable({
       const line = mergeEmployeeLines(groupLines);
       const employee = employeesById.get(line.employee_id);
       return {
+        selectionKey: groupKey,
         line,
         employee,
         employeeName: employee?.full_name ?? "Сотрудник требует настройки",
@@ -1060,7 +1077,15 @@ function PayrollPaymentsTable({
     { accrued: 0, payable: 0, remaining: 0 },
   );
 
-  const selectedLine = rows.find((row) => row.line.id === selectedLineId) ?? null;
+  const selectedLine = rows.find((row) => row.selectionKey === selectedLineKey) ?? null;
+  const loansQuery = useQuery({
+    queryKey: ["payroll-advances", selectedLine?.line.employee_id],
+    queryFn: () => getPayrollAdvances(selectedLine?.line.employee_id),
+    enabled: Boolean(selectedLine) && canReadAdvances,
+  });
+  const employeeLoans = (loansQuery.data ?? []).filter(
+    (advance) => advance.kind === "loan" && advance.status === "issued",
+  );
   const selectedAmount = normalizeMoney(
     rows
       .filter((row) => selectedEmployeeIds.has(row.line.employee_id))
@@ -1230,7 +1255,7 @@ function PayrollPaymentsTable({
                           isPaid && "opacity-70",
                         )}
                         key={row.line.id}
-                        onClick={() => setSelectedLineId(row.line.id)}
+                        onClick={() => setSelectedLineKey(row.selectionKey)}
                       >
                         {canManagePayments ? (
                           <td className="px-3 py-3">
@@ -1298,18 +1323,21 @@ function PayrollPaymentsTable({
       <Dialog
         open={Boolean(selectedLine)}
         onOpenChange={(open) => {
-          if (!open) setSelectedLineId(null);
+          if (!open) setSelectedLineKey(null);
         }}
       >
         <DialogContent className="max-w-5xl">
           {selectedLine ? (
             <PayrollLineDialogContent
+              canDeferLoans={canDeferLoans}
               canEditDeposits={canEditDeposits}
               canManagePayments={canManagePayments}
               cancelDepositPayoutPending={cancelDepositPayoutPending}
               channelPerms={channelPerms}
               onCancelDepositPayout={() => onCancelDepositPayout(selectedLine.line.employee_id)}
               periodLabel={periodLabel}
+              payoutDate={payoutDate}
+              loans={employeeLoans}
               row={selectedLine}
               runStatus={runStatus}
             />
@@ -2362,21 +2390,27 @@ function BlockingIssue({
 }
 
 function PayrollLineDialogContent({
+  canDeferLoans,
   canEditDeposits,
   canManagePayments,
   cancelDepositPayoutPending,
   channelPerms,
   onCancelDepositPayout,
   periodLabel,
+  payoutDate,
+  loans,
   row,
   runStatus,
 }: {
+  canDeferLoans: boolean;
   canEditDeposits: boolean;
   canManagePayments: boolean;
   cancelDepositPayoutPending: boolean;
   channelPerms: PayrollCashChannelPerms;
   onCancelDepositPayout: () => void;
   periodLabel: string;
+  payoutDate?: string;
+  loans: PayrollAdvance[];
   row: PayrollLineRowModel;
   runStatus: string;
 }) {
@@ -2460,6 +2494,13 @@ function PayrollLineDialogContent({
         items={adjustments.penalties}
         kind="deduction"
         title="Штрафы и удержания"
+      />
+
+      <LoanDeferralControl
+        canDefer={canDeferLoans && !runIsFinal}
+        line={row.line}
+        loans={loans}
+        payoutDate={payoutDate}
       />
 
       <section className="space-y-3">
@@ -2572,6 +2613,135 @@ function PayrollLineDialogContent({
         />
       </section>
     </div>
+  );
+}
+
+function LoanDeferralControl({
+  canDefer,
+  line,
+  loans,
+  payoutDate,
+}: {
+  canDefer: boolean;
+  line: PayrollLine;
+  loans: PayrollAdvance[];
+  payoutDate?: string;
+}) {
+  const queryClient = useQueryClient();
+  const recoveries = extractRecoveries(line).filter(
+    (item) => item.kind === "loan" && item.advanceId && item.amount > 0,
+  );
+  const recoveryByLoan = new Map<string, number>();
+  for (const item of recoveries) {
+    recoveryByLoan.set(item.advanceId, (recoveryByLoan.get(item.advanceId) ?? 0) + item.amount);
+  }
+  const excludedLoans = payoutDate
+    ? loans.filter(
+        (loan) =>
+          loan.issued_on < payoutDate &&
+          loan.recovered_amount < loan.amount &&
+          loan.recovery_start_date !== null &&
+          loan.recovery_start_date > payoutDate &&
+          !recoveryByLoan.has(loan.id),
+      )
+    : [];
+
+  const mutation = useMutation({
+    mutationFn: ({ advanceId, defer }: { advanceId: string; defer: boolean }) =>
+      deferPayrollAdvanceRecovery(line.run_id, advanceId, defer),
+    onSuccess: async (_run, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["payroll-run", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-run-lines", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["payroll-advances", line.employee_id] }),
+        queryClient.invalidateQueries({ queryKey: ["run-funding-sources", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["run-bank-draft", line.run_id] }),
+        queryClient.invalidateQueries({ queryKey: ["run-payout-delta", line.run_id] }),
+      ]);
+      toast.success(
+        variables.defer
+          ? "Возврат займа исключён из этой выплаты"
+          : "Возврат займа включён в эту выплату",
+      );
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось изменить возврат займа")),
+  });
+
+  if (recoveryByLoan.size === 0 && excludedLoans.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-2 rounded-md border bg-card p-3">
+      <div className="text-sm font-semibold">Возврат займа в этой выплате</div>
+      {Array.from(recoveryByLoan, ([advanceId, amount]) => {
+        const loan = loans.find((item) => item.id === advanceId);
+        return (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 text-sm"
+            key={advanceId}
+          >
+            <div>
+              <span className="tabular-nums text-rose-700">−{formatMoney(amount)}</span>
+              {loan ? (
+                <span className="ml-2 text-muted-foreground">
+                  заём от {formatDate(loan.issued_on)}
+                </span>
+              ) : null}
+            </div>
+            {canDefer ? (
+              <Button
+                disabled={mutation.isPending}
+                onClick={() => mutation.mutate({ advanceId, defer: true })}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {mutation.isPending ? (
+                  <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+                ) : (
+                  <CalendarClock size={15} aria-hidden="true" />
+                )}
+                Отложить возврат
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+      {excludedLoans.map((loan) => (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm" key={loan.id}>
+          <div>
+            <Badge className="rounded-md border-amber-200 bg-amber-50 text-amber-800 shadow-none">
+              Не удерживается
+            </Badge>
+            <span className="ml-2 text-muted-foreground">
+              заём от {formatDate(loan.issued_on)} · остаток{" "}
+              {formatMoney(loan.amount - loan.recovered_amount)}
+            </span>
+          </div>
+          {canDefer ? (
+            <Button
+              disabled={mutation.isPending}
+              onClick={() => mutation.mutate({ advanceId: loan.id, defer: false })}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {mutation.isPending ? (
+                <LoaderCircle className="animate-spin" size={15} aria-hidden="true" />
+              ) : (
+                <Undo2 size={15} aria-hidden="true" />
+              )}
+              Включить возврат
+            </Button>
+          ) : null}
+        </div>
+      ))}
+      <p className="text-xs text-muted-foreground">
+        Отложенная сумма остаётся долгом и будет удержана при следующей выплате. Сумма к выплате
+        пересчитается сразу.
+      </p>
+    </section>
   );
 }
 

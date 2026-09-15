@@ -81,6 +81,93 @@ test("shows one payroll statement and opens the employee breakdown modal", async
   await expect(dialog.getByText("Выдача депозита", { exact: true })).toHaveCount(0);
 });
 
+test("defers a production loan in the payslip and updates the payout without closing it", async ({
+  page,
+}) => {
+  let deferred = false;
+  const loanId = "loan-details";
+  await page.unroute(`**/api/v1/payroll/runs/${runId}/lines`);
+  await page.route(`**/api/v1/payroll/runs/${runId}/lines`, (route) =>
+    fulfillJson(route, [
+      {
+        ...payrollLine(),
+        id: deferred ? "line-after-deferral" : "line-before-deferral",
+        base_pay: 8000,
+        premium: 0,
+        percent_pay: 0,
+        deduction: 0,
+        deposit_withholding: 0,
+        total_payable: deferred ? 8000 : 6000,
+        components: {
+          days: [
+            {
+              date: "2026-07-07",
+              role: "pizza",
+              category: "category_2",
+              hours: 10,
+              base_pay: 8000,
+              percent_pay: 0,
+              vacation_pay: 0,
+              fund_accrual: 0,
+              ndfl_withheld: 0,
+            },
+          ],
+          adjustments: { bonuses: [], penalties: [] },
+          advance_recoveries: deferred ? [] : [{ advance_id: loanId, kind: "loan", amount: 2000 }],
+        },
+      },
+    ]),
+  );
+  await page.unroute(`**/api/v1/payroll/runs/${runId}`);
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
+    fulfillJson(route, {
+      ...payrollRun(),
+      summary: { ...payrollRun().summary, total_payable: deferred ? 8000 : 6000 },
+    }),
+  );
+  await page.route(/\/api\/v1\/payroll\/advances(\?.*)?$/, (route) =>
+    fulfillJson(route, [
+      {
+        id: loanId,
+        employee_id: employeeId,
+        role: "Пиццерист",
+        kind: "loan",
+        amount: 10000,
+        per_installment_amount: 2000,
+        installments_count: 5,
+        recovered_amount: 0,
+        status: "issued",
+        issued_on: "2026-07-01",
+        recovery_start_date: deferred ? "2026-07-15" : null,
+        payout_method: "cash",
+        wallet_id: null,
+        comment: null,
+        payout_status: "disbursed",
+      },
+    ]),
+  );
+  await page.route(`**/api/v1/payroll/runs/${runId}/advances/${loanId}/defer-recovery`, (route) => {
+    const request = route.request().postDataJSON();
+    expect(request).toEqual({ defer: !deferred });
+    deferred = request.defer;
+    return fulfillJson(route, payrollRun());
+  });
+
+  await page.goto(`/payroll/runs/${runId}`);
+  await page.getByRole("row", { name: /София Колесникова/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("возврат займа 2 000 ₽");
+  await dialog.getByRole("button", { name: "Отложить возврат" }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText("К выплате", { exact: true })).toBeVisible();
+  await expect(dialog).toContainText("зарплата 8 000 ₽");
+  await expect(dialog).toContainText("Не удерживается");
+  await expect(dialog.getByRole("button", { name: "Включить возврат" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Включить возврат" }).click();
+  await expect(dialog).toContainText("возврат займа 2 000 ₽");
+  await expect(dialog.getByRole("button", { name: "Отложить возврат" })).toBeVisible();
+});
+
 test("includes a deposit-only amount in the payments register", async ({ page }) => {
   await page.unroute(/\/api\/v1\/employees\/?(\?.*)?$/);
   await page.route(/\/api\/v1\/employees\/?(\?.*)?$/, (route) =>

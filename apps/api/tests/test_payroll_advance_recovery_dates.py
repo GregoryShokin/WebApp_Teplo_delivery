@@ -13,6 +13,7 @@ from app.services.payroll_advance_recovery import (
     apply_advance_issuances,
     apply_advance_recoveries,
 )
+from app.services.payroll_advance_service import set_advance_recovery_deferral
 
 
 async def _employee(session: AsyncSession) -> Employee:
@@ -135,3 +136,56 @@ async def test_payroll_loan_issued_sep_1_starts_recovery_on_sep_8(
         assert second_issuance["advance_issued_count"] == 0
         assert second_line.advance_recovered == Decimal("2000.00")
         assert second_line.total_payable == Decimal("10000.00")
+
+
+async def test_production_loan_deferral_skips_one_payout_and_keeps_the_debt(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _employee(session)
+        loan = SalaryAdvance(
+            id=uuid.uuid4(),
+            employee_id=employee.id,
+            role="Повар",
+            kind="loan",
+            amount=Decimal("10000"),
+            per_installment_amount=Decimal("2000"),
+            installments_count=5,
+            recovered_amount=Decimal("0"),
+            status="issued",
+            issued_on=date(2026, 9, 1),
+            payout_method="cash",
+        )
+        session.add(loan)
+        period, run, line = await _week(
+            session,
+            start=date(2026, 9, 1),
+            end=date(2026, 9, 7),
+            payout=date(2026, 9, 8),
+            employee=employee,
+            payable="12000",
+        )
+        await session.commit()
+
+        await set_advance_recovery_deferral(
+            session, run_id=run.id, advance_id=loan.id, defer=True
+        )
+        current = await apply_advance_recoveries(session, period, run, [line])
+        assert current["advance_recovery_count"] == 0
+        assert line.total_payable == Decimal("12000")
+        assert loan.recovered_amount == Decimal("0")
+
+        next_period, next_run, next_line = await _week(
+            session,
+            start=date(2026, 9, 8),
+            end=date(2026, 9, 14),
+            payout=date(2026, 9, 15),
+            employee=employee,
+            payable="12000",
+        )
+        following = await apply_advance_recoveries(
+            session, next_period, next_run, [next_line]
+        )
+        assert following["advance_recovery_count"] == 1
+        assert next_line.advance_recovered == Decimal("2000.00")
+        assert next_line.total_payable == Decimal("10000.00")
