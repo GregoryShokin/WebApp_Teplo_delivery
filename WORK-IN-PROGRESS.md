@@ -25,6 +25,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### agent-ddsmodalscroll — ветка `agent/ddsmodalscroll-dds-modal-scroll`
+- worktree: `../Teplo-agent-ddsmodalscroll`
+- compose: стенд не поднимаю
+- трогает: `apps/web/src/routes/dds/OperationClassifyDialog.tsx` — прокрутка окна разбора проводки/операции ДДС
+- НЕ трогать другим: этот компонент до завершения правки
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
