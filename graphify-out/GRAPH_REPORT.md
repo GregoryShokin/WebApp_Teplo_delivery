@@ -1,20 +1,22 @@
-# Graph Report - .  (2026-09-01)
+# Graph Report - .  (2026-09-15)
 
 ## Corpus Check
-- 1244 files · ~3,161,388 words
+- 1244 files · ~3,162,244 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 25923 nodes · 82686 edges · 1044 communities (893 shown, 151 thin omitted)
+- 25925 nodes · 82697 edges · 1068 communities (915 shown, 153 thin omitted)
 - Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 22067 edges (avg confidence: 0.61)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `736c9a04`
+- Built from commit: `4b12d86e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
+- [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
+- [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apialembic|api/alembic]]
 - [[_COMMUNITY_apialembicversions|api/alembic/versions]]
 - [[_COMMUNITY_apialembicversions|api/alembic/versions]]
@@ -136,37 +138,40 @@
 - [[_COMMUNITY_apialembicversions|api/alembic/versions]]
 - [[_COMMUNITY_apiappauth + apiappapi|api/app/auth + api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
+- [[_COMMUNITY_apitests + apiappapi|api/tests + api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
+- [[_COMMUNITY_apiappapi|api/app/api]]
+- [[_COMMUNITY_apiappservices + apiappapi|api/app/services + api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apiappapi + apiapp|api/app/api + api/app]]
 - [[_COMMUNITY_apiappapi + apiappmodels|api/app/api + api/app/models]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappschemas + (root)|api/app/schemas + (root)]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappapi + apiappcore|api/app/api + api/app/core]]
+- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
+- [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
+- [[_COMMUNITY_apitestskassa + apiappservices|api/tests/kassa + api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
+- [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappauth|api/app/api + api/app/auth]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apitests + apiappapi|api/tests + api/app/api]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apiappapi + apitests|api/app/api + api/tests]]
+- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappservices + apiappapi|api/app/services + api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
-- [[_COMMUNITY_apiappapi|api/app/api]]
-- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
-- [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
+- [[_COMMUNITY_apiappapi + apiappcore|api/app/api + api/app/core]]
+- [[_COMMUNITY_apiappapi + apiappauth|api/app/api + api/app/auth]]
+- [[_COMMUNITY_apiappapi + apitests|api/app/api + api/tests]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
@@ -175,44 +180,42 @@
 - [[_COMMUNITY_apiappservices + apiappapi|api/app/services + api/app/api]]
 - [[_COMMUNITY_apiappservices + apiappapi|api/app/services + api/app/api]]
 - [[_COMMUNITY_apiappapi + apiappservices|api/app/api + api/app/services]]
+- [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apiappservices + apiappapi|api/app/services + api/app/api]]
 - [[_COMMUNITY_apiappapi|api/app/api]]
 - [[_COMMUNITY_apiappaudit|api/app/audit]]
 - [[_COMMUNITY_apiappintegrations + apiappmodules|api/app/integrations + api/app/modules]]
 - [[_COMMUNITY_apiappservices + apiappauth|api/app/services + api/app/auth]]
 - [[_COMMUNITY_apiappcore|api/app/core]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apitests + apiappcore|api/tests + api/app/core]]
 - [[_COMMUNITY_apitests + apiappcore|api/tests + api/app/core]]
 - [[_COMMUNITY_apiappdb|api/app/db]]
-- [[_COMMUNITY_apiappmodels + (root)|api/app/models + (root)]]
+- [[_COMMUNITY_apiappmodels + apiappdb|api/app/models + api/app/db]]
 - [[_COMMUNITY_apiappdb|api/app/db]]
 - [[_COMMUNITY_apiappintegrations|api/app/integrations]]
 - [[_COMMUNITY_apiappjobs|api/app/jobs]]
-- [[_COMMUNITY_apiappservices + apiappjobs|api/app/services + api/app/jobs]]
+- [[_COMMUNITY_apiappjobs|api/app/jobs]]
 - [[_COMMUNITY_apiappjobs|api/app/jobs]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappjobs|api/app/jobs]]
 - [[_COMMUNITY_apitests + apiappjobs|api/tests + api/app/jobs]]
 - [[_COMMUNITY_apiappjobs|api/app/jobs]]
+- [[_COMMUNITY_apiapp + apiappjobs|api/app + api/app/jobs]]
 - [[_COMMUNITY_apiappjobs|api/app/jobs]]
 - [[_COMMUNITY_apitestscounterparties + apiappjobs|api/tests/counterparties + api/app/jobs]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
-- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
-- [[_COMMUNITY_apitests + apiapp|api/tests + api/app]]
+- [[_COMMUNITY_apiappjobs|api/app/jobs]]
 - [[_COMMUNITY_apitests + apiapp|api/tests + api/app]]
 - [[_COMMUNITY_apitestscounterparties + apiappmodels|api/tests/counterparties + api/app/models]]
-- [[_COMMUNITY_apitests + apiappmodels|api/tests + api/app/models]]
 - [[_COMMUNITY_apitests + apiappmodels|api/tests + api/app/models]]
 - [[_COMMUNITY_apitestscounterparties + apiappmodels|api/tests/counterparties + api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
-- [[_COMMUNITY_apitestscounterparties + apitests|api/tests/counterparties + api/tests]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
-- [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apitests + apiappmodels|api/tests + api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
@@ -227,28 +230,31 @@
 - [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
+- [[_COMMUNITY_apiappservices + apiappmodels|api/app/services + api/app/models]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappmodels|api/app/models]]
 - [[_COMMUNITY_apiappmodules|api/app/modules]]
-- [[_COMMUNITY_apiapp + apitests|api/app + api/tests]]
-- [[_COMMUNITY_apiappservices + apiapp|api/app/services + api/app]]
-- [[_COMMUNITY_apiappservices + apiapp|api/app/services + api/app]]
+- [[_COMMUNITY_apiapp|api/app]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiapp|api/tests/counterparties + api/app]]
 - [[_COMMUNITY_apitestscounterparties + apitests|api/tests/counterparties + api/tests]]
 - [[_COMMUNITY_apiappservices + apiapp|api/app/services + api/app]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + apiapp|api/app/services + api/app]]
+- [[_COMMUNITY_apiapp|api/app]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
-- [[_COMMUNITY_apiappservices + apiappschemas|api/app/services + api/app/schemas]]
+- [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apiappschemas|api/app/schemas]]
+- [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
 - [[_COMMUNITY_apiappschemas|api/app/schemas]]
@@ -274,100 +280,114 @@
 - [[_COMMUNITY_apiappscripts|api/app/scripts]]
 - [[_COMMUNITY_apitestscounterparties + apiappscripts|api/tests/counterparties + api/app/scripts]]
 - [[_COMMUNITY_apiappscripts|api/app/scripts]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apiappservices + apiappscripts|api/app/services + api/app/scripts]]
 - [[_COMMUNITY_apiappscripts|api/app/scripts]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappservices + apitestscouriers|api/app/services + api/tests/couriers]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_integrationstbankscripts + (root)|integrations/tbank/scripts + (root)]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscouriers|api/app/services + api/tests/couriers]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + tmp|api/app/services + tmp]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices + apitestscouriers|api/app/services + api/tests/couriers]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices + apitestscouriers|api/app/services + api/tests/couriers]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestskassa|api/app/services + api/tests/kassa]]
 - [[_COMMUNITY_apiappservices + apitestskassa|api/app/services + api/tests/kassa]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitestskassa + apiappservices|api/tests/kassa + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + api|api/app/services + api]]
 - [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apitestskassa + apiappservices|api/tests/kassa + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
@@ -377,15 +397,12 @@
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
-- [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
@@ -406,12 +423,16 @@
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
@@ -419,26 +440,30 @@
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
 - [[_COMMUNITY_apiappservices + apitests|api/app/services + api/tests]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
-- [[_COMMUNITY_apiappservices|api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apitests + apiappservices|api/tests + api/app/services]]
+- [[_COMMUNITY_apiappservices + apitestscounterparties|api/app/services + api/tests/counterparties]]
 - [[_COMMUNITY_apiappservices|api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
-- [[_COMMUNITY_api|api]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
+- [[_COMMUNITY_apitestscounterparties + apiappservices|api/tests/counterparties + api/app/services]]
 - [[_COMMUNITY_api|api]]
 - [[_COMMUNITY_apiscripts|api/scripts]]
 - [[_COMMUNITY_apiscripts|api/scripts]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
+- [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
+- [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
@@ -496,8 +521,7 @@
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
 - [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
-- [[_COMMUNITY_apitests + apitestscounterparties|api/tests + api/tests/counterparties]]
-- [[_COMMUNITY_apitestscounterparties|api/tests/counterparties]]
+- [[_COMMUNITY_apitestscouriers|api/tests/couriers]]
 - [[_COMMUNITY_apitestscouriers|api/tests/couriers]]
 - [[_COMMUNITY_apitestscouriers|api/tests/couriers]]
 - [[_COMMUNITY_apitestscouriers|api/tests/couriers]]
@@ -524,12 +548,14 @@
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
+- [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests + tmp|api/tests + tmp]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
+- [[_COMMUNITY_tmp + apitests|tmp + api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
@@ -560,8 +586,7 @@
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
-- [[_COMMUNITY_apitests|api/tests]]
-- [[_COMMUNITY_apitests|api/tests]]
+- [[_COMMUNITY_apitests + (root)|api/tests + (root)]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
 - [[_COMMUNITY_apitests|api/tests]]
@@ -574,9 +599,9 @@
 - [[_COMMUNITY_web|web]]
 - [[_COMMUNITY_web|web]]
 - [[_COMMUNITY_web|web]]
-- [[_COMMUNITY_websrcroutes + websrc|web/src/routes + web/src]]
+- [[_COMMUNITY_websrc + websrccomponents|web/src + web/src/components]]
 - [[_COMMUNITY_websrcroutes + websrccomponents|web/src/routes + web/src/components]]
-- [[_COMMUNITY_websrccomponents + websrcroutes|web/src/components + web/src/routes]]
+- [[_COMMUNITY_websrccomponents + websrclib|web/src/components + web/src/lib]]
 - [[_COMMUNITY_websrclib + websrcroutes|web/src/lib + web/src/routes]]
 - [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
 - [[_COMMUNITY_websrccomponents + websrcroutes|web/src/components + web/src/routes]]
@@ -584,6 +609,7 @@
 - [[_COMMUNITY_websrcroutes + websrccomponents|web/src/routes + web/src/components]]
 - [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
 - [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
+- [[_COMMUNITY_websrcroutes + websrccomponents|web/src/routes + web/src/components]]
 - [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
 - [[_COMMUNITY_websrclib + websrcroutes|web/src/lib + web/src/routes]]
 - [[_COMMUNITY_websrcroutes + websrclib|web/src/routes + web/src/lib]]
@@ -621,11 +647,10 @@
 - [[_COMMUNITY_deploy|deploy]]
 - [[_COMMUNITY_integrationstbankscripts + disigncutouts|integrations/tbank/scripts + disign/cutouts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
-- [[_COMMUNITY_integrationsiikoscripts + tmp|integrations/iiko/scripts + tmp]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
-- [[_COMMUNITY_researchscriptsbusiness_control + integrationsiikoscripts|research/scripts/business_control + integrations/iiko/scripts]]
+- [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
 - [[_COMMUNITY_integrationsiikoscripts|integrations/iiko/scripts]]
@@ -645,9 +670,9 @@
 - [[_COMMUNITY_integrationstbankscripts|integrations/tbank/scripts]]
 - [[_COMMUNITY_integrationstbankscripts|integrations/tbank/scripts]]
 - [[_COMMUNITY_integrationstbankscripts|integrations/tbank/scripts]]
-- [[_COMMUNITY_integrationstbankscripts|integrations/tbank/scripts]]
 - [[_COMMUNITY_integrationstbanktests|integrations/tbank/tests]]
 - [[_COMMUNITY_researchscriptsbank|research/scripts/bank]]
+- [[_COMMUNITY_researchscriptsbusiness_control|research/scripts/business_control]]
 - [[_COMMUNITY_researchscriptsbusiness_control|research/scripts/business_control]]
 - [[_COMMUNITY_scripts|scripts]]
 - [[_COMMUNITY_scripts|scripts]]
@@ -658,17 +683,15 @@
 - [[_COMMUNITY_tmp|tmp]]
 - [[_COMMUNITY_tmp|tmp]]
 - [[_COMMUNITY_tmp|tmp]]
-- [[_COMMUNITY_tmp|tmp]]
 - [[_COMMUNITY_.agents|.agents]]
-- [[_COMMUNITY_.agents|.agents]]
+- [[_COMMUNITY_business-docsmarketing + .agents|business-docs/marketing + .agents]]
 - [[_COMMUNITY_(root)|(root)]]
 - [[_COMMUNITY_(root)|(root)]]
-- [[_COMMUNITY_app-specintegrationsiiko + app-specarchitecturedecisions|app-spec/integrations/iiko + app-spec/architecture/decisions]]
+- [[_COMMUNITY_app-specarchitecturedecisions + app-specintegrations|app-spec/architecture/decisions + app-spec/integrations]]
 - [[_COMMUNITY_app-spec|app-spec]]
 - [[_COMMUNITY_app-specai-agents + app-specarchitecture|app-spec/ai-agents + app-spec/architecture]]
 - [[_COMMUNITY_app-specai-agents|app-spec/ai-agents]]
 - [[_COMMUNITY_app-specarchitecture|app-spec/architecture]]
-- [[_COMMUNITY_app-specintegrationsiiko + app-specarchitecturedecisions|app-spec/integrations/iiko + app-spec/architecture/decisions]]
 - [[_COMMUNITY_app-specarchitecturedecisions|app-spec/architecture/decisions]]
 - [[_COMMUNITY_app-specarchitecturedecisions|app-spec/architecture/decisions]]
 - [[_COMMUNITY_app-specarchitecture|app-spec/architecture]]
@@ -677,8 +700,7 @@
 - [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
 - [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
 - [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
-- [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
-- [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
+- [[_COMMUNITY_app-specintegrationsiiko + app-specarchitecture|app-spec/integrations/iiko + app-spec/architecture]]
 - [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
 - [[_COMMUNITY_app-specintegrationsiiko|app-spec/integrations/iiko]]
 - [[_COMMUNITY_app-specintegrationsmailru|app-spec/integrations/mailru]]
@@ -710,7 +732,9 @@
 - [[_COMMUNITY_business-docsfinance + business-docsportrait|business-docs/finance + business-docs/portrait]]
 - [[_COMMUNITY_business-docsfinance|business-docs/finance]]
 - [[_COMMUNITY_business-docsfinance|business-docs/finance]]
+- [[_COMMUNITY_business-docsfinance|business-docs/finance]]
 - [[_COMMUNITY_business-docsloyalty|business-docs/loyalty]]
+- [[_COMMUNITY_business-docsmarketing|business-docs/marketing]]
 - [[_COMMUNITY_business-docsmarketing|business-docs/marketing]]
 - [[_COMMUNITY_business-docsmarketing|business-docs/marketing]]
 - [[_COMMUNITY_business-docsmarketing|business-docs/marketing]]
@@ -860,14 +884,14 @@
 10. `BankCredentialsError` - 193 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `IikoClient` --references--> `IIKO_SERVER_BASE_URL-заглушка предотвращает SystemExit`  [EXTRACTED]
-  integrations/iiko/scripts/export_orders_delivery.py → apps/docker-compose.agent-vat.yml
+- `IIKO_SERVER_BASE_URL-заглушка предотвращает SystemExit` --references--> `IikoClient`  [EXTRACTED]
+  apps/docker-compose.agent-vat.yml → integrations/iiko/scripts/export_orders_delivery.py
 - `integrations/sber/scripts/reconcile_iiko_revenue.py — сверка банк ↔ iiko` --semantically_similar_to--> `Методика выручки Starter: OLAP SALES, DishDiscountSumInt, источники Сайт/IOS/Андройд`  [INFERRED] [semantically similar]
   app-spec/integrations/sber/api-endpoints.md → research/processed/iiko/orders_delivery/starter_revenue_commission_2026-01_2026-06.md
 - `Выборочный хронометраж (0 ₽)` --semantically_similar_to--> `Задача 0.2: Holdout-инфраструктура`  [INFERRED] [semantically similar]
   .agents/kds_measurement_spec.md → teplo-launch-board.html
-- `Правила безопасности iiko-запросов: секреты только из ENV, GET может иметь side effect, период не больше месяца` --semantically_similar_to--> `IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid — обязательная заглушка iiko на превью`  [INFERRED] [semantically similar]
-  app-spec/integrations/iiko/server-api-endpoints.md → apps/docker-compose.agent-pnl.yml
+- `IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid — обязательная заглушка iiko на превью` --semantically_similar_to--> `Правила безопасности iiko-запросов: секреты только из ENV, GET может иметь side effect, период не больше месяца`  [INFERRED] [semantically similar]
+  apps/docker-compose.agent-pnl.yml → app-spec/integrations/iiko/server-api-endpoints.md
 - `run_with_iiko_backoff()` --calls--> `Operation`  [INFERRED]
   apps/api/app/scheduler.py → research/scripts/bank/classify_cashflow.py
 
@@ -893,7 +917,15 @@
 - 1-file cycle: `apps/api/app/services/couriers/evaluation_service.py -> apps/api/app/services/couriers/evaluation_service.py`
 - 1-file cycle: `apps/api/app/services/couriers/schedule_service.py -> apps/api/app/services/couriers/schedule_service.py`
 
-## Communities (1044 total, 151 thin omitted)
+## Communities (1068 total, 153 thin omitted)
+
+### Community 6 - "web/src/routes + web/src/lib"
+Cohesion: 0.02
+Nodes (182): PayrollRunDetailRouteProps, PayrollLineRowModel, PAYMENT_METHOD_OPTIONS, PayrollRunDetailRoute(), PayoutSplitDialog(), PayrollPaymentsTable(), KpiCard(), RunBankDraftCard() (+174 more)
+
+### Community 548 - "api/tests"
+Cohesion: 0.29
+Nodes (12): _employee(), AsyncSession, _week(), date, PayrollPeriod, PayrollRun, PayrollLine, test_payroll_loan_issued_sep_1_starts_recovery_on_sep_8() (+4 more)
 
 ### Community 576 - "api/alembic"
 Cohesion: 0.40
@@ -904,8 +936,8 @@ Cohesion: 0.47
 Nodes (5): _create_enums(), _drop_enums(), upgrade(), downgrade(), core domain, audit and settings schema  Revision ID: 0001_core_domain Revises: C
 
 ### Community 286 - "api/alembic/versions + api/app/models"
-Cohesion: 0.16
-Nodes (13): upgrade(), downgrade(), _replace_status_enum(), ENUM, _sql_values(), StrEnum, CourierShiftDayStatus, CourierShiftReview (+5 more)
+Cohesion: 0.08
+Nodes (26): upgrade(), downgrade(), _replace_status_enum(), ENUM, _sql_values(), CourierShiftMatchStatus, StrEnum, DeliveryOrder (+18 more)
 
 ### Community 482 - "api/alembic/versions"
 Cohesion: 0.36
@@ -1160,24 +1192,32 @@ Cohesion: 0.40
 Nodes (4): upgrade(), downgrade(), Только сведение веток — DDL здесь нет и быть не должно., Симметрично: откат разводит ветки обратно, ничего не отменяя.
 
 ### Community 370 - "api/app/auth + api/app/api"
-Cohesion: 0.09
-Nodes (33): _split_roles(), _default_permissions_for_header_roles(), get_current_actor(), AsyncSession, Depends, get_session, Header, require_permission() (+25 more)
+Cohesion: 0.12
+Nodes (26): _split_roles(), _default_permissions_for_header_roles(), get_current_actor(), AsyncSession, Depends, get_session, Header, require_finance_manager_plus() (+18 more)
 
-### Community 19 - "api/app/api + api/app/services"
-Cohesion: 0.06
-Nodes (143): CurrentActor, _conflict(), Exception, HTTPException, _bank_rejected(), BankFetchError, CategoryRead, CategoryCreate (+135 more)
+### Community 76 - "api/app/api + api/app/services"
+Cohesion: 0.05
+Nodes (143): CurrentActor, AdminSalaryDefaultRead, AdminSalaryOverrideRead, AdminSalariesRead, AdminSalaryUpsert, AdminExclusionUpsert, AdminExclusionRead, AdminPayoutModeUpsert (+135 more)
+
+### Community 1026 - "api/tests + api/app/api"
+Cohesion: 0.36
+Nodes (7): require_permission(), test_rbac_seed_grants_passport_defaults(), async_sessionmaker, AsyncSession, test_require_permission_allows_matching_permission_and_denies_missing(), test_split_permission_does_not_expand_to_legacy_siblings(), _load_seeded_permissions()
 
 ### Community 68 - "api/app/api + api/app/services"
-Cohesion: 0.10
-Nodes (69): ensure_permission(), ensure_any_permission(), _serialize_time_suggestion(), Any, list_products(), AsyncSession, Depends, get_session (+61 more)
+Cohesion: 0.09
+Nodes (107): ensure_permission(), ensure_any_permission(), LineCreate, InvoiceCreate, InvoiceUpdate, ReturnLineCreate, ReturnCreate, MoneySettleLine (+99 more)
 
-### Community 344 - "api/app/api + api/app/services"
-Cohesion: 0.29
-Nodes (41): get_rates(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, Query, put_rate() (+33 more)
+### Community 344 - "api/app/api"
+Cohesion: 0.42
+Nodes (21): get_rates(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, Query, put_rate() (+13 more)
 
-### Community 318 - "api/app/api + api/app"
-Cohesion: 0.07
-Nodes (43): readiness(), AsyncSession, Depends, get_session, integration_definitions(), AccountWrite, AccountRead, AccountListRead (+35 more)
+### Community 375 - "api/app/services + api/app/api"
+Cohesion: 0.53
+Nodes (21): PayrollRateBase, PayrollRevenueShareBase, PayrollRevenueTierBase, PayrollCategoryCoefficientBase, PayrollDeductionCategoryBase, PayrollSeniorityPremiumBase, PayrollRate, PayrollRoleCategoryAvailability (+13 more)
+
+### Community 357 - "api/app/api + api/app/services"
+Cohesion: 0.11
+Nodes (15): readiness(), AsyncSession, Depends, get_session, integration_definitions(), IntegrationDefinition, list_integration_definitions(), lifespan() (+7 more)
 
 ### Community 129 - "api/app/api + api/app/models"
 Cohesion: 0.18
@@ -1189,7 +1229,7 @@ Nodes (109): SupplierAccountingItem, StageTile, SupplierAccountingList, ServiceP
 
 ### Community 2 - "api/app/schemas + (root)"
 Cohesion: 0.01
-Nodes (275): BaseModel, PermissionRead, PermissionModuleRead, RoleAccessRead, RolePermissionsUpdate, AccessUserRead, AccessUserCreate, AccessUserPatch (+267 more)
+Nodes (299): BaseModel, PermissionRead, PermissionModuleRead, RoleAccessRead, RolePermissionsUpdate, AccessUserRead, AccessUserCreate, AccessUserPatch (+291 more)
 
 ### Community 96 - "api/app/api + api/app/services"
 Cohesion: 0.11
@@ -1197,31 +1237,39 @@ Nodes (61): FundPayoutRequest, FundTierItem, FundTiersWrite, FundTiersRead, Fund
 
 ### Community 359 - "api/app/api + api/app/core"
 Cohesion: 0.28
-Nodes (20): _read_user(), AuthUserRead, _set_refresh_cookie(), Response, login(), LoginRequest, AsyncSession, Depends (+12 more)
+Nodes (19): _read_user(), AuthUserRead, _set_refresh_cookie(), Response, login(), LoginRequest, AsyncSession, Depends (+11 more)
+
+### Community 19 - "api/app/api + api/app/services"
+Cohesion: 0.06
+Nodes (138): _conflict(), Exception, HTTPException, _bank_rejected(), BankFetchError, CategoryRead, CategoryCreate, CategoryUpdate (+130 more)
 
 ### Community 60 - "api/app/services + api/tests/counterparties"
 Cohesion: 0.05
-Nodes (76): AssetLinkError, Нарушение правил связи проводки с основным средством. Поднимается ДО любых запис, Wallet, Any, RequisitesNotVerifiedError, _money(), Any, Decimal (+68 more)
+Nodes (90): channel_provider(), Банк-провайдер по значению канала выплаты, или None если канал не банк-черновик., RequisitesNotVerifiedError, _money(), Any, Decimal, _payer_account(), _allocated_amount() (+82 more)
 
 ### Community 40 - "api/app/api + api/app/services"
 Cohesion: 0.07
 Nodes (151): CourierSyncRequest, post_courier_sync(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, Body (+143 more)
 
-### Community 22 - "api/app/api + api/app/services"
+### Community 22 - "api/app/api"
 Cohesion: 0.06
-Nodes (111): list_bank_operations(), AsyncSession, Depends, get_session, list_cashflow(), UUID, list_journal(), list_wallets() (+103 more)
+Nodes (105): list_bank_operations(), AsyncSession, Depends, get_session, list_cashflow(), UUID, list_journal(), list_articles() (+97 more)
 
 ### Community 137 - "api/app/api + api/app/services"
-Cohesion: 0.51
-Nodes (72): date, Query, alias, ge, le, CurrentActor, get_current_actor, NewPaymentExpenseDraftCreate (+64 more)
+Cohesion: 0.43
+Nodes (84): date, Query, alias, ge, le, CurrentActor, get_current_actor, NewPaymentExpenseDraftCreate (+76 more)
 
-### Community 145 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.09
-Nodes (60): NamedTuple, OperationSplitLine, apply_operation_split(), Одна доля разбора банк-операции.      ``counterparty_id`` — контрагент ИМЕННО эт, Spread one bank operation across one or more DDS articles.      Splits are ``Ope, _fixture(), AsyncSession, _rows() (+52 more)
+### Community 181 - "api/tests/kassa + api/app/services"
+Cohesion: 0.07
+Nodes (81): list_wallets(), _article_id(), AsyncSession, UUID, safe_reserved_total(), Decimal, safe_active_allocations_count(), create_allocation() (+73 more)
 
-### Community 160 - "api/app/api + api/app/services"
-Cohesion: 0.10
-Nodes (53): DepositEmployeeRead, DepositTransactionRead, DepositConfigPatch, DepositConfigRead, DepositPayoutRequest, DepositSchedulePayoutRequest, DepositScheduleRead, DepositScheduledPayoutSettingsRead (+45 more)
+### Community 108 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.05
+Nodes (94): classify_operation(), Classify a bank operation directly: multi-article split, internal transfer, or e, EmployeeCreateRequest, EmployeePatch, parse_args(), Namespace, async_main(), main() (+86 more)
+
+### Community 160 - "api/app/api"
+Cohesion: 0.13
+Nodes (44): DepositEmployeeRead, DepositTransactionRead, DepositConfigPatch, DepositConfigRead, DepositPayoutRequest, DepositSchedulePayoutRequest, DepositScheduleRead, DepositScheduledPayoutSettingsRead (+36 more)
 
 ### Community 24 - "api/app/api + api/app/auth"
 Cohesion: 0.08
@@ -1237,7 +1285,7 @@ Nodes (124): dismiss_employee(), EmployeeDismissRequest, patch_employee(), _norm
 
 ### Community 239 - "api/app/services + api/tests"
 Cohesion: 0.09
-Nodes (34): _validate_patch_assignment_shortcut(), _validate_patch_roles(), parse_args(), Namespace, async_main(), main(), Пересчёт кэшированного ``employee.status`` от текущих назначений.  ``employee.st, compute_status() (+26 more)
+Nodes (33): _validate_patch_assignment_shortcut(), _validate_patch_roles(), parse_args(), Namespace, async_main(), main(), Пересчёт кэшированного ``employee.status`` от текущих назначений.  ``employee.st, compute_status() (+25 more)
 
 ### Community 483 - "api/app/api"
 Cohesion: 0.25
@@ -1247,13 +1295,13 @@ Nodes (10): PaymentRead, BucketMeta, PaymentsResponse, _to_read(), PaymentItem, 
 Cohesion: 0.06
 Nodes (100): AssetCategoryRead, CategoryListRead, FixedAssetRead, FixedAssetListRead, CategoryTotalRead, LocationTotalRead, SummaryRead, DepreciationEntryRead (+92 more)
 
-### Community 14 - "api/app/api + api/tests"
-Cohesion: 0.20
-Nodes (78): list_positions(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, Any, create_position() (+70 more)
+### Community 14 - "api/app/api + api/app/services"
+Cohesion: 0.21
+Nodes (76): list_positions(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, Any, create_position() (+68 more)
 
 ### Community 105 - "api/app/services + api/app/models"
-Cohesion: 0.12
-Nodes (65): InventoryAudit, InventoryAuditItem, PnlIikoFact, PnlIikoGoodsFact, PnlIikoStockFact, PnlIikoProductObservation, PnlProductWhitelist, PnlProductMonthlyDecision (+57 more)
+Cohesion: 0.09
+Nodes (72): InventoryAudit, InventoryAuditItem, PnlIikoFact, PnlIikoGoodsFact, PnlIikoStockFact, PnlProductWhitelist, Месячный факт из iiko: выручка, фудкост, зарплата курьеров.      Единственное ме, Вклад одной номенклатуры whitelist в месячную товарную строку ОПиУ.      ``PnlIi (+64 more)
 
 ### Community 88 - "api/app/services + api/app/api"
 Cohesion: 0.08
@@ -1261,7 +1309,7 @@ Nodes (103): item_payload(), InventoryPositionsSyncResult, PenaltyComputation, I
 
 ### Community 30 - "api/app/api + api/app/services"
 Cohesion: 0.09
-Nodes (110): _manual_pending_enabled(), AsyncSession, get_kassa_config(), Depends, get_session, list_dds_articles(), DdsArticle, list_accounts() (+102 more)
+Nodes (112): _manual_pending_enabled(), AsyncSession, get_kassa_config(), Depends, get_session, list_dds_articles(), DdsArticle, list_accounts() (+104 more)
 
 ### Community 72 - "api/app/api"
 Cohesion: 0.08
@@ -1271,25 +1319,21 @@ Nodes (71): LocationRead, LocationListRead, LocationCreateRequest, LocationUpdat
 Cohesion: 0.24
 Nodes (17): OwnerRead, OwnerListRead, OwnerCreate, OwnerUpdate, _to_read(), OwnerRow, _listing(), AsyncSession (+9 more)
 
-### Community 208 - "api/app/api"
-Cohesion: 0.12
-Nodes (53): IntakeRead, CounterpartyRequisitesRead, ConfirmIn, ConfirmUtilityIn, SendToBankIn, SendManyToBankIn, ScheduleSendIn, _to_read() (+45 more)
+### Community 208 - "api/app/api + api/app/core"
+Cohesion: 0.08
+Nodes (71): IntakeRead, CounterpartyRequisitesRead, ReviewRequisites, ConfirmIn, ConfirmUtilityIn, SendToBankIn, SendManyToBankIn, ScheduleSendIn (+63 more)
 
-### Community 11 - "api/app/api + api/app/services"
-Cohesion: 0.22
-Nodes (127): post_auto_create_next_period(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, get_runs(), get_audit_events() (+119 more)
+### Community 11 - "api/app/api + api/app/auth"
+Cohesion: 0.12
+Nodes (77): post_auto_create_next_period(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, get_runs(), get_audit_events() (+69 more)
+
+### Community 356 - "api/app/api + api/tests"
+Cohesion: 0.76
+Nodes (56): date, Query, ge, le, Any, DeferredChargeCreate, alias, PayrollRunCreate (+48 more)
 
 ### Community 138 - "api/app/api + api/app/services"
 Cohesion: 0.13
 Nodes (66): _adjustment_employee_positions(), list_adjustments(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, UUID (+58 more)
-
-### Community 209 - "api/app/api + api/app/services"
-Cohesion: 0.17
-Nodes (41): AdminSalariesRead, AdminSalaryUpsert, AdminExclusionUpsert, AdminExclusionRead, AdminPayoutModeUpsert, DishwasherShiftRateRead, DishwasherShiftRateUpsert, DishwasherEmployeeRead (+33 more)
-
-### Community 76 - "api/app/api + api/app/services"
-Cohesion: 0.08
-Nodes (81): AdminSalaryDefaultRead, AdminSalaryOverrideRead, PayrollRunCreate, PayrollLineRead, OnDemandEmployeeRead, OnDemandIncludeRequest, EmployeePayoutRead, date (+73 more)
 
 ### Community 238 - "api/app/api + api/app/services"
 Cohesion: 0.34
@@ -1317,15 +1361,15 @@ Nodes (55): get_shift_ledger(), AsyncSession, Depends, get_session, CurrentActor
 
 ### Community 35 - "api/app/api + api/app/services"
 Cohesion: 0.16
-Nodes (124): _resolve_as_of(), date, _resolve_year(), _load_state(), AsyncSession, TaxState, _load_ledger(), LedgerSummary (+116 more)
+Nodes (122): _resolve_as_of(), date, _resolve_year(), _load_state(), AsyncSession, TaxState, _load_ledger(), LedgerSummary (+114 more)
+
+### Community 318 - "api/app/api"
+Cohesion: 0.20
+Nodes (22): AccountWrite, AccountRead, AccountListRead, CalendarRow, CalendarRead, _account_title(), _account_or_404(), AsyncSession (+14 more)
 
 ### Community 120 - "api/app/services + api/tests"
 Cohesion: 0.06
 Nodes (108): get_vacations(), AsyncSession, Depends, get_session, CurrentActor, get_current_actor, UUID, VacationPeriodRead (+100 more)
-
-### Community 227 - "api/app/services + api/app/api"
-Cohesion: 0.16
-Nodes (54): LineCreate, InvoiceCreate, InvoiceUpdate, ReturnLineCreate, ReturnCreate, MoneySettleLine, MoneySettleRequest, MatchConfirmRequest (+46 more)
 
 ### Community 272 - "api/app/api"
 Cohesion: 0.17
@@ -1339,21 +1383,17 @@ Nodes (18): ManualAction, SourceReference, AuditEvent, UUIDPrimaryKeyMixin, Time
 Cohesion: 0.21
 Nodes (21): expand_permission_codes(), normalize_permission_codes_for_storage(), _validate_catalog(), _positions_for_area(), effective_staff_permission_codes(), Any, accessible_staff_areas(), can_access_staff_area() (+13 more)
 
-### Community 93 - "api/app/services + api/tests"
-Cohesion: 0.03
-Nodes (109): _looks_like_placeholder(), Settings, BaseSettings, get_settings(), treasury_enp_requisites(), Any, Owner-approved реквизиты единого налогового платежа (ЕНП) в Казначейство/ФНС.  П, Изменяемая копия реквизитов ЕНП для одного вызова банк-клиента. (+101 more)
-
 ### Community 205 - "api/tests + api/app/core"
 Cohesion: 0.14
 Nodes (39): timedelta, FakeIiko, fake_iiko(), _placeholder(), Employee, _real_employee(), _freelancer(), Decimal (+31 more)
 
-### Community 17 - "api/app/models + (root)"
-Cohesion: 0.03
-Nodes (94): Base, DeclarativeBase, DataSource, SourceCredential, SourceSnapshot, ParsedDocument, SourceDocument, AgentRun (+86 more)
+### Community 282 - "api/tests + api/app/core"
+Cohesion: 0.32
+Nodes (27): create_access_token(), UserRole, test_migrated_read_guards_follow_passport_defaults(), TestClient, async_sessionmaker, AsyncSession, test_migrated_write_guard_allows_permission_and_denies_missing(), test_put_role_permissions_updates_set_and_writes_events() (+19 more)
 
-### Community 81 - "api/app/services + api/app/jobs"
-Cohesion: 0.08
-Nodes (48): _run(), run_counterparty_invoice_sync_job(), IikoSupplier, CounterpartyInvoiceSyncResult, _candidate_project_roots(), Path, _load_orders_module(), ModuleType (+40 more)
+### Community 17 - "api/app/models + api/app/db"
+Cohesion: 0.03
+Nodes (82): Base, DeclarativeBase, DataSource, SourceCredential, SourceSnapshot, ParsedDocument, SourceDocument, AgentRun (+74 more)
 
 ### Community 549 - "api/app/jobs"
 Cohesion: 0.43
@@ -1369,7 +1409,11 @@ Nodes (3): _run(), run_lease_accrual_job(), Начислить аренду за
 
 ### Community 134 - "api/tests + api/app/jobs"
 Cohesion: 0.04
-Nodes (50): target_months(), date, _run(), run_pnl_iiko_sync_job(), Месяцы ночного зеркала ОПиУ: текущий всегда, предыдущий — пока идут поздние доку, Обновить iiko-факты ОПиУ и товарную расшифровку за два рабочих месяца.      Пред, PnlArticleRule, Статья ДДС → строка ОПиУ. Одно правило обслуживает и кассу, и признание.      По (+42 more)
+Nodes (47): target_months(), date, _run(), run_pnl_iiko_sync_job(), Месяцы ночного зеркала ОПиУ: текущий всегда, предыдущий — пока идут поздние доку, Обновить iiko-факты ОПиУ и товарную расшифровку за два рабочих месяца.      Пред, test_whitelist_details_keep_each_product_contribution(), test_partner_commission_is_revenue_with_discount_times_contract_rate() (+39 more)
+
+### Community 1012 - "api/app + api/app/jobs"
+Cohesion: 0.31
+Nodes (7): get_scheduler(), BackgroundScheduler, register_jobs(), start_all(), main(), Единственный процесс, где живут ФОНОВЫЕ задачи (контейнер ``scheduler``).  Плани, Поднять оба планировщика; вернуть их в порядке запуска (гасить — в обратном).
 
 ### Community 659 - "api/app/jobs"
 Cohesion: 0.67
@@ -1377,23 +1421,15 @@ Nodes (3): _run(), run_service_agreement_accrual_job(), Начислить до�
 
 ### Community 110 - "api/tests/counterparties + api/app/jobs"
 Cohesion: 0.05
-Nodes (95): _run(), run_subscription_accrual_job(), Помесячное признание абонентских платежей, по которым закрывающих документов не, accrue_due_months(), Признать все истёкшие месяцы по абонентским платежам. Идемпотентно., make_wallet(), Wallet, _card_operation() (+87 more)
+Nodes (98): _run(), run_subscription_accrual_job(), Помесячное признание абонентских платежей, по которым закрывающих документов не, accrue_due_months(), Признать все истёкшие месяцы по абонентским платежам. Идемпотентно., make_counterparty(), Counterparty, A supplier counterparty + role + payable profile (+ optional iiko alias). (+90 more)
 
 ### Community 56 - "api/app/services + api/tests/counterparties"
-Cohesion: 0.03
-Nodes (142): _run(), run_supplier_closing_activation_job(), Правило 4 канона ДЗ/КЗ: закрывающие документы (УПД/акт) с наступившей ДАТОЙ ДОКУ, invoice_binds_settlement(), Any, SQL-условие «документ участвует в расчётах ДЗ/КЗ».      Два флага, и оба обязате, main(), snapshot() (+134 more)
-
-### Community 90 - "api/app/services + api/tests/counterparties"
-Cohesion: 0.07
-Nodes (61): _run(), run_supplier_service_period_job(), ServicePeriodError, validate_period(), date, recognition_month(), effective_period_status(), is_expense_bearing() (+53 more)
-
-### Community 202 - "api/tests + api/app"
-Cohesion: 0.29
-Nodes (5): _user(), CurrentUser, test_refresh_with_valid_cookie_returns_new_tokens(), test_logout_clears_refresh_cookie(), test_health()
+Cohesion: 0.04
+Nodes (138): _run(), run_supplier_closing_activation_job(), Правило 4 канона ДЗ/КЗ: закрывающие документы (УПД/акт) с наступившей ДАТОЙ ДОКУ, invoice_binds_settlement(), Any, SQL-условие «документ участвует в расчётах ДЗ/КЗ».      Два флага, и оба обязате, main(), snapshot() (+130 more)
 
 ### Community 10 - "api/tests + api/app"
-Cohesion: 0.06
-Nodes (161): create_app(), payroll_settings(), make_period(), date, make_employee(), make_role_assignment(), make_entry(), make_payroll_line() (+153 more)
+Cohesion: 0.05
+Nodes (186): create_app(), payroll_settings(), make_period(), date, make_employee(), make_role_assignment(), make_entry(), make_payroll_line() (+178 more)
 
 ### Community 435 - "api/tests/counterparties + api/app/models"
 Cohesion: 0.17
@@ -1403,10 +1439,6 @@ Nodes (21): Location, User, Role, Permission, RolePermission, RolePermissionEven
 Cohesion: 0.22
 Nodes (9): Organization, _organization_id(), AsyncSession, UUID, test_resolver_reads_ids_from_registry(), test_resolver_skips_inactive_and_iikoless(), Резолвер iiko-идентификаторов точки из реестра помещений (замена зашитых констан, Резолвер отдаёт id действующей точки из реестра, а не зашитую константу. (+1 more)
 
-### Community 282 - "api/tests + api/app/models"
-Cohesion: 0.33
-Nodes (26): UserRole, test_migrated_read_guards_follow_passport_defaults(), TestClient, async_sessionmaker, AsyncSession, test_migrated_write_guard_allows_permission_and_denies_missing(), test_put_role_permissions_updates_set_and_writes_events(), test_access_control_permissions_api_returns_visible_passport_catalog() (+18 more)
-
 ### Community 165 - "api/tests/counterparties + api/app/models"
 Cohesion: 0.15
 Nodes (26): Counterparty, CounterpartyRole, ensure_owner_context(), DdsArticle, Проверить связку «статья ↔ собственник». Ничего не возвращает: достраивать нечег, _article(), AsyncSession, DdsArticle (+18 more)
@@ -1415,25 +1447,21 @@ Nodes (26): Counterparty, CounterpartyRole, ensure_owner_context(), DdsArticle, 
 Cohesion: 0.06
 Nodes (30): CounterpartyLedgerCategory, CounterpartyPayableProfile, CounterpartyCollectionSource, CounterpartyRoutingRule, CounterpartyPaymentDraft, ExpenseDraftLine, SupplierInvoice, SupplierExpenseAccrual (+22 more)
 
-### Community 25 - "api/tests/counterparties + api/tests"
+### Community 25 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.03
-Nodes (166): InvoiceLineItem, A normalized line of a warehouse invoice — quantity, unit, sum, «персонал» flag., adjust_paid_invoice(), Исправить УЖЕ ОПЛАЧЕННУЮ (или частично оплаченную) обычную накладную: заменить п, async_session_factory(), AsyncSession, make_iiko_product(), IikoProduct (+158 more)
+Nodes (172): InvoiceLineItem, A normalized line of a warehouse invoice — quantity, unit, sum, «персонал» flag., assert_price_cleared(), Гейт перед оплатой/отправкой в банк: не пускаем неподтверждённую подозрительную, counterparty_prepayment_balance(), Остаток выданных предоплат контрагенту (= «поставщик нам должен»)., adjust_paid_invoice(), Исправить УЖЕ ОПЛАЧЕННУЮ (или частично оплаченную) обычную накладную: заменить п (+164 more)
 
 ### Community 100 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.05
-Nodes (100): InvoicePaymentAllocation, Links part of an invoice to a real cash fact (bank operation or cash txn)., create_expense_payment_draft(), Банковский черновик расхода из окна «Новый платёж».      Строка с официальным/ба, _allowed_flows(), new_payment_article_flow(), DdsArticle, ensure_expense_article_allowed() (+92 more)
+Cohesion: 0.06
+Nodes (78): InvoicePaymentAllocation, Links part of an invoice to a real cash fact (bank operation or cash txn)., _allowed_flows(), new_payment_article_flow(), DdsArticle, ensure_expense_article_allowed(), ensure_reservable_article_allowed(), ensure_income_article_allowed() (+70 more)
 
 ### Community 273 - "api/app/services + api/app/models"
 Cohesion: 0.20
 Nodes (22): BarterReturnLine, One partial settlement of a barter loan — by product line and/or by amount., _money(), Any, Decimal, _qty(), _resync_rule1_prepayment(), AsyncSession (+14 more)
 
-### Community 309 - "api/app/services + api/app/models"
-Cohesion: 0.24
-Nodes (24): CourierShiftDay, Подтверждение смены за день. Одна запись на дату.      draft → администратор ещё, _day_bounds(), date, datetime, _category_from_match(), CourierShiftMatch, get_shift_day() (+16 more)
-
-### Community 378 - "api/tests + api/app/services"
-Cohesion: 0.17
-Nodes (16): OwnAccountsRegistry, sync_own_accounts(), AsyncSession, _activate_internal_transfer_rule_if_ready(), _active_own_account_count(), test_classifier_sets_article_internal_transfer_and_review(), async_sessionmaker, AsyncSession (+8 more)
+### Community 378 - "api/tests + api/app/models"
+Cohesion: 0.22
+Nodes (12): OwnAccountsRegistry, test_classifier_sets_article_internal_transfer_and_review(), async_sessionmaker, AsyncSession, _prepare_own_accounts(), Account, _seed_account(), test_transfer_matching_links_sber_outflow_to_tbank_inflow() (+4 more)
 
 ### Community 562 - "api/app/models"
 Cohesion: 0.17
@@ -1441,7 +1469,7 @@ Nodes (13): EmployeeRoleAssignment, EmployeeRoleAssignment, EmployeePositionEven
 
 ### Community 79 - "api/tests + api/app/services"
 Cohesion: 0.04
-Nodes (122): Employee, _same_injury_window(), date, is_settled(), TaxPayment, PayableObligation, _month_title(), _title() (+114 more)
+Nodes (105): Employee, _same_injury_window(), date, is_settled(), TaxPayment, PayableObligation, _month_title(), _title() (+97 more)
 
 ### Community 391 - "api/app/models"
 Cohesion: 0.12
@@ -1456,8 +1484,8 @@ Cohesion: 0.20
 Nodes (19): BusinessOwner, Реестр собственников бизнеса: кто владеет и какой долей.  ПОЧЕМУ ОТДЕЛЬНАЯ ТАБЛИ, Одна строка = один собственник с его долей., _run(), _owner(), AsyncSession, Decimal, UUID (+11 more)
 
 ### Community 45 - "api/app/services + api/app/models"
-Cohesion: 0.11
-Nodes (58): PayrollRunEvent, _q(), Decimal, RunPaymentSettlement, UUID, allocated_total(), ReserveTransferResult, ReserveCancelResult (+50 more)
+Cohesion: 0.14
+Nodes (49): PayrollRunEvent, _q(), Decimal, UUID, allocated_total(), ReserveTransferResult, _is_admin_run(), PayrollRun (+41 more)
 
 ### Community 43 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.13
@@ -1467,45 +1495,49 @@ Nodes (55): PayrollPayment, PayrollCalculationResult, BeforeAccountingStart, Sta
 Cohesion: 0.22
 Nodes (18): AccumulationFundTransaction, FundPayoutResult, fund_outstanding(), AccumulationFundAccount, Decimal, fund_account_visible_in_roster(), Employee, forfeit_fund_account() (+10 more)
 
-### Community 82 - "api/app/services + api/app/models"
-Cohesion: 0.06
-Nodes (82): PnlLine, PnlSourceRule, PnlCashOrigin, PnlManualEntry, PnlPartnerCommissionRule, PnlPartnerCommissionFact, PnlIikoWriteoffFact, Справочники ОПиУ (P&L) — строки отчёта и правила, откуда берётся каждая цифра. (+74 more)
-
 ### Community 236 - "api/app/services + api/app/models"
-Cohesion: 0.13
-Nodes (33): PnlWorkupReview, Вопрос человеку: «этот товар брали на проработку?» — и след ответа.      ЗАЧЕМ О, WorkupReviewError, format_iiko_datetime(), datetime, writeoff_moment(), date, WorkupReviewRow (+25 more)
+Cohesion: 0.08
+Nodes (48): PnlLine, PnlArticleRule, PnlSourceRule, PnlCashOrigin, PnlManualEntry, PnlWorkupReview, PnlIikoProductObservation, Справочники ОПиУ (P&L) — строки отчёта и правила, откуда берётся каждая цифра. (+40 more)
+
+### Community 82 - "api/app/services + api/app/models"
+Cohesion: 0.08
+Nodes (74): PnlPartnerCommissionRule, PnlPartnerCommissionFact, PnlIikoWriteoffFact, Ставка партнёра и сохранённый OLAP-пресет, из которого берётся его выручка., Месячный расчёт комиссии: выручка партнёра × ставка договора.      Это детализац, Номенклатура проведённых актов списания за месяц.      ЗАЧЕМ ХРАНИТЬ ПОИМЁННО, Р, normalize_partner_name(), Any (+66 more)
+
+### Community 263 - "api/app/services + api/app/models"
+Cohesion: 0.15
+Nodes (30): PnlProductMonthlyDecision, Временное решение по неизвестному товару только для одного месяца.      ``workup, MenuProduct, ProductDishUsage, MenuUsageSnapshot, AutoClassificationCandidate, AutoClassificationResult, _clean() (+22 more)
 
 ### Community 212 - "api/app/services + api/app/models"
 Cohesion: 0.14
 Nodes (36): Position, PositionChangeEvent, Реестр должностей: архетип оплаты + группа прав + допуски + связь с ролью iiko., Журнал изменений реестра должностей (по образцу журнала сотрудников)., normalize_position_name(), _translit_slug(), generate_iiko_role_code(), generate_access_role_code() (+28 more)
 
 ### Community 84 - "api/app/services + api/tests"
-Cohesion: 0.06
-Nodes (58): IikoRevenuePeriod, TaxPeriodClose, Налоги: база дохода, факты уплаты в бюджет, закрытые периоды, ручные обязательст, Выручка iiko за период — БАЗА налога.      Гранулярность двойная: ``month`` (мес, Зафиксированный расчёт отчётного периода + реестр израсходованного вычета., YearConfig, ClaimPolicy, TaxInputs (+50 more)
+Cohesion: 0.04
+Nodes (90): TaxPeriodClose, TaxManualObligation, TaxPayrollLedger, Налоги: база дохода, факты уплаты в бюджет, закрытые периоды, ручные обязательст, Зафиксированный расчёт отчётного периода + реестр израсходованного вычета., Ручное обязательство перед бюджетом: пени, штрафы, требования ФНС.      Движок и, Помесячная раскладка зарплаты по сотруднику из сальдо-оборотной ведомости., payroll_taxes_for_month() (+82 more)
+
+### Community 20 - "api/tests + api/app/services"
+Cohesion: 0.05
+Nodes (119): IikoRevenuePeriod, Выручка iiko за период — БАЗА налога.      Гранулярность двойная: ``month`` (мес, ReconLine, _diff(), Decimal, _classify(), date, _payable() (+111 more)
 
 ### Community 172 - "api/tests + api/app/services"
 Cohesion: 0.09
 Nodes (44): IikoRevenueRevision, Журнал правок базы задним числом.      iiko правит закрытые дни (сторно-чеки, пе, _iter_cache_files(), Path, _load_records(), _run(), Namespace, main() (+36 more)
 
-### Community 109 - "api/app/services + api/tests"
-Cohesion: 0.04
-Nodes (94): TaxPayrollLedger, Помесячная раскладка зарплаты по сотруднику из сальдо-оборотной ведомости., payroll_taxes_for_month(), AsyncSession, date, Decimal, _month_revenue(), income_tax_for_month() (+86 more)
-
 ### Community 661 - "api/app/models"
 Cohesion: 0.50
 Nodes (3): UtilityAccount, Коммунальные услуги помещения: вода, газ, электричество.  ЧЕМ ЭТО ОТЛИЧАЕТСЯ ОТ, Коммунальный поток помещения: за какой ресурс, кому платим и по какой статье.
 
-### Community 189 - "api/app + api/tests"
-Cohesion: 0.06
-Nodes (63): maintain_sber_credentials(), poll_banks(), auto_commit_shift_schedule_job(), refresh_production_advance_window_job(), poll_payment_statuses(), AsyncSession, NormalizedBankOperation, BankOperation (+55 more)
+### Community 189 - "api/app"
+Cohesion: 0.07
+Nodes (56): maintain_sber_credentials(), poll_banks(), reconcile_dismissing_employees_job(), refresh_production_advance_window_job(), poll_payment_statuses(), AsyncSession, NormalizedBankOperation, BankOperation (+48 more)
 
-### Community 44 - "api/app/services + api/app"
-Cohesion: 0.06
-Nodes (95): escalate_pending_cheques(), Поднять в «Требует разбора» ручные чеки, которые банк не подтвердил дольше порог, _money(), Any, Decimal, _qty(), _line_sum(), ChequeLineInput (+87 more)
+### Community 265 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.16
+Nodes (46): escalate_pending_cheques(), Поднять в «Требует разбора» ручные чеки, которые банк не подтвердил дольше порог, match_card_refund_operations(), escalate_missing_cheque_refunds(), Привязать непривязанные возвраты (refundIn) к чекам, ждущим ровно эту сумму. Без, Поднять в «Требует разбора» отложенные кейсы возвратов. Без commit.      Две вет, _purchase_op(), AsyncSession (+38 more)
 
-### Community 430 - "api/app/services + api/app"
-Cohesion: 0.18
-Nodes (21): reconcile_dismissing_employees_job(), Завершает отложенные увольнения: переводит `dismissing` → `inactive`, если     в, SettlementState, _deposit_settled(), AsyncSession, UUID, _payroll_settled(), _advances_settled() (+13 more)
+### Community 89 - "api/tests + api/app/services"
+Cohesion: 0.05
+Nodes (112): auto_commit_shift_schedule_job(), В 00:00 МСК авто-фиксируем график, если управляющий забыл нажать «Зафиксировать», create_schedule(), AsyncSession, date, CurrentActor, ShiftSchedule, get_schedule_with_shifts() (+104 more)
 
 ### Community 291 - "api/tests/counterparties + api/app"
 Cohesion: 0.21
@@ -1516,36 +1548,24 @@ Cohesion: 0.14
 Nodes (42): settle_counterparty_draft_from_operation(), Закрыть черновик по подтверждённой операции T-Банка без ожидания ``EXECUTED``., absorb_auto_classified_counterparty_payment(), Свести авто-классифицированную операцию выписки с prebooked-проводкой оплаты пос, _document_number(), _op(), NormalizedBankOperation, _sent_draft() (+34 more)
 
 ### Community 178 - "api/app/services + api/app"
-Cohesion: 0.07
-Nodes (67): push_iiko_invoice_payments(), Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Clou, _throttle_add_payment(), _amount_iiko_representable(), Decimal, representable_split(), _is_incoming_invoice_not_found(), _is_already_paid() (+59 more)
-
-### Community 198 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.11
-Nodes (54): verify_iiko_invoice_payments(), Подтвердить, что отправленные в iiko оплаты реально стали проводками.      ``add, fetch_invoice_payment_transactions(), date, Decimal, _covered(), _clear_kassa_done_marker(), AsyncSession (+46 more)
+Cohesion: 0.08
+Nodes (59): push_iiko_invoice_payments(), Зеркалировать в iiko оплаты iiko-накладных, оплаченных через банк-черновик (Clou, _throttle_add_payment(), _amount_iiko_representable(), Decimal, representable_split(), _is_incoming_invoice_not_found(), _is_already_paid() (+51 more)
 
 ### Community 55 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.10
 Nodes (52): verify_iiko_cash_payouts(), Подтвердить, что выдачи (авансы, депозиты) реально стали проводками в кассе iiko, fetch_cash_payout_comments(), date, _is_posted(), verify_cash_payouts(), AsyncSession, Пост-сверка денежных проводок в iiko: подтверждать выдачу проводкой в учёте, а н (+44 more)
 
-### Community 28 - "api/tests + api/app/services"
-Cohesion: 0.05
-Nodes (98): poll_tax_documents(), Модуль «Налоги»: циклический забор документов бухгалтера из почты (платёжки/ведо, resolve_tax_senders(), _received_year(), _received_date(), _classify_document(), _payment_order_recognition(), _payroll_recognition() (+90 more)
+### Community 103 - "api/app/services + api/app"
+Cohesion: 0.10
+Nodes (43): poll_tax_documents(), Модуль «Налоги»: циклический забор документов бухгалтера из почты (платёжки/ведо, Exception, MailAccount, configured_accounts(), Settings, Учётка ящика для опроса. ``label`` уходит в intake.mailbox., Собрать ящики, у которых заданы логин+пароль. Пустые — молча пропускаем. (+35 more)
 
-### Community 514 - "api/app/services + api/app"
-Cohesion: 0.20
-Nodes (16): run_iiko_courier_delivery_sync_once(), OlapSyncReport, _iiko_host_and_port(), _auth_token(), fetch_olap_deliveries(), date, Any, _parse_dt() (+8 more)
+### Community 93 - "api/app/services + api/tests"
+Cohesion: 0.06
+Nodes (53): _client_for_provider(), TbankClient, Settings, _bank_error_detail(), _payment_status_from_payload(), Any, TbankClient, date (+45 more)
 
 ### Community 46 - "api/app/schemas"
 Cohesion: 0.22
 Nodes (5): NewPaymentExpenseLineIn, NewPaymentExpenseDraftCreate, Строка свободного расхода: статья, сумма, назначение и получатель., Свободный расход: прямой платёж или банковский черновик на карту ИП.      Одним, Строки транша (одиночные поля → транш из одной строки).
-
-### Community 320 - "api/app/schemas"
-Cohesion: 0.03
-Nodes (36): EmployeeRoleAssignmentRead, EmployeeRoleAssignmentCreate, EmployeeRoleAssignmentPatch, EmployeePositionEventRead, EmployeePositionAssignmentRead, EmployeePositionChange, EmployeePositionAssignmentPatch, EmployeePositionAssignmentDelete (+28 more)
-
-### Community 108 - "api/app/services + api/app/schemas"
-Cohesion: 0.07
-Nodes (59): EmployeeCreateRequest, EmployeePatch, parse_args(), Namespace, async_main(), main(), ValueError, AssetContext (+51 more)
 
 ### Community 77 - "api/app/schemas"
 Cohesion: 0.03
@@ -1553,11 +1573,15 @@ Nodes (71): KassaDdsArticleRead, KassaAccountRead, KassaCounterpartyRead, KassaC
 
 ### Community 15 - "api/tests + api/app/services"
 Cohesion: 0.03
-Nodes (76): DeferredChargeCreate, PayrollAdjustmentLockedError, AttendanceSnapshot, Any, PayrollPeriod, Employee, UUID, EmployeeRoleAssignment (+68 more)
+Nodes (75): DeferredChargeCreate, PayrollAdjustmentLockedError, AttendanceSnapshot, Any, PayrollPeriod, Employee, UUID, EmployeeRoleAssignment (+67 more)
 
 ### Community 404 - "api/app/schemas"
 Cohesion: 0.15
 Nodes (16): PayrollRateBase, PayrollRateRead, PayrollRateCellRead, PayrollRoleCategoryAvailabilityToggle, PayrollRoleCategoryAvailabilityRead, PayrollRoleCategoryOptionRead, PayrollRevenueShareBase, PayrollRevenueShareRead (+8 more)
+
+### Community 1030 - "api/app/schemas"
+Cohesion: 0.29
+Nodes (7): PositionBase, PositionCreateRequest, PositionUpdateRequest, PositionRead, PositionListRead, PositionIikoSyncResult, PositionChangeEventRead
 
 ### Community 62 - "api/app/schemas"
 Cohesion: 0.03
@@ -1600,8 +1624,8 @@ Cohesion: 0.15
 Nodes (37): RoleSnapshot, EmployeeSnapshot, DepositSnapshot, SourceSnapshot, parse_source(), Path, parse_staff_sheet(), date (+29 more)
 
 ### Community 63 - "api/tests + api/app/services"
-Cohesion: 0.06
-Nodes (77): _run(), Namespace, main(), Опрос почты бухгалтера: разбор налоговых документов в staging ``tax_document_int, PromotionError, PromotionResult, _injury_due_fallback(), date (+69 more)
+Cohesion: 0.05
+Nodes (84): _run(), Namespace, main(), Опрос почты бухгалтера: разбор налоговых документов в staging ``tax_document_int, insert_or_reread(), AsyncSession, T, lock_row() (+76 more)
 
 ### Community 532 - "api/app/scripts"
 Cohesion: 0.39
@@ -1620,8 +1644,8 @@ Cohesion: 0.19
 Nodes (17): _money(), Decimal, _orphan_payments(), AsyncSession, CashflowTransaction, _own_prepayment(), SupplierInvoice, SupplierPrepayment (+9 more)
 
 ### Community 303 - "api/app/services + api/tests/counterparties"
-Cohesion: 0.07
-Nodes (29): main(), Переразобрать период услуги в уже принятых счетах — по сохранённому PDF.  Период, RecognizedInvoice, extract_pdf_pages(), extract_pdf_text(), _confidence(), llm_recognize(), Settings (+21 more)
+Cohesion: 0.06
+Nodes (52): main(), Переразобрать период услуги в уже принятых счетах — по сохранённому PDF.  Период, _money(), Decimal, _parse_date(), date, _strip_basis_lines(), _pick_basis() (+44 more)
 
 ### Community 518 - "api/app/scripts"
 Cohesion: 0.39
@@ -1639,9 +1663,9 @@ Nodes (5): parse_args(), Namespace, async_main(), main(), Завести еди�
 Cohesion: 0.12
 Nodes (39): _ensure_period(), AsyncSession, PayrollPeriod, seed(), _main(), Seed an OPEN weekly period with attendance so a production employee shows a non-, _admin(), _stuck_prepayment() (+31 more)
 
-### Community 196 - "api/tests + api/app/services"
-Cohesion: 0.07
-Nodes (85): _run(), main(), Бэкфилл налогового контура: выписка (``bank_operations``) → ``tax_payment`` → пр, article_code_for(), kind_title(), TaxDdsProjectionReport, _Article, _DesiredLine (+77 more)
+### Community 326 - "api/app/services + api/app/scripts"
+Cohesion: 0.10
+Nodes (34): _run(), main(), Бэкфилл налогового контура: выписка (``bank_operations``) → ``tax_payment`` → пр, article_code_for(), kind_title(), TaxDdsProjectionReport, _Article, _DesiredLine (+26 more)
 
 ### Community 533 - "api/app/scripts"
 Cohesion: 0.43
@@ -1659,13 +1683,13 @@ Nodes (27): _money(), Decimal, ReadinessItem, MonthReadiness, _stuck_accruals(),
 Cohesion: 0.07
 Nodes (45): send_advance_payout(), Decimal, date, UUID, post_advance_payout_to_iiko(), AsyncSession, Выдача аванса/займа сотруднику в iiko — изъятие из «Главной кассы».  ТК Черников, Синхронная отправка изъятия (исполняется в треде). Возвращает id типа проводки. (+37 more)
 
-### Community 143 - "api/app/services + api/tests"
-Cohesion: 0.06
-Nodes (62): call_tool(), Settings, Any, call_failure_reason(), Exception, Один структурированный вызов Claude — общий для всех сервисов проекта.  До этого, Спросить модель и вернуть заполненные ею поля инструмента.      ``prompt`` — про, Человеческая причина отказа вместо сырого текста исключения.      Отдельно ловим (+54 more)
+### Community 486 - "api/app/services"
+Cohesion: 0.14
+Nodes (14): call_tool(), Settings, Any, call_failure_reason(), Exception, Один структурированный вызов Claude — общий для всех сервисов проекта.  До этого, Спросить модель и вернуть заполненные ею поля инструмента.      ``prompt`` — про, Человеческая причина отказа вместо сырого текста исключения.      Отдельно ловим (+6 more)
 
 ### Community 12 - "api/tests + api/app/services"
 Cohesion: 0.06
-Nodes (91): _article_name_for_kind(), AsyncSession, resolve_asset_context(), DdsArticle, UUID, Decimal, _purchase_context(), FixedAsset (+83 more)
+Nodes (88): _article_name_for_kind(), AsyncSession, resolve_asset_context(), DdsArticle, UUID, Decimal, _purchase_context(), FixedAsset (+80 more)
 
 ### Community 419 - "api/app/services"
 Cohesion: 0.18
@@ -1675,6 +1699,10 @@ Nodes (26): BalanceLine, _money(), Decimal, _created_date(), FixedAsset, date, m
 Cohesion: 0.21
 Nodes (22): _money(), Decimal, disposal_for_asset(), AsyncSession, UUID, AssetMovement, month_is_frozen(), date (+14 more)
 
+### Community 143 - "api/app/services + api/tests"
+Cohesion: 0.09
+Nodes (48): AssetIntakeError, IntakeTurn, IntakeResult, build_prompt(), AssetCategory, _clean(), parse_answer(), Any (+40 more)
+
 ### Community 153 - "api/tests + api/app/services"
 Cohesion: 0.07
 Nodes (69): _decimal(), build_prompt(), AsyncSession, AssetConditionReport, build_purchase_prompt(), apply_purchase_answer(), Any, apply_model_answer() (+61 more)
@@ -1683,25 +1711,29 @@ Nodes (69): _decimal(), build_prompt(), AsyncSession, AssetConditionReport, buil
 Cohesion: 0.25
 Nodes (21): AttendanceRules, default_attendance_rules(), load_attendance_entries(), AsyncSession, PayrollPeriod, Any, AttendanceEntry, load_attendance_rules() (+13 more)
 
-### Community 58 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.04
-Nodes (162): _resolve_payer_bank_wallet(), AsyncSession, CounterpartyPaymentDraft, Wallet, _settle_draft_via_safe(), UUID, date, classify_payment_status() (+154 more)
+### Community 550 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.08
+Nodes (52): _resolve_payer_bank_wallet(), AsyncSession, CounterpartyPaymentDraft, Wallet, _settle_draft_via_safe(), UUID, date, classify_payment_status() (+44 more)
 
 ### Community 52 - "api/app/services + api/tests"
-Cohesion: 0.05
-Nodes (65): NormalizedBankOperation, AccountMeta, PaymentDraftResult, BankClient, Protocol, date, Decimal, Any (+57 more)
+Cohesion: 0.06
+Nodes (64): NormalizedBankOperation, AccountMeta, PaymentDraftResult, BankClient, date, Decimal, Any, date_range() (+56 more)
+
+### Community 390 - "integrations/tbank/scripts + (root)"
+Cohesion: 0.17
+Nodes (9): Protocol, DetectionResult, PaymentParser, normalize_text(), normalize_key(), water_row_label(), enrich_known_counterparty(), completeness_score() (+1 more)
 
 ### Community 371 - "api/app/services"
-Cohesion: 0.14
-Nodes (25): ensure_cashflow_reclassifiable(), CashflowTransaction, _transfer_article_ids(), AsyncSession, UUID, _clear_transfer_counter_leg(), _book_transfer_counter_leg(), apply_cashflow_split() (+17 more)
+Cohesion: 0.12
+Nodes (27): ensure_cashflow_reclassifiable(), CashflowTransaction, _transfer_article_ids(), AsyncSession, UUID, _clear_transfer_counter_leg(), _book_transfer_counter_leg(), Wallet (+19 more)
 
 ### Community 306 - "api/tests + api/app/services"
 Cohesion: 0.24
 Nodes (25): reconcile_needs_review_prebooked(), Подхватить «требующие проверки» операции, под которые prebooked-проводка появила, _bank_wallet(), AsyncSession, Wallet, _needs_review_op(), UUID, Decimal (+17 more)
 
-### Community 97 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.09
-Nodes (58): resolve_or_create_operation_counterparty(), Найти контрагента по ИНН (если есть) или создать нового из распознанных данных б, pay_invoice_from_wallet(), Manually pay (part of) a payable invoice from a DDS wallet — bypasses the bank., make_bank_operation(), BankOperation, An outgoing bank op. ``amount`` stays POSITIVE — sign lives in ``direction``, _cashflow_count() (+50 more)
+### Community 227 - "api/tests + api/app/services"
+Cohesion: 0.05
+Nodes (61): treasury_enp_requisites(), Any, Owner-approved реквизиты единого налогового платежа (ЕНП) в Казначейство/ФНС.  П, Изменяемая копия реквизитов ЕНП для одного вызова банк-клиента., treasury_injury_requisites(), Any, Owner-approved реквизиты взноса на травматизм (0,2%) в СФР по Ростовской области, Изменяемая копия реквизитов травматизма для одного вызова банк-клиента. (+53 more)
 
 ### Community 429 - "api/app/services + api/tests"
 Cohesion: 0.17
@@ -1711,21 +1743,21 @@ Nodes (13): owner_approved_ip_card_requisites(), Any, load_owner_approved_ip_car
 Cohesion: 0.17
 Nodes (14): merchant_token(), normalized_name(), _unwrap_quotes(), Имя мерчанта из текста карт-операции — единственная опора для её опознания.  Кар, Стабильное имя мерчанта из назначения карт-операции.      Возвращает ``None``, е, Название контрагента в сравнимом виде: без уточнения в скобках, регистра и кавыч, test_merchant_token_extracts_seller_name(), test_merchant_token_keeps_shops_apart() (+6 more)
 
-### Community 500 - "api/tests + api/app/services"
-Cohesion: 0.16
-Nodes (14): channel_provider(), payout_client_for(), Выбор банковского клиента-плательщика по провайдеру (Т-Банк / Сбер) для payout-ч, Банк-провайдер по значению канала выплаты, или None если канал не банк-черновик., Клиент банка-плательщика по коду провайдера (по умолчанию — Т-Банк)., _run(), _mock_settings(), test_sber_create_draft_mock_returns_unsigned_draft() (+6 more)
+### Community 1035 - "api/app/services"
+Cohesion: 0.80
+Nodes (4): sync_own_accounts(), AsyncSession, _activate_internal_transfer_rule_if_ready(), _active_own_account_count()
 
 ### Community 50 - "api/app/services + api/tests"
-Cohesion: 0.07
-Nodes (108): payer_account_for(), Номер расчётного счёта плательщика для провайдера (в mock — заглушка)., PayoutBucket, Корзина выплаты по статье ДДС: сколько всего к выплате по этой статье., PayoutExpenseResult, PayrollFundingSource, PayrollRunFunding, set_run_payout_cash() (+100 more)
+Cohesion: 0.05
+Nodes (121): payer_account_for(), Выбор банковского клиента-плательщика по провайдеру (Т-Банк / Сбер) для payout-ч, Номер расчётного счёта плательщика для провайдера (в mock — заглушка)., PayrollPayoutBooking, PayrollLine, _money(), Decimal, PayoutBucket (+113 more)
+
+### Community 1028 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.25
+Nodes (7): payee_account_error(), Any, Проверка контрольного разряда банковских реквизитов (алгоритм Банка России).  Т-, Сообщение об ошибке, если счёт получателя не проходит контроль; иначе None., test_payee_account_error_flags_invalid(), test_payee_account_error_none_for_valid(), test_payee_account_error_none_when_incomplete()
 
 ### Community 185 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.10
-Nodes (25): account_control_key_valid(), payee_account_error(), Any, Проверка контрольного разряда банковских реквизитов (алгоритм Банка России).  Т-, True, если контрольный разряд счёта ``account`` сходится с БИК ``bik``.      Раб, Сообщение об ошибке, если счёт получателя не проходит контроль; иначе None., test_control_key_valid_for_correct_pair(), test_control_key_invalid_for_incident_pair() (+17 more)
-
-### Community 265 - "api/app/services"
-Cohesion: 0.13
-Nodes (39): _article_id(), AsyncSession, UUID, safe_reserved_total(), Decimal, safe_active_allocations_count(), create_allocation(), SafeAllocation (+31 more)
+Cohesion: 0.16
+Nodes (19): account_control_key_valid(), True, если контрольный разряд счёта ``account`` сходится с БИК ``bik``.      Раб, test_control_key_valid_for_correct_pair(), test_control_key_invalid_for_incident_pair(), test_control_key_rejects_bad_length(), test_control_key_ignores_separators(), test_set_requisites_rejects_invalid_account_when_verified(), async_sessionmaker (+11 more)
 
 ### Community 499 - "api/app/services"
 Cohesion: 0.51
@@ -1733,39 +1765,55 @@ Nodes (9): find_and_link_transfer_pairs(), AsyncSession, _operations_match(), Ba
 
 ### Community 328 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.09
-Nodes (20): moscow_today(), date, as_moscow(), datetime, Единственная точка, где берётся «сегодня» по Москве.  ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ. К, Сегодняшняя дата по Москве. Единственное место, которое смотрит на системные час, Наивный ``datetime`` от клиента — это МОСКОВСКОЕ стенное время, а не UTC.      П, test_as_moscow_localizes_naive() (+12 more)
+Nodes (22): moscow_today(), date, as_moscow(), datetime, Единственная точка, где берётся «сегодня» по Москве.  ЗАЧЕМ ОТДЕЛЬНАЯ ФУНКЦИЯ. К, Сегодняшняя дата по Москве. Единственное место, которое смотрит на системные час, Наивный ``datetime`` от клиента — это МОСКОВСКОЕ стенное время, а не UTC.      П, _to_moscow_wall_clock() (+14 more)
 
 ### Community 234 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.12
 Nodes (31): _msk_date(), CounterpartyBalanceAsOf, Decimal, BalanceSheetAsOf, _document_in_force(), _allocation_event_date(), build_balance_as_of(), AsyncSession (+23 more)
 
 ### Community 7 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.07
-Nodes (75): _money(), Any, Decimal, _receiver_block(), _is_card_noise(), BankOperation, _payee_requisites(), MatchCandidate (+67 more)
+Cohesion: 0.06
+Nodes (77): _money(), Any, Decimal, _receiver_block(), _is_card_noise(), BankOperation, _payee_requisites(), MatchCandidate (+69 more)
 
 ### Community 34 - "api/app/services + api/tests/counterparties"
 Cohesion: 0.06
 Nodes (96): BarterMatchError, _money(), Any, Decimal, _products(), SupplierInvoice, _Ref, BarterSettlementView (+88 more)
 
-### Community 1028 - "api/app/services + tmp"
-Cohesion: 0.13
-Nodes (19): date, _fetch_cloud_documents(), fetch_iiko_payables(), Cloud ``list`` (сводки) → ``get`` по каждому проведённому. Непроведённые/удалённ, Справочник поставщиков (RMS XML) + полные документы обоих направлений (Cloud JSO, iiko_opener(), OpenerDirector, iiko_auth_token() (+11 more)
+### Community 1029 - "api/app/services"
+Cohesion: 0.32
+Nodes (8): _iiko_opener(), OpenerDirector, _iiko_auth_token(), _iiko_auth_token_with_retry(), _call_add_payment(), Cloud OAuth: POST /api/v2/access_token {appId, apiKey, clientSecret} → token., ``_iiko_auth_token`` с бэкоффом на 429. Выдача токена — чистое чтение: если по л, Синхронный вызов iiko ``add_payment`` (исполняется в треде): auth + POST в обход
+
+### Community 81 - "api/app/services"
+Cohesion: 0.07
+Nodes (53): IikoSupplier, CounterpartyInvoiceSyncResult, _candidate_project_roots(), Path, _load_orders_module(), ModuleType, _text(), Element (+45 more)
 
 ### Community 27 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.11
-Nodes (66): ingest_iiko_payables(), Разобрать и апсертнуть фиды: справочник поставщиков (RMS XML) + документы (Cloud, Any, suppliers_xml(), _cloud_item(), cloud_invoice_docs(), cloud_outgoing_docs(), Build a ``/suppliers`` XML payload. Each dict: id, name, inn, deleted,     repre (+58 more)
+Cohesion: 0.12
+Nodes (59): ingest_iiko_payables(), Разобрать и апсертнуть фиды: справочник поставщиков (RMS XML) + документы (Cloud, suppliers_xml(), cloud_invoice_docs(), Build a ``/suppliers`` XML payload. Each dict: id, name, inn, deleted,     repre, Cloud JSON-документы (incoming) в форме ответа ``incoming_invoice/get``.      Ea, test_iiko_resync_does_not_rewrite_barter_loan_amount(), Реверс-синк iiko не переписывает сумму бартерного займа.      Состав займа замор (+51 more)
+
+### Community 623 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.06
+Nodes (72): _money(), Any, Decimal, _allocated_amount(), AsyncSession, UUID, payment_allocated_amount(), _invoice_remaining() (+64 more)
 
 ### Community 74 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.08
+Nodes (71): create_payment_draft_for_invoices(), Черновик оплаты накладных. ``channel`` выбирает банк-плательщика: ``bank_draft``, _informal_supplier(), AsyncSession, _transfer_legs(), _draft_reserve(), test_informal_draft_targets_ip_card(), async_sessionmaker (+63 more)
+
+### Community 97 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.05
-Nodes (91): create_payment_draft_for_invoices(), Черновик оплаты накладных. ``channel`` выбирает банк-плательщика: ``bank_draft``, _informal_supplier(), AsyncSession, _transfer_legs(), _draft_reserve(), test_informal_draft_targets_ip_card(), async_sessionmaker (+83 more)
+Nodes (111): pay_invoice_from_wallet(), Manually pay (part of) a payable invoice from a DDS wallet — bypasses the bank., make_wallet(), Wallet, make_expense_article(), DdsArticle, test_paid_bill_shows_single_payment_row(), TestClient (+103 more)
 
 ### Community 64 - "api/app/services"
-Cohesion: 0.11
-Nodes (50): CounterpartyRegistryError, Any, AsyncSession, UUID, _profile_dict(), CounterpartyPayableProfile, _get_or_create_profile(), activate_configured_placeholder() (+42 more)
+Cohesion: 0.10
+Nodes (65): CounterpartyRegistryError, _money(), Any, Decimal, _normalize_vat_breakdown(), InvoiceItem, RegistryItem, CounterpartyCard (+57 more)
 
 ### Community 455 - "api/app/services"
-Cohesion: 0.17
-Nodes (22): _money(), Decimal, _due_from_day_of_month(), date, compute_invoice_due_date(), _normalize_vat_breakdown(), InvoiceItem, RegistryItem (+14 more)
+Cohesion: 0.67
+Nodes (4): _due_from_day_of_month(), date, compute_invoice_due_date(), Derive a due date from supplier terms: N days after delivery, else day-of-month.
+
+### Community 1054 - "api/app/services"
+Cohesion: 0.67
+Nodes (3): list_expense_articles(), DdsArticle, Active outflow DDS articles a manual supplier payment can be booked to.
 
 ### Community 112 - "api/app/services + api/tests/counterparties"
 Cohesion: 0.07
@@ -1776,12 +1824,16 @@ Cohesion: 0.06
 Nodes (81): money(), Decimal, _clamp(), period_of(), date, expected_by(), LedgerRow, LedgerMonth (+73 more)
 
 ### Community 442 - "api/app/services"
-Cohesion: 0.21
-Nodes (12): ingest_cloud_shift_event(), AsyncSession, Any, UUID, Ingest смены курьера из вебхука iikoCloud (realtime открытие/закрытие).  Дополня, Применить событие смены вебхука iikoCloud. Возвращает employee_id курьера или No, get_employee_or_404(), AsyncSession (+4 more)
+Cohesion: 0.33
+Nodes (6): ingest_cloud_shift_event(), AsyncSession, Any, UUID, Ingest смены курьера из вебхука iikoCloud (realtime открытие/закрытие).  Дополня, Применить событие смены вебхука iikoCloud. Возвращает employee_id курьера или No
+
+### Community 1033 - "api/app/services"
+Cohesion: 0.67
+Nodes (5): get_employee_or_404(), AsyncSession, UUID, Employee, get_courier_or_404()
 
 ### Community 179 - "api/app/services"
-Cohesion: 0.12
-Nodes (43): _topup_payment_purpose(), is_senior_courier(), Employee, target_cents_for_employee(), CourierDepositFilters, get_deposit_settings(), AsyncSession, update_deposit_settings() (+35 more)
+Cohesion: 0.10
+Nodes (49): _topup_payment_purpose(), is_senior_courier(), Employee, target_cents_for_employee(), CourierDepositFilters, get_deposit_settings(), AsyncSession, update_deposit_settings() (+41 more)
 
 ### Community 274 - "api/app/services"
 Cohesion: 0.20
@@ -1789,11 +1841,11 @@ Nodes (27): EvaluationFilters, create_evaluation(), AsyncSession, UUID, date, Co
 
 ### Community 241 - "api/app/services + api/tests/couriers"
 Cohesion: 0.08
-Nodes (42): SyncReport, Any, IikoAttendanceRecord, AttendanceParseResult, resolve_courier_role_ids(), AsyncSession, sync_attendance(), date (+34 more)
+Nodes (44): SyncReport, Any, IikoAttendanceRecord, AttendanceParseResult, resolve_courier_role_ids(), AsyncSession, sync_attendance(), date (+36 more)
 
-### Community 26 - "api/app/services + api/tests"
-Cohesion: 0.05
-Nodes (107): fetch_iiko_employee_roles(), fetch_iiko_attendance_xml(), is_target_position(), Any, IikoEmployeeRecord, IikoRoleUpsertResult, EmployeeMutation, SkippedEmployeeRecord (+99 more)
+### Community 514 - "api/app/services"
+Cohesion: 0.22
+Nodes (15): OlapSyncReport, _iiko_host_and_port(), _auth_token(), fetch_olap_deliveries(), date, Any, _parse_dt(), datetime (+7 more)
 
 ### Community 149 - "api/app/services"
 Cohesion: 0.12
@@ -1803,9 +1855,13 @@ Nodes (47): get_courier_kpi(), AsyncSession, UUID, date, CourierKPI, list_courie
 Cohesion: 0.19
 Nodes (31): ScheduleFilters, upsert_entry(), AsyncSession, UUID, date, ScheduleCategory, datetime, CourierScheduleEntry (+23 more)
 
-### Community 242 - "api/app/services + api/tests/couriers"
-Cohesion: 0.12
-Nodes (44): MatchRecalculationReport, build_shift_matches(), CourierScheduleEntry, CourierIikoShift, UUID, date, datetime, CourierShiftMatch (+36 more)
+### Community 309 - "api/app/services"
+Cohesion: 0.27
+Nodes (22): _day_bounds(), date, datetime, _category_from_match(), CourierShiftMatch, get_shift_day(), AsyncSession, Any (+14 more)
+
+### Community 242 - "api/app/services"
+Cohesion: 0.18
+Nodes (30): MatchRecalculationReport, build_shift_matches(), CourierScheduleEntry, CourierIikoShift, UUID, date, datetime, CourierShiftMatch (+22 more)
 
 ### Community 124 - "api/app/services + api/tests"
 Cohesion: 0.08
@@ -1816,16 +1872,16 @@ Cohesion: 0.14
 Nodes (41): create_deferred_charge(), AsyncSession, DeferredChargeCreate, CurrentActor, DeferredAuditCharge, list_deferred_charges(), UUID, cancel_deferred_charge() (+33 more)
 
 ### Community 219 - "api/app/services"
-Cohesion: 0.14
-Nodes (32): _money(), Any, Decimal, book_deposit_bank_to_safe_transfer(), AsyncSession, UUID, date, send_deposit_payout_bank_draft() (+24 more)
-
-### Community 362 - "api/tests + api/app/services"
-Cohesion: 0.19
-Nodes (31): apply_deposit_draft_status(), Продвинуть депозитный черновик по статусу платежа (webhook Т-Банк / поллинг Сбер, _seed_article(), AsyncSession, UUID, _seed_employee_with_deposit(), Decimal, Employee (+23 more)
+Cohesion: 0.13
+Nodes (36): _money(), Any, Decimal, book_deposit_bank_to_safe_transfer(), AsyncSession, UUID, date, send_deposit_payout_bank_draft() (+28 more)
 
 ### Community 394 - "api/app/services"
 Cohesion: 0.26
 Nodes (13): _d(), Any, Decimal, ledger_delta(), BalanceDrift, expected_balances(), AsyncSession, UUID (+5 more)
+
+### Community 1010 - "api/app/services"
+Cohesion: 0.29
+Nodes (9): DepositPayoutResult, execute_deposit_payout(), AsyncSession, UUID, Decimal, datetime, Единый контур НЕМЕДЛЕННОЙ (наличной) выдачи депозита производственнику (обычная, Что получилось на выходе — вызывающему нужно для ответа API (и iiko-изъятия). (+1 more)
 
 ### Community 210 - "api/app/services + api/tests"
 Cohesion: 0.12
@@ -1835,13 +1891,17 @@ Nodes (35): _truthy(), Any, is_scheduled_payout_enabled(), AsyncSession, load_pe
 Cohesion: 0.18
 Nodes (24): get_deposit_account(), AsyncSession, UUID, DepositAccount, has_imported_deposit_accruals(), load_accounts(), ensure_account(), datetime (+16 more)
 
+### Community 430 - "api/app/services"
+Cohesion: 0.20
+Nodes (19): SettlementState, _deposit_settled(), AsyncSession, UUID, _payroll_settled(), _advances_settled(), _revision_settled(), _payouts_settled() (+11 more)
+
 ### Community 665 - "api/app/services"
 Cohesion: 0.50
 Nodes (3): sniff_mime(), Приём файла от человека: определение типа по содержимому и предел размера.  ЗАЧЕ, Тип по сигнатуре. ``None`` — формат не поддержан, грузить нельзя.
 
 ### Community 190 - "api/app/services"
-Cohesion: 0.08
-Nodes (64): _is_tax_agent(), _guess_type(), _doc_kind_from_recognition(), _resync_closing_after_edit(), AsyncSession, SupplierInvoice, _sender_email(), _counterparty_by_email() (+56 more)
+Cohesion: 0.09
+Nodes (63): _is_tax_agent(), _guess_type(), _doc_kind_from_recognition(), _resync_closing_after_edit(), AsyncSession, SupplierInvoice, _sender_email(), _counterparty_by_email() (+55 more)
 
 ### Community 161 - "api/app/services"
 Cohesion: 0.22
@@ -1863,25 +1923,21 @@ Nodes (54): create_cash_employee_payout(), AsyncSession, UUID, date, EmployeePay
 Cohesion: 0.22
 Nodes (29): EmployeePositionError, PayrollPeriodSummary, ClosedPayrollPeriodConflict, Any, PositionHistoryMutationResult, position_at(), AsyncSession, UUID (+21 more)
 
-### Community 534 - "api/app/services"
-Cohesion: 0.24
-Nodes (13): ExpenseCell, ExpenseReport, spread_over_months(), Decimal, date, build_expense_report(), AsyncSession, UUID (+5 more)
+### Community 26 - "api/app/services + api/tests"
+Cohesion: 0.05
+Nodes (106): is_cook_position(), is_target_position(), Any, IikoEmployeeRecord, IikoRoleUpsertResult, EmployeeMutation, SkippedEmployeeRecord, EmployeeSyncPlan (+98 more)
+
+### Community 534 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.17
+Nodes (17): ExpenseCell, ExpenseReport, spread_over_months(), Decimal, date, build_expense_report(), AsyncSession, UUID (+9 more)
 
 ### Community 626 - "api/app/services"
-Cohesion: 0.27
-Nodes (12): _self_billed_invoice(), AsyncSession, SupplierExpenseAccrual, SupplierInvoice, reverse_expense(), Decimal, UUID, SupplierExpenseReversal (+4 more)
-
-### Community 220 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.20
-Nodes (22): ReversalRefused, Откатить этот расход нельзя — с объяснением, почему., _recognized_accrual(), AsyncSession, date, SupplierExpenseAccrual, test_closing_a_running_month_is_refused(), async_sessionmaker (+14 more)
+Cohesion: 0.24
+Nodes (14): ReversalRefused, _self_billed_invoice(), AsyncSession, SupplierExpenseAccrual, SupplierInvoice, reverse_expense(), Decimal, UUID (+6 more)
 
 ### Community 180 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.06
 Nodes (93): FixedAssetError, _money(), Decimal, month_start(), date, _setting_decimal(), AsyncSession, capitalization_threshold() (+85 more)
-
-### Community 103 - "api/app/services + api/tests/counterparties"
-Cohesion: 0.07
-Nodes (59): Exception, MailAccount, FetchedAttachment, configured_accounts(), Settings, _decode(), _since_token(), _received_at() (+51 more)
 
 ### Community 329 - "api/app/services"
 Cohesion: 0.15
@@ -1891,9 +1947,9 @@ Nodes (19): _Binding, BindingIndex, UUID, date, load_binding_index(), AsyncSessi
 Cohesion: 0.10
 Nodes (91): _Shift, _shift_amount(), Any, Decimal, _is_freelancer(), Employee, _collect_open_period_shifts(), AsyncSession (+83 more)
 
-### Community 54 - "api/app/services"
-Cohesion: 0.14
-Nodes (28): iiko_cloud_call(), Синхронный Cloud-вызов (исполнять в треде): auth (если ``token`` не передан) + P, endpoint(), _ref(), get_invoice(), OpenerDirector, list_invoices(), create_invoice() (+20 more)
+### Community 54 - "api/app/services + tmp"
+Cohesion: 0.13
+Nodes (25): iiko_opener(), OpenerDirector, iiko_auth_token(), iiko_cloud_call(), Низкоуровневый транспорт iiko Cloud API (``api-ru.iiko.services``).  Единая точк, Opener с ПУСТЫМ ``ProxyHandler`` — в обход банк-туннеля (``HTTPS_PROXY``), котор, Cloud OAuth: ``POST /api/v2/access_token {appId, apiKey, clientSecret}`` → ``tok, Синхронный Cloud-вызов (исполнять в треде): auth (если ``token`` не передан) + P (+17 more)
 
 ### Community 431 - "api/app/services"
 Cohesion: 0.23
@@ -1903,33 +1959,57 @@ Nodes (14): IikoDirectory, _cache_get(), _cache_set(), _safe(), _fetch_organizat
 Cohesion: 0.15
 Nodes (27): _load_inventory_module(), ModuleType, fetch_inventory_documents(), date, Any, fetch_inventory_document(), fetch_products_catalog(), AsyncSession (+19 more)
 
-### Community 444 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.17
-Nodes (19): format_iiko_invoice_datetime(), datetime, CloudInvoiceLine, build_invoice_body(), Закодировать московское стенное время для дефектного datetime-контракта iiko Clo, Позиция накладной для Cloud-тела. Только поля, принимаемые ``create``/``update``, Собрать JSON-тело для ``create``/``update`` по направлению. Read-only поля не эм, test_datetime_compensates_cloud_shift_and_keeps_msk_offset() (+11 more)
-
 ### Community 186 - "api/app/services + api/tests/counterparties"
-Cohesion: 0.07
-Nodes (60): CloudInvoiceDoc, extract_document_id(), business_error_message(), Доменно-нейтральное описание накладной для сборки Cloud-тела., ``documentId`` из ответа ``create``/``get`` (create кладёт его прямо в тело)., Текст бизнес-ошибки iiko. Cloud отдаёт бизнес-отказ КОДОМ 500/409 с ``message``, _to_moscow_wall_clock(), datetime (+52 more)
+Cohesion: 0.09
+Nodes (43): endpoint(), _ref(), get_invoice(), OpenerDirector, list_invoices(), create_invoice(), update_invoice(), post_invoice() (+35 more)
 
-### Community 523 - "api/app/services"
-Cohesion: 0.14
-Nodes (29): primary_location(), AsyncSession, Location, resolve_organization_id(), resolve_department_id(), warm_iiko_location_cache(), get_revenue_department_name(), Резолвер iiko-идентификаторов точки из реестра помещений — вместо зашитых конста (+21 more)
+### Community 444 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.13
+Nodes (25): format_iiko_invoice_datetime(), datetime, CloudInvoiceLine, CloudInvoiceDoc, build_invoice_body(), Закодировать московское стенное время для дефектного datetime-контракта iiko Clo, Позиция накладной для Cloud-тела. Только поля, принимаемые ``create``/``update``, Доменно-нейтральное описание накладной для сборки Cloud-тела. (+17 more)
+
+### Community 567 - "api/app/services"
+Cohesion: 0.21
+Nodes (13): primary_location(), AsyncSession, Location, resolve_organization_id(), resolve_department_id(), warm_iiko_location_cache(), get_revenue_department_name(), Резолвер iiko-идентификаторов точки из реестра помещений — вместо зашитых конста (+5 more)
 
 ### Community 132 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.07
-Nodes (110): get_department_id(), ``departmentId`` основной точки для синхронных мест (кэш → fallback-константа)., ChequeBankPart, create_cheque(), match_card_refund_operations(), Одна card-операция как источник оплаты чека. ``amount=None`` → вся операция., Создать чек (оплата картой ± наличными) и сразу провести его в ДДС.      Всё вал, Привязать непривязанные возвраты (refundIn) к чекам, ждущим ровно эту сумму. Без (+102 more)
+Cohesion: 0.09
+Nodes (64): get_department_id(), ``departmentId`` основной точки для синхронных мест (кэш → fallback-константа)., ChequeBankPart, Одна card-операция как источник оплаты чека. ``amount=None`` → вся операция., _mock_iiko(), _card_op(), AsyncSession, _payouts() (+56 more)
+
+### Community 731 - "api/app/services"
+Cohesion: 0.22
+Nodes (10): fetch_invoice_payment_transactions(), date, Decimal, _covered(), _clear_kassa_done_marker(), AsyncSession, Пост-проверка зеркала оплат: подтверждать проводку в iiko, а не верить ответу ``, Проводки ``INVOICE_PAYMENT`` за период: список (номер документа, сумма).      Си (+2 more)
+
+### Community 198 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.17
+Nodes (42): verify_mirrored_payments(), Подтвердить проводки по отправленным платежам; неподтверждённые — переотправить., _sent_at(), datetime, _paid_invoice(), AsyncSession, SupplierInvoice, _push_row() (+34 more)
+
+### Community 523 - "api/app/services"
+Cohesion: 0.35
+Nodes (16): fetch_daily_revenue(), AsyncSession, date, Decimal, _fetch_daily_revenue_sync(), build_daily_revenue_olap_body(), Any, parse_daily_revenue_olap_payload() (+8 more)
 
 ### Community 157 - "api/app/services"
-Cohesion: 0.18
-Nodes (24): PriceControlConfig, _money(), Any, Decimal, _deviation_pct(), load_config(), AsyncSession, _moving_averages() (+16 more)
+Cohesion: 0.20
+Nodes (20): PriceControlConfig, _money(), Any, Decimal, _deviation_pct(), load_config(), AsyncSession, _moving_averages() (+12 more)
 
 ### Community 39 - "api/app/services"
-Cohesion: 0.10
-Nodes (63): PriceCheckLine, Строка накладной для проверки цены — минимум, что нужно контролю (без ORM-объект, supplier_payment_article_ids(), AsyncSession, UUID, line_is_goods(), InvoiceLineItem, list_staff_articles() (+55 more)
+Cohesion: 0.09
+Nodes (68): PriceCheckLine, apply_price_control(), Строка накладной для проверки цены — минимум, что нужно контролю (без ORM-объект, Пересчитать контроль цен и обновить ``price_control_*`` на накладной (без commit, supplier_payment_article_ids(), AsyncSession, UUID, line_is_goods() (+60 more)
+
+### Community 338 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.07
+Nodes (27): RecognizedInvoice, split_document_sections(), _confidence(), deterministic_recognize_pages(), _merge_identity(), НДС в форме ``SupplierInvoice.vat_breakdown`` (ставка → сумма).          Ключ пу, Реквизиты в форме, понятной ``build_payment_draft_api_payload`` (для Фазы 2/3)., Разбить страницы PDF на секции «один документ» → ``[(тип, текст), …]``.      Пос (+19 more)
+
+### Community 559 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.13
+Nodes (15): _is_signature_date(), _extract_service_periods(), _apply_service_period(), Месяц на позиции ``month_pos`` — часть подписной строки бланка, а не период услу, Извлечь все различные периоды с детерминированным приоритетом.      Поддерживает, test_abbreviated_month_is_a_service_period(), test_contract_date_is_not_mistaken_for_a_period(), test_explicit_period_wins_over_abbreviation() (+7 more)
 
 ### Community 168 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.03
-Nodes (122): _money(), Decimal, _parse_date(), date, _strip_basis_lines(), _pick_basis(), _pick_form_number_date(), _pick_invoice_date() (+114 more)
+Cohesion: 0.06
+Nodes (50): _labelled_20(), _pick_recipient(), _iiko_product(), deterministic_recognize(), Развести два регулярных счёта iiko: courierica (ПО курьеров, суффикс -лсп / is-1, test_iiko_courierica_invoice(), test_invoice_date_read_from_document_line(), test_form_approval_date_is_not_invoice_date() (+42 more)
+
+### Community 44 - "api/app/services"
+Cohesion: 0.06
+Nodes (93): _money(), Any, Decimal, _qty(), _line_sum(), ChequeLineInput, _assert_goods_lines_have_product(), UUID (+85 more)
 
 ### Community 235 - "api/app/services + api/tests/counterparties"
 Cohesion: 0.13
@@ -1943,21 +2023,25 @@ Nodes (74): CashShiftSyncReport, _payout_category(), _iiko_host_and_port(), _aut
 Cohesion: 0.09
 Nodes (61): sync_iiko_cashshifts(), fetch_open_shift(), Загрузить закрытые смены iiko за период, обновить витрину и провести наличный, Текущая незакрытая смена iiko для витрины «идёт». ``None`` — открытой смены нет., _patch_open(), test_fetch_open_shift_builds_showcase(), test_fetch_open_shift_returns_none_without_open_shift(), test_fetch_open_shift_ignores_closed_row() (+53 more)
 
+### Community 1034 - "api/app/services"
+Cohesion: 0.40
+Nodes (5): counterparty_iiko_guid(), AsyncSession, UUID, iiko-GUID поставщика для проводок оплаты накладной Кассы.  Раньше здесь жило зер, iiko-GUID поставщика (первый alias ``source='iiko'``) — для проводок оплаты в ii
+
 ### Community 104 - "api/app/services + api/tests/kassa"
 Cohesion: 0.09
 Nodes (58): _money(), Decimal, ensure_article_payin_eligible(), DdsArticle, _validated_preset_article(), AsyncSession, UUID, list_preset_articles() (+50 more)
 
-### Community 87 - "api/app/services"
-Cohesion: 0.10
-Nodes (52): UUID, SalaryAdvance, SupplierPrepayment, Any, date, _money(), Decimal, article_kassa_flow() (+44 more)
-
-### Community 338 - "api/tests/kassa + api/app/services"
-Cohesion: 0.18
-Nodes (38): kassa_today(), create_payout(), Календарная дата кассы (МСК): правило «править можно в день создания».      Чере, Выдать наличные из кассы по разрешённой статье (дата — всегда сегодня).      Сум, _make_user(), AsyncSession, User, _seeded_article() (+30 more)
+### Community 87 - "api/app/services + api/tests/kassa"
+Cohesion: 0.07
+Nodes (91): KassaFlow, UUID, SalaryAdvance, SupplierPrepayment, Any, kassa_today(), date, _money() (+83 more)
 
 ### Community 262 - "api/app/services"
 Cohesion: 0.21
 Nodes (22): lease_external_id(), UUID, date, month_bounds(), invoice_date_for(), LocationLease, lease_covers_month(), _month_closed_by_landlord() (+14 more)
+
+### Community 188 - "api/app/services + api"
+Cohesion: 0.12
+Nodes (24): FetchedAttachment, _decode(), _since_token(), _received_at(), Message, datetime, _is_pdf_part(), _is_tax_document_part() (+16 more)
 
 ### Community 216 - "api/app/services + api/tests/counterparties"
 Cohesion: 0.14
@@ -1977,19 +2061,19 @@ Nodes (30): _fmt_money(), Decimal, PaymentItem, _article_names(), AsyncSession, 
 
 ### Community 99 - "api/app/services"
 Cohesion: 0.08
-Nodes (63): _last_day_of_month(), _first_half(), date, _second_half(), latest_admin_period_dates(), next_admin_period_dates(), auto_create_next_admin_period(), AsyncSession (+55 more)
+Nodes (66): _last_day_of_month(), _first_half(), date, _second_half(), latest_admin_period_dates(), next_admin_period_dates(), auto_create_next_admin_period(), AsyncSession (+58 more)
 
 ### Community 146 - "api/tests + api/app/services"
 Cohesion: 0.14
 Nodes (65): run_admin_payroll(), set_okladnik_payout_mode(), DishwasherShift, Режим выплаты оклада за полумесяц для должности (split — дефолт, не хранится)., test_latest_admin_period_after_15th_is_first_half(), test_latest_admin_period_before_15th_is_prev_second_half(), test_next_admin_period_first_to_second_half(), test_next_admin_period_second_half_rolls_to_next_month() (+57 more)
 
-### Community 150 - "api/app/services"
-Cohesion: 0.10
-Nodes (51): _okladnik_payout_mode(), _half_month_bounds(), date, _half_month_payout_paid_end(), _weekly_payout_paid_end(), AsyncSession, _okladnik_payout_paid_end(), _payout_paid_end() (+43 more)
-
 ### Community 451 - "api/tests + api/app/services"
 Cohesion: 0.41
 Nodes (13): okladnik_earned_to_date(), Заработанная часть оклада на дату `as_of` внутри полупериода (для аванса)., _period(), date, PayrollPeriod, _employee(), test_earned_to_date_prorates_by_calendar_days(), test_earned_to_date_full_base_at_period_end() (+5 more)
+
+### Community 150 - "api/app/services"
+Cohesion: 0.10
+Nodes (50): _half_month_bounds(), date, _half_month_payout_paid_end(), _weekly_payout_paid_end(), AsyncSession, _okladnik_payout_paid_end(), _payout_paid_end(), _open_weekly_period() (+42 more)
 
 ### Community 276 - "api/app/services"
 Cohesion: 0.19
@@ -2007,10 +2091,6 @@ Nodes (59): issue_advance(), Выдать аванс или заём.      `requ
 Cohesion: 0.20
 Nodes (35): apply_advance_draft_status(), Продвинуть банк-черновик выдачи по статусу платежа (polling/webhook).      При `, _bank_settings(), MonkeyPatch, _make_bank_wallet(), AsyncSession, Wallet, _cashflows() (+27 more)
 
-### Community 181 - "api/tests/kassa + api/app/services"
-Cohesion: 0.12
-Nodes (41): list_kassa_pending_advances(), Ожидающие разрешения на авансы/займы через кассу (для вкладки «К выдаче»)., _wallet(), AsyncSession, _expense_article(), DdsArticle, _counterparty(), _safe_target() (+33 more)
-
 ### Community 474 - "api/app/services"
 Cohesion: 0.39
 Nodes (11): build_aggregate(), AsyncSession, date, Any, adjustment_totals(), Decimal, sum_adjustment_items(), deposit_withheld_value() (+3 more)
@@ -2024,8 +2104,8 @@ Cohesion: 0.51
 Nodes (9): role_category_rate_from_versions(), _settings(), _rate(), test_station_specific_rate_matches_empty_station_query(), test_station_specific_rate_matches_same_station_query(), test_station_specific_rate_skipped_for_different_station_query(), test_stationless_rate_matches_any_station_query(), test_station_specific_preferred_over_stationless_for_empty_query() (+1 more)
 
 ### Community 151 - "api/app/services"
-Cohesion: 0.13
-Nodes (51): PayrollConfigConflictError, PayrollConfigValidationError, SubstitutePair, get_substitute_pairs(), AsyncSession, set_substitute_pairs(), Any, is_substitute_pair_allowed() (+43 more)
+Cohesion: 0.14
+Nodes (50): PayrollConfigConflictError, PayrollConfigValidationError, SubstitutePair, get_substitute_pairs(), AsyncSession, set_substitute_pairs(), Any, is_substitute_pair_allowed() (+42 more)
 
 ### Community 417 - "api/app/services"
 Cohesion: 0.18
@@ -2040,12 +2120,8 @@ Cohesion: 0.19
 Nodes (18): _money_key(), Any, _paid_cash_settlements(), AsyncSession, PayrollPeriod, FreelancerShiftSettlement, _paid_cash_stats(), Decimal (+10 more)
 
 ### Community 158 - "api/app/services + api/tests"
-Cohesion: 0.16
+Cohesion: 0.17
 Nodes (45): _payroll_cash_wallet_id(), AsyncSession, UUID, mark_payment(), date, PayrollPayment, unmark_payment(), _link_legacy_payout() (+37 more)
-
-### Community 446 - "api/app/services + api/tests"
-Cohesion: 0.19
-Nodes (17): _money(), Decimal, BucketAllocation, build_payout_buckets(), allocate_cash_cascade(), Разнесение выплаты ведомости по статьям ДДС с каскадным распределением наличных., Корзина, разнесённая на наличную и банковскую части (cash + bank == total)., Сгруппировать строки ведомости ``(должность, сумма)`` в корзины по статьям ДДС. (+9 more)
 
 ### Community 130 - "api/app/services + api/tests"
 Cohesion: 0.06
@@ -2065,15 +2141,15 @@ Nodes (15): _money(), Decimal, round_payable_down(), apply_employee_payable_roun
 
 ### Community 42 - "api/app/services"
 Cohesion: 0.12
-Nodes (56): ensure_daily_revenue_cached(), AsyncSession, Decimal, write_daily_revenue_cache(), AppSetting, iter_dates(), PayrollPeriod, run_payroll() (+48 more)
+Nodes (59): compute_next_payroll_period_dates(), date, ensure_daily_revenue_cached(), AsyncSession, Decimal, write_daily_revenue_cache(), AppSetting, iter_dates() (+51 more)
 
 ### Community 423 - "api/tests + api/app/services"
-Cohesion: 0.16
-Nodes (24): compute_next_payroll_period_dates(), date, auto_create_next_period(), current_week_bounds(), ensure_weekly_period(), refresh_current_week_advance_window(), Границы ТЕКУЩЕЙ (идущей) недельной ЗП-недели, содержащей ``today``.      Неделя, Get-or-create недельного периода по точным границам (без commit; flush). (+16 more)
+Cohesion: 0.18
+Nodes (21): current_week_bounds(), ensure_weekly_period(), refresh_current_week_advance_window(), Границы ТЕКУЩЕЙ (идущей) недельной ЗП-недели, содержащей ``today``.      Неделя, Get-or-create недельного периода по точным границам (без commit; flush)., Ночной свип «окна заработанного» для авансов производственникам (повар/кассир)., _make_cook(), AsyncSession (+13 more)
 
 ### Community 330 - "api/tests + api/app/services"
-Cohesion: 0.25
-Nodes (25): finalize_payroll_run(), unfinalize_payroll_run(), test_finalize_and_unfinalize_round_trip_deposit_balance(), async_sessionmaker, AsyncSession, test_unfinalize_allows_recompute_for_period(), MonkeyPatch, test_finalize_locks_rate_snapshot_and_rate_changes_do_not_rewrite_line_components() (+17 more)
+Cohesion: 0.36
+Nodes (20): finalize_payroll_run(), unfinalize_payroll_run(), test_finalize_and_unfinalize_round_trip_deposit_balance(), async_sessionmaker, AsyncSession, test_unfinalize_allows_recompute_for_period(), MonkeyPatch, test_finalize_locks_rate_snapshot_and_rate_changes_do_not_rewrite_line_components() (+12 more)
 
 ### Community 142 - "api/app/services"
 Cohesion: 0.17
@@ -2082,14 +2158,6 @@ Nodes (37): DrillRow, DrillGroup, DrillAside, DrillResult, _plural(), _names(), 
 ### Community 332 - "api/app/services"
 Cohesion: 0.21
 Nodes (22): FormulaError, _block_members(), LineValue, Any, evaluate(), Decimal, _operand(), _sum() (+14 more)
-
-### Community 263 - "api/app/services"
-Cohesion: 0.16
-Nodes (26): MenuProduct, ProductDishUsage, MenuUsageSnapshot, AutoClassificationCandidate, AutoClassificationResult, _clean(), Any, _truthy() (+18 more)
-
-### Community 554 - "api/app/services"
-Cohesion: 0.14
-Nodes (16): _assert_goods_product(), Пустить в товарную разметку только позицию типа ``GOODS``.      Неизвестная спра, type_label(), load_non_goods_guids(), AsyncSession, load_product_types(), Какая номенклатура iiko вообще допускается в товарный учёт ОПиУ.  СКЛАДСКОЙ УЧЁТ, Человеческое название типа iiko; неизвестное значение возвращаем как есть. (+8 more)
 
 ### Community 70 - "api/app/services"
 Cohesion: 0.10
@@ -2112,8 +2180,8 @@ Cohesion: 0.33
 Nodes (8): depreciation_for_month(), AsyncSession, date, Decimal, disposal_loss_for_month(), Учёт ОС как источник ОПиУ: амортизация и убыток от выбытия.  Обе величины модуль, Начисленная амортизация месяца. ``None`` — начислений не было вовсе.      Ноль и, Убыток от выбытия ОС за месяц — остаточная стоимость списанных объектов.      Ст
 
 ### Community 125 - "api/app/services"
-Cohesion: 0.16
-Nodes (20): PartnerCommissionItem, month_partner_commissions(), AsyncSession, date, workup_expense_amount(), Decimal, WorkupWriteoffState, month_workup_writeoff_state() (+12 more)
+Cohesion: 0.15
+Nodes (22): GoodsWorkupItem, PartnerCommissionItem, month_partner_commissions(), AsyncSession, date, workup_expense_amount(), Decimal, WorkupWriteoffState (+14 more)
 
 ### Community 539 - "api/app/services"
 Cohesion: 0.25
@@ -2163,29 +2231,45 @@ Nodes (54): agreement_external_id(), UUID, date, month_bounds(), agreement_cover
 Cohesion: 0.25
 Nodes (26): SettingValidationError, is_critical_setting_key(), _user_name(), User, serialize_setting(), AppSetting, Any, serialize_history() (+18 more)
 
-### Community 89 - "api/tests + api/app/services"
-Cohesion: 0.05
-Nodes (110): create_schedule(), AsyncSession, date, CurrentActor, ShiftSchedule, get_schedule_with_shifts(), UUID, ScheduledShift (+102 more)
-
 ### Community 183 - "api/app/services"
 Cohesion: 0.17
 Nodes (34): _money(), Decimal, _msk_date(), _month_key(), date, _finalized_runs(), AsyncSession, UUID (+26 more)
 
 ### Community 126 - "api/app/services"
 Cohesion: 0.10
-Nodes (47): month_bounds(), date, add_months(), self_billed_external_id(), UUID, superseded_external_id(), monthly_shares(), Decimal (+39 more)
+Nodes (45): month_bounds(), date, add_months(), self_billed_external_id(), UUID, superseded_external_id(), Decimal, covered_months() (+37 more)
 
 ### Community 298 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.24
-Nodes (23): sync_manual_payment_receivable(), Правило 1 для РУЧНОГО разбора ДДС — только по деньгам, которыми никто ещё не рас, _service_counterparty(), AsyncSession, _article(), DdsArticle, _safe_payout(), _draft() (+15 more)
+Cohesion: 0.22
+Nodes (25): manual_payment_money_is_free(), sync_manual_payment_receivable(), Свободны ли деньги проводки для правила 1 — критерий один для всех ручных дверей, Правило 1 для РУЧНОГО разбора ДДС — только по деньгам, которыми никто ещё не рас, _service_counterparty(), AsyncSession, _article(), DdsArticle (+17 more)
+
+### Community 90 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.08
+Nodes (58): ServicePeriodError, validate_period(), date, recognition_month(), effective_period_status(), is_expense_bearing(), SupplierInvoice, _period_from_document_date() (+50 more)
 
 ### Community 299 - "api/app/services + api/tests"
 Cohesion: 0.07
 Nodes (53): AiDocumentReview, AiAuditFinding, AiAuditReport, _call_claude(), Settings, _extract_text(), TaxDocumentIntake, _document_prompt() (+45 more)
 
+### Community 109 - "api/app/services"
+Cohesion: 0.08
+Nodes (56): TaxFactsSyncReport, _recipient_for_operation(), BankOperation, _aware(), datetime, _month_from_due(), date, _year_for() (+48 more)
+
 ### Community 92 - "api/tests + api/app/services"
-Cohesion: 0.10
-Nodes (69): sync_tax_facts_from_bank(), Однопроходный синк: новые налоговые списания → факты; зревшие — пересобрать., insert_or_reread(), AsyncSession, T, lock_row(), Защита от двойного клика: единственность слота гарантирует БД, код её переживает, Вставить строку; при конфликте уникального слота вернуть выигравшую чужую. (+61 more)
+Cohesion: 0.12
+Nodes (62): sync_tax_facts_from_bank(), Однопроходный синк: новые налоговые списания → факты; зревшие — пересобрать., _operation(), date, _draft(), _planned(), _intake(), _ledger() (+54 more)
+
+### Community 196 - "api/tests + api/app/services"
+Cohesion: 0.15
+Nodes (51): project_tax_facts_to_dds(), Привести разнос ДДС налоговых операций в соответствие со строками фактов.      Н, _bank_wallet(), AsyncSession, Wallet, _articles(), _operation(), BankOperation (+43 more)
+
+### Community 1031 - "api/tests + api/app/services"
+Cohesion: 0.25
+Nodes (8): _classify_document(), Тип документа по имени файла, до разбора содержимого., test_injury_document_classified_as_payment_order(), test_kadr_doc_wins_over_extension(), test_svod_classified_as_turnover(), Файл травматизма («0,2 %.xls») — это платёжка (payment_order), а не Т-53-ведомос, «Приказ … .doc» — кадровый документ, а не платёжка: раньше .doc уводил его в раз, Файл «СВОД 02.xls» — это оборотка в другой форме, а не ведомость Т-53.      До п
+
+### Community 28 - "api/tests + api/app/services"
+Cohesion: 0.06
+Nodes (75): parse_attachment(), set_intake_review(), Разобрать вложение. Возвращает (document_type, status, recognition, error)., Владелец проверил документ: пометить готовым к продвижению (``parsed``) или откл, _att(), FetchedAttachment, _fetch_stub(), test_parse_attachment_routes_payment_order() (+67 more)
 
 ### Community 51 - "api/app/services + api/tests"
 Cohesion: 0.05
@@ -2193,15 +2277,15 @@ Nodes (65): PayrollRow, _XlsxSheet, _XlsxWorkbook, open_workbook(), _docx_text()
 
 ### Community 57 - "api/tests + api/app/services"
 Cohesion: 0.05
-Nodes (78): rub(), Decimal, money(), clamp(), fmt_money(), period_code_for(), date, period_end_date() (+70 more)
+Nodes (79): rub(), Decimal, money(), clamp(), fmt_money(), period_code_for(), date, period_end_date() (+71 more)
+
+### Community 349 - "api/tests + api/app/services"
+Cohesion: 0.13
+Nodes (26): SplitResult, payroll_enp_due(), date, _existing_split_row(), AsyncSession, TaxPayment, rebuild_payroll_enp_split(), Разнос зарплатного ЕНП на назначения по эталону-оборотке.  Проблема, которую реш (+18 more)
 
 ### Community 197 - "api/tests + api/app/services"
 Cohesion: 0.12
 Nodes (37): usn_due_date(), date, EnsWallet, _bank_facts_sum(), AsyncSession, Decimal, _payroll_accrual_rows(), compute_ens_wallet() (+29 more)
-
-### Community 20 - "api/tests + api/app/services"
-Cohesion: 0.06
-Nodes (115): ReconLine, _diff(), Decimal, _classify(), date, _payable(), _action_for(), _offset_by_ens() (+107 more)
 
 ### Community 386 - "api/app/services + api/tests"
 Cohesion: 0.17
@@ -2211,21 +2295,17 @@ Nodes (21): load_regional_wage(), AsyncSession, Decimal, save_regional_wage(), M
 Cohesion: 0.15
 Nodes (27): TelegramIntakeError, is_stale(), Any, sender_label(), _make_client(), AsyncClient, _call(), _notify() (+19 more)
 
-### Community 376 - "api/app/services"
-Cohesion: 0.14
-Nodes (29): UtilityMonthTakenError, SupplierInvoice, month_bounds(), date, intake_external_id(), UUID, superseded_external_id(), invoice_title() (+21 more)
-
 ### Community 67 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.10
-Nodes (54): UtilityChargeError, Проведение невозможно: причина написана так, чтобы её можно было показать челове, _article(), AsyncSession, DdsArticle, _location(), _account(), date (+46 more)
+Cohesion: 0.06
+Nodes (83): UtilityChargeError, UtilityMonthTakenError, SupplierInvoice, month_bounds(), date, intake_external_id(), UUID, superseded_external_id() (+75 more)
 
 ### Community 279 - "api/tests/counterparties + api/app/services"
 Cohesion: 0.12
 Nodes (19): sniff_media_type(), to_displayable(), HEIC → JPEG: снимок с айфона, пригодный и для браузера, и для распознавания.  ЗА, Тип файла по его первым байтам, когда заявленному верить нельзя.      ЗАЧЕМ. Тип, Вернуть пару «байты, тип», пригодную для браузера и vision.      Не-HEIC возвращ, test_sniff_overrides_opaque_declared_type(), test_sniff_keeps_informative_declared_type(), test_sniff_falls_back_when_nothing_known() (+11 more)
 
 ### Community 213 - "api/app/services"
-Cohesion: 0.12
-Nodes (40): UtilityIntakeError, _document_sha(), _decimal_or_none(), Decimal, _date_or_none(), date, _reason_labels(), _electricity_pair_fields() (+32 more)
+Cohesion: 0.11
+Nodes (42): UtilityIntakeError, _document_sha(), _decimal_or_none(), Decimal, _date_or_none(), date, _reason_labels(), _electricity_pair_fields() (+34 more)
 
 ### Community 131 - "api/app/services"
 Cohesion: 0.10
@@ -2233,43 +2313,55 @@ Nodes (51): money(), Decimal, fmt_money(), find_amount(), find_vat(), _expected_
 
 ### Community 252 - "api/app/services"
 Cohesion: 0.08
-Nodes (40): DetectionResult, Any, clean_digits(), normalize_key(), find_labeled_digits(), _strip_ocr_table_prefix(), _find_account_in_text(), find_bank_account() (+32 more)
+Nodes (38): DetectionResult, Any, clean_digits(), first_match(), find_labeled_digits(), _strip_ocr_table_prefix(), _find_account_in_text(), find_bank_account() (+30 more)
 
-### Community 246 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.08
-Nodes (44): normalize_text(), _decimal_field(), split_utility_documents(), recognize_utility_documents(), recognize_utility_document(), Приводит OCR-выхлоп к виду, в котором работают все остальные регулярки.      ``№, Строковая сумма → ``Decimal``. Непустая, но нечитаемая строка попадает в ``reaso, Разбить текст ОДНОГО файла на отдельные документы.      ЗАЧЕМ. Энергетик присыла (+36 more)
+### Community 1011 - "api/app/services"
+Cohesion: 0.24
+Nodes (10): normalize_text(), normalize_key(), electricity_act_kind(), _looks_like_water(), _looks_like_electricity(), _pick_parser(), Приводит OCR-выхлоп к виду, в котором работают все остальные регулярки.      ``№, Ключ для сравнения слов: регистр, ``ё`` и пробелы не должны решать ничего. (+2 more)
 
 ### Community 513 - "api/app/services"
 Cohesion: 0.11
 Nodes (20): normalize_date(), iso_date_from_ru(), month_bounds(), find_document(), find_service_period(), find_water_utility_document(), find_electricity_document_date(), resolve_electricity_period_year() (+12 more)
 
-### Community 947 - "api/app/services"
-Cohesion: 0.33
-Nodes (6): first_match(), clean_name(), find_counterparty_name(), find_water_utility_counterparty_name(), find_electricity_supplier_name(), Имя поставщика воды. Покупатель (физлицо-владелец) намеренно отсекается.      До
-
 ### Community 736 - "api/app/services"
 Cohesion: 0.67
 Nodes (3): mask_digits(), evidence_line(), Прячет длинные числа в пруфах: человеку показывают строку счёта, а не номер счёт
+
+### Community 246 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.09
+Nodes (36): _decimal_field(), recognize_utility_document(), Строковая сумма → ``Decimal``. Непустая, но нечитаемая строка попадает в ``reaso, Единственная точка входа: текст документа → структура или ``None``.      ``None`, load(), recognize(), UtilityRecognition, assert_volgodonsk_water() (+28 more)
+
+### Community 1051 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.50
+Nodes (4): split_utility_documents(), Разбить текст ОДНОГО файла на отдельные документы.      ЗАЧЕМ. Энергетик присыла, test_real_acts_arrive_as_separate_files(), Каждое фото — один акт, и резать его не на что.      Владелец уточнил 02.08.2026
 
 ### Community 117 - "api/tests + api/app/services"
 Cohesion: 0.09
 Nodes (52): _money(), Decimal, WalletBalanceAsOf, MoneyBalanceAsOf, wallet_movement_deltas(), AsyncSession, date, UUID (+44 more)
 
-### Community 312 - "api/app/services"
-Cohesion: 0.19
-Nodes (24): _money(), Any, Decimal, ReprojectReport, _supplier_article_id(), AsyncSession, UUID, invoice_article_breakdown() (+16 more)
+### Community 312 - "api/app/services + api/tests/counterparties"
+Cohesion: 0.13
+Nodes (35): _money(), Any, Decimal, ReprojectReport, _supplier_article_id(), AsyncSession, UUID, invoice_article_breakdown() (+27 more)
 
-### Community 83 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.14
-Nodes (44): ReturnLineInput, _product(), AsyncSession, _loan(), _remaining(), UUID, Decimal, test_chain_goods_then_money_then_writeoff() (+36 more)
+### Community 622 - "api/app/services"
+Cohesion: 0.21
+Nodes (13): _store_guid(), AsyncSession, SupplierInvoice, delete_invoice_in_iiko(), _external_id_owner(), UUID, _correction_number(), _tombstone_exists() (+5 more)
+
+### Community 1050 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.40
+Nodes (5): _line_amounts_for_iiko(), ``(цена, сумма)`` строки для документа iiko: строго ``sum == price * amount``., test_line_amounts_for_iiko(), test_line_amounts_for_iiko_keeps_line_without_sum(), Строка без эталонной суммы (старые данные) — прежнее поведение, цена из базы.
+
+### Community 69 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.10
+Nodes (59): prepare_push(), push_invoice_to_iiko(), propagate_invoice_edit_to_iiko(), Резолвинг GUID + сборка ``CloudInvoiceDoc``, либо причина пропуска. Сеть не трог, Отправить накладную в iiko (РЕАЛЬНЫЙ документ) через Cloud ``create`` → ``post``, Пробросить правку уже выгруженной накладной в iiko (Cloud ``update`` → ``post``), _invoice_with_lines(), AsyncSession (+51 more)
+
+### Community 477 - "api/tests/counterparties + api/app/services"
+Cohesion: 0.17
+Nodes (25): ReturnLineInput, IikoProduct, SupplierInvoice, InvoiceLineItem, _product(), AsyncSession, IikoProduct, _loan() (+17 more)
 
 ### Community 127 - "api/tests/counterparties + api/app/services"
-Cohesion: 0.10
-Nodes (59): _money(), Any, Decimal, _production_amount(), SupplierInvoice, _resolve_article_id(), AsyncSession, UUID (+51 more)
-
-### Community 188 - "api"
-Cohesion: 0.50
-Nodes (3): fetch(), main(), Прицельный добор писем Натальи за декабрь 2025 (окно ingest их не достаёт).
+Cohesion: 0.12
+Nodes (45): _money(), Any, Decimal, _production_amount(), SupplierInvoice, _resolve_article_id(), AsyncSession, UUID (+37 more)
 
 ### Community 583 - "api/scripts"
 Cohesion: 0.47
@@ -2279,17 +2371,17 @@ Nodes (5): _tounicode(), _pdf(), main(), Стенд: имитация письм
 Cohesion: 0.14
 Nodes (24): BaselineSnapshot, postgres_available(), alembic_cfg_session(), Config, alembic_cfg(), _test_db_migrated(), _baseline_snapshot(), async_sessionmaker (+16 more)
 
-### Community 237 - "api/tests/counterparties"
-Cohesion: 0.05
-Nodes (70): token_headers(), UUID, admin_user_id(), async_sessionmaker, AsyncSession, create_user(), headers_for(), admin_headers() (+62 more)
-
-### Community 133 - "api/tests/counterparties"
-Cohesion: 0.05
-Nodes (101): make_counterparty(), Counterparty, A supplier counterparty + role + payable profile (+ optional iiko alias)., test_card_barter_balance_nets_payable_minus_receivable(), async_sessionmaker, AsyncSession, test_card_barter_balance_negative_when_they_owe_more(), test_registry_splits_payable_and_receivable() (+93 more)
+### Community 58 - "api/tests/counterparties"
+Cohesion: 0.06
+Nodes (94): make_invoice(), SupplierInvoice, test_card_barter_balance_nets_payable_minus_receivable(), async_sessionmaker, AsyncSession, test_card_barter_balance_negative_when_they_owe_more(), test_registry_splits_payable_and_receivable(), test_inbox_lists_only_payables() (+86 more)
 
 ### Community 293 - "api/tests/counterparties"
 Cohesion: 0.19
 Nodes (19): _admin(), _make_tx(), AsyncSession, UUID, date, CashflowTransaction, _make_prepayment(), SupplierPrepayment (+11 more)
+
+### Community 220 - "api/tests/counterparties"
+Cohesion: 0.21
+Nodes (20): _recognized_accrual(), AsyncSession, date, SupplierExpenseAccrual, test_closing_a_running_month_is_refused(), async_sessionmaker, test_period_change_is_blocked_in_a_closed_month(), test_reversal_is_blocked_in_a_closed_month() (+12 more)
 
 ### Community 373 - "api/tests/counterparties"
 Cohesion: 0.21
@@ -2307,29 +2399,17 @@ Nodes (22): _receivable(), AsyncSession, UUID, Decimal, _payable(), _make_intake
 Cohesion: 0.36
 Nodes (8): _receivable(), AsyncSession, UUID, Decimal, test_closing_amount_shrink_returns_prepayment_excess(), async_sessionmaker, АУДИТ-5 (проверка работы email-агента): усушка суммы уже ЗАЧТЁННОГО закрывающего, Аванс 1000 → УПД 1000 (зачёт полный) → пере-разбор исправил сумму УПД на 400.
 
-### Community 550 - "api/tests/counterparties"
-Cohesion: 0.32
-Nodes (7): test_closing_frozen_in_bank_draft_not_settled_from_prepayment(), async_sessionmaker, AsyncSession, test_excluded_operation_releases_its_invoice_allocation(), АУДИТ-4, четвёртая волна: два независимых корня с риском ДВОЙНОЙ ОПЛАТЫ.  A. Авт, A. Закрывающий отправлен в банк (draft_id) — деньги в пути. Появившаяся дебиторк, B. Оператор исключил банк-операцию из учёта («Исключить» — реальная дверь     ``
-
-### Community 623 - "api/tests/counterparties"
-Cohesion: 0.29
-Nodes (6): test_finalized_half_month_not_double_counted_in_staff_payable(), TestClient, async_sessionmaker, AsyncSession, АУДИТ-4: двойной счёт оклада в /accounting/suppliers/staff-payable.  ``_okladnik, Полумесяц, покрывающий СЕГОДНЯ, финализирован и не выплачен. Долг сотруднику обя
-
-### Community 380 - "api/tests/counterparties"
-Cohesion: 0.13
-Nodes (29): _product(), AsyncSession, IikoProduct, _make_loan(), SupplierInvoice, InvoiceLineItem, test_documents_registry_subtracts_barter_goods_returns(), async_sessionmaker (+21 more)
-
 ### Community 260 - "api/tests/counterparties"
 Cohesion: 0.19
 Nodes (22): _run(), _user_with_perms(), async_sessionmaker, AsyncSession, UUID, _headers(), _loan_invoice(), SupplierInvoice (+14 more)
 
 ### Community 18 - "api/tests/counterparties"
-Cohesion: 0.12
-Nodes (46): _receivable(), AsyncSession, UUID, Decimal, _product(), _make_loan(), test_goods_return_uses_issue_price_not_market(), async_sessionmaker (+38 more)
+Cohesion: 0.11
+Nodes (48): _receivable(), AsyncSession, UUID, Decimal, _product(), _make_loan(), test_goods_return_uses_issue_price_not_market(), async_sessionmaker (+40 more)
 
-### Community 477 - "api/tests/counterparties"
-Cohesion: 0.22
-Nodes (18): _product(), AsyncSession, _loan(), test_overreturn_beyond_tolerance_is_rejected(), async_sessionmaker, test_overreturn_within_tolerance_closes_loan_without_receivable(), test_under_return_keeps_remainder_by_default(), test_under_return_with_write_off_closes_loan() (+10 more)
+### Community 83 - "api/tests/counterparties"
+Cohesion: 0.13
+Nodes (43): _product(), AsyncSession, _loan(), _remaining(), UUID, Decimal, test_chain_goods_then_money_then_writeoff(), async_sessionmaker (+35 more)
 
 ### Community 297 - "api/tests/counterparties"
 Cohesion: 0.17
@@ -2343,9 +2423,13 @@ Nodes (13): _service_article(), AsyncSession, DdsArticle, _set_billing_mode(), U
 Cohesion: 0.21
 Nodes (16): _paid_bill(), AsyncSession, UUID, SupplierInvoice, _act_intake(), EmailInvoiceIntake, test_closing_inherits_period_from_basis_invoice(), async_sessionmaker (+8 more)
 
-### Community 326 - "api/tests/counterparties"
-Cohesion: 0.21
-Nodes (23): test_article_codes_match_new_payment(), _employee(), AsyncSession, _salary_op(), test_split_salary_article_creates_employee_payout(), async_sessionmaker, test_cashflow_split_salary_article_creates_employee_payout(), test_salary_via_safe_reserve_then_payout_creates_employee_payout() (+15 more)
+### Community 380 - "api/tests/counterparties"
+Cohesion: 0.22
+Nodes (18): _invoice_count(), AsyncSession, _make_intake(), EmailInvoiceIntake, test_email_ingest_links_to_existing_sbis_bill(), async_sessionmaker, test_email_bill_and_sbis_closing_coexist(), test_email_ingest_outside_window_creates_new_invoice() (+10 more)
+
+### Community 947 - "api/tests/counterparties"
+Cohesion: 0.31
+Nodes (10): _att(), FetchedAttachment, _stub_mail(), test_poll_skips_tax_agent_pdf(), async_sessionmaker, AsyncSession, test_poll_still_takes_ordinary_sender(), Документы бухгалтера не попадают в очередь оплат.  27.07.2026 налоговый агент пр (+2 more)
 
 ### Community 214 - "api/tests/counterparties"
 Cohesion: 0.15
@@ -2370,6 +2454,10 @@ Nodes (15): _fake(), _seed_paid_iiko_invoice(), async_sessionmaker, AsyncSession
 ### Community 321 - "api/tests/counterparties"
 Cohesion: 0.18
 Nodes (24): _fake(), _seed_paid_iiko_invoice(), async_sessionmaker, AsyncSession, UUID, _push_row(), IikoInvoicePaymentPush, _cases() (+16 more)
+
+### Community 237 - "api/tests/counterparties"
+Cohesion: 0.09
+Nodes (41): _paid_iiko(), _ok_push(), _cases(), test_sweep_flags_paid_outside_draft(), test_sweep_skips_bank_eligible_and_settled(), test_sweep_flags_correction_unsettled(), test_sweep_flags_retry_cap_exhausted(), test_sweep_resolves_recovered_case() (+33 more)
 
 ### Community 381 - "api/tests/counterparties"
 Cohesion: 0.20
@@ -2412,28 +2500,36 @@ Cohesion: 0.18
 Nodes (24): _article(), AsyncSession, DdsArticle, _location(), _agreement(), UUID, CounterpartyServiceAgreement, _lease_with_agreement() (+16 more)
 
 ### Community 434 - "api/tests/counterparties"
-Cohesion: 0.29
-Nodes (13): _energy_supplier(), AsyncSession, _utility_bill(), date, test_two_utility_bills_of_different_periods_pack_into_one_draft(), async_sessionmaker, test_same_period_invoices_still_pack_into_draft(), test_expense_lines_of_different_periods_still_rejected() (+5 more)
+Cohesion: 0.26
+Nodes (14): _energy_supplier(), AsyncSession, _utility_bill(), date, SupplierInvoice, test_two_utility_bills_of_different_periods_pack_into_one_draft(), async_sessionmaker, test_same_period_invoices_still_pack_into_draft() (+6 more)
 
 ### Community 555 - "api/tests/counterparties"
 Cohesion: 0.43
 Nodes (6): test_context_endpoint_denied_without_window_permissions(), TestClient, test_context_endpoint_owner_sees_all_flows(), test_context_endpoint_manager_has_payout_but_no_loan(), test_expense_draft_endpoint_requires_safe_allocate(), API контекста окна «Новый платёж»: права на эндпоинты (header-роли).  Отдельный
-
-### Community 627 - "api/tests/counterparties"
-Cohesion: 0.67
-Nodes (3): TestClient, test_expense_draft_endpoint_rejects_impossible_rate(), Ставка ≥ 100 % — ошибка ввода, а не платёж: столько налога в сумме не бывает.
 
 ### Community 322 - "api/tests/counterparties"
 Cohesion: 0.18
 Nodes (23): _run(), _bank_fixture(), AsyncSession, _operation_rows(), CashflowTransaction, test_exclude_takes_the_cashflow_row_out_of_the_article(), async_sessionmaker, test_reclassify_after_exclude_revives_the_same_row() (+15 more)
 
 ### Community 226 - "api/tests/counterparties"
-Cohesion: 0.15
-Nodes (35): _card_fixture(), AsyncSession, _alloc_count(), _op_cashflow_count(), test_split_card_without_allow_card_rejected_and_no_writes(), async_sessionmaker, test_split_card_with_allow_card_pays_invoice(), test_confirm_match_card_without_allow_card_rejected() (+27 more)
+Cohesion: 0.16
+Nodes (33): _card_fixture(), AsyncSession, _alloc_count(), _op_cashflow_count(), test_split_card_without_allow_card_rejected_and_no_writes(), async_sessionmaker, test_split_card_with_allow_card_pays_invoice(), test_confirm_match_card_without_allow_card_rejected() (+25 more)
+
+### Community 145 - "api/tests/counterparties"
+Cohesion: 0.17
+Nodes (26): _bank_fixture(), AsyncSession, test_split_books_each_line_to_own_counterparty(), async_sessionmaker, test_split_line_without_counterparty_falls_back_to_common(), test_split_pays_invoices_of_two_counterparties(), test_split_rejects_invoice_of_another_counterparty_in_line(), test_split_rejects_same_invoice_in_two_lines() (+18 more)
+
+### Community 376 - "api/tests/counterparties"
+Cohesion: 0.25
+Nodes (20): _fixture(), AsyncSession, _alloc_count(), test_split_pays_invoice_full(), async_sessionmaker, test_split_pays_invoice_partial(), test_split_pays_multiple_invoices(), test_split_rejects_overpay() (+12 more)
 
 ### Community 383 - "api/tests/counterparties"
 Cohesion: 0.21
 Nodes (18): _pay_bill(), AsyncSession, SupplierInvoice, date, CashflowTransaction, _payable(), UUID, Decimal (+10 more)
+
+### Community 500 - "api/tests/counterparties"
+Cohesion: 0.36
+Nodes (15): _articles(), AsyncSession, _alloc_count(), _cash_txns(), test_pay_split_bank_plus_cash_pays_in_full(), async_sessionmaker, test_pay_split_partial_leaves_remaining(), test_pay_split_rejects_occupied_operation_without_writing() (+7 more)
 
 ### Community 66 - "api/tests/counterparties"
 Cohesion: 0.17
@@ -2464,8 +2560,16 @@ Cohesion: 0.35
 Nodes (10): _admin(), _seed(), async_sessionmaker, AsyncSession, test_remembered_inn_rule_survives_changed_purpose(), TestClient, test_second_remember_updates_the_same_rule(), «Запомнить» при разборе операции: правило по ИНН, а не по тексту назначения.  По (+2 more)
 
 ### Community 541 - "api/tests/counterparties"
-Cohesion: 0.18
-Nodes (12): Any, _package_item(), _PackageClient, _sbis_counterparty_with_channel(), test_package_invoice_facture_attachment_not_routed(), test_package_invoice_skipped_for_iiko_counterparty(), test_package_invoice_skipped_when_links_are_stale(), Пакет отгрузки ЭкоЦентра: формализованный УПД + PDF счёта на оплату в одном доку (+4 more)
+Cohesion: 0.19
+Nodes (12): Any, _package_item(), _PackageClient, _sbis_counterparty_with_channel(), test_package_invoice_attachment_goes_to_payment_page(), test_package_invoice_facture_attachment_not_routed(), test_package_invoice_skipped_when_links_are_stale(), Пакет отгрузки ЭкоЦентра: формализованный УПД + PDF счёта на оплату в одном доку (+4 more)
+
+### Community 133 - "api/tests/counterparties"
+Cohesion: 0.13
+Nodes (53): _bill(), AsyncSession, UUID, date, SupplierInvoice, _closing(), _prepaid(), SupplierPrepayment (+45 more)
+
+### Community 421 - "api/tests/counterparties"
+Cohesion: 0.24
+Nodes (17): _article(), AsyncSession, DdsArticle, _manual_payment(), CashflowTransaction, test_split_of_fully_spent_payment_does_not_double_the_expense(), async_sessionmaker, test_partially_spent_payment_keeps_its_free_part() (+9 more)
 
 ### Community 476 - "api/tests/counterparties"
 Cohesion: 0.24
@@ -2491,10 +2595,6 @@ Nodes (12): _headers(), async_sessionmaker, AsyncSession, _seed_flow(), UtilityA
 Cohesion: 0.30
 Nodes (14): _kassa_invoice(), AsyncSession, UUID, datetime, test_next_number_considers_all_sources(), async_sessionmaker, test_next_number_ignores_non_digit_and_foreign_sources(), test_kassa_number_uniquified_same_date() (+6 more)
 
-### Community 69 - "api/tests/counterparties"
-Cohesion: 0.11
-Nodes (53): _invoice_with_lines(), AsyncSession, SupplierInvoice, test_prepare_push_builds_incoming_cloud_body(), async_sessionmaker, test_prepare_push_skips_without_iiko_guid(), test_prepare_push_skips_without_store(), test_prepare_push_skips_all_staff() (+45 more)
-
 ### Community 269 - "api/tests/counterparties"
 Cohesion: 0.24
 Nodes (27): _run(), _admin(), _cashier(), _seed(), async_sessionmaker, AsyncSession, UUID, test_match_suggestions_lists_confident_candidate() (+19 more)
@@ -2502,10 +2602,6 @@ Nodes (27): _run(), _admin(), _cashier(), _seed(), async_sessionmaker, AsyncSess
 ### Community 224 - "api/tests/counterparties"
 Cohesion: 0.34
 Nodes (13): _goods_invoice(), AsyncSession, UUID, _goods_line(), LineInput, test_update_changes_supplier(), async_sessionmaker, test_update_rejects_unknown_supplier() (+5 more)
-
-### Community 228 - "api/tests + api/tests/counterparties"
-Cohesion: 0.12
-Nodes (45): _run(), _admin(), _seed(), async_sessionmaker, AsyncSession, UUID, _payload(), test_change_supplier_without_iiko_guid_conflicts_when_pushed() (+37 more)
 
 ### Community 32 - "api/tests/counterparties"
 Cohesion: 0.22
@@ -2527,6 +2623,10 @@ Nodes (10): EvaluationSession, Employee, CourierEvaluationCriterion, CourierEval
 Cohesion: 0.19
 Nodes (8): ScalarResult, Any, ScheduleSession, Employee, UUID, employee(), test_upsert_entry_creates_then_updates_single_courier_day(), test_delete_entry_removes_shift_and_recalculates()
 
+### Community 554 - "api/tests/couriers"
+Cohesion: 0.28
+Nodes (14): test_shift_matching_covers_plan_fact_status_matrix_and_open_shift(), test_plan_primary_no_fact_today_skips_match(), test_plan_primary_no_fact_future_skips_match(), test_plan_primary_open_shift_today_skips_match(), test_plan_primary_closed_short_shift_yesterday_is_short(), test_no_plan_open_shift_today_skips_match(), test_no_plan_closed_shift_with_deliveries_is_helping(), test_no_plan_closed_shift_without_deliveries_skips_match() (+6 more)
+
 ### Community 364 - "api/tests/couriers"
 Cohesion: 0.19
 Nodes (14): SubstitutionSession, Employee, CourierShiftSubstitution, Any, courier(), test_set_substitution_rejects_non_placeholder_card(), test_set_substitution_rejects_real_being_placeholder(), test_set_substitution_rejects_non_courier_real() (+6 more)
@@ -2544,8 +2644,12 @@ Cohesion: 0.12
 Nodes (26): FundAdminFakeSession, AppSetting, Any, FundInitialBalanceFakeSession, Employee, AccumulationFundAccount, AccumulationFundTransaction, FakeScalarResult (+18 more)
 
 ### Community 488 - "api/tests"
-Cohesion: 0.26
-Nodes (18): AsyncSession, Wallet, _safe_wallet(), _make_admin_run(), Decimal, PayrollRun, UUID, _txns() (+10 more)
+Cohesion: 0.14
+Nodes (33): AsyncSession, Wallet, _safe_wallet(), _make_admin_run(), Decimal, PayrollRun, UUID, _txns() (+25 more)
+
+### Community 202 - "api/tests"
+Cohesion: 0.50
+Nodes (4): _user(), CurrentUser, test_refresh_with_valid_cookie_returns_new_tokens(), test_logout_clears_refresh_cookie()
 
 ### Community 339 - "api/tests"
 Cohesion: 0.22
@@ -2588,16 +2692,16 @@ Cohesion: 0.11
 Nodes (27): _required_keys(), _template_keys(), _script_required_keys(), test_template_carries_every_required_key(), test_preflight_check_requires_every_required_key(), _config_production_requirements(), test_preflight_check_covers_settings_production_requirements(), test_templates_carry_settings_requirements() (+19 more)
 
 ### Community 204 - "api/tests"
-Cohesion: 0.19
-Nodes (21): _seed_article(), AsyncSession, UUID, _seed_employee(), Employee, _transfer_txns(), CashflowTransaction, test_bank_to_safe_transfer_books_pair_idempotently() (+13 more)
+Cohesion: 0.20
+Nodes (22): _seed_article(), AsyncSession, UUID, _seed_employee(), Employee, _transfer_txns(), CashflowTransaction, test_bank_to_safe_transfer_books_pair_idempotently() (+14 more)
+
+### Community 362 - "api/tests"
+Cohesion: 0.20
+Nodes (28): _seed_article(), AsyncSession, UUID, _seed_employee_with_deposit(), Decimal, Employee, _seed_bank_and_articles(), _employee_payouts() (+20 more)
 
 ### Community 498 - "api/tests"
 Cohesion: 0.44
 Nodes (10): _employee(), _run(), AsyncSession, PayrollRun, _tx(), DepositTransaction, test_expected_balance_counts_manual_and_finalized_only(), async_sessionmaker (+2 more)
-
-### Community 421 - "api/tests"
-Cohesion: 0.29
-Nodes (15): _seed_deposit_article(), AsyncSession, _make_production_run_with_deposit(), Decimal, PayrollRun, UUID, _txns(), CashflowTransaction (+7 more)
 
 ### Community 449 - "api/tests"
 Cohesion: 0.48
@@ -2628,12 +2732,16 @@ Cohesion: 0.12
 Nodes (41): _admin(), _today(), date, _month_start(), _asset(), AsyncSession, FixedAsset, _loss_answer() (+33 more)
 
 ### Community 73 - "api/tests"
-Cohesion: 0.06
-Nodes (115): test_lookup_rate_uses_chefs_thresholds(), Decimal, test_group_penalty_rate_chefs_thresholds(), test_group_penalty_rate_common_and_admins_full_100pct(), test_chefs_below_5000_zero_rate(), test_chefs_5000_10000_40pct(), test_chefs_10000_plus_50pct(), test_swap_group_validation_rejects_mixed_allocation() (+107 more)
+Cohesion: 0.05
+Nodes (123): test_lookup_rate_uses_chefs_thresholds(), Decimal, test_group_penalty_rate_chefs_thresholds(), test_group_penalty_rate_common_and_admins_full_100pct(), test_chefs_below_5000_zero_rate(), test_chefs_5000_10000_40pct(), test_chefs_10000_plus_50pct(), test_swap_group_validation_rejects_mixed_allocation() (+115 more)
 
 ### Community 267 - "api/tests"
-Cohesion: 0.10
-Nodes (14): test_load_prepaid_revision_charges_excludes_auto_comment_in_manual_category(), Any, test_load_prepaid_revision_charges_uses_manual_revision_category(), test_load_period_employees_gated_by_status_and_worked_shift(), test_import_from_iiko_unmapped_item_position_id_null(), Employee, AuditItemRouteSession, FakeScalarResult (+6 more)
+Cohesion: 0.09
+Nodes (17): test_load_prepaid_revision_charges_excludes_auto_comment_in_manual_category(), Any, test_load_prepaid_revision_charges_uses_manual_revision_category(), test_load_period_employees_gated_by_status_and_worked_shift(), test_import_from_iiko_unmapped_item_position_id_null(), test_sync_positions_creates_new_and_updates_existing(), Employee, PayrollAdjustment (+9 more)
+
+### Community 655 - "tmp + api/tests"
+Cohesion: 0.38
+Nodes (5): value_from(), clean(), main(), channel_for(), main()
 
 ### Community 192 - "api/tests"
 Cohesion: 0.06
@@ -2642,6 +2750,14 @@ Nodes (39): _lease(), AsyncSession, LocationLease, test_accrual_creates_obligati
 ### Community 184 - "api/tests"
 Cohesion: 0.09
 Nodes (21): test_rent_article_demands_location(), test_location_on_plain_article_is_rejected(), test_location_without_lease_is_allowed(), test_lease_bound_article_demands_landlord(), test_lease_bound_article_accepts_registered_landlord(), test_lease_fills_landlord_and_rejects_alien_counterparty(), test_lease_outside_its_period_is_rejected(), test_lease_of_another_location_is_rejected() (+13 more)
+
+### Community 1036 - "api/tests"
+Cohesion: 0.40
+Nodes (5): _fixture(), AsyncSession, DdsArticle, Location, Counterparty
+
+### Community 228 - "api/tests"
+Cohesion: 0.17
+Nodes (34): _admin(), test_migration_links_active_location_to_iiko(), TestClient, async_sessionmaker, AsyncSession, test_location_without_iiko_ids_is_valid(), test_duplicate_name_is_rejected(), test_store_ids_are_deduplicated_and_trimmed() (+26 more)
 
 ### Community 266 - "api/tests"
 Cohesion: 0.09
@@ -2659,17 +2775,13 @@ Nodes (13): test_payment_contour_read_accepts_both_read_permissions(), TestClien
 Cohesion: 0.34
 Nodes (13): LegacyImportFakeSession, legacy_payroll_row(), write_legacy_payroll_csv(), Path, write_headerless_legacy_payroll_csv(), test_legacy_import_basic(), test_legacy_import_unknown_employee_skipped(), test_legacy_import_period_grouping() (+5 more)
 
-### Community 349 - "api/tests"
-Cohesion: 0.18
-Nodes (30): make_inventory_audit(), InventoryAudit, make_inventory_position(), InventoryAuditPosition, make_inventory_item(), InventoryAuditItem, exclude_audit_employee(), make_deferred_charge_periods() (+22 more)
+### Community 660 - "api/tests"
+Cohesion: 0.24
+Nodes (6): PayrollAdjustmentFakeSession, app_with_payroll_adjustment_session(), adjustment_category(), test_create_adjustment_in_finalized_period_409(), test_patch_delete_in_finalized_period_409(), test_create_for_non_payroll_position_422()
 
 ### Community 253 - "api/tests"
 Cohesion: 0.15
 Nodes (30): _make_cook(), AsyncSession, Employee, _make_week(), PayrollPeriod, _entry(), UUID, date (+22 more)
-
-### Community 548 - "api/tests"
-Cohesion: 0.26
-Nodes (11): _employee(), AsyncSession, _week(), date, PayrollPeriod, PayrollRun, PayrollLine, test_payroll_loan_issued_sep_1_starts_recovery_on_sep_8() (+3 more)
 
 ### Community 439 - "api/tests"
 Cohesion: 0.31
@@ -2696,12 +2808,8 @@ Cohesion: 0.27
 Nodes (11): _week(), datetime, PayrollPeriod, test_period_closed_later_is_open_on_the_snapshot_date(), test_open_period_is_never_finalized_on_any_date(), test_containing_period_is_found_even_after_it_was_closed(), async_sessionmaker, AsyncSession (+3 more)
 
 ### Community 230 - "api/tests"
-Cohesion: 0.15
-Nodes (48): _actor(), CurrentActor, _payment(), AsyncSession, PayrollPayment, _dds_out_total(), Decimal, test_partial_payment_sets_partially_paid() (+40 more)
-
-### Community 356 - "api/tests"
-Cohesion: 0.22
-Nodes (30): test_mark_payment_on_finalized_run_creates_snapshot_and_serializes_line(), async_sessionmaker, AsyncSession, test_mark_payment_uses_total_payable_after_ndfl(), test_mark_payment_on_not_finalized_run_returns_409(), test_mark_payment_on_legacy_run_returns_409(), test_mark_payment_with_invalid_method_returns_409(), test_unmark_payment_deletes_row_and_line_returns_pending() (+22 more)
+Cohesion: 0.11
+Nodes (71): _actor(), _payment(), AsyncSession, _dds_out_total(), Decimal, test_partial_payment_sets_partially_paid(), async_sessionmaker, test_topup_completes_to_paid() (+63 more)
 
 ### Community 113 - "api/tests"
 Cohesion: 0.12
@@ -2737,15 +2845,15 @@ Nodes (12): _service_counterparty(), _article(), DdsArticle, _line_amount(), Dec
 
 ### Community 135 - "api/tests"
 Cohesion: 0.05
-Nodes (30): _line(), Decimal, LineStatus, LineValue, TestRubles, TestRatioIncompleteness, TestNotUsedLines, TestInventoryVersusStock (+22 more)
+Nodes (32): _line(), Decimal, LineStatus, LineValue, TestRubles, TestRatioIncompleteness, TestNotUsedLines, TestInventoryVersusStock (+24 more)
 
 ### Community 592 - "api/tests"
 Cohesion: 0.47
 Nodes (5): _labelled_verdicts(), test_every_verdict_has_a_russian_label(), test_no_stale_labels_left_behind(), У каждого вердикта сходимости обязана быть подпись по-русски.  Карточка «Сходимо, Обратная сторона: метка без вердикта означает, что кто-то переименовал ключ.
 
 ### Community 342 - "api/tests"
-Cohesion: 0.09
-Nodes (21): test_writeoff_moment_is_midday_not_now(), test_writeoff_body_carries_the_fields_api_silently_requires(), test_queue_is_built_once_and_keeps_the_answer(), _fake_cloud(), test_confirm_creates_the_act_once(), test_iiko_failure_keeps_the_answer_and_reports_it(), test_unknown_unit_is_explained_not_swallowed(), test_reject_returns_product_to_normal_classification() (+13 more)
+Cohesion: 0.08
+Nodes (22): test_writeoff_moment_is_midday_not_now(), test_writeoff_body_carries_the_fields_api_silently_requires(), _seed_workup(), test_queue_is_built_once_and_keeps_the_answer(), _fake_cloud(), test_confirm_creates_the_act_once(), test_iiko_failure_keeps_the_answer_and_reports_it(), test_unknown_unit_is_explained_not_swallowed() (+14 more)
 
 ### Community 316 - "api/tests"
 Cohesion: 0.14
@@ -2755,13 +2863,17 @@ Nodes (20): _actor(), CurrentActor, edit_client(), TestClient, fake_iiko(), Monk
 Cohesion: 0.17
 Nodes (24): FakeScalarResult, Any, RevenueForecastFakeSession, RevenueForecast, actor(), CurrentActor, revenue_for_history(), date (+16 more)
 
+### Community 446 - "api/tests + (root)"
+Cohesion: 0.26
+Nodes (12): RefreshingSberClient, SberClient, AsyncSession, SecretRotatingSberClient, _seed_sber_oauth_credentials(), datetime, test_expired_sber_access_token_is_refreshed_and_pair_rotated(), async_sessionmaker (+4 more)
+
 ### Community 254 - "api/tests"
 Cohesion: 0.16
 Nodes (21): ScalarResult, Any, AllowanceFakeSession, PayrollSeniorityPremium, payroll_settings(), date, make_period(), PayrollPeriod (+13 more)
 
 ### Community 1014 - "api/tests"
-Cohesion: 0.16
-Nodes (19): _user(), CurrentUser, _actor(), CurrentActor, client(), TestClient, _setting(), Any (+11 more)
+Cohesion: 0.39
+Nodes (9): _actor(), CurrentActor, client(), TestClient, test_get_setting_by_key_authorized_returns_value(), MonkeyPatch, test_get_setting_history_authorized_returns_entries(), test_get_setting_history_missing_key_returns_404() (+1 more)
 
 ### Community 167 - "api/tests"
 Cohesion: 0.14
@@ -2770,10 +2882,6 @@ Nodes (32): ScalarResult, Any, ForecastRunFakeSession, ShiftSchedule, PayrollFor
 ### Community 106 - "api/tests"
 Cohesion: 0.06
 Nodes (43): _po(), _ved(), _osv(), test_period_hint_ignores_words_that_merely_contain_a_marker(), test_period_hint_reads_real_periods(), test_payment_order_reads_period_from_header_not_from_body(), test_usn_h1_payment_order(), test_extra_1pct_due_date_read_from_body_not_filename() (+35 more)
-
-### Community 375 - "api/tests"
-Cohesion: 0.23
-Nodes (21): _ledger(), TaxPayrollLedger, _paid(), date, TaxPayment, _build(), AsyncSession, test_rows_cover_all_kinds() (+13 more)
 
 ### Community 176 - "api/tests"
 Cohesion: 0.14
@@ -2807,25 +2915,25 @@ Nodes (21): dependencies, @radix-ui/react-avatar, @radix-ui/react-dialog, @radix
 Cohesion: 0.11
 Nodes (18): devDependencies, @playwright/test, @types/react, @types/react-dom, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, @vitejs/plugin-react, autoprefixer (+10 more)
 
-### Community 71 - "web/src/routes + web/src"
-Cohesion: 0.02
-Nodes (118): App(), PaymentsFab(), OfficialContourSection(), StickyHorizontalScrollbar(), ToasterProps, Toaster(), api, apiErrorMessage() (+110 more)
+### Community 1032 - "web/src + web/src/components"
+Cohesion: 0.38
+Nodes (3): App(), StickyHorizontalScrollbar(), queryClient
 
-### Community 194 - "web/src/routes + web/src/components"
-Cohesion: 0.02
-Nodes (138): CourierDepositHistoryDrawerProps, CourierDepositHistoryDrawer(), TransactionBadge(), CourierDepositsSettingsSectionProps, SettingsDraft, PendingOpeningUpdate, DEFAULT_SETTINGS, CourierDepositsSettingsSection() (+130 more)
+### Community 3 - "web/src/routes + web/src/components"
+Cohesion: 0.01
+Nodes (260): CourierDepositHistoryDrawerProps, CourierDepositHistoryDrawer(), TransactionBadge(), CourierDepositsSettingsSectionProps, SettingsDraft, PendingOpeningUpdate, DEFAULT_SETTINGS, CourierDepositsSettingsSection() (+252 more)
 
-### Community 49 - "web/src/components + web/src/routes"
-Cohesion: 0.05
-Nodes (69): DepositsSettingsTabProps, RuleDraft, PendingInitialBalance, DepositsSettingsTab(), DepositSummary(), draftSnapshot(), decimalPayloadValue(), EmployeeDepositSectionProps (+61 more)
+### Community 49 - "web/src/components + web/src/lib"
+Cohesion: 0.06
+Nodes (54): DepositsSettingsTabProps, RuleDraft, PendingInitialBalance, DepositsSettingsTab(), DepositSummary(), draftSnapshot(), decimalPayloadValue(), EmployeeDepositSectionProps (+46 more)
 
 ### Community 13 - "web/src/lib + web/src/routes"
 Cohesion: 0.02
-Nodes (117): Navigate, AppLayoutProps, NavItem, NavGroup, navGroups, AppLayout(), SidebarContent(), NavLink() (+109 more)
+Nodes (124): Navigate, AppLayoutProps, NavItem, NavGroup, navGroups, AppLayout(), SidebarContent(), NavLink() (+116 more)
 
-### Community 78 - "web/src/routes + web/src/lib"
+### Community 136 - "web/src/routes + web/src/lib"
 Cohesion: 0.02
-Nodes (101): EmptyModule(), PageHeaderProps, PageHeader(), TabsList, TabsTrigger, TabsContent, AccessPermissionModule, AccessRole (+93 more)
+Nodes (113): EmptyModule(), PageHeaderProps, PageHeader(), AccordionProps, Accordion(), AccordionItemProps, AccordionItem, AccordionTrigger (+105 more)
 
 ### Community 155 - "web/src/components + web/src/routes"
 Cohesion: 0.05
@@ -2833,31 +2941,31 @@ Nodes (62): BooleanWidget(), DateArrayValue, DateArrayWidget(), normalizeDateArr
 
 ### Community 1 - "web/src/routes + web/src/components"
 Cohesion: 0.01
-Nodes (363): money, OfficialSummary(), childrenLabel(), ArticleCombobox(), DataTable(), ButtonProps, Button, Checkbox (+355 more)
+Nodes (343): money, OfficialSummary(), childrenLabel(), ArticleCombobox(), DataTableColumn, DataTable(), badgeVariants, BadgeProps (+335 more)
 
-### Community 3 - "web/src/routes + web/src/components"
+### Community 71 - "web/src/routes + web/src/components"
 Cohesion: 0.02
-Nodes (203): useAccountOptions(), NON_PAYOUT_WALLET_CODES, GROUP_RANK, sortAccounts(), AccountSelect(), CounterpartyOption, CounterpartyCombobox(), DataTableProps (+195 more)
+Nodes (100): useAccountOptions(), NON_PAYOUT_WALLET_CODES, GROUP_RANK, sortAccounts(), AccountSelect(), Card, CardHeader, CardTitle (+92 more)
 
-### Community 6 - "web/src/routes + web/src/lib"
-Cohesion: 0.02
-Nodes (189): DataTableColumn, AccordionProps, Accordion(), AccordionItemProps, AccordionItem, AccordionTrigger, AccordionContent, PayrollPeriod (+181 more)
+### Community 8 - "web/src/routes + web/src/lib"
+Cohesion: 0.04
+Nodes (64): CounterpartyOption, CounterpartyCombobox(), NewPaymentCounterparty, NewPaymentArticle, NewPaymentWallet, NewPaymentEmployee, NewPaymentExpenseLine, getNewPaymentContext() (+56 more)
+
+### Community 194 - "web/src/routes + web/src/lib"
+Cohesion: 0.05
+Nodes (52): employeeOptionLabel(), EmployeeCombobox(), EmployeeRoleAssignment, Employee, PayrollAdjustmentType, PayrollAdjustmentCategory, PayrollAdjustment, PayrollAdjustmentPayload (+44 more)
+
+### Community 78 - "web/src/routes + web/src/components"
+Cohesion: 0.04
+Nodes (62): InfoHintProps, InfoHint(), Money, AssetStatus, ValuationBasis, ReviewStatus, AcquisitionSource, AssetCategory (+54 more)
 
 ### Community 5 - "web/src/routes + web/src/lib"
 Cohesion: 0.01
 Nodes (202): statusLabels, colorClasses, statusClasses, StatusBadge(), EmployeeStatus, CookingStation, PayrollRole, EmployeePatch (+194 more)
 
-### Community 8 - "web/src/routes + web/src/lib"
-Cohesion: 0.03
-Nodes (108): CardFooter, InlineOptionList(), MONTHS, WEEKDAYS, pad(), toISO(), parseISO(), shortLabel() (+100 more)
-
 ### Community 0 - "web/src/lib + web/src/routes"
 Cohesion: 0.00
-Nodes (475): RetriableRequestConfig, IntegrationDefinition, LoginResponse, AccessPermission, AccessAuditParams, AppSettingHistory, SubstitutePairsResponse, PositionStatus (+467 more)
-
-### Community 136 - "web/src/routes + web/src/lib"
-Cohesion: 0.03
-Nodes (56): PayrollPersonalReport, ShiftLedgerAvailableRole, ShiftLedgerEntry, ShiftLedgerMatrixShift, ShiftLedgerMatrixDay, ShiftLedgerMatrixEmployee, ShiftLedgerMatrix, getEmployeePayrollReport() (+48 more)
+Nodes (459): RetriableRequestConfig, IntegrationDefinition, LoginResponse, AccessPermission, AccessAuditParams, AppSettingHistory, SubstitutePairsResponse, PositionArchetype (+451 more)
 
 ### Community 4 - "web/src/routes + web/src/lib"
 Cohesion: 0.01
@@ -2865,15 +2973,19 @@ Nodes (205): ScheduledShiftRead, ScheduleRead, ScheduleLedgerEntryRead, Schedule
 
 ### Community 21 - "web/src/routes + web/src/lib"
 Cohesion: 0.11
-Nodes (26): VacationPeriodRead, VacationRosterRow, VacationConflictResponse, getVacationRoster(), getVacationPayoutDates(), createVacationPeriod(), patchVacationPeriod(), cancelVacationPeriod() (+18 more)
+Nodes (25): VacationPeriodRead, VacationRosterRow, VacationConflictResponse, getVacationRoster(), getVacationPayoutDates(), createVacationPeriod(), patchVacationPeriod(), cancelVacationPeriod() (+17 more)
+
+### Community 209 - "web/src/routes + web/src/lib"
+Cohesion: 0.02
+Nodes (91): getCounterpartyLeases(), sumOf(), BarterSection(), DirtyFormsContext, useReportDirty(), ProfileSavedContext, CounterpartyCard(), BILLING_MODE_HINTS (+83 more)
 
 ### Community 469 - "web/src/routes + web/src/lib"
 Cohesion: 0.21
 Nodes (10): getDishwasherEmployees(), getDishwasherShifts(), putDishwasherShift(), WEEKDAY_LABELS, MonthRange, pad2(), isoDate(), daysInMonth() (+2 more)
 
 ### Community 9 - "web/src/routes"
-Cohesion: 0.03
-Nodes (76): KassaDdsArticle, KassaAccount, KassaCounterparty, KassaConfig, ChequeAllocation, ChequeLine, Cheque, CreateChequePayload (+68 more)
+Cohesion: 0.02
+Nodes (107): Stat(), Stat(), formatDdsMoney(), formatDateTime(), toDateTimeLocalInput(), GroupCard(), StoreLine, ExpenseLine (+99 more)
 
 ### Community 59 - "web/src/routes"
 Cohesion: 0.04
@@ -2931,9 +3043,9 @@ Nodes (6): Foundation, Vision, CoreImage, fail(), String, Never
 Cohesion: 0.22
 Nodes (31): d(), Any, Decimal, money(), ratio(), out_number(), pct(), clean_text() (+23 more)
 
-### Community 121 - "integrations/iiko/scripts + tmp"
-Cohesion: 0.11
-Nodes (55): WhitelistEntry, WhitelistSets, InventoryItem, ClassifiedDocument, month_start(), date, month_end(), next_month() (+47 more)
+### Community 121 - "integrations/iiko/scripts"
+Cohesion: 0.12
+Nodes (53): WhitelistEntry, WhitelistSets, InventoryItem, ClassifiedDocument, month_start(), date, month_end(), next_month() (+45 more)
 
 ### Community 231 - "integrations/iiko/scripts"
 Cohesion: 0.15
@@ -2945,11 +3057,7 @@ Nodes (48): WhitelistEntry, InvoiceItem, month_start(), date, month_end(), next_
 
 ### Community 187 - "integrations/iiko/scripts"
 Cohesion: 0.15
-Nodes (39): clean_text(), Any, rel(), Path, iso(), date, month_chunks(), write_bytes() (+31 more)
-
-### Community 325 - "research/scripts/business_control + integrations/iiko/scripts"
-Cohesion: 0.24
-Nodes (23): Counter, norm(), Any, norm_key(), as_float(), as_date(), date, iso() (+15 more)
+Nodes (40): clean_text(), Any, rel(), Path, iso(), date, month_chunks(), write_bytes() (+32 more)
 
 ### Community 287 - "integrations/iiko/scripts"
 Cohesion: 0.19
@@ -3016,12 +3124,8 @@ Cohesion: 0.13
 Nodes (43): TelegramAPIError, env_value(), required_env(), api_request(), Any, download_file(), Path, allowed_chat_ids() (+35 more)
 
 ### Community 171 - "integrations/tbank/scripts"
-Cohesion: 0.10
-Nodes (40): normalize_date(), iso_date_from_ru(), first_match(), _strip_ocr_table_prefix(), _find_account_in_text(), find_bank_account(), find_corr_account(), clean_name() (+32 more)
-
-### Community 390 - "integrations/tbank/scripts"
-Cohesion: 0.16
-Nodes (11): DetectionResult, PaymentParser, normalize_text(), normalize_key(), find_labeled_digits(), find_bank_name(), electricity_act_kind(), requisites_score() (+3 more)
+Cohesion: 0.09
+Nodes (45): normalize_date(), iso_date_from_ru(), first_match(), find_labeled_digits(), _strip_ocr_table_prefix(), _find_account_in_text(), find_bank_account(), find_corr_account() (+37 more)
 
 ### Community 206 - "integrations/tbank/scripts"
 Cohesion: 0.14
@@ -3029,7 +3133,7 @@ Nodes (20): Any, clean_digits(), build_electricity_merged_purpose(), next_month_
 
 ### Community 232 - "integrations/tbank/scripts"
 Cohesion: 0.14
-Nodes (35): money(), Decimal, fmt_money(), find_amount(), _expected_water_row_for_label(), collect_numbered_table_rows(), money_tokens(), water_money_token() (+27 more)
+Nodes (33): money(), Decimal, fmt_money(), _expected_water_row_for_label(), collect_numbered_table_rows(), money_tokens(), water_money_token(), water_money_values() (+25 more)
 
 ### Community 288 - "integrations/tbank/tests"
 Cohesion: 0.10
@@ -3038,6 +3142,10 @@ Nodes (4): PaymentParserTests, WaterUtilityRealOcrGoldenTests, Any, Golden tests
 ### Community 159 - "research/scripts/bank"
 Cohesion: 0.15
 Nodes (45): Operation, ClassifiedOperation, load_local_env(), rel(), Path, load_json(), Any, write_csv() (+37 more)
+
+### Community 325 - "research/scripts/business_control"
+Cohesion: 0.25
+Nodes (22): norm(), Any, norm_key(), as_float(), as_date(), date, iso(), money() (+14 more)
 
 ### Community 300 - "research/scripts/business_control"
 Cohesion: 0.22
@@ -3055,17 +3163,17 @@ Nodes (5): normalize(), preferred_types(), score(), deduplicate(), main()
 Cohesion: 0.18
 Nodes (10): Спецификация измерения скорости кухни (КДС) — шаг 2.3b, Ключевой вывод: новых полей НЕ нужно, Проверено 2026-06-16: API-обходного пути НЕТ (нельзя открыть ящик данными), `completeBefore` = готовый якорь (100% заполнено) — классификация + пунктуальность, 6 точек → 5 интервалов (маппинг на поля iiko), Что внедрить (приоритеты), Минимальный вариант (если полноценный КДС не сразу), Лестница внедрения — от 0 ₽ (экраны на каждую станцию НЕ нужны для диагностики) (+2 more)
 
-### Community 323 - ".agents"
-Cohesion: 0.20
-Nodes (9): Product Marketing Context — «Тепло», North Star, Product Overview, Brand Voice (КРИСТАЛЛИЗОВАН — главная ценность этого документа), Messaging Pillars, Anti-Positioning (чем мы НЕ являемся), Customer Language, Target & Segments (RFM) (+1 more)
+### Community 323 - "business-docs/marketing + .agents"
+Cohesion: 0.11
+Nodes (18): Product Marketing Context — «Тепло», North Star, Product Overview, Brand Voice (КРИСТАЛЛИЗОВАН — главная ценность этого документа), Messaging Pillars, Anti-Positioning (чем мы НЕ являемся), Customer Language, Target & Segments (RFM) (+10 more)
 
 ### Community 114 - "(root)"
 Cohesion: 0.05
 Nodes (63): Правила работы над проектом, Изучение кода — всегда через Graphify, Порядок действий, Когда можно идти сразу в файлы (без графа), Важно про актуальность графа, Обновление графа — обязательный шаг после деплоя, Работа с ветками и worktree — как не плодить хаос, Золотое правило (+55 more)
 
-### Community 268 - "app-spec/integrations/iiko + app-spec/architecture/decisions"
+### Community 268 - "app-spec/architecture/decisions + app-spec/integrations"
 Cohesion: 0.04
-Nodes (52): Teplo — управленческая система ресторана, Структура, Быстрый старт разработчика, Правила работы AI-агентов, Решения, которые нельзя принимать автоматически, Stack decision for Teplo, Контекст выбора, Default stack (+44 more)
+Nodes (50): Teplo — управленческая система ресторана, Структура, Быстрый старт разработчика, Правила работы AI-агентов, Решения, которые нельзя принимать автоматически, Stack decision for Teplo, Контекст выбора, Default stack (+42 more)
 
 ### Community 496 - "app-spec"
 Cohesion: 0.18
@@ -3083,17 +3191,13 @@ Nodes (67): Каталог AI-agent integration patterns, Назначение, 
 Cohesion: 0.09
 Nodes (22): Архитектура БД единого управленческого приложения, 1. Назначение, 2. Источники и обозначения, 3. Полная карта сущностей из модульных спецификаций, 4. Принципы модели, 4.1 Ключи и опциональность, 5. Core domain и master data, 6. Financial modules (+14 more)
 
-### Community 403 - "app-spec/integrations/iiko + app-spec/architecture/decisions"
-Cohesion: 0.05
-Nodes (46): iiko Finance: chart of accounts and Main Cash, Назначение, Связь с модулями, Авторизация, Найденные endpoint'ы, Основной endpoint, Схема операции Главная касса, Маппинг в cashflow_transactions (+38 more)
-
 ### Community 475 - "app-spec/architecture/decisions"
 Cohesion: 0.17
 Nodes (12): Database architecture decisions, 11. Архитектурные вопросы и зафиксированные решения, 11.1 `counterparty` DDS vs `supplier_counterparty` УДКЗ, 11.2 `cashflow_transaction` DDS vs `supplier_document.payment` / оплата в УДКЗ, 11.3 `balance_source_reference` vs общий `source_reference` + `source_snapshot` + `agent_run`, 11.4 `wallet` DDS vs `data_source` AI/integration, 11.5 `prepaid_expenses` vs баланс «Выданные авансы поставщикам» vs `supplier_document` с типом аванса, 11.6 `dds_article` vs `pnl_line` vs `balance_line` (+4 more)
 
 ### Community 1015 - "app-spec/architecture/decisions"
-Cohesion: 0.20
-Nodes (9): Payroll decisions, 1. Owner decisions 2026-05-20, 2. Owner decisions 2026-05-24/25, 3. Закрытые вопросы из owner-review, 5. Minute rounding policy, Payroll: точные минуты, без округления >=40, Payroll: категория 6 Внештат, Payroll: накопительный фонд выплачивается 15 января (+1 more)
+Cohesion: 0.40
+Nodes (5): Payroll decisions, 1. Owner decisions 2026-05-20, 2. Owner decisions 2026-05-24/25, 3. Закрытые вопросы из owner-review, 5. Minute rounding policy
 
 ### Community 406 - "app-spec/architecture"
 Cohesion: 0.13
@@ -3107,17 +3211,9 @@ Nodes (13): Видение единого управленческого при�
 Cohesion: 0.12
 Nodes (17): Реестр источников данных для миграции, §1. Назначение, §2. Карта источников, Проверка покрытия строк ОПиУ и баланса, §3. Связи между источниками, §4. Категории по способу подключения, API, Sheets (+9 more)
 
-### Community 559 - "app-spec/integrations/iiko"
-Cohesion: 0.25
-Nodes (8): 4. Интеграция с Google Sheets, Клиент, scope и авторизация, Какие листы сервис пишет, Операции Google Sheets, Маппинг в лист `Курьеры`, Маппинг в лист `Доставки`, Маппинг в лист `Выходы`, PII
-
-### Community 660 - "app-spec/integrations/iiko"
-Cohesion: 0.29
-Nodes (7): 5. Бизнес-расчеты внутри сервиса, Что сервис считает сам, Что перекладывается 1-к-1, Алгоритм матчинга курьера, Частично закрытые смены, Незавершенные и отмененные доставки, Время и timezone
-
 ### Community 443 - "app-spec/integrations/iiko"
-Cohesion: 0.15
-Nodes (13): Python-сервис курьерской книги: связь с книгой, риски и перенос, 6. Связь с уже изученной книгой, Какие листы сервис трогает, Что нужно поправить в прежних выводах, 7. Слабые места кода, 8. План переноса в приложение, Что переносить 1-к-1, Что переписывать иначе (+5 more)
+Cohesion: 0.05
+Nodes (38): iiko courier service integration, Файлы, Python-сервис курьерской книги: модели, Sheets и расчеты, 3. Модель данных в памяти и на выходе, Runtime-сущности, Маппинг iiko/webhook -> внутренняя модель, Выходные row-модели, 4. Интеграция с Google Sheets (+30 more)
 
 ### Community 413 - "app-spec/integrations/iiko"
 Cohesion: 0.13
@@ -3126,6 +3222,10 @@ Nodes (15): Python-сервис курьерской книги: обзор и i
 ### Community 445 - "app-spec/integrations/iiko"
 Cohesion: 0.15
 Nodes (13): iiko employees API: явки, смены и payroll, Назначение, Связь с другими модулями, Статус первого прохода и переоткрытие, Авторизация и безопасность, Найденные и проверенные endpoint'ы, Схема журнала явки, Маппинг iiko -> payroll-модель (+5 more)
+
+### Community 403 - "app-spec/integrations/iiko + app-spec/architecture"
+Cohesion: 0.05
+Nodes (41): iiko Finance: chart of accounts and Main Cash, Назначение, Связь с модулями, Авторизация, Найденные endpoint'ы, Основной endpoint, Схема операции Главная касса, Маппинг в cashflow_transactions (+33 more)
 
 ### Community 658 - "app-spec/integrations/iiko"
 Cohesion: 0.09
@@ -3153,7 +3253,7 @@ Nodes (20): Saby / SBIS EDO API endpoint map, Назначение, Безопа
 
 ### Community 193 - "app-spec/modules/finance + app-spec/modules/shift-ledger"
 Cohesion: 0.04
-Nodes (57): Payroll: смена, оклад, процент и надбавка пт/сб, Смена, Оклад за смену, Процент от выручки, Надбавка пт/сб, Settings module, Entity reference, Учёт смен: приоритет автоматического проставления роли/категории (+49 more)
+Nodes (58): Payroll: смена, оклад, процент и надбавка пт/сб, Смена, Оклад за смену, Процент от выручки, Надбавка пт/сб, Settings module, Entity reference, Учёт смен: приоритет автоматического проставления роли/категории (+50 more)
 
 ### Community 385 - "app-spec/integrations/tbank"
 Cohesion: 0.11
@@ -3205,7 +3305,7 @@ Nodes (27): Payroll engine, Источники и статусы правил, 1
 
 ### Community 154 - "app-spec/modules/staff"
 Cohesion: 0.06
-Nodes (38): Production payroll spec, 1. Роли, категории и коэффициенты, Категория и коэффициент процента, Ставки смены по роли и категории, 2. Надбавки production, 3. Оклад production, 4. Процент от выручки, 5. Распределение процента по точным минутам (+30 more)
+Nodes (37): Production payroll spec, 1. Роли, категории и коэффициенты, Категория и коэффициент процента, Ставки смены по роли и категории, 2. Надбавки production, 3. Оклад production, 4. Процент от выручки, 5. Распределение процента по точным минутам (+29 more)
 
 ### Community 319 - "app-spec/modules/staff"
 Cohesion: 0.09
@@ -3220,8 +3320,8 @@ Cohesion: 0.36
 Nodes (7): PostgreSQL infrastructure notes, Dev docker-compose stack, postgres service (postgres:16), api service (FastAPI), scheduler service (scheduler_runner), web service (Vite), Web app HTML entry point
 
 ### Community 128 - "business-docs/marketing + business-docs"
-Cohesion: 0.08
-Nodes (47): Тепло — Диагностика бизнеса (живой документ), Карта работы, Статус (на 2026-06-15), Тепло — Арсенал решений (Фаза 2), Течь 1→2: ~80% новых гостей не возвращаются, «Ножницы»: заказы −16…−26% YoY при чеке +15…+21%, Скидочная нагрузка ~977 тыс ₽/мес (20% gross), Течь скорости доставки (84 мин / 67% опозданий) (+39 more)
+Cohesion: 0.10
+Nodes (35): Тепло — Арсенал решений (Фаза 2), Течь 1→2: ~80% новых гостей не возвращаются, «Ножницы»: заказы −16…−26% YoY при чеке +15…+21%, Скидочная нагрузка ~977 тыс ₽/мес (20% gross), Течь скорости доставки (84 мин / 67% опозданий), Бритвенная маржа: чистая прибыль ~2,6%, ВК-слив: 100к ₽/мес при ROI 0,04, SEO — лучший недофинансированный канал (CPO 190 ₽, ROI ~10×) (+27 more)
 
 ### Community 656 - "business-docs"
 Cohesion: 0.29
@@ -3229,7 +3329,7 @@ Nodes (7): Бизнес-документация, Портрет бизнеса,
 
 ### Community 222 - "business-docs/finance + business-docs/data-quality"
 Cohesion: 0.07
-Nodes (27): Инвентаризация данных, Цель, 1. Выгрузки из iiko, 2. Внешние источники, 3. Проверка качества данных, 4. Минимальный первый пакет данных, 5. Приоритет автоматизации, Методология восстановления баланса (+19 more)
+Nodes (25): Инвентаризация данных, Цель, 1. Выгрузки из iiko, 2. Внешние источники, 3. Проверка качества данных, 4. Минимальный первый пакет данных, 5. Приоритет автоматизации, Методология восстановления баланса (+17 more)
 
 ### Community 275 - "business-docs/counterparties"
 Cohesion: 0.07
@@ -3240,8 +3340,12 @@ Cohesion: 0.11
 Nodes (18): Источники данных и доступы, Цель, Роли банков (подтверждено владельцем 2026-05-19), 1. Карта источников, 2. Что нужно от бэк-офиса API, 3. Первые API-эндпоинты, 4. Google Drive, 5. ЭДО DocsInbox / СБИС (+10 more)
 
 ### Community 290 - "business-docs/finance + business-docs/portrait"
-Cohesion: 0.06
-Nodes (30): Экономический блок, Назначение, Ключевой источник выручки, скидок и food cost, Статус источников, Верх экономики 2026, Валовая маржа минус ФОТ, ФОТ, Курьеры (+22 more)
+Cohesion: 0.09
+Nodes (20): Правила учета основных средств, 1. Связь с P&L, 2. Established policy по ОС, 3. План восстановления реестра ОС, Портрет бизнеса, 1. Краткое описание, 2. Экономическая модель, 3. Каналы заказов (+12 more)
+
+### Community 627 - "business-docs/finance"
+Cohesion: 0.15
+Nodes (13): Экономический блок, Назначение, Ключевой источник выручки, скидок и food cost, Статус источников, Верх экономики 2026, Валовая маржа минус ФОТ, ФОТ, Курьеры (+5 more)
 
 ### Community 352 - "business-docs/finance"
 Cohesion: 0.11
@@ -3266,6 +3370,10 @@ Nodes (8): Тепло — План действий (Фаза 4), Принцип
 ### Community 427 - "business-docs/marketing"
 Cohesion: 0.13
 Nodes (15): Карта каналов маркетинговых данных, 1. iiko Cloud — `https://api-ru.iiko.services`, 2. iiko Server (OLAP) — iikoServer Resto, `/reports/olap`, 3. Starter CRM — `https://crm.starterapp.ru/fmteplo/api/v1/frontend/` (+ `api/v2`), 4. Revvy — `https://admin.revvy.ru` (API `https://revvy.ru/web/`), 5. Яндекс.Метрика (сайт teplofood.ru), 6. AppMetrica (приложение «Тепло»), 7. teplofood.ru (сайт-витрина) (+7 more)
+
+### Community 1057 - "business-docs/marketing"
+Cohesion: 0.67
+Nodes (3): Тепло — Диагностика бизнеса (живой документ), Карта работы, Статус (на 2026-06-15)
 
 ### Community 619 - "business-docs/marketing"
 Cohesion: 0.25
@@ -3540,24 +3648,28 @@ Cohesion: 0.50
 Nodes (4): Проходимость техкарт и кандидаты на удаление (v1), Tier 2 — 13 позиций под наблюдением (решение владельца), Дубли iiko DISH/MODIFIER/PREPARED и техварианты, Датасеты проходимости (dish_throughput.json + CSV вердиктов)
 
 ### Community 425 - "(root)"
-Cohesion: 0.20
-Nodes (12): Изолированный стек agent-b (проект teplo-b, слот 1), Порты agent-b: web 5183 / api 8010 / pg 5442, iiko-заглушка agent-b: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-b (TEPLO_BANK_CLIENT_MODE), environment перебивает env_file — правило неснимаемых заглушек, Превью-учётка agent-b (admin1@teplo.local), Тестовая БД teplo_test_b, iiko-заглушка agent-c: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid (+4 more)
+Cohesion: 0.16
+Nodes (15): Изолированный стек agent-b (проект teplo-b, слот 1), Порты agent-b: web 5183 / api 8010 / pg 5442, iiko-заглушка agent-b: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-b (TEPLO_BANK_CLIENT_MODE), environment перебивает env_file — правило неснимаемых заглушек, Превью-учётка agent-b (admin1@teplo.local), Тестовая БД teplo_test_b, Изолированный стек agent-c (проект teplo-c, слот 3) (+7 more)
 
 ### Community 466 - "(root)"
-Cohesion: 0.15
-Nodes (15): Изолированный стек agent-c (проект teplo-c, слот 3), Порты agent-c (слот 3): web 5203 / api 8030 / pg 5462, Банк в mock на agent-c (TEPLO_BANK_CLIENT_MODE), Превью-учётка agent-c (admin1@teplo.local), Порты agent-dds (слот 6): web 5233 / api 8060 / pg 5492, Изолированный стек agent-partial / partial-payroll (проект teplo-partial, слот 5), Порты agent-partial (слот 5): web 7163 вместо 5223 / api 8050 / pg 5482, iiko-заглушка agent-partial: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid (+7 more)
+Cohesion: 0.47
+Nodes (6): Порты agent-c (слот 3): web 5203 / api 8030 / pg 5462, Порты agent-dds (слот 6): web 5233 / api 8060 / pg 5492, Порты agent-partial (слот 5): web 7163 вместо 5223 / api 8050 / pg 5482, Порты agent-payments (слот 4): web 7153 по запросу владельца / api 8040 / pg 5472, Порты preview-ic (слот 7): web 5243 / api 8070 / pg 5502, Переезд preview-ic со старых 7153/8163/5472 (делил web+pg с agent-payments)
+
+### Community 1037 - "(root)"
+Cohesion: 0.40
+Nodes (5): Изолированный стек agent-partial / partial-payroll (проект teplo-partial, слот 5), iiko-заглушка agent-partial: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-partial (TEPLO_BANK_CLIENT_MODE), Превью-учётка agent-partial (admin1@teplo.local), Тестовая БД teplo_test_partial
 
 ### Community 917 - "(root)"
 Cohesion: 0.33
 Nodes (6): Изолированный стек agent-payments (проект teplo-payments, слот 4), Предупреждение: preview-taxes (ветка agent/tax-taxes) занимает тот же слот 4, iiko-заглушка agent-payments: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-payments (TEPLO_BANK_CLIENT_MODE), Превью-учётка agent-payments (admin1@teplo.local), Тестовая БД teplo_test_payments
 
 ### Community 569 - "(root)"
-Cohesion: 0.40
-Nodes (5): Изолированный стек agent-periods / counterparty-service-periods (проект teplo-periods, слот 2), iiko-заглушка agent-periods: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-periods (TEPLO_BANK_CLIENT_MODE), Превью-учётка agent-periods (admin1@teplo.local), Тестовая БД teplo_test_periods
+Cohesion: 0.33
+Nodes (6): Изолированный стек agent-periods / counterparty-service-periods (проект teplo-periods, слот 2), Порты agent-periods (слот 2): web 5193 / api 8020 / pg 5452, iiko-заглушка agent-periods: IIKO_SERVER_BASE_URL=http://iiko-disabled.invalid, Банк в mock на agent-periods (TEPLO_BANK_CLIENT_MODE), Превью-учётка agent-periods (admin1@teplo.local), Тестовая БД teplo_test_periods
 
 ### Community 1013 - "(root)"
-Cohesion: 0.40
-Nodes (5): Превью-стек preview-ic ветки agent/invoicecloud-unify (проект teplo-ic, слот 7), Живой iiko на preview-ic — единственный стенд без заглушки, осознанно, Унификация накладных на iiko Cloud (предмет ветки), Превью-учётка preview-ic (admin1@teplo.local), Тестовая БД teplo_test_ic_local
+Cohesion: 0.33
+Nodes (6): Превью-стек preview-ic ветки agent/invoicecloud-unify (проект teplo-ic, слот 7), Живой iiko на preview-ic — единственный стенд без заглушки, осознанно, Унификация накладных на iiko Cloud (предмет ветки), Vite --strictPort на preview-ic (фиксация порта web), Превью-учётка preview-ic (admin1@teplo.local), Тестовая БД teplo_test_ic_local
 
 ### Community 207 - "(root)"
 Cohesion: 0.08
@@ -3620,21 +3732,21 @@ Nodes (11): Стек агента vatpurpose (docker-compose, слот 13), Се
   docs/BACKLOG.md · relation: conceptually_related_to
 
 ## Knowledge Gaps
-- **2670 isolated node(s):** `Table`, `RowMapping`, `Connection`, `date`, `AsyncSession` (+2665 more)
+- **2669 isolated node(s):** `PayrollRunDetailRouteProps`, `PayrollLineRowModel`, `PAYMENT_METHOD_OPTIONS`, `PayoutFormulaTerm`, `DayComponent` (+2664 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **151 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **153 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `Перевод денег с Торговой кассы на Сейф` and `Статья ДДС «Ремонт оборудования» (операционная, доступна в кассе)`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `async_session_factory()` connect `api/tests/counterparties + api/tests` to `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests + api/app`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/tests/counterparties`, `api/app/services + api/tests/kassa`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/jobs`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests + api/app/jobs`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties + api/tests`, `api/tests/counterparties`, `api/tests/counterparties + api/app/models`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/kassa + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/tests`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/tests + api/app/core`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests`, `api/tests/counterparties + api/app`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests`, `api/app/services + api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/kassa + api/app/services`, `api/tests`, `api/app/scripts + api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/couriers`, `api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests`?**
-  _High betweenness centrality (0.173) - this node is a cross-community bridge._
-- **Why does `CurrentActor` connect `api/app/api + api/app/services` to `api/app/api + api/app/models`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/tests`, `api/app/api + api/tests`, `api/tests + api/app`, `api/tests + api/app/api`, `api/tests + api/app/services`, `api/app/services`, `api/app/api + api/app/services`, `api/app/api + api/app/auth`, `api/app/services + api/tests`, `api/app/services`, `api/app/api`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/services`, `api/app/api + api/app/services`, `api/app/services + api/app/api`, `api/tests`, `api/app/api + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/app`, `api/tests`, `api/app/api + api/app/services`, `api/tests`, `api/app/services + api/tests`, `api/tests`, `api/tests`, `api/app/services + api/app/api`, `api/app/api + api/app/services`, `api/tests`, `api/tests`, `api/tests + api/app/services`, `api/app/api + api/app/services`, `api/tests + api/app/core`, `api/app/api`, `api/app/api + api/app/services`, `api/tests`, `api/app/api + api/app/services`, `api/app/services + api/app/api`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests`, `api/app/api + api/app/services`, `api/tests`, `api/app/services + api/app/api`, `api/tests`, `api/app/services`, `api/tests`, `api/app/services + api/app/models`, `api/tests + api/app/services`, `api/app/api + api/app/services`, `api/app/api`, `api/app/auth + api/app/api`, `api/app/services`, `api/app/services`, `api/tests`, `api/tests`, `api/app/services + api/tests`?**
-  _High betweenness centrality (0.084) - this node is a cross-community bridge._
-- **Why does `timedelta` connect `api/tests + api/app/core` to `api/app/services`, `api/app/services + api/app`, `api/app/services + tmp`, `api/tests/counterparties + api/app/services`, `api/tests + api/app`, `api/app/api + api/app/services`, `api/tests + api/app/api`, `api/tests + api/app/services`, `api/tests/counterparties + api/tests`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/app/api + api/app/services`, `api/app/jobs`, `api/app/services + api/app/api`, `api/app/api + api/app/services`, `api/app/services`, `api/app/services + api/app`, `api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/app/services + api/app/api`, `api/tests/counterparties + api/app/services`, `api/app/services`, `api/tests + api/app/services`, `api/app/services + api/app/api`, `api/tests + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests + api/app/services`, `api/app/services`, `api/app/services + api/tests/counterparties`, `api/app/services + api/tests/kassa`, `api/tests`, `api/app/services + api/app/schemas`, `api/app/services + api/tests`, `api/app/services + api/tests`, `api/app/scripts`, `api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/jobs`, `api/app/api + api/app/services`, `api/app/services`, `api/app/services`, `api/app/services`, `api/app/services + api/tests`, `api/app/scripts`, `api/tests`, `api/tests`, `api/tests + tmp`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/app/services`, `api/app + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties`, `api/app/services + api/tests/couriers`, `api/app/services + api/tests/couriers`, `api/app/services`, `api/tests`, `api/app/services`, `api/app/api`, `api/app/services`, `api/app/services`, `api/app/services`, `api/app/services + api/app/models`, `api/tests/counterparties`, `api/tests/kassa + api/app/services`, `api/tests`, `api/app/services`, `api/tests`, `api/app/api + api/app/core`, `api/app/services + api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests/couriers`, `api/tests`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/app/services`, `api/tests/counterparties`, `api/tests`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+- **Why does `async_session_factory()` connect `api/tests/counterparties + api/app/services` to `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests + api/app`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests/kassa`, `api/tests + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/tests/kassa`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties + api/app/jobs`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests + api/app/jobs`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties + api/tests`, `api/tests/counterparties`, `api/tests/counterparties + api/app/models`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/kassa + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties + api/tests`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/tests + api/app/core`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests`, `api/app/services + api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/tests/counterparties`, `api/app/services + api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/tests/counterparties + api/app`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/app/services + api/tests`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/services`, `api/app/scripts + api/tests/counterparties`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests + api/app/models`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests/couriers`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests`, `api/tests + api/app/services`, `api/app/services + api/tests`, `api/tests/counterparties`, `api/tests/counterparties`, `api/tests`, `api/tests + (root)`, `api/tests`, `api/tests/counterparties`, `api/tests/counterparties + api/app/services`, `api/tests`, `api/tests`, `api/tests`, `api/tests/counterparties`?**
+  _High betweenness centrality (0.158) - this node is a cross-community bridge._
+- **Why does `CurrentActor` connect `api/app/api + api/app/services` to `api/app/api + api/app/models`, `api/tests + api/app/api`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/api + api/app/auth`, `api/app/api + api/app/services`, `api/tests`, `api/app/api + api/app/services`, `api/tests + api/app`, `api/tests + api/app/api`, `api/tests + api/app/services`, `api/app/api + api/app/services`, `api/tests`, `api/app/services`, `api/app/api`, `api/app/api + api/app/auth`, `api/app/services + api/tests`, `api/app/services`, `api/app/api`, `api/app/api + api/app/services`, `api/app/api + api/app/services`, `api/app/api`, `api/app/services`, `api/app/api + api/app/services`, `api/app/services + api/app/api`, `api/tests`, `api/app/api + api/app/services`, `api/tests + api/app/services`, `api/app/services`, `api/tests`, `api/app/api + api/app/services`, `api/tests`, `api/app/services + api/tests`, `api/tests`, `api/tests`, `api/app/services + api/app/api`, `api/app/api + api/app/services`, `api/tests`, `api/tests`, `api/tests + api/app/services`, `api/tests`, `api/tests + api/app/core`, `api/app/api + api/app/core`, `api/tests`, `api/app/api`, `api/app/services + api/app/api`, `api/tests + api/app/services`, `api/app/api + api/app/services`, `api/tests`, `api/app/api + api/tests`, `api/app/services`, `api/tests`, `api/app/services + api/app/models`, `api/app/api + api/app/services`, `api/app/api`, `api/app/auth + api/app/api`, `api/app/services`, `api/app/services`, `api/tests`, `api/tests`, `api/app/services + api/app/api`, `api/app/services + api/tests`?**
+  _High betweenness centrality (0.111) - this node is a cross-community bridge._
+- **Why does `Settings` connect `api/app/api + api/app/core` to `api/tests`, `api/tests + api/app/jobs`, `api/app/services + api/app/models`, `api/app/services`, `api/app/api + api/app/services`, `api/app/services + api/tests`, `api/app/api`, `api/tests`, `api/app/api + api/app/services`, `api/tests + api/app/services`, `api/app/api + api/app/services`, `api/tests/counterparties`, `api/app/api + api/app/services`, `api/app/services + api/tests`, `api/app/services + api/tests/counterparties`, `api/app/services + api/tests`, `api/app/services + api/tests`, `api/tests`, `api/app/services + api`, `api/app/services + api/tests/counterparties`, `api/app/services`, `api/tests/counterparties`, `api/app/services + api/app/api`, `api/app/api + api/app/services`, `api/tests`, `api/tests/counterparties + api/app/services`, `api/app/services`, `api/app/services + api/tests`, `api/tests + api/app/services`, `api/app/services`, `api/app/services + api/app`, `api/tests`, `api/app/services + api/app/models`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
 - **Are the 1549 inferred relationships involving `async_session_factory()` (e.g. with `test_closing_a_running_month_is_refused()` and `test_incoming_document_does_not_erase_expense_of_a_closed_month()`) actually correct?**
   _`async_session_factory()` has 1549 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 1135 inferred relationships involving `CurrentActor` (e.g. with `AccessAuditEventRead` and `AccessUserCreate`) actually correct?**
