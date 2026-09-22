@@ -275,6 +275,70 @@ async def test_extra_1pct_increment_is_not_a_false_alert(
     assert not recon.has_alerts
 
 
+async def test_paid_extra_1pct_document_disappears_from_payment_queue(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """После банковского списания приростная платёжка не выставляется повторно."""
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(_tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9)))
+        paid_h1 = _tax_payment("contrib_extra_1pct", "105628", date(2026, 9, 22))
+        paid_h1.for_period = "h1"
+        session.add(paid_h1)
+        session.add(
+            _payment_order_intake(
+                tax_kind="contrib_extra_1pct", period="h1", amount="105628",
+                due=date(2026, 9, 25), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="1% за 2 кв 2026.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 9, 22))
+        obligations = await list_payable_obligations(session, today=date(2026, 9, 22))
+
+    line = _line(recon, "contrib_extra_1pct", "year")
+    assert line.documented == Decimal("105628")
+    assert line.paid == Decimal("221988")
+    assert line.verdict == "ok"
+    assert line.payable_amount is None
+    assert not [ob for ob in obligations if ob.kind == "contrib_extra_1pct"]
+
+
+async def test_partly_paid_extra_1pct_offers_only_remaining_amount(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """При частичном списании очередь предлагает лишь неоплаченный остаток платёжки."""
+    from app.services.taxes.obligations import list_payable_obligations
+
+    async with async_session_factory() as session:
+        await _seed_revenue(session, 6)
+        session.add(_tax_payment("contrib_extra_1pct", "116360", date(2026, 6, 9)))
+        paid_h1 = _tax_payment("contrib_extra_1pct", "50000", date(2026, 9, 22))
+        paid_h1.for_period = "h1"
+        session.add(paid_h1)
+        session.add(
+            _payment_order_intake(
+                tax_kind="contrib_extra_1pct", period="h1", amount="105628",
+                due=date(2026, 9, 25), received=datetime(2026, 7, 22, tzinfo=UTC),
+                filename="1% за 2 кв 2026.docx",
+            )
+        )
+        await session.commit()
+
+        recon = await build_reconciliation(session, as_of=date(2026, 9, 22))
+        obligations = await list_payable_obligations(session, today=date(2026, 9, 22))
+
+    line = _line(recon, "contrib_extra_1pct", "year")
+    assert line.documented == Decimal("105628")
+    assert line.payable_amount == Decimal("55628")
+    assert [ob.amount for ob in obligations if ob.kind == "contrib_extra_1pct"] == [
+        Decimal("55628")
+    ]
+
+
 async def test_extra_1pct_real_shortfall_still_alerts(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

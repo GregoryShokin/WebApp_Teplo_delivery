@@ -285,7 +285,11 @@ def _action_for(
 
 
 def _offset_by_ens(
-    line: ReconLine, *, expected: Decimal | None, wallet_balance: Decimal
+    line: ReconLine,
+    *,
+    expected: Decimal | None,
+    wallet_balance: Decimal,
+    unpaid_documented: Decimal | None = None,
 ) -> ReconLine:
     """Смягчить «документ меньше начисленного», если разницу покрывает переплата на ЕНС.
 
@@ -297,9 +301,10 @@ def _offset_by_ens(
     """
     if line.verdict != "doc_mismatch" or line.severity != "alert":
         return line
-    if line.documented is None or line.documented <= ZERO or expected is None:
+    amount_to_pay = line.documented if unpaid_documented is None else unpaid_documented
+    if amount_to_pay is None or amount_to_pay <= ZERO or expected is None:
         return line
-    gap = expected - line.documented
+    gap = expected - amount_to_pay
     if gap <= ZERO:
         return line
     if wallet_balance + TOLERANCE >= gap:
@@ -316,7 +321,7 @@ def _offset_by_ens(
                 f"Недостающие {fmt_money(gap)} ₽ спишутся из переплаты на ЕНС. "
                 f"Если хотите — сверьте остаток кошелька с бухгалтером."
             ),
-            payable_amount=line.documented,
+            payable_amount=amount_to_pay,
         )
     if wallet_balance > ZERO:
         return replace(
@@ -801,9 +806,20 @@ async def build_reconciliation(
     paid = await _paid_amount(
         session, year=year, kind="contrib_extra_1pct", period_code=None
     )
+    paid_for_document = await _paid_amount(
+        session, year=year, kind="contrib_extra_1pct", period_code="h1"
+    )
+    # Платёжка на прирост за квартал остаётся в документах после исполнения. Сверяем с
+    # текущим остатком только её неоплаченную часть; иначе сразу после списания полная
+    # сумма документа повторно попадает в «к уплате» как безопасное расхождение.
+    unpaid_documented = (
+        max(documented - (paid_for_document or ZERO), ZERO)
+        if documented is not None
+        else None
+    )
     verdict, severity, messages = _classify(
         calculated=state.extra_accrued,
-        documented=documented,
+        documented=unpaid_documented,
         paid=paid,
         due_date=due,
         as_of=as_of,
@@ -813,7 +829,7 @@ async def build_reconciliation(
     )
     # Приростная платёжка сверяется с ОСТАТКОМ к доплате — его и передаём как ожидание.
     _extra_action = _action_for(
-        verdict, documented=documented, expected=state.extra_accrued - (paid or ZERO)
+        verdict, documented=unpaid_documented, expected=state.extra_accrued - (paid or ZERO)
     )
     lines.append(
         _offset_by_ens(
@@ -833,13 +849,14 @@ async def build_reconciliation(
                 action_why=_extra_action[1],
                 payable_amount=_payable(
                     verdict,
-                    documented=documented,
+                    documented=unpaid_documented,
                     calculated=state.extra_accrued,
                     expected=state.extra_accrued - (paid or ZERO),
                 ),
             ),
             expected=state.extra_accrued - (paid or ZERO),
             wallet_balance=wallet.balance,
+            unpaid_documented=unpaid_documented,
         )
     )
 
