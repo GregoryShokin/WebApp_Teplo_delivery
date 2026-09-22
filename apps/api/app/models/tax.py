@@ -441,7 +441,12 @@ class TaxDocumentIntake(Base):
 
     __tablename__ = "tax_document_intake"
     __table_args__ = (
-        UniqueConstraint("attachment_sha256", name="uq_tax_document_intake_sha"),
+        # Один и тот же шаблон ПД может приходить побайтно одинаковым каждый месяц.
+        # Повторным считаем вложение того же IMAP-письма, а не байты другого письма.
+        UniqueConstraint(
+            "mailbox", "message_uid", "attachment_sha256",
+            name="uq_tax_document_intake_mail_uid_sha",
+        ),
         CheckConstraint(
             "status in ('parsed', 'needs_review', 'promoted', 'unsupported', 'error', 'ignored')",
             name="ck_tax_document_intake_status",

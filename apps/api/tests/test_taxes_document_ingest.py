@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -17,13 +17,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
-from app.models.tax import TaxDocumentIntake
+from app.models.tax import TaxDocumentIntake, TaxPayment
 from app.services.mail.imap_client import FetchedAttachment, MailAccount
 from app.services.taxes.document_ingest import (
     ingest_tax_documents,
     parse_attachment,
     set_intake_review,
 )
+from app.services.taxes.promote import promote_ready_intakes
 
 FIXTURES = Path(__file__).parent / "fixtures" / "taxes"
 
@@ -486,6 +487,60 @@ async def test_ingest_two_months_of_injury_do_not_collapse(
         ).all()
     assert sorted(r.recognition["period_hint"] for r in rows) == ["2026-04", "2026-08"]
     assert all("duplicate_of" not in r.recognition for r in rows)
+
+
+async def test_identical_injury_file_in_new_letter_gets_new_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Сентябрьский ПД побайтно равен августовскому: письмо задаёт новый месяц.
+
+    Инцидент 18.09.2026: глобальный SHA-дедуп выбросил четвёртое вложение до разбора.
+    Повторный опрос одного письма по-прежнему не создаёт новый документ.
+    """
+    from dataclasses import replace
+
+    august = _pd_att(period_cell=None, received=datetime(2026, 8, 19, tzinfo=UTC))
+    september = replace(
+        august,
+        message_uid="19056",
+        message_id="<september@test>",
+        received_at=datetime(2026, 9, 18, tzinfo=UTC),
+    )
+    assert august.sha256 == september.sha256
+
+    async with async_session_factory() as session:
+        first = await ingest_tax_documents(
+            session, settings=get_settings(), fetch=_fetch_stub([august]),
+            accounts=_TEST_ACCOUNTS,
+        )
+        second = await ingest_tax_documents(
+            session, settings=get_settings(), fetch=_fetch_stub([september]),
+            accounts=_TEST_ACCOUNTS,
+        )
+        repeated = await ingest_tax_documents(
+            session, settings=get_settings(), fetch=_fetch_stub([september]),
+            accounts=_TEST_ACCOUNTS,
+        )
+        rows = (
+            await session.execute(select(TaxDocumentIntake).order_by(TaxDocumentIntake.received_at))
+        ).scalars().all()
+        assert [(r.status, r.recognition["period_hint"]) for r in rows] == [
+            ("parsed", "2026-08"), ("parsed", "2026-09")
+        ]
+        promotions = await promote_ready_intakes(session)
+        payments = (
+            await session.execute(select(TaxPayment).order_by(TaxPayment.for_period))
+        ).scalars().all()
+
+    assert first["parsed"] == 1
+    assert second["parsed"] == 1
+    assert second["duplicate"] == 0
+    assert repeated["duplicate"] == 1
+    assert [p.action for p in promotions] == ["created", "created"]
+    assert [(p.for_period, p.amount, p.paid_on) for p in payments] == [
+        ("2026-08", Decimal("100.0"), date(2026, 9, 15)),
+        ("2026-09", Decimal("100.0"), date(2026, 10, 15)),
+    ]
 
 
 def test_xlsx_turnover_statement_parsed_same_as_xls() -> None:
