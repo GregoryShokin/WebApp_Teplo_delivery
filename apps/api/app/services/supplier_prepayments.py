@@ -645,6 +645,102 @@ async def reconcile_bill_prepayment(
         await _settle_counterparty_closing_from_prepayments(
             session, invoice.counterparty_id, actor_user_id=actor_user_id
         )
+        # Остаток своей ДЗ забирает у чужих денег акт, который назван этим счётом, но погашен
+        # «наугад». Освобождённые чужие авансы — снова свободная ДЗ, и она по тому же правилу
+        # гасит неоплаченную кредиторку контрагента.
+        if await _repoint_guessed_settlements_to_bill(
+            session, invoice, existing, actor_user_id=actor_user_id
+        ):
+            await _settle_counterparty_closing_from_prepayments(
+                session, invoice.counterparty_id, actor_user_id=actor_user_id
+            )
+
+
+async def _repoint_guessed_settlements_to_bill(
+    session: AsyncSession,
+    bill: SupplierInvoice,
+    own: SupplierPrepayment,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> bool:
+    """Перевести на деньги оплаченного счёта акт, который его называет, но погашен «наугад».
+
+    Обратный порядок (``_settle_counterparty_closing_from_prepayments``) перебирает только
+    НЕОПЛАЧЕННЫЕ закрывающие. Если акт пары успел погаситься чужим авансом раньше, чем оплатили
+    его счёт, дебиторка счёта оставалась открытой навсегда, а чужой аванс — занятым. Прод,
+    01.09.2026: вода Станислава Юрьевича за август закрылась арендой, заплаченной вперёд, счёт
+    оплатили из Сейфа через час, и его ДЗ 3321f346 так и висела открытой; «Аренде 09» стало
+    нечем гаситься. Нетто по контрагенту сходилось — врала адресность, каждый месяц.
+
+    Переносим только то, что система УГАДАЛА: аллокации ``match_basis='chronology'`` от авансов
+    другого счёта (или без счёта). Остальные ранги — признаки, найденные в самих документах, их
+    не перебиваем; зачёт человека (``match_basis`` пуст) — тем более. ``origin`` здесь не
+    смотрим: у предоплатных зачётов он всегда пуст, это метка авторства денежных аллокаций
+    правила 1. Акт должен САМ называть этот счёт (``_basis_bill_id``: строка «Основание» или
+    общий номер системной пары), быть финансовым, не бартерным и не в банк-черновике.
+
+    Снимаем LIFO и не больше свободного остатка своей ДЗ — иначе освобождённое было бы нечем
+    заместить. Возврат чужому авансу — та же арифметика, что у
+    ``release_invoice_prepayment_allocations``. Затем акт гасится заново штатным авто-зачётом,
+    и лестница отдаёт ему свою ДЗ рангом «счёт-основание». Начисления не трогаем: суммы акта не
+    меняются, меняется только то, чьими деньгами он закрыт. Рекурсии нет — пересчёт статуса
+    закрывающего чокпоинт счетов не зовёт. Без commit. Возвращает, было ли что перенесено.
+    """
+    free = _money(own.amount) - _money(own.amount_settled)
+    if free <= 0:
+        return False
+    rows = (
+        await session.execute(
+            select(InvoicePaymentAllocation, SupplierPrepayment, SupplierInvoice)
+            .join(
+                SupplierPrepayment, SupplierPrepayment.id == InvoicePaymentAllocation.prepayment_id
+            )
+            .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
+            .where(
+                InvoicePaymentAllocation.source_kind == "prepayment",
+                InvoicePaymentAllocation.match_basis == MATCH_CHRONOLOGY,
+                SupplierPrepayment.bill_invoice_id.is_distinct_from(bill.id),
+                # Возвращённый аванс деньгами у поставщика уже не числится — не воскрешаем.
+                SupplierPrepayment.status != "refunded",
+                SupplierInvoice.counterparty_id == bill.counterparty_id,
+                SupplierInvoice.direction == "payable",
+                SupplierInvoice.doc_kind == "closing",
+                SupplierInvoice.operational_scope == AUTO_SETTLEMENT_OPERATIONAL_SCOPE,
+                invoice_binds_settlement(),
+                SupplierInvoice.barter_role.is_(None),
+                SupplierInvoice.draft_id.is_(None),
+                SupplierInvoice.payment_status.in_(("paid", "partially_paid")),
+            )
+            .order_by(InvoicePaymentAllocation.created_at.desc(), InvoicePaymentAllocation.id)
+        )
+    ).all()
+    named: dict[uuid.UUID, bool] = {}
+    touched: dict[uuid.UUID, SupplierInvoice] = {}
+    for alloc, foreign, closing in rows:
+        if free <= 0:
+            break
+        if closing.id not in named:
+            named[closing.id] = await _basis_bill_id(session, closing) == bill.id
+        if not named[closing.id]:
+            continue
+        take = min(_money(alloc.amount), free)
+        if take >= _money(alloc.amount):
+            await session.delete(alloc)
+        else:
+            alloc.amount = _money(alloc.amount) - take
+        foreign.amount_settled = max(_money(foreign.amount_settled) - take, Decimal("0.00"))
+        _sync_bill_prepayment_status(foreign)
+        free -= take
+        touched[closing.id] = closing
+    if not touched:
+        return False
+    await session.flush()
+    for closing in touched.values():
+        await _recompute_status(session, closing)
+        await auto_settle_invoice_from_open_prepayments(
+            session, closing, actor_user_id=actor_user_id
+        )
+    return True
 
 
 async def _settle_counterparty_closing_from_prepayments(

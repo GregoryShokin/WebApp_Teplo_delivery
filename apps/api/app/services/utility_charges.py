@@ -304,12 +304,13 @@ async def build_utility_documents(
         as_of=as_of,
         # Если акт сам назвал зачтённый аванс, чужую ДЗ по общей хронологии брать нельзя.
         # Либо найден ровно тот денежный факт, либо баланс честно оставляет разрыв видимым.
+        # Не назвал — гасится только деньгами своего потока (см. ``_stream_prepayment_ids``).
         allowed_prepayment_ids=(
             {documented_prepayment.id}
             if documented_prepayment is not None
             else set()
             if paid_advance_amount is not None
-            else None
+            else await _stream_prepayment_ids(session, account)
         ),
         prepayment_limit=paid_advance_amount,
     )
@@ -323,6 +324,42 @@ async def build_utility_documents(
         session, closing, location_id=account.location_id
     )
     return bill, closing
+
+
+async def _stream_prepayment_ids(session: AsyncSession, account: UtilityAccount) -> set[uuid.UUID]:
+    """Открытые авансы арендодателя, которые могут быть деньгами ЭТОГО потока.
+
+    Пару «счёт + акт» заводит сам бот, и в момент приёма счёт ещё не оплачен — своих денег у
+    акта нет. Без ограничения ``apply_closing_document`` гасил его ЛЮБЫМ открытым авансом
+    контрагента по хронологии, а у арендодателя таким почти всегда оказывается аренда,
+    заплаченная вперёд. Прод, 01.09.2026: вода Станислава Юрьевича за август (9 429,75 ₽)
+    закрылась арендным авансом 50 000 ₽ в 13:17, а когда в 14:39 счёт оплатили из Сейфа,
+    дебиторка счёта повисла открытой навсегда — акт уже числился оплаченным чужими деньгами.
+
+    Свои деньги — это аванс со статьёй потока: дебиторка оплаченного счёта наследует статью
+    счёта (``reconcile_bill_prepayment``), переплата наличными — статью выдачи
+    (``settle_utility_invoices_from_cash``), правило 1 — статью проводки. Аванс БЕЗ статьи
+    тоже берём: назначение неизвестно, и противоречия с потоком в нём нет, а запрет оставил
+    бы без зачёта начальные остатки, заведённые до внедрения системы. Аренда вперёд
+    (``settle_lease_invoice_from_cash``) всегда несёт статью договора — и потому не проходит.
+
+    Без своих денег акт остаётся честной кредиторкой до оплаты счёта; оплата заводит
+    дебиторку счёта, и обратный порядок гасит ею акт рангом «счёт-основание».
+    """
+    return set(
+        (
+            await session.scalars(
+                select(SupplierPrepayment.id).where(
+                    SupplierPrepayment.counterparty_id == account.counterparty_id,
+                    SupplierPrepayment.status.in_(supplier_prepayments.OPEN_PREPAYMENT_STATUSES),
+                    or_(
+                        SupplierPrepayment.article_id.is_(None),
+                        SupplierPrepayment.article_id == account.dds_article_id,
+                    ),
+                )
+            )
+        ).all()
+    )
 
 
 async def _documented_cash_advance(

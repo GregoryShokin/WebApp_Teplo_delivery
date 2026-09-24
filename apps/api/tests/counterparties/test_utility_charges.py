@@ -832,6 +832,161 @@ async def test_rent_and_utilities_of_one_landlord_coexist(
         await session.rollback()
 
 
+async def _rent_paid_forward(
+    session: AsyncSession, account: UtilityAccount, *, amount: str, on: date
+) -> SupplierPrepayment:
+    """«Аренда вперёд» — ровно то, что оставляет ``settle_lease_invoice_from_cash``.
+
+    Наличные арендодателю, когда арендного документа месяца ещё нет: свободный аванс вида
+    ``subscription`` со статьёй аренды и без периода. Для лестницы адресности он ничем не
+    отличается от любого другого свободного аванса того же контрагента.
+    """
+    rent_article = await _article(session, name="Аренда торговых точек", lease_bound=True)
+    wallet = await make_wallet(session, name="Сейф")
+    tx = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=Decimal(amount),
+        operation_date=on,
+        counterparty_id=account.counterparty_id,
+        article_id=rent_article.id,
+        source_kind="safe_payout",
+        quality_status="final",
+    )
+    session.add(tx)
+    await session.flush()
+    prepayment = SupplierPrepayment(
+        counterparty_id=account.counterparty_id,
+        kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+        wallet_id=wallet.id,
+        amount=Decimal(amount),
+        amount_settled=Decimal("0.00"),
+        status="open",
+        cashflow_transaction_id=tx.id,
+        article_id=rent_article.id,
+        note="Аренда вперёд: обязательство ещё не вступило в силу",
+    )
+    session.add(prepayment)
+    await session.flush()
+    return prepayment
+
+
+async def test_bot_water_pair_does_not_take_rent_money_paid_forward(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Кейс Станислава Юрьевича (прод, 01.09.2026): вода не гасится арендой, заплаченной вперёд.
+
+    Бот коммуналки завёл пару «счёт + акт» за воду августа (9 429,75 ₽). Счёт ещё не оплачен,
+    а у арендодателя лежал открытый аванс «Аренда вперёд» 50 000 ₽ — и акт сразу закрылся им по
+    хронологии. Нетто по контрагенту сходилось, но водяной долг исчез из кредиторки, а аренде
+    сентября стало нечем гаситься. Акт без денег своего потока — честная кредиторка до оплаты
+    счёта, а не повод занять деньги соседнего потока.
+    """
+    async with async_session_factory() as session:
+        account = await _account(session)
+        rent_money = await _rent_paid_forward(
+            session, account, amount="50000.00", on=date(2026, 8, 20)
+        )
+
+        bill, closing = await utility_charges.build_utility_documents(
+            session,
+            account,
+            period_start=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            expense_amount=Decimal("9429.75"),
+            payable_amount=Decimal("9429.75"),
+            as_of=date(2026, 9, 1),
+        )
+
+        assert closing is not None
+        assert closing.payment_status == "unpaid", "водяной акт закрылся арендными деньгами"
+        assert bill.payment_status == "unpaid"
+        assert rent_money.status == "open"
+        assert rent_money.amount_settled == Decimal("0.00")
+        await session.rollback()
+
+
+async def test_bot_water_pair_settles_from_own_bill_when_paid_later(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Продолжение того же кейса: счёт оплатили из Сейфа — акт гасится деньгами СВОЕГО счёта.
+
+    На проде в 14:39 того же дня счёт оплатили наличными, чокпоинт завёл по нему дебиторку, но
+    акт к тому времени уже числился оплаченным арендой, и дебиторка счёта повисла открытой
+    навсегда. Итог обязан быть адресным: акт закрыт авансом своего счёта рангом «счёт-основание»
+    (пару связывает общий номер), арендный аванс нетронут.
+    """
+    async with async_session_factory() as session:
+        account = await _account(session)
+        rent_money = await _rent_paid_forward(
+            session, account, amount="50000.00", on=date(2026, 8, 20)
+        )
+        bill, closing = await utility_charges.build_utility_documents(
+            session,
+            account,
+            period_start=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            expense_amount=Decimal("9429.75"),
+            payable_amount=Decimal("9429.75"),
+            as_of=date(2026, 9, 1),
+        )
+        assert closing is not None
+
+        wallet = await make_wallet(session, name="Сейф-выдача")
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("9429.75"),
+            operation_date=date(2026, 9, 1),
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            source_kind="safe_payout",
+            payment_purpose="возмещение воды за август",
+            quality_status="final",
+        )
+        session.add(tx)
+        await session.flush()
+        # Та же дверь, что у выдачи из Сейфа на проде (``safe_allocations.pay_allocation``).
+        assert await utility_charges.settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=account.counterparty_id,
+            article_id=account.dds_article_id,
+            location_id=account.location_id,
+            transaction_id=tx.id,
+            amount=Decimal("9429.75"),
+            wallet_id=wallet.id,
+        )
+
+        await session.refresh(bill)
+        await session.refresh(closing)
+        assert bill.payment_status == "paid"
+        assert closing.payment_status == "paid"
+        own = await session.scalar(
+            select(SupplierPrepayment).where(
+                SupplierPrepayment.bill_invoice_id == bill.id,
+                SupplierPrepayment.kind == supplier_prepayments.BILL_PREPAYMENT_KIND,
+            )
+        )
+        assert own is not None
+        assert own.status == "settled", "дебиторка оплаченного счёта повисла открытой"
+        allocations = list(
+            (
+                await session.scalars(
+                    select(InvoicePaymentAllocation).where(
+                        InvoicePaymentAllocation.invoice_id == closing.id
+                    )
+                )
+            ).all()
+        )
+        assert [(a.prepayment_id, a.match_basis) for a in allocations] == [
+            (own.id, supplier_prepayments.MATCH_BASIS_INVOICE)
+        ]
+        await session.refresh(rent_money)
+        assert rent_money.status == "open"
+        assert rent_money.amount_settled == Decimal("0.00")
+        await session.rollback()
+
+
 async def test_calendar_shows_month_without_document(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

@@ -21,6 +21,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from cp_helpers import make_counterparty, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,6 +33,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services import counterparty_matching
 from app.services import supplier_prepayments as prepayments
 
 COURIER = "courierica"
@@ -1413,3 +1415,314 @@ async def test_ambiguous_document_period_does_not_veto_amount(
         alloc = await _allocations(session, act.id)
         assert [a.prepayment_id for a in alloc] == [september_money.id]
         assert [a.match_basis for a in alloc] == [prepayments.MATCH_AMOUNT]
+
+
+async def _pay_bill_later(session: AsyncSession, bill: SupplierInvoice, *, on: date) -> None:
+    """Оплата счёта штатной дверью: денежная аллокация + пересчёт статуса (он и есть чокпоинт)."""
+    wallet = await make_wallet(
+        session, code=f"pay-{uuid.uuid4().hex[:8]}", name="Сейф: оплата счёта"
+    )
+    tx = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=bill.amount,
+        operation_date=on,
+        counterparty_id=bill.counterparty_id,
+        source_kind="safe_payout",
+    )
+    session.add(tx)
+    await session.flush()
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=bill.id,
+            source_kind="cash",
+            cashflow_transaction_id=tx.id,
+            amount=bill.amount,
+        )
+    )
+    await session.flush()
+    await counterparty_matching._recompute_status(session, bill)
+    await session.flush()
+
+
+async def _own_receivable(session: AsyncSession, bill: SupplierInvoice) -> SupplierPrepayment:
+    own = await session.scalar(
+        select(SupplierPrepayment).where(
+            SupplierPrepayment.bill_invoice_id == bill.id,
+            SupplierPrepayment.kind == prepayments.BILL_PREPAYMENT_KIND,
+        )
+    )
+    assert own is not None, "оплата счёта не завела дебиторку"
+    return own
+
+
+async def _water_pair_with_rent_money(
+    session: AsyncSession, *, name: str, inn: str
+) -> tuple[SupplierInvoice, SupplierInvoice, SupplierPrepayment]:
+    """Пара «счёт + акт» за воду августа и свободные арендные деньги того же арендодателя.
+
+    Счёт ещё не оплачен, поэтому у акта нет денег своего счёта — единственное, чем его можно
+    погасить, это арендный аванс по хронологии. Так и было на проде 01.09.2026.
+    """
+    cp = await make_counterparty(session, name=name, inn=inn)
+    august = (date(2026, 8, 1), date(2026, 8, 31))
+    water_bill = await _bill(
+        session,
+        counterparty_id=cp.id,
+        number="Возмещение: вода, 08.2026",
+        amount="9429.75",
+        invoice_date=date(2026, 8, 31),
+        period=august,
+    )
+    water_bill.payment_status = "unpaid"
+    rent_money = await _prepaid(
+        session,
+        counterparty_id=cp.id,
+        amount="50000.00",
+        paid_on=date(2026, 7, 1),
+        wallet_code=f"rent-{uuid.uuid4().hex[:8]}",
+        kind="subscription",
+    )
+    water_act = await _closing(
+        session,
+        counterparty_id=cp.id,
+        number="Возмещение: вода, 08.2026",
+        amount="9429.75",
+        invoice_date=date(2026, 8, 31),
+        period=august,
+    )
+    await session.flush()
+    return water_bill, water_act, rent_money
+
+
+async def _trail(
+    session: AsyncSession, invoice_id: uuid.UUID
+) -> list[tuple[uuid.UUID, uuid.UUID | None, str | None]]:
+    """След зачёта документа: какая аллокация, чьими деньгами и на каком основании."""
+    return [(a.id, a.prepayment_id, a.match_basis) for a in await _allocations(session, invoice_id)]
+
+
+async def _counterparty_net(session: AsyncSession, counterparty_id: uuid.UUID) -> Decimal:
+    """ДЗ − КЗ по контрагенту: открытые авансы минус непогашенные закрывающие."""
+    receivable = sum(
+        (
+            p.amount - p.amount_settled
+            for p in (
+                await session.scalars(
+                    select(SupplierPrepayment).where(
+                        SupplierPrepayment.counterparty_id == counterparty_id,
+                        SupplierPrepayment.status.in_(prepayments.OPEN_PREPAYMENT_STATUSES),
+                    )
+                )
+            ).all()
+        ),
+        Decimal("0.00"),
+    )
+    payable = Decimal("0.00")
+    for closing in (
+        await session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.counterparty_id == counterparty_id,
+                SupplierInvoice.doc_kind == "closing",
+            )
+        )
+    ).all():
+        paid = sum((a.amount for a in await _allocations(session, closing.id)), Decimal("0.00"))
+        payable += closing.amount - paid
+    return receivable - payable
+
+
+async def test_own_bill_payment_repoints_guessed_settlement(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Кейс Станислава Юрьевича (прод, 01.09.2026): оплата счёта забирает «угаданный» зачёт акта.
+
+    Акт за воду закрылся арендным авансом по хронологии («система угадала»), потом счёт той же
+    пары оплатили из Сейфа. Обратный порядок перебирал только НЕОПЛАЧЕННЫЕ закрывающие, и
+    дебиторка счёта повисла открытой навсегда, а арендные деньги остались занятыми водой. Акт,
+    сам называющий этот счёт, обязан перейти на его деньги; нетто по контрагенту не меняется.
+    """
+    async with async_session_factory() as session:
+        water_bill, water_act, rent_money = await _water_pair_with_rent_money(
+            session, name="Арендодатель-вода", inn="7712345694"
+        )
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, water_act)
+        guessed = await _allocations(session, water_act.id)
+        assert [(a.prepayment_id, a.match_basis) for a in guessed] == [
+            (rent_money.id, prepayments.MATCH_CHRONOLOGY)
+        ]
+        await session.commit()
+        net_before_payment = await _counterparty_net(session, water_act.counterparty_id)
+
+        await _pay_bill_later(session, water_bill, on=date(2026, 9, 1))
+        await session.commit()
+
+        own = await _own_receivable(session, water_bill)
+        alloc = await _allocations(session, water_act.id)
+        assert [(a.prepayment_id, a.match_basis, a.amount) for a in alloc] == [
+            (own.id, prepayments.MATCH_BASIS_INVOICE, Decimal("9429.75"))
+        ], "акт остался на арендных деньгах"
+        assert own.status == "settled"
+        await session.refresh(rent_money)
+        assert rent_money.status == "open"
+        assert rent_money.amount_settled == Decimal("0.00")
+        await session.refresh(water_act)
+        assert water_act.payment_status == "paid"
+        # Перенос меняет адресность, а не суммы: к нетто добавились ровно деньги платежа.
+        assert await _counterparty_net(session, water_act.counterparty_id) == (
+            net_before_payment + Decimal("9429.75")
+        )
+
+
+@pytest.mark.parametrize("confirmed", ["amount", "service_period"])
+async def test_repoint_keeps_confirmed_matches(
+    async_session_factory: async_sessionmaker[AsyncSession], confirmed: str
+) -> None:
+    """Переносится только «угаданное». Зачёт, подтверждённый суммой или периодом, не трогаем.
+
+    Ранги ``amount`` и ``service_period`` — признаки, которые система нашла в самих документах;
+    перебивать их задним числом значило бы менять адресность, на которую уже опирается сверка.
+    Своя дебиторка оплаченного счёта в таком случае просто остаётся открытой — видимо и честно.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session, name=f"Подтверждённый зачёт {confirmed}", inn=f"77123457{len(confirmed):02d}"
+        )
+        august = (date(2026, 8, 1), date(2026, 8, 31))
+        bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="ВОДА-08-ПОДТВ",
+            amount="9429.75",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        bill.payment_status = "unpaid"
+        foreign = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="9429.75" if confirmed == "amount" else "50000.00",
+            paid_on=date(2026, 8, 20),
+            wallet_code=f"confirmed-{uuid.uuid4().hex[:8]}",
+            kind="subscription",
+            period=august if confirmed == "service_period" else None,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="ВОДА-08-ПОДТВ",
+            amount="9429.75",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        before = await _trail(session, act.id)
+        assert [(p, m) for _, p, m in before] == [(foreign.id, confirmed)]
+        await session.commit()
+
+        await _pay_bill_later(session, bill, on=date(2026, 9, 1))
+        await session.commit()
+
+        after = await _trail(session, act.id)
+        assert after == before
+        own = await _own_receivable(session, bill)
+        assert own.status == "open" and own.amount_settled == Decimal("0.00")
+
+
+async def test_repoint_ignores_closing_with_other_basis(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Угаданный зачёт чужого документа оплата этого счёта не трогает.
+
+    Переносим только акт, который САМ называет оплаченный счёт (строкой «Основание» или общим
+    номером системной пары). Иначе оплата воды снимала бы деньги с любого угаданного акта
+    арендодателя — та же каша, только в обратную сторону.
+    """
+    async with async_session_factory() as session:
+        water_bill, water_act, rent_money = await _water_pair_with_rent_money(
+            session, name="Арендодатель-другой-акт", inn="7712345695"
+        )
+        other_act = await _closing(
+            session,
+            counterparty_id=water_bill.counterparty_id,
+            number="Вывоз мусора, 08.2026",
+            amount="1200.00",
+            invoice_date=date(2026, 8, 30),
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        # Водяной акт в этом тесте не участвует: убираем его из контура, чтобы оплата счёта
+        # не нашла ему ни неоплаченного остатка, ни угаданного зачёта.
+        water_act.payment_status = "void"
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, other_act)
+        before = await _trail(session, other_act.id)
+        assert [(p, m) for _, p, m in before] == [(rent_money.id, prepayments.MATCH_CHRONOLOGY)]
+        await session.commit()
+
+        await _pay_bill_later(session, water_bill, on=date(2026, 9, 1))
+        await session.commit()
+
+        after = await _trail(session, other_act.id)
+        assert after == before
+        own = await _own_receivable(session, water_bill)
+        assert own.status == "open" and own.amount_settled == Decimal("0.00")
+
+
+async def test_rent_activation_takes_rent_money_not_open_water_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """01.10 активируется «Аренда 09»: она берёт арендный аванс, а водяную дебиторку не трогает.
+
+    После переноса угаданных зачётов у арендодателя одновременно лежат оплаченная водяная
+    дебиторка сентября (ждёт свой акт) и арендные деньги вперёд. Отложенный арендный акт в свой
+    день обязан закрыться арендой рангом «сумма», а не водой по совпавшему периоду.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Арендодатель-активация", inn="7712345696")
+        september = (date(2026, 9, 1), date(2026, 9, 30))
+        water_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="Возмещение: вода, 09.2026",
+            amount="9500.00",
+            invoice_date=date(2026, 9, 30),
+            period=september,
+        )
+        water_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="9500.00",
+            paid_on=date(2026, 9, 10),
+            wallet_code=f"act-water-{uuid.uuid4().hex[:8]}",
+            bill=water_bill,
+            period=september,
+        )
+        rent_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="50000.00",
+            paid_on=date(2026, 9, 15),
+            wallet_code=f"act-rent-{uuid.uuid4().hex[:8]}",
+            kind="subscription",
+        )
+        rent_act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="Аренда 09.2026",
+            amount="50000.00",
+            invoice_date=date(2026, 9, 30),
+            period=september,
+        )
+        rent_act.activation_status = "pending"
+        await session.flush()
+
+        await prepayments.activate_due_closing_invoices(
+            session, as_of=date(2026, 10, 1), commit=False
+        )
+
+        assert rent_act.activation_status == "active"
+        alloc = await _allocations(session, rent_act.id)
+        assert [(a.prepayment_id, a.match_basis) for a in alloc] == [
+            (rent_money.id, prepayments.MATCH_AMOUNT)
+        ]
+        assert water_money.status == "open" and water_money.amount_settled == Decimal("0.00")
+        await session.rollback()
