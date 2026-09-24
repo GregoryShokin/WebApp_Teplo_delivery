@@ -65,7 +65,7 @@ from app.services.supplier_prepayments import (
     BILL_PREPAYMENT_KIND,
     EARMARKED_PREPAYMENT_KINDS,
     OPEN_PREPAYMENT_STATUSES,
-    _basis_bill_id,
+    _basis_bill_ids,
     _money,
     _periods_overlap,
     auto_settle_invoice_from_open_prepayments,
@@ -265,11 +265,10 @@ async def readdress_closing(
     # АДРЕСНОСТЬ ДОЛЖНА БЫТЬ ДОКАЗУЕМОЙ. Скрипт существует, чтобы исправлять угаданное на
     # подтверждённое, а не наоборот: либо периоды документа и аванса пересекаются, либо аванс —
     # ДЗ того самого счёта, который документ называет своим основанием.
-    basis_bill_id = await _basis_bill_id(session, closing)
     by_basis = (
         target.kind == BILL_PREPAYMENT_KIND
-        and basis_bill_id is not None
-        and target.bill_invoice_id == basis_bill_id
+        and target.bill_invoice_id is not None
+        and target.bill_invoice_id in await _basis_bill_ids(session, closing)
     )
     if not (_periods_overlap(target, closing) or by_basis):
         raise ReaddressRefused(

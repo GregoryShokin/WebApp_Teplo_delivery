@@ -1104,7 +1104,7 @@ async def test_parsed_act_number_does_not_invent_a_basis(
         )
         await session.commit()
 
-        assert await prepayments._basis_bill_id(session, act) is None
+        assert await prepayments._basis_bill_ids(session, act) == frozenset()
         # А документ с номером счёта — находит его.
         twin = await _closing(
             session,
@@ -1114,7 +1114,7 @@ async def test_parsed_act_number_does_not_invent_a_basis(
             invoice_date=date(2026, 7, 31),
         )
         await session.commit()
-        assert await prepayments._basis_bill_id(session, twin) == bill.id
+        assert await prepayments._basis_bill_ids(session, twin) == {bill.id}
 
 
 async def test_own_bill_money_keeps_amount_rank_when_document_has_no_period(

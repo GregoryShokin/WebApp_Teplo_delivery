@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta
@@ -29,10 +30,12 @@ from app.models import (
     InvoicePaymentAllocation,
     SupplierInvoice,
     SupplierPrepayment,
+    UtilityAccount,
     Wallet,
     invoice_binds_settlement,
 )
 from app.models.enums import SELF_ACCRUED_INVOICE_SOURCES
+from app.services import accounting_periods
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
@@ -40,6 +43,8 @@ from app.services.counterparty_matching import (
     payment_allocated_amount,
 )
 from app.services.counterparty_payments import CounterpartyPaymentError, _money
+
+logger = logging.getLogger(__name__)
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
@@ -641,19 +646,31 @@ async def reconcile_bill_prepayment(
         await session.flush()
 
     # Обратный порядок: новая/выросшая открытая ДЗ гасит уже открытую кредиторку контрагента.
+    #
+    # СВОИ ДЕНЬГИ СНАЧАЛА СВОЕМУ АКТУ. Общий обратный порядок перебирает неоплаченные акты
+    # контрагента по ДАТЕ документа, и первый же из них забирал деньги этого счёта рангом
+    # «хронология» — даже когда рядом ждал акт, который этот счёт САМ называет. У арендодателя
+    # так бумажный акт от середины месяца доедал водяные деньги, а водяной акт оставался
+    # недоплаченным: перенос угаданного его не спасал, он двигает только уже погашенные акты.
+    # Поэтому три шага: (1) неоплаченные акты, называющие этот счёт; (2) уже погашенные «наугад»
+    # акты, называющие этот счёт, — перенос на свои деньги; (3) только теперь — все остальные,
+    # в том числе освобождённые переносом чужие авансы.
+    #
+    # Общий порядок раньше шёл первым ради фактического акта электричества: у авансового и
+    # фактического счёта месяца один номер, акт не называл ни один из них, и деньги доплаты
+    # доходили до него только общим проходом. Теперь ``_basis_bill_ids`` связывает акт с ОБОИМИ
+    # счетами месяца по ключу потока, и шаг (1) отдаёт ему деньги любого из них рангом
+    # «счёт-основание»; акт, который никого не называет, по-прежнему получает деньги в шаге (3).
     if grew and existing.status in OPEN_PREPAYMENT_STATUSES:
+        await _settle_counterparty_closing_from_prepayments(
+            session, invoice.counterparty_id, actor_user_id=actor_user_id, naming_bill=invoice
+        )
+        await _repoint_guessed_settlements_to_bill(
+            session, invoice, existing, actor_user_id=actor_user_id
+        )
         await _settle_counterparty_closing_from_prepayments(
             session, invoice.counterparty_id, actor_user_id=actor_user_id
         )
-        # Остаток своей ДЗ забирает у чужих денег акт, который назван этим счётом, но погашен
-        # «наугад». Освобождённые чужие авансы — снова свободная ДЗ, и она по тому же правилу
-        # гасит неоплаченную кредиторку контрагента.
-        if await _repoint_guessed_settlements_to_bill(
-            session, invoice, existing, actor_user_id=actor_user_id
-        ):
-            await _settle_counterparty_closing_from_prepayments(
-                session, invoice.counterparty_id, actor_user_id=actor_user_id
-            )
 
 
 async def _repoint_guessed_settlements_to_bill(
@@ -676,15 +693,29 @@ async def _repoint_guessed_settlements_to_bill(
     другого счёта (или без счёта). Остальные ранги — признаки, найденные в самих документах, их
     не перебиваем; зачёт человека (``match_basis`` пуст) — тем более. ``origin`` здесь не
     смотрим: у предоплатных зачётов он всегда пуст, это метка авторства денежных аллокаций
-    правила 1. Акт должен САМ называть этот счёт (``_basis_bill_id``: строка «Основание» или
-    общий номер системной пары), быть финансовым, не бартерным и не в банк-черновике.
+    правила 1. Акт должен САМ называть этот счёт (``_basis_bill_ids``: ключ потока коммуналки,
+    строка «Основание» или общий номер системной пары), быть финансовым, не бартерным и не в
+    банк-черновике.
+
+    ЗАКРЫТЫЙ МЕСЯЦ НЕ ПЕРЕПИСЫВАЕМ. Перенос меняет остатки ДЗ/КЗ на прошлые даты: зачёт акта
+    датирован его вступлением в силу, и на 31.08 акт воды, переехавший с аренды на деньги
+    сентябрьской оплаты, превращает «ДЗ 40 570,25 / КЗ 0» в «ДЗ 50 000 / КЗ 9 429,75»
+    (скептик S6). Поэтому акт, чей месяц документа или любой месяц периода закрыт замком,
+    пропускаем — тем же способом, что скрипт адресного перегашения (``assert_month_open`` +
+    ``assert_period_open``), и пишем в лог. ДЗ своего счёта тогда остаётся открытой — видимо
+    и честно, до открытия периода человеком.
 
     Снимаем LIFO и не больше свободного остатка своей ДЗ — иначе освобождённое было бы нечем
     заместить. Возврат чужому авансу — та же арифметика, что у
     ``release_invoice_prepayment_allocations``. Затем акт гасится заново штатным авто-зачётом,
-    и лестница отдаёт ему свою ДЗ рангом «счёт-основание». Начисления не трогаем: суммы акта не
-    меняются, меняется только то, чьими деньгами он закрыт. Рекурсии нет — пересчёт статуса
-    закрывающего чокпоинт счетов не зовёт. Без commit. Возвращает, было ли что перенесено.
+    и лестница отдаёт ему свою ДЗ рангом «счёт-основание». Суммы акта не меняются, меняется
+    то, чьими деньгами он закрыт, — но НАЧИСЛЕНИЕ появиться может, и это желаемо: акт без
+    своего периода, закрытый теперь адресно, наследует период счёта
+    (``_inherit_period_from_prepayment_allocations``), и расход признаётся в его месяце — ровно
+    то, чего не давала угаданная хронология. В закрытом периоде этого не случится: такой акт
+    пропущен выше, а наследуемый период — это период счёта, названного актом. Рекурсии нет —
+    пересчёт статуса закрывающего чокпоинт счетов не зовёт. Без commit. Возвращает, было ли что
+    перенесено.
     """
     free = _money(own.amount) - _money(own.amount_settled)
     if free <= 0:
@@ -714,14 +745,16 @@ async def _repoint_guessed_settlements_to_bill(
             .order_by(InvoicePaymentAllocation.created_at.desc(), InvoicePaymentAllocation.id)
         )
     ).all()
-    named: dict[uuid.UUID, bool] = {}
+    movable: dict[uuid.UUID, bool] = {}
     touched: dict[uuid.UUID, SupplierInvoice] = {}
     for alloc, foreign, closing in rows:
         if free <= 0:
             break
-        if closing.id not in named:
-            named[closing.id] = await _basis_bill_id(session, closing) == bill.id
-        if not named[closing.id]:
+        if closing.id not in movable:
+            movable[closing.id] = bill.id in await _basis_bill_ids(
+                session, closing
+            ) and await _closing_period_open(session, closing)
+        if not movable[closing.id]:
             continue
         take = min(_money(alloc.amount), free)
         if take >= _money(alloc.amount):
@@ -743,17 +776,44 @@ async def _repoint_guessed_settlements_to_bill(
     return True
 
 
+async def _closing_period_open(session: AsyncSession, closing: SupplierInvoice) -> bool:
+    """Месяц документа и все месяцы его периода открыты — переразметку зачёта можно делать.
+
+    Та же проверка, что у ``readdress_closing_settlements``: единица замка и отчёта одна (см.
+    ``accounting_periods.assert_period_open``). Закрытый — пропуск с записью в лог, а не
+    исключение: перенос идёт побочным шагом оплаты счёта, и валить из-за него саму оплату
+    нельзя."""
+    action = f"перенос зачёта документа № {closing.number} на деньги его счёта"
+    try:
+        await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
+        await accounting_periods.assert_period_open(
+            session, closing.service_period_start, closing.service_period_end, action=action
+        )
+    except accounting_periods.PeriodClosed as exc:
+        logger.info(
+            "Перенос угаданного зачёта пропущен: закрывающий %s в закрытом периоде (%s)",
+            closing.id,
+            exc,
+        )
+        return False
+    return True
+
+
 async def _settle_counterparty_closing_from_prepayments(
     session: AsyncSession,
     counterparty_id: uuid.UUID,
     *,
     actor_user_id: uuid.UUID | None = None,
+    naming_bill: SupplierInvoice | None = None,
 ) -> None:
     """Правило 2 в обратном порядке для финансовых документов.
 
     Открытые финансовые УПД/акты гасятся предоплатами FIFO, когда предоплата появилась позже
     кредиторки. Складские накладные намеренно исключены: их можно зачесть только явным вызовом
     ``settle_invoice_from_prepayment`` после выбора оператором конкретной поставки.
+
+    ``naming_bill`` сужает проход до актов, которые САМИ называют этот счёт своим основанием
+    (``_basis_bill_ids``): так оплата счёта сначала закрывает свой акт, а не первый по дате.
     """
     closings = (
         await session.scalars(
@@ -771,6 +831,10 @@ async def _settle_counterparty_closing_from_prepayments(
         )
     ).all()
     for closing in closings:
+        if naming_bill is not None and naming_bill.id not in await _basis_bill_ids(
+            session, closing
+        ):
+            continue
         await auto_settle_invoice_from_open_prepayments(
             session, closing, actor_user_id=actor_user_id
         )
@@ -1844,20 +1908,78 @@ def _recognition(invoice: SupplierInvoice) -> dict[str, object]:
     return recognition if isinstance(recognition, dict) else {}
 
 
-async def _basis_bill_id(session: AsyncSession, invoice: SupplierInvoice) -> uuid.UUID | None:
-    """Счёт, НАЗВАННЫЙ В САМОМ документе строкой «Основание Счет № … от …».
+# Источники документов, которые порождает сама система по потокам денег арендодателя. Зеркала
+# ``utility_charges.UTILITY_INVOICE_SOURCE`` и ``lease_accruals.LEASE_INVOICE_SOURCE``: оба
+# модуля импортируют этот, прямой импорт отсюда замкнул бы кольцо.
+UTILITY_INVOICE_SOURCE = "utility"
+LEASE_INVOICE_SOURCE = "lease"
+# Роли коммунального документа, которые являются СЧЕТАМИ (зеркало ``utility_charges
+# .UTILITY_DOC_ROLES`` без закрывающего): авансовый счёт месяца и счёт к оплате по факту.
+_UTILITY_BILL_ROLES = ("advance", "due")
+
+
+def _utility_stream(invoice: SupplierInvoice) -> tuple[uuid.UUID, str] | None:
+    """Поток и месяц коммунального документа из его ключа ``utility:<поток>:<YYYY-MM>:<роль>``.
+
+    Ключ пишет бот (``utility_charges.intake_external_id``), и это единственная ТОЧНАЯ связь
+    документа с потоком: статья у двух потоков может совпасть, заголовок месяца у двух точек
+    одного арендодателя совпадает всегда («Возмещение: вода, 08.2026»). Отозванный документ
+    несёт хвост ``:revoked:<id>`` — поток у него тот же, счётом месяца он уже не считается
+    (это решает точное сравнение ключей в ``_basis_bill_ids``)."""
+    if invoice.source != UTILITY_INVOICE_SOURCE or not invoice.external_id:
+        return None
+    parts = invoice.external_id.split(":")
+    if len(parts) < 4 or parts[0] != UTILITY_INVOICE_SOURCE:
+        return None
+    try:
+        return uuid.UUID(parts[1]), parts[2]
+    except ValueError:
+        return None
+
+
+async def _basis_bill_ids(session: AsyncSession, invoice: SupplierInvoice) -> frozenset[uuid.UUID]:
+    """Счета, которые документ САМ называет своим основанием. Пусто — не называет.
 
     Самый сильный признак адресности из существующих: поставщик прямо говорит, какой счёт
     закрывает этот акт, а у аванса есть обратная ссылка на оплаченный счёт (``bill_invoice_id``).
     У актов iiko это единственный доступный ключ — периода услуги в их тексте нет вовсе.
 
+    Три источника, по убыванию точности.
+
+    1. Акт коммуналки — по ключу потока и месяца (``_utility_stream``). У электричества счетов
+       месяца ДВА — авансовый и фактический, — и номер у них одинаковый по построению
+       (заголовок месяца). Связь по номеру молчала («два кандидата — не угадываем»): оплаченный
+       аванс месяца гасил факт-акт лишь «хронологией», а перенос угаданного зачёта на деньги
+       фактического счёта не срабатывал вовсе (скептик S5). Поэтому основанием здесь бывает
+       МНОЖЕСТВО, и оба счёта месяца — законное основание одного акта. Номер для акта с
+       известным потоком не смотрим: у двух точек одного арендодателя он общий.
+    2. Строка «Основание Счет № … от …» из распознанного текста.
+    3. Общий номер системной пары (ЭДО и прочие пары без текста «Основание»).
+
     Номер счёта у одного поставщика уникален, но при нескольких совпадениях не угадываем:
     уточняем датой основания, а если и она не развела — признак не сработал."""
+    stream = _utility_stream(invoice)
+    if stream is not None:
+        account_id, month = stream
+        keys = [f"utility:{account_id}:{month}:{role}" for role in _UTILITY_BILL_ROLES]
+        return frozenset(
+            (
+                await session.scalars(
+                    select(SupplierInvoice.id).where(
+                        SupplierInvoice.counterparty_id == invoice.counterparty_id,
+                        SupplierInvoice.source == UTILITY_INVOICE_SOURCE,
+                        SupplierInvoice.doc_kind == "bill",
+                        SupplierInvoice.external_id.in_(keys),
+                        SupplierInvoice.payment_status != "void",
+                    )
+                )
+            ).all()
+        )
     recognition = _recognition(invoice)
     number = str(recognition.get("basis_number") or "").strip()
     if not number:
         # ПАРА, ПОРОЖДЁННАЯ САМОЙ СИСТЕМОЙ, строки «Основание Счет №» не несёт — её неоткуда
-        # взять, текста документа нет вовсе (коммуналка `source='utility'`, ЭДО-пары). Зато
+        # взять, текста документа нет вовсе (ЭДО-пары, коммуналка без ключа потока). Зато
         # номер у счёта и акта ОДИН по построению, и это такая же точная ссылка.
         #
         # Цена молчания известна по проду: акт «Возмещение: вода, 07.2026» не нашёл своего
@@ -1870,7 +1992,7 @@ async def _basis_bill_id(session: AsyncSession, invoice: SupplierInvoice) -> uui
         # случайные пересечения.
         number = str(invoice.number or "").strip()
     if not number:
-        return None
+        return frozenset()
     candidates = (
         await session.scalars(
             select(SupplierInvoice).where(
@@ -1882,16 +2004,126 @@ async def _basis_bill_id(session: AsyncSession, invoice: SupplierInvoice) -> uui
         )
     ).all()
     if not candidates:
-        return None
+        return frozenset()
     if len(candidates) == 1:
-        return candidates[0].id
+        return frozenset({candidates[0].id})
     raw_date = recognition.get("basis_date")
     basis_date: date | None = None
     if raw_date:
         with contextlib.suppress(ValueError, TypeError):
             basis_date = date.fromisoformat(str(raw_date))
     exact = [c for c in candidates if basis_date is not None and c.invoice_date == basis_date]
-    return exact[0].id if len(exact) == 1 else None
+    return frozenset({exact[0].id}) if len(exact) == 1 else frozenset()
+
+
+async def _other_stream_prepayment_ids(
+    session: AsyncSession,
+    invoice: SupplierInvoice,
+    prepayments: Sequence[SupplierPrepayment],
+) -> set[uuid.UUID]:
+    """Авансы, которые документу потока арендодателя НЕ ГОДЯТСЯ вовсе: это деньги другого потока.
+
+    У арендодателя под одним контрагентом живут аренда и коммуналка (вода, свет, газ), и
+    лестница адресности, будучи порядком, отдавала документу без своих денег любой открытый
+    аванс контрагента по хронологии. Прод, 01.09.2026: акт воды Станислава Юрьевича за август
+    закрылся «Арендой вперёд», свой счёт оплатили через час, и его ДЗ повисла открытой; 01.10
+    «Аренда 09.2026» доедала бы водяные деньги — перекрёст стал бы двойным. Нетто по
+    контрагенту при этом сходится, поэтому ошибку видно только в адресности: ложное «ждём
+    документ» в ОПиУ и открытая ДЗ оплаченного счёта.
+
+    ПОЭТОМУ ЗДЕСЬ ФИЛЬТР, А НЕ ПОРЯДОК, И ЖИВЁТ ОН В ЯДРЕ. Белый список одной двери (бот при
+    немедленной активации) не закрывал остальные: активацию 1-го числа, обратный порядок при
+    оплате чужого счёта, ремонтные скрипты — все они зовут авто-зачёт без списка. Акт без своих
+    денег честно остаётся кредиторкой, чужая дебиторка — открытой.
+
+    Акт коммуналки (``source='utility'``) берёт только деньги СВОЕГО потока:
+
+    * ДЗ оплаченного счёта коммуналки — только счёта своего потока (ключ ``utility:<поток>:…``
+      у счёта и акта), любого месяца: у электричества аванс одного месяца законно зачитывает
+      факт другого;
+    * прочие авансы — со статьёй потока или без статьи: назначение неизвестно, а запрет оставил
+      бы без зачёта входящие остатки, заведённые до системы;
+    * но НИКОГДА — арендные деньги, даже без статьи: аванс с ``lease_id`` (залог по договору) и
+      аванс, чья проводка выдана по договору аренды (``CashflowTransaction.lease_id``). Так
+      выглядит «Аренда вперёд» у договора без статьи (скептик S2): ``settle_lease_invoice
+      _from_cash`` пишет статью договора, а её нет, — и белый список «без статьи» её пропускал.
+
+    Арендный акт (``source='lease'``) не берёт деньги коммуналки — симметрично: ДЗ оплаченного
+    коммунального счёта и авансы со статьёй коммунального потока этого арендодателя (переплата
+    наличными, ``settle_utility_invoices_from_cash``). Статью самого договора не трогаем, даже
+    если поток заведён на ту же статью: развести такие деньги нечем.
+
+    Прочие документы арендодателя (бумажный акт почтой, ЭДО) фильтра не получают: у них потока
+    нет, и лестница решает, как у любого поставщика."""
+    if invoice.source not in (UTILITY_INVOICE_SOURCE, LEASE_INVOICE_SOURCE) or not prepayments:
+        return set()
+    bill_ids = {p.bill_invoice_id for p in prepayments if p.bill_invoice_id is not None}
+    bills: dict[uuid.UUID, SupplierInvoice] = {}
+    if bill_ids:
+        found = await session.scalars(
+            select(SupplierInvoice).where(SupplierInvoice.id.in_(bill_ids))
+        )
+        bills = {bill.id: bill for bill in found.all()}
+    foreign: set[uuid.UUID] = set()
+
+    if invoice.source == LEASE_INVOICE_SOURCE:
+        utility_articles = set(
+            (
+                await session.scalars(
+                    select(UtilityAccount.dds_article_id).where(
+                        UtilityAccount.counterparty_id == invoice.counterparty_id,
+                        UtilityAccount.dds_article_id.is_not(None),
+                    )
+                )
+            ).all()
+        )
+        utility_articles.discard(invoice.dds_article_id)
+        for prepayment in prepayments:
+            bill = bills.get(prepayment.bill_invoice_id) if prepayment.bill_invoice_id else None
+            if (bill is not None and bill.source == UTILITY_INVOICE_SOURCE) or (
+                prepayment.article_id in utility_articles
+            ):
+                foreign.add(prepayment.id)
+        return foreign
+
+    stream = _utility_stream(invoice)
+    articles = {invoice.dds_article_id}
+    if stream is not None:
+        account = await session.get(UtilityAccount, stream[0])
+        if account is not None:
+            articles.add(account.dds_article_id)
+    articles.discard(None)
+    transaction_ids = {
+        p.cashflow_transaction_id for p in prepayments if p.cashflow_transaction_id is not None
+    }
+    lease_transactions: set[uuid.UUID] = set()
+    if transaction_ids:
+        lease_transactions = set(
+            (
+                await session.scalars(
+                    select(CashflowTransaction.id).where(
+                        CashflowTransaction.id.in_(transaction_ids),
+                        CashflowTransaction.lease_id.is_not(None),
+                    )
+                )
+            ).all()
+        )
+    for prepayment in prepayments:
+        if prepayment.lease_id is not None or prepayment.cashflow_transaction_id in (
+            lease_transactions
+        ):
+            foreign.add(prepayment.id)
+            continue
+        bill = bills.get(prepayment.bill_invoice_id) if prepayment.bill_invoice_id else None
+        bill_stream = _utility_stream(bill) if bill is not None else None
+        if stream is not None and bill_stream is not None:
+            # Ключи потока известны у обоих — они и решают, статья тут уже не нужна.
+            if bill_stream[0] != stream[0]:
+                foreign.add(prepayment.id)
+            continue
+        if prepayment.article_id is not None and prepayment.article_id not in articles:
+            foreign.add(prepayment.id)
+    return foreign
 
 
 async def _prepayment_products(
@@ -1926,14 +2158,14 @@ def _match_basis(
     prepayment: SupplierPrepayment,
     invoice: SupplierInvoice,
     *,
-    basis_bill_id: uuid.UUID | None,
+    basis_bill_ids: frozenset[uuid.UUID],
     doc_product: str | None,
     prepayment_product: str | None,
     doc_amount: Decimal,
     money_on: date | None,
 ) -> str:
     """На каком основании этот аванс годится документу. Первое сработавшее и есть ответ."""
-    if basis_bill_id is not None and prepayment.bill_invoice_id == basis_bill_id:
+    if prepayment.bill_invoice_id is not None and prepayment.bill_invoice_id in basis_bill_ids:
         return MATCH_BASIS_INVOICE
     same_period = _periods_overlap(prepayment, invoice)
     same_product = bool(doc_product and prepayment_product and doc_product == prepayment_product)
@@ -1999,6 +2231,8 @@ async def _settlement_candidates(
     Порядок, а не фильтр: если адресных не нашлось, документ по-прежнему гасится любым открытым
     авансом — иначе зачёт перестал бы работать там, где ни периодов, ни оснований нет (на проде
     это почти все платежи). Меняются не суммы, а то, ЧЬЮ дебиторку закроет документ.
+    Единственный фильтр — деньги другого потока арендодателя (``_other_stream_prepayment_ids``):
+    аренда и коммуналка одного контрагента не гасят документы друг друга ни в каком порядке.
 
     Зачем лестница. Одной хронологии мало, и цена этому известна по проду: 02.08.2026 у АО
     «АЙКО» акт на лицензию iikoCloud (16 430 ₽) закрылся авансом за Курьерику (4 260 ₽) плюс
@@ -2017,9 +2251,16 @@ async def _settlement_candidates(
     прошлого месяца выигрывал бы у аванса своего месяца одной датой денег (оба адресных, оба
     в хронологии). Это тоже порядок, а не фильтр: других денег нет — годится и он."""
     order = await _settlement_order(session, invoice)
+    # Деньги другого потока арендодателя — не кандидаты вовсе (фильтр, в отличие от лестницы).
+    # Здесь, а не в одной из дверей: сюда сходятся все — приём, активация, обратный порядок,
+    # перенос угаданного и ремонтные скрипты (см. ``_other_stream_prepayment_ids``).
+    foreign = await _other_stream_prepayment_ids(
+        session, invoice, [prepayment for prepayment, _ in order]
+    )
+    order = [row for row in order if row[0].id not in foreign]
     if not order:
         return []
-    basis_bill_id = await _basis_bill_id(session, invoice)
+    basis_bill_ids = await _basis_bill_ids(session, invoice)
     prepayments = [prepayment for prepayment, _ in order]
     products = await _prepayment_products(
         session, prepayments, counterparty_id=invoice.counterparty_id
@@ -2032,7 +2273,7 @@ async def _settlement_candidates(
             _match_basis(
                 prepayment,
                 invoice,
-                basis_bill_id=basis_bill_id,
+                basis_bill_ids=basis_bill_ids,
                 doc_product=doc_product,
                 prepayment_product=products.get(prepayment.id),
                 doc_amount=doc_amount,
@@ -2063,7 +2304,9 @@ def _period_may_be_inherited(
     лежал невзятый кандидат того же ранга, период не наследуем — пусть решает оператор.
 
     Счёт-основание из этой проверки исключён: там неоднозначности нет по построению —
-    ``_basis_bill_id`` сам отказывается отвечать, когда под номер подходит несколько счетов.
+    ``_basis_bill_ids`` сам отказывается отвечать, когда под номер подходит несколько счетов, а
+    несколько счетов-оснований у акта коммуналки — это счета ОДНОГО месяца одного потока (аванс
+    и доплата), и у их дебиторок один и тот же период.
     """
     used_bases = [basis for _, basis in used]
     if MATCH_CHRONOLOGY in used_bases:
