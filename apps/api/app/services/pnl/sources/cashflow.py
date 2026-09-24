@@ -480,28 +480,33 @@ async def build_cash_layer(
             # месяц из ``expense_month``. Но бакет заводим и сумму запоминаем: без неё строка
             # молчала о том, что деньги по ней прошли, а при отсутствии других движений отчёт
             # печатал «движения по статье не было» — прямая неправда.
+            #
+            # Со знаком строки, как и зеркальный ``moved_in`` у месяца-получателя: возврат,
+            # размеченный тем же чужим месяцем, уменьшает перенесённый расход, а не
+            # прибавляется к нему. Иначе отдающий месяц называл бы одну сумму, а принимающий —
+            # другую за те же проводки.
             bucket = layer.buckets.setdefault(line_code, CashBucket())
-            bucket.moved_out_amount += amount
+            bucket.moved_out_amount += _signed(tx, amount, rules, sign_roles, line_code)
             bucket.moved_out_count += 1
             continue
 
         bucket = layer.buckets.setdefault(line_code, CashBucket())
         if verdict is Verdict.INCLUDED:
-            # Расходная строка при оттоке даёт положительную величину расхода; приход по ней
-            # (возврат, компенсация) — отрицательную. Доходная строка ведёт себя зеркально.
-            # Знак выводится из направления и роли строки, а не хранится в правиле: правило
-            # не должно повторять то, что уже сказано справочником.
-            rule = rules[tx.article_id]
-            expense_line = sign_roles.get(line_code, -1) == -1
-            natural = (tx.direction == "out") == expense_line
-            bucket.amount += amount * rule.sign * (1 if natural else -1)
+            contribution = _signed(tx, amount, rules, sign_roles, line_code)
+            bucket.amount += contribution
             bucket.count += 1
             if tx.counterparty_id is None and tx.article_id in context.recognized_articles:
                 # По этой статье за месяц есть и признание документом, и наличная касса без
                 # контрагента. Обычно это РАЗНЫЕ расходы (наличное электричество и
                 # перевыставленная доля коммуналки), но проверить может только человек —
                 # проектор превратит сумму в пометку на строке.
-                bucket.cash_alongside_accrual += amount
+                #
+                # КОПИМ СО ЗНАКОМ СТРОКИ, А НЕ ПО МОДУЛЮ. Пометка называет расход, который
+                # касса внесла в строку, — значит, то же нетто, что легло в ``amount``. По
+                # модулю возврат складывался с тратой: август 2026, «Содержание точек» —
+                # пометка 30 551 ₽ при нетто 17 351 ₽, потому что возвраты OZON 3 130 и
+                # 3 470 ₽ посчитались ещё двумя покупками.
+                bucket.cash_alongside_accrual += contribution
         else:
             bucket.excluded_amount += amount
             bucket.excluded_count += 1
@@ -595,17 +600,37 @@ async def _apply_moved_in(
         if verdict is not Verdict.INCLUDED or line_code is None or tx.counterparty_id is not None:
             continue
         amount = tx.amount or Decimal("0.00")
-        rule = context.rules[tx.article_id]
-        expense_line = sign_roles.get(line_code, -1) == -1
-        natural = (tx.direction == "out") == expense_line
         bucket = layer.buckets.setdefault(line_code, CashBucket())
-        contribution = amount * rule.sign * (1 if natural else -1)
+        contribution = _signed(tx, amount, context.rules, sign_roles, line_code)
         bucket.amount += contribution
         bucket.count += 1
         bucket.moved_in_amount += contribution
         bucket.moved_in_count += 1
         if tx.article_id in context.recognized_articles:
-            bucket.cash_alongside_accrual += amount
+            bucket.cash_alongside_accrual += contribution
+
+
+def _signed(
+    tx: CashflowTransaction,
+    amount: Decimal,
+    rules: dict[uuid.UUID, PnlArticleRule],
+    sign_roles: dict[str, int],
+    line_code: str,
+) -> Decimal:
+    """Вклад проводки в строку со знаком: ровно то, что она прибавляет к сумме строки.
+
+    Расходная строка при оттоке даёт положительную величину расхода; приход по ней
+    (возврат, компенсация) — отрицательную. Доходная строка ведёт себя зеркально. Знак
+    выводится из направления и роли строки, а не хранится в правиле: правило не должно
+    повторять то, что уже сказано справочником.
+
+    Одна функция на сумму строки и на все её пометки — чтобы пометка не могла разойтись с
+    суммой по знаку: так «наличные рядом с признанием» и считали возвраты тратами.
+    """
+    rule = rules[tx.article_id]
+    expense_line = sign_roles.get(line_code, -1) == -1
+    natural = (tx.direction == "out") == expense_line
+    return amount * rule.sign * (1 if natural else -1)
 
 
 @dataclass(slots=True)
@@ -644,7 +669,6 @@ async def explain_line(
     """
     context = await build_context(session, month_start, month_end)
     sign_roles = sign_roles or {}
-    expense_line = sign_roles.get(line_code, -1) == -1
 
     transactions = (
         await session.execute(
@@ -686,9 +710,7 @@ async def explain_line(
         amount = tx.amount or Decimal("0.00")
         contribution = Decimal("0.00")
         if verdict is Verdict.INCLUDED:
-            rule = context.rules[tx.article_id]
-            natural = (tx.direction == "out") == expense_line
-            contribution = amount * rule.sign * (1 if natural else -1)
+            contribution = _signed(tx, amount, context.rules, sign_roles, line_code)
         details.append(
             CashDetail(
                 transaction_id=tx.id,
