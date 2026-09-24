@@ -137,9 +137,7 @@ def _alongside_warnings(layer: cash_source.CashLayer, line_code: str) -> list:
     projector._apply_cash(lines, layer)
     return [
         warning
-        for warning in projector._warnings(
-            lines, layer, recognition_source.RecognitionLayer(), {}
-        )
+        for warning in projector._warnings(lines, layer, recognition_source.RecognitionLayer(), {})
         if warning.code == "cash_alongside_accrual"
     ]
 
@@ -159,9 +157,7 @@ def test_cash_alongside_accrual_nets_refunds(async_session_factory) -> None:
                 session, code="test_alongside_refund", line_code="shop_maintenance"
             )
             wallet = await make_wallet(session, code="alongside-refund-w", name="Сейф")
-            supplier = await make_counterparty(
-                session, name="Поставщик-документ", inn="6155032002"
-            )
+            supplier = await make_counterparty(session, name="Поставщик-документ", inn="6155032002")
             session.add(
                 SupplierExpenseAccrual(
                     counterparty_id=supplier.id,
@@ -218,12 +214,18 @@ def test_moved_out_nets_refunds_like_moved_in(async_session_factory) -> None:
             wallet = await make_wallet(session, code="moved-out-refund-w", name="Сейф")
             session.add(
                 _cash_out(
-                    wallet.id, article.id, "4000.00", date(2026, 7, 10),
+                    wallet.id,
+                    article.id,
+                    "4000.00",
+                    date(2026, 7, 10),
                     expense_month=date(2026, 8, 1),
                 )
             )
             refund = _cash_out(
-                wallet.id, article.id, "1000.00", date(2026, 7, 15),
+                wallet.id,
+                article.id,
+                "1000.00",
+                date(2026, 7, 15),
                 expense_month=date(2026, 8, 1),
             )
             refund.direction = "in"

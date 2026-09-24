@@ -52,7 +52,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
-from app.models import InvoicePaymentAllocation, SupplierInvoice, SupplierPrepayment
+from app.models import (
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+    SupplierPrepayment,
+    invoice_binds_settlement,
+)
 from app.services import accounting_periods
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
 from app.services.supplier_prepayments import (
@@ -115,7 +120,13 @@ async def counterparty_net(session: AsyncSession, counterparty_id: uuid.UUID) ->
     """ДЗ − КЗ по контрагенту: свободный остаток открытых авансов минус непогашенные закрывающие.
 
     Перегашение — разметка: оно меняет, НА КАКОМ авансе висит остаток, но не сколько его. Если
-    нетто сдвинулось, значит зачёт взял или вернул лишнее, и применять такое нельзя."""
+    нетто сдвинулось, значит зачёт взял или вернул лишнее, и применять такое нельзя.
+
+    КЗ — только по документам, которые связывают расчёты (``invoice_binds_settlement``). Будущий
+    (``pending``) и справочный (``informational``) документ долгом не являются, и в нетто их
+    сумма была бы мнимой КЗ: авто-зачёт, погасивший такой документ, уменьшает ДЗ и эту мнимую
+    КЗ на одно и то же, нетто сходится — и контроль молча пропускает зачёт, которого канон не
+    допускает (скептик S7). Без них тот же зачёт сдвигает нетто, и контроль его ловит."""
     receivable = sum(
         (
             _money(p.amount) - _money(p.amount_settled)
@@ -137,6 +148,7 @@ async def counterparty_net(session: AsyncSession, counterparty_id: uuid.UUID) ->
                 SupplierInvoice.counterparty_id == counterparty_id,
                 SupplierInvoice.doc_kind == "closing",
                 SupplierInvoice.payment_status != "void",
+                invoice_binds_settlement(),
             )
         )
     ).all():
@@ -204,6 +216,20 @@ async def readdress_closing(
     if closing.doc_kind != "closing":
         raise ReaddressRefused(
             f"документ № {closing.number} — не закрывающий (doc_kind={closing.doc_kind})"
+        )
+    # КАНОН: ДЗ гасит только документ, который связывает расчёты (``invoice_binds_settlement``).
+    # Будущий документ (правило 4) ещё не долг — его погасит активация в свою дату; справочный
+    # по договору не долг вовсе. Штатный авто-зачёт такие документы не выбирает, а скрипт
+    # называет документ по id и мимо этих фильтров проходил: перегашение закрыло бы авансом
+    # документ, который канон к деньгам не подпускает (скептик S7).
+    if closing.activation_status != "active":
+        raise ReaddressRefused(
+            f"документ № {closing.number} ещё не вступил в силу "
+            f"(activation_status={closing.activation_status}) — ДЗ он не гасит"
+        )
+    if closing.informational:
+        raise ReaddressRefused(
+            f"документ № {closing.number} справочный (по договору) — ДЗ он не гасит"
         )
     if closing.draft_id is not None:
         # Документ в банковском черновике: платёж в пути, и зачёт закрыл бы его дважды.
