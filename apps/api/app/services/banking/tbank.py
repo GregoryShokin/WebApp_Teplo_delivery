@@ -73,6 +73,22 @@ def _bank_error_detail(response: httpx.Response) -> str | None:
     return joined or None
 
 
+def _transport_cause(exc: httpx.HTTPError, token: str | None = None) -> str:
+    """Короткая причина сетевого сбоя (``ConnectError: [SSL: …]``) без секретов.
+
+    Причина уходит в лог и в ``last_error`` черновика, а тот показывают пользователям. Но
+    h11 при «плохом» заголовке пишет в ошибку его значение целиком — ``Bearer <токен>``
+    (хватит пробела или перевода строки в конце вставленного токена). Такой текст
+    отбрасываем и оставляем только класс исключения.
+    """
+    name = type(exc).__name__
+    text = str(exc).strip()
+    lowered = text.lower()
+    if not text or "bearer" in lowered or "authorization" in lowered or (token and token in text):
+        return name
+    return f"{name}: {text}"
+
+
 def _payment_status_from_payload(payload: Any, payment_id: str) -> str | None:
     """Извлечь статус одного черновика из batch-ответа ``/payment/status``.
 
@@ -181,10 +197,11 @@ class TbankClient:
         except httpx.HTTPError as exc:
             # Без этой строки причина (TLS, DNS, таймаут) нигде не оставалась: роут отдаёт
             # «Банк временно недоступен», а в логе api — только «502» (инцидент 24.09.2026).
-            logger.warning("tbank payment/create transport error: %r", exc)
+            cause = _transport_cause(exc, token)
+            logger.warning("tbank payment/create transport error: %s", cause)
             raise BankFetchError(
                 self.provider,
-                f"T-Bank payment API is unavailable or misconfigured: {exc}",
+                f"T-Bank payment API is unavailable or misconfigured: {cause}",
             ) from exc
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
@@ -382,7 +399,7 @@ class TbankClient:
             # Сетевой сбой — тоже BankFetchError: ``run_bank_sync_job`` изолирует его по
             # провайдеру и пишет причину одной строкой, а не роняет ``poll_banks`` трейсбеком.
             raise BankFetchError(
-                self.provider, f"T-Bank statement API is unavailable: {exc}"
+                self.provider, f"T-Bank statement API is unavailable: {_transport_cause(exc)}"
             ) from exc
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")

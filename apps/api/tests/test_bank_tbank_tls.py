@@ -12,6 +12,7 @@ import hashlib
 import ssl
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import certifi
@@ -29,8 +30,8 @@ ROOT_SHA256 = "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"
 ROOT_CN = "Russian Trusted Root CA"
 
 
-def _bundled_root_der() -> bytes:
-    pem = RUSSIAN_TRUSTED_ROOT_CA.read_text(encoding="ascii")
+def _root_der(path: Path) -> bytes:
+    pem = path.read_text(encoding="ascii")
     start = pem.index("-----BEGIN CERTIFICATE-----")
     return ssl.PEM_cert_to_DER_cert(pem[start:])
 
@@ -41,7 +42,15 @@ def _subject_cns(cert: dict[str, Any]) -> set[str]:
 
 def test_bundled_root_is_the_mintsifry_root_by_fingerprint() -> None:
     """Файл — ровно тот корень, что сверен по трём источникам; подмену ловит отпечаток."""
-    assert hashlib.sha256(_bundled_root_der()).hexdigest() == ROOT_SHA256
+    assert hashlib.sha256(_root_der(RUSSIAN_TRUSTED_ROOT_CA)).hexdigest() == ROOT_SHA256
+
+
+def test_bundled_root_matches_deploy_copy_for_sber() -> None:
+    """Копия в ``deploy/certs`` (из неё собирается бандл Сбера) — тот же корень."""
+    deploy_copy = Path(__file__).resolve().parents[3] / "deploy/certs/russian_trusted_root_ca.pem"
+    if not deploy_copy.exists():  # в образе api каталога deploy/ нет
+        pytest.skip("deploy/certs недоступен в этом окружении")
+    assert hashlib.sha256(_root_der(deploy_copy)).hexdigest() == ROOT_SHA256
 
 
 def test_context_trusts_mintsifry_root_on_top_of_certifi() -> None:
@@ -182,6 +191,42 @@ async def test_payment_draft_transport_error_keeps_cause(
     assert "CERTIFICATE_VERIFY_FAILED" in str(excinfo.value)
     assert excinfo.value.status_code is None  # → роут отдаёт 502, а не 422 «по реквизитам»
     assert "CERTIFICATE_VERIFY_FAILED" in caplog.text
+
+
+async def test_transport_error_never_leaks_bearer_token(
+    recording_client: type[_RecordingClient],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """h11 кладёт в ошибку значение «плохого» заголовка целиком — вместе с токеном.
+
+    Хватит перевода строки в конце вставленного токена. ``last_error`` видят пользователи
+    (ведомость, налоги, тост 502), поэтому такой текст в сообщение и лог не попадает.
+    """
+    monkeypatch.setattr(tbank_module.logger, "disabled", False)
+    recording_client.fail_with = httpx.LocalProtocolError(
+        "Illegal header value b'Bearer test-token\\n'"
+    )
+
+    with (
+        caplog.at_level("WARNING", logger="app.services.banking.tbank"),
+        pytest.raises(BankFetchError) as excinfo,
+    ):
+        await _LiveTbank().create_payment_draft(
+            document_id="doc-1",
+            amount=Decimal("100.00"),
+            purpose="Оплата по счёту 1",
+            requisites=_REQUISITES,
+            payer_account="40802810100002438573",
+        )
+
+    assert "test-token" not in str(excinfo.value)
+    assert "test-token" not in caplog.text
+    assert "LocalProtocolError" in str(excinfo.value)
+
+    with pytest.raises(BankFetchError) as statement_exc:
+        await _LiveTbank().fetch_statement(date_from=date(2026, 9, 22), date_to=date(2026, 9, 24))
+    assert "test-token" not in str(statement_exc.value)
 
 
 async def test_statement_transport_error_is_bank_fetch_error(
