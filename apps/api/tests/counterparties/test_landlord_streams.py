@@ -9,10 +9,12 @@
 август закрылся «Арендой вперёд», свой счёт оплатили через час, и его ДЗ повисла открытой;
 01.10 «Аренда 09.2026» доедала бы водяные деньги.
 
-Поэтому поток — ФИЛЬТР в ядре зачёта, а не параметр одной двери: акт коммуналки гасится
-только авансами своего потока, арендный акт — не деньгами коммуналки, в ЛЮБОЙ двери —
-приём ботом, активация 1-го числа, обратный порядок при оплате чужого счёта. Акт без своих
-денег остаётся честной КЗ, чужая ДЗ — открытой.
+Поэтому поток — ФИЛЬТР в ядре зачёта, а не параметр одной двери: акт коммуналки не гасится
+арендой и деньгами другого потока, арендный акт — деньгами коммуналки, в любой двери зачёта из
+авансов — приём ботом, активация 1-го числа, обратный порядок при оплате чужого счёта. Фильтр —
+чёрный список: отвергается только ЯВНО чужое, деньги неизвестного назначения годятся, как на
+main. Акт без своих денег остаётся честной КЗ, чужая ДЗ — открытой. Мимо фильтра идёт только
+правило 1 — банковские деньги прямо на открытую КЗ (известное ограничение, как на main).
 
 Плюс три стыка переноса угаданного зачёта на деньги своего счёта: своя ДЗ сначала своему
 акту; пара электричества (авансовый и фактический счёт с одинаковым номером) связывается по
@@ -284,7 +286,7 @@ async def _legacy_guess(
     await session.flush()
 
 
-# --- 1(а): акт коммуналки гасится только деньгами своего потока, в любой двери --------------
+# --- 1(а): акт коммуналки не гасится арендой и чужим потоком, в любой двери ----------------
 
 
 async def test_rent_forward_of_lease_without_article_is_not_water_money(
@@ -592,7 +594,8 @@ async def test_repoint_does_not_rewrite_a_closed_month(
     Перенос угаданного зачёта переписал бы остатки ДЗ/КЗ на 31.08 — месяц, уже сверенный и
     закрытый (скептик S6: ДЗ 40 570,25 → 50 000, КЗ 0 → 9 429,75). Скрипт адресного
     перегашения в закрытом месяце отказывает; перенос обязан пропускать такой акт так же.
-    ДЗ оплаченного счёта остаётся открытой — видимо и честно, до открытия периода."""
+    ДЗ оплаченного счёта остаётся открытой — видимо и честно, до ручного перегашения скриптом
+    ``readdress_closing_settlements`` после открытия периода."""
     async with async_session_factory() as session:
         landlord, location = await _landlord(session)
         water = await _stream(session, landlord, location, kind="water", article="Вода")
@@ -619,3 +622,353 @@ async def test_repoint_does_not_rewrite_a_closed_month(
         assert landlord_row(await build_balance_as_of(session, as_of=date(2026, 8, 31))) == before
         own = await _own(session, bill)
         assert own.status == "open" and own.amount_settled == Decimal("0.00")
+        await session.rollback()
+
+
+# --- R4-1: фильтр потоков — чёрный список, а не белый ---------------------------------------
+
+
+async def test_water_money_paid_under_a_general_article_still_settles_the_water_act(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Воду оплатили выпиской ДО прихода документов, статья проводки — общая, не статья потока.
+
+    Белый список отдавал акту только авансы со статьёй потока или без статьи — и такие деньги
+    стали «чужими»: на main акт гасился ими, на ветке оставался неоплаченным при живых своих
+    деньгах (скептик A3). Отвергать надо только ЯВНО чужое — аренду и другой поток, — а деньги
+    неизвестного назначения акту годятся, как любому поставщику."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода")
+        general = await _article(session, name="Коммунальные платежи (общая)")
+        wallet = await make_wallet(session, name="Т-Банк")
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("9429.75"),
+            operation_date=date(2026, 8, 30),
+            counterparty_id=landlord.id,
+            article_id=general.id,
+            source_kind="bank_operation",
+            quality_status="final",
+        )
+        session.add(tx)
+        await session.flush()
+        money = await supplier_prepayments.ensure_prepayment_from_bank_transaction(session, tx)
+        assert money is not None
+
+        _, act = await _bot_pair(session, water, amount="9429.75")
+
+        assert act.payment_status == "paid", "акт воды не взял деньги, оплаченные по общей статье"
+        assert [row[0] for row in await _trail(session, act.id)] == [money.id]
+        await session.rollback()
+
+
+async def test_stream_overpayment_under_the_old_article_survives_an_article_change(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Переплату за воду выдали по старой статье потока, потом поток перевели на новую статью.
+
+    Белый список сравнивал статью аванса с ТЕКУЩЕЙ статьёй потока — и собственная переплата
+    потока стала «чужой» (скептик A11). Деньги по старой статье не аренда и не другой поток:
+    акт воды их берёт."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода (старая)")
+        wallet = await make_wallet(session, name="Сейф")
+        tx = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("1000.00"),
+            operation_date=date(2026, 8, 25),
+            counterparty_id=landlord.id,
+            article_id=water.dds_article_id,
+            source_kind="safe_payout",
+            quality_status="final",
+        )
+        session.add(tx)
+        await session.flush()
+        assert await utility_charges.settle_utility_invoices_from_cash(
+            session,
+            counterparty_id=landlord.id,
+            article_id=water.dds_article_id,
+            location_id=location.id,
+            transaction_id=tx.id,
+            amount=Decimal("1000.00"),
+            wallet_id=wallet.id,
+        )
+        overpaid = await session.scalar(
+            select(SupplierPrepayment).where(SupplierPrepayment.cashflow_transaction_id == tx.id)
+        )
+        assert overpaid is not None
+        water.dds_article_id = (await _article(session, name="Вода (новая)")).id
+        await session.flush()
+
+        _, act = await _bot_pair(session, water, amount="9429.75")
+
+        assert [row[0] for row in await _trail(session, act.id)] == [overpaid.id], (
+            "переплата за воду не зачлась акту воды после смены статьи потока"
+        )
+        await session.rollback()
+
+
+async def test_rent_money_recognised_by_the_lease_article_alone(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аренда, выданная без ``lease_id`` проводки по статье договора, — всё равно аренда.
+
+    Статья договора не обязана быть помечена ``lease_bound`` (каталог правит владелец), а
+    проводка выдачи не обязана нести договор. Статья, записанная в договоре аренды этого
+    арендодателя, — достаточный признак арендных денег."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода")
+        rent_article = await _article(session, name="Аренда (без флага)", lease_bound=False)
+        await _lease(session, landlord, location, article_id=rent_article.id, accrual_enabled=False)
+        rent = SupplierPrepayment(
+            counterparty_id=landlord.id,
+            kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+            amount=Decimal("50000.00"),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            article_id=rent_article.id,
+        )
+        session.add(rent)
+        await session.flush()
+
+        _, act = await _bot_pair(session, water, amount="9429.75")
+
+        assert act.payment_status == "unpaid", "акт воды закрылся деньгами по статье договора"
+        assert rent.amount_settled == Decimal("0.00")
+        await session.rollback()
+
+
+async def test_other_stream_article_is_foreign_only_when_it_differs_from_own(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Переплата за газ наличными — деньги газа, акт воды их не берёт, ЕСЛИ статьи разные.
+
+    На проде у воды и газа Станислава Юрьевича статья одна («Коммунальные платежи») — по статье
+    такие деньги не развести, и акт воды их берёт, как на main. Если же у потоков статьи
+    разные, статья газа — явный признак чужого потока."""
+    for shared_article in (False, True):
+        async with async_session_factory() as session:
+            landlord, location = await _landlord(session)
+            water = await _stream(session, landlord, location, kind="water", article="Вода")
+            gas = await _stream(session, landlord, location, kind="gas", article="Газ")
+            if shared_article:
+                gas.dds_article_id = water.dds_article_id
+                await session.flush()
+            gas_money = SupplierPrepayment(
+                counterparty_id=landlord.id,
+                kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+                amount=Decimal("9429.75"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                article_id=gas.dds_article_id,
+            )
+            session.add(gas_money)
+            await session.flush()
+
+            _, act = await _bot_pair(session, water, amount="9429.75")
+
+            if shared_article:
+                assert [row[0] for row in await _trail(session, act.id)] == [gas_money.id]
+            else:
+                assert act.payment_status == "unpaid", "акт воды закрылся деньгами газа"
+                assert gas_money.amount_settled == Decimal("0.00")
+            await session.rollback()
+
+
+# --- R4-2: перенос угаданного — лимит по всем счетам-основаниям -----------------------------
+
+
+async def _power_month_with_paid_advance(
+    session: AsyncSession, landlord: Counterparty, location: Location
+) -> tuple[UtilityAccount, SupplierPrepayment, SupplierInvoice, SupplierInvoice]:
+    power = await _stream(session, landlord, location, kind="electricity", article="Свет")
+    advance, no_closing = await utility_charges.build_utility_documents(
+        session,
+        power,
+        period_start=AUGUST[0],
+        period_end=AUGUST[1],
+        expense_amount=None,
+        payable_amount=Decimal("3000.00"),
+        as_of=date(2026, 8, 19),
+    )
+    assert no_closing is None
+    await _pay_bill(session, advance, on=date(2026, 8, 20))
+    advance_money = await _own(session, advance)
+    due, act = await utility_charges.build_utility_documents(
+        session,
+        power,
+        period_start=AUGUST[0],
+        period_end=AUGUST[1],
+        expense_amount=Decimal("7000.00"),
+        payable_amount=Decimal("4000.00"),
+        as_of=date(2026, 9, 17),
+    )
+    assert act is not None
+    # Легаси: снять то, что сделал новый код; прод-состояние кладёт каждый тест сам.
+    await supplier_prepayments.release_invoice_prepayment_allocations(session, act)
+    await session.flush()
+    return power, advance_money, due, act
+
+
+async def test_repoint_releases_rent_up_to_free_money_of_all_basis_bills(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Факт-акт света целиком на аренде (так его строил main), аванс месяца оплачен и открыт.
+
+    Перенос освобождал не больше свободного остатка ТРИГГЕРНОГО счёта (4 000), а перегашение
+    брало все деньги оснований акта по дате (аванс 3 000 первым): аренда оставалась на акте на
+    3 000, а ДЗ оплаченного счёта доплаты — открытой (скептик A1b). Лимит — свободные деньги
+    ВСЕХ счетов-оснований акта."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        rent = await _bare_rent_money(session, landlord, on=date(2026, 8, 25))
+        _, advance_money, due, act = await _power_month_with_paid_advance(
+            session, landlord, location
+        )
+        await supplier_prepayments._allocate_invoice_from_prepayment(
+            session,
+            invoice=act,
+            prepayment=rent,
+            amount=Decimal("7000.00"),
+            actor_user_id=None,
+            match_basis=supplier_prepayments.MATCH_CHRONOLOGY,
+        )
+        await supplier_prepayments._recompute_status(session, act)
+        await session.flush()
+        assert advance_money.status == "open" and act.payment_status == "paid"
+
+        await _pay_bill(session, due, on=date(2026, 9, 18))
+
+        due_money = await _own(session, due)
+        await session.refresh(rent)
+        assert rent.amount_settled == Decimal("0.00"), "аренда осталась на акте света"
+        assert advance_money.status == "settled" and due_money.status == "settled"
+        assert sorted(await _trail(session, act.id), key=lambda row: row[1]) == [
+            (advance_money.id, Decimal("3000.00"), supplier_prepayments.MATCH_BASIS_INVOICE),
+            (due_money.id, Decimal("4000.00"), supplier_prepayments.MATCH_BASIS_INVOICE),
+        ]
+        await session.rollback()
+
+
+async def test_repoint_never_releases_money_of_the_acts_own_basis_bills(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аванс месяца лёг на факт-акт «хронологией» (легаси), недостающее добрала аренда.
+
+    Обе аллокации записаны одной транзакцией — ``created_at`` совпадает, и LIFO решался
+    порядком UUID: при «неудачном» id перенос снимал законный аванс своего месяца, а аренда
+    оставалась (скептик A1). Деньги счёта, который акт сам называет, — свои, не угадка: их не
+    снимаем никогда, от UUID это не зависит."""
+    for advance_first in (True, False):
+        async with async_session_factory() as session:
+            landlord, location = await _landlord(session)
+            rent = await _bare_rent_money(session, landlord, on=date(2026, 8, 25))
+            _, advance_money, due, act = await _power_month_with_paid_advance(
+                session, landlord, location
+            )
+            # Крайние UUID (уникальные на каждый прогон): у Postgres порядок UUID — порядок байт.
+            salt = uuid.uuid4().int % 2**64
+            low, high = uuid.UUID(int=salt), uuid.UUID(int=2**128 - 1 - salt)
+            advance_id, rent_id = (low, high) if advance_first else (high, low)
+            session.add_all(
+                [
+                    InvoicePaymentAllocation(
+                        id=advance_id,
+                        invoice_id=act.id,
+                        source_kind="prepayment",
+                        prepayment_id=advance_money.id,
+                        amount=Decimal("3000.00"),
+                        match_basis=supplier_prepayments.MATCH_CHRONOLOGY,
+                    ),
+                    InvoicePaymentAllocation(
+                        id=rent_id,
+                        invoice_id=act.id,
+                        source_kind="prepayment",
+                        prepayment_id=rent.id,
+                        amount=Decimal("4000.00"),
+                        match_basis=supplier_prepayments.MATCH_CHRONOLOGY,
+                    ),
+                ]
+            )
+            advance_money.amount_settled = Decimal("3000.00")
+            advance_money.status = "settled"
+            rent.amount_settled = Decimal("4000.00")
+            rent.status = "partially_settled"
+            await session.flush()
+            await supplier_prepayments._recompute_status(session, act)
+            await session.commit()
+            assert act.payment_status == "paid"
+
+            await _pay_bill(session, due, on=date(2026, 9, 18))
+
+            due_money = await _own(session, due)
+            await session.refresh(rent)
+            await session.refresh(advance_money)
+            assert rent.amount_settled == Decimal("0.00"), f"аренда осталась ({advance_first=})"
+            assert advance_money.status == "settled" and due_money.status == "settled"
+            trail = await _trail(session, act.id)
+            assert {row[0] for row in trail} == {advance_money.id, due_money.id}
+
+
+# --- R4-3: замок унаследованного периода -----------------------------------------------------
+
+
+async def test_repoint_does_not_inherit_a_closed_period_into_an_unperioded_act(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Бумажный акт без периода, датированный открытым сентябрём, называет августовский счёт.
+
+    Сам акт в замок не попадает: месяц документа открыт, периода нет. Но перенос на деньги
+    счёта даёт акту АДРЕСНЫЙ зачёт, акт наследует период счёта (август) и заводит начисление —
+    в закрытом месяце. Замок обязан смотреть и на период, который акт унаследует."""
+    async with async_session_factory() as session:
+        landlord, _location_ = await _landlord(session)
+        stranger = await _bare_rent_money(session, landlord, on=date(2026, 8, 10))
+        bill = SupplierInvoice(
+            counterparty_id=landlord.id,
+            source="email",
+            direction="payable",
+            doc_kind="bill",
+            operational_scope="finance",
+            number="С-5",
+            invoice_date=date(2026, 8, 20),
+            amount=Decimal("5000.00"),
+            payment_status="unpaid",
+            service_period_start=AUGUST[0],
+            service_period_end=AUGUST[1],
+            service_period_status="ready",
+        )
+        act = SupplierInvoice(
+            counterparty_id=landlord.id,
+            source="email",
+            direction="payable",
+            doc_kind="closing",
+            operational_scope="finance",
+            number="А-7",
+            invoice_date=date(2026, 9, 5),
+            amount=Decimal("5000.00"),
+            payment_status="unpaid",
+            service_period_status="missing",
+            raw_payload={"recognition": {"basis_number": "С-5"}},
+        )
+        session.add_all([bill, act])
+        await session.flush()
+        await _legacy_guess(session, act, stranger)
+        session.add(AccountingPeriodClose(period_month=date(2026, 8, 1)))
+        await session.commit()
+        trail_before = await _trail(session, act.id)
+
+        await _pay_bill(session, bill, on=date(2026, 9, 6))
+        await session.commit()
+
+        await session.refresh(act)
+        assert await _trail(session, act.id) == trail_before
+        assert act.service_period_start is None, "акт унаследовал закрытый август"
+        own = await _own(session, bill)
+        assert own.status == "open"
+        await session.rollback()
