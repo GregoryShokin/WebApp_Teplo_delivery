@@ -140,8 +140,14 @@ async def _catalog(session: AsyncSession) -> list[dict[str, Any]]:
     ]
 
 
-async def build_report(session: AsyncSession, month: date) -> PnlReport:
-    """Собрать ОПиУ за месяц."""
+async def build_report(
+    session: AsyncSession, month: date, *, today: date | None = None
+) -> PnlReport:
+    """Собрать ОПиУ за месяц.
+
+    ``today`` влияет только на СОСТОЯНИЕ ожиданий («ждём до», «просрочено») — суммы отчёта от
+    него не зависят. Параметр нужен тестам и сверке на данных за прошлую дату.
+    """
     month_start, month_end = month_bounds(month)
     catalog = await _catalog(session)
     report = PnlReport(month=month_start)
@@ -201,6 +207,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
             for detail in recognition.details
             if detail.counterparty_id is not None
         },
+        today=today,
     )
     article_lines = await _article_lines(session)
     _apply_recognition(lines, recognition, session_article_lines=article_lines)
@@ -230,6 +237,7 @@ async def build_report(session: AsyncSession, month: date) -> PnlReport:
     report.lines = _ordered(lines, catalog)
     report.reconciliation = _reconciliation(cash)
     report.warnings.extend(_warnings(lines, cash, recognition, article_lines))
+    report.warnings.extend(_overdue_document_warnings(waiting, article_lines, lines))
     report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
@@ -610,6 +618,10 @@ def _apply_cash(lines: dict[str, LineValue], layer: cash_source.CashLayer) -> No
         line.drill_available = True
 
 
+#: Строка × состояние × дата состояния × основание — ключ одной пометки ожидания.
+_WaitingKey = tuple[str, str, date | None, str | None]
+
+
 def _apply_waiting(
     lines: dict[str, LineValue],
     layer: waiting_source.WaitingLayer,
@@ -619,20 +631,43 @@ def _apply_waiting(
 
     Компонент несёт только ожидание: суммы у него нет и быть не должно, иначе расход
     посчитается дважды — сейчас деньгами и потом документом. Он нужен, чтобы строка получила
-    статус «ждём документ» и предупреждение с настоящей цифрой.
+    статус «ждём документ» и пометку с настоящей цифрой.
+
+    ОДИН КОМПОНЕНТ НА СОСТОЯНИЕ, А НЕ НА СТРОКУ. «Оплата систем автоматизации» за сентябрь
+    ждёт 41 220 ₽, и это две разные новости: акты АЙКО на 20 690 ₽ уже получены и вступят
+    01.10, а по ДоксИнБоксу и Леме просто идёт период. Одна сумма на строку заставила бы
+    выбирать одно из двух слов — и любое из них было бы неправдой про половину денег.
     """
-    for article_id, amount in layer.by_article.items():
-        line_code = article_lines.get(article_id)
-        if line_code is None or line_code not in lines or amount <= 0:
+    groups: dict[_WaitingKey, Decimal] = defaultdict(Decimal)
+    # Чьими словами группа подписана. Просрочки одной строки сводятся в одну пометку со
+    # старейшим сроком: дни у разных платежей разные, а строка отчёта говорит о строке.
+    leaders: dict[_WaitingKey, waiting_source.WaitingItem] = {}
+    for item in layer.items:
+        line_code = article_lines.get(item.article_id)
+        if line_code is None or line_code not in lines or item.amount <= 0:
             continue
+        key_date = None if item.state == waiting_source.STATE_OVERDUE else item.state_date
+        key = (line_code, item.state, key_date, item.basis)
+        groups[key] += item.amount
+        leader = leaders.get(key)
+        if leader is None or item.overdue_days > leader.overdue_days:
+            leaders[key] = item
+    for key, amount in groups.items():
+        line_code, state, _date, _basis = key
         line = lines[line_code]
         line.components.append(
             Component(
                 stream="recognition",
                 component="waiting",
                 amount=None,
-                status=LineStatus.WAITING_DOCUMENT,
+                status=(
+                    LineStatus.OVERDUE_DOCUMENT
+                    if state == waiting_source.STATE_OVERDUE
+                    else LineStatus.WAITING_DOCUMENT
+                ),
                 unrecognized_paid=amount,
+                waiting_state=state,
+                note=waiting_source.state_label(leaders[key]),
             )
         )
         line.drill_available = True
@@ -688,8 +723,9 @@ def _collapse(line: LineValue) -> None:
     """Свести компоненты строки в итог и статус.
 
     Правило статуса: если есть хоть один известный компонент — строка известна. Ручной ввод
-    красит строку в «ручной ввод», ожидание документа — в «ждём документ», но только когда
-    другой суммы у строки нет: оплаченное и уже признанное не должно выглядеть как ожидание.
+    красит строку в «ручной ввод», ожидание документа — в «ждём документ» (а просроченное —
+    в «документ просрочен»), но только когда другой суммы у строки нет: оплаченное и уже
+    признанное не должно выглядеть как ожидание.
     """
     if not line.components:
         return
@@ -697,6 +733,7 @@ def _collapse(line: LineValue) -> None:
     known = False
     manual_only = True
     waiting = False
+    overdue = False
     for component in line.components:
         if component.amount is not None:
             total += component.amount
@@ -705,12 +742,24 @@ def _collapse(line: LineValue) -> None:
                 manual_only = False
         if component.unrecognized_paid > 0:
             waiting = True
+            overdue = overdue or component.status is LineStatus.OVERDUE_DOCUMENT
     if not known:
-        line.status = LineStatus.NO_DATA
+        # Суммы нет, но известно, почему: деньги ушли и ждут документа. «Нет данных» здесь
+        # было бы неправдой — контекстная реклама за сентябрь 2026 оплачена на 78 000 ₽ и
+        # показывалась бейджем «нет данных», как строка, по которой никто ничего не знает.
+        # Для каскада разницы нет: оба статуса неизвестные, подытог остаётся неполным.
+        if overdue:
+            line.status = LineStatus.OVERDUE_DOCUMENT
+        elif waiting:
+            line.status = LineStatus.WAITING_DOCUMENT
+        else:
+            line.status = LineStatus.NO_DATA
         return
     line.amount = total
     if manual_only:
         line.status = LineStatus.MANUAL
+    elif overdue and total == 0:
+        line.status = LineStatus.OVERDUE_DOCUMENT
     elif waiting and total == 0:
         line.status = LineStatus.WAITING_DOCUMENT
     elif total == 0:
@@ -792,6 +841,61 @@ def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
     )
 
 
+def _overdue_document_warnings(
+    layer: waiting_source.WaitingLayer,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
+) -> list[Warning]:
+    """Оплачено, срок закрывающего документа вышел, а документа нет — вот это тревога.
+
+    Остальные ожидания законны и тревогой не становятся (``waiting_source.waiting_state``).
+    До 24.09.2026 тревогой было каждое: за сентябрь — восемь строк на 334 459,84 ₽, из
+    которых не было просрочено ни рубля, а единственная настоящая пропажа прошлого месяца —
+    100 ₽ ЛИКАРДа, оплаченные 19.08 без документа, — стояла бы в том же списке неотличимой.
+
+    Текст называет контрагентов и срок: действие здесь одно — написать поставщику, и
+    владельцу нужно знать кому, а не только по какой строке.
+
+    О ПРИБЫЛИ ТЕКСТ НЕ ГОВОРИТ НИЧЕГО, и это намеренно. Ожидание бывает у контрагента вне
+    контура признания, чья касса уже стоит в строке: 100 ₽ ЛИКАРДа от 19.08 есть в
+    «Содержании торговых точек» деньгами. «Расход в прибыль не попал» было бы про него
+    неправдой — пропал документ, а не расход.
+    """
+    by_line: dict[str, list[waiting_source.WaitingItem]] = defaultdict(list)
+    for item in layer.items:
+        if item.state != waiting_source.STATE_OVERDUE:
+            continue
+        line_code = article_lines.get(item.article_id)
+        if line_code is None or line_code not in lines:
+            continue
+        by_line[line_code].append(item)
+
+    result: list[Warning] = []
+    for line_code, items in by_line.items():
+        items.sort(key=lambda item: -item.amount)
+        total = sum((item.amount for item in items), Decimal("0.00"))
+        listed = ", ".join(
+            f"{item.counterparty_name or 'контрагент без названия'} — {rubles(item.amount)} ₽ "
+            f"(ждали до {item.state_date:%d.%m}, просрочка {item.overdue_days} дн.)"
+            for item in items[:5]
+        )
+        if len(items) > 5:
+            listed = f"{listed} и ещё {len(items) - 5}"
+        result.append(
+            Warning(
+                code="overdue_document",
+                line_code=line_code,
+                message=(
+                    f"«{lines[line_code].title}»: оплачено {rubles(total)} ₽, срок закрывающего "
+                    f"документа вышел, а документа нет: {listed}. Запросите документ у "
+                    "контрагента"
+                ),
+                amount=total,
+            )
+        )
+    return result
+
+
 def _unperiodled_warnings(
     layer: waiting_source.UnperiodedLayer,
     article_lines: dict[Any, str],
@@ -858,19 +962,9 @@ def _warnings(
             )
         )
     for line in lines.values():
-        paid = sum((component.unrecognized_paid for component in line.components), Decimal("0.00"))
-        if paid > 0:
-            result.append(
-                Warning(
-                    code="waiting_document",
-                    line_code=line.code,
-                    message=(
-                        f"«{line.title}»: за период оплачено {rubles(paid)} ₽, "
-                        "закрывающего документа ещё нет"
-                    ),
-                    amount=paid,
-                )
-            )
+        # Ожидание документа здесь не тревога: оно почти всегда законно (период идёт, документ
+        # лежит отложенным, аренду начислит договор) и стоит пометкой на самой строке. Тревогу
+        # поднимает только просрочка — ``_overdue_document_warnings``.
         moved_out = sum(
             (component.moved_out_amount for component in line.components), Decimal("0.00")
         )

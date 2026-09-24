@@ -25,12 +25,18 @@ export type LineStatus =
   | "before_accounting_start"
   | "incomplete";
 
+/** Состояние ожидания документа. Тревога — только `overdue`: остальные три законны и
+ *  показываются серой пометкой на строке, а не в «Требует внимания». */
+export type WaitingState = "document_pending" | "period_running" | "awaiting" | "overdue";
+
 export type PnlComponent = {
   stream: string;
   amount: string | null;
   status: LineStatus;
   excluded_amount: string;
   unrecognized_paid: string;
+  /** Только у компонента ожидания; `note` тогда — состояние словами («вступит 01.10»). */
+  waiting_state: WaitingState | null;
   note: string | null;
 };
 
@@ -301,6 +307,8 @@ export type RecognitionLedgerTotals = {
   without_primary: string;
   unattributed: string;
   unrecognized: string;
+  /** Часть `waiting_document`, у которой срок документа вышел. */
+  waiting_overdue: string;
 };
 
 export type RecognitionLedgerRow = {
@@ -319,6 +327,10 @@ export type RecognitionLedgerRow = {
   service_period_end: string | null;
   has_primary: boolean | null;
   reason: string;
+  waiting_state: WaitingState | null;
+  waiting_label: string | null;
+  /** Для `document_pending`: бумага контрагента или начисление самой системы (аренда). */
+  waiting_basis: "document" | "agreement" | "accrual" | null;
 };
 
 export type RecognitionLedger = {
@@ -343,7 +355,7 @@ export async function setInvoiceServicePeriod(
 }
 
 /** Строка расшифровки. `kind` решает, как её читать, а не как покрасить. */
-export type DrillRowKind = "included" | "waiting" | "excluded" | "info";
+export type DrillRowKind = "included" | "waiting" | "overdue" | "excluded" | "info";
 
 export type DrillRow = {
   title: string;

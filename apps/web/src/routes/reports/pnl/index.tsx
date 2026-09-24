@@ -75,6 +75,7 @@ import {
   type PnlReport,
   type RecognitionLedger,
   type RecognitionLedgerRow,
+  type WaitingState,
 } from "./api";
 
 const MONTH_NAMES = [
@@ -185,6 +186,39 @@ function LineAmount({ line }: { line: PnlLine }) {
   );
 }
 
+/** Оплата, которую ещё не закрыл документ, — серой пометкой под названием строки.
+ *
+ *  Тревогой это не является: период идёт, документ уже получен и ждёт своей даты, аренду
+ *  начислит договор. Пометка отвечает на вопрос «где мои 41 220 ₽», не поднимая крика там,
+ *  где всё идёт по плану. Красной становится только просрочка — она же единственная из
+ *  ожиданий попадает в «Требует внимания».
+ *
+ *  Подпись не утверждает, что суммы нет в строке: у контрагента вне контура признания
+ *  (ЛИКАРД) оплата уже стоит в ней деньгами — не хватает документа, а не расхода. */
+function WaitingNotes({ line }: { line: PnlLine }) {
+  const notes = line.components
+    .filter((component) => component.waiting_state && Number(component.unrecognized_paid) > 0)
+    .sort(
+      (a, b) =>
+        Number(b.waiting_state === "overdue") - Number(a.waiting_state === "overdue") ||
+        Number(b.unrecognized_paid) - Number(a.unrecognized_paid),
+    );
+  if (notes.length === 0) return null;
+  return (
+    <div className="mt-0.5 text-xs font-normal text-muted-foreground">
+      оплата ждёт закрытия:{" "}
+      {notes.map((component, index) => (
+        <span key={`${component.waiting_state}-${index}`}>
+          {index > 0 ? " · " : ""}
+          <span className={component.waiting_state === "overdue" ? "text-destructive" : undefined}>
+            {formatMoney(component.unrecognized_paid)} ₽ — {component.note}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function ReportTable({
   report,
   onOpenLine,
@@ -245,6 +279,7 @@ function ReportTable({
                       неполно: нет {line.missing_lines.length} источников
                     </span>
                   )}
+                  <WaitingNotes line={line} />
                 </td>
                 <td className="py-1.5 text-right">
                   <LineAmount line={line} />
@@ -362,7 +397,13 @@ function DrillPanel({
                   <td className="py-1">
                     {row.title}
                     {row.subtitle && (
-                      <div className="text-xs text-muted-foreground">{row.subtitle}</div>
+                      <div
+                        className={`text-xs ${
+                          row.kind === "overdue" ? "text-destructive" : "text-muted-foreground"
+                        }`}
+                      >
+                        {row.subtitle}
+                      </div>
                     )}
                   </td>
                   <td className="w-32 py-1 text-right tabular-nums">{formatMoney(row.amount)}</td>
@@ -1312,6 +1353,28 @@ const RECOGNITION_STATUS = {
   missing_period: { label: "нет периода", variant: "destructive" as const },
 };
 
+/** Ожидание — по состоянию: красным только просрочка, остальное — спокойным контуром. */
+const WAITING_STATUS: Record<
+  WaitingState,
+  { label: string; variant: "secondary" | "outline" | "destructive" }
+> = {
+  document_pending: { label: "документ получен", variant: "secondary" },
+  period_running: { label: "период идёт", variant: "outline" },
+  awaiting: { label: "ждём документ", variant: "outline" },
+  overdue: { label: "документ просрочен", variant: "destructive" },
+};
+
+function recognitionStatus(row: RecognitionLedgerRow) {
+  if (row.status === "waiting_document" && row.waiting_state) {
+    // Аренду начисляет договор — «документ получен» о ней было бы неправдой.
+    if (row.waiting_state === "document_pending" && row.waiting_basis !== "document") {
+      return { label: "начислится сам", variant: "secondary" as const };
+    }
+    return WAITING_STATUS[row.waiting_state];
+  }
+  return RECOGNITION_STATUS[row.status];
+}
+
 function RecognitionLedgerView({
   ledger,
   onReload,
@@ -1326,7 +1389,15 @@ function RecognitionLedgerView({
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard title="Признано в месяце" amount={totals.recognized} />
         <MetricCard title="Ещё не признано" amount={totals.unrecognized} />
-        <MetricCard title="Ждём документ" amount={totals.waiting_document} />
+        <MetricCard
+          title="Ждём документ"
+          amount={totals.waiting_document}
+          note={
+            Number(totals.waiting_overdue) > 0
+              ? `из них просрочено ${formatMoney(totals.waiting_overdue)} ₽`
+              : undefined
+          }
+        />
         <MetricCard title="Не заполнен период" amount={totals.missing_period} />
         <MetricCard title="Без статьи ОПиУ" amount={totals.unattributed} />
       </div>
@@ -1346,7 +1417,7 @@ function RecognitionLedgerView({
             </thead>
             <tbody>
               {ledger.rows.map((row) => {
-                const status = RECOGNITION_STATUS[row.status];
+                const status = recognitionStatus(row);
                 return (
                   <tr
                     key={`${row.source_kind}-${row.source_id}`}
@@ -1364,6 +1435,17 @@ function RecognitionLedgerView({
                       <div className="mt-1 max-w-lg text-xs text-muted-foreground">
                         {row.reason}
                       </div>
+                      {row.waiting_label ? (
+                        <div
+                          className={`max-w-lg text-xs ${
+                            row.waiting_state === "overdue"
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {row.waiting_label}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-2 whitespace-nowrap">
                       <div>{formatPeriod(row.service_period_start, row.service_period_end)}</div>

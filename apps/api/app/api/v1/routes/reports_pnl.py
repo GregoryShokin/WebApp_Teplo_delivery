@@ -45,6 +45,7 @@ class ComponentOut(BaseModel):
     status: str
     excluded_amount: Decimal
     unrecognized_paid: Decimal
+    waiting_state: str | None = None
     note: str | None
 
     @field_serializer("amount", "excluded_amount", "unrecognized_paid")
@@ -324,6 +325,7 @@ class RecognitionLedgerTotalsOut(BaseModel):
     without_primary: Decimal
     unattributed: Decimal
     unrecognized: Decimal
+    waiting_overdue: Decimal = Decimal("0.00")
 
     @field_serializer(
         "recognized",
@@ -332,6 +334,7 @@ class RecognitionLedgerTotalsOut(BaseModel):
         "without_primary",
         "unattributed",
         "unrecognized",
+        "waiting_overdue",
     )
     def _money(self, value: Decimal) -> str:
         return f"{value:.2f}"
@@ -353,6 +356,9 @@ class RecognitionLedgerRowOut(BaseModel):
     service_period_end: date | None
     has_primary: bool | None
     reason: str
+    waiting_state: str | None = None
+    waiting_label: str | None = None
+    waiting_basis: str | None = None
 
     @field_serializer("amount")
     def _money(self, value: Decimal) -> str:
@@ -389,6 +395,7 @@ def _line_out(line: LineValue) -> LineOut:
                 status=component.status.value,
                 excluded_amount=component.excluded_amount,
                 unrecognized_paid=component.unrecognized_paid,
+                waiting_state=component.waiting_state,
                 note=component.note,
             )
             for component in line.components
@@ -768,6 +775,7 @@ async def get_recognition_ledger(
             without_primary=ledger.totals.without_primary,
             unattributed=ledger.totals.unattributed,
             unrecognized=ledger.totals.unrecognized,
+            waiting_overdue=ledger.totals.waiting_overdue,
         ),
         rows=[
             RecognitionLedgerRowOut(
@@ -786,6 +794,9 @@ async def get_recognition_ledger(
                 service_period_end=row.service_period_end,
                 has_primary=row.has_primary,
                 reason=row.reason,
+                waiting_state=row.waiting_state,
+                waiting_label=row.waiting_label,
+                waiting_basis=row.waiting_basis,
             )
             for row in ledger.rows
         ],

@@ -1495,6 +1495,12 @@ class RecognitionLedgerRow:
     service_period_end: date | None
     has_primary: bool | None
     reason: str
+    #: Только у ожиданий: ``waiting.STATE_*`` и то же состояние словами — «документ
+    #: получен, вступит 01.10», «просрочен на 15 дн.». Тревога — только ``overdue``.
+    waiting_state: str | None = None
+    waiting_label: str | None = None
+    #: Чем подтвердится ``document_pending``: бумагой контрагента или начислением по договору.
+    waiting_basis: str | None = None
 
 
 @dataclass(slots=True)
@@ -1504,6 +1510,8 @@ class RecognitionLedgerTotals:
     missing_period: Decimal
     without_primary: Decimal
     unattributed: Decimal
+    #: Часть ``waiting_document``, у которой срок документа вышел.
+    waiting_overdue: Decimal = Decimal("0.00")
 
     @property
     def unrecognized(self) -> Decimal:
@@ -1651,10 +1659,13 @@ async def build_recognition_ledger(session: AsyncSession, month: date) -> Recogn
                 service_period_end=item.period_end,
                 has_primary=False,
                 reason=(
-                    "Оплачено, но закрывающий документ за период ещё не получен"
+                    "Оплачено, расход признает закрывающий документ за период"
                     if item.period_known
-                    else "Оплачено, период услуги неизвестен и документ ещё не получен"
+                    else "Оплачено, период услуги неизвестен — месяц взят по дате платежа"
                 ),
+                waiting_state=item.state,
+                waiting_label=waiting_source.state_label(item),
+                waiting_basis=item.basis,
                 **common(item),
             )
         )
@@ -1675,12 +1686,28 @@ async def build_recognition_ledger(session: AsyncSession, month: date) -> Recogn
         )
 
     status_order = {"waiting_document": 0, "missing_period": 1, "recognized": 2}
-    rows.sort(key=lambda item: (status_order[item.status], -item.amount, item.counterparty_name))
+    # Внутри ожиданий просрочка — первой: она единственная требует действия.
+    rows.sort(
+        key=lambda item: (
+            status_order[item.status],
+            item.waiting_state != waiting_source.STATE_OVERDUE,
+            -item.amount,
+            item.counterparty_name,
+        )
+    )
     return RecognitionLedger(
         month=month_start,
         totals=RecognitionLedgerTotals(
             recognized=sum((item.amount for item in recognized_items), Decimal("0.00")),
             waiting_document=sum((item.amount for item in waiting_items), Decimal("0.00")),
+            waiting_overdue=sum(
+                (
+                    item.amount
+                    for item in waiting_items
+                    if item.state == waiting_source.STATE_OVERDUE
+                ),
+                Decimal("0.00"),
+            ),
             missing_period=sum((item.amount for item in unperioded_items), Decimal("0.00")),
             without_primary=sum(
                 (item.amount for item in recognized_items if not item.has_primary),
