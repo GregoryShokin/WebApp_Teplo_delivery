@@ -30,6 +30,7 @@ from app.services.banking.base import (
     scalar,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.banking.tls import russian_trusted_ssl_context
 
 PAYMENT_DRAFT_PATH = "/api/v1/payment/create"
 PAYMENT_STATUS_PATH = "/api/v1/payment/status"  # POST {"documentIds": [...]}
@@ -170,6 +171,7 @@ class TbankClient:
                     "Content-Type": "application/json",
                 },
                 timeout=self.settings.tbank_api_timeout_seconds,
+                verify=russian_trusted_ssl_context(),
             ) as client:
                 response = await client.post(
                     PAYMENT_DRAFT_PATH,
@@ -177,9 +179,12 @@ class TbankClient:
                     headers={"X-Request-Id": str(uuid.uuid4())},
                 )
         except httpx.HTTPError as exc:
+            # Без этой строки причина (TLS, DNS, таймаут) нигде не оставалась: роут отдаёт
+            # «Банк временно недоступен», а в логе api — только «502» (инцидент 24.09.2026).
+            logger.warning("tbank payment/create transport error: %r", exc)
             raise BankFetchError(
                 self.provider,
-                "T-Bank payment API is unavailable or misconfigured",
+                f"T-Bank payment API is unavailable or misconfigured: {exc}",
             ) from exc
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
@@ -234,6 +239,7 @@ class TbankClient:
                 "Content-Type": "application/json",
             },
             timeout=self.settings.tbank_api_timeout_seconds,
+            verify=russian_trusted_ssl_context(),
         ) as client:
             for attempt in range(4):
                 response = await client.post(
@@ -300,6 +306,7 @@ class TbankClient:
                 "Accept": "application/json",
             },
             timeout=self.settings.tbank_api_timeout_seconds,
+            verify=russian_trusted_ssl_context(),
         ) as client:
             fetched_any = False
             unknown_account_error: BankFetchError | None = None
@@ -365,11 +372,18 @@ class TbankClient:
                 return operations
 
     async def _get_json(self, client: httpx.AsyncClient, path: str, params: dict[str, Any]) -> Any:
-        response = await client.get(
-            path,
-            params=params,
-            headers={"X-Request-Id": str(uuid.uuid4())},
-        )
+        try:
+            response = await client.get(
+                path,
+                params=params,
+                headers={"X-Request-Id": str(uuid.uuid4())},
+            )
+        except httpx.HTTPError as exc:
+            # Сетевой сбой — тоже BankFetchError: ``run_bank_sync_job`` изолирует его по
+            # провайдеру и пишет причину одной строкой, а не роняет ``poll_banks`` трейсбеком.
+            raise BankFetchError(
+                self.provider, f"T-Bank statement API is unavailable: {exc}"
+            ) from exc
         if response.status_code in {401, 403}:
             raise BankCredentialsError(self.provider, "T-Bank bearer token is invalid or expired")
         if response.status_code >= 400:
