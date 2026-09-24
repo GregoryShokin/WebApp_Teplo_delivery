@@ -1714,6 +1714,33 @@ def _periods_overlap(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -
     return start <= invoice.service_period_end and end >= invoice.service_period_start
 
 
+def _periods_conflict(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -> bool:
+    """Известный период аванса ПРОТИВОРЕЧИТ известному периоду документа.
+
+    Не зеркало ``_periods_overlap``: отсутствие пересечения ещё не противоречие. Противоречие —
+    только когда ОБЕ стороны знают свой период наверняка, и эти периоды не пересекаются.
+
+    Доверие — статус ``ready`` у обеих сторон. У документа ``ambiguous`` — догадка парсера из
+    нескольких периодов в тексте, ей не доверяют ни начисление, ни правило 4; ``missing`` и
+    ``not_required`` — периода нет. У аванса ``ready`` ставит каждая дверь, которая пишет даты
+    (правило 1, ДЗ оплаченного счёта через ``_invoice_period_fields``, аренда, абонентка,
+    коммуналка, ремонтные скрипты), а ``missing`` без дат — исторические авансы, которые и
+    очередь признания не трогает до решения человека."""
+    if (
+        invoice.service_period_status != "ready"
+        or invoice.service_period_start is None
+        or invoice.service_period_end is None
+    ):
+        return False
+    if (
+        prepayment.service_period_status != "ready"
+        or prepayment.service_period_start is None
+        or prepayment.service_period_end is None
+    ):
+        return False
+    return not _periods_overlap(prepayment, invoice)
+
+
 def _recognition(invoice: SupplierInvoice) -> dict[str, object]:
     """Распознанное содержимое документа (у почты и ЭДО лежит в ``raw_payload``)."""
     payload = invoice.raw_payload or {}
@@ -1844,6 +1871,15 @@ def _match_basis(
         return MATCH_CHRONOLOGY
     if same_period:
         return MATCH_SERVICE_PERIOD
+    # РАВНАЯ СУММА ПРИ ИЗВЕСТНОМ ЧУЖОМ ПЕРИОДЕ — ПРОТИВОРЕЧИЕ, А НЕ ПРИЗНАК. Ранг ``amount`` ниже
+    # не смотрел на периоды вовсе, и в паре с гардом выше это давало перевёрнутый выбор: аванс
+    # СВОЕГО периода гард ронял в хронологию, а аванс ЧУЖОГО месяца той же суммы получал ранг
+    # выше. Прод, 24.09.2026: у Лемы абонентка ровная (3 700 ₽), счёт за M+1 оплачивается 10-го
+    # числа M, раньше УПД за M от 31-го, — УПД 32108 за август погасил сентябрьский аванс, а
+    # августовский остался открытым. У Синапсиса ровно так же. В ОПиУ это ложное «ждём
+    # документ» за август и спрятанное законное ожидание в сентябре — каждый месяц.
+    if _periods_conflict(prepayment, invoice):
+        return MATCH_CHRONOLOGY
     # Равенство суммы — САМЫЙ слабый признак, и он опасен: у подписочного поставщика с ровной
     # абонентской платой ему совпадает любой месяц. Поэтому два ограничения. Аванс должен быть
     # НЕТРОНУТ — совпадение хвоста частично погашенного это совпадение остатка, а не «платёж за
@@ -1880,7 +1916,10 @@ async def _settlement_candidates(
     не хватило ровно потому, что у ручных документов периода не было вовсе.
 
     Сортировка СТАБИЛЬНАЯ: внутри одного основания сохраняется порядок ``_settlement_order``,
-    то есть хронология денег со всеми её правилами."""
+    то есть хронология денег со всеми её правилами. Единственное исключение внутри ранга —
+    аванс, чей известный период противоречит документу, идёт последним: иначе открытый аванс
+    прошлого месяца выигрывал бы у аванса своего месяца одной датой денег (оба адресных, оба
+    в хронологии). Это тоже порядок, а не фильтр: других денег нет — годится и он."""
     order = await _settlement_order(session, invoice)
     if not order:
         return []
@@ -1906,7 +1945,7 @@ async def _settlement_candidates(
         )
         for prepayment, money_on in order
     ]
-    ranked.sort(key=lambda item: _MATCH_RANKS.index(item[1]))
+    ranked.sort(key=lambda item: (_MATCH_RANKS.index(item[1]), _periods_conflict(item[0], invoice)))
     return ranked
 
 

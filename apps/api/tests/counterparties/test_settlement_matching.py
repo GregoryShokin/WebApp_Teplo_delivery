@@ -143,6 +143,8 @@ async def _prepaid(
         bill_invoice_id=bill.id if bill is not None else None,
         service_period_start=period[0] if period else None,
         service_period_end=period[1] if period else None,
+        # Как у всех дверей прода: даты периода у аванса без статуса ``ready`` не бывает.
+        service_period_status="ready" if period else "missing",
     )
     session.add(prepayment)
     await session.flush()
@@ -968,6 +970,9 @@ async def test_landlord_rent_does_not_eat_the_water_receivable(
         assert [a.prepayment_id for a in rent_alloc] == [rent_money.id], (
             "аренда снова закрылась водяными деньгами"
         )
+        # Свободные арендные деньги без периода с документом не спорят: противоречие периодов
+        # требует ДВУХ известных периодов, и ранг суммы у аренды остаётся.
+        assert [a.match_basis for a in rent_alloc] == [prepayments.MATCH_AMOUNT]
         water_alloc = await _allocations(session, water_act.id)
         assert [a.prepayment_id for a in water_alloc] == [water_money.id]
         assert [a.match_basis for a in water_alloc] == [prepayments.MATCH_BASIS_INVOICE]
@@ -1169,4 +1174,242 @@ async def test_own_bill_money_keeps_amount_rank_when_document_has_no_period(
 
         alloc = await _allocations(session, act.id)
         assert [a.prepayment_id for a in alloc] == [own.id], "акт закрылся чужими деньгами"
+        assert [a.match_basis for a in alloc] == [prepayments.MATCH_AMOUNT]
+
+
+async def test_equal_amount_of_another_period_does_not_beat_own_period_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Кейс Лемы (прод, 24.09.2026): УПД за август не гасит аванс за СЕНТЯБРЬ по равной сумме.
+
+    Абонентская плата ровная, 3 700 ₽ каждый месяц, и счёт за следующий месяц оплачивается
+    10-го числа текущего — раньше, чем приходит УПД за текущий от 31-го. УПД 32108 из СБИС за
+    08.2026 основания не называет. Аванс СВОЕГО периода гард «деньги чужого счёта» ронял в
+    хронологию, а сентябрьский аванс той же суммы получал ранг «сумма» — ранг не проверял, что
+    известный период аванса документу ПРОТИВОРЕЧИТ. Итог в ОПиУ: ложное «ждём документ» за
+    август и спрятанное законное ожидание в сентябре. Повторяется каждый месяц.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Лема-абонентка", inn="7712345690")
+        august = (date(2026, 8, 1), date(2026, 8, 31))
+        september = (date(2026, 9, 1), date(2026, 9, 30))
+        august_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="70221/1/У",
+            amount="3700.00",
+            invoice_date=date(2026, 7, 8),
+            period=august,
+        )
+        september_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="73163/1/У",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 8),
+            period=september,
+        )
+        august_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 7, 10),
+            wallet_code="lema-aug",
+            bill=august_bill,
+            period=august,
+        )
+        september_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 8, 10),
+            wallet_code="lema-sep",
+            bill=september_bill,
+            period=september,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="32108",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [august_money.id], (
+            "августовский УПД погасил сентябрьский аванс"
+        )
+        await session.refresh(september_money)
+        assert september_money.status == "open"
+        assert september_money.amount_settled == Decimal("0.00")
+
+
+async def test_open_older_month_advance_does_not_win_by_chronology(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Открытый аванс прошлого месяца не перебивает аванс своего месяца хронологией денег.
+
+    Июльский аванс ещё висит (УПД за июль не пришёл), августовский тоже. Суммы разные — цена
+    поменялась, ранга «сумма» нет ни у кого, и оба адресных аванса сваливаются в хронологию:
+    свой — гардом «деньги чужого счёта», июльский — потому что ничего не совпало. Раньше
+    побеждали более ранние деньги, и УПД за август закрывал июль. Противоречащий период
+    внутри одного ранга обязан идти последним."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонентка-два-месяца", inn="7712345691")
+        july = (date(2026, 7, 1), date(2026, 7, 31))
+        august = (date(2026, 8, 1), date(2026, 8, 31))
+        july_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-ИЮЛЬ",
+            amount="3700.00",
+            invoice_date=date(2026, 6, 8),
+            period=july,
+        )
+        august_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-АВГУСТ",
+            amount="3900.00",
+            invoice_date=date(2026, 7, 8),
+            period=august,
+        )
+        july_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 6, 10),
+            wallet_code="two-months-jul",
+            bill=july_bill,
+            period=july,
+        )
+        august_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3900.00",
+            paid_on=date(2026, 7, 10),
+            wallet_code="two-months-aug",
+            bill=august_bill,
+            period=august,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="УПД-АВГУСТ",
+            amount="3900.00",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [august_money.id], (
+            "УПД за август закрылся июльскими деньгами"
+        )
+        await session.refresh(july_money)
+        assert july_money.status == "open"
+        assert july_money.amount_settled == Decimal("0.00")
+
+
+async def test_conflicting_period_money_is_last_resort_but_still_usable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аванс другого периода — это ПОРЯДОК, а не запрет, как и вся лестница.
+
+    Если других денег у контрагента нет, документ по-прежнему гасится авансом противоречащего
+    периода — иначе он висел бы неоплаченным при живых деньгах. Но равенство суммы при
+    известном чужом периоде — противоречие, а не признак: основание честно «подобрано»."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Только другой месяц", inn="7712345692")
+        september = (date(2026, 9, 1), date(2026, 9, 30))
+        september_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-СЕНТЯБРЬ",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 8),
+            period=september,
+        )
+        september_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 8, 10),
+            wallet_code="only-sep",
+            bill=september_bill,
+            period=september,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="УПД-АВГУСТ-ОДИН",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 31),
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        await session.commit()
+
+        settled = await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        assert settled == Decimal("3700.00"), "документ остался неоплаченным при живых деньгах"
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [september_money.id]
+        assert [a.match_basis for a in alloc] == [prepayments.MATCH_CHRONOLOGY], (
+            "аванс другого месяца выдан за подтверждённую связь"
+        )
+
+
+async def test_ambiguous_document_period_does_not_veto_amount(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Недоверенный период документа (ambiguous) противоречия не создаёт.
+
+    Когда в тексте нашлось несколько периодов, ingest записывает один и ставит 'ambiguous' —
+    это догадка парсера, а не факт. Отнять по ней у аванса ранг «сумма» значило бы доверить
+    адресность той самой догадке, которой не доверяют ни начисление, ни правило 4."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Период-догадка", inn="7712345693")
+        september = (date(2026, 9, 1), date(2026, 9, 30))
+        september_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="СЧЁТ-СЕНТЯБРЬ-АМБИГ",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 8),
+            period=september,
+        )
+        september_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 8, 10),
+            wallet_code="ambig-sep",
+            bill=september_bill,
+            period=september,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="УПД-АМБИГ-ПЕРИОД",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 31),
+            period=(date(2026, 8, 1), date(2026, 8, 31)),
+        )
+        act.service_period_status = "ambiguous"
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [september_money.id]
         assert [a.match_basis for a in alloc] == [prepayments.MATCH_AMOUNT]
