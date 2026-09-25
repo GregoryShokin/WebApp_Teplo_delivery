@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import uuid
-from collections.abc import Collection, Sequence
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -1899,8 +1899,8 @@ SETTLED_ADVANCE_TO_DIVIDENDS_ERROR = (
 async def assert_settled_advances_not_dividends(
     session: AsyncSession,
     *,
-    transaction_ids: Collection[uuid.UUID],
-    dividends_counterparty_ids: Collection[uuid.UUID],
+    transaction_ids: set[uuid.UUID],
+    dividends_counterparty_ids: set[uuid.UUID],
 ) -> None:
     """Переразбор, который ПЕРЕСОЗДАЁТ проводки, не превращает погашенный аванс в дивиденды.
 
