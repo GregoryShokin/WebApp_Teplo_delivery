@@ -25,16 +25,19 @@ import json
 import logging
 import uuid
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
 import pytest
-from cp_helpers import make_counterparty
+from cp_helpers import make_counterparty, make_wallet
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.models import (
+    AccountingPeriodClose,
+    CashflowTransaction,
     DdsArticle,
     EmailInvoiceIntake,
     Location,
@@ -514,3 +517,62 @@ async def test_cutoff_can_be_switched_off(
         result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
 
         assert result.get("linked") == 1
+
+
+async def test_advance_paid_in_a_closed_month_is_explained_in_the_reply(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    settings_with_bot,
+) -> None:
+    """Акт за август пришёл в сентябре, а аванс по нему платили 19.07 — и июль уже закрыт.
+
+    Связать «Оплачено аванс» с выплатой запрещает замок закрытого месяца: дебиторка на 31.07
+    появилась бы задним числом. Акт поэтому встаёт полной кредиторкой, и «Готово» без
+    объяснения выглядело бы потерянным авансом. Причина обязана доехать до ответа бота и до
+    подсказок строки — их же показывает «Страница на оплату»."""
+    text = (
+        (FIXTURE_ROOT / "electricity_real_20260717_actual.txt")
+        .read_text(encoding="utf-8")
+        .replace("от 17.07.2026г.", "от 17.09.2026г.")
+        .replace("июнь", "август")
+        .replace("-20.06.2026", "-19.07.2026")
+    )
+
+    async def fake_extract(content, *, mime, settings):  # noqa: ANN001, ARG001
+        return text, "vision"
+
+    monkeypatch.setattr(utility_ocr, "extract_text", fake_extract)
+    telegram = FakeTelegram([[_photo_update(17)]], {"act": JPEG})
+    monkeypatch.setattr(telegram_intake, "_make_client", telegram.client)
+
+    async with async_session_factory() as session:
+        account = await _flow(session)
+        wallet = await make_wallet(session, name="Сейф")
+        session.add(
+            CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("65000.00"),
+                operation_date=date(2026, 7, 19),
+                article_id=account.dds_article_id,
+                source_kind="safe_payout",
+                payment_purpose="Предоплата за Август",
+                quality_status="final",
+            )
+        )
+        session.add(AccountingPeriodClose(period_month=date(2026, 7, 1)))
+        await session.commit()
+
+        result = await telegram_intake.poll_and_ingest(session, settings=settings_with_bot)
+
+        assert result.get("linked") == 1, "счёт заведён — платить по нему можно"
+        row = await session.scalar(select(EmailInvoiceIntake))
+        assert row is not None
+        remark = (
+            "Аванс 65000.00 ₽ от 19.07.2026 не зачтён: выплата учтена в закрытом 07.2026. "
+            "Акт встал полной кредиторкой — связать аванс можно после открытия периода в "
+            "разделе «Учёт»"
+        )
+        assert remark in row.recognition["utility"]["hints"]
+        _started, reply = telegram.sent
+        assert remark in reply["text"]

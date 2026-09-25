@@ -1103,7 +1103,9 @@ async def test_documented_advance_paid_in_a_closed_month_is_not_linked(
 
     Связка заводила ДЗ на уже учтённые деньги закрытого месяца и ставила выплате контрагента —
     баланс на 31.07 и расход кассы сверенного июля менялись от бумаги, принесённой в августе.
-    Факт не связываем: разрыв остаётся видимым, как если бы факта не нашлось."""
+    Факт не связываем: разрыв остаётся видимым, как если бы факта не нашлось. И не молча —
+    причина уходит вызывающему: без неё бот отвечал «Готово», а акт вставал полной
+    кредиторкой, и выглядело это как потерянный аванс."""
     async with async_session_factory() as session:
         account = await _account(session, kind="electricity")
         wallet = await make_wallet(session, name="Сейф")
@@ -1122,6 +1124,7 @@ async def test_documented_advance_paid_in_a_closed_month_is_not_linked(
         session.add(AccountingPeriodClose(period_month=date(2026, 7, 1)))
         await session.commit()
 
+        remarks: list[str] = []
         _, closing = await utility_charges.build_utility_documents(
             session,
             account,
@@ -1132,9 +1135,15 @@ async def test_documented_advance_paid_in_a_closed_month_is_not_linked(
             paid_advance_amount=Decimal("65000.00"),
             paid_advance_date=date(2026, 7, 19),
             as_of=date(2026, 9, 23),
+            remarks=remarks,
         )
 
         assert closing is not None and closing.payment_status == "unpaid"
+        assert remarks == [
+            "Аванс 65000.00 ₽ от 19.07.2026 не зачтён: выплата учтена в закрытом 07.2026. "
+            "Акт встал полной кредиторкой — связать аванс можно после открытия периода в "
+            "разделе «Учёт»"
+        ]
         assert paid.counterparty_id is None
         assert (
             await session.scalar(

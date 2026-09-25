@@ -8,6 +8,16 @@
 Скрипт идемпотентен: повторный прогон не двигает уже разнесённые проводки (смотрит на текущую
 статью и заполненность помещения). Сначала прогоняется на превью-стенде, затем на проде.
 
+ЗАКРЫТЫЙ МЕСЯЦ НЕ ТРОГАЕМ. Статья переносит сумму между строками ОПиУ, помещение — между
+точками, договор с контрагентом пересобирает дебиторку (правило 1). Всё это цифры месяца
+проводки, и в закрытом месяце скрипт двигал их молча: не-арендные ветки правило 1 не зовут, и
+его замок (``ensure_prepayment_from_bank_transaction``) их не видел, а арендные упирались в
+``PeriodClosed`` и роняли весь прогон вместе с уже сделанным. Теперь проводка закрытого
+месяца пропускается целиком и попадает в отчёт «пропущено по замку». Месяцы те же, что
+сторожит ручная переразметка (``PATCH /dds/transactions/{id}``): где расход стоит сейчас
+(размеченный месяц или месяц денег) и месяц денег. Нужна правка — откройте период в
+разделе «Учёт» и запустите скрипт ещё раз.
+
     docker exec -w /app/apps/api -e PYTHONPATH=/app/apps/api <api> \
         python -m app.scripts.reclassify_rent_article --location "Черникова" [--apply]
 
@@ -19,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -26,6 +37,7 @@ from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
 from app.models import CashflowTransaction, Counterparty, DdsArticle, Location, LocationLease
+from app.services import accounting_periods
 from app.services.supplier_prepayments import ensure_prepayment_from_bank_transaction
 
 RENT_ARTICLE_CODE = "arenda_torgovyh_tochek"
@@ -49,6 +61,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--apply", action="store_true", help="Записать изменения")
     return parser.parse_args()
+
+
+def locked_months(transaction: CashflowTransaction, closed: set[date]) -> list[date]:
+    """Закрытые месяцы, цифры которых сдвинула бы правка проводки.
+
+    Те же два месяца, что у ``PATCH /dds/transactions/{id}``: где расход стоит сейчас и месяц
+    денег (в нём живёт дебиторка платежа). Период до начала учёта не запирается — отчётов за
+    него нет."""
+    touched = {
+        accounting_periods.month_start(day)
+        for day in (transaction.expense_month, transaction.operation_date)
+        if day is not None
+    }
+    return sorted(
+        month
+        for month in touched
+        if month >= accounting_periods.ACCOUNTING_START and month in closed
+    )
 
 
 def _is_security(counterparty_name: str | None) -> bool:
@@ -99,8 +129,12 @@ async def async_main() -> None:
             )
         ).all()
 
+        closed = await accounting_periods.closed_months(session)
         plan: list[tuple[CashflowTransaction, str, DdsArticle | None]] = []
+        locked: dict[uuid.UUID, list[date]] = {}
         for txn, counterparty_name in rows:
+            if months := locked_months(txn, closed):
+                locked[txn.id] = months
             if Decimal(txn.amount) == rent_amount:
                 # Аренда остаётся своей статьёй — ей нужны помещение и договор.
                 plan.append((txn, "аренда", None))
@@ -115,10 +149,20 @@ async def async_main() -> None:
             already = txn.location_id is not None and (
                 article is None or txn.article_id == article.id
             )
-            mark = "уже разнесено" if already else "→"
+            if txn.id in locked:
+                closed_list = ", ".join(f"{month:%m.%Y}" for month in locked[txn.id])
+                mark = f"пропущено по замку ({closed_list} закрыт)"
+            else:
+                mark = "уже разнесено" if already else "→"
             print(
                 f"  {txn.operation_date} {txn.amount:>10} "
                 f"{(counterparty_name_of(rows, txn) or '—'):22} {mark} {target}"
+            )
+
+        if locked:
+            print(
+                f"\nпропущено по замку: {len(locked)} — месяц закрыт; откройте период в разделе "
+                "«Учёт», если правка действительно нужна"
             )
 
         if not args.apply:
@@ -128,6 +172,8 @@ async def async_main() -> None:
         changed = 0
         rent_transactions: list[CashflowTransaction] = []
         for txn, _target, article in plan:
+            if txn.id in locked:
+                continue
             if article is not None and txn.article_id != article.id:
                 txn.article_id = article.id
                 changed += 1
@@ -152,6 +198,8 @@ async def async_main() -> None:
         print(f"\nзаписано изменений: {changed}")
         if rent_transactions:
             print(f"правило 1 применено к арендным проводкам: {len(rent_transactions)}")
+        if locked:
+            print(f"пропущено по замку: {len(locked)}")
 
 
 def counterparty_name_of(rows, txn) -> str | None:
