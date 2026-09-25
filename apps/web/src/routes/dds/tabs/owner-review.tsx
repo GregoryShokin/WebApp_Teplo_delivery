@@ -184,6 +184,9 @@ function OwnerReviewCard({
       : null;
   const refundTwinsResult = useQuery(refundTwinsQuery(refundTwinParams));
   const refundTwinText = refundTwinWarning(refundTwinsResult.data);
+  // Возврат переплаты правилом не запоминаем (решение владельца 25.09): авторазметка гасила бы
+  // авансы фоном, мимо сторожа задвоенного возврата. Сервер такое правило тоже не заведёт.
+  const rememberBlockedByRefund = Boolean(refundArticleId) && articleId === refundArticleId;
 
   const invalidate = async () => {
     await Promise.all([
@@ -284,7 +287,7 @@ function OwnerReviewCard({
       action,
       article_id: action === "set_article" ? articleId : null,
       counterparty_id: counterpartyId === "none" ? null : counterpartyId,
-      remember_as_rule: rememberAsRule,
+      remember_as_rule: rememberAsRule && !rememberBlockedByRefund,
     });
   }
 
@@ -540,17 +543,18 @@ function OwnerReviewCard({
 
             <label className="flex items-start gap-3 text-sm">
               <input
-                checked={rememberAsRule}
+                checked={rememberAsRule && !rememberBlockedByRefund}
                 className="mt-1 h-4 w-4"
-                disabled={!canClassify}
+                disabled={!canClassify || rememberBlockedByRefund}
                 onChange={(event) => setRememberAsRule(event.target.checked)}
                 type="checkbox"
               />
               <span>
                 <span className="block font-medium">Запомнить как правило</span>
                 <span className="block text-muted-foreground">
-                  Если включить, будущие операции этого же отправителя разберутся сами: обычная
-                  платёжка — по ИНН, оплата картой — по имени продавца в назначении.
+                  {rememberBlockedByRefund
+                    ? "Возврат переплаты правилом не запоминаем: каждый возврат разбирайте вручную, со сверкой на задвоение."
+                    : "Если включить, будущие операции этого же отправителя разберутся сами: обычная платёжка — по ИНН, оплата картой — по имени продавца в назначении."}
                 </span>
               </span>
             </label>

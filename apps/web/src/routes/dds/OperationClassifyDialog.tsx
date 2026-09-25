@@ -378,9 +378,18 @@ export function OperationClassifyDialog({
   const refundTwinQueries = useQueries({
     queries: refundTwinParams.map((params) => refundTwinsQuery(params)),
   });
-  const refundTwinWarnings = refundTwinQueries
-    .map((query) => refundTwinWarning(query.data))
-    .filter((text): text is string => Boolean(text));
+  // Возвраты нескольким контрагентам в одной выписке — предупреждение называет, чей это возврат.
+  const refundTwinWarnings = refundTwinParams.flatMap((params, index) => {
+    const name = (counterpartiesQuery.data ?? []).find(
+      (cp) => cp.id === params.counterparty_id,
+    )?.name;
+    const text = refundTwinWarning(refundTwinQueries[index]?.data, name);
+    return text ? [{ counterpartyId: params.counterparty_id, text }] : [];
+  });
+  // Возврат переплаты правилом не запоминаем (решение владельца 25.09): авторазметка гасила бы
+  // авансы фоном, мимо сторожа задвоенного возврата. Сервер такое правило тоже не заведёт.
+  const rememberBlockedByRefund =
+    Boolean(refundArticleId) && rows.length === 1 && rows[0]?.articleId === refundArticleId;
   // Помещения строк «объектных» статей: тот же ключ, что у OperationLocationPicker (общий кэш,
   // второго запроса нет). Родителю нужен сам факт 403 — без права source.locations.read
   // помещение выбрать нечем, и «Разнести» серая не потому, что оператор поленился заполнить поле.
@@ -554,7 +563,8 @@ export function OperationClassifyDialog({
         new_counterparty_name: createsCounterparty ? row?.counterparty_name_raw ?? null : null,
         new_counterparty_inn: createsCounterparty ? row?.counterparty_inn_raw ?? null : null,
         // Правило не запоминаем при карт-привязке (backend его тоже отклонит) — чекбокс скрыт.
-        remember_as_rule: rememberAsRule && rows.length === 1 && !bindsInvoiceOnCard,
+        remember_as_rule:
+          rememberAsRule && rows.length === 1 && !bindsInvoiceOnCard && !rememberBlockedByRefund,
         // Карт-операция + привязанная накладная: разрешаем guard пропустить карт-шум.
         allow_card: bindsInvoiceOnCard ? true : undefined,
       });
@@ -923,8 +933,9 @@ export function OperationClassifyDialog({
               {isOperation && rows.length === 1 && !bindsInvoiceOnCard ? (
                 <label className="flex items-start gap-2 text-sm">
                   <input
-                    checked={rememberAsRule}
+                    checked={rememberAsRule && !rememberBlockedByRefund}
                     className="mt-0.5 h-4 w-4"
+                    disabled={rememberBlockedByRefund}
                     onChange={(event) => setRememberAsRule(event.target.checked)}
                     type="checkbox"
                   />
@@ -934,11 +945,13 @@ export function OperationClassifyDialog({
                       {/* У карт-операции реквизиты банковские (эквайер один на все покупки),
                           поэтому запоминаем продавца из назначения, а не ИНН — иначе правило
                           заберёт себе все карт-списания подряд. */}
-                      {row?.merchant
-                        ? `Будущие оплаты продавцу «${row.merchant}» разберутся сами — даже в другом городе`
-                        : row?.counterparty_inn_raw
-                          ? `Будущие платежи с ИНН ${row.counterparty_inn_raw} разберутся сами — даже с другим текстом назначения`
-                          : "Будущие списания с таким же текстом разберутся сами"}
+                      {rememberBlockedByRefund
+                        ? "Возврат переплаты правилом не запоминаем: каждый возврат разбирайте вручную, со сверкой на задвоение"
+                        : row?.merchant
+                          ? `Будущие оплаты продавцу «${row.merchant}» разберутся сами — даже в другом городе`
+                          : row?.counterparty_inn_raw
+                            ? `Будущие платежи с ИНН ${row.counterparty_inn_raw} разберутся сами — даже с другим текстом назначения`
+                            : "Будущие списания с таким же текстом разберутся сами"}
                     </span>
                   </span>
                 </label>
@@ -963,10 +976,10 @@ export function OperationClassifyDialog({
               </div>
             ) : null}
 
-            {refundTwinWarnings.map((text) => (
+            {refundTwinWarnings.map(({ counterpartyId, text }) => (
               <div
                 className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
-                key={text}
+                key={counterpartyId}
                 role="alert"
               >
                 {text}

@@ -10,6 +10,10 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // Проверяем, что предупреждение доезжает во все три окна (разбор операции, «Новый платёж»,
 // разбор кейса собственником), спрашивает бэкенд правильным каналом (операция выписки — своей
 // операцией, наличный приход — кошельком) и не блокирует кнопку.
+//
+// И решение владельца 25.09: возврат переплаты не запоминается правилом — авторазметка гасила
+// бы аванс фоном, мимо сторожа. Галочка «Запомнить» при возвратной статье заблокирована в обоих
+// окнах разбора, и в запрос уходит remember_as_rule: false.
 
 const REFUND_ARTICLE_ID = "11111111-1111-1111-1111-111111111111";
 const CP_ID = "22222222-2222-2222-2222-222222222222";
@@ -76,13 +80,27 @@ const SKACHKOVA = {
   relationship: "official",
 };
 
-// Операция выписки 300 ₽, уже разнесённая возвратными долями (суммы долей — `shares`).
-async function mockClassifiedOperation(page: Page, shares: string[]) {
+const OTHER_CP_ID = "22222222-2222-2222-2222-222222222223";
+const LEMA = {
+  counterparty_id: OTHER_CP_ID,
+  name: "ООО Лема",
+  inn: "610000000002",
+  status: "active",
+  relationship: "official",
+};
+
+// Операция выписки 300 ₽, уже разнесённая возвратными долями (суммы долей — `shares`, их
+// контрагенты — `counterparties`, по умолчанию все доли Скачковой).
+async function mockClassifiedOperation(
+  page: Page,
+  shares: string[],
+  counterparties: string[] = shares.map(() => CP_ID),
+) {
   await mockAuth(page);
   await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, [REFUND_ARTICLE]));
   await page.route("**/api/v1/dds/wallets**", (route) => fulfillJson(route, []));
   await page.route("**/api/v1/counterparties/registry**", (route) =>
-    fulfillJson(route, [SKACHKOVA]),
+    fulfillJson(route, [SKACHKOVA, LEMA]),
   );
   await page.route("**/api/v1/dds/journal**", (route) =>
     fulfillJson(route, {
@@ -117,7 +135,7 @@ async function mockClassifiedOperation(page: Page, shares: string[]) {
         cashflow_transaction_id: `66666666-6666-6666-6666-66666666666${index}`,
         article_id: REFUND_ARTICLE_ID,
         amount,
-        counterparty_id: CP_ID,
+        counterparty_id: counterparties[index],
         invoice_id: null,
         employee_id: null,
         location_id: null,
@@ -152,10 +170,14 @@ test("разбор выписки возвратом предупреждает 
 
   const warning = dialog.getByRole("alert").filter({ hasText: "Похоже на задвоение" });
   await expect(warning).toBeVisible();
+  await expect(warning).toContainText("у контрагента «ИП Скачкова»");
   await expect(warning).toContainText("от 20.09.2026 наличными на «Сейф» («Новый платёж»)");
   await expect(warning).toContainText("аванс погасится дважды");
   // Предупреждение, не запрет: два возврата одной суммы бывают.
   await expect(dialog.getByRole("button", { name: "Разнести" })).toBeEnabled();
+  // А вот правилом возврат не запоминается: фоном он прошёл бы мимо этого предупреждения.
+  await expect(dialog.getByRole("checkbox", { name: /Запомнить/ })).toBeDisabled();
+  await expect(dialog.getByText(/Возврат переплаты правилом не запоминаем/)).toBeVisible();
 
   // Операция выписки спрашивает своей операцией — канал и дату бэкенд берёт из неё.
   const params = asked.at(-1)!;
@@ -208,7 +230,34 @@ test("доли 150 + 150 спрашивают одним возвратом на
   expect(new Set(asked.map((params) => params.get("amount")))).toEqual(new Set(["300.00"]));
 });
 
-test("«Новый платёж» — возврат наличными предупреждает о той же выписке", async ({ page }) => {
+test("возвраты двум контрагентам — каждое предупреждение называет своего", async ({ page }) => {
+  await mockClassifiedOperation(page, ["150.00", "150.00"], [CP_ID, OTHER_CP_ID]);
+  const asked = await mockTwins(page, {
+    transaction_id: "77777777-7777-7777-7777-777777777777",
+    operation_date: "2026-09-20",
+    amount: "150.00",
+    wallet_name: "Сейф",
+    channel: "cash",
+    source_kind: "new_payment_income",
+  });
+  const duplicateKeys: string[] = [];
+  page.on("console", (message) => {
+    if (message.text().includes("same key")) duplicateKeys.push(message.text());
+  });
+
+  const dialog = await openOperationDialog(page);
+  const warnings = dialog.getByRole("alert").filter({ hasText: "Похоже на задвоение" });
+  // Совпадения у обоих одинаковые по сумме и дате — без имени это два неотличимых текста.
+  await expect(warnings).toHaveCount(2);
+  await expect(warnings.filter({ hasText: "у контрагента «ИП Скачкова»" })).toHaveCount(1);
+  await expect(warnings.filter({ hasText: "у контрагента «ООО Лема»" })).toHaveCount(1);
+  expect(new Set(asked.map((params) => params.get("counterparty_id")))).toEqual(
+    new Set([CP_ID, OTHER_CP_ID]),
+  );
+  expect(duplicateKeys).toEqual([]);
+});
+
+async function mockNewPaymentIncome(page: Page) {
   await mockAuth(page);
   await page.route("**/api/v1/finance/payments**", (route) =>
     fulfillJson(route, { scope: "active", buckets: [], items: [] }),
@@ -253,23 +302,33 @@ test("«Новый платёж» — возврат наличными пред
       },
     ]),
   );
-  const asked = await mockTwins(page, {
-    transaction_id: "88888888-8888-8888-8888-888888888888",
-    operation_date: "2026-09-22",
-    amount: "300.00",
-    wallet_name: "Т-Банк",
-    channel: "bank",
-    source_kind: "bank_operation",
-  });
+}
 
+async function openNewPaymentRefund(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Активные платежи" }).click();
   const payments = page.getByRole("dialog").filter({ hasText: "Активные платежи" });
   await payments.getByRole("button", { name: "Создать", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Новый платёж" });
   await expect(dialog).toBeVisible();
-
   await dialog.getByRole("button", { name: "Возврат переплаты от поставщиков" }).first().click();
+  return dialog;
+}
+
+const BANK_TWIN = {
+  transaction_id: "88888888-8888-8888-8888-888888888888",
+  operation_date: "2026-09-22",
+  amount: "300.00",
+  wallet_name: "Т-Банк",
+  channel: "bank",
+  source_kind: "bank_operation",
+};
+
+test("«Новый платёж» — возврат наличными предупреждает о той же выписке", async ({ page }) => {
+  await mockNewPaymentIncome(page);
+  const asked = await mockTwins(page, BANK_TWIN);
+
+  const dialog = await openNewPaymentRefund(page);
   await dialog.getByLabel("Сумма, ₽").fill("300");
   await dialog.getByRole("button", { name: /ИП Скачкова/ }).click();
 
@@ -284,6 +343,21 @@ test("«Новый платёж» — возврат наличными пред
   expect(params.get("bank_operation_id")).toBeNull();
 
   await dialog.screenshot({ path: "test-results/refund-twin-new-payment.png" });
+});
+
+test("«Новый платёж» спрашивает сторожа суммой после паузы, а не на каждую цифру", async ({
+  page,
+}) => {
+  await mockNewPaymentIncome(page);
+  const asked = await mockTwins(page, { ...BANK_TWIN, amount: "35017.95" });
+
+  const dialog = await openNewPaymentRefund(page);
+  await dialog.getByRole("button", { name: /ИП Скачкова/ }).click();
+  // Печатаем как человек: восемь нажатий быстрее паузы в 300 мс.
+  await dialog.getByLabel("Сумма, ₽").pressSequentially("35017.95", { delay: 20 });
+
+  await expect(dialog.getByText(/Похоже на задвоение/)).toBeVisible();
+  expect(asked.map((params) => params.get("amount"))).toEqual(["35017.95"]);
 });
 
 test("разбор кейса собственником тоже предупреждает — так пришёл возврат Скачковой", async ({
@@ -345,6 +419,23 @@ test("разбор кейса собственником тоже предупр
   // Пока статья и контрагент не выбраны — спрашивать не о чем.
   await expect(page.getByText(/Похоже на задвоение/)).toBeHidden();
 
+  const classified: Record<string, unknown>[] = [];
+  await page.route("**/api/v1/dds/owner-review/*/classify", (route) => {
+    classified.push(route.request().postDataJSON());
+    return fulfillJson(route, {
+      case_id: "99999999-9999-9999-9999-999999999999",
+      status: "resolved",
+      bank_operation_id: OP_ID,
+      classification_status: "classified",
+      rule_id: null,
+      rule_warning: null,
+    });
+  });
+
+  // Галочку поставили раньше, чем выбрали статью: возвратная статья её всё равно снимает.
+  const remember = page.getByRole("checkbox", { name: /Запомнить как правило/ });
+  await remember.check();
+
   const selects = page.getByRole("combobox");
   await selects.nth(1).click();
   await page.getByRole("option", { name: /Возврат переплаты от поставщиков/ }).click();
@@ -355,6 +446,17 @@ test("разбор кейса собственником тоже предупр
   await expect(warning).toBeVisible();
   await expect(warning).toContainText("наличными на «Сейф» («Новый платёж»)");
   expect(asked.at(-1)!.get("bank_operation_id")).toBe(OP_ID);
+
+  await expect(remember).toBeDisabled();
+  await expect(remember).not.toBeChecked();
+  await expect(page.getByText(/Возврат переплаты правилом не запоминаем/)).toBeVisible();
+  await page.getByRole("button", { name: "Классифицировать" }).click();
+  await expect.poll(() => classified.length).toBe(1);
+  expect(classified[0]).toMatchObject({
+    action: "set_article",
+    article_id: REFUND_ARTICLE_ID,
+    remember_as_rule: false,
+  });
 
   await page.screenshot({ path: "test-results/refund-twin-owner-review.png", fullPage: true });
 });
