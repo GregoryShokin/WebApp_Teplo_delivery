@@ -15,6 +15,7 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from cp_helpers import make_counterparty, make_invoice, make_wallet
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -481,3 +482,122 @@ async def test_rule1_remainder_of_a_bigger_payment_leaves_the_bill_money_alone(
 
         assert await _balance(session, date(2026, 7, 24)) == (15000, 0)
         assert await _balance(session, date(2026, 7, 31)) == (5000, 0)
+
+
+async def _rule1_advance(
+    session: AsyncSession, cp_id: uuid.UUID, wallet_id: uuid.UUID, *, amount: str, on: date
+) -> SupplierPrepayment:
+    """Аванс правила 1: своя проводка, вся сумма — дебиторка."""
+    tx = await _cash_payment(
+        session, counterparty_id=cp_id, wallet_id=wallet_id, amount=amount, on=on
+    )
+    advance = SupplierPrepayment(
+        counterparty_id=cp_id,
+        kind="subscription",
+        wallet_id=wallet_id,
+        amount=Decimal(amount),
+        amount_settled=Decimal("0.00"),
+        status="open",
+        cashflow_transaction_id=tx.id,
+    )
+    session.add(advance)
+    await session.flush()
+    return advance
+
+
+async def test_bill_paid_partly_from_an_earlier_advance_carries_the_advance_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Счёт, оплаченный частью деньгами и частью ручным зачётом аванса, несёт в ДЗ обе части.
+
+    Аванс правила 1 от 01.07 (6 000) вручную зачтён в счёт на 10 000
+    (``settle_invoice_from_prepayment``), 4 000 доплачены 20.07. Чокпоинт растит ДЗ по счёту до
+    10 000: деньги аванса переехали в неё, сам аванс этим зачётом закрыт. Баланс, фондируя ДЗ
+    по счёту одними денежными оплатами, видел 4 000 при леджере 10 000, а после акта на 10 000 —
+    фантомную кредиторку 6 000. Зачёт записан сегодня, а действует датой счёта (15.07) — так же,
+    как его видит сам аванс.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Счёт из аванса и денег", inn="6155000809"
+        )
+        advance = await _rule1_advance(
+            session, cp_id, wallet_id, amount="6000.00", on=date(2026, 7, 1)
+        )
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="4000.00", on=date(2026, 7, 20))
+        await session.commit()
+        await supplier_prepayments.settle_invoice_from_prepayment(
+            session, invoice_id=bill.id, prepayment_id=advance.id
+        )
+        assert (await _bill_prepayment(session, bill)).amount == Decimal("10000.00")
+        act = await _closing_act(session, cp_id, date(2026, 7, 31))
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 1))
+        await session.commit()
+        await session.refresh(act)
+        assert act.payment_status == "paid"
+
+        assert await _balance(session, date(2026, 6, 30)) == (0, 0)
+        assert await _balance(session, date(2026, 7, 10)) == (6000, 0), "аванс ушёл 01.07"
+        assert await _balance(session, date(2026, 7, 16)) == (6000, 0), "аванс переехал в счёт"
+        assert await _balance(session, date(2026, 7, 20)) == (10000, 0), "плюс доплата 20.07"
+        assert await _balance(session, date(2026, 7, 31)) == (0, 0), "акт закрыт обеими частями"
+
+
+async def test_advance_settled_into_an_earlier_bill_counts_from_its_own_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Зачёт аванса в счёт, датированный раньше платежа, не создаёт дебиторку до денег.
+
+    Счёт от 15.07 закрыт авансом, заплаченным 17.07. Аванс до своей даты в балансе не
+    существует, и ДЗ по счёту не может получить его деньги раньше — иначе 16.07 показал бы
+    6 000 дебиторки при ноле ушедших денег.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Аванс после счёта", inn="6155000810"
+        )
+        advance = await _rule1_advance(
+            session, cp_id, wallet_id, amount="6000.00", on=date(2026, 7, 17)
+        )
+        await session.commit()
+        await supplier_prepayments.settle_invoice_from_prepayment(
+            session, invoice_id=bill.id, prepayment_id=advance.id
+        )
+        assert (await _bill_prepayment(session, bill)).amount == Decimal("6000.00")
+
+        assert await _balance(session, date(2026, 7, 16)) == (0, 0)
+        assert await _balance(session, date(2026, 7, 17)) == (6000, 0)
+
+
+async def test_bill_receivable_cannot_be_moved_to_another_bill(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """ДЗ по оплаченному счёту в другой счёт не зачитывается.
+
+    Её деньги — оплаты своего счёта; перенос на второй счёт денег не двигает, а баланс на дату
+    показал бы такую ДЗ со дня второго счёта, даже если первый оплатили месяцем позже.
+    """
+    from app.services.counterparty_payments import CounterpartyPaymentError
+
+    async with async_session_factory() as session:
+        cp_id, wallet_id, first = await _two_part_bill(
+            session, name="ДЗ счёта в счёт", inn="6155000811"
+        )
+        second = await make_invoice(
+            session,
+            counterparty_id=cp_id,
+            amount="10000.00",
+            number="СЧ-0811-2",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 1),
+            payment_status="unpaid",
+        )
+        await _pay_bill(session, first, wallet_id=wallet_id, amount="10000.00", on=date(2026, 8, 5))
+        receivable = await _bill_prepayment(session, first)
+        await session.commit()
+
+        with pytest.raises(CounterpartyPaymentError, match="другой счёт"):
+            await supplier_prepayments.settle_invoice_from_prepayment(
+                session, invoice_id=second.id, prepayment_id=receivable.id
+            )
