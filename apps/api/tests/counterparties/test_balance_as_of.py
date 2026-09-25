@@ -644,3 +644,58 @@ async def test_opening_balance_settled_into_an_earlier_bill_counts_from_its_reco
         assert await _balance(session, date(2026, 7, 19)) == (0, 0), "остатка ещё нет"
         assert await _balance(session, date(2026, 7, 20)) == (Decimal("15862.24"), 0)
         assert await _balance(session, date(2026, 7, 31)) == (Decimal("15862.24"), 0)
+
+
+async def test_act_closed_by_a_bill_funded_from_a_later_opening_balance_stays_payable_until_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Акт, закрытый ДЗ счёта, которую фондирует более поздний остаток, — долг до дня остатка.
+
+    Остаток (запись 20.07) зачтён в счёт от 01.07, акт от 10.07 закрыт ДЗ этого счёта. Денег
+    до 20.07 нет ни у остатка, ни у счёта: 10.07–19.07 акт — живая кредиторка, с 20.07 всё
+    погашено. Дебиторка не появляется ни на одном срезе — остаток съеден актом в день, когда
+    возник (сценарий скептика Fable 25.09, сторона КЗ).
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Остаток → счёт → акт", inn="6155000813")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="15862.24",
+            number="СЧ-0813",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 1),
+            payment_status="unpaid",
+        )
+        opening = await supplier_prepayments.create_opening_prepayment(
+            session, counterparty_id=cp.id, amount=Decimal("15862.24"), kind="ad"
+        )
+        opening.created_at = datetime(2026, 7, 20, 9, 0, tzinfo=UTC)
+        await session.commit()
+        await supplier_prepayments.settle_invoice_from_prepayment(
+            session, invoice_id=bill.id, prepayment_id=opening.id
+        )
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="15862.24",
+            number="АКТ-0813",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 10),
+            payment_status="unpaid",
+        )
+        await session.commit()
+        await supplier_prepayments.settle_invoice_from_prepayment(
+            session, invoice_id=act.id, prepayment_id=(await _bill_prepayment(session, bill)).id
+        )
+        await session.refresh(act)
+        assert act.payment_status == "paid"
+
+        debt = Decimal("15862.24")
+        assert await _balance(session, date(2026, 7, 9)) == (0, 0)
+        assert await _balance(session, date(2026, 7, 10)) == (0, debt), "акт — долг"
+        assert await _balance(session, date(2026, 7, 19)) == (0, debt)
+        assert await _balance(session, date(2026, 7, 20)) == (0, 0), "остаток закрыл акт"
+        assert await _balance(session, date(2026, 8, 31)) == (0, 0)

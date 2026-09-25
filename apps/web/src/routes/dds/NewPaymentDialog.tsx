@@ -2427,7 +2427,7 @@ function IncomeForm({
         }
       : null;
   const refundTwinsResult = useQuery(refundTwinsQuery(refundTwinParams));
-  const refundTwinText = refundTwinWarning(refundTwinsResult.data?.items);
+  const refundTwinText = refundTwinWarning(refundTwinsResult.data);
 
   const mutation = useMutation({
     mutationFn: () =>

@@ -351,33 +351,35 @@ export function OperationClassifyDialog({
   const invoicesFor = (cpId: string) => invoicesByCounterparty.get(cpId) ?? [];
   // Возврат переплаты, уже проведённый другим каналом (наличные ↔ выписка): пересборка гасит
   // аванс каждым возвратным приходом, и те же деньги дважды погасили бы его вдвое. Спрашиваем
-  // по каждой возвратной строке с контрагентом ДО «Разнести» — предупреждаем, не запрещаем.
+  // по контрагенту СУММОЙ его возвратных строк ДО «Разнести» — доли 150 + 150 гасят аванс как
+  // один возврат на 300. Предупреждаем, не запрещаем.
   const refundArticleId = articles.find((a) => a.code === SUPPLIER_REFUND_ARTICLE_CODE)?.id;
-  const refundTwinParams = new Map<string, RefundTwinQuery>();
-  for (const item of rows) {
-    const amount = round2(Number(item.amount) || 0);
-    if (
-      row?.direction !== "in" ||
-      !refundArticleId ||
-      item.articleId !== refundArticleId ||
-      !item.counterpartyId ||
-      amount <= 0
-    ) {
-      continue;
+  const refundTotals = new Map<string, number>();
+  if (row?.direction === "in" && refundArticleId) {
+    for (const item of rows) {
+      if (item.articleId !== refundArticleId || !item.counterpartyId) continue;
+      const sum = (refundTotals.get(item.counterpartyId) ?? 0) + (Number(item.amount) || 0);
+      refundTotals.set(item.counterpartyId, round2(sum));
     }
-    const base = { counterparty_id: item.counterpartyId, amount: amount.toFixed(2) };
-    const params: RefundTwinQuery | null = isOperation
-      ? { ...base, bank_operation_id: targetId }
-      : row.wallet_id
-        ? { ...base, wallet_id: row.wallet_id, operation_date: row.operation_date }
-        : null;
-    if (params) refundTwinParams.set(`${base.counterparty_id}:${base.amount}`, params);
   }
+  const refundTwinParams: RefundTwinQuery[] = [];
+  refundTotals.forEach((sum, counterpartyId) => {
+    if (sum <= 0 || !row) return;
+    const base = { counterparty_id: counterpartyId, amount: sum.toFixed(2) };
+    if (isOperation) refundTwinParams.push({ ...base, bank_operation_id: targetId });
+    else if (row.wallet_id) {
+      refundTwinParams.push({
+        ...base,
+        wallet_id: row.wallet_id,
+        operation_date: row.operation_date,
+      });
+    }
+  });
   const refundTwinQueries = useQueries({
-    queries: Array.from(refundTwinParams.values()).map((params) => refundTwinsQuery(params)),
+    queries: refundTwinParams.map((params) => refundTwinsQuery(params)),
   });
   const refundTwinWarnings = refundTwinQueries
-    .map((query) => refundTwinWarning(query.data?.items))
+    .map((query) => refundTwinWarning(query.data))
     .filter((text): text is string => Boolean(text));
   // Помещения строк «объектных» статей: тот же ключ, что у OperationLocationPicker (общий кэш,
   // второго запроса нет). Родителю нужен сам факт 403 — без права source.locations.read

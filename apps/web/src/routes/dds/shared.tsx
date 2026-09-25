@@ -32,7 +32,7 @@ import {
   getRefundTwins,
   triggerBankSync,
   type DdsProvider,
-  type RefundTwin,
+  type RefundTwinList,
   type RefundTwinQuery,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
@@ -477,8 +477,9 @@ const REFUND_TWIN_SOURCE: Record<string, string> = {
  * бывают, решает оператор. Дату «ГГГГ-ММ-ДД» разворачиваем строкой — ``new Date`` прочёл бы её
  * как полночь по UTC.
  */
-export function refundTwinWarning(twins: RefundTwin[] | undefined): string | null {
-  if (!twins?.length) return null;
+export function refundTwinWarning(found: RefundTwinList | undefined): string | null {
+  const twins = found?.items ?? [];
+  if (!twins.length) return null;
   const list = twins
     .map((twin) => {
       const channel = twin.channel === "cash" ? "наличными" : "по банку";
@@ -487,9 +488,13 @@ export function refundTwinWarning(twins: RefundTwin[] | undefined): string | nul
       return `${formatDdsMoney(twin.amount)} от ${day} ${channel} на «${twin.wallet_name}» (${source})`;
     })
     .join("; ");
-  const lead = twins.length === 1 ? "уже есть возврат" : "уже есть возвраты";
+  const lead = found?.combined
+    ? "уже есть возвраты, которые вместе дают ту же сумму"
+    : twins.length === 1
+      ? "уже есть возврат на ту же сумму"
+      : "уже есть возвраты на ту же сумму";
   return (
-    `Похоже на задвоение: у этого контрагента ${lead} на ту же сумму — ${list}. ` +
+    `Похоже на задвоение: у этого контрагента ${lead} — ${list}. ` +
     "Если это те же деньги, не проводите их возвратом второй раз: аванс погасится дважды. " +
     "Лишний приход исключите из ДДС."
   );

@@ -113,9 +113,10 @@ async def test_cash_refund_then_the_same_statement_is_flagged_and_would_double_s
             on_date=operation.operation_date,
             channel="bank",
         )
-        assert [(t.transaction_id, t.channel, t.wallet_name) for t in twins] == [
+        assert [(t.transaction_id, t.channel, t.wallet_name) for t in twins.items] == [
             (cash.id, "cash", "Сейф")
         ]
+        assert not twins.combined
 
         # Оператор не внял — разметил выписку возвратом: аванс погашен вдвое.
         await apply_operation_action(
@@ -133,7 +134,7 @@ async def test_cash_refund_then_the_same_statement_is_flagged_and_would_double_s
             on_date=OP_DATE,
             channel="cash",
         )
-        assert [(t.channel, t.source_kind) for t in twins] == [("bank", "bank_operation")]
+        assert [(t.channel, t.source_kind) for t in twins.items] == [("bank", "bank_operation")]
 
 
 async def test_only_a_same_amount_refund_of_the_other_channel_nearby_is_a_twin(
@@ -183,8 +184,7 @@ async def test_only_a_same_amount_refund_of_the_other_channel_nearby_is_a_twin(
                 on_date=OP_DATE,
                 channel="cash",
             )
-            == []
-        )
+        ).items == []
 
         edge = await bank_income(
             amount="300.00", on=OP_DATE - timedelta(days=REFUND_TWIN_WINDOW_DAYS)
@@ -197,7 +197,109 @@ async def test_only_a_same_amount_refund_of_the_other_channel_nearby_is_a_twin(
             on_date=OP_DATE,
             channel="cash",
         )
-        assert [t.transaction_id for t in twins] == [edge.id], "край окна включён"
+        assert [t.transaction_id for t in twins.items] == [edge.id], "край окна включён"
+
+
+async def test_refund_split_into_shares_is_compared_as_one_payment(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Выписка 300, разнесённая двумя возвратными долями по 150, — один платёж на 300.
+
+    Пересборка спишет аванс на все 300, а построчное сравнение с наличными 300 молчало бы
+    (находка скептика 25.09): доли одной операции складываются, окно разбора спрашивает суммой.
+    """
+    from app.services.banking.classifier import OperationSplitLine, apply_operation_split
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Возврат долями", inn="6155030404")
+        safe = await make_wallet(session, name="Сейф", wallet_type="cash_safe")
+        refund = await _refund_article(session)
+        account = await make_account(session)
+        await make_wallet(session, name="Т-Банк", wallet_type="bank", account_id=account.id)
+        operation = await make_bank_operation(
+            session, amount="300.00", direction="in", account_id=account.id, operation_date=OP_DATE
+        )
+        await session.commit()
+        await apply_operation_split(
+            session,
+            operation,
+            splits=[
+                OperationSplitLine(refund.id, Decimal("150.00")),
+                OperationSplitLine(refund.id, Decimal("150.00")),
+            ],
+            counterparty_id=cp.id,
+        )
+        await session.commit()
+
+        # «Новый платёж» на 300 наличными видит выписку одним платежом на 300.
+        twins = await find_refund_twins(
+            session,
+            counterparty_id=cp.id,
+            amount=Decimal("300.00"),
+            on_date=OP_DATE,
+            channel="cash",
+        )
+        assert [(t.amount, t.source_kind) for t in twins.items] == [
+            (Decimal("300.00"), "bank_operation")
+        ]
+        assert not twins.combined
+
+        # И наоборот: наличные 300 уже есть — окно разбора спрашивает суммой долей (300).
+        await _income(
+            session, wallet=safe, counterparty_id=cp.id, article_id=refund.id, amount="300.00"
+        )
+        await session.commit()
+        twins = await find_refund_twins(
+            session,
+            counterparty_id=cp.id,
+            amount=Decimal("300.00"),
+            on_date=OP_DATE,
+            channel="bank",
+        )
+        assert [t.channel for t in twins.items] == ["cash"]
+
+
+async def test_refund_entered_in_parts_is_flagged_by_the_window_total(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Наличные 150 + 150 двумя приходами против выписки на 300 — та же ошибка в два приёма."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Возврат частями", inn="6155030505")
+        safe = await make_wallet(session, name="Сейф", wallet_type="cash_safe")
+        refund = await _refund_article(session)
+        first = await _income(
+            session, wallet=safe, counterparty_id=cp.id, article_id=refund.id, amount="150.00"
+        )
+        second = await _income(
+            session,
+            wallet=safe,
+            counterparty_id=cp.id,
+            article_id=refund.id,
+            amount="150.00",
+            on=OP_DATE + timedelta(days=1),
+        )
+        await session.commit()
+
+        twins = await find_refund_twins(
+            session,
+            counterparty_id=cp.id,
+            amount=Decimal("300.00"),
+            on_date=OP_DATE + timedelta(days=2),
+            channel="bank",
+        )
+        assert twins.combined
+        assert [t.transaction_id for t in twins.items] == [first.id, second.id]
+
+        # Сумма окна не сходится — молчим: 150 + 150 не двойник выписки на 250.
+        assert (
+            await find_refund_twins(
+                session,
+                counterparty_id=cp.id,
+                amount=Decimal("250.00"),
+                on_date=OP_DATE,
+                channel="bank",
+            )
+        ).items == []
 
 
 def test_refund_twins_endpoint_answers_for_an_operation_and_for_a_wallet(
@@ -248,6 +350,7 @@ def test_refund_twins_endpoint_answers_for_an_operation_and_for_a_wallet(
     assert by_operation.status_code == 200, by_operation.text
     body = by_operation.json()
     assert body["window_days"] == REFUND_TWIN_WINDOW_DAYS
+    assert body["combined"] is False
     assert [
         (item["transaction_id"], item["channel"], item["amount"]) for item in body["items"]
     ] == [(ids["cash"], "cash", "450.50")]

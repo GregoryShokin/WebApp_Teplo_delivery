@@ -876,8 +876,9 @@ async def get_refund_twins(
     """Тот же возврат контрагента, уже проведённый другим каналом (``services.refund_twins``).
 
     Окна спрашивают ДО проведения: разбор операции выписки передаёт саму операцию (канал —
-    банк, дата — её), «Новый платёж» и разбор ручной проводки — кошелёк и дату. Предупреждение,
-    а не запрет: два возврата одной суммы бывают, решает оператор."""
+    банк, дата — её), «Новый платёж» и разбор ручной проводки — кошелёк и дату; ``amount`` —
+    сумма ВСЕХ возвратных строк контрагента в разборе. Предупреждение, а не запрет: два
+    возврата одной суммы бывают, решает оператор."""
     if bank_operation_id is not None:
         operation = await session.get(BankOperation, bank_operation_id)
         if operation is None:
@@ -891,10 +892,7 @@ async def get_refund_twins(
         channel = wallet_channel(wallet.type)
         on_date = operation_date or datetime.now(MOSCOW_TZ).date()
     else:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Нужна операция выписки или счёт зачисления",
-        )
+        raise HTTPException(status_code=422, detail="Нужна операция выписки или счёт зачисления")
     twins = await find_refund_twins(
         session,
         counterparty_id=counterparty_id,
@@ -912,8 +910,9 @@ async def get_refund_twins(
                 "channel": twin.channel,
                 "source_kind": twin.source_kind,
             }
-            for twin in twins
+            for twin in twins.items
         ],
+        "combined": twins.combined,
         "window_days": REFUND_TWIN_WINDOW_DAYS,
     }
 

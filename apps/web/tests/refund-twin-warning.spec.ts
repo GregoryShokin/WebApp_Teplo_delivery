@@ -52,38 +52,37 @@ async function mockTwins(page: Page, twin: Record<string, unknown>) {
   return asked;
 }
 
-test("разбор выписки возвратом предупреждает о том же возврате наличными", async ({ page }) => {
+const REFUND_ARTICLE = {
+  id: REFUND_ARTICLE_ID,
+  code: REFUND_CODE,
+  name: "Возврат переплаты от поставщиков",
+  movement_type: "inflow",
+  activity_type: "operating",
+  parent_id: null,
+  is_active: true,
+  kassa_enabled: false,
+  location_required: false,
+  lease_bound: false,
+  asset_link_kind: null,
+  description: null,
+  aliases: [],
+};
+
+const SKACHKOVA = {
+  counterparty_id: CP_ID,
+  name: "ИП Скачкова",
+  inn: "610000000001",
+  status: "active",
+  relationship: "official",
+};
+
+// Операция выписки 300 ₽, уже разнесённая возвратными долями (суммы долей — `shares`).
+async function mockClassifiedOperation(page: Page, shares: string[]) {
   await mockAuth(page);
-  await page.route("**/api/v1/dds/articles**", (route) =>
-    fulfillJson(route, [
-      {
-        id: REFUND_ARTICLE_ID,
-        code: REFUND_CODE,
-        name: "Возврат переплаты от поставщиков",
-        movement_type: "inflow",
-        activity_type: "operating",
-        parent_id: null,
-        is_active: true,
-        kassa_enabled: false,
-        location_required: false,
-        lease_bound: false,
-        asset_link_kind: null,
-        description: null,
-        aliases: [],
-      },
-    ]),
-  );
+  await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, [REFUND_ARTICLE]));
   await page.route("**/api/v1/dds/wallets**", (route) => fulfillJson(route, []));
   await page.route("**/api/v1/counterparties/registry**", (route) =>
-    fulfillJson(route, [
-      {
-        counterparty_id: CP_ID,
-        name: "ИП Скачкова",
-        inn: "610000000001",
-        status: "active",
-        relationship: "official",
-      },
-    ]),
+    fulfillJson(route, [SKACHKOVA]),
   );
   await page.route("**/api/v1/dds/journal**", (route) =>
     fulfillJson(route, {
@@ -114,21 +113,32 @@ test("разбор выписки возвратом предупреждает 
       bank_operation_id: OP_ID,
       amount: "300.00",
       classification_status: "classified",
-      lines: [
-        {
-          cashflow_transaction_id: "66666666-6666-6666-6666-666666666666",
-          article_id: REFUND_ARTICLE_ID,
-          amount: "300.00",
-          counterparty_id: CP_ID,
-          invoice_id: null,
-          employee_id: null,
-          location_id: null,
-          lease_id: null,
-          asset_id: null,
-        },
-      ],
+      lines: shares.map((amount, index) => ({
+        cashflow_transaction_id: `66666666-6666-6666-6666-66666666666${index}`,
+        article_id: REFUND_ARTICLE_ID,
+        amount,
+        counterparty_id: CP_ID,
+        invoice_id: null,
+        employee_id: null,
+        location_id: null,
+        lease_id: null,
+        asset_id: null,
+      })),
     }),
   );
+}
+
+async function openOperationDialog(page: Page) {
+  await page.goto("/dds");
+  await page.getByRole("tab", { name: /Журнал ДДС/ }).click();
+  await page.getByRole("row").filter({ hasText: "Возврат переплаты по счёту 17" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+test("разбор выписки возвратом предупреждает о том же возврате наличными", async ({ page }) => {
+  await mockClassifiedOperation(page, ["300.00"]);
   const asked = await mockTwins(page, {
     transaction_id: "77777777-7777-7777-7777-777777777777",
     operation_date: "2026-09-20",
@@ -138,11 +148,7 @@ test("разбор выписки возвратом предупреждает 
     source_kind: "new_payment_income",
   });
 
-  await page.goto("/dds");
-  await page.getByRole("tab", { name: /Журнал ДДС/ }).click();
-  await page.getByRole("row").filter({ hasText: "Возврат переплаты по счёту 17" }).first().click();
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
+  const dialog = await openOperationDialog(page);
 
   const warning = dialog.getByRole("alert").filter({ hasText: "Похоже на задвоение" });
   await expect(warning).toBeVisible();
@@ -159,6 +165,47 @@ test("разбор выписки возвратом предупреждает 
   expect(params.get("wallet_id")).toBeNull();
 
   await dialog.screenshot({ path: "test-results/refund-twin-operation.png" });
+});
+
+test("доли 150 + 150 спрашивают одним возвратом на 300 — и видят два наличных прихода", async ({
+  page,
+}) => {
+  await mockClassifiedOperation(page, ["150.00", "150.00"]);
+  const asked: URLSearchParams[] = [];
+  await page.route("**/api/v1/dds/refund-twins**", (route) => {
+    asked.push(new URL(route.request().url()).searchParams);
+    return fulfillJson(route, {
+      combined: true,
+      window_days: 7,
+      items: [
+        {
+          transaction_id: "77777777-7777-7777-7777-777777777771",
+          operation_date: "2026-09-20",
+          amount: "150.00",
+          wallet_name: "Сейф",
+          channel: "cash",
+          source_kind: "new_payment_income",
+        },
+        {
+          transaction_id: "77777777-7777-7777-7777-777777777772",
+          operation_date: "2026-09-21",
+          amount: "150.00",
+          wallet_name: "Сейф",
+          channel: "cash",
+          source_kind: "new_payment_income",
+        },
+      ],
+    });
+  });
+
+  const dialog = await openOperationDialog(page);
+  const warning = dialog.getByRole("alert").filter({ hasText: "Похоже на задвоение" });
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("вместе дают ту же сумму");
+  await expect(warning).toContainText("от 21.09.2026 наличными");
+
+  // Пересборка гасит аванс всеми долями сразу — спрашиваем их суммой, а не строкой по 150.
+  expect(new Set(asked.map((params) => params.get("amount")))).toEqual(new Set(["300.00"]));
 });
 
 test("«Новый платёж» — возврат наличными предупреждает о той же выписке", async ({ page }) => {
@@ -243,35 +290,9 @@ test("разбор кейса собственником тоже предупр
   page,
 }) => {
   await mockAuth(page);
-  await page.route("**/api/v1/dds/articles**", (route) =>
-    fulfillJson(route, [
-      {
-        id: REFUND_ARTICLE_ID,
-        code: REFUND_CODE,
-        name: "Возврат переплаты от поставщиков",
-        movement_type: "inflow",
-        activity_type: "operating",
-        parent_id: null,
-        is_active: true,
-        kassa_enabled: false,
-        location_required: false,
-        lease_bound: false,
-        asset_link_kind: null,
-        description: null,
-        aliases: [],
-      },
-    ]),
-  );
+  await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, [REFUND_ARTICLE]));
   await page.route("**/api/v1/counterparties/registry**", (route) =>
-    fulfillJson(route, [
-      {
-        counterparty_id: CP_ID,
-        name: "ИП Скачкова",
-        inn: "610000000001",
-        status: "active",
-        relationship: "official",
-      },
-    ]),
+    fulfillJson(route, [SKACHKOVA]),
   );
   await page.route("**/api/v1/dds/owner-review**", (route) =>
     fulfillJson(route, {

@@ -856,7 +856,10 @@ class NewPaymentIncomeRead(BaseModel):
 
 
 class RefundTwinRead(BaseModel):
-    """Возврат контрагента на ту же сумму, уже проведённый другим каналом (наличные ↔ банк)."""
+    """Возвратный платёж контрагента, уже проведённый другим каналом (наличные ↔ банк).
+
+    Доли одной операции выписки сложены: ``amount`` — сумма платежа, ``transaction_id`` — его
+    первая проводка."""
 
     transaction_id: uuid.UUID
     operation_date: date
@@ -869,6 +872,8 @@ class RefundTwinRead(BaseModel):
 
 class RefundTwinListRead(BaseModel):
     items: list[RefundTwinRead]
+    # Совпал не один платёж, а сумма всех возвратов другим каналом в окне (150 + 150 против 300).
+    combined: bool = False
     window_days: int
 
 

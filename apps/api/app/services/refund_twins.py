@@ -12,8 +12,9 @@
 исправляет человек (исключает лишнюю проводку). Здесь мы только показываем ему совпадение ДО
 того, как он её совершит.
 
-ЧТО СЧИТАЕМ ДВОЙНИКОМ. Приход того же контрагента с возвратной статьёй на ту же сумму в пределах
-``REFUND_TWIN_WINDOW_DAYS`` дней, проведённый ДРУГИМ каналом: наличные против банка. Внутри
+ЧТО СЧИТАЕМ ДВОЙНИКОМ. Возвратный платёж того же контрагента на ту же сумму в пределах
+``REFUND_TWIN_WINDOW_DAYS`` дней, проведённый ДРУГИМ каналом: наличные против банка (платёж —
+операция выписки целиком или отдельная проводка; либо все такие платежи окна вместе). Внутри
 одного канала совпадение — не наша дыра: две операции выписки — это два реальных поступления,
 а своя же проводка при переразметке иначе нашла бы саму себя. Исключённые проводки и
 гашения бартерного займа деньгами (``not_barter_money_return``) дебиторку не гасят — и
@@ -23,7 +24,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -50,12 +51,22 @@ RefundChannel = Literal["cash", "bank"]
 
 @dataclass(frozen=True)
 class RefundTwin:
+    """Один возвратный ПЛАТЁЖ другим каналом: операция выписки со всеми её возвратными долями
+    этого контрагента или отдельная проводка."""
+
     transaction_id: uuid.UUID
     operation_date: date
     amount: Decimal
     wallet_name: str
     channel: RefundChannel
     source_kind: str
+
+
+@dataclass(frozen=True)
+class RefundTwins:
+    items: list[RefundTwin]
+    # Совпала не одна проводка, а СУММА возвратов другим каналом в окне (150 + 150 против 300).
+    combined: bool = False
 
 
 def wallet_channel(wallet_type: str) -> RefundChannel:
@@ -70,11 +81,18 @@ async def find_refund_twins(
     amount: Decimal,
     on_date: date,
     channel: RefundChannel,
-) -> list[RefundTwin]:
-    """Возвраты контрагента на ту же сумму рядом по дате, уже проведённые другим каналом."""
+) -> RefundTwins:
+    """Возвраты контрагента на ту же сумму рядом по дате, уже проведённые другим каналом.
+
+    СРАВНИВАЕМ ПЛАТЕЖИ, А НЕ СТРОКИ. Выписку на 300 можно разнести двумя возвратными долями по
+    150 — пересборка всё равно спишет аванс на 300, а построчное сравнение с наличными 300
+    промолчало бы. Поэтому доли одной операции выписки складываются в один платёж, а окно
+    разбора спрашивает суммой возвратных строк контрагента. Если отдельного платежа на эту сумму
+    нет, сверяем ещё и сумму ВСЕХ возвратов другим каналом в окне: наличные 150 + 150 против
+    выписки на 300 — та же ошибка, разнесённая на два приёма."""
     amount = money(amount)
     if amount <= 0:
-        return []
+        return RefundTwins(items=[])
     cash_types = tuple(sorted(CASH_WALLET_TYPES))
     other_channel = (
         Wallet.type.not_in(cash_types) if channel == "cash" else Wallet.type.in_(cash_types)
@@ -87,7 +105,6 @@ async def find_refund_twins(
             .where(
                 CashflowTransaction.counterparty_id == counterparty_id,
                 CashflowTransaction.direction == "in",
-                CashflowTransaction.amount == amount,
                 CashflowTransaction.quality_status != EXCLUDED_QUALITY,
                 CashflowTransaction.operation_date
                 >= on_date - timedelta(days=REFUND_TWIN_WINDOW_DAYS),
@@ -100,14 +117,30 @@ async def find_refund_twins(
             .order_by(CashflowTransaction.operation_date, CashflowTransaction.created_at)
         )
     ).all()
-    return [
-        RefundTwin(
-            transaction_id=transaction.id,
-            operation_date=transaction.operation_date,
-            amount=money(transaction.amount),
-            wallet_name=wallet_name,
-            channel=wallet_channel(wallet_type),
-            source_kind=transaction.source_kind,
+    payments: dict[uuid.UUID, RefundTwin] = {}
+    for transaction, wallet_name, wallet_type in rows:
+        # Доли разбора одной операции выписки — один платёж: у всех source_id = операция.
+        key = (
+            transaction.source_id
+            if transaction.source_kind == "bank_operation" and transaction.source_id is not None
+            else transaction.id
         )
-        for transaction, wallet_name, wallet_type in rows
-    ]
+        known = payments.get(key)
+        if known is None:
+            payments[key] = RefundTwin(
+                transaction_id=transaction.id,
+                operation_date=transaction.operation_date,
+                amount=money(transaction.amount),
+                wallet_name=wallet_name,
+                channel=wallet_channel(wallet_type),
+                source_kind=transaction.source_kind,
+            )
+        else:
+            payments[key] = replace(known, amount=known.amount + money(transaction.amount))
+    same = [payment for payment in payments.values() if payment.amount == amount]
+    if same:
+        return RefundTwins(items=same)
+    everything = list(payments.values())
+    if len(everything) > 1 and sum((p.amount for p in everything), Decimal("0")) == amount:
+        return RefundTwins(items=everything, combined=True)
+    return RefundTwins(items=[])

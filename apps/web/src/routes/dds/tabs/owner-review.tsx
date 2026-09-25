@@ -183,7 +183,7 @@ function OwnerReviewCard({
         }
       : null;
   const refundTwinsResult = useQuery(refundTwinsQuery(refundTwinParams));
-  const refundTwinText = refundTwinWarning(refundTwinsResult.data?.items);
+  const refundTwinText = refundTwinWarning(refundTwinsResult.data);
 
   const invalidate = async () => {
     await Promise.all([

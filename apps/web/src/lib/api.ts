@@ -3086,10 +3086,16 @@ export type RefundTwin = {
   source_kind: string;
 };
 
-export type RefundTwinList = { items: RefundTwin[]; window_days: number };
+export type RefundTwinList = {
+  items: RefundTwin[];
+  // Совпал не один платёж, а сумма всех возвратов другим каналом в окне (150 + 150 против 300).
+  combined: boolean;
+  window_days: number;
+};
 
 // Операция выписки даёт канал и дату сама; «Новый платёж» и ручная проводка — кошельком
-// (без даты бэк берёт сегодняшний день по Москве).
+// (без даты бэк берёт сегодняшний день по Москве). amount — сумма ВСЕХ возвратных строк
+// контрагента в разборе: доли 150 + 150 гасят аванс как один возврат на 300.
 export type RefundTwinQuery = {
   counterparty_id: string;
   amount: string;
