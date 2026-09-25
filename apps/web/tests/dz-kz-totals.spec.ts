@@ -86,8 +86,18 @@ test.beforeEach(async ({ page }) => {
       wallet: { balance: "0" },
     }),
   );
+  // Плитки состояний обязательны: без needs_period страница падает на счётчике вкладки
+  // «Признание расходов» целиком, и ни одна плитка не рисуется.
   await page.route(/\/api\/v1\/accounting\/suppliers(\?.*)?$/, (route) =>
-    fulfillJson(route, { items: [], needs_review_total: 0 }),
+    fulfillJson(route, {
+      items: [],
+      needs_review_total: 0,
+      in_expense: { count: 0, amount: 0 },
+      period_running: { count: 0, amount: 0 },
+      waiting_document: { count: 0, amount: 0 },
+      needs_period: { count: 0, amount: 0 },
+      in_expense_month: null,
+    }),
   );
 });
 
