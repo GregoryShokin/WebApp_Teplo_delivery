@@ -45,6 +45,7 @@ from app.models import (
 )
 from app.services.banking.cashflow_classify import CashflowSplitLine, apply_cashflow_split
 from app.services.owner_analytics import DIVIDENDS_ARTICLE_CODE, OWNER_ROLE
+from app.services.supplier_prepayments import apply_closing_document
 
 HEADERS = {"X-User-Role": "admin"}
 
@@ -423,3 +424,234 @@ def test_bank_operation_split_keeps_dividends_share_off_receivables(
     assert response.status_code == 200, response.text
     assert _prepayments(async_session_factory, pavel) == [("subscription", LOAN)]
     assert _receivable(client, pavel) == LOAN
+
+
+# --- Находки скептика 25.09: двери, которые до гейта не доходили ------------------------------
+
+
+def _rent_act(
+    factory: async_sessionmaker[AsyncSession], owner: uuid.UUID, *, amount: Decimal, day: date
+) -> uuid.UUID:
+    async def go() -> uuid.UUID:
+        async with factory() as session:
+            act = await make_invoice(
+                session,
+                counterparty_id=owner,
+                amount=amount,
+                invoice_date=day,
+                operational_scope="finance",
+            )
+            await session.commit()
+            return act.id
+
+    return _run(go())
+
+
+def _act_paid_by(
+    factory: async_sessionmaker[AsyncSession], act_id: uuid.UUID
+) -> tuple[str, Decimal]:
+    """Статус акта и сколько его оплачено ДЕНЬГАМИ (cash/bank), а не зачётом аванса."""
+
+    async def go() -> tuple[str, Decimal]:
+        async with factory() as session:
+            act = await session.get(SupplierInvoice, act_id)
+            assert act is not None
+            rows = (
+                await session.scalars(
+                    select(InvoicePaymentAllocation.amount).where(
+                        InvoicePaymentAllocation.invoice_id == act_id,
+                        InvoicePaymentAllocation.source_kind != "prepayment",
+                    )
+                )
+            ).all()
+            return act.payment_status, sum((Decimal(r) for r in rows), Decimal("0"))
+
+    return _run(go())
+
+
+@pytest.mark.parametrize("source_kind", ["bank_operation", "manual", "template_import"])
+def test_payment_fully_spent_on_owners_rent_is_released_by_dividends(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    source_kind: str,
+) -> None:
+    """Платёж, целиком ушедший правилом 1 в зачёт акта, переразметкой в дивиденды акт отпускает.
+
+    НАХОДКА F1. Своей дебиторки у такого платежа нет — деньги целиком легли в акт аренды
+    собственника зачётом правила 1 (``origin='rule1'``). Ручная дверь спрашивает «свободны ли
+    деньги» и считала любой зачёт чужим: правило 1 не звалось вовсе, и акт так и оставался
+    оплаченным дивидендами, а кредиторка перед собственником — нулём вместо 20 000 ₽.
+    """
+    seeded = _seed(async_session_factory)
+    grigoriy = seeded["grigoriy"]
+    act_id = _rent_act(async_session_factory, grigoriy, amount=RENT_ACT, day=date(2026, 7, 1))
+    txn_id = _add_txn(
+        async_session_factory,
+        wallet_id=seeded["bank"] if source_kind == "bank_operation" else seeded["safe"],
+        article_id=seeded["rent"],
+        amount=RENT_ACT,
+        source_kind=source_kind,
+        operation_date=date(2026, 7, 20),
+    )
+
+    _patch(client, txn_id, article_id=seeded["rent"], counterparty_id=grigoriy)
+    assert _act_paid_by(async_session_factory, act_id) == ("paid", RENT_ACT)
+    assert _prepayments(async_session_factory, grigoriy) == []
+
+    _patch(client, txn_id, article_id=seeded["dividends"], counterparty_id=grigoriy)
+    assert _act_paid_by(async_session_factory, act_id) == ("unpaid", Decimal("0")), (
+        "акт аренды собственника остался оплаченным дивидендами"
+    )
+    assert _prepayments(async_session_factory, grigoriy) == []
+
+
+def test_split_of_payment_spent_on_owners_rent_releases_it(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """НАХОДКА F3 — тот же корень через ручной разбор: свобода денег считается по родителю."""
+    seeded = _seed(async_session_factory)
+    grigoriy = seeded["grigoriy"]
+    act_id = _rent_act(async_session_factory, grigoriy, amount=RENT_ACT, day=date(2026, 7, 1))
+    txn_id = _add_txn(
+        async_session_factory,
+        wallet_id=seeded["safe"],
+        article_id=seeded["rent"],
+        amount=RENT_ACT,
+        source_kind="manual",
+        operation_date=date(2026, 7, 20),
+        counterparty_id=grigoriy,
+    )
+
+    async def split(article_id: uuid.UUID) -> None:
+        async with async_session_factory() as session:
+            txn = await session.get(CashflowTransaction, txn_id)
+            assert txn is not None
+            await apply_cashflow_split(
+                session,
+                txn,
+                splits=[CashflowSplitLine(article_id, RENT_ACT, counterparty_id=grigoriy)],
+            )
+            await session.commit()
+
+    _run(split(seeded["rent"]))
+    assert _act_paid_by(async_session_factory, act_id) == ("paid", RENT_ACT)
+
+    _run(split(seeded["dividends"]))
+    assert _act_paid_by(async_session_factory, act_id) == ("unpaid", Decimal("0"))
+    assert _prepayments(async_session_factory, grigoriy) == []
+
+
+@pytest.mark.parametrize("source_kind", ["bank_operation", "manual"])
+def test_reclassifying_a_settled_advance_into_dividends_is_refused(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    source_kind: str,
+) -> None:
+    """НАХОДКА F2. Дебиторку, которую уже погасил документ, в дивиденды молча не переносим.
+
+    Платёж 50 000 ₽ с арендой стал авансом, пришёл акт на 20 000 ₽ и погасил его. Раньше
+    переразметка в «Дивиденды» проходила и оставляла всё как было: долг собственника 30 000 ₽
+    со статьёй аренды и акт, оплаченный дивидендами, — человек думал, что переразметил. Снять
+    гашение документа по пути нельзя (у него свой месяц и своё признание), поэтому — отказ
+    409 до записи, и цифры остаются прежними.
+    """
+    seeded = _seed(async_session_factory)
+    grigoriy = seeded["grigoriy"]
+    payment = Decimal("50000.00")
+    txn_id = _add_txn(
+        async_session_factory,
+        wallet_id=seeded["bank"] if source_kind == "bank_operation" else seeded["safe"],
+        article_id=seeded["rent"],
+        amount=payment,
+        source_kind=source_kind,
+        operation_date=date(2026, 7, 20),
+    )
+    _patch(client, txn_id, article_id=seeded["rent"], counterparty_id=grigoriy)
+    act_id = _rent_act(async_session_factory, grigoriy, amount=RENT_ACT, day=date(2026, 7, 25))
+
+    async def close() -> None:
+        async with async_session_factory() as session:
+            act = await session.get(SupplierInvoice, act_id)
+            assert act is not None
+            await apply_closing_document(session, act, as_of=date(2026, 7, 26))
+            await session.commit()
+
+    _run(close())
+    assert _receivable(client, grigoriy) == payment - RENT_ACT
+
+    response = client.patch(
+        f"/api/v1/dds/transactions/{txn_id}",
+        json={"article_id": str(seeded["dividends"]), "counterparty_id": str(grigoriy)},
+        headers=HEADERS,
+    )
+    assert response.status_code == 409, response.text
+    assert "дивиденд" in response.json()["detail"]
+
+    async def state() -> tuple[uuid.UUID | None, str]:
+        async with async_session_factory() as session:
+            txn = await session.get(CashflowTransaction, txn_id)
+            act = await session.get(SupplierInvoice, act_id)
+            assert txn is not None and act is not None
+            return txn.article_id, act.payment_status
+
+    assert _run(state()) == (seeded["rent"], "paid")
+    assert _prepayments(async_session_factory, grigoriy) == [("subscription", payment)]
+    assert _receivable(client, grigoriy) == payment - RENT_ACT
+
+
+def test_bank_operation_reclassification_refusal_is_409_not_500(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Тот же отказ через разбор операции выписки: роут отдаёт его 409-й, а не падает 500-й."""
+    seeded = _seed(async_session_factory)
+    grigoriy = seeded["grigoriy"]
+    payment = Decimal("50000.00")
+
+    async def operation() -> uuid.UUID:
+        async with async_session_factory() as session:
+            op = await make_bank_operation(
+                session,
+                amount=payment,
+                direction="out",
+                account_id=seeded["account"],
+                name="Григорий",
+                operation_date=date(2026, 7, 20),
+            )
+            await session.commit()
+            return op.id
+
+    op_id = _run(operation())
+
+    def classify(article_id: uuid.UUID):
+        return client.post(
+            f"/api/v1/dds/operations/{op_id}/classify",
+            json={
+                "action": "split",
+                "splits": [
+                    {
+                        "article_id": str(article_id),
+                        "amount": str(payment),
+                        "counterparty_id": str(grigoriy),
+                    }
+                ],
+            },
+            headers=HEADERS,
+        )
+
+    response = classify(seeded["rent"])
+    assert response.status_code == 200, response.text
+    act_id = _rent_act(async_session_factory, grigoriy, amount=RENT_ACT, day=date(2026, 7, 25))
+
+    async def close() -> None:
+        async with async_session_factory() as session:
+            act = await session.get(SupplierInvoice, act_id)
+            assert act is not None
+            await apply_closing_document(session, act, as_of=date(2026, 7, 26))
+            await session.commit()
+
+    _run(close())
+
+    response = classify(seeded["dividends"])
+    assert response.status_code == 409, response.text
+    assert _prepayments(async_session_factory, grigoriy) == [("subscription", payment)]
+    assert _receivable(client, grigoriy) == payment - RENT_ACT

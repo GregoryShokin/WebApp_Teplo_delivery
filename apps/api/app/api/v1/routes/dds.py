@@ -1703,8 +1703,10 @@ async def classify_owner_review_case(
             counterparty_id=payload.counterparty_id,
             quality_status="owner_review",
         )
-    except accounting_periods.PeriodClosed as error:
+    except (accounting_periods.PeriodClosed, CounterpartyPaymentError) as error:
         # Замок обязан объяснять, а не падать: без этого отказ выходил бы к владельцу как 500.
+        # Отказ правила 1 (зачёт в банк-черновике, погашенная предоплата под дивиденды) —
+        # тоже конфликт состояния: без перехвата он уходил бы к владельцу как 500.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if payload.action == "mark_internal_transfer":
         await find_and_link_transfer_pairs(session)
@@ -2063,9 +2065,11 @@ async def classify_operation(
             # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
             # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-        except accounting_periods.PeriodClosed as error:
+        except (accounting_periods.PeriodClosed, CounterpartyPaymentError) as error:
             # Закрытый месяц — конфликт состояния, а не негодный ввод. Ловим ДО ValueError:
             # PeriodClosed его подкласс, иначе отказ ушёл бы к владельцу как 400 без смысла.
+            # Отказ правила 1 (зачёт в банк-черновике, погашенная предоплата под дивиденды) —
+            # тоже конфликт состояния: без перехвата он уходил бы к владельцу как 500.
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
@@ -2179,7 +2183,9 @@ async def classify_operation(
             # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
             # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-        except accounting_periods.PeriodClosed as error:
+        except (accounting_periods.PeriodClosed, CounterpartyPaymentError) as error:
+            # Отказ правила 1 (зачёт в банк-черновике, погашенная предоплата под дивиденды) —
+            # тоже конфликт состояния: без перехвата он уходил бы к владельцу как 500.
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         if payload.action == "mark_internal_transfer":
             await find_and_link_transfer_pairs(session)

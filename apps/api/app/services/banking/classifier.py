@@ -1480,6 +1480,33 @@ async def _apply_operation_split(
     ):
         raise ValueError("Для статьи «Оплата поставщикам» укажите контрагента")
 
+    # Дивиденды — выплата, а не долг (решение владельца 25.09.2026). Переразбор пересоздаёт
+    # проводки, и погашенный аванс прежней осиротел бы мимо гейта правила 1 — отказ до записей.
+    from app.services.owner_analytics import DIVIDENDS_ARTICLE_CODE
+    from app.services.supplier_prepayments import assert_settled_advances_not_dividends
+
+    dividends_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DIVIDENDS_ARTICLE_CODE)
+    )
+    await assert_settled_advances_not_dividends(
+        session,
+        transaction_ids=set(
+            (
+                await session.scalars(
+                    select(CashflowTransaction.id).where(
+                        CashflowTransaction.source_kind == "bank_operation",
+                        CashflowTransaction.source_id == operation.id,
+                    )
+                )
+            ).all()
+        ),
+        dividends_counterparty_ids={
+            resolved_counterparty[index]
+            for index, line in enumerate(lines)
+            if line.article_id == dividends_article_id and resolved_counterparty[index] is not None
+        },
+    )
+
     # Re-split: снять прежние гашения накладных ЭТОЙ операцией (cashflow чистит
     # _clear_operation_cashflow, аллокации — здесь), иначе повторный разбор задвоит гашение.
     prior_allocations = (
