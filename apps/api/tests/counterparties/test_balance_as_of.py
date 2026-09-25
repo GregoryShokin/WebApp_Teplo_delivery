@@ -601,3 +601,46 @@ async def test_bill_receivable_cannot_be_moved_to_another_bill(
             await supplier_prepayments.settle_invoice_from_prepayment(
                 session, invoice_id=second.id, prepayment_id=receivable.id
             )
+
+
+async def test_opening_balance_settled_into_an_earlier_bill_counts_from_its_record_date(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Входящий остаток, зачтённый в счёт, отдаёт ему деньги не раньше, чем появился сам.
+
+    Своей проводки у остатка нет (``create_opening_prepayment``): деньгами он считается с дня
+    записи — 20.07. Счёт от 01.07 закрыт этим остатком через API. Пока дата денег у зачёта в счёт
+    бралась только из проводки аванса, ДЗ по счёту фондировалась датой счёта: на срезах
+    01.07–19.07 баланс показывал 15 862,24 ₽ дебиторки, которой ещё не было ни у остатка, ни у
+    счёта.
+    """
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Входящий остаток в счёт", inn="6155000812")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="15862.24",
+            number="СЧ-0812",
+            doc_kind="bill",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 1),
+            payment_status="unpaid",
+        )
+        opening = await supplier_prepayments.create_opening_prepayment(
+            session, counterparty_id=cp.id, amount=Decimal("15862.24"), kind="ad"
+        )
+        opening.created_at = datetime(2026, 7, 20, 9, 0, tzinfo=UTC)
+        await session.commit()
+        await supplier_prepayments.settle_invoice_from_prepayment(
+            session, invoice_id=bill.id, prepayment_id=opening.id
+        )
+        receivable = await _bill_prepayment(session, bill)
+        assert receivable.amount == Decimal("15862.24")
+        await session.refresh(opening)
+        assert opening.status == "settled"
+
+        assert await _balance(session, date(2026, 6, 30)) == (0, 0)
+        assert await _balance(session, date(2026, 7, 1)) == (0, 0), "остатка ещё нет"
+        assert await _balance(session, date(2026, 7, 19)) == (0, 0), "остатка ещё нет"
+        assert await _balance(session, date(2026, 7, 20)) == (Decimal("15862.24"), 0)
+        assert await _balance(session, date(2026, 7, 31)) == (Decimal("15862.24"), 0)

@@ -273,6 +273,24 @@ _rule1_share = case(
     ),
     else_=0,
 )
+def _prepayment_money_on(prepayment, transaction, bill_paid_on=None):
+    """День, с которого деньги предоплаты существуют: своя проводка → оплата счёта → дата записи.
+
+    Одно правило на два места — дату денег самой дебиторки (``_prepayment_money_date``) и день,
+    когда зачтённый в счёт аванс стал деньгами ДЗ по счёту (``_bill_payment_date``). Пока второе
+    место знало только проводку, аванс без неё (входящий остаток ``create_opening_prepayment``)
+    отдавал счёту деньги с даты счёта, а сам в балансе появлялся лишь датой записи: остаток,
+    заведённый 20.07 и зачтённый в счёт от 01.07, с 01.07 по 19.07 уже был дебиторкой по счёту.
+
+    ``bill_paid_on`` — первая оплата счёта у ДЗ ``prepaid_bill``; своей проводки у неё нет по
+    конструкции (см. ``_prepayment_money_date``)."""
+    dates = [transaction.operation_date]
+    if bill_paid_on is not None:
+        dates.append(bill_paid_on)
+    dates.append(func.date(prepayment.created_at))
+    return func.coalesce(*dates)
+
+
 # Аванс, зачтённый в счёт (``settle_invoice_from_prepayment``), и его проводка.
 _bill_source_prepayment = aliased(SupplierPrepayment)
 _bill_source_money = aliased(CashflowTransaction)
@@ -284,14 +302,22 @@ def _bill_payment_date():
     Зачёт аванса в счёт денег не двигает: аванс уменьшается датой вступления счёта в силу
     (``_allocation_event_date``), и ровно этой датой его деньги переезжают в ДЗ по счёту — иначе
     общая дебиторка на время между датами проседала бы или раздувалась на сумму зачёта. Но не
-    раньше, чем ушли сами деньги аванса: счёт, датированный до платежа, закрыт авансом с его дня.
+    раньше, чем деньги аванса появились в балансе: счёт, датированный до платежа, закрыт авансом
+    с его дня, а входящий остаток — с дня записи.
+
+    Звено «оплата счёта» из ``_prepayment_money_on`` здесь не нужно и невозможно: источником
+    зачёта в счёт ДЗ по счёту быть не может (гард ``settle_invoice_from_prepayment``), а сама дата
+    первой оплаты счёта считается из этих же строк — ссылка на неё замкнула бы расчёт на себя.
     """
     event_date = _allocation_event_date()
     return case(
         (
             InvoicePaymentAllocation.source_kind == "prepayment",
             func.greatest(
-                event_date, func.coalesce(_bill_source_money.operation_date, event_date)
+                event_date,
+                func.coalesce(
+                    _prepayment_money_on(_bill_source_prepayment, _bill_source_money), event_date
+                ),
             ),
         ),
         else_=event_date,
@@ -404,10 +430,8 @@ _bill_first_payment = (
 _prepayment_money_date = (
     select(
         SupplierPrepayment.id.label("prepayment_id"),
-        func.coalesce(
-            CashflowTransaction.operation_date,
-            _bill_first_payment.c.paid_on,
-            func.date(SupplierPrepayment.created_at),
+        _prepayment_money_on(
+            SupplierPrepayment, CashflowTransaction, _bill_first_payment.c.paid_on
         ).label("money_date"),
         # Своей проводки нет, а у счёта есть оплаты: сумма на дату — оплаченное к дате.
         and_(
