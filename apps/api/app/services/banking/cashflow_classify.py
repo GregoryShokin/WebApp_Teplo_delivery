@@ -369,6 +369,34 @@ async def apply_cashflow_split(
             raise ValueError("Счёт-получатель не найден")
         destinations[transfer_wallet_id] = destination
 
+    # Дивиденды — выплата, а не долг (решение владельца 25.09.2026). Гейт правила 1 откажет,
+    # только если «Дивиденды» лягут первой долей — на саму проводку с её погашенной ДЗ; второй
+    # долей они прошли бы молча, а ДЗ осталась бы на первой. Проверяем по контрагенту до записей.
+    from app.services.owner_analytics import DIVIDENDS_ARTICLE_CODE
+    from app.services.supplier_prepayments import assert_settled_advances_not_dividends
+
+    dividends_article_id = await session.scalar(
+        select(DdsArticle.id).where(DdsArticle.code == DIVIDENDS_ARTICLE_CODE)
+    )
+    prior_leg_ids = (
+        await session.scalars(
+            select(CashflowTransaction.id).where(
+                CashflowTransaction.source_kind == SPLIT_SOURCE_KIND,
+                CashflowTransaction.source_id == txn.id,
+            )
+        )
+    ).all()
+    await assert_settled_advances_not_dividends(
+        session,
+        transaction_ids={txn.id, *prior_leg_ids},
+        dividends_counterparty_ids={
+            line.counterparty_id or counterparty_id
+            for line in splits
+            if line.article_id == dividends_article_id
+            and (line.counterparty_id or counterparty_id) is not None
+        },
+    )
+
     # Переразбор: снять прежнюю встречную ногу этой проводки (была переводом → стала расходом).
     await _clear_transfer_counter_leg(session, txn)
 

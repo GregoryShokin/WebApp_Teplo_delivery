@@ -38,7 +38,7 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.models.enums import SELF_ACCRUED_INVOICE_SOURCES
-from app.services import accounting_periods, clock
+from app.services import accounting_periods, clock, owner_analytics
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
@@ -2167,6 +2167,35 @@ async def _sync_rule1_distribution(
             await session.flush()
         return None
 
+    if await _dividends_payout(session, transaction):
+        # Дивиденды — ВЫПЛАТА собственнику из прибыли, а не его долг бизнесу (решение владельца
+        # 25.09.2026). Payable-профиль у собственника есть — через него правило 1 растит его
+        # заём, — и без этой проверки та же дверь завела бы «долг» и на дивиденды, а если
+        # собственник ещё и арендодатель, оплатила бы ими его акт аренды. Правило 1 такими
+        # деньгами не распоряжается вовсе: снимаем только СВОЁ (пересборкой, а не сносом —
+        # деньги из учёта не уходят, и ручную оплату счёта оператором трогать не за что), а
+        # счета этого платежа досинхронизируем, как при усохшем авансе.
+        #
+        # Кроме дебиторки, которую уже начали гасить: закрывающим документом, признанием
+        # разового расхода или решением человека. Политика «тронутое — история» здесь не
+        # годится: запись осталась бы долгом со старой статьёй, а акт — оплаченным дивидендами,
+        # и человек был бы уверен, что переразметил. Снять гашение по пути нельзя — у документа
+        # свой месяц и своё признание, — поэтому отказ ДО записи, понятными словами.
+        if existing is not None and not _prepayment_untouched(existing):
+            raise CounterpartyPaymentError(SETTLED_ADVANCE_TO_DIVIDENDS_ERROR)
+        if not await _unwind_transaction_kz_settlements(
+            session, transaction.id, include_bills=False
+        ):
+            raise CounterpartyPaymentError(
+                "Платёж уже погасил кредиторку, отправленную в банк-черновик — "
+                "сначала откатите черновик"
+            )
+        if existing is not None:
+            await session.delete(existing)
+            await session.flush()
+        await _resync_transaction_bills(session, transaction)
+        return None
+
     # Гашёную предоплату (её авансы уже связаны с накладными) не пересобираем.
     if existing is not None and not _prepayment_untouched(existing):
         return existing
@@ -2269,6 +2298,64 @@ async def _sync_rule1_distribution(
     await session.flush()
     await _resync_transaction_bills(session, transaction)
     return existing
+
+
+SETTLED_ADVANCE_TO_DIVIDENDS_ERROR = (
+    "Предоплату по этому платежу уже погасили документом или закрыли решением — выплатой "
+    "дивидендов он станет только после того, как это гашение снимут"
+)
+
+
+async def assert_settled_advances_not_dividends(
+    session: AsyncSession,
+    *,
+    transaction_ids: set[uuid.UUID],
+    dividends_counterparty_ids: set[uuid.UUID],
+) -> None:
+    """Переразбор, который ПЕРЕСОЗДАЁТ проводки, не превращает погашенный аванс в дивиденды.
+
+    Разбор операции выписки удаляет прежние проводки и заводит новые: гашёная ДЗ правила 1
+    при этом остаётся сиротой (``cashflow_transaction_id`` → NULL), а гейт дивидендов в
+    ``_sync_rule1_distribution`` её уже не видит — новая проводка чистая. Итог тот же, что
+    закрыт там для переразметки на месте: долг собственника со старой статьёй и акт,
+    оплаченный дивидендами. Поэтому отказ здесь, ДО первой записи, и тем же текстом.
+
+    Сопоставить прежние проводки с новыми долями нельзя (переразбор режет сумму заново),
+    поэтому признак — контрагент: доля «Дивиденды» тому, у кого прежняя проводка операции
+    несёт погашенную ДЗ правила 1."""
+    if not transaction_ids or not dividends_counterparty_ids:
+        return
+    settled = await session.scalar(
+        select(func.count(SupplierPrepayment.id)).where(
+            SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids),
+            SupplierPrepayment.counterparty_id.in_(dividends_counterparty_ids),
+            SupplierPrepayment.kind == RULE1_PREPAYMENT_KIND,
+            or_(
+                SupplierPrepayment.status != "open",
+                SupplierPrepayment.amount_settled > 0,
+            ),
+        )
+    )
+    if settled:
+        raise CounterpartyPaymentError(SETTLED_ADVANCE_TO_DIVIDENDS_ERROR)
+
+
+async def _dividends_payout(session: AsyncSession, transaction: CashflowTransaction) -> bool:
+    """Проводка — выплата дивидендов: правилу 1 её деньгами распоряжаться нельзя.
+
+    Отбор по СТАТЬЕ, а не по контрагенту: собственник бывает бизнесу и арендодателем, и
+    подрядчиком (``owner_analytics``), и такие его платежи — обычные деньги правила 1. И не по
+    признаку ``owner_required``: под ним же живёт выдача займа, а заём дебиторкой стать обязан.
+
+    Гейт живёт здесь, а не в ``manual_payment_money_is_free``: та отвечает лишь на вопрос,
+    звать ли правило 1, и её «нет» оставило бы на месте дебиторку, заведённую платежу до
+    переразметки в дивиденды, — снять её может только сама пересборка."""
+    if transaction.article_id is None:
+        return False
+    code = await session.scalar(
+        select(DdsArticle.code).where(DdsArticle.id == transaction.article_id)
+    )
+    return code == owner_analytics.DIVIDENDS_ARTICLE_CODE
 
 
 async def _service_cash_needs_receivable(
@@ -2390,6 +2477,49 @@ async def manual_payment_money_is_free(
     return not allocated
 
 
+async def _dividends_money_to_release(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    *,
+    origin_source_kind: str | None = None,
+) -> bool:
+    """Проводка стала дивидендами, и правилу 1 есть что за собой прибрать.
+
+    Ручная дверь зовёт правило 1 только по свободным деньгам, а платёж, целиком ушедший
+    правилом 1 в зачёт кредиторки (своей ДЗ не осталось), свободным не выглядит — его
+    аллокации она считает чужими. Для обычной переразметки это старое известное ограничение,
+    но дивиденды им воспользоваться не вправе: акт аренды собственника остался бы оплаченным
+    дивидендами. Здесь правило 1 ничего не раскладывает — гейт в ``_sync_rule1_distribution``
+    только снимает его собственное, — поэтому пускаем, если чужих аллокаций нет.
+
+    Только для дивидендов: расширить свободу денег на всё подряд значило бы открыть ручным
+    проводкам пересборку после сторно расхода, которая не видит сиротскую ДЗ сторно и
+    задваивает дебиторку (у банковских проводок этот дефект есть и сейчас)."""
+    origin = origin_source_kind or transaction.source_kind
+    if (
+        transaction.source_kind in SELF_SETTLING_SOURCE_KINDS
+        or origin in SELF_SETTLING_SOURCE_KINDS
+        or not await _dividends_payout(session, transaction)
+    ):
+        return False
+    return not await _foreign_allocations_exist(session, transaction.id)
+
+
+async def _foreign_allocations_exist(session: AsyncSession, transaction_id: uuid.UUID) -> bool:
+    """Деньгами проводки распорядился кто-то, кроме правила 1.
+
+    Зачёт, подписанный самим правилом 1 (``origin='rule1'``), — его собственный, как и его
+    дебиторка. Строки без метки (заведённые до её появления) и зачёты оператора — чужие: там
+    автора не различить."""
+    foreign = await session.scalar(
+        select(func.count(InvoicePaymentAllocation.id)).where(
+            InvoicePaymentAllocation.cashflow_transaction_id == transaction_id,
+            InvoicePaymentAllocation.origin.is_distinct_from(RULE1_ALLOCATION_ORIGIN),
+        )
+    )
+    return bool(foreign)
+
+
 async def sync_manual_payment_receivable(
     session: AsyncSession,
     transaction: CashflowTransaction,
@@ -2416,7 +2546,8 @@ async def sync_manual_payment_receivable(
     зачёты на ней тоже его, и пересобрать/снять их он вправе (иначе смена контрагента оставила
     бы фантом на прежнем). Известное ограничение: если платёж целиком ушёл в зачёт КЗ и своей
     ДЗ не осталось, последующее исключение проводки зачёт не снимет — деньги придётся
-    отвязать вручную.
+    отвязать вручную. Для переразметки в дивиденды ограничения нет — см.
+    ``_dividends_money_to_release``.
 
     ``money_is_free`` передают, когда свобода уже посчитана по родительской проводке (сплит);
     иначе считается здесь по самой проводке.
@@ -2426,7 +2557,9 @@ async def sync_manual_payment_receivable(
         is_free = await manual_payment_money_is_free(
             session, transaction, origin_source_kind=origin_source_kind
         )
-    if not is_free:
+    if not is_free and not await _dividends_money_to_release(
+        session, transaction, origin_source_kind=origin_source_kind
+    ):
         return None
     return await ensure_prepayment_from_bank_transaction(session, transaction)
 
