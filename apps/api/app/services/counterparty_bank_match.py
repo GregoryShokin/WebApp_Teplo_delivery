@@ -570,6 +570,15 @@ async def confirm_invoice_match(
             operation=operation,
             amount=allocation,
             actor_user_id=actor_user_id,
+            # Бартерный заём забирает деньги у аванса своей доли разбора
+            # (``release_rule1_money_to_loan``) — сверку метим этой долей, как сплит. Без метки
+            # мост «операция → якорная проводка» засчитал бы её и в бюджет якоря, и пересборка
+            # якорной доли ужала бы чужой аванс на те же деньги (скептик Fable 25.09).
+            cashflow_transaction_id=(
+                money.transaction.id
+                if money is not None and invoice.barter_role is not None
+                else None
+            ),
         )
         await _recompute_status(session, invoice)
 

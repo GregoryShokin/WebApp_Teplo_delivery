@@ -1506,6 +1506,21 @@ async def _apply_operation_split(
     for alloc in prior_allocations:
         await session.delete(alloc)
     await session.flush()
+    # И сверки, записанные зачётом из аванса операции (дверь «Оплатить»): это те же гашения
+    # накладных этой операцией. Здесь, а не в сносе проводок ниже — иначе строка разбора с той же
+    # накладной увидела бы её оплаченной собственным прежним зачётом (скептик Fable 25.09).
+    from app.services.supplier_prepayments import (
+        operation_transaction_ids,
+        release_payment_match_settlements,
+    )
+
+    if not await release_payment_match_settlements(
+        session, await operation_transaction_ids(session, operation.id)
+    ):
+        raise ValueError(
+            "Операция оплачивает накладную, отправленную в банк-черновик — "
+            "сначала откатите черновик"
+        )
 
     # Остаток проверяем ПОСЛЕ снятия прежних аллокаций (иначе повторный разбор той же накладной
     # увидел бы её занятой собственной прежней аллокацией).
