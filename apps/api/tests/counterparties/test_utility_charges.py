@@ -30,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    AccountingPeriodClose,
     CashflowTransaction,
     DdsArticle,
     InvoicePaymentAllocation,
@@ -1092,4 +1093,54 @@ async def test_advance_and_actual_of_the_same_month_coexist(
         accruals = await _accruals(session, advance_bill, due_bill, closing)
         assert [accrual.invoice_id for accrual in accruals] == [closing.id]
         assert accruals[0].amount == Decimal("95402.00")
+        await session.rollback()
+
+
+async def test_documented_advance_paid_in_a_closed_month_is_not_linked(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Оплачено аванс 19.07» при закрытом июле: выплату не превращаем в дебиторку задним числом.
+
+    Связка заводила ДЗ на уже учтённые деньги закрытого месяца и ставила выплате контрагента —
+    баланс на 31.07 и расход кассы сверенного июля менялись от бумаги, принесённой в августе.
+    Факт не связываем: разрыв остаётся видимым, как если бы факта не нашлось."""
+    async with async_session_factory() as session:
+        account = await _account(session, kind="electricity")
+        wallet = await make_wallet(session, name="Сейф")
+        paid = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("65000.00"),
+            operation_date=date(2026, 7, 19),
+            counterparty_id=None,
+            article_id=account.dds_article_id,
+            source_kind="safe_payout",
+            payment_purpose="Предоплата за Август",
+            quality_status="final",
+        )
+        session.add(paid)
+        session.add(AccountingPeriodClose(period_month=date(2026, 7, 1)))
+        await session.commit()
+
+        _, closing = await utility_charges.build_utility_documents(
+            session,
+            account,
+            period_start=date(2026, 8, 1),
+            period_end=date(2026, 8, 31),
+            expense_amount=Decimal("112469.00"),
+            payable_amount=Decimal("47469.00"),
+            paid_advance_amount=Decimal("65000.00"),
+            paid_advance_date=date(2026, 7, 19),
+            as_of=date(2026, 9, 23),
+        )
+
+        assert closing is not None and closing.payment_status == "unpaid"
+        assert paid.counterparty_id is None
+        assert (
+            await session.scalar(
+                select(SupplierPrepayment.id).where(
+                    SupplierPrepayment.cashflow_transaction_id == paid.id
+                )
+            )
+        ) is None
         await session.rollback()

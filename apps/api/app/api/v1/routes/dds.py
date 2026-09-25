@@ -2221,6 +2221,24 @@ async def classify_transaction(
         )
     except AssetLinkError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+    # ПЕРЕРАЗМЕТКА УЧТЁННОЙ ПРОВОДКИ — ПРАВКА ЕЁ МЕСЯЦА, как и в полном разборе
+    # (``apply_cashflow_split``): статья переносит сумму между строками ОПиУ, контрагент
+    # пересобирает правило 1 — дебиторку и зачёты КЗ на конец месяца денег. Замок здесь стоял
+    # только на снятии разметки месяца (ниже), а смена статьи и контрагента в закрытом месяце
+    # проходила молча. Интерфейс эту дверь не зовёт, но она открыта всем с правом разметки.
+    #
+    # Месяцев два, и оба: где расход стоит сейчас (размеченный или месяц денег) и месяц денег —
+    # в нём живёт дебиторка платежа, и туда же вернётся расход при снятии разметки. Проверка
+    # перед выкаткой воспроизвела снятие разметки закрытого июля на 77 000 ₽.
+    try:
+        for touched in {txn.expense_month, txn.operation_date} - {None}:
+            month = accounting_periods.month_start(touched)
+            if month >= accounting_periods.ACCOUNTING_START:
+                await accounting_periods.assert_month_open(
+                    session, month, action="переразметить проводку"
+                )
+    except accounting_periods.PeriodClosed as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     txn.article_id = payload.article_id
     txn.counterparty_id = context.counterparty_id
     txn.location_id = context.location_id
@@ -2230,34 +2248,12 @@ async def classify_transaction(
     # ДЗ/КЗ не работает вовсе). Гейт на это стоял только в полном разборе, а контрагента
     # привязывают именно здесь: поле переживало привязку и МОЛЧА ОЖИВАЛО при отвязке, уводя
     # расход в другой месяц спустя недели после того, как человек об этом поле забыл.
-    #
-    # СНЯТИЕ РАЗМЕТКИ — ТАКОЕ ЖЕ ИЗМЕНЕНИЕ ЗАКРЫТОГО МЕСЯЦА, как и её постановка: расход
-    # уезжает обратно в месяц денег. Здесь замка не было вовсе, и закрытый июль менялся
-    # молча — проверка перед выкаткой воспроизвела это на 77 000 ₽.
+    # Снятие разметки — изменение обоих месяцев, их уже проверил замок выше.
     if (
         txn.counterparty_id is not None
         and txn.expense_month is not None
         and accounting_periods.month_start(txn.expense_month) >= accounting_periods.ACCOUNTING_START
     ):
-        try:
-            for touched, action in (
-                (
-                    accounting_periods.month_start(txn.expense_month),
-                    "снять расход с этого месяца",
-                ),
-                (
-                    accounting_periods.month_start(txn.operation_date),
-                    "вернуть расход в этот месяц",
-                ),
-            ):
-                if touched >= accounting_periods.ACCOUNTING_START:
-                    await accounting_periods.assert_month_open(session, touched, action=action)
-        except OperationAlreadyBooked as error:
-            # 409, а не 400: запрос корректен, конфликтует СОСТОЯНИЕ — деньги операции уже
-            # проведены другим контуром. Ловится ДО ValueError, чей это подкласс.
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-        except accounting_periods.PeriodClosed as error:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         txn.expense_month = None
     await link_transaction_to_asset(
         session, context=asset_context, transaction_id=txn.id, amount=txn.amount
@@ -2274,7 +2270,7 @@ async def classify_transaction(
             await ensure_prepayment_from_bank_transaction(session, txn)
         else:
             await sync_manual_payment_receivable(session, txn)
-    except CounterpartyPaymentError as error:
+    except (CounterpartyPaymentError, accounting_periods.PeriodClosed) as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     # Возврат переплаты гасит дебиторку без аллокации, поэтому сам за переразметкой не следует:
     # снятая возвратная статья оставляла бы дебиторку списанной навсегда, а поставленная — не

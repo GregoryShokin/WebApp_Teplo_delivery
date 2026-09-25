@@ -70,6 +70,7 @@ from app.services.supplier_prepayments import (
     _basis_bill_ids,
     _money,
     _periods_overlap,
+    assert_closing_months_open,
     assert_prepayment_months_open,
     auto_settle_invoice_from_open_prepayments,
     release_invoice_prepayment_allocations,
@@ -286,11 +287,7 @@ async def readdress_closing(
     # отчёта одна (см. ``assert_period_open``).
     action = f"перегашение документа № {closing.number}"
     try:
-        if closing.invoice_date is not None:
-            await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
-        await accounting_periods.assert_period_open(
-            session, closing.service_period_start, closing.service_period_end, action=action
-        )
+        await assert_closing_months_open(session, closing, action=action)
     except accounting_periods.PeriodClosed as exc:
         raise ReaddressRefused(str(exc)) from exc
 

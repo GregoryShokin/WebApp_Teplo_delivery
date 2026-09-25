@@ -945,6 +945,38 @@ async def _release_guessed_settlements(
     return released
 
 
+async def assert_closing_months_open(
+    session: AsyncSession, closing: SupplierInvoice, *, action: str
+) -> None:
+    """``PeriodClosed``, если закрыт месяц документа или хоть один месяц его периода.
+
+    Месяц документа — тот, которым его датирует баланс (``counterparty_balance_as_of``): дата
+    документа, а без неё — день записи. Документ без даты раньше замок не сторожил вовсе
+    (``assert_month_open(None)`` молчит), а баланс считает его действующим с ``created_at`` —
+    перегашение такого документа меняло ДЗ и КЗ на конец закрытого месяца. Пока снятие аванса
+    мерилось месяцем денег любого вида, дыру случайно прикрывал аванс; с фильтром вида
+    (``_prepayment_waiting_months``) она открылась бы. День записи берём и тот, что считает
+    баланс (``date()`` в зоне базы), и московский — ночь на 1-е не проскочит между ними."""
+    if closing.invoice_date is not None:
+        await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
+    elif closing.id is not None:
+        # Запросом, а не атрибутом: ``created_at`` ставит сервер, и у только что записанного
+        # документа он не загружен. Заодно день считает база — тем же ``date()``, что и баланс.
+        recorded = (
+            await session.execute(
+                select(
+                    func.date(SupplierInvoice.created_at),
+                    func.date(func.timezone("Europe/Moscow", SupplierInvoice.created_at)),
+                ).where(SupplierInvoice.id == closing.id)
+            )
+        ).first()
+        for day in set(recorded or ()):
+            await accounting_periods.assert_month_open(session, day, action=action)
+    await accounting_periods.assert_period_open(
+        session, closing.service_period_start, closing.service_period_end, action=action
+    )
+
+
 async def _closing_period_open(session: AsyncSession, closing: SupplierInvoice) -> bool:
     """Переразметку зачёта можно делать: месяцы самого документа не закрыты.
 
@@ -969,10 +1001,7 @@ async def _closing_period_open(session: AsyncSession, closing: SupplierInvoice) 
     оплаты счёта, и валить из-за него саму оплату нельзя."""
     action = f"перенос зачёта документа № {closing.number} на деньги его счёта"
     try:
-        await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
-        await accounting_periods.assert_period_open(
-            session, closing.service_period_start, closing.service_period_end, action=action
-        )
+        await assert_closing_months_open(session, closing, action=action)
     except accounting_periods.PeriodClosed as exc:
         logger.warning(
             "Перенос угаданного зачёта пропущен: закрывающий %s задевает закрытый период (%s). "
@@ -994,9 +1023,19 @@ async def _prepayment_waiting_months(
     периода и без проводки (ДЗ оплаченного счёта без периода, входящий остаток) ОПиУ не
     относит ни к одному месяцу — пустой список.
 
+    Вид аванса — тот же фильтр, что у слоя ожидания (``waiting.EXPENSE_KINDS``): аванс под
+    товар, заём, «прочее» документа в ОПиУ не ждут ни в каком месяце — пустой список. Без
+    фильтра замок был строже отчёта: аванс такого вида из закрытого месяца не снимался с акта и
+    не пропускался скриптом перегашения, хотя ни одна цифра закрытого месяца от этого не
+    меняется — ОПиУ его не видит, а баланс датирует зачёт вступлением акта, и акт закрытого
+    месяца сторожит свой замок (``_closing_period_open``).
+
     Щит признанного месяца («у пары контрагент × статья месяц уже признан») здесь не
     учитывается намеренно: он зависит от чужих начислений и может отпасть, а замок, который на
     эти месяцы опирается, обязан держать сверенный месяц всегда."""
+    # Импорт локальный: слой ожидания сам импортирует этот модуль.
+    from app.services.pnl.sources.waiting import EXPENSE_KINDS
+
     transaction_ids = {
         p.cashflow_transaction_id for p in prepayments if p.cashflow_transaction_id is not None
     }
@@ -1013,6 +1052,9 @@ async def _prepayment_waiting_months(
         )
     months: dict[uuid.UUID, list[date]] = {}
     for prepayment in prepayments:
+        if prepayment.kind not in EXPENSE_KINDS:
+            months[prepayment.id] = []
+            continue
         if (
             prepayment.service_period_status == "ready"
             and prepayment.service_period_start is not None
@@ -1489,7 +1531,148 @@ async def _expense_line_period(
     )
 
 
+async def _created_in_this_transaction(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> bool:
+    """Проводка заведена в текущей транзакции базы — её деньги ещё нигде не учтены.
+
+    ``created_at`` ставит сервер значением ``now()``, а ``now()`` в Postgres — момент начала
+    транзакции. Совпали — значит строку вставили в этой же транзакции: выписка только что
+    пришла, выплату только что провели. Номер транзакции (``xmin``) для этого не годится —
+    вставка внутри точки сохранения получает номер подтранзакции."""
+    created_now = await session.scalar(
+        select(CashflowTransaction.created_at >= func.now()).where(
+            CashflowTransaction.id == transaction.id
+        )
+    )
+    return bool(created_now)
+
+
+async def _rule1_footprint(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> tuple[str, ...]:
+    """Всё, чем правило 1 распорядилось деньгами платежа, — для сравнения «до» и «после».
+
+    Дебиторка проводки, её гашения КЗ, ДЗ оплаченных ею счетов (чокпоинт досинхронизирует их
+    следом, ``_resync_transaction_bills``) и зачёты этих авансов в документы. Без ``id``:
+    нетронутый аванс пересборка вправе удалить и завести заново той же суммой, и это не
+    изменение."""
+    own = list(
+        (
+            await session.scalars(
+                select(SupplierPrepayment).where(
+                    SupplierPrepayment.cashflow_transaction_id == transaction.id
+                )
+            )
+        ).all()
+    )
+    paid = list(
+        (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(_paid_by_transaction(transaction))
+            )
+        ).all()
+    )
+    records = {prepayment.id: prepayment for prepayment in own}
+    paid_invoice_ids = {allocation.invoice_id for allocation in paid}
+    if paid_invoice_ids:
+        for prepayment in (
+            await session.scalars(
+                select(SupplierPrepayment).where(
+                    SupplierPrepayment.bill_invoice_id.in_(paid_invoice_ids)
+                )
+            )
+        ).all():
+            records[prepayment.id] = prepayment
+    netting = (
+        list(
+            (
+                await session.scalars(
+                    select(InvoicePaymentAllocation).where(
+                        InvoicePaymentAllocation.prepayment_id.in_(records)
+                    )
+                )
+            ).all()
+        )
+        if records
+        else []
+    )
+
+    def prepayment_key(prepayment: SupplierPrepayment) -> tuple[object, ...]:
+        return (
+            prepayment.kind,
+            prepayment.counterparty_id,
+            prepayment.bill_invoice_id,
+            _money(prepayment.amount),
+            _money(prepayment.amount_settled),
+            prepayment.status,
+            prepayment.article_id,
+            prepayment.wallet_id,
+            prepayment.service_period_start,
+            prepayment.service_period_end,
+            prepayment.service_period_status,
+        )
+
+    state = (
+        *sorted(f"prepayment {prepayment_key(p)!r}" for p in records.values()),
+        # Без ``origin``: он говорит, чья запись, а не сколько. Старая аллокация без метки,
+        # пересобранная той же суммой с меткой «rule1», цифр месяца не меняет.
+        *sorted(f"paid {(a.invoice_id, a.source_kind, _money(a.amount))!r}" for a in paid),
+        *sorted(
+            # Чей аванс — по содержанию, а не по id (см. выше): вид, контрагент, счёт.
+            f"netted {(prepayment_key(records[a.prepayment_id])[:3], a.invoice_id)!r} "
+            f"{_money(a.amount)}"
+            for a in netting
+        ),
+    )
+    return state
+
+
 async def ensure_prepayment_from_bank_transaction(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> SupplierPrepayment | None:
+    """Правило 1 канона (``_sync_rule1_distribution``) под замком закрытого месяца.
+
+    Пересборка учтённого платежа меняет цифры месяца его денег: дебиторку и кредиторку на конец
+    месяца (баланс датирует их денежным фактом), разовое признание расхода. Замок стоит на
+    дверях — переразметка, сплит, исключение и возврат из исключения, — но сама пересборка его
+    не знала, и любая новая дверь (или ремонтный скрипт) проходила мимо. Проверка на копии
+    прода с закрытым августом: прямой прогон по всем расходным проводкам с 01.07 завёл семь
+    новых авансов, дебиторка на 31.08 выросла на 101 866 ₽.
+
+    Поэтому замок здесь, и он на ИЗМЕНЕНИЕ, а не на вызов. Проводка, заведённая в этой же
+    транзакции, — новые деньги: выписка вправе приезжать задним числом, и её правило 1 проводит
+    как обычно. Учтённую проводку пересобираем внутри точки сохранения и сравниваем
+    распоряжение деньгами до и после: не изменилось — пропускаем (повторный прогон безвреден),
+    изменилось, а месяц денег закрыт — откатываем и отказываем ``PeriodClosed``.
+
+    Опечатан месяц ДЕНЕГ, а не месяц ожидания документа по периоду аванса: пометка «ждём
+    документ» — состояние на сегодня, суммы у неё нет (``pnl/projector._apply_waiting``), и её
+    так же гасит пришедший позже документ (решение 25.09.2026).
+
+    Откат точки сохранения возвращает только то, что сделало правило 1. Правки самой проводки,
+    сделанные вызывающим ДО вызова (новый контрагент, статья), SQLAlchemy сбрасывает в базу
+    раньше точки сохранения, и они в ней остаются: поймав ``PeriodClosed``, сессию не коммитят,
+    а откатывают — так делают все двери (отказ уходит 409-й, сессия закрывается без коммита)."""
+    closed = await accounting_periods.closed_months(session)
+    money_month = accounting_periods.month_start(transaction.operation_date)
+    if (
+        money_month not in closed
+        or money_month < accounting_periods.ACCOUNTING_START
+        or await _created_in_this_transaction(session, transaction)
+    ):
+        return await _sync_rule1_distribution(session, transaction)
+    before = await _rule1_footprint(session, transaction)
+    async with session.begin_nested():
+        result = await _sync_rule1_distribution(session, transaction)
+        if await _rule1_footprint(session, transaction) != before:
+            await accounting_periods.assert_month_open(
+                session, money_month, action="пересобрать дебиторку и зачёты этого платежа"
+            )
+    return result
+
+
+async def _sync_rule1_distribution(
     session: AsyncSession, transaction: CashflowTransaction
 ) -> SupplierPrepayment | None:
     """Синхронизировать распределение платежа поставщику с состоянием проводки (правило 1 канона).
@@ -2737,6 +2920,34 @@ def _can_inherit_period(invoice: SupplierInvoice) -> bool:
     )
 
 
+async def inherited_period_open(
+    session: AsyncSession, start: date, end: date, *, number: str | None
+) -> bool:
+    """Можно ли закрывающему перенять ЧУЖОЙ период ``start``–``end``: ни один его месяц не закрыт.
+
+    Одно правило для всех путей наследования — от погасивших документ авансов
+    (``_inherit_period_from_prepayment_allocations``) и от счёта из строки «Основание» при
+    приёме почтой (``email_invoice_ingest``). Перенятый период — правка документа, за ней
+    начисление в этом периоде; в закрытом месяце его не признать, и оно повисло бы там
+    «не вступившим». Отказ — не исключение: документ заводится без периода, виден в «оплачено,
+    расход не признан» месяца своей даты, и период ему назначает человек. СВОЙ период документа
+    (распознанный из него самого — почта, СБИС, бот коммуналки) сюда не ходит: новый документ
+    за закрытый месяц завести можно, признание отложится (``accounting_periods``)."""
+    try:
+        await accounting_periods.assert_period_open(
+            session, start, end, action=f"перенос периода счёта в документ № {number}"
+        )
+    except accounting_periods.PeriodClosed as exc:
+        logger.warning(
+            "Период не унаследован: закрывающий № %s получил бы период закрытого месяца (%s). "
+            "Назначить период вручную",
+            number,
+            exc,
+        )
+        return False
+    return True
+
+
 async def _inherit_period_from_prepayment_allocations(
     session: AsyncSession, invoice: SupplierInvoice
 ) -> bool:
@@ -2793,17 +3004,7 @@ async def _inherit_period_from_prepayment_allocations(
         return False
 
     start, end = periods.pop()
-    try:
-        await accounting_periods.assert_period_open(
-            session, start, end, action=f"перенос периода счёта в документ № {invoice.number}"
-        )
-    except accounting_periods.PeriodClosed as exc:
-        logger.warning(
-            "Период не унаследован: закрывающий %s погашен деньгами закрытого периода (%s). "
-            "Назначить период вручную",
-            invoice.id,
-            exc,
-        )
+    if not await inherited_period_open(session, start, end, number=invoice.number):
         return False
     invoice.service_period_start = start
     invoice.service_period_end = end

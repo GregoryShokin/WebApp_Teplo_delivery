@@ -289,6 +289,31 @@ async def _basis_invoice(
     return exact[0] if len(exact) == 1 else None
 
 
+async def _basis_period(
+    session: AsyncSession, cp_id: uuid.UUID, rec_json: dict[str, object]
+) -> tuple[date, date] | None:
+    """Период закрывающего из счёта-основания — под тем же замком, что и прочее наследование.
+
+    Период счёта для акта чужой: наследуется, а не распознан из самого документа. Все двери
+    зачёта перенимают чужой период через ``inherited_period_open`` — закрытый месяц не
+    наследуется, документ остаётся без периода, и его назначает человек. Приём почтой
+    наследовал сразу, мимо замка: акт за закрытый август получал август, а начисление в
+    закрытом месяце зависало «не вступившим». Теперь итог один, какой бы дверью ни пришёл
+    документ."""
+    basis = await _basis_invoice(session, cp_id, rec_json)
+    if basis is None or basis.service_period_start is None or basis.service_period_end is None:
+        return None
+    number = rec_json.get("invoice_number")
+    if not await prepayments.inherited_period_open(
+        session,
+        basis.service_period_start,
+        basis.service_period_end,
+        number=str(number) if number else None,
+    ):
+        return None
+    return basis.service_period_start, basis.service_period_end
+
+
 def _enrich_duplicate_period(
     invoice: SupplierInvoice,
     *,
@@ -531,9 +556,9 @@ async def materialize_from_intake(
         # Период своего оказания закрывающий документ обычно не печатает — он есть в счёте,
         # на который тот ссылается («Основание Счет № … от …»). Наследуем оттуда, иначе расход
         # по акту не признаётся вовсе: у актов iiko периода в тексте нет.
-        basis = await _basis_invoice(session, cp_id, rec_json)
-        if basis is not None:
-            period_start, period_end = basis.service_period_start, basis.service_period_end
+        basis_period = await _basis_period(session, cp_id, rec_json)
+        if basis_period is not None:
+            period_start, period_end = basis_period
             period_source = "basis_invoice"
 
     if period_ambiguous:
@@ -1131,10 +1156,10 @@ async def process_attachment(
     period_source = rec.service_period_source
     if doc_kind == "closing" and period_start is None:
         # Своего периода у закрывающего в тексте может не быть — берём его из счёта-основания
-        # (см. ``_basis_invoice``), иначе расход по акту не признаётся вовсе.
-        basis = await _basis_invoice(session, cp_id, rec.to_json())
-        if basis is not None:
-            period_start, period_end = basis.service_period_start, basis.service_period_end
+        # (см. ``_basis_period``), иначе расход по акту не признаётся вовсе.
+        basis_period = await _basis_period(session, cp_id, rec.to_json())
+        if basis_period is not None:
+            period_start, period_end = basis_period
             period_source = "basis_invoice"
 
     invoice = SupplierInvoice(
