@@ -278,6 +278,8 @@ _rule1_share = case(
     ),
     else_=0,
 )
+
+
 def _prepayment_money_on(prepayment, transaction, bill_paid_on=None):
     """День, с которого деньги предоплаты существуют: своя проводка → оплата счёта → дата записи.
 
@@ -458,9 +460,7 @@ _prepayment_money_date = (
 )
 
 
-async def build_balance_as_of(
-    session: AsyncSession, *, as_of: date
-) -> BalanceSheetAsOf:
+async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceSheetAsOf:
     """Остатки расчётов с контрагентами на конец указанной даты (включительно)."""
     event_date = _allocation_event_date()
     settled_by_invoice = (
@@ -492,9 +492,7 @@ async def build_balance_as_of(
             CashflowTransaction,
             CashflowTransaction.id == InvoicePaymentAllocation.cashflow_transaction_id,
         )
-        .outerjoin(
-            BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id
-        )
+        .outerjoin(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
         .where(event_date <= as_of)
         .group_by(InvoicePaymentAllocation.invoice_id)
@@ -513,9 +511,7 @@ async def build_balance_as_of(
                 ),
                 func.sum(func.coalesce(settled_by_invoice.c.approximate, 0)),
             )
-            .outerjoin(
-                settled_by_invoice, settled_by_invoice.c.invoice_id == SupplierInvoice.id
-            )
+            .outerjoin(settled_by_invoice, settled_by_invoice.c.invoice_id == SupplierInvoice.id)
             .where(
                 *_DOC_CONDITIONS,
                 # Правило 4 канона: документ становится обязательством, когда услуга по нему
