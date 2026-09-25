@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import CashflowTransaction, SupplierPrepayment
+from app.models import CashflowTransaction, InvoicePaymentAllocation, SupplierPrepayment
 from app.services import supplier_prepayments
 from app.services.counterparty_balance_as_of import _prepayment_money_date, build_balance_as_of
 from app.services.counterparty_settlement_ledger import build_ledger
@@ -154,6 +154,61 @@ async def test_ledger_dates_opening_by_moscow_day(
         assert [(row.title, row.row_date) for row in ledger.rows] == [
             ("Входящий остаток", MOSCOW_DAY)
         ]
+
+
+@pytest.mark.parametrize("zone", ["UTC", "Europe/Moscow", "America/New_York"])
+async def test_record_day_of_settlement_and_document_is_moscow_too(
+    async_session_factory: async_sessionmaker[AsyncSession], zone: str
+) -> None:
+    """То же правило у гашения и документа, когда своей даты у них нет.
+
+    Гашение, потерявшее ссылку на проводку (``ON DELETE SET NULL``), датируется записью; документ
+    без даты вступает в силу с записи. На проде таких строк 0 из 489 и 0 из закрывающих, но
+    правило одно на модуль: сверка и реестр документов ведут этот день по Москве."""
+    async with async_session_factory() as session:
+        settled = await make_counterparty(session, name="Гашение ночью", inn="6155000906")
+        paid_later = await make_invoice(
+            session,
+            counterparty_id=settled.id,
+            amount="1000.00",
+            number="УПД-0720",
+            doc_kind="closing",
+            operational_scope="finance",
+            invoice_date=date(2026, 7, 20),
+            payment_status="paid",
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=paid_later.id,
+                source_kind="cash",
+                amount=Decimal("1000.00"),
+                created_at=RECORDED_AT,
+            )
+        )
+        undated = await make_counterparty(session, name="Документ без даты", inn="6155000907")
+        document = await make_invoice(
+            session,
+            counterparty_id=undated.id,
+            amount="700.00",
+            number="АКТ-БЕЗ-ДАТЫ",
+            doc_kind="closing",
+            operational_scope="finance",
+        )
+        document.created_at = RECORDED_AT
+        await session.commit()
+
+        await _session_time_zone(session, zone)
+        same_utc_day = await build_balance_as_of(session, as_of=UTC_DAY)
+        assert {row.counterparty_name: row.payable for row in same_utc_day.rows} == {
+            "Гашение ночью": Decimal("1000.00")
+        }, "запись 03.08 по Москве погасила долг или родила его уже 02.08"
+        next_day = await build_balance_as_of(session, as_of=MOSCOW_DAY)
+        assert {row.counterparty_name: row.payable for row in next_day.rows} == {
+            "Документ без даты": Decimal("700.00")
+        }
+
+        ledger = await build_ledger(session, undated.id, today=date(2026, 9, 1))
+        assert [row.row_date for row in ledger.rows] == [MOSCOW_DAY]
 
 
 def test_payments_register_filters_and_dates_opening_by_moscow_day(

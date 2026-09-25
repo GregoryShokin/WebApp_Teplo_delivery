@@ -480,7 +480,7 @@ async def build_ledger(
             tx_id = alloc.cashflow_transaction_id
             if alloc.prepayment_id is not None or tx_id is None or tx_id in seen_tx:
                 continue
-            op_date, payer = tx_meta.get(tx_id, (alloc.created_at.date(), None))
+            op_date, payer = tx_meta.get(tx_id, (clock.moscow_date(alloc.created_at), None))
             external_rows.append(
                 (
                     op_date,
@@ -558,7 +558,7 @@ async def build_ledger(
     for doc in documents:
         paid = sum((money(a.amount) for a in doc_allocs.get(doc.id, [])), Decimal("0"))
         remainder = _clamp(money(doc.amount) - paid)
-        doc_date = doc.invoice_date or doc.created_at.date()
+        doc_date = doc.invoice_date or clock.moscow_date(doc.created_at)
         # У документа нет безопасного фолбэка периода. Дата УПД — дата первички, а не
         # доказательство месяца услуги. Прежний period_of() превращал любой УПД после 16-го
         # в «услугу следующего месяца»: УПД Синапсиса от 31.07 визуально становился августом,

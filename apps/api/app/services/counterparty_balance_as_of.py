@@ -78,7 +78,12 @@ _DOC_CONDITIONS = (
 
 
 def _msk_date(column):
-    """Момент записи → календарный день ПО МОСКВЕ (как в остальном леджерном коде)."""
+    """Момент записи → календарный день ПО МОСКВЕ (как в остальном леджерном коде).
+
+    Везде, где у события нет своей даты и ориентиром служит ``created_at`` — у предоплаты,
+    гашения, документа, — день берётся только так. Голый ``date()`` считается в зоне сессии (на
+    проде ``Etc/UTC``), а питоновские зеркала — сверка, очередь гашения, реестры — ведут день по
+    Москве (``clock.moscow_date``): запись после полуночи МСК легла бы в них в разные сутки."""
     return func.date(func.timezone("Europe/Moscow", column))
 
 
@@ -111,7 +116,7 @@ def _money_allocation_date():
     return func.coalesce(
         CashflowTransaction.operation_date,
         BankOperation.operation_date,
-        func.date(InvoicePaymentAllocation.created_at),
+        _msk_date(InvoicePaymentAllocation.created_at),
     )
 
 
@@ -165,7 +170,7 @@ def _allocation_event_date():
     середину августа показывал ноль. Два источника правды об одном контрагенте расходились
     на 20 690 ₽, и оба считали себя правыми.
     """
-    document_in_force = _document_in_force(func.date(InvoicePaymentAllocation.created_at))
+    document_in_force = _document_in_force(_msk_date(InvoicePaymentAllocation.created_at))
     return case(
         (
             InvoicePaymentAllocation.source_kind == "prepayment",
@@ -178,7 +183,7 @@ def _allocation_event_date():
             InvoicePaymentAllocation.source_kind == "barter",
             # У зачёта денежного факта нет вовсе — остаётся дата записи, и это единственный
             # приблизительный случай во всём расчёте (см. approximate_settlements).
-            func.date(InvoicePaymentAllocation.created_at),
+            _msk_date(InvoicePaymentAllocation.created_at),
         ),
         else_=_money_allocation_date(),
     )
@@ -496,14 +501,14 @@ async def build_balance_as_of(
                 # оплаченного авансом, в середине месяца одновременно висели бы кредиторка по
                 # неоказанной услуге и списанный аванс. Документ без даты считаем действующим
                 # с момента записи — других ориентиров нет.
-                _document_in_force(func.date(SupplierInvoice.created_at)) <= as_of,
+                _document_in_force(_msk_date(SupplierInvoice.created_at)) <= as_of,
             )
             .group_by(SupplierInvoice.counterparty_id)
         )
     ).all()
 
     # Дебиторка: предоплата живёт с даты своего денежного факта и гасится аллокациями до даты.
-    in_force = _document_in_force(func.date(InvoicePaymentAllocation.created_at))
+    in_force = _document_in_force(_msk_date(InvoicePaymentAllocation.created_at))
     settled_by_prepayment = (
         select(
             InvoicePaymentAllocation.prepayment_id.label("prepayment_id"),

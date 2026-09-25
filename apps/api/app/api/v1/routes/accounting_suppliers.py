@@ -1681,7 +1681,7 @@ async def list_document_register(
             DocumentAllocationRef(
                 source_kind=alloc.source_kind,
                 amount=_float(alloc.amount),
-                operation_date=tx_date or alloc.created_at.date(),
+                operation_date=tx_date or clock.moscow_date(alloc.created_at),
                 prepayment_kind=prepayment_kind,
                 match_basis=alloc.match_basis,
             )
