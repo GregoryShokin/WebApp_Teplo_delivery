@@ -36,7 +36,7 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.models.enums import SELF_ACCRUED_INVOICE_SOURCES
-from app.services import accounting_periods, clock
+from app.services import accounting_periods, clock, owner_analytics
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
@@ -1757,6 +1757,27 @@ async def _sync_rule1_distribution(
             await session.flush()
         return None
 
+    if await _dividends_payout(session, transaction):
+        # Дивиденды — ВЫПЛАТА собственнику из прибыли, а не его долг бизнесу (решение владельца
+        # 25.09.2026). Payable-профиль у собственника есть — через него правило 1 растит его
+        # заём, — и без этой проверки та же дверь завела бы «долг» и на дивиденды, а если
+        # собственник ещё и арендодатель, оплатила бы ими его акт аренды. Правило 1 такими
+        # деньгами не распоряжается вовсе: снимаем только СВОЁ (пересборкой, а не сносом —
+        # деньги из учёта не уходят, и ручную оплату счёта оператором трогать не за что), а
+        # счета этого платежа досинхронизируем, как при усохшем авансе.
+        if not await _unwind_transaction_kz_settlements(
+            session, transaction.id, include_bills=False
+        ):
+            raise CounterpartyPaymentError(
+                "Платёж уже погасил кредиторку, отправленную в банк-черновик — "
+                "сначала откатите черновик"
+            )
+        if existing is not None and _prepayment_untouched(existing):
+            await session.delete(existing)
+            await session.flush()
+        await _resync_transaction_bills(session, transaction)
+        return None
+
     # Гашёную предоплату (её авансы уже связаны с накладными) не пересобираем.
     if existing is not None and not _prepayment_untouched(existing):
         return existing
@@ -1859,6 +1880,24 @@ async def _sync_rule1_distribution(
     await session.flush()
     await _resync_transaction_bills(session, transaction)
     return existing
+
+
+async def _dividends_payout(session: AsyncSession, transaction: CashflowTransaction) -> bool:
+    """Проводка — выплата дивидендов: правилу 1 её деньгами распоряжаться нельзя.
+
+    Отбор по СТАТЬЕ, а не по контрагенту: собственник бывает бизнесу и арендодателем, и
+    подрядчиком (``owner_analytics``), и такие его платежи — обычные деньги правила 1. И не по
+    признаку ``owner_required``: под ним же живёт выдача займа, а заём дебиторкой стать обязан.
+
+    Гейт живёт здесь, а не в ``manual_payment_money_is_free``: та отвечает лишь на вопрос,
+    звать ли правило 1, и её «нет» оставило бы на месте дебиторку, заведённую платежу до
+    переразметки в дивиденды, — снять её может только сама пересборка."""
+    if transaction.article_id is None:
+        return False
+    code = await session.scalar(
+        select(DdsArticle.code).where(DdsArticle.id == transaction.article_id)
+    )
+    return code == owner_analytics.DIVIDENDS_ARTICLE_CODE
 
 
 async def _service_cash_needs_receivable(

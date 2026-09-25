@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import BusinessOwner, Counterparty, CounterpartyRole, DdsArticle
 
 __all__ = [
+    "DIVIDENDS_ARTICLE_CODE",
     "OWNER_LOAN_KIND",
     "OWNER_ROLE",
     "OwnerAnalyticsError",
@@ -50,6 +51,11 @@ OWNER_ROLE = "owner"
 # признаётся, документа от собственника не ждут, и очередь признания расходов такие строки
 # обязана пропускать (иначе 1,25 млн ₽ входящих остатков вечно висят в «Ждём документ»).
 OWNER_LOAN_KIND = "owner_loan"
+
+# Статья выплаты дивидендов (каталог 0114, признак собственника — 0247). Дивиденды — ВЫПЛАТА
+# собственнику из прибыли, а не его долг бизнесу (решение владельца 25.09.2026): в отличие от
+# займа, дебиторкой они не становятся, и сверка с собственником не вправе считать их авансом.
+DIVIDENDS_ARTICLE_CODE = "dividendy"
 
 
 async def settlement_article_ids(session: AsyncSession) -> set[uuid.UUID]:
