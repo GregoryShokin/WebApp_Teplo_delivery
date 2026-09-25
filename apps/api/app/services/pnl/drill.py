@@ -96,8 +96,9 @@ class DrillRow:
     subtitle: str | None
     row_date: date | None
     amount: Decimal
-    #: ``included`` — в сумме строки; ``waiting`` — деньги ушли, документа нет;
-    #: ``excluded`` — учтено в другом месте; ``info`` — справочно, в сумму не входит.
+    #: ``included`` — в сумме строки; ``waiting`` — деньги ушли, документа нет; ``overdue`` —
+    #: то же, но срок документа вышел; ``excluded`` — учтено в другом месте; ``info`` —
+    #: справочно, в сумму не входит.
     kind: str
 
 
@@ -416,17 +417,20 @@ async def _waiting_group(
         ),
     )
     for item in sorted(items, key=lambda entry: -entry.amount):
+        period = (
+            f"период {_period_label(item.period_start, item.period_end)}"
+            if item.period_known
+            else "период не указан — месяц взят по дате платежа"
+        )
         group.rows.append(
             DrillRow(
                 title=names.get(item.counterparty_id) or "Без контрагента",
-                subtitle=(
-                    f"период {_period_label(item.period_start, item.period_end)}"
-                    if item.period_known
-                    else "период не указан — месяц взят по дате платежа"
-                ),
+                subtitle=f"{period} · {waiting_source.state_label(item)}",
                 row_date=item.paid_on,
                 amount=item.amount,
-                kind="waiting",
+                # Просрочку расшифровка выделяет: из всех ожиданий строки действия требует
+                # только она, и в списке законных ожиданий её надо видеть сразу.
+                kind="overdue" if item.state == waiting_source.STATE_OVERDUE else "waiting",
             )
         )
     result.groups.append(group)
