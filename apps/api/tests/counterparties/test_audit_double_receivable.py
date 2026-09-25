@@ -581,3 +581,505 @@ async def test_rule1_remainder_of_a_bigger_payment_survives_touching_the_bill(
 
         assert await _bill_receivable(session, bill.id) == Decimal("10000.00")
         assert await _receivable_total(session, cp.id) == Decimal("15000.00")
+
+
+async def _assert_balance_matches_ledger(session: AsyncSession, counterparty_id: uuid.UUID) -> None:
+    """Баланс на дату (зеркало чокпоинта в SQL) видит ту же дебиторку, что леджер предоплат."""
+    from app.services.counterparty_balance_as_of import build_balance_as_of
+
+    sheet = await build_balance_as_of(session, as_of=date(2026, 12, 31))
+    row = next((r for r in sheet.rows if r.counterparty_id == counterparty_id), None)
+    receivable = row.receivable if row is not None else Decimal("0.00")
+    assert receivable == await _receivable_total(session, counterparty_id), (
+        "баланс на дату разошёлся с леджером"
+    )
+
+
+async def test_reassigned_payment_does_not_carry_another_counterpartys_bill_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик 25.09 (п. 4): перевес платежа на другого контрагента не уносит деньги чужого счёта.
+
+    Платёж 10 000 классифицирован на X, 4 000 из него оператор привязал к счёту X — деньги счёта
+    несёт аванс правила 1 (своей ДЗ у счёта нет). Потом платёж перевесили на Y. Ручную оплату
+    счёта правило 1 не снимает, но и нести её деньги аванс Y не вправе: у X оплаченный счёт без
+    дебиторки, у Y — аванс на 4 000 больше денег платежа, оставшихся ему."""
+    from app.services.counterparty_matching import allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        x = await make_counterparty(session, name="Перевес-X", inn="6155990013")
+        y = await make_counterparty(session, name="Перевес-Y", inn="6155990014")
+        bill = await make_invoice(
+            session,
+            counterparty_id=x.id,
+            amount="4000.00",
+            doc_kind="bill",
+            number="СЧ-986",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        _, tx = await _classified_payment(
+            session, counterparty_id=x.id, amount="10000.00", inn="6155990013"
+        )
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        await allocate_cash_to_invoice(
+            session, invoice_id=bill.id, amount=Decimal("4000.00"), cashflow_transaction_id=tx.id
+        )
+        assert await _bill_receivable(session, bill.id) is None
+        assert await _receivable_total(session, x.id) == Decimal("10000.00")
+
+        tx = await session.get(CashflowTransaction, tx.id)
+        tx.counterparty_id = y.id
+        await session.flush()
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+
+        assert await _bill_receivable(session, bill.id) == Decimal("4000.00"), (
+            "деньги оплаченного счёта X выпали из его дебиторки"
+        )
+        assert await _receivable_total(session, x.id) == Decimal("4000.00")
+        assert await _receivable_total(session, y.id) == Decimal("6000.00"), (
+            "аванс Y унёс деньги счёта X"
+        )
+        await _assert_balance_matches_ledger(session, x.id)
+        await _assert_balance_matches_ledger(session, y.id)
+
+
+async def _bill_paid_by_rule1_and_a_bank_top_up(
+    session: AsyncSession, *, inn: str, name: str, act_amount: str
+) -> tuple[SupplierInvoice, SupplierInvoice, SupplierPrepayment, uuid.UUID]:
+    """Счёт 10 000: первые 5 000 несёт аванс правила 1, доплату 5 000 — ДЗ по счёту (сверка
+    второй операции). Потом приходит акт и гасится обеими."""
+    from app.services.counterparty_bank_match import confirm_invoice_match
+
+    cp = await make_counterparty(session, name=name, inn=inn)
+    bill = await make_invoice(
+        session,
+        counterparty_id=cp.id,
+        amount="10000.00",
+        doc_kind="bill",
+        number=f"СЧ-{inn[-3:]}",
+        invoice_date=date(2026, 7, 1),
+    )
+    await session.commit()
+    first, tx = await _classified_payment(session, counterparty_id=cp.id, amount="5000.00", inn=inn)
+    rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+    await session.commit()
+    assert rule1 is not None
+    await confirm_invoice_match(
+        session, invoice_id=bill.id, bank_operation_id=first.id, enrich=False, actor_user_id=None
+    )
+    assert await _bill_receivable(session, bill.id) is None
+    top_up = await make_bank_operation(
+        session,
+        amount="5000.00",
+        direction="out",
+        inn=inn,
+        operation_date=date(2026, 7, 16),
+        classification_status="classified",
+    )
+    await session.commit()
+    await confirm_invoice_match(
+        session, invoice_id=bill.id, bank_operation_id=top_up.id, enrich=False, actor_user_id=None
+    )
+    assert await _bill_receivable(session, bill.id) == Decimal("5000.00")
+    act = await make_invoice(
+        session,
+        counterparty_id=cp.id,
+        amount=act_amount,
+        doc_kind="closing",
+        number=f"АКТ-{inn[-3:]}",
+        invoice_date=date(2026, 7, 20),
+        operational_scope="finance",
+    )
+    await apply_closing_document(session, act, as_of=date(2026, 7, 21))
+    await session.commit()
+    return bill, act, rule1, top_up.id
+
+
+async def _act_paid(session: AsyncSession, act_id: uuid.UUID) -> Decimal:
+    return Decimal(
+        str(
+            await session.scalar(
+                select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
+                    InvoicePaymentAllocation.invoice_id == act_id
+                )
+            )
+        )
+    )
+
+
+async def test_rolled_back_bill_top_up_does_not_leave_the_act_paid_twice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик 25.09 (п. 5): откат доплаты счёта не оставляет акт закрытым одними деньгами дважды.
+
+    Акт 10 000 погашен авансом правила 1 (первая оплата счёта) и ДЗ по счёту (доплата). Доплату
+    исключили: у счёта оплачено 5 000, и все их несёт аванс — своей ДЗ счёт больше не держит.
+    Откат зачётов целился в ОПЛАЧЕННОЕ (5 000 — «зачтено не больше оплаты»), а не в то, что
+    ДЗ по счёту несёт (0): ДЗ усаживалась до зачтённых 5 000 и оставалась на акте, акт —
+    оплаченным 10 000 при 5 000 денег. Теперь зачёт доплаты снимается, акт — кредиторка 5 000."""
+    from app.services.supplier_prepayments import unwind_operation_bank_allocations
+
+    async with async_session_factory() as session:
+        bill, act, rule1, top_up_id = await _bill_paid_by_rule1_and_a_bank_top_up(
+            session, inn="6155990015", name="Откат-доплаты", act_amount="10000.00"
+        )
+        await session.refresh(rule1)
+        assert act.payment_status == "paid"
+        assert rule1.amount_settled == Decimal("5000.00")
+
+        assert await unwind_operation_bank_allocations(session, top_up_id)
+        await session.commit()
+
+        assert await _bill_receivable(session, bill.id) is None
+        assert await _act_paid(session, act.id) == Decimal("5000.00"), (
+            "акт остался закрытым деньгами, которых нет"
+        )
+        assert (await session.get(SupplierInvoice, act.id)).payment_status == "partially_paid"
+        assert await _receivable_total(session, bill.counterparty_id) == Decimal("0.00")
+        await _assert_balance_matches_ledger(session, bill.counterparty_id)
+
+
+async def test_rolled_back_bill_top_up_leaves_the_act_a_payable_not_a_phantom(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Снятый зачёт не оставляет фантомной дебиторки, но и не перегашается сам.
+
+    Акт 5 000 погашен ДЗ по счёту (доплата), аванс правила 1 (первая оплата) открыт. Доплату
+    исключили — деньги счёта теперь только в авансе. Прежде ДЗ по счёту оставалась на акте, а
+    аванс висел открытым: дебиторка 5 000 при оплаченном акте — нетто врало на 5 000. Теперь
+    зачёт снят: акт — кредиторка 5 000, аванс — дебиторка 5 000, нетто ноль. Перегасить акт
+    авансом — решение человека: автоматическое перегашение из отката брало аванс проводки,
+    которую в этот момент выводят из учёта (скептик Fable, F1)."""
+    from app.services.supplier_prepayments import unwind_operation_bank_allocations
+
+    async with async_session_factory() as session:
+        bill, act, rule1, top_up_id = await _bill_paid_by_rule1_and_a_bank_top_up(
+            session, inn="6155990016", name="Откат-кредиторка", act_amount="5000.00"
+        )
+        assert act.payment_status == "paid"
+
+        assert await unwind_operation_bank_allocations(session, top_up_id)
+        await session.commit()
+
+        assert await _bill_receivable(session, bill.id) is None
+        assert await _act_paid(session, act.id) == Decimal("0.00")
+        assert (await session.get(SupplierInvoice, act.id)).payment_status == "unpaid"
+        await session.refresh(rule1)
+        assert rule1.status == "open" and rule1.amount_settled == Decimal("0.00")
+        assert await _receivable_total(session, bill.counterparty_id) == Decimal("5000.00")
+        await _assert_balance_matches_ledger(session, bill.counterparty_id)
+
+
+async def test_excluding_a_matched_operation_does_not_resettle_the_act_with_its_own_advance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик Fable F1: исключённая операция не оставляет акт оплаченным своими же деньгами.
+
+    Операцию 15 000 сверили со счётом 10 000 до правила 1 (ДЗ по счёту 10 000), акт 10 000
+    погашен этой ДЗ, остаток 5 000 правило 1 сделало авансом. «Исключить операцию» снимает
+    сверку, откат зачёта возвращает акт в кредиторку — и перегашение из открытых авансов брало
+    аванс исключаемой операции: тронутый, он переживал снос нетронутых, и акт оставался
+    оплаченным на 5 000 деньгами, которых в учёте нет."""
+    from app.services.banking.classifier import apply_operation_action
+    from app.services.counterparty_bank_match import confirm_invoice_match
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Исключение-сверки", inn="6155990017")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="bill",
+            number="СЧ-983",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        operation, tx = await _classified_payment(
+            session, counterparty_id=cp.id, amount="15000.00", inn="6155990017"
+        )
+        await confirm_invoice_match(
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
+        )
+        act = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="closing",
+            number="АКТ-983",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, act, as_of=date(2026, 7, 21))
+        rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        assert rule1 is not None and rule1.amount == Decimal("5000.00")
+        assert act.payment_status == "paid"
+        act_id, cp_id = act.id, cp.id
+
+        await apply_operation_action(session, operation, action="exclude")
+        await session.commit()
+
+        assert await _act_paid(session, act_id) == Decimal("0.00"), (
+            "акт оплачен деньгами исключённой операции"
+        )
+        assert await _receivable_total(session, cp_id) == Decimal("0.00")
+
+
+async def test_bill_can_be_matched_to_a_payment_whose_rule1_advance_went_to_its_upd(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик Fable F2: счёт привязывается к платежу, чей аванс уже погасил УПД.
+
+    Платёж 10 000 классифицирован — аванс правила 1; УПД 10 000 погасил аванс; счёт пришёл
+    позже. Деньги счёта аванс несёт и так — счёт лишь называет, за что заплачено, и путь «счёт →
+    УПД» законен. Потолок по остатку аванса не давал привязать счёт, и тот висел «Готов к
+    оплате» при уже ушедших деньгах."""
+    from app.services.counterparty_bank_match import confirm_invoice_match
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Счёт-после-УПД", inn="6155990018")
+        operation, tx = await _classified_payment(
+            session, counterparty_id=cp.id, amount="10000.00", inn="6155990018"
+        )
+        rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        upd = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="closing",
+            number="УПД-982",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, upd, as_of=date(2026, 7, 21))
+        await session.commit()
+        await session.refresh(rule1)
+        assert rule1.status == "settled"
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="bill",
+            number="СЧ-982",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+
+        await confirm_invoice_match(
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
+        )
+
+        assert (await session.get(SupplierInvoice, bill.id)).payment_status == "paid"
+        assert await _bill_receivable(session, bill.id) is None
+        assert await _receivable_total(session, cp.id) == Decimal("0.00")
+        await _assert_balance_matches_ledger(session, cp.id)
+
+
+async def test_reassigned_payment_with_a_touched_advance_does_not_double_the_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик Fable F3: тронутый аванс прежнего контрагента несёт деньги счёта нового.
+
+    Платёж 10 000 классифицирован на X, УПД X 6 000 погасил аванс; платёж перевесили на Y —
+    тронутый аванс перевес не пересобирает, он остаётся у X. Потом той же проводкой оплатили счёт
+    Y 4 000. Дебиторка — 4 000 (остаток денег платежа), а не 4 000 у X плюс 4 000 ДЗ по счёту Y:
+    чокпоинт не вправе отбросить аванс платежа только потому, что тот записан на другого."""
+    from app.services.counterparty_matching import allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        x = await make_counterparty(session, name="Тронутый-X", inn="6155990019")
+        y = await make_counterparty(session, name="Тронутый-Y", inn="6155990020")
+        _, tx = await _classified_payment(
+            session, counterparty_id=x.id, amount="10000.00", inn="6155990019"
+        )
+        rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        upd = await make_invoice(
+            session,
+            counterparty_id=x.id,
+            amount="6000.00",
+            doc_kind="closing",
+            number="УПД-981",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, upd, as_of=date(2026, 7, 21))
+        await session.commit()
+        await session.refresh(rule1)
+        assert rule1.amount_settled == Decimal("6000.00")
+
+        tx = await session.get(CashflowTransaction, tx.id)
+        tx.counterparty_id = y.id
+        await session.flush()
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        bill = await make_invoice(
+            session,
+            counterparty_id=y.id,
+            amount="4000.00",
+            doc_kind="bill",
+            number="СЧ-981",
+            invoice_date=date(2026, 7, 22),
+        )
+        await session.commit()
+        await allocate_cash_to_invoice(
+            session, invoice_id=bill.id, amount=Decimal("4000.00"), cashflow_transaction_id=tx.id
+        )
+
+        total = await _receivable_total(session, x.id) + await _receivable_total(session, y.id)
+        assert total == Decimal("4000.00"), f"дебиторка {total} при 4 000 денег платежа"
+
+
+async def test_statement_payment_does_not_borrow_the_period_of_a_bill_with_own_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик Fable F5 — прод-путь S3: сентябрь выпиской не получает период августа.
+
+    Абонентка ровная, 3 700 ₽. Счёт за август оплачен из очереди (своя ДЗ с периодом августа).
+    Сентябрь заплачен выпиской раньше, чем пришёл его счёт, — правило 1 искало период по
+    оплаченному счёту той же суммы и находило единственный: августовский. Сентябрьские деньги
+    получали период августа, и УПД за август гасил их рангом «период», а ДЗ августа висела."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонентка-F5", inn="6155990021")
+        august_bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            doc_kind="bill",
+            number="АБ-08",
+            invoice_date=date(2026, 7, 8),
+        )
+        august_bill.service_period_start = date(2026, 8, 1)
+        august_bill.service_period_end = date(2026, 8, 31)
+        august_bill.service_period_status = "ready"
+        await session.commit()
+        await _pay_bill_directly(session, august_bill, amount="3700.00")
+        august_money = await session.scalar(
+            select(SupplierPrepayment).where(SupplierPrepayment.bill_invoice_id == august_bill.id)
+        )
+        assert august_money is not None
+
+        _, tx = await _classified_payment(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            inn="6155990021",
+            operation_date=date(2026, 8, 10),
+        )
+        september_money = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        assert september_money is not None
+        assert september_money.service_period_start is None, (
+            "сентябрьские деньги получили период августа"
+        )
+
+        upd = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            doc_kind="closing",
+            number="УПД-08",
+            invoice_date=date(2026, 8, 31),
+            operational_scope="finance",
+        )
+        upd.service_period_start = date(2026, 8, 1)
+        upd.service_period_end = date(2026, 8, 31)
+        upd.service_period_status = "ready"
+        await session.flush()
+        await apply_closing_document(session, upd, as_of=date(2026, 9, 1))
+        await session.commit()
+
+        rows = (
+            await session.scalars(
+                select(InvoicePaymentAllocation).where(
+                    InvoicePaymentAllocation.invoice_id == upd.id
+                )
+            )
+        ).all()
+        assert [r.prepayment_id for r in rows] == [august_money.id], (
+            "УПД за август погасил сентябрьские деньги"
+        )
+
+
+async def test_foreign_bill_paid_by_the_same_payment_does_not_shrink_own_bill_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик Fable P1: чужой счёт той же проводки — деньги аванса, а не своего счёта.
+
+    Платёж Y 10 000: счёт Y 6 000 сверен до правила 1 (своя ДЗ 6 000, акт Y погашен ею),
+    остаток 4 000 — аванс правила 1. Той же проводкой оплатили счёт X 4 000 — его деньги несёт
+    аванс. Когда чокпоинт считал «другие счета» только по контрагенту платежа, касание счёта Y
+    относило эти 4 000 к нему: ДЗ по счёту Y падала до 2 000, откат снимал зачёт с оплаченного
+    акта, и деньги не числились нигде."""
+    from app.services.counterparty_matching import _recompute_status, allocate_cash_to_invoice
+
+    async with async_session_factory() as session:
+        x = await make_counterparty(session, name="Чужой-счёт-X", inn="6155990022")
+        y = await make_counterparty(session, name="Свой-счёт-Y", inn="6155990023")
+        own_bill = await make_invoice(
+            session,
+            counterparty_id=y.id,
+            amount="6000.00",
+            doc_kind="bill",
+            number="СЧ-980",
+            invoice_date=date(2026, 7, 1),
+        )
+        foreign_bill = await make_invoice(
+            session,
+            counterparty_id=x.id,
+            amount="4000.00",
+            doc_kind="bill",
+            number="СЧ-979",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        _, tx = await _classified_payment(
+            session, counterparty_id=y.id, amount="10000.00", inn="6155990023"
+        )
+        await session.commit()
+        await allocate_cash_to_invoice(
+            session,
+            invoice_id=own_bill.id,
+            amount=Decimal("6000.00"),
+            cashflow_transaction_id=tx.id,
+        )
+        act = await make_invoice(
+            session,
+            counterparty_id=y.id,
+            amount="6000.00",
+            doc_kind="closing",
+            number="АКТ-980",
+            invoice_date=date(2026, 7, 20),
+            operational_scope="finance",
+        )
+        await apply_closing_document(session, act, as_of=date(2026, 7, 21))
+        rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        assert rule1 is not None and rule1.amount == Decimal("4000.00")
+        assert act.payment_status == "paid"
+        await allocate_cash_to_invoice(
+            session,
+            invoice_id=foreign_bill.id,
+            amount=Decimal("4000.00"),
+            cashflow_transaction_id=tx.id,
+        )
+
+        await _recompute_status(session, await session.get(SupplierInvoice, own_bill.id))
+        await session.commit()
+
+        assert await _bill_receivable(session, own_bill.id) == Decimal("6000.00")
+        assert await _act_paid(session, act.id) == Decimal("6000.00"), (
+            "касание своего счёта сняло зачёт с оплаченного акта"
+        )
