@@ -1716,6 +1716,10 @@ async def classify_owner_review_case(
         # Отказ правила 1 (зачёт в банк-черновике, погашенная предоплата под дивиденды) —
         # тоже конфликт состояния: без перехвата он уходил бы к владельцу как 500.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    except ValueError as error:
+        # Как в classify_operation: прочий отказ разбора («операция оплачивает накладную в
+        # банк-черновике») — объяснение, а не 500. PeriodClosed — подкласс, пойман выше.
+        raise HTTPException(status_code=400, detail=str(error)) from error
     if payload.action == "mark_internal_transfer":
         await find_and_link_transfer_pairs(session)
 

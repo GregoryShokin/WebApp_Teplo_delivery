@@ -390,7 +390,15 @@ async def _payment_rows(
                 CashflowTransaction.counterparty_id == counterparty_id,
                 CashflowTransaction.quality_status != EXCLUDED_QUALITY,
             )
-            .order_by(CashflowTransaction.operation_date, CashflowTransaction.created_at)
+            # Доли одного разбора заводятся одной транзакцией — created_at у них общий. Без
+            # последних ключей «ничьё» гашение операции ложилось на доли в случайном порядке, и
+            # «непокрыто» у строк менялось от загрузки к загрузке. Бо́льшая доля — первой.
+            .order_by(
+                CashflowTransaction.operation_date,
+                CashflowTransaction.created_at,
+                CashflowTransaction.amount.desc(),
+                CashflowTransaction.id,
+            )
         )
     ).all()
 
