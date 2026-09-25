@@ -31,6 +31,17 @@ def moscow_today() -> date:
     return datetime.now(MOSCOW_TZ).date()
 
 
+def moscow_date(moment: datetime) -> date:
+    """Момент записи (``timestamptz``) → календарный день ПО МОСКВЕ.
+
+    ``created_at.date()`` отдаёт день по UTC: asyncpg возвращает ``timestamptz`` в UTC, и запись
+    02.08 в 21:42 UTC (03.08 00:42 МСК) читалась бы вторым августа. SQL-зеркало —
+    ``date(timezone('Europe/Moscow', …))``: голый ``date()`` там считается в зоне сессии, а на проде
+    это ``Etc/UTC``. Обе стороны обязаны давать один день, иначе баланс на дату и очередь гашения
+    ставят одну запись в разные сутки."""
+    return moment.astimezone(MOSCOW_TZ).date()
+
+
 def as_moscow(value: datetime) -> datetime:
     """Наивный ``datetime`` от клиента — это МОСКОВСКОЕ стенное время, а не UTC.
 
