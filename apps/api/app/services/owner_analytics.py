@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -36,7 +37,9 @@ __all__ = [
     "OwnerAnalyticsError",
     "OwnerRow",
     "ensure_owner_context",
+    "is_owner_settlement",
     "list_owners",
+    "settlement_article_ids",
     "shares_total",
 ]
 
@@ -47,6 +50,33 @@ OWNER_ROLE = "owner"
 # признаётся, документа от собственника не ждут, и очередь признания расходов такие строки
 # обязана пропускать (иначе 1,25 млн ₽ входящих остатков вечно висят в «Ждём документ»).
 OWNER_LOAN_KIND = "owner_loan"
+
+
+async def settlement_article_ids(session: AsyncSession) -> set[uuid.UUID]:
+    """Статьи расчётов с собственниками: заём, его возврат, взнос, дивиденды."""
+    return set(
+        (
+            await session.scalars(select(DdsArticle.id).where(DdsArticle.owner_required.is_(True)))
+        ).all()
+    )
+
+
+def is_owner_settlement(
+    *, kind: str | None, article_id: uuid.UUID | None, owner_articles: Collection[uuid.UUID]
+) -> bool:
+    """Платёж — расчёт с собственником, а не услуга: документа по нему не будет никогда.
+
+    Один признак для очереди признания, сверки с контрагентом и сводки разрывов. Пока очередь
+    проверяла его сама, а сверка — нет, входящие остатки собственников (1 020 000 и 200 000 ₽) и
+    июльский заём Павла ушли из «Ждём документ», но в карточке продолжали краснеть «документа
+    нет · 15 дн.». ОПиУ отсекает такие строки раньше и по-своему: статьи собственника в отчёт не
+    входят (``in_pnl=false``), и ожидание по ним до строки отчёта не доходит.
+
+    Отбор по СТАТЬЕ, а не по контрагенту: собственник бывает бизнесу ещё и арендодателем, и
+    подрядчиком (см. докстринг модуля), и выкинуть все его платежи значило бы спрятать настоящую
+    услугу вместе с займом. ``kind`` ловит входящий остаток: у него статьи нет вовсе.
+    """
+    return kind == OWNER_LOAN_KIND or (article_id is not None and article_id in owner_articles)
 
 
 class OwnerAnalyticsError(ValueError):

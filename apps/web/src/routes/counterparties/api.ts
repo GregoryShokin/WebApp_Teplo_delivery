@@ -402,6 +402,8 @@ export type LedgerRow = {
   prepayment_id: string | null;
   /** Документ создан нами (абонентский платёж без закрывающих), а не прислан контрагентом. */
   self_billed: boolean;
+  /** Расчёт с собственником (заём, дивиденды): документа не будет, срока ожидания нет. */
+  owner_settlement: boolean;
 };
 
 export type LedgerMonth = {
