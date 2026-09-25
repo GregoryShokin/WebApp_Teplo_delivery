@@ -399,3 +399,185 @@ async def test_bill_touched_after_upd_does_not_resurrect_receivable(
         assert total == Decimal("0.00"), (
             f"Повторное касание счёта воскресило дебиторку {total} на уже отработанные деньги"
         )
+
+
+async def _bill_receivable(session: AsyncSession, bill_id: uuid.UUID) -> Decimal | None:
+    prepayment = await session.scalar(
+        select(SupplierPrepayment).where(SupplierPrepayment.bill_invoice_id == bill_id)
+    )
+    return None if prepayment is None else Decimal(str(prepayment.amount))
+
+
+async def _pay_bill_directly(
+    session: AsyncSession, bill: SupplierInvoice, *, amount: str
+) -> CashflowTransaction:
+    """Оплата счёта дверью, которая правило 1 не зовёт (ручная оплата с кошелька)."""
+    from app.services.counterparty_matching import _recompute_status
+
+    wallet = await make_wallet(session, name=f"Касса-{amount}", wallet_type="bank")
+    tx = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=Decimal(amount),
+        operation_date=date(2026, 8, 5),
+        counterparty_id=bill.counterparty_id,
+        source_kind="manual",
+        quality_status="auto",
+    )
+    session.add(tx)
+    await session.flush()
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=bill.id,
+            source_kind="cash",
+            cashflow_transaction_id=tx.id,
+            amount=Decimal(amount),
+        )
+    )
+    await session.flush()
+    await _recompute_status(session, bill)
+    await session.commit()
+    return tx
+
+
+async def test_touching_a_bill_does_not_take_money_carried_by_rule1(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повторное касание счёта не забирает в ДЗ по счёту деньги аванса правила 1.
+
+    Счёт 10 000: первые 4 000 — классифицированный платёж (его деньги несёт аванс правила 1),
+    потом оператор привязал его к счёту — своей ДЗ счёт не завёл. Доплату 6 000 провели
+    дверью без правила 1 — ДЗ по счёту 6 000. Прежний чокпоинт уступал правилу 1 только при
+    СОЗДАНИИ записи, и следующее касание счёта растило её до всей оплаты: 14 000 на 10 000.
+    """
+    from app.services.counterparty_bank_match import confirm_invoice_match
+    from app.services.counterparty_matching import _recompute_status
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Касание-счёта", inn="6155990007")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="bill",
+            number="СЧ-993",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        operation, tx = await _classified_payment(
+            session, counterparty_id=cp.id, amount="4000.00", inn="6155990007"
+        )
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        await confirm_invoice_match(
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
+        )
+        assert await _bill_receivable(session, bill.id) is None
+        await _pay_bill_directly(session, bill, amount="6000.00")
+        assert await _bill_receivable(session, bill.id) == Decimal("6000.00")
+
+        await _recompute_status(session, await session.get(SupplierInvoice, bill.id))
+        await session.commit()
+
+        assert await _bill_receivable(session, bill.id) == Decimal("6000.00")
+        assert await _receivable_total(session, cp.id) == Decimal("10000.00")
+
+
+async def test_classified_payment_matched_to_a_bill_with_own_receivable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Естественный порядок без повторного касания и пересборка аванса после него.
+
+    Счёт 10 000 уже несёт свою ДЗ 6 000 (доплата дверью без правила 1). Второй платёж 4 000
+    классифицирован (аванс правила 1 на всю сумму) и привязан к тому же счёту: прежний
+    чокпоинт брал в ДЗ по счёту всю оплату — 14 000. А когда правило 1 затем пересобирает
+    аванс (правка проводки), счёт со своей ДЗ оно себе не берёт — аванс исчезает, и его
+    деньги обязана подхватить ДЗ по счёту, иначе дебиторка проседает до 6 000.
+    """
+    from app.services.counterparty_bank_match import confirm_invoice_match
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Счёт-со-своей-ДЗ", inn="6155990008")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="bill",
+            number="СЧ-992",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        await _pay_bill_directly(session, bill, amount="6000.00")
+        assert await _bill_receivable(session, bill.id) == Decimal("6000.00")
+
+        operation, tx = await _classified_payment(
+            session, counterparty_id=cp.id, amount="4000.00", inn="6155990008"
+        )
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        await confirm_invoice_match(
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
+        )
+        assert await _receivable_total(session, cp.id) == Decimal("10000.00")
+
+        await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        rule1 = await session.scalar(
+            select(SupplierPrepayment).where(SupplierPrepayment.cashflow_transaction_id == tx.id)
+        )
+        assert rule1 is None, "счёт со своей ДЗ правило 1 себе не берёт"
+        assert await _bill_receivable(session, bill.id) == Decimal("10000.00")
+        assert await _receivable_total(session, cp.id) == Decimal("10000.00")
+
+
+async def test_rule1_remainder_of_a_bigger_payment_survives_touching_the_bill(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аванс-остаток платежа больше счёта денег счёта не несёт — и касание это помнит.
+
+    Платёж 15 000 сначала привязали к счёту на 10 000 (ДЗ по счёту 10 000), потом правило 1
+    сделало остаток 5 000 своим авансом. Вычти аванс из денег счёта при касании — и ДЗ по счёту
+    усохла бы до 5 000: 10 000 дебиторки на 15 000 денег.
+    """
+    from app.services.counterparty_bank_match import confirm_invoice_match
+    from app.services.counterparty_matching import _recompute_status
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Остаток-платежа", inn="6155990009")
+        bill = await make_invoice(
+            session,
+            counterparty_id=cp.id,
+            amount="10000.00",
+            doc_kind="bill",
+            number="СЧ-991",
+            invoice_date=date(2026, 7, 1),
+        )
+        await session.commit()
+        operation, tx = await _classified_payment(
+            session, counterparty_id=cp.id, amount="15000.00", inn="6155990009"
+        )
+        await confirm_invoice_match(
+            session,
+            invoice_id=bill.id,
+            bank_operation_id=operation.id,
+            enrich=False,
+            actor_user_id=None,
+        )
+        rule1 = await ensure_prepayment_from_bank_transaction(session, tx)
+        await session.commit()
+        assert rule1 is not None and rule1.amount == Decimal("5000.00")
+        assert await _bill_receivable(session, bill.id) == Decimal("10000.00")
+
+        await _recompute_status(session, await session.get(SupplierInvoice, bill.id))
+        await session.commit()
+
+        assert await _bill_receivable(session, bill.id) == Decimal("10000.00")
+        assert await _receivable_total(session, cp.id) == Decimal("15000.00")

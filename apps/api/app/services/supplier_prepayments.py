@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     BankOperation,
+    BarterReturnLine,
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
@@ -49,6 +50,21 @@ logger = logging.getLogger(__name__)
 PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 # Приходная статья «Возврат переплаты от поставщиков» — возврат гасит открытые предоплаты.
 SUPPLIER_REFUND_ARTICLE_CODE = "vozvrat_pereplaty_ot_postavschikov"
+
+
+def not_barter_money_return():
+    """Приход — не гашение бартерного займа деньгами.
+
+    ``barter_loan_money`` проводит деньги за наш товарный заём той же возвратной статьёй, но
+    это не возврат переплаты: гасится заём (``BarterReturnLine``), а не аванс поставщику.
+    Сосчитай их возвратом — и пересборка списала бы этой суммой открытые предоплаты партнёра,
+    а баланс вычел бы её из его дебиторки."""
+    return ~(
+        select(BarterReturnLine.id)
+        .where(BarterReturnLine.cashflow_transaction_id == CashflowTransaction.id)
+        .exists()
+    )
+
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 # Открытая кредиторка контрагента = неоплаченный остаток АКТИВНЫХ закрывающих документов.
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
@@ -473,8 +489,8 @@ async def _bill_paid_already_receivable(session: AsyncSession, invoice: Supplier
     из двух — вторая висела бы фантомом вечно.
 
     Считаем по КАЖДОЙ оплатной аллокации счёта, чей платёж уже несёт rule-1-предоплату, и не
-    вычитаем по одной проводке больше суммы этой предоплаты (бюджет на проводку) — иначе две
-    аллокации одного платежа списали бы покрытие дважды.
+    вычитаем по одной проводке больше денег счетов в этой предоплате (бюджет на проводку,
+    ``_rule1_bill_money``) — иначе две аллокации одного платежа списали бы покрытие дважды.
     """
     allocations = (
         await session.scalars(
@@ -496,28 +512,59 @@ async def _bill_paid_already_receivable(session: AsyncSession, invoice: Supplier
         if transaction_id is None:
             continue
         if transaction_id not in budget_by_tx:
-            rule1 = await session.scalar(
-                select(SupplierPrepayment)
-                .where(
-                    SupplierPrepayment.cashflow_transaction_id == transaction_id,
-                    SupplierPrepayment.kind != BILL_PREPAYMENT_KIND,
-                )
-                .limit(1)
-            )
-            # Берём ПОЛНУЮ сумму rule-1-предоплаты, а не её открытый остаток, и НЕ фильтруем по
-            # статусу: вопрос «становились ли эти деньги дебиторкой», а не «числятся ли ею
-            # сейчас». Иначе пришедший УПД гасит rule-1-ДЗ (статус 'settled'), покрытие пропадает,
-            # и следующее же касание счёта завело бы фантомную ДЗ на те же деньги. Если предоплату
-            # СНЕСЛИ (реклассификация/исключение), покрытия действительно нет — счёт корректно
-            # берёт дебиторку на себя.
-            budget_by_tx[transaction_id] = (
-                _money(rule1.amount) if rule1 is not None else Decimal("0.00")
+            budget_by_tx[transaction_id] = await _rule1_bill_money(
+                session, transaction_id, bill=invoice
             )
         take = min(_money(alloc.amount), budget_by_tx[transaction_id])
         if take > 0:
             covered += take
             budget_by_tx[transaction_id] -= take
     return covered
+
+
+async def _rule1_bill_money(
+    session: AsyncSession, transaction_id: uuid.UUID, *, bill: SupplierInvoice
+) -> Decimal:
+    """Сколько денег счёта ``bill`` может нести аванс правила 1 этого платежа.
+
+    АВАНС НА ТОЙ ЖЕ ПРОВОДКЕ ЕЩЁ НЕ ДЕНЬГИ СЧЁТА. Платёж больше счёта сначала гасит счёт, и
+    правило 1 берёт себе только остаток; счёт, у которого своя ДЗ уже есть, оно не берёт вовсе
+    (``_transaction_carried_bill_allocations``). Пока бюджетом здесь стояла вся сумма аванса,
+    это различие держалось на том, что для СУЩЕСТВУЮЩЕЙ ДЗ по счёту покрытие не считали
+    совсем, — и повторное касание счёта, чью первую оплату правило 1 уже несло, растило ДЗ по
+    счёту до всей оплаты: 14 000 дебиторки на 10 000 денег.
+
+    Что из аванса — деньги документов, а не свободный остаток, говорит сам платёж: аванс минус
+    незанятое платежом (сумма − все его аллокации, ``payment_allocated_amount``). Из этого
+    вычитаем оплаты ДРУГИХ счетов без своей ДЗ — их правило 1 несёт по определению.
+
+    Сумма аванса ПОЛНАЯ, без фильтра по статусу: вопрос «становились ли эти деньги
+    дебиторкой», а не «числятся ли ею сейчас». Иначе пришедший УПД гасит rule-1-ДЗ (статус
+    'settled'), покрытие пропадает, и следующее же касание счёта завело бы фантомную ДЗ на те же
+    деньги. Если предоплату СНЕСЛИ (реклассификация/исключение), покрытия действительно нет —
+    счёт корректно берёт дебиторку на себя."""
+    rule1 = _money(
+        await session.scalar(
+            select(func.coalesce(func.sum(SupplierPrepayment.amount), 0)).where(
+                SupplierPrepayment.cashflow_transaction_id == transaction_id,
+                SupplierPrepayment.kind != BILL_PREPAYMENT_KIND,
+            )
+        )
+    )
+    if rule1 <= 0:
+        return Decimal("0.00")
+    transaction = await session.get(CashflowTransaction, transaction_id)
+    if transaction is None:
+        return Decimal("0.00")
+    free = max(
+        _money(transaction.amount)
+        - await payment_allocated_amount(session, transaction_id=transaction_id),
+        Decimal("0.00"),
+    )
+    others = await _transaction_carried_bill_allocations(
+        session, transaction, exclude_invoice_id=bill.id
+    )
+    return max(rule1 - free - others, Decimal("0.00"))
 
 
 async def reconcile_bill_prepayment(
@@ -551,15 +598,16 @@ async def reconcile_bill_prepayment(
         )
         .limit(1)
     )
-    # Носитель ДЗ у денег платежа ровно ОДИН. Если своя prepaid_bill-запись у счёта уже есть —
-    # ею и управляем (правило 1 такие оплаты в свою предоплату не включает: см. carried в
-    # ensure_prepayment_from_bank_transaction). Уступаем правилу 1 только при решении о
-    # СОЗДАНИИ: платёж, уже несущий rule-1-предоплату, свою ДЗ имеет — вторую не заводим.
+    # Носитель ДЗ у денег платежа ровно ОДИН, и решает правило 1: те деньги счёта, что несёт
+    # его аванс на той же проводке, ДЗ по счёту не берёт — ни при создании, ни при росте. Пока
+    # правилу 1 уступали только при СОЗДАНИИ, счёт, оплаченный сперва классифицированным
+    # платежом (его несёт аванс правила 1), а потом другой дверью, при следующем касании
+    # забирал себе и первую оплату: 14 000 ДЗ на 10 000 денег. Какие деньги аванс НЕ несёт
+    # (платёж больше счёта, счёт уже со своей ДЗ), считает ``_rule1_bill_money``; пересборка
+    # аванса досинхронизирует ДЗ счетов платежа сама (``_resync_transaction_bills``).
     # ``paid`` остаётся СЫРЫМ для отката зачётов — откат обязан следовать реальной оплате
     # счёта, иначе снимались бы зачёты закрывающих, которые никто не заменит.
-    booked = paid
-    if existing is None:
-        booked = max(paid - await _bill_paid_already_receivable(session, invoice), Decimal("0.00"))
+    booked = max(paid - await _bill_paid_already_receivable(session, invoice), Decimal("0.00"))
 
     # Оплату счёта уменьшили ниже уже зачтённого закрывающими → откатить избыток зачётов
     # (закрывающие обратно в КЗ), иначе они остались бы фантомно-погашенными, долг поставщику
@@ -580,8 +628,16 @@ async def reconcile_bill_prepayment(
         return
 
     if booked <= 0:
-        # Достижимо только при existing is None (иначе booked=paid>0): счёт оплачен, но все его
-        # деньги уже несёт rule-1-предоплата — свою ДЗ счёт не заводит (иначе задвоение).
+        # Счёт оплачен, но все его деньги уже несёт rule-1-предоплата — своей ДЗ счёт не держит
+        # (иначе задвоение). Была своя запись — нетронутую снимаем, тронутую усаживаем до уже
+        # зачтённого: зачёты закрывающих откатывает только уменьшение самой оплаты (выше).
+        if existing is not None:
+            if _money(existing.amount_settled) <= 0:
+                await session.delete(existing)
+            else:
+                existing.amount = _money(existing.amount_settled)
+                _sync_bill_prepayment_status(existing)
+            await session.flush()
         return
 
     grew = False
@@ -1238,7 +1294,10 @@ async def unwind_operation_bank_allocations(
 
 
 async def _transaction_carried_bill_allocations(
-    session: AsyncSession, transaction: CashflowTransaction
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    *,
+    exclude_invoice_id: uuid.UUID | None = None,
 ) -> Decimal:
     """Оплаты СЧЕТОВ из этого платежа, дебиторку которых несёт правило 1 (а не чокпоинт).
 
@@ -1251,10 +1310,10 @@ async def _transaction_carried_bill_allocations(
 
     Мост «проводка → операция» тянет только НЕатрибутированные аллокации: у разбора операции по
     разным контрагентам гашения долей помечены своей проводкой, и чужая доля не должна попасть
-    в бюджет этой (иначе её дебиторка занижена — см. ``payment_allocated_amount``)."""
-    operation_ids = select(BankOperation.id).where(
-        BankOperation.cashflow_transaction_id == transaction.id
-    )
+    в бюджет этой (иначе её дебиторка занижена — см. ``payment_allocated_amount``).
+
+    ``exclude_invoice_id`` — счёт, для которого чокпоинт сам решает вопрос о ДЗ
+    (``_rule1_bill_money``): его оплаты здесь не считаем."""
     own_prepaid = (
         select(SupplierPrepayment.id)
         .where(
@@ -1263,22 +1322,62 @@ async def _transaction_carried_bill_allocations(
         )
         .exists()
     )
+    conditions = [
+        SupplierInvoice.doc_kind == "bill",
+        InvoicePaymentAllocation.source_kind != "prepayment",
+        _paid_by_transaction(transaction),
+        ~own_prepaid,
+    ]
+    if exclude_invoice_id is not None:
+        conditions.append(InvoicePaymentAllocation.invoice_id != exclude_invoice_id)
     total = await session.scalar(
         select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0))
         .select_from(InvoicePaymentAllocation)
         .join(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-        .where(
-            SupplierInvoice.doc_kind == "bill",
-            InvoicePaymentAllocation.source_kind != "prepayment",
-            (InvoicePaymentAllocation.cashflow_transaction_id == transaction.id)
-            | (
-                InvoicePaymentAllocation.bank_operation_id.in_(operation_ids)
-                & InvoicePaymentAllocation.cashflow_transaction_id.is_(None)
-            ),
-            ~own_prepaid,
-        )
+        .where(*conditions)
     )
     return _money(total)
+
+
+def _paid_by_transaction(transaction: CashflowTransaction):
+    """Аллокация оплачена этим платежом: по его проводке или — неатрибутированная доля — по
+    операции выписки, которую проводка сшивает мостом (см. ``payment_allocated_amount``)."""
+    operation_ids = select(BankOperation.id).where(
+        BankOperation.cashflow_transaction_id == transaction.id
+    )
+    return (InvoicePaymentAllocation.cashflow_transaction_id == transaction.id) | (
+        InvoicePaymentAllocation.bank_operation_id.in_(operation_ids)
+        & InvoicePaymentAllocation.cashflow_transaction_id.is_(None)
+    )
+
+
+async def _resync_transaction_bills(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> None:
+    """Правило 1 переложило свой аванс — ДЗ счетов этого платежа идут следом.
+
+    Чокпоинт отдаёт правилу 1 те деньги счёта, что несёт его аванс (``_rule1_bill_money``).
+    Пересборка аванса этот ответ меняет: счёт, у которого своя ДЗ уже есть, правило 1 себе
+    больше не берёт, аванс усыхает — и эти деньги должна подхватить ДЗ по счёту. Без
+    досинхронизации они выпадали бы из дебиторки до следующего касания счёта. Идемпотентно:
+    если ответ не изменился, чокпоинт ничего не трогает."""
+    bills = (
+        await session.scalars(
+            select(SupplierInvoice)
+            .join(
+                InvoicePaymentAllocation,
+                InvoicePaymentAllocation.invoice_id == SupplierInvoice.id,
+            )
+            .where(
+                SupplierInvoice.doc_kind == "bill",
+                InvoicePaymentAllocation.source_kind != "prepayment",
+                _paid_by_transaction(transaction),
+            )
+            .distinct()
+        )
+    ).all()
+    for bill in bills:
+        await reconcile_bill_prepayment(session, bill)
 
 
 def _invoice_period_fields(invoice: SupplierInvoice) -> dict[str, object]:
@@ -1494,12 +1593,14 @@ async def ensure_prepayment_from_bank_transaction(
             if remainder <= 0:
                 await session.delete(existing)
                 await session.flush()
+                await _resync_transaction_bills(session, transaction)
                 return None
             existing.counterparty_id = transaction.counterparty_id
             existing.amount = remainder
             existing.article_id = transaction.article_id
             existing.wallet_id = transaction.wallet_id
             await session.flush()
+            await _resync_transaction_bills(session, transaction)
         return existing
 
     amount = _money(transaction.amount)
@@ -1518,6 +1619,7 @@ async def ensure_prepayment_from_bank_transaction(
         if existing is not None:
             await session.delete(existing)
             await session.flush()
+            await _resync_transaction_bills(session, transaction)
         return None
 
     # Период платежа знает СТРОКА расхода (окно «Новый платёж» его и спрашивает), а
@@ -1562,6 +1664,7 @@ async def ensure_prepayment_from_bank_transaction(
             await _subs.recognize_one_off_payment(
                 session, prepayment, as_of=transaction.operation_date
             )
+        await _resync_transaction_bills(session, transaction)
         return prepayment
 
     # Адаптируем существующую нетронутую предоплату НА МЕСТЕ (id сохраняется): при отсутствии
@@ -1571,6 +1674,7 @@ async def ensure_prepayment_from_bank_transaction(
     existing.article_id = transaction.article_id
     existing.wallet_id = transaction.wallet_id
     await session.flush()
+    await _resync_transaction_bills(session, transaction)
     return existing
 
 
@@ -1829,10 +1933,17 @@ async def resync_counterparty_refunds(
                 CashflowTransaction.direction == "in",
                 CashflowTransaction.quality_status != EXCLUDED_QUALITY,
                 DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+                not_barter_money_return(),
             )
         )
     )
     for prepayment in prepayments:
+        if prepayment.settled_on is not None:
+            # Закрыта решением человека без строки гашения (дозачётный остаток,
+            # ``scripts/writeoff_pre_accounting``): её amount_settled — не след возвратов. Сброс к
+            # аллокациям воскресил бы списанную дебиторку (38 479 ₽ «Поставки овощей»), а
+            # возврат зачёлся бы в предоплату, которой уже нет.
+            continue
         allocated = _money(
             await session.scalar(
                 select(func.coalesce(func.sum(InvoicePaymentAllocation.amount), 0)).where(
@@ -1855,6 +1966,31 @@ async def resync_counterparty_refunds(
             _consume_prepayment(prepayment, take, full_status="refunded")
             remaining -= take
     await session.flush()
+
+
+async def refund_counterparties(
+    session: AsyncSession, transaction_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Контрагенты возвратных проводок (статья возврата переплаты) среди этих строк.
+
+    Разбор проводки меняет её статью, контрагента или исключает её, а зачёт возврата живёт без
+    аллокации и сам за этим не следует. Двери разбора собирают этих контрагентов ДО и ПОСЛЕ
+    правки и пересобирают им зачёт (``resync_counterparty_refunds``) — так же, как ручная
+    переразметка проводки. Качество не фильтруем: исключённая возвратная строка тоже повод
+    пересобрать — её зачёт должен уйти."""
+    if not transaction_ids:
+        return set()
+    rows = await session.scalars(
+        select(CashflowTransaction.counterparty_id)
+        .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
+        .where(
+            CashflowTransaction.id.in_(transaction_ids),
+            CashflowTransaction.counterparty_id.is_not(None),
+            DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+        )
+        .distinct()
+    )
+    return set(rows.all())
 
 
 async def cancel_supplier_prepayment(session: AsyncSession, prepayment_id: uuid.UUID) -> None:
@@ -1921,6 +2057,14 @@ async def settle_invoice_from_prepayment(
     prepayment = await session.get(SupplierPrepayment, prepayment_id)
     if prepayment is None:
         raise CounterpartyPaymentError("Предоплата не найдена")
+    if invoice.doc_kind == "bill" and prepayment.kind == BILL_PREPAYMENT_KIND:
+        # Деньги ДЗ по счёту — оплаты ТОГО счёта; перенос на другой счёт денег не двигает и
+        # хозяйственного события не описывает. А баланс на дату показал бы такую ДЗ со дня
+        # второго счёта, даже если первый оплатили месяцем позже.
+        raise CounterpartyPaymentError(
+            "Дебиторку по оплаченному счёту нельзя зачесть в другой счёт — "
+            "гасите ею закрывающий документ"
+        )
     if prepayment.counterparty_id != invoice.counterparty_id:
         raise CounterpartyPaymentError("Предоплата и накладная относятся к разным контрагентам")
     if prepayment.status not in OPEN_PREPAYMENT_STATUSES:

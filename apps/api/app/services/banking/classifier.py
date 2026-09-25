@@ -351,6 +351,44 @@ async def absorb_auto_classified_counterparty_payment(session: AsyncSession) -> 
     return absorbed
 
 
+async def _operation_refund_counterparties(
+    session: AsyncSession, operation: BankOperation
+) -> set[UUID]:
+    """Контрагенты возвратных проводок этой операции — всех её долей и якорной строки."""
+    from app.services.supplier_prepayments import refund_counterparties
+
+    transaction_ids = set(
+        (
+            await session.scalars(
+                select(CashflowTransaction.id).where(
+                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_id == operation.id,
+                )
+            )
+        ).all()
+    )
+    if operation.cashflow_transaction_id is not None:
+        transaction_ids.add(operation.cashflow_transaction_id)
+    return await refund_counterparties(session, transaction_ids)
+
+
+async def _resync_operation_refunds(
+    session: AsyncSession, operation: BankOperation, before: set[UUID]
+) -> None:
+    """Возврат переплаты из выписки гасит дебиторку так же, как из «Нового платежа».
+
+    Зачёт возврата живёт без аллокации, и заводили его только «Новый платёж» и ручная
+    переразметка проводки. Разбор операции выписки — статьёй, исключением или сплитом, в том
+    числе подтверждение кейса собственником — его не делал вовсе: деньги вернулись, а аванс
+    висел открытой дебиторкой (ИП Скачкова: возврат 10 112,13 ₽ от 22.09 при товарном авансе
+    с тем же остатком). Пересобираем зачёт всем контрагентам, чьи возвратные строки операция
+    имела ДО разбора или имеет ПОСЛЕ — проводку могли перевесить или исключить."""
+    from app.services.supplier_prepayments import resync_counterparty_refunds
+
+    for counterparty_id in before | await _operation_refund_counterparties(session, operation):
+        await resync_counterparty_refunds(session, counterparty_id)
+
+
 async def apply_operation_action(
     session: AsyncSession,
     operation: BankOperation,
@@ -359,6 +397,30 @@ async def apply_operation_action(
     article_id: UUID | None = None,
     counterparty_id: UUID | None = None,
     quality_status: str = "auto",
+) -> None:
+    """Разбор операции выписки одним действием (статья, исключение, внутренний перевод) —
+    ``_apply_operation_action`` — и следом зачёт возвратов переплаты
+    (``_resync_operation_refunds``)."""
+    refunds_before = await _operation_refund_counterparties(session, operation)
+    await _apply_operation_action(
+        session,
+        operation,
+        action=action,
+        article_id=article_id,
+        counterparty_id=counterparty_id,
+        quality_status=quality_status,
+    )
+    await _resync_operation_refunds(session, operation, refunds_before)
+
+
+async def _apply_operation_action(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    action: str,
+    article_id: UUID | None,
+    counterparty_id: UUID | None,
+    quality_status: str,
 ) -> None:
     if action == "set_article":
         if article_id is None:
@@ -1210,6 +1272,33 @@ async def apply_operation_split(
     quality_status: str = "owner_review",
     actor_user_id: UUID | None = None,
     allow_card: bool = False,
+) -> list[UUID]:
+    """Сплит операции выписки (``_apply_operation_split``) + зачёт возвратов переплаты
+    (``_resync_operation_refunds``): сплит пересоздаёт доли, и возвратная статья может
+    появиться на них или уйти с них."""
+    refunds_before = await _operation_refund_counterparties(session, operation)
+    created_ids = await _apply_operation_split(
+        session,
+        operation,
+        splits=splits,
+        counterparty_id=counterparty_id,
+        quality_status=quality_status,
+        actor_user_id=actor_user_id,
+        allow_card=allow_card,
+    )
+    await _resync_operation_refunds(session, operation, refunds_before)
+    return created_ids
+
+
+async def _apply_operation_split(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    splits: list[OperationSplitLine | tuple[Any, ...]],
+    counterparty_id: UUID | None,
+    quality_status: str,
+    actor_user_id: UUID | None,
+    allow_card: bool,
 ) -> list[UUID]:
     """Spread one bank operation across one or more DDS articles.
 

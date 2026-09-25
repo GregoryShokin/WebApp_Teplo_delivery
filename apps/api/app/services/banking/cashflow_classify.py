@@ -212,6 +212,7 @@ async def apply_cashflow_split(
     ensure_cashflow_reclassifiable(txn)
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
+    refunds_before = await _refund_counterparties(session, {txn.id})
     # Совместимость: доля — (article, amount, comment, transfer_wallet_id[, employee_id
     # [, counterparty_id]]). Старые кортежи дополняются дефолтами NamedTuple.
     splits = [
@@ -510,6 +511,7 @@ async def apply_cashflow_split(
             origin_source_kind=origin_source_kind,
             money_is_free=origin_money_is_free,
         )
+    await _resync_refunds(session, refunds_before, {txn.id, *created})
     return created
 
 
@@ -534,6 +536,7 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     отдельно, поэтому здесь трогаем только выплаты ЭТОЙ строки.
     """
     ensure_cashflow_reclassifiable(txn)
+    refunds_before = await _refund_counterparties(session, {txn.id})
 
     # ИСКЛЮЧЕНИЕ ВЫНИМАЕТ РАСХОД ИЗ МЕСЯЦА, И ЭТОТ МЕСЯЦ МОЖЕТ БЫТЬ ЗАКРЫТ. Проверка качества
     # стоит в разборе отчёта первой, раньше всех прочих, поэтому исключённая проводка исчезает
@@ -559,4 +562,27 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     from app.services.supplier_prepayments import sync_manual_payment_receivable
 
     await sync_manual_payment_receivable(session, txn)
+    # Исключённый возврат переплаты больше не гасит дебиторку — его зачёт уходит.
+    await _resync_refunds(session, refunds_before, {txn.id})
     return [txn.id]
+
+
+async def _refund_counterparties(session: AsyncSession, transaction_ids: set[UUID]) -> set[UUID]:
+    from app.services.supplier_prepayments import refund_counterparties
+
+    return await refund_counterparties(session, transaction_ids)
+
+
+async def _resync_refunds(
+    session: AsyncSession, before: set[UUID], transaction_ids: set[UUID]
+) -> None:
+    """Зачёт возвратов переплаты следует за разбором ручной проводки — как в переразметке.
+
+    Возврат гасит дебиторку без аллокации, и сам за правкой проводки не следует: сплит мог
+    поставить возвратную статью на долю или снять её, исключение — вынуть возврат из учёта.
+    Пересобираем зачёт контрагентам возвратных строк до и после правки
+    (``resync_counterparty_refunds``)."""
+    from app.services.supplier_prepayments import resync_counterparty_refunds
+
+    for counterparty_id in before | await _refund_counterparties(session, transaction_ids):
+        await resync_counterparty_refunds(session, counterparty_id)
