@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from cp_helpers import make_counterparty
@@ -29,8 +29,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import BusinessOwner, CashflowTransaction, CounterpartyRole, DdsArticle, Wallet
-from app.services import supplier_prepayments
+from app.models import (
+    BusinessOwner,
+    CashflowTransaction,
+    CounterpartyRole,
+    DdsArticle,
+    SupplierPrepayment,
+    Wallet,
+)
+from app.services import clock, supplier_prepayments
+from app.services.counterparty_settlement_ledger import build_ledger, list_gaps
 from app.services.owner_analytics import OWNER_ROLE
 
 HEADERS = {"X-User-Role": "admin"}
@@ -201,3 +209,161 @@ def test_opening_balance_does_not_create_a_cashflow(
     transactions, is_opening = _run(check())
     assert transactions == 0, "входящий остаток не двигает деньги"
     assert is_opening, "остаток обязан быть помечен входящим — иначе сверка сочтёт его платежом"
+
+
+DIVIDENDS = Decimal("50000.00")
+REPAIR = Decimal("12000.00")
+
+
+def test_owner_settlements_are_not_gaps_in_the_ledger(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Сверка с контрагентом и сводка разрывов не ждут документ от собственника.
+
+    НАХОДКА 25.09.2026 НА КОПИИ ПРОДА. Очередь признания строки собственников пропускала, а
+    сверка — нет: в карточке Григория входящий остаток 1 020 000 ₽ краснел «документа нет · 15 дн.,
+    срок 10.09», у Павла так же 200 000 ₽ и июльский заём 30 000 ₽ («46 дн.»), и все три стояли
+    в сводке разрывов — 1,25 млн из 1,42 млн ₽. А выданные 19.08 из Сейфа дивиденды по 50 000 ₽
+    своей предоплаты не имеют вовсе: очередь их не видит, а сверка «ждала документ» до 10.10 и
+    покраснела бы с 11.10.
+
+    Проверяется признак, а не только эти строки:
+
+    * все три вида — заём, входящий остаток, дивиденды без предоплаты — без срока и без разрыва;
+    * отбор по СТАТЬЕ: ремонт, оплаченный тому же Григорию, ждёт документ как у всех и остаётся
+      в сводке. Отбор по контрагенту спрятал бы настоящую услугу вместе с займом;
+    * очередь и сверка отвечают одинаково на одних и тех же деньгах;
+    * меняется только ожидание — бегущий остаток прежний: долг собственника живёт в ДЗ.
+    """
+    seeded = _seed(async_session_factory)
+    response = client.patch(
+        f"/api/v1/dds/transactions/{seeded['txn']}",
+        json={"article_id": seeded["article"], "counterparty_id": seeded["pavel"]},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200, response.text
+    grigoriy = uuid.UUID(seeded["grigoriy"])
+    pavel = uuid.UUID(seeded["pavel"])
+
+    async def add_payments() -> uuid.UUID:
+        async with async_session_factory() as session:
+            wallet = await session.scalar(select(Wallet).where(Wallet.code == "owner_loan_bank"))
+            assert wallet is not None
+            dividends = DdsArticle(
+                code="owner_dividends",
+                name="Дивиденды",
+                movement_type="outflow",
+                activity_type="financing",
+                owner_required=True,
+            )
+            repair = DdsArticle(
+                code="owner_side_repair",
+                name="Ремонт",
+                movement_type="outflow",
+                activity_type="operating",
+            )
+            session.add_all([dividends, repair])
+            await session.flush()
+            # Как на проде: выдача дивидендов из Сейфа — проводка без предоплаты.
+            for owner in (grigoriy, pavel):
+                session.add(
+                    CashflowTransaction(
+                        wallet_id=wallet.id,
+                        counterparty_id=owner,
+                        direction="out",
+                        amount=DIVIDENDS,
+                        operation_date=date(2026, 8, 19),
+                        article_id=dividends.id,
+                        source_kind="manual",
+                        quality_status="auto",
+                    )
+                )
+            # Собственник как подрядчик: обычная услуга, документ по ней ждут.
+            repair_tx = CashflowTransaction(
+                wallet_id=wallet.id,
+                counterparty_id=grigoriy,
+                direction="out",
+                amount=REPAIR,
+                operation_date=date(2026, 8, 5),
+                article_id=repair.id,
+                source_kind="manual",
+                quality_status="auto",
+            )
+            session.add(repair_tx)
+            await session.flush()
+            repair_prepayment = SupplierPrepayment(
+                counterparty_id=grigoriy,
+                kind="subscription",
+                wallet_id=wallet.id,
+                article_id=repair.id,
+                amount=REPAIR,
+                amount_settled=Decimal("0"),
+                status="open",
+                cashflow_transaction_id=repair_tx.id,
+                service_period_status="missing",
+            )
+            session.add(repair_prepayment)
+            await session.commit()
+            return repair_prepayment.id
+
+    repair_prepayment_id = _run(add_payments())
+
+    # День, когда любой платёж из сида без документа уже просрочен: и заём 14.07, и дивиденды
+    # 19.08, и входящие остатки, заведённые сегодня. Строкам собственника это не должно быть видно.
+    far_today = clock.moscow_today() + timedelta(days=120)
+
+    async def ledgers_and_gaps():
+        async with async_session_factory() as session:
+            return (
+                await build_ledger(session, grigoriy, today=far_today),
+                await build_ledger(session, pavel, today=far_today),
+                await list_gaps(session, today=far_today),
+            )
+
+    grigoriy_ledger, pavel_ledger, gaps = _run(ledgers_and_gaps())
+
+    owner_rows = [
+        row
+        for row in (*grigoriy_ledger.rows, *pavel_ledger.rows)
+        if row.kind == "payment" and row.amount != REPAIR
+    ]
+    # Григорий: остаток + дивиденды; Павел: остаток + заём + дивиденды.
+    assert sorted(row.amount for row in owner_rows) == sorted(
+        [OPENING["Григорий"], DIVIDENDS, OPENING["Павел"], LOAN_AMOUNT, DIVIDENDS]
+    )
+    for row in owner_rows:
+        assert row.owner_settlement, row.title
+        assert row.status == "ok", row.title
+        assert row.expected_by is None, row.title
+        assert row.days_overdue == 0, row.title
+        assert row.uncovered == Decimal("0"), row.title
+    assert pavel_ledger.overdue_amount == Decimal("0")
+    assert all(not month.has_overdue and month.gap == 0 for month in pavel_ledger.months)
+
+    # Ремонт у того же Григория ждёт документ как обычная услуга.
+    (repair_row,) = [row for row in grigoriy_ledger.rows if row.amount == REPAIR]
+    assert not repair_row.owner_settlement
+    assert repair_row.status == "overdue"
+    assert grigoriy_ledger.overdue_amount == REPAIR
+    assert [(gap.counterparty_id, gap.amount) for gap in gaps] == [(grigoriy, REPAIR)]
+
+    # Остаток — прежний: ожидание документа его не касается.
+    assert grigoriy_ledger.closing_balance == OPENING["Григорий"] + DIVIDENDS + REPAIR
+    assert pavel_ledger.closing_balance == OPENING["Павел"] + LOAN_AMOUNT + DIVIDENDS
+
+    # Очередь признания отвечает так же: из денег собственников в ней только ремонт.
+    queue = client.get("/api/v1/accounting/suppliers", headers=HEADERS)
+    assert queue.status_code == 200, queue.text
+    owners = {seeded["pavel"], seeded["grigoriy"]}
+    assert [item["id"] for item in queue.json()["items"] if item["counterparty_id"] in owners] == [
+        str(repair_prepayment_id)
+    ]
+
+    # И экран получает признак, по которому подписывает строку «документа не будет».
+    response = client.get(f"/api/v1/accounting/suppliers/{seeded['pavel']}/ledger", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    assert rows and all(
+        row["owner_settlement"] and row["status"] == "ok" and row["expected_by"] is None
+        for row in rows
+    )

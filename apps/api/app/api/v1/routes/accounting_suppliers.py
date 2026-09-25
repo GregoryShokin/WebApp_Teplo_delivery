@@ -319,10 +319,7 @@ async def _queue_context(session: AsyncSession, *, today: date) -> _QueueContext
     ).all()
     ctx.goods_contour.update(cp_id for cp_id in warehouse if cp_id not in explicit_service)
 
-    owner_articles = (
-        await session.scalars(select(DdsArticle.id).where(DdsArticle.owner_required.is_(True)))
-    ).all()
-    ctx.owner_settlement_articles.update(owner_articles)
+    ctx.owner_settlement_articles.update(await owner_analytics.settlement_article_ids(session))
     return ctx
 
 
@@ -544,10 +541,11 @@ async def list_supplier_accounting(
         # остатки собственников (1 020 000 и 200 000 ₽ на 01.07.2026) плюс июльский заём давали
         # 1,25 млн ₽ из 1,4 млн ₽ плитки «Ждём документ» — экран читался как долг перед
         # поставщиками, которого нет. Долг собственника при этом никуда не делся: он живёт в
-        # ДЗ/КЗ и в «Остатках», где ему и место.
-        if (
-            prepayment.kind == owner_analytics.OWNER_LOAN_KIND
-            or prepayment.article_id in ctx.owner_settlement_articles
+        # ДЗ/КЗ и в «Остатках», где ему и место. Признак общий со сверкой и сводкой разрывов.
+        if owner_analytics.is_owner_settlement(
+            kind=prepayment.kind,
+            article_id=prepayment.article_id,
+            owner_articles=ctx.owner_settlement_articles,
         ):
             continue
         # Договор и аренда: платежи — это просто деньги, гасящие кредиторку начислений
@@ -1763,6 +1761,8 @@ class LedgerRowRead(BaseModel):
     prepayment_id: uuid.UUID | None = None
     # Документ создан нами (абонентский платёж без закрывающих), а не прислан контрагентом.
     self_billed: bool = False
+    # Расчёт с собственником (заём, дивиденды): документа не будет, срока ожидания нет.
+    owner_settlement: bool = False
 
 
 class LedgerMonthRead(BaseModel):
@@ -1892,6 +1892,7 @@ async def get_settlement_ledger(
                 balance_after=_float(row.balance_after),
                 prepayment_id=row.prepayment_id,
                 self_billed=row.self_billed,
+                owner_settlement=row.owner_settlement,
             )
             for row in ledger.rows
         ],

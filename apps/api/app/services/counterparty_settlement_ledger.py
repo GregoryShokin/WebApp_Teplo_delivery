@@ -25,6 +25,10 @@
 после срока: конец периода + ``closing_doc_expected_day`` из карточки (NULL = 1-е число).
 Так контрагент, который честно присылает УПД 5-го, не краснеет каждое 1-е число.
 
+Расчёт с собственником (заём, входящий остаток по нему, дивиденды) разрывом не бывает вовсе:
+документа по нему не будет, и срока у такой строки нет. Признак — тот же
+``owner_analytics.is_owner_settlement``, по которому их пропускает очередь признания.
+
 БАРТЕР СЮДА НЕ ВХОДИТ. Бартерные документы гасятся товаром через BarterReturnLine, а не
 аллокациями: их сумма в «деньги минус документы» уводила бы остаток в минус на весь заём.
 У бартерных контрагентов свой контур и своя вкладка — здесь только денежные расчёты.
@@ -53,7 +57,7 @@ from app.models import (
     Wallet,
 )
 from app.models.enums import UTILITY_INVOICE_SOURCE
-from app.services import accounting_periods
+from app.services import accounting_periods, owner_analytics
 
 # Статусы предоплат, которые ещё держат дебиторку (те же, что в плитке «Остатки»).
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
@@ -170,6 +174,10 @@ class LedgerRow:
     # июньское электричество иначе висела бы переплатой: карточка показывала по нему 145 402 ₽
     # против 115 000 ₽ в реестре остатков — расхождение ровно на эту сумму.
     binds: bool = True
+    # Расчёт с собственником (заём, его входящий остаток, дивиденды) — не услуга: закрывающего
+    # документа по нему не будет, поэтому ни срока ожидания, ни «без документов» у строки нет.
+    # Бегущий остаток она двигает как прежде — долг собственника никуда не девается.
+    owner_settlement: bool = False
 
 
 @dataclass
@@ -266,15 +274,18 @@ async def resolve_contour(session: AsyncSession, counterparty_id: uuid.UUID) -> 
     return (CONTOUR_GOODS if (warehouse or 0) > 0 else CONTOUR_SERVICE), False
 
 
-async def _payment_rows(
-    session: AsyncSession, counterparty_id: uuid.UUID
-) -> list[
-    tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool]
-]:
+# Денежная строка до сборки в LedgerRow: (дата, id, сумма, заголовок, подпись, предоплата,
+# прямые гашения, до начала учёта, расчёт с собственником).
+_PaymentRow = tuple[
+    date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool, bool
+]
+
+
+async def _payment_rows(session: AsyncSession, counterparty_id: uuid.UUID) -> list[_PaymentRow]:
     """Денежные строки: ДДС-проводки контрагенту + входящие остатки без движения денег.
 
-    Возвращает кортежи (дата, id, сумма, заголовок, подпись, предоплата, прямые гашения),
-    чтобы вызывающий собрал из них строки сверки, не повторяя запросы.
+    Возвращает кортежи ``_PaymentRow``, чтобы вызывающий собрал из них строки сверки, не
+    повторяя запросы.
     """
     tx_rows = (
         await session.execute(
@@ -338,10 +349,9 @@ async def _payment_rows(
     prepayment_by_tx = {
         sp.cashflow_transaction_id: sp for sp in prepayments if sp.cashflow_transaction_id
     }
+    owner_articles = await owner_analytics.settlement_article_ids(session)
 
-    out: list[
-        tuple[date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool]
-    ] = []
+    out: list[_PaymentRow] = []
     for tx, wallet_name, article_name in tx_rows:
         allocs = [
             a
@@ -354,6 +364,7 @@ async def _payment_rows(
             )
         ]
         direct_total = sum((money(a.amount) for a in allocs), Decimal("0"))
+        prepayment = prepayment_by_tx.get(tx.id)
         out.append(
             (
                 tx.operation_date,
@@ -361,12 +372,20 @@ async def _payment_rows(
                 money(tx.amount),
                 wallet_name or "Платёж",
                 article_name or (tx.payment_purpose or tx.comment),
-                prepayment_by_tx.get(tx.id),
+                prepayment,
                 direct_total,
                 # Платёж за период до начала учёта гасит обязательство, которого в системе
                 # нет: дебиторкой он не становится и бегущий остаток не двигает.
                 tx.expense_month is not None
                 and tx.expense_month < accounting_periods.ACCOUNTING_START,
+                # С предоплатой — ровно те поля, что смотрит очередь признания. Без неё (выдача
+                # дивидендов из Сейфа) очереди смотреть не на что, и признак берётся со статьи
+                # самой проводки: иначе строка «ждала бы документ» до 10-го и краснела с 11-го.
+                owner_analytics.is_owner_settlement(
+                    kind=prepayment.kind if prepayment else None,
+                    article_id=prepayment.article_id if prepayment else tx.article_id,
+                    owner_articles=owner_articles,
+                ),
             )
         )
 
@@ -388,6 +407,9 @@ async def _payment_rows(
                     sp,
                     Decimal("0"),
                     False,
+                    owner_analytics.is_owner_settlement(
+                        kind=sp.kind, article_id=sp.article_id, owner_articles=owner_articles
+                    ),
                 )
             )
     return out
@@ -499,21 +521,42 @@ async def build_ledger(
         prepayment,
         direct_total,
         before_start,
+        owner_settlement,
     ) in payments:
-        start, end = period_of(
-            prepayment.service_period_start if prepayment else None,
-            prepayment.service_period_end if prepayment else None,
-            row_date,
+        period_known = bool(
+            prepayment
+            and prepayment.service_period_start is not None
+            and prepayment.service_period_end is not None
         )
         settled_by_prepayment = money(prepayment.amount_settled) if prepayment else Decimal("0")
         uncovered = _clamp(amount - direct_total - settled_by_prepayment)
-        deadline = expected_by(end, expected_day)
-        if uncovered <= 0:
+        deadline: date | None = None
+        if owner_settlement:
+            # Заём собственнику, его входящий остаток, дивиденды — не услуга, и документа по ним
+            # не будет никогда (решение владельца, то же, что убрало их из очереди признания).
+            # Срок ожидания здесь выдумывать не из чего, и период из даты платежа — тоже: он
+            # нужен только для срока. Без этого входящие остатки собственников краснели
+            # «документа нет · 15 дн.» и стояли первыми в сводке разрывов.
+            start, end = (
+                (prepayment.service_period_start, prepayment.service_period_end)
+                if period_known and prepayment
+                else (None, None)
+            )
+            uncovered = Decimal("0")
             status = "ok"
-        elif today <= deadline:
-            status = "waiting"
         else:
-            status = "overdue"
+            start, end = period_of(
+                prepayment.service_period_start if prepayment else None,
+                prepayment.service_period_end if prepayment else None,
+                row_date,
+            )
+            deadline = expected_by(end, expected_day)
+            if uncovered <= 0:
+                status = "ok"
+            elif today <= deadline:
+                status = "waiting"
+            else:
+                status = "overdue"
         rows.append(
             LedgerRow(
                 kind="payment",
@@ -524,17 +567,16 @@ async def build_ledger(
                 subtitle=subtitle,
                 period_start=start,
                 period_end=end,
-                period_assumed=not (
-                    prepayment
-                    and prepayment.service_period_start is not None
-                    and prepayment.service_period_end is not None
-                ),
+                period_assumed=not period_known and not owner_settlement,
                 uncovered=uncovered,
                 status=status,
                 expected_by=deadline,
-                days_overdue=(today - deadline).days if status == "overdue" else 0,
+                days_overdue=(today - deadline).days
+                if status == "overdue" and deadline is not None
+                else 0,
                 prepayment_id=prepayment.id if prepayment else None,
                 binds=not before_start,
+                owner_settlement=owner_settlement,
             )
         )
 

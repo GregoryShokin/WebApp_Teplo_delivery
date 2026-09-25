@@ -37,7 +37,8 @@ function monthTitle(month: string): string {
 }
 
 function periodLabel(row: LedgerRow): string {
-  if (!row.period_start || !row.period_end) return "не заполнен";
+  // У займа и дивидендов периода услуги нет вовсе — «не заполнен» звало бы его заполнить.
+  if (!row.period_start || !row.period_end) return row.owner_settlement ? "—" : "не заполнен";
   const start = new Date(row.period_start);
   const end = new Date(row.period_end);
   // Целый календарный месяц — самый частый случай: показываем его словом, а не двумя датами.
@@ -68,6 +69,15 @@ function StatusCell({ row }: { row: LedgerRow }) {
       </Badge>
     ) : (
       <span className="text-xs text-muted-foreground">закрыт</span>
+    );
+  }
+  // Раньше статуса «ok»: у такой строки документа нет и не будет, и «закрыт документом» про
+  // неё было бы неправдой.
+  if (row.owner_settlement) {
+    return (
+      <span className="text-xs text-muted-foreground">
+        расчёт с собственником · документа не будет
+      </span>
     );
   }
   if (row.status === "ok") {
@@ -108,6 +118,17 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
     return map;
   }, [query.data?.months]);
 
+  // Месяцы, где все строки — расчёты с собственником. «Закрыт полностью» там читалось бы как
+  // «документы получены», хотя их не было и не будет.
+  const ownerOnlyMonths = useMemo(() => {
+    const owner = new Map<string, boolean>();
+    (query.data?.rows ?? []).forEach((row) => {
+      const key = row.row_date.slice(0, 7);
+      owner.set(key, (owner.get(key) ?? true) && row.owner_settlement);
+    });
+    return owner;
+  }, [query.data?.rows]);
+
   if (query.isLoading) {
     return <p className="text-sm text-muted-foreground">Загружаем сверку…</p>;
   }
@@ -134,6 +155,11 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
   // Разделители месяцев вставляем на лету: строки идут свежими сверху, и подытог
   // показывается перед первой строкой своего месяца.
   let lastMonth: string | null = null;
+  // Остаток держат расчёты с собственником, а документа не ждёт ни один платёж: «ждём документы»
+  // в подсказке было бы неправдой — в том числе у собственника-подрядчика с закрытым УПД.
+  const ownerNoDocuments =
+    ledger.rows.some((row) => row.owner_settlement) &&
+    !ledger.rows.some((row) => row.kind === "payment" && !row.owner_settlement && row.uncovered > 0);
 
   return (
     <div className="space-y-3">
@@ -145,7 +171,9 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
             ledger.closing_balance === 0
               ? "расчёты закрыты"
               : ledger.closing_balance > 0
-                ? "мы заплатили вперёд — ждём документы"
+                ? ownerNoDocuments
+                  ? "расчёты с собственником — документов по ним не будет"
+                  : "мы заплатили вперёд — ждём документы"
                 : "мы должны по документам"
           }
           tone={ledger.closing_balance > 0 ? "sky" : ledger.closing_balance < 0 ? "rose" : "muted"}
@@ -217,6 +245,8 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
                           <span className="ml-3 font-medium text-rose-700">
                             без документов {formatRub(month.gap)}
                           </span>
+                        ) : ownerOnlyMonths.get(monthKey) ? (
+                          <span className="ml-3 text-muted-foreground">документов не ждём</span>
                         ) : (
                           <span className="ml-3 text-emerald-700">закрыт полностью</span>
                         )}
