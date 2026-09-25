@@ -629,6 +629,39 @@ class TestReconciliationIsNotTautological:
         assert result.missed_count == 1, "а проводка потеряна"
         assert result.balanced is False
 
+    def test_unmapped_names_outflow_and_inflow_apart(self) -> None:
+        """Сверка складывает неразнесённое по модулю, подпись — нет.
+
+        10 000 ₽ расхода и 4 000 ₽ возврата — это 14 000 ₽ в сверке, но «отчёт неполон ровно
+        на 14 000» неверно: в прибыли это от 6 000 до 14 000 ₽, смотря по статьям.
+        """
+        layer = cash_source.CashLayer()
+        layer.unmapped_count = 3
+        layer.unmapped_out = Decimal("10000.00")
+        layer.unmapped_in = Decimal("4000.00")
+        layer.unmapped = Decimal("14000.00")
+
+        message = projector._unmapped_cash_message(layer)
+
+        assert "расход 10\u00a0000,00 ₽ и приход 4\u00a0000,00 ₽" in message
+        assert "ровно" not in message
+        assert "14\u00a0000" not in message
+        # Сверка по-прежнему видит модуль.
+        assert projector._reconciliation(layer).unmapped == Decimal("14000.00")
+        assert projector._reconciliation(layer).unmapped_in == Decimal("4000.00")
+
+    def test_unmapped_of_one_direction_is_the_exact_gap(self) -> None:
+        layer = cash_source.CashLayer()
+        layer.unmapped_count = 1
+        layer.unmapped_out = layer.unmapped = Decimal("2500.00")
+
+        message = projector._unmapped_cash_message(layer)
+
+        assert message == (
+            "Не разнесено по статьям проводок: 1 — расход 2\u00a0500,00 ₽. "
+            "Отчёт неполон ровно на эту сумму"
+        )
+
     def test_unmapped_still_breaks_the_balance(self) -> None:
         layer = self._layer(
             source_total="1000.00",

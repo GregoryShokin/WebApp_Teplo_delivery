@@ -170,7 +170,7 @@ function LineAmount({ line }: { line: PnlLine }) {
       </span>
     );
   }
-  if (line.amount === null) {
+  if (line.amount === null || waitsDocumentAtZero(line)) {
     const label = stalledOnly(line) ? "не проведено" : STATUS_LABEL[line.status] || line.status;
     return (
       <Badge variant={STATUS_VARIANT[line.status] ?? "secondary"} className="font-normal">
@@ -184,6 +184,21 @@ function LineAmount({ line }: { line: PnlLine }) {
       {incomplete ? "≈ " : ""}
       {formatMoney(line.amount)}
     </span>
+  );
+}
+
+/** Ноль, за которым стоит ожидание документа, — бейдж, а не «0,00».
+ *
+ *  Сервер ставит строке «ждём документ» / «документ просрочен» и при известной сумме, если
+ *  она ноль. Так выглядит строка, чья касса исключена «под начисление», а начисления ещё нет:
+ *  аренда Черниковой за сентябрь 2026 — 100 000 ₽ кассы вне строки, от неё «0.00». Каскад
+ *  такую строку считает НЕИЗВЕСТНОЙ (подытог неполон), а страница печатала «0,00» без бейджа —
+ *  и зависшее 01.10 начисление аренды не было видно на самой строке. Другие статусы при нуле
+ *  не трогаем: `zero_confirmed` и ручной ноль — настоящий ноль, у `incomplete` своя пометка «≈». */
+function waitsDocumentAtZero(line: PnlLine): boolean {
+  return (
+    (line.status === "waiting_document" || line.status === "overdue_document") &&
+    Number(line.amount) === 0
   );
 }
 
@@ -457,12 +472,26 @@ function Reconciliation({ report }: { report: PnlReport }) {
           ))}
       </div>
       <div className={`mt-2 text-xs ${ok ? "text-emerald-700" : "text-amber-700"}`}>
-        {ok
-          ? "Каждый рубль разложен по строкам и исключениям."
-          : `Не разнесено: ${formatMoney(reconciliation.unmapped)} ₽ (${reconciliation.unmapped_count} проводок) — отчёт неполон ровно на эту сумму.`}
+        {ok ? "Каждый рубль разложен по строкам и исключениям." : unmappedNote(reconciliation)}
       </div>
     </Card>
   );
+}
+
+/** Неразнесённое словами. `unmapped` — сумма по модулю: так её сверяет сервер. Пока она одного
+ *  направления, это и есть недостача отчёта; если среди неразнесённых есть и приходы, «ровно на
+ *  эту сумму» было бы неправдой — расход и приход весят в прибыли с разными знаками. */
+function unmappedNote(reconciliation: PnlReport["reconciliation"]): string {
+  const out = Number(reconciliation.unmapped_out);
+  const inflow = Number(reconciliation.unmapped_in);
+  const head = `Не разнесено проводок: ${reconciliation.unmapped_count}`;
+  if (out > 0 && inflow > 0) {
+    return `${head} — расход ${formatMoney(reconciliation.unmapped_out)} ₽ и приход ${formatMoney(reconciliation.unmapped_in)} ₽. В отчёт не попало ни то, ни другое.`;
+  }
+  if (inflow > 0) {
+    return `${head} — приход ${formatMoney(reconciliation.unmapped_in)} ₽. Отчёт неполон ровно на эту сумму.`;
+  }
+  return `${head} — расход ${formatMoney(reconciliation.unmapped)} ₽. Отчёт неполон ровно на эту сумму.`;
 }
 
 // Подпись каждого вердикта сходимости. Карточка «Сходимость денежного слоя» — единственное

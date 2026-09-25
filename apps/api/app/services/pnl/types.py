@@ -163,6 +163,9 @@ class Reconciliation:
     by_verdict: dict[str, Decimal] = field(default_factory=dict)
     unmapped: Decimal = Decimal("0.00")
     unmapped_count: int = 0
+    #: ``unmapped`` по направлениям — только для подписи; ``balanced`` их не читает.
+    unmapped_out: Decimal = Decimal("0.00")
+    unmapped_in: Decimal = Decimal("0.00")
     balanced: bool = True
     # Расхождение контрольного агрегата базы с разложением по вердиктам. Ненулевое означает
     # ошибку в самом проекторе: деньги в месяце есть, а вердикта у них нет.
