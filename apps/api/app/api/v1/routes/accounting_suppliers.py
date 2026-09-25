@@ -1749,7 +1749,10 @@ async def list_document_register(
 
 
 class LedgerRowRead(BaseModel):
-    kind: Literal["payment", "document"]
+    # payment/document — деньги и закрывающие; refund/closure/transfer — гасят остаток без
+    # документа (возврат, закрытие решением, оплата чужого документа); payout — выплата
+    # дивидендов, остаток не двигает. См. «ЗЕРКАЛО БАЛАНСА НА ДАТУ» в модуле сверки.
+    kind: Literal["payment", "document", "refund", "closure", "transfer", "payout"]
     id: uuid.UUID
     row_date: date
     amount: float
@@ -1759,7 +1762,7 @@ class LedgerRowRead(BaseModel):
     period_end: date | None = None
     period_assumed: bool = False
     # Для платежа — сколько денег ещё не подтверждено закрывающим документом;
-    # для документа — неоплаченный остаток.
+    # для документа — неоплаченный остаток; для возврата — излишек сверх открытой дебиторки.
     uncovered: float
     status: Literal["ok", "waiting", "overdue"]
     expected_by: date | None = None
@@ -1770,6 +1773,8 @@ class LedgerRowRead(BaseModel):
     self_billed: bool = False
     # Расчёт с собственником (заём, дивиденды): документа не будет, срока ожидания нет.
     owner_settlement: bool = False
+    # Платёж закрыт не документом: 'refund' — деньги вернули, 'decision' — закрыл человек.
+    closed_by: Literal["refund", "decision"] | None = None
 
 
 class LedgerMonthRead(BaseModel):
@@ -1858,8 +1863,9 @@ async def get_settlement_ledger(
 ) -> LedgerRead:
     """Сверка с контрагентом: платежи и закрывающие документы одной хронологией.
 
-    Бегущий остаток — «деньги минус документы»; его итог сходится с плиткой «Остатки»
-    на той же странице, потому что связи берутся из тех же аллокаций.
+    Бегущий остаток — «деньги минус документы»; его итог сходится с остатками на сегодня
+    (``build_balance_as_of``): связи берутся из тех же аллокаций, а что баланс видит без них
+    (возвраты, закрытия решением, оплаты чужих документов, дивиденды), стоит своими строками.
     """
     today = datetime.now(MOSCOW_TZ).date()
     try:
@@ -1900,6 +1906,7 @@ async def get_settlement_ledger(
                 prepayment_id=row.prepayment_id,
                 self_billed=row.self_billed,
                 owner_settlement=row.owner_settlement,
+                closed_by=row.closed_by,
             )
             for row in ledger.rows
         ],

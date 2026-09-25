@@ -1,6 +1,16 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Clock } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowLeftRight,
+  ArrowUpRight,
+  CircleCheck,
+  Clock,
+  HandCoins,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,8 +23,30 @@ import {
 } from "@/components/ui/table";
 import { apiErrorMessage } from "@/lib/api";
 
-import { getSettlementLedger, type LedgerRow } from "./api";
+import { getSettlementLedger, type LedgerRow, type LedgerRowKind } from "./api";
 import { formatDate, formatRub } from "./shared";
+
+/** Как строка выглядит в хронологии: значок, знак суммы и её цвет.
+ *
+ *  Возврат, закрытие решением и оплата чужого документа гасят остаток так же, как документ, —
+ *  поэтому со знаком «−», но своим значком: документом они не являются. Выплата дивидендов
+ *  остаток не двигает, и знака у неё нет: «+» читался бы как аванс собственнику. */
+const ROW_LOOK: Record<LedgerRowKind, { icon: LucideIcon; sign: string; tone: string }> = {
+  payment: { icon: ArrowUpRight, sign: "+", tone: "text-sky-700" },
+  document: { icon: ArrowDownRight, sign: "−", tone: "text-emerald-700" },
+  refund: { icon: Undo2, sign: "−", tone: "text-amber-700" },
+  closure: { icon: CircleCheck, sign: "−", tone: "text-violet-700" },
+  transfer: { icon: ArrowLeftRight, sign: "−", tone: "text-slate-600" },
+  payout: { icon: HandCoins, sign: "", tone: "text-muted-foreground" },
+};
+
+/** Подпись движений месяца, которые не платёж и не документ, — чтобы подытог объяснял остаток. */
+const MOVE_LABELS: Partial<Record<LedgerRowKind, string>> = {
+  refund: "возвраты",
+  closure: "закрыто без документа",
+  transfer: "оплачены чужие документы",
+  payout: "дивиденды",
+};
 
 const MONTH_LABELS = [
   "январь",
@@ -37,8 +69,13 @@ function monthTitle(month: string): string {
 }
 
 function periodLabel(row: LedgerRow): string {
-  // У займа и дивидендов периода услуги нет вовсе — «не заполнен» звало бы его заполнить.
-  if (!row.period_start || !row.period_end) return row.owner_settlement ? "—" : "не заполнен";
+  // У займа, дивидендов, возврата и оплаты чужого документа периода услуги нет вовсе —
+  // «не заполнен» звало бы его заполнить.
+  if (!row.period_start || !row.period_end) {
+    return row.owner_settlement || (row.kind !== "payment" && row.kind !== "document")
+      ? "—"
+      : "не заполнен";
+  }
   const start = new Date(row.period_start);
   const end = new Date(row.period_end);
   // Целый календарный месяц — самый частый случай: показываем его словом, а не двумя датами.
@@ -53,6 +90,26 @@ function periodLabel(row: LedgerRow): string {
 }
 
 function StatusCell({ row }: { row: LedgerRow }) {
+  if (row.kind === "payout") {
+    return <span className="text-xs text-muted-foreground">выплата собственнику · не долг</span>;
+  }
+  if (row.kind === "refund") {
+    // Излишек сверх открытой дебиторки — обычный приход: гасить ему нечего, и молчать о нём
+    // нельзя — иначе непонятно, почему остаток сдвинулся меньше суммы возврата.
+    return row.uncovered > 0 ? (
+      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+        не по предоплате: {formatRub(row.uncovered)}
+      </Badge>
+    ) : (
+      <span className="text-xs text-muted-foreground">деньги вернулись · аванс погашен</span>
+    );
+  }
+  if (row.kind === "closure") {
+    return <span className="text-xs text-muted-foreground">решение человека · без документа</span>;
+  }
+  if (row.kind === "transfer") {
+    return <span className="text-xs text-muted-foreground">долг гасится у получателя</span>;
+  }
   if (row.kind === "document") {
     // Самоакт называем своим именем: это НАШЕ признание расхода, а не документ поставщика.
     // Спутать их нельзя — от этого зависит, попадёт ли расход в налоговую базу.
@@ -81,7 +138,16 @@ function StatusCell({ row }: { row: LedgerRow }) {
     );
   }
   if (row.status === "ok") {
-    return <span className="text-xs text-muted-foreground">закрыт документом</span>;
+    // Закрыт — ещё не значит «документом»: предоплату мог закрыть человек или вернуть поставщик.
+    return (
+      <span className="text-xs text-muted-foreground">
+        {row.closed_by === "decision"
+          ? "закрыт решением"
+          : row.closed_by === "refund"
+            ? "деньги вернули"
+            : "закрыт документом"}
+      </span>
+    );
   }
   if (row.status === "waiting") {
     return (
@@ -127,6 +193,20 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
       owner.set(key, (owner.get(key) ?? true) && row.owner_settlement);
     });
     return owner;
+  }, [query.data?.rows]);
+
+  // Движения месяца помимо платежей и документов: без них подытог «платежи · документы» не
+  // объяснял бы, почему остаток месяца сдвинулся (вернули деньги, закрыли решением…).
+  const movesByMonth = useMemo(() => {
+    const moves = new Map<string, Map<LedgerRowKind, number>>();
+    (query.data?.rows ?? []).forEach((row) => {
+      if (!MOVE_LABELS[row.kind]) return;
+      const key = row.row_date.slice(0, 7);
+      const month = moves.get(key) ?? new Map<LedgerRowKind, number>();
+      month.set(row.kind, (month.get(row.kind) ?? 0) + row.amount);
+      moves.set(key, month);
+    });
+    return moves;
   }, [query.data?.rows]);
 
   if (query.isLoading) {
@@ -232,6 +312,8 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
               const showMonth = monthKey !== lastMonth;
               lastMonth = monthKey;
               const month = monthByKey.get(monthKey);
+              const look = ROW_LOOK[row.kind] ?? ROW_LOOK.payment;
+              const RowIcon = look.icon;
               return (
                 <>
                   {showMonth && month ? (
@@ -240,6 +322,12 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
                         <span className="font-medium uppercase">{monthTitle(monthKey)}</span>
                         <span className="ml-3 text-muted-foreground">
                           платежи {formatRub(month.paid)} · документы {formatRub(month.documented)}
+                          {Array.from(movesByMonth.get(monthKey) ?? []).map(([kind, amount]) => (
+                            <span key={kind}>
+                              {" "}
+                              · {MOVE_LABELS[kind]} {formatRub(amount)}
+                            </span>
+                          ))}
                         </span>
                         {month.gap > 0 ? (
                           <span className="ml-3 font-medium text-rose-700">
@@ -259,15 +347,7 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5 text-sm font-medium">
-                        {row.kind === "payment" ? (
-                          <ArrowUpRight size={14} className="text-sky-600" aria-hidden="true" />
-                        ) : (
-                          <ArrowDownRight
-                            size={14}
-                            className="text-emerald-600"
-                            aria-hidden="true"
-                          />
-                        )}
+                        <RowIcon size={14} className={look.tone} aria-hidden="true" />
                         {row.title}
                       </div>
                       {row.subtitle ? (
@@ -284,12 +364,8 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
                     >
                       {periodLabel(row)}
                     </TableCell>
-                    <TableCell
-                      className={`text-right font-semibold tabular-nums ${
-                        row.kind === "payment" ? "text-sky-700" : "text-emerald-700"
-                      }`}
-                    >
-                      {row.kind === "payment" ? "+" : "−"}
+                    <TableCell className={`text-right font-semibold tabular-nums ${look.tone}`}>
+                      {look.sign}
                       {formatRub(row.amount)}
                     </TableCell>
                     <TableCell>
@@ -316,7 +392,9 @@ export function SettlementLedgerSection({ counterpartyId }: { counterpartyId: st
       <p className="text-xs text-muted-foreground">
         Остаток в строке — состояние расчётов после неё: положительный значит, что мы заплатили
         вперёд и ждём закрывающий документ, отрицательный — что документ пришёл, а оплаты по нему
-        ещё нет. Итог сходится с плиткой «Остатки» на странице ДЗ/КЗ.
+        ещё нет. Возврат денег, закрытие предоплаты решением и оплата документа другого
+        контрагента гасят остаток без документа; выплата дивидендов видна, но остаток не двигает —
+        это не долг. Итог сходится с плиткой «Остатки» на странице ДЗ/КЗ.
       </p>
     </div>
   );

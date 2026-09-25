@@ -381,8 +381,13 @@ export async function getCounterpartyCard(id: string): Promise<CounterpartyCard>
 }
 
 // Сверка расчётов: платежи и закрывающие документы одной хронологией (вкладка «Сверка»).
+/** Вид строки сверки. payment/document — деньги и закрывающие документы; refund, closure,
+ *  transfer гасят остаток без документа (возврат денег, закрытие решением, оплата чужого
+ *  документа); payout — выплата дивидендов: видна, но остаток не двигает. */
+export type LedgerRowKind = "payment" | "document" | "refund" | "closure" | "transfer" | "payout";
+
 export type LedgerRow = {
-  kind: "payment" | "document";
+  kind: LedgerRowKind;
   id: string;
   row_date: string;
   amount: number;
@@ -392,7 +397,8 @@ export type LedgerRow = {
   period_end: string | null;
   /** Период выведен из даты платежа и ещё не подтверждён человеком или документом. */
   period_assumed: boolean;
-  /** Для платежа — сколько не подтверждено документом; для документа — неоплаченный остаток. */
+  /** Для платежа — сколько не подтверждено документом; для документа — неоплаченный остаток;
+   *  для возврата — излишек сверх открытой дебиторки (обычный приход, остаток не гасит). */
   uncovered: number;
   status: "ok" | "waiting" | "overdue";
   expected_by: string | null;
@@ -404,6 +410,8 @@ export type LedgerRow = {
   self_billed: boolean;
   /** Расчёт с собственником (заём, дивиденды): документа не будет, срока ожидания нет. */
   owner_settlement: boolean;
+  /** Платёж закрыт не документом: деньги вернули или предоплату закрыл человек. */
+  closed_by: "refund" | "decision" | null;
 };
 
 export type LedgerMonth = {
