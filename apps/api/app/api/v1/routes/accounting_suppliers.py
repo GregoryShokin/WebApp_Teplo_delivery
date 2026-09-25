@@ -53,7 +53,7 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.services import accounting_periods as periods_service
-from app.services import accounting_readiness, owner_analytics
+from app.services import accounting_readiness, clock, owner_analytics
 from app.services import counterparty_balance_as_of as balance_as_of
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import expense_recognition_report as expense_report
@@ -338,7 +338,7 @@ async def list_supplier_accounting(
     # где смотрит на долги. Переключатель добавляет их отдельными строками, уже погашенными.
     include_settled: bool = Query(default=False),
 ) -> SupplierAccountingList:
-    today = datetime.now(MOSCOW_TZ).date()
+    today = clock.moscow_today()
     current_month = today.replace(day=1)
     ctx = await _queue_context(session, today=today)
     allocated = (

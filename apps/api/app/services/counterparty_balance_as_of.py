@@ -10,7 +10,16 @@
 (правило 4 канона: поздняя из даты документа и конца подтверждённого периода услуги —
 ``_document_in_force``), и гасится теми аллокациями, чьё СОБЫТИЕ
 произошло не позже даты. Дебиторка — зеркально: предоплата существует с даты своего денежного
-факта и уменьшается гашениями до даты.
+факта и уменьшается гашениями до даты. У предоплаты по оплаченному счёту (``prepaid_bill``)
+денежный факт — оплата самого счёта, а не момент, когда запись о дебиторке завели.
+
+ЗАЧЁТ АВАНСОМ НЕ БОЛЬШЕ ДЕНЕГ. Документ гасится авансом в день вступления в силу, но закрыть
+на дату он может только те деньги, что к ней уже ушли. Сколько их, говорит «фондирование»
+предоплаты на дату: у аванса со своей проводкой — вся сумма с даты платежа, у ДЗ по счёту —
+оплаченное по счёту к дате (счёт платят и частями). Зачтённое сверх фондирования — живой долг:
+он остаётся кредиторкой, пока деньги не придут. Так одно гашение описано одним правилом с обеих
+сторон — и тогда, когда УПД датирован раньше оплаты счёта (ЭкоЦентр), и тогда, когда акт
+пришёл между двумя частями оплаты.
 
 ДАТА СОБЫТИЯ У ГАШЕНИЯ. У аллокации есть только ``created_at`` — когда строку записали в
 систему. Для денежных гашений это не то же самое, что дата платежа: выписку разбирают через
@@ -37,6 +46,7 @@ from decimal import Decimal
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models import (
     BankOperation,
@@ -48,7 +58,10 @@ from app.models import (
     SupplierPrepayment,
 )
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
-from app.services.supplier_prepayments import SUPPLIER_REFUND_ARTICLE_CODE
+from app.services.supplier_prepayments import (
+    BILL_PREPAYMENT_KIND,
+    SUPPLIER_REFUND_ARTICLE_CODE,
+)
 from app.services.supplier_service_periods import money
 
 # Документы, которые вообще участвуют в расчётах: закрывающие финансовые обязательства.
@@ -91,17 +104,151 @@ class BalanceSheetAsOf:
     approximate_settlements: Decimal
 
 
-# Дата, когда деньги предоплаты реально ушли: у неё либо своя ДДС-проводка, либо это
-# входящий остаток (тогда ориентир — дата записи).
+def _money_allocation_date():
+    """Дата денежного гашения: проводка ДДС → операция выписки → дата записи строки."""
+    return func.coalesce(
+        CashflowTransaction.operation_date,
+        BankOperation.operation_date,
+        func.date(InvoicePaymentAllocation.created_at),
+    )
+
+
+# Проводка платежа, которым оплачен счёт: у доли разбора операции она стоит на самой аллокации,
+# у прежних дверей — только через мост операции выписки.
+_bill_payment_transaction = func.coalesce(
+    InvoicePaymentAllocation.cashflow_transaction_id, BankOperation.cashflow_transaction_id
+)
+# Деньги платежа, уже ставшие дебиторкой правила 1 (предоплата со своей проводкой).
+_rule1_receivable = (
+    select(
+        SupplierPrepayment.cashflow_transaction_id.label("transaction_id"),
+        func.sum(SupplierPrepayment.amount).label("amount"),
+    )
+    .where(
+        SupplierPrepayment.cashflow_transaction_id.is_not(None),
+        SupplierPrepayment.kind != BILL_PREPAYMENT_KIND,
+    )
+    .group_by(SupplierPrepayment.cashflow_transaction_id)
+    .subquery()
+)
+_bill_prepayment = aliased(SupplierPrepayment)
+# Какая доля платежа могла уже стать авансом правила 1: не больше этого аванса.
+_rule1_share = case(
+    (
+        InvoicePaymentAllocation.source_kind.in_(("cash", "bank")),
+        func.least(InvoicePaymentAllocation.amount, func.coalesce(_rule1_receivable.c.amount, 0)),
+    ),
+    else_=0,
+)
+_bill_payment_rows = (
+    select(
+        InvoicePaymentAllocation.invoice_id.label("bill_invoice_id"),
+        InvoicePaymentAllocation.amount.label("amount"),
+        _money_allocation_date().label("paid_on"),
+        _rule1_share.label("rule1_share"),
+        func.sum(_rule1_share)
+        .over(
+            partition_by=InvoicePaymentAllocation.invoice_id,
+            order_by=(InvoicePaymentAllocation.created_at, InvoicePaymentAllocation.id),
+        )
+        .label("rule1_running"),
+        # Сколько денег счёта ДЗ по счёту не несёт — по данным самого чокпоинта.
+        func.greatest(
+            func.sum(InvoicePaymentAllocation.amount).over(
+                partition_by=InvoicePaymentAllocation.invoice_id
+            )
+            - _bill_prepayment.amount,
+            0,
+        ).label("carried_elsewhere"),
+    )
+    .join(
+        _bill_prepayment,
+        and_(
+            _bill_prepayment.bill_invoice_id == InvoicePaymentAllocation.invoice_id,
+            _bill_prepayment.kind == BILL_PREPAYMENT_KIND,
+        ),
+    )
+    .outerjoin(
+        CashflowTransaction,
+        CashflowTransaction.id == InvoicePaymentAllocation.cashflow_transaction_id,
+    )
+    .outerjoin(BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id)
+    .outerjoin(_rule1_receivable, _rule1_receivable.c.transaction_id == _bill_payment_transaction)
+    # Зачёт авансом и бартер денег не несут: деньги первого ушли раньше, со своей предоплатой.
+    .where(InvoicePaymentAllocation.source_kind.notin_(("prepayment", "barter")))
+    .subquery()
+)
+# Оплаты счетов — денежный факт ДЗ ``prepaid_bill`` — за вычетом денег, которые несёт аванс
+# правила 1. Зеркало ``supplier_prepayments._bill_paid_already_receivable``: при штатном
+# classify-then-match платёж сначала становится авансом правила 1, потом его привязывают к счёту,
+# и чокпоинт заводит ДЗ счёта только на остаток. Взять эти деньги сюда целиком — и они встали бы
+# в дебиторку дважды.
+#
+# ВЫЧИТАЕМ НЕ БОЛЬШЕ РАЗРЫВА «ОПЛАЧЕНО ПО СЧЁТУ − ДЗ ПО СЧЁТУ». Аванс правила 1 на той же проводке
+# ещё не значит, что он несёт деньги СЧЁТА: платёж больше счёта сначала гасит счёт, и правило 1
+# берёт только остаток. Вычесть его из денег счёта — и акт, закрытый ДЗ счёта, получил бы
+# ложную кредиторку на сумму этого остатка. Что именно несёт ДЗ по счёту, знает только сам
+# чокпоинт, и его ответ — её сумма; разрыв распределяем по оплатам в порядке их записи, как он.
+_bill_payments = (
+    select(
+        _bill_payment_rows.c.bill_invoice_id,
+        _bill_payment_rows.c.paid_on,
+        (
+            _bill_payment_rows.c.amount
+            - func.greatest(
+                func.least(
+                    _bill_payment_rows.c.rule1_running, _bill_payment_rows.c.carried_elsewhere
+                )
+                - func.least(
+                    _bill_payment_rows.c.rule1_running - _bill_payment_rows.c.rule1_share,
+                    _bill_payment_rows.c.carried_elsewhere,
+                ),
+                0,
+            )
+        ).label("amount"),
+    )
+).subquery()
+_bill_first_payment = (
+    select(
+        _bill_payments.c.bill_invoice_id,
+        # Первая оплата, в которой есть деньги самой ДЗ, а не аванса правила 1.
+        func.min(case((_bill_payments.c.amount > 0, _bill_payments.c.paid_on))).label("paid_on"),
+    )
+    .group_by(_bill_payments.c.bill_invoice_id)
+    .subquery()
+)
+
+# Дата, когда деньги предоплаты реально ушли. Носитель денежного факта у предоплат разный:
+#
+# * своя ДДС-проводка (аванс из выписки) — её дата;
+# * ДЗ по оплаченному счёту (``prepaid_bill``) проводки не несёт ПО КОНСТРУКЦИИ: деньги уже
+#   несёт аллокация счёта на реальный платёж, вторая ссылка задвоила бы расход
+#   (``reconcile_bill_prepayment``). Её факт — оплаты самого счёта. Пока здесь стояла дата
+#   записи, ДЗ возникала в день, когда её завёл чокпоинт, а не когда ушли деньги: аванс за
+#   электричество, оплаченный 20.06 и заведённый позже 31.08, на 31.08 не существовал, и
+#   июньский акт висел кредиторкой целиком — 95 402 ₽ вместо 30 402 ₽. Канон владельца от
+#   17.07: дебиторку создают ОПЛАТЫ, а не записи о них;
+# * входящий остаток — денежного факта нет вовсе, ориентир — дата записи.
 _prepayment_money_date = (
     select(
         SupplierPrepayment.id.label("prepayment_id"),
         func.coalesce(
-            CashflowTransaction.operation_date, func.date(SupplierPrepayment.created_at)
+            CashflowTransaction.operation_date,
+            _bill_first_payment.c.paid_on,
+            func.date(SupplierPrepayment.created_at),
         ).label("money_date"),
+        # Своей проводки нет, а у счёта есть оплаты: сумма на дату — оплаченное к дате.
+        and_(
+            CashflowTransaction.operation_date.is_(None),
+            _bill_first_payment.c.bill_invoice_id.is_not(None),
+        ).label("by_bill"),
     )
     .outerjoin(
         CashflowTransaction, CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id
+    )
+    .outerjoin(
+        _bill_first_payment,
+        _bill_first_payment.c.bill_invoice_id == SupplierPrepayment.bill_invoice_id,
     )
     .subquery()
 )
@@ -161,15 +308,10 @@ def _allocation_event_date():
     return case(
         (
             InvoicePaymentAllocation.source_kind == "prepayment",
-            # Гашение авансом не может произойти РАНЬШЕ, чем пришли деньги: берём позднюю из
-            # двух дат. ЭкоЦентр присылает УПД, датированный 31.07, а счёт по нему оплачивают
-            # 15.08 — по одной лишь дате документа выходило, что на 31.07 долг уже закрыт,
-            # хотя предоплаты в тот день ещё не существовало. Обе стороны показывали ноль там,
-            # где был живой долг.
-            func.greatest(
-                document_in_force,
-                func.coalesce(_prepayment_money_date.c.money_date, document_in_force),
-            ),
+            # Сколько из зачтённого к дате покрыто деньгами, решает не дата зачёта, а
+            # фондирование предоплаты (см. «ЗАЧЁТ АВАНСОМ НЕ БОЛЬШЕ ДЕНЕГ» в докстринге модуля):
+            # одна дата на весь зачёт неверна, когда аванс оплачен частями.
+            document_in_force,
         ),
         (
             InvoicePaymentAllocation.source_kind == "barter",
@@ -177,11 +319,7 @@ def _allocation_event_date():
             # приблизительный случай во всём расчёте (см. approximate_settlements).
             func.date(InvoicePaymentAllocation.created_at),
         ),
-        else_=func.coalesce(
-            CashflowTransaction.operation_date,
-            BankOperation.operation_date,
-            func.date(InvoicePaymentAllocation.created_at),
-        ),
+        else_=_money_allocation_date(),
     )
 
 
@@ -223,10 +361,6 @@ async def build_balance_as_of(
             BankOperation, BankOperation.id == InvoicePaymentAllocation.bank_operation_id
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-        .outerjoin(
-            _prepayment_money_date,
-            _prepayment_money_date.c.prepayment_id == InvoicePaymentAllocation.prepayment_id,
-        )
         .where(event_date <= as_of)
         .group_by(InvoicePaymentAllocation.invoice_id)
         .subquery()
@@ -263,50 +397,80 @@ async def build_balance_as_of(
     ).all()
 
     # Дебиторка: предоплата живёт с даты своего денежного факта и гасится аллокациями до даты.
+    in_force = _document_in_force(func.date(InvoicePaymentAllocation.created_at))
     settled_by_prepayment = (
         select(
             InvoicePaymentAllocation.prepayment_id.label("prepayment_id"),
             func.sum(InvoicePaymentAllocation.amount).label("settled"),
+            # Та часть, что гасит документы, которые кредиторка выше считает долгом.
+            func.sum(
+                case((and_(*_DOC_CONDITIONS), InvoicePaymentAllocation.amount), else_=0)
+            ).label("settled_debts"),
         )
         .outerjoin(SupplierInvoice, SupplierInvoice.id == InvoicePaymentAllocation.invoice_id)
-        .outerjoin(
-            _prepayment_money_date,
-            _prepayment_money_date.c.prepayment_id == InvoicePaymentAllocation.prepayment_id,
-        )
-        .where(
-            InvoicePaymentAllocation.prepayment_id.is_not(None),
-            # Та же поздняя из двух дат, что и на стороне кредиторки: иначе одно и то же
-            # гашение считалось бы на разные даты у ДЗ и у КЗ.
-            func.greatest(
-                _document_in_force(func.date(InvoicePaymentAllocation.created_at)),
-                func.coalesce(
-                    _prepayment_money_date.c.money_date,
-                    _document_in_force(func.date(InvoicePaymentAllocation.created_at)),
-                ),
-            )
-            <= as_of,
-        )
+        .where(InvoicePaymentAllocation.prepayment_id.is_not(None), in_force <= as_of)
         .group_by(InvoicePaymentAllocation.prepayment_id)
         .subquery()
     )
-    prepayment_date = func.coalesce(
-        CashflowTransaction.operation_date, func.date(SupplierPrepayment.created_at)
+    # Сколько денег у предоплаты к дате. ДЗ по счёту растёт с каждой его оплатой: на дату между
+    # двумя частями существует только первая, и одна дата на всю сумму показала бы вторую часть
+    # дебиторкой раньше, чем она ушла со счёта.
+    bill_paid_by_date = (
+        select(
+            _bill_payments.c.bill_invoice_id,
+            func.sum(_bill_payments.c.amount).label("paid"),
+        )
+        .where(_bill_payments.c.paid_on <= as_of)
+        .group_by(_bill_payments.c.bill_invoice_id)
+        .subquery()
     )
+    funded = case(
+        (
+            _prepayment_money_date.c.by_bill,
+            func.least(SupplierPrepayment.amount, func.coalesce(bill_paid_by_date.c.paid, 0)),
+        ),
+        (_prepayment_money_date.c.money_date <= as_of, SupplierPrepayment.amount),
+        else_=0,
+    )
+
+    # Зачтено больше, чем к дате пришло денег: разница — живой долг, возвращаем её кредиторке.
+    shortfall_rows = (
+        await session.execute(
+            select(
+                SupplierPrepayment.counterparty_id,
+                func.sum(func.greatest(settled_by_prepayment.c.settled_debts - funded, 0)),
+            )
+            .join(
+                settled_by_prepayment,
+                settled_by_prepayment.c.prepayment_id == SupplierPrepayment.id,
+            )
+            .join(
+                _prepayment_money_date,
+                _prepayment_money_date.c.prepayment_id == SupplierPrepayment.id,
+            )
+            .outerjoin(
+                bill_paid_by_date,
+                bill_paid_by_date.c.bill_invoice_id == SupplierPrepayment.bill_invoice_id,
+            )
+            .group_by(SupplierPrepayment.counterparty_id)
+        )
+    ).all()
+
     receivable_rows = (
         await session.execute(
             select(
                 SupplierPrepayment.counterparty_id,
                 func.sum(
-                    func.greatest(
-                        SupplierPrepayment.amount
-                        - func.coalesce(settled_by_prepayment.c.settled, 0),
-                        0,
-                    )
+                    func.greatest(funded - func.coalesce(settled_by_prepayment.c.settled, 0), 0)
                 ),
             )
+            .join(
+                _prepayment_money_date,
+                _prepayment_money_date.c.prepayment_id == SupplierPrepayment.id,
+            )
             .outerjoin(
-                CashflowTransaction,
-                CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
+                bill_paid_by_date,
+                bill_paid_by_date.c.bill_invoice_id == SupplierPrepayment.bill_invoice_id,
             )
             .outerjoin(
                 settled_by_prepayment,
@@ -325,7 +489,7 @@ async def build_balance_as_of(
             # Дату такого закрытия несёт ``settled_on`` (миграция 0273); у строк, закрытых до
             # её появления, фолбэк — день создания. Фолбэк ЗАНИЖАЕТ срок жизни дебиторки, но
             # для единственной прод-строки разница в два дня и на срез не влияет.
-            .where(prepayment_date <= as_of)
+            .where(_prepayment_money_date.c.money_date <= as_of)
             .where(
                 or_(
                     SupplierPrepayment.status != "settled",
@@ -374,6 +538,9 @@ async def build_balance_as_of(
     refunds_by_cp = {row[0]: money(row[1]) for row in refund_rows}
 
     payable_by_cp = {row[0]: money(row[1]) for row in payable_rows}
+    for cp_id, shortfall in shortfall_rows:
+        if shortfall:
+            payable_by_cp[cp_id] = payable_by_cp.get(cp_id, Decimal("0.00")) + money(shortfall)
     approximate = money(sum((row[2] or Decimal("0") for row in payable_rows), Decimal("0")))
     receivable_by_cp = {
         row[0]: max(money(row[1]) - refunds_by_cp.get(row[0], Decimal("0.00")), Decimal("0.00"))

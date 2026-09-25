@@ -16,9 +16,16 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from cp_helpers import make_counterparty, make_invoice, make_wallet
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import CashflowTransaction, InvoicePaymentAllocation, SupplierPrepayment
+from app.models import (
+    CashflowTransaction,
+    InvoicePaymentAllocation,
+    SupplierInvoice,
+    SupplierPrepayment,
+)
+from app.services import supplier_prepayments
 from app.services.counterparty_balance_as_of import build_balance_as_of
 
 
@@ -246,3 +253,231 @@ async def test_prepayment_settlement_counts_from_the_money_date(
         august = await build_balance_as_of(session, as_of=date(2026, 8, 31))
         assert august.payable_total == Decimal("0.00")
         assert august.receivable_total == Decimal("0.00")
+
+
+async def _pay_bill(
+    session: AsyncSession,
+    bill: SupplierInvoice,
+    *,
+    wallet_id: uuid.UUID,
+    amount: str,
+    on: date,
+) -> CashflowTransaction:
+    """Оплатить счёт (целиком или частью) и провести штатный чокпоинт ДЗ по счёту."""
+    tx = await _cash_payment(
+        session, counterparty_id=bill.counterparty_id, wallet_id=wallet_id, amount=amount, on=on
+    )
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=bill.id,
+            source_kind="cash",
+            cashflow_transaction_id=tx.id,
+            amount=Decimal(amount),
+        )
+    )
+    await session.flush()
+    await supplier_prepayments.reconcile_bill_prepayment(session, bill)
+    await session.flush()
+    return tx
+
+
+async def _bill_prepayment(session: AsyncSession, bill: SupplierInvoice) -> SupplierPrepayment:
+    prepayment = await session.scalar(
+        select(SupplierPrepayment).where(SupplierPrepayment.bill_invoice_id == bill.id)
+    )
+    assert prepayment is not None and prepayment.cashflow_transaction_id is None
+    return prepayment
+
+
+async def _two_part_bill(
+    session: AsyncSession, *, name: str, inn: str
+) -> tuple[uuid.UUID, uuid.UUID, SupplierInvoice]:
+    cp = await make_counterparty(session, name=name, inn=inn)
+    wallet = await make_wallet(session, code=f"tbank-asof-{inn[-2:]}", name="Т-Банк")
+    bill = await make_invoice(
+        session,
+        counterparty_id=cp.id,
+        amount="10000.00",
+        number=f"СЧ-{inn[-4:]}",
+        doc_kind="bill",
+        operational_scope="finance",
+        invoice_date=date(2026, 7, 15),
+        payment_status="unpaid",
+    )
+    return cp.id, wallet.id, bill
+
+
+async def _closing_act(session: AsyncSession, cp_id: uuid.UUID, on: date) -> SupplierInvoice:
+    return await make_invoice(
+        session,
+        counterparty_id=cp_id,
+        amount="10000.00",
+        number=f"АКТ-{on:%d%m}",
+        doc_kind="closing",
+        operational_scope="finance",
+        invoice_date=on,
+        payment_status="unpaid",
+    )
+
+
+async def _balance(session: AsyncSession, on: date) -> tuple[Decimal, Decimal]:
+    report = await build_balance_as_of(session, as_of=on)
+    return report.receivable_total, report.payable_total
+
+
+async def test_paid_bill_receivable_counts_from_the_bill_payments(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """ДЗ по оплаченному счёту живёт с даты оплаты счёта и растёт с каждой её частью.
+
+    Своей проводки у такой ДЗ нет по конструкции чокпоинта (``reconcile_bill_prepayment``):
+    деньги несёт аллокация счёта. Пока баланс датировал её днём ЗАПИСИ, аванс за электричество,
+    оплаченный 20.06, а заведённый позже конца месяца, на этот конец не существовал вовсе, и
+    закрывающий акт висел кредиторкой целиком. Запись здесь намеренно заведена 20.09 — позже
+    всех дат среза, как бывает при позднем разборе выписки.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Счёт двумя частями", inn="6155000805"
+        )
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="4000.00", on=date(2026, 7, 20))
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="6000.00", on=date(2026, 8, 5))
+        prepayment = await _bill_prepayment(session, bill)
+        assert prepayment.amount == Decimal("10000.00")
+        prepayment.created_at = datetime(2026, 9, 20, 9, 0, tzinfo=UTC)
+        act = await _closing_act(session, cp_id, date(2026, 8, 31))
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 9, 1))
+        await session.commit()
+
+        assert await _balance(session, date(2026, 7, 19)) == (0, 0), "денег по счёту ещё не было"
+        assert await _balance(session, date(2026, 7, 31)) == (4000, 0), "вторая часть — 05.08"
+        assert await _balance(session, date(2026, 8, 30)) == (10000, 0), "акт ещё не в силе"
+        assert await _balance(session, date(2026, 8, 31)) == (0, 0), "акт погашен авансом"
+
+
+async def test_act_between_two_bill_payments_leaves_the_unpaid_part_payable(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Акт, вступивший в силу между двумя частями оплаты, закрыт авансом только на первую.
+
+    Зачёт авансом записан на всю сумму акта, но на 31.07 по счёту ушло 4 000 из 10 000:
+    остальные 6 000 — живой долг, пока 05.08 не пришла доплата. Одна дата на весь зачёт
+    (первой оплаты) закрывала акт задним числом деньгами из будущего — сторона ДЗ при этом
+    уже честно показывала только 4 000, и обе стороны описывали одно гашение по-разному.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Акт между оплатами", inn="6155000806"
+        )
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="4000.00", on=date(2026, 7, 20))
+        act = await _closing_act(session, cp_id, date(2026, 7, 25))
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 7, 26))
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="6000.00", on=date(2026, 8, 5))
+        await session.commit()
+        await session.refresh(act)
+        assert act.payment_status == "paid", "доплата дозакрыла акт обратным неттингом"
+
+        assert await _balance(session, date(2026, 7, 24)) == (4000, 0)
+        assert await _balance(session, date(2026, 7, 31)) == (0, 6000), "6 000 ещё не ушли"
+        assert await _balance(session, date(2026, 8, 5)) == (0, 0)
+
+
+async def test_bill_money_carried_by_rule1_receivable_is_not_counted_twice(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Деньги, уже ставшие авансом правила 1, в ДЗ по счёту второй раз не попадают.
+
+    Classify-then-match: платёж 20.07 сначала стал авансом правила 1 (своя проводка) и только
+    потом его привязали к счёту — чокпоинт завёл ДЗ счёта лишь на доплату 05.08. Баланс,
+    датируя ДЗ счёта ПЕРВОЙ его оплатой, приписал бы ей и деньги аванса: 8 000 на 31.07 при
+    4 000 ушедших.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Аванс правила 1", inn="6155000807"
+        )
+        first = await _cash_payment(
+            session,
+            counterparty_id=cp_id,
+            wallet_id=wallet_id,
+            amount="4000.00",
+            on=date(2026, 7, 20),
+        )
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=cp_id,
+                kind="subscription",
+                wallet_id=wallet_id,
+                amount=Decimal("4000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                cashflow_transaction_id=first.id,
+            )
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=bill.id,
+                source_kind="cash",
+                cashflow_transaction_id=first.id,
+                amount=Decimal("4000.00"),
+            )
+        )
+        await session.flush()
+        await supplier_prepayments.reconcile_bill_prepayment(session, bill)
+        await _pay_bill(session, bill, wallet_id=wallet_id, amount="6000.00", on=date(2026, 8, 5))
+        assert (await _bill_prepayment(session, bill)).amount == Decimal("6000.00")
+        await session.commit()
+
+        assert await _balance(session, date(2026, 7, 31)) == (4000, 0)
+        assert await _balance(session, date(2026, 8, 31)) == (10000, 0)
+
+
+async def test_rule1_remainder_of_a_bigger_payment_leaves_the_bill_money_alone(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Аванс правила 1 на той же проводке не всегда несёт деньги счёта.
+
+    Платёж 15 000 сначала погасил счёт на 10 000 (ДЗ по счёту — 10 000), и только остаток 5 000
+    правило 1 сделало своим авансом. Вычти аванс из денег счёта — и акт, закрытый ДЗ счёта,
+    получил бы 5 000 ложной кредиторки, навсегда.
+    """
+    async with async_session_factory() as session:
+        cp_id, wallet_id, bill = await _two_part_bill(
+            session, name="Платёж больше счёта", inn="6155000808"
+        )
+        payment = await _cash_payment(
+            session,
+            counterparty_id=cp_id,
+            wallet_id=wallet_id,
+            amount="15000.00",
+            on=date(2026, 7, 20),
+        )
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=bill.id,
+                source_kind="cash",
+                cashflow_transaction_id=payment.id,
+                amount=Decimal("10000.00"),
+            )
+        )
+        await session.flush()
+        await supplier_prepayments.reconcile_bill_prepayment(session, bill)
+        session.add(
+            SupplierPrepayment(
+                counterparty_id=cp_id,
+                kind="subscription",
+                wallet_id=wallet_id,
+                amount=Decimal("5000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                cashflow_transaction_id=payment.id,
+            )
+        )
+        await session.flush()
+        assert (await _bill_prepayment(session, bill)).amount == Decimal("10000.00")
+        act = await _closing_act(session, cp_id, date(2026, 7, 25))
+        await supplier_prepayments.apply_closing_document(session, act, as_of=date(2026, 7, 26))
+        await session.commit()
+
+        assert await _balance(session, date(2026, 7, 24)) == (15000, 0)
+        assert await _balance(session, date(2026, 7, 31)) == (5000, 0)
