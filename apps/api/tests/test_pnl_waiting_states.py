@@ -417,6 +417,75 @@ class TestWaitingOnTheLine:
             STATE_OVERDUE: LineStatus.OVERDUE_DOCUMENT,
         }
 
+    def test_alarm_names_counterparty_once_per_label(self) -> None:
+        # Реплей копии прода на 02.10: у ЭкоЦентра два акта за сентябрь не вступили 01.10.
+        # Текст повторял «ООО "ЭкоЦентр" — …» на каждый акт — новость одна, пунктов два.
+        eco = uuid.uuid4()
+        lines = {"waste": _line("waste")}
+        stalled = {
+            "state_date": date(2026, 10, 1),
+            "overdue_days": 1,
+            "basis": waiting_source.BASIS_DOCUMENT,
+            "counterparty_name": 'ООО "ЭкоЦентр"',
+        }
+        layer = self._layer(
+            _waiting(self.ARTICLE, "3348.22", STATE_STALLED, **stalled),
+            _waiting(self.ARTICLE, "772.37", STATE_STALLED, **stalled),
+            _waiting(
+                self.ARTICLE,
+                "5000.00",
+                STATE_STALLED,
+                **{**stalled, "counterparty_name": "ООО «Спецавто»"},
+            ),
+        )
+        for item in layer.items[:2]:
+            item.counterparty_id = eco
+        article_lines = {self.ARTICLE: "waste"}
+
+        [warning] = projector._stalled_document_warnings(layer, article_lines, lines)
+
+        assert warning.amount == Decimal("9120.59")
+        assert warning.message.count("ЭкоЦентр") == 1
+        assert (
+            "ООО «Спецавто» — 5\u00a0000,00 ₽ (документ получен, должен был вступить 01.10 — "
+            'не вступил), ООО "ЭкоЦентр" — 4\u00a0120,59 ₽ (документ получен, должен был '
+            "вступить 01.10 — не вступил)."
+        ) in warning.message
+
+    def test_alarm_keeps_different_deadlines_of_one_counterparty_apart(self) -> None:
+        # Два просроченных платежа одного контрагента с разными сроками — два разных факта:
+        # складывать их значило бы потерять старший срок.
+        telecom = uuid.uuid4()
+        lines = {"telecom": _line("telecom")}
+        layer = self._layer(
+            _waiting(
+                self.ARTICLE,
+                "500.00",
+                STATE_OVERDUE,
+                state_date=date(2026, 9, 10),
+                overdue_days=3,
+                counterparty_name="ПАО «Связь»",
+            ),
+            _waiting(
+                self.ARTICLE,
+                "700.00",
+                STATE_OVERDUE,
+                state_date=date(2026, 8, 10),
+                overdue_days=34,
+                counterparty_name="ПАО «Связь»",
+            ),
+        )
+        for item in layer.items:
+            item.counterparty_id = telecom
+
+        [warning] = projector._overdue_document_warnings(
+            layer, {self.ARTICLE: "telecom"}, lines
+        )
+
+        assert warning.message.count("ПАО «Связь»") == 2
+        assert "700,00 ₽ (ждали до 10.08, просрочка 34 дн.)" in warning.message
+        assert "500,00 ₽ (ждали до 10.09, просрочка 3 дн.)" in warning.message
+
     def test_zero_line_waiting_for_overdue_document_says_so(self) -> None:
         line = _line("telecom")
         line.components.append(
@@ -742,7 +811,7 @@ def test_report_raises_only_the_overdue_document(async_session_factory) -> None:
     документа нет. АЙКО за сентябрь уже прислал акт, он вступит 01.10. Прежний отчёт
     называл оба «закрывающего документа ещё нет» одинаково.
     """
-    from cp_helpers import make_counterparty
+    from cp_helpers import make_counterparty, make_wallet
 
     async def scenario() -> None:
         async with async_session_factory() as session:
@@ -755,6 +824,20 @@ def test_report_raises_only_the_overdue_document(async_session_factory) -> None:
             await _pending_closing(
                 session, aiko.id, "4260.00", invoice_date=date(2026, 9, 1), period=SEPTEMBER
             )
+            # Проводка без статьи — пометка «не разнесено», которую сборка кладёт в список
+            # раньше тревог по документам.
+            wallet = await make_wallet(session, code=f"wait-{uuid.uuid4().hex[:6]}")
+            session.add(
+                CashflowTransaction(
+                    wallet_id=wallet.id,
+                    direction="out",
+                    amount=Decimal("300.00"),
+                    operation_date=date(2026, 8, 5),
+                    source_kind="bank_feed",
+                    payment_purpose="Без статьи",
+                    quality_status="manual_override",
+                )
+            )
             await session.commit()
 
             august = await projector.build_report(session, date(2026, 8, 1), today=TODAY)
@@ -762,6 +845,11 @@ def test_report_raises_only_the_overdue_document(async_session_factory) -> None:
 
             overdue = [w for w in august.warnings if w.code == "overdue_document"]
             assert len(overdue) == 1
+            # Тревога по документу — первой в «Требует внимания»: страница печатает список как
+            # есть, а до 25.09.2026 «не разнесено» и пометки строк стояли над ней.
+            codes = [w.code for w in august.warnings]
+            assert codes[0] == "overdue_document"
+            assert "unmapped_cash" in codes[1:]
             assert overdue[0].line_code == "shop_maintenance"
             assert overdue[0].amount == Decimal("100.00")
             assert "ООО «ЛИКАРД»" in overdue[0].message

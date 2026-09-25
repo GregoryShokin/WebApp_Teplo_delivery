@@ -88,11 +88,16 @@ class ReconciliationOut(BaseModel):
     by_verdict: dict[str, Decimal]
     unmapped: Decimal
     unmapped_count: int
+    #: ``unmapped`` по направлениям: сверка складывает их по модулю, подпись называет раздельно.
+    unmapped_out: Decimal = Decimal("0.00")
+    unmapped_in: Decimal = Decimal("0.00")
     balanced: bool
     drift: Decimal
     missed_count: int = 0
 
-    @field_serializer("cash_out_total", "cash_in_total", "unmapped", "drift")
+    @field_serializer(
+        "cash_out_total", "cash_in_total", "unmapped", "unmapped_out", "unmapped_in", "drift"
+    )
     def _money(self, value: Decimal) -> str:
         return f"{value:.2f}"
 
@@ -416,6 +421,8 @@ def _report_out(report: PnlReport) -> PnlReportOut:
             by_verdict=report.reconciliation.by_verdict,
             unmapped=report.reconciliation.unmapped,
             unmapped_count=report.reconciliation.unmapped_count,
+            unmapped_out=report.reconciliation.unmapped_out,
+            unmapped_in=report.reconciliation.unmapped_in,
             balanced=report.reconciliation.balanced,
             drift=report.reconciliation.drift,
             missed_count=report.reconciliation.missed_count,

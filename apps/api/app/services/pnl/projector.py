@@ -237,9 +237,16 @@ async def build_report(
 
     report.lines = _ordered(lines, catalog)
     report.reconciliation = _reconciliation(cash)
+    # Тревоги по документам — в начало «Требует внимания», впереди всего, что сборка успела
+    # сложить в список раньше. У них одних есть срок и адресат действия, а страница печатает
+    # список как есть. Пока «ждём документ» стоял внутри цикла по строкам, он шёл вперемешку
+    # с пометками своей строки; вынесенная отдельно просрочка оказалась ПОСЛЕ всех справочных
+    # пометок («наличные рядом с признанием», переносы между месяцами) — под ними её не видно.
+    report.warnings[:0] = [
+        *_overdue_document_warnings(waiting, article_lines, lines),
+        *_stalled_document_warnings(waiting, article_lines, lines),
+    ]
     report.warnings.extend(_warnings(lines, cash, recognition, article_lines))
-    report.warnings.extend(_overdue_document_warnings(waiting, article_lines, lines))
-    report.warnings.extend(_stalled_document_warnings(waiting, article_lines, lines))
     report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
@@ -839,6 +846,8 @@ def _reconciliation(layer: cash_source.CashLayer) -> Reconciliation:
         by_verdict=by_verdict,
         unmapped=layer.unmapped,
         unmapped_count=layer.unmapped_count,
+        unmapped_out=layer.unmapped_out,
+        unmapped_in=layer.unmapped_in,
         balanced=layer.unmapped == 0 and drift == 0 and missed == 0,
         drift=drift,
         missed_count=missed,
@@ -950,14 +959,27 @@ def _listed(
     items: list[waiting_source.WaitingItem],
     detail: Callable[[waiting_source.WaitingItem], str],
 ) -> str:
-    """«Кто — сколько (подробность)» через запятую; больше пяти — хвостом «и ещё N»."""
+    """«Кто — сколько (подробность)» через запятую; больше пяти — хвостом «и ещё N».
+
+    Платежи одного контрагента с одинаковой подписью сложены в одну позицию. Иначе тревога
+    повторяла имя на каждый документ: «ООО "ЭкоЦентр" — 3 348,22 ₽ (… не вступил),
+    ООО "ЭкоЦентр" — 772,37 ₽ (… не вступил)» — два пункта, из которых новость одна, а до
+    хвоста «и ещё N» доживало меньше разных контрагентов. Разные подписи того же контрагента
+    (просрочен с разных дат) остаются раздельными: это разные сроки.
+    """
+    groups: dict[tuple[uuid.UUID | None, str], Decimal] = defaultdict(Decimal)
+    names: dict[tuple[uuid.UUID | None, str], str | None] = {}
+    for item in items:
+        key = (item.counterparty_id, detail(item))
+        groups[key] += item.amount
+        names.setdefault(key, item.counterparty_name)
+    ordered = sorted(groups.items(), key=lambda entry: -entry[1])
     listed = ", ".join(
-        f"{item.counterparty_name or 'контрагент без названия'} — {rubles(item.amount)} ₽ "
-        f"({detail(item)})"
-        for item in items[:5]
+        f"{names[key] or 'контрагент без названия'} — {rubles(amount)} ₽ ({key[1]})"
+        for key, amount in ordered[:5]
     )
-    if len(items) > 5:
-        listed = f"{listed} и ещё {len(items) - 5}"
+    if len(ordered) > 5:
+        listed = f"{listed} и ещё {len(ordered) - 5}"
     return listed
 
 
@@ -1008,10 +1030,7 @@ def _warnings(
         result.append(
             Warning(
                 code="unmapped_cash",
-                message=(
-                    f"{cash.unmapped_count} проводок на {rubles(cash.unmapped)} ₽ не разнесены "
-                    "по статьям — отчёт неполон ровно на эту сумму"
-                ),
+                message=_unmapped_cash_message(cash),
                 amount=cash.unmapped,
             )
         )
@@ -1089,6 +1108,27 @@ def _warnings(
             )
     result.extend(_unfulfilled_accrual_warnings(cash, recognition, article_lines, lines))
     return result
+
+
+def _unmapped_cash_message(cash: cash_source.CashLayer) -> str:
+    """Неразнесённая касса словами — расход и приход отдельно.
+
+    ``cash.unmapped`` — сумма ПО МОДУЛЮ, так её требует сверка с ``source_total``. Пока
+    неразнесённое одного направления, модуль и есть недостача отчёта. Когда среди них есть
+    и приходы, «неполон ровно на эту сумму» неверно: 10 000 ₽ расхода и 10 000 ₽ возврата
+    дают 20 000 ₽ по модулю, а в прибыли — от нуля до 20 000 ₽, смотря по статьям. Тогда
+    текст называет обе суммы и цифры недостачи не обещает.
+    """
+    head = f"Не разнесено по статьям проводок: {cash.unmapped_count}"
+    if cash.unmapped_in == 0:
+        return f"{head} — расход {rubles(cash.unmapped_out)} ₽. Отчёт неполон ровно на эту сумму"
+    if cash.unmapped_out == 0:
+        return f"{head} — приход {rubles(cash.unmapped_in)} ₽. Отчёт неполон ровно на эту сумму"
+    return (
+        f"{head} — расход {rubles(cash.unmapped_out)} ₽ и приход {rubles(cash.unmapped_in)} ₽. "
+        "В отчёт не попало ни то, ни другое; на сколько это меняет прибыль, решат статьи, "
+        "которые им назначат"
+    )
 
 
 def _unclassified_goods_warning(goods: iiko_source.UnclassifiedGoods) -> Warning | None:

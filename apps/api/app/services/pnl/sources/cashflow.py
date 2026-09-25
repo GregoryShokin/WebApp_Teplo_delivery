@@ -109,6 +109,11 @@ class CashLayer:
     in_total: Decimal = Decimal("0.00")
     unmapped: Decimal = Decimal("0.00")
     unmapped_count: int = 0
+    #: ``unmapped`` по направлениям. Сверке нужна сумма по модулю (её сравнивают с
+    #: ``source_total``), а человеку — что именно выпало: расход и приход в прибыли весят
+    #: с разными знаками, и их сумма по модулю не говорит, на сколько неполон отчёт.
+    unmapped_out: Decimal = Decimal("0.00")
+    unmapped_in: Decimal = Decimal("0.00")
     # Статьи, по которым касса встретилась, а правила нет. Пустой список — инвариант.
     unmapped_articles: set[uuid.UUID | None] = field(default_factory=set)
     #: Сколько кассы исключено «под признание» — по паре КОНТРАГЕНТ × СТРОКА ОПиУ. Нужно,
@@ -471,6 +476,10 @@ async def build_cash_layer(
         if verdict is Verdict.UNMAPPED:
             layer.unmapped += amount
             layer.unmapped_count += 1
+            if tx.direction == "out":
+                layer.unmapped_out += amount
+            else:
+                layer.unmapped_in += amount
             layer.unmapped_articles.add(tx.article_id)
             continue
         if line_code is None:

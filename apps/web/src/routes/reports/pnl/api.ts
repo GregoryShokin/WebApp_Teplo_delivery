@@ -74,8 +74,12 @@ export type PnlReconciliation = {
   cash_out_total: string;
   cash_in_total: string;
   by_verdict: Record<string, string>;
+  /** Сумма неразнесённого ПО МОДУЛЮ — её сверяет сервер. */
   unmapped: string;
   unmapped_count: number;
+  /** То же по направлениям — для подписи: расход и приход весят в прибыли с разными знаками. */
+  unmapped_out: string;
+  unmapped_in: string;
   balanced: boolean;
   drift: string;
 };
