@@ -352,7 +352,24 @@ async def pay_payable_loan_with_money(
             CounterpartyMatchError,
             confirm_invoice_match,
         )
+        from app.services.supplier_prepayments import (
+            assert_rule1_money_month_open,
+            release_rule1_money_to_loan,
+            rule1_money_of_payment,
+        )
 
+        # Деньги операции, уже ставшие авансом правила 1, уходят из аванса пересборкой — с даты
+        # денег, то есть меняют цифры их месяца. Замок — ДО записи: прежде сверка коммитилась, и
+        # отказ пересборки приходил 409-й поверх оплаченного займа при открытом авансе.
+        money = await rule1_money_of_payment(
+            session, bank_operation_id=bank_operation_id, counterparty_id=loan.counterparty_id
+        )
+        if money is not None:
+            await assert_rule1_money_month_open(
+                session,
+                money.transaction,
+                action=f"оплата бартерного займа № {loan.number or '—'} деньгами этого платежа",
+            )
         try:
             await confirm_invoice_match(
                 session,
@@ -364,9 +381,14 @@ async def pay_payable_loan_with_money(
                 # ЯВНАЯ сумма: остаток по аллокациям не знает товарных возвратов (они в
                 # BarterReturnLine), без неё операция закрыла бы уже возвращённое вторично.
                 amount=requested,
+                # Без коммита: пересборка аванса ниже — часть той же оплаты, и её отказ
+                # обязан откатить и сверку.
+                commit=False,
             )
         except CounterpartyMatchError as exc:
             raise WarehouseInvoiceError(str(exc)) from exc
+        if money is not None:
+            await release_rule1_money_to_loan(session, money, requested)
         await _resync_rule1_prepayment(session, bank_operation_id)
 
     remaining = await sync_barter_loan_status(session, loan)

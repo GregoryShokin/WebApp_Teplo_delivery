@@ -31,11 +31,14 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.services.counterparty_matching import (
+    PAYMENT_MATCH_LOCK_ACTION,
     CounterpartyMatchError,
     _allocated_amount,
     _op_already_allocated,
     _recompute_status,
     payment_allocated_amount,
+    rule1_money_foreign,
+    rule1_money_taken,
 )
 from app.services.counterparty_requisites_history import BANK_NOISE_INNS as _BANK_NOISE_INNS
 from app.services.counterparty_requisites_history import requisites_from_operation
@@ -75,6 +78,27 @@ def _is_card_noise(operation: BankOperation) -> bool:
         return True
     name = str(receiver.get("name") or operation.counterparty_name_raw or "")
     return "ТБанк" in name or "ТБАНК" in name.upper()
+
+
+async def _payment_can_pay(
+    session: AsyncSession, operation: BankOperation, invoice: SupplierInvoice
+) -> bool:
+    """У операции остались деньги для этого документа с учётом аванса правила 1.
+
+    Зачёт двери из аванса не метит операцию «использованной» (``_op_already_allocated``) — и
+    правильно: остаток аванса может оплатить ещё одну накладную. Но операцию, чей аванс уже
+    ушёл на другие документы или принадлежит другому контрагенту, предлагать нельзя — подтверждение
+    всё равно откажет (``confirm_invoice_match``)."""
+    from app.services.supplier_prepayments import rule1_money_of_payment
+
+    if invoice.doc_kind == "bill":
+        return True
+    money = await rule1_money_of_payment(
+        session, bank_operation_id=operation.id, counterparty_id=invoice.counterparty_id
+    )
+    if money is None:
+        return True
+    return not money.foreign_to(invoice) and money.for_document(invoice) > 0
 
 
 def _payee_requisites(operation: BankOperation) -> dict[str, Any]:
@@ -144,6 +168,8 @@ async def suggest_invoice_matches(
             if _is_card_noise(operation):
                 continue
             if await _op_already_allocated(session, operation.id):
+                continue
+            if not await _payment_can_pay(session, operation, invoice):
                 continue
             requisites = _payee_requisites(operation)
             payee_inn = requisites.get("inn")
@@ -309,6 +335,8 @@ async def suggest_invoice_matches_by_time(
             continue
         if await _op_already_allocated(session, operation.id):
             continue
+        if not await _payment_can_pay(session, operation, invoice):
+            continue
         requisites = _payee_requisites(operation)
         payee_inn = requisites.get("inn")
         if counterparty and counterparty.inn and payee_inn and payee_inn != counterparty.inn:
@@ -451,7 +479,28 @@ async def confirm_invoice_match(
     allow_card: bool = False,
     allow_barter_loan: bool = False,
     amount: Decimal | None = None,
+    commit: bool = True,
 ) -> dict[str, Any]:
+    """Сверка операции выписки с накладной: деньги операции оплачивают документ.
+
+    Операция, чью проводку правило 1 уже сделало авансом, оплачивает закрывающий документ
+    ЗАЧЁТОМ из этого аванса (``supplier_prepayments.settle_from_payment_rule1``), а не
+    bank-аллокацией рядом с открытым авансом: иначе одни деньги числились бы и оплатой
+    накладной, и дебиторкой. Зачёт датируется вступлением документа, поэтому замок — месяц
+    документа, и проверяется он до первой записи.
+
+    ``commit=False`` — дверь бартерного займа: после сверки она пересобирает аванс правила 1, и
+    отказ замка там должен откатывать и саму сверку, а не приходить 409-й поверх закоммиченной
+    оплаты."""
+    # Ленивый импорт: supplier_prepayments тянет классификатор, а тот — этот модуль.
+    from app.services.supplier_prepayments import (
+        PAYMENT_MATCH_BANK_ORIGIN,
+        assert_closing_months_open,
+        payment_settles_from_advance,
+        rule1_money_of_payment,
+        settle_from_payment_rule1,
+    )
+
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
         raise CounterpartyMatchError("Накладная не найдена")
@@ -481,6 +530,18 @@ async def confirm_invoice_match(
         raise CounterpartyMatchError(
             "Платёж уже полностью распределён по документам — свободного остатка нет"
         )
+    # Проводку операции правило 1 могло уже сделать авансом, а аванс — погасить документы:
+    # эти деньги заняты, хотя аллокаций на них нет. Счёту аванс не мешает (его деньги аванс
+    # несёт и так), остальным — потолок по открытому остатку аванса.
+    money = await rule1_money_of_payment(
+        session, bank_operation_id=operation.id, counterparty_id=invoice.counterparty_id
+    )
+    if money is not None and invoice.doc_kind != "bill":
+        if money.foreign_to(invoice):
+            raise CounterpartyMatchError(rule1_money_foreign())
+        free = min(free, money.for_document(invoice))
+        if free <= 0:
+            raise CounterpartyMatchError(rule1_money_taken(free))
     # ``amount`` задаёт вызывающий, когда закрывает НЕ весь остаток накладной: у бартерного
     # займа часть долга гасится товаром (леджер BarterReturnLine, не аллокации), поэтому
     # ``remaining`` по аллокациям больше реального остатка — без явной суммы аллокация
@@ -490,14 +551,27 @@ async def confirm_invoice_match(
         raise CounterpartyMatchError(
             f"Сумма {allocation} вне допустимого остатка (накладная {remaining}, платёж {free})"
         )
-    await _apply_bank_allocation(
-        session,
-        invoice=invoice,
-        operation=operation,
-        amount=allocation,
-        actor_user_id=actor_user_id,
-    )
-    await _recompute_status(session, invoice)
+    if money is not None and payment_settles_from_advance(invoice):
+        await assert_closing_months_open(
+            session, invoice, action=PAYMENT_MATCH_LOCK_ACTION.format(number=invoice.number or "—")
+        )
+        await settle_from_payment_rule1(
+            session,
+            invoice=invoice,
+            money=money,
+            amount=allocation,
+            origin=PAYMENT_MATCH_BANK_ORIGIN,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        await _apply_bank_allocation(
+            session,
+            invoice=invoice,
+            operation=operation,
+            amount=allocation,
+            actor_user_id=actor_user_id,
+        )
+        await _recompute_status(session, invoice)
 
     enriched = False
     if enrich:
@@ -505,7 +579,8 @@ async def confirm_invoice_match(
             session, invoice.counterparty_id, operation, actor_user_id
         )
 
-    await session.commit()
+    if commit:
+        await session.commit()
     return {
         "invoice_id": str(invoice.id),
         "payment_status": invoice.payment_status,
