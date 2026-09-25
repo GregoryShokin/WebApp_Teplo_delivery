@@ -1474,9 +1474,11 @@ async def patch_classification_rule(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
     rule = await _classification_rule_or_404(session, rule_id)
-    await _ensure_rule_article_allowed(session, payload.article_id)
     for key, value in _classification_rule_data(payload.model_dump(exclude_unset=True)).items():
         setattr(rule, key, value)
+    # Проверяем итог, а не только присланное поле: статью возврата правило могло принести из
+    # разбора владельца (exclude со статьёй), а сюда прийти правкой одного действия.
+    await _ensure_rule_article_allowed(session, rule.article_id)
     await session.commit()
     await session.refresh(rule)
     return _classification_rule_payload(rule)
@@ -1507,6 +1509,8 @@ async def toggle_classification_rule(
 ) -> dict[str, object]:
     rule = await _classification_rule_or_404(session, rule_id)
     rule.is_active = not rule.is_active
+    if rule.is_active:
+        await _ensure_rule_article_allowed(session, rule.article_id)
     await session.commit()
     await session.refresh(rule)
     return _classification_rule_payload(rule)
@@ -3170,18 +3174,25 @@ def _rule_from_owner_review(
 
 
 _RULE_DIRECTION_LABELS = {"in": "поступления", "out": "списания"}
+_REMEMBERED_RULE_PRIORITY = 50
 _COUNTER_DIRECTION = {"in": "out", "out": "in"}
 
 
-def _narrow_to_counter_direction(rules: Sequence[ClassificationRule], direction: str) -> None:
+def _narrow_to_counter_direction(rules: Sequence[ClassificationRule], direction: str) -> int:
     """Правило без направления ловит и приходы, и расходы. Решение по одному направлению его
-    не трогает — оно продолжает жить для встречного, а своё направление получает своё правило."""
+    не трогает — оно продолжает жить для встречного, а своё направление получает своё правило.
+
+    Возвращает приоритет для нового правила: не ниже суженного. Иначе пере-решение уступило бы
+    третьему правилу, которое раньше проигрывало суженному (приоритет 10 против 30 против 50)."""
+    priority = _REMEMBERED_RULE_PRIORITY
     counter = _COUNTER_DIRECTION.get(direction)
     if counter is None:
-        return
+        return priority
     for rule in rules:
         if rule.direction is None:
             rule.direction = counter
+            priority = min(priority, rule.priority)
+    return priority
 
 
 class RememberedRule(NamedTuple):
@@ -3258,7 +3269,7 @@ async def _remember_binding_rule(
                 .order_by(ClassificationRule.priority, ClassificationRule.name)
             )
         ).all()
-        _narrow_to_counter_direction(candidates, direction)
+        priority = _narrow_to_counter_direction(candidates, direction)
         existing = next((rule for rule in candidates if rule.direction == direction), None)
         if existing is not None:
             existing.is_active = True
@@ -3270,7 +3281,7 @@ async def _remember_binding_rule(
             return RememberedRule(existing)
         rule = ClassificationRule(
             name=f"Привязка по ИНН {inn}: {_RULE_DIRECTION_LABELS.get(direction, direction)}",
-            priority=50,
+            priority=priority,
             is_active=True,
             direction=direction,
             counterparty_inn_match=inn,
@@ -3339,7 +3350,7 @@ async def _remember_binding_rule(
                 "Разрешите конфликт в настройках ДДС",
             )
 
-    _narrow_to_counter_direction(undirected, direction)
+    priority = _narrow_to_counter_direction(undirected, direction)
     if existing is not None:
         existing.is_active = True
         existing.article_id = article_id
@@ -3349,7 +3360,7 @@ async def _remember_binding_rule(
     else:
         rule = ClassificationRule(
             name=rule_name,
-            priority=50,
+            priority=priority,
             is_active=True,
             provider=None if merchant else operation.provider,
             direction=direction,

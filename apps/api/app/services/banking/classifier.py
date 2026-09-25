@@ -846,6 +846,12 @@ async def match_counterparty_by_merchant(
     counterparty_id, article_id = rows[0]
     if article_id is None:
         return None
+    # Возврат переплаты фоном не размечаем — ни правилом, ни статьёй по умолчанию из карточки:
+    # авторазметка гасила бы аванс мимо сторожа задвоенного возврата (решение владельца 25.09).
+    from app.services.refund_twins import refund_rule_refusal
+
+    if await refund_rule_refusal(session, article_id) is not None:
+        return None
     return MerchantMatch(counterparty_id=counterparty_id, article_id=article_id)
 
 

@@ -35,6 +35,7 @@ from app.models import (
     BankOperation,
     CashflowTransaction,
     ClassificationRule,
+    CounterpartyPayableProfile,
     DdsArticle,
     ReconciliationCase,
 )
@@ -307,7 +308,8 @@ def test_remember_narrows_an_undirected_inn_rule_instead_of_overwriting_it(
     client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Правило без направления (из настроек ДДС) ловит и оплаты, и приходы. «Запомнить» на
-    приходе не переписывает его, а сужает до списаний и заводит приходам своё правило."""
+    приходе не переписывает его, а сужает до списаний и заводит приходам своё правило — с
+    приоритетом не ниже суженного, иначе пере-решение уступило бы третьему правилу."""
     ids = _seed(async_session_factory)
     headers = _admin(async_session_factory)
 
@@ -315,7 +317,7 @@ def test_remember_narrows_an_undirected_inn_rule_instead_of_overwriting_it(
         async with async_session_factory() as session:
             rule = ClassificationRule(
                 name="Поставщик из настроек",
-                priority=50,
+                priority=10,
                 is_active=True,
                 counterparty_inn_match=SUPPLIER_INN,
                 action="set_article",
@@ -344,6 +346,10 @@ def test_remember_narrows_an_undirected_inn_rule_instead_of_overwriting_it(
     }
     assert rules[undirected_id].direction == "out"
     assert rules[undirected_id].article_id == ids["expense"]
+    incoming_rule = rules[uuid.UUID(str(answer["rule_id"]))]
+    assert incoming_rule.direction == "in"
+    assert incoming_rule.article_id == ids["income"]
+    assert incoming_rule.priority == 10
 
     next_payment = _new_operation(
         async_session_factory,
@@ -353,6 +359,14 @@ def test_remember_narrows_an_undirected_inn_rule_instead_of_overwriting_it(
         purpose="Оплата по счету 16 за продукты",
     )
     assert _auto_classify(async_session_factory, next_payment) == ("classified", ids["expense"])
+    next_incoming = _new_operation(
+        async_session_factory,
+        account_id=ids["account"],
+        direction="in",
+        amount="300.00",
+        purpose="Возврат излишне уплаченных средств по счету 16",
+    )
+    assert _auto_classify(async_session_factory, next_incoming) == ("classified", ids["income"])
 
 
 def test_card_refund_remember_keeps_the_merchant_purchase_rule(
@@ -543,6 +557,13 @@ def test_settings_and_merchant_doors_refuse_a_refund_article_rule(
         json={"article_id": str(ids["refund"])},
     )
     assert patched.status_code == 422, patched.text
+    # Правка без статьи — обычная правка, запрет её не касается.
+    renamed = client.patch(
+        f"/api/v1/dds/classification-rules/{allowed.json()['id']}",
+        headers=admin,
+        json={"name": "Приходы поставщика"},
+    )
+    assert renamed.status_code == 200, renamed.text
 
     merchant = client.post(
         f"/api/v1/counterparties/{ids['supplier']}/merchant-rule",
@@ -555,3 +576,92 @@ def test_settings_and_merchant_doors_refuse_a_refund_article_rule(
     # Отказ правки не задел правило: статья осталась прежней.
     kept = _rules(async_session_factory, name="Приходы поставщика")
     assert [rule.article_id for rule in kept] == [ids["income"]]
+
+
+def test_rule_carrying_refund_article_cannot_be_turned_into_set_article_or_revived(
+    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Статью возврата правило может принести не из поля статьи: разбор владельцем с «исключить»
+    сохраняет её в правиле. Правка одного действия или включение такого правила — отказ."""
+    ids = _seed(async_session_factory)
+    admin = {"X-User-Role": "admin"}
+
+    async def _legacy() -> uuid.UUID:
+        async with async_session_factory() as session:
+            rule = ClassificationRule(
+                name="Исключить возвраты",
+                priority=50,
+                is_active=False,
+                direction="in",
+                counterparty_inn_match=SUPPLIER_INN,
+                action="exclude",
+                article_id=ids["refund"],
+            )
+            session.add(rule)
+            await session.commit()
+            return rule.id
+
+    rule_id = asyncio.run(_legacy())
+    turned = client.patch(
+        f"/api/v1/dds/classification-rules/{rule_id}",
+        headers=admin,
+        json={"action": "set_article"},
+    )
+    assert turned.status_code == 422, turned.text
+    revived = client.post(f"/api/v1/dds/classification-rules/{rule_id}/toggle", headers=admin)
+    assert revived.status_code == 422, revived.text
+    kept = _rules(async_session_factory, name="Исключить возвраты")
+    assert [(rule.action, rule.is_active) for rule in kept] == [("exclude", False)]
+
+
+def test_merchant_registry_fallback_does_not_book_a_refund_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Последняя фоновая дверь — статья по умолчанию из карточки, по которой классификатор
+    узнаёт мерчанта без правила. Возвратную статью так не ставим: операция ждёт человека.
+    Контроль — тот же контрагент с обычной статьёй размечается сам."""
+    ids = _seed(async_session_factory)
+    card = {"inn": ACQUIRER_INN, "name": 'АО "ТБанк"'}
+
+    async def _set_default(article_id: uuid.UUID) -> None:
+        async with async_session_factory() as session:
+            lavka = await make_counterparty(session, name="LAVKA")
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.counterparty_id == lavka.id
+                )
+            )
+            profile.default_dds_article_id = article_id
+            await session.commit()
+
+    asyncio.run(_set_default(ids["refund"]))
+    refund = _new_operation(
+        async_session_factory,
+        account_id=ids["account"],
+        direction="in",
+        amount="450.00",
+        purpose="Возврат средств по операции оплаты LAVKA Moskva RUS",
+        **card,
+    )
+    assert _auto_classify(async_session_factory, refund) == ("needs_review", None)
+
+    async def _switch_to_expense() -> None:
+        async with async_session_factory() as session:
+            profile = await session.scalar(
+                select(CounterpartyPayableProfile).where(
+                    CounterpartyPayableProfile.default_dds_article_id == ids["refund"]
+                )
+            )
+            profile.default_dds_article_id = ids["expense"]
+            await session.commit()
+
+    asyncio.run(_switch_to_expense())
+    purchase = _new_operation(
+        async_session_factory,
+        account_id=ids["account"],
+        direction="out",
+        amount="990.00",
+        purpose="Оплата в LAVKA Moskva RUS",
+        **card,
+    )
+    assert _auto_classify(async_session_factory, purchase) == ("classified", ids["expense"])
