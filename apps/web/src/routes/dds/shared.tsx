@@ -29,8 +29,11 @@ import {
   apiErrorStatus,
   getAssetOptions,
   getLocationOptionsForArticle,
+  getRefundTwins,
   triggerBankSync,
   type DdsProvider,
+  type RefundTwin,
+  type RefundTwinQuery,
 } from "@/lib/api";
 import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -443,4 +446,51 @@ export function assetOptionsQuery(enabled: boolean) {
     retry: (failureCount: number, error: Error) =>
       apiErrorStatus(error) !== 403 && failureCount < 1,
   };
+}
+
+// «Возврат переплаты от поставщиков»: приход гасит открытые авансы контрагента.
+export const SUPPLIER_REFUND_ARTICLE_CODE = "vozvrat_pereplaty_ot_postavschikov";
+
+/**
+ * Двойник возврата — тот же возврат контрагента, уже проведённый другим каналом. Спрашиваем ДО
+ * проведения: разбор выписки, разбор кейса собственником и «Новый платёж» читают один ключ.
+ * ``null`` — спрашивать не о чем (не возврат, нет контрагента или суммы).
+ */
+export function refundTwinsQuery(params: RefundTwinQuery | null) {
+  return {
+    queryKey: ["dds", "refund-twins", params],
+    queryFn: () => getRefundTwins(params as RefundTwinQuery),
+    enabled: params != null,
+    // Предупреждение необязательное: без права на запрос окно работает как раньше.
+    retry: (failureCount: number, error: Error) =>
+      apiErrorStatus(error) !== 403 && failureCount < 1,
+  };
+}
+
+const REFUND_TWIN_SOURCE: Record<string, string> = {
+  bank_operation: "выписка",
+  new_payment_income: "«Новый платёж»",
+};
+
+/**
+ * Текст предупреждения о двойнике или ``null``. Запрета нет: два возврата одной суммы
+ * бывают, решает оператор. Дату «ГГГГ-ММ-ДД» разворачиваем строкой — ``new Date`` прочёл бы её
+ * как полночь по UTC.
+ */
+export function refundTwinWarning(twins: RefundTwin[] | undefined): string | null {
+  if (!twins?.length) return null;
+  const list = twins
+    .map((twin) => {
+      const channel = twin.channel === "cash" ? "наличными" : "по банку";
+      const source = REFUND_TWIN_SOURCE[twin.source_kind] ?? "ручная проводка";
+      const day = twin.operation_date.split("-").reverse().join(".");
+      return `${formatDdsMoney(twin.amount)} от ${day} ${channel} на «${twin.wallet_name}» (${source})`;
+    })
+    .join("; ");
+  const lead = twins.length === 1 ? "уже есть возврат" : "уже есть возвраты";
+  return (
+    `Похоже на задвоение: у этого контрагента ${lead} на ту же сумму — ${list}. ` +
+    "Если это те же деньги, не проводите их возвратом второй раз: аванс погасится дважды. " +
+    "Лишний приход исключите из ДДС."
+  );
 }

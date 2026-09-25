@@ -83,6 +83,7 @@ from app.schemas.dds import (
     OwnerReviewClassifyRequest,
     OwnerReviewListRead,
     PayoutAttributionEmployeeRead,
+    RefundTwinListRead,
     SafeAllocationCreate,
     SafeAllocationPayRequest,
     SafeAllocationRead,
@@ -179,6 +180,11 @@ from app.services.payroll_advance_service import (
     sync_advance_after_allocation_change,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
+from app.services.refund_twins import (
+    REFUND_TWIN_WINDOW_DAYS,
+    find_refund_twins,
+    wallet_channel,
+)
 from app.services.supplier_prepayments import (
     SUPPLIER_REFUND_ARTICLE_CODE,
     ensure_prepayment_from_bank_transaction,
@@ -839,6 +845,76 @@ async def post_new_payment_expense_cash(
         "total": float(total),
         "location": location,
         "paid": payload.pay_now,
+    }
+
+
+@router.get(
+    "/refund-twins",
+    response_model=RefundTwinListRead,
+    # Спрашивают три окна, и у каждого своё право: разбор операции/проводки, «Новый платёж»
+    # (приход — право подтверждения оплат) и разбор кейса собственником.
+    dependencies=(
+        Depends(
+            require_any_permission(
+                (
+                    "finance.cashflow.classify",
+                    "finance.safe.confirm_paid",
+                    "finance.owner_review.prepare",
+                )
+            )
+        ),
+    ),
+)
+async def get_refund_twins(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    counterparty_id: UUID,
+    amount: Annotated[Decimal, Query(gt=0)],
+    bank_operation_id: UUID | None = None,
+    wallet_id: UUID | None = None,
+    operation_date: date | None = None,
+) -> dict[str, object]:
+    """Тот же возврат контрагента, уже проведённый другим каналом (``services.refund_twins``).
+
+    Окна спрашивают ДО проведения: разбор операции выписки передаёт саму операцию (канал —
+    банк, дата — её), «Новый платёж» и разбор ручной проводки — кошелёк и дату. Предупреждение,
+    а не запрет: два возврата одной суммы бывают, решает оператор."""
+    if bank_operation_id is not None:
+        operation = await session.get(BankOperation, bank_operation_id)
+        if operation is None:
+            raise HTTPException(status_code=404, detail="Bank operation not found")
+        channel = "bank"
+        on_date = operation.operation_date
+    elif wallet_id is not None:
+        wallet = await session.get(Wallet, wallet_id)
+        if wallet is None:
+            raise HTTPException(status_code=404, detail="Счёт не найден")
+        channel = wallet_channel(wallet.type)
+        on_date = operation_date or datetime.now(MOSCOW_TZ).date()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Нужна операция выписки или счёт зачисления",
+        )
+    twins = await find_refund_twins(
+        session,
+        counterparty_id=counterparty_id,
+        amount=amount,
+        on_date=on_date,
+        channel=channel,
+    )
+    return {
+        "items": [
+            {
+                "transaction_id": twin.transaction_id,
+                "operation_date": twin.operation_date,
+                "amount": str(twin.amount),
+                "wallet_name": twin.wallet_name,
+                "channel": twin.channel,
+                "source_kind": twin.source_kind,
+            }
+            for twin in twins
+        ],
+        "window_days": REFUND_TWIN_WINDOW_DAYS,
     }
 
 

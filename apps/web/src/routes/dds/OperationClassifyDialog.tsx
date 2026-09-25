@@ -40,6 +40,7 @@ import {
   type JournalRow,
   type LocationOption,
   type OperationClassifyPayload,
+  type RefundTwinQuery,
 } from "@/lib/api";
 import { getCounterpartyDirectory } from "@/routes/counterparties/api";
 import { AssetPicker, assetTitle } from "@/routes/dds/AssetPicker";
@@ -48,11 +49,14 @@ import {
   DdsStatusBadge,
   DirectionBadge,
   LOCATIONS_FORBIDDEN_HINT,
+  SUPPLIER_REFUND_ARTICLE_CODE,
   assetOptionsQuery,
   compactText,
   formatDate,
   formatDdsMoney,
   locationOptionsQuery,
+  refundTwinWarning,
+  refundTwinsQuery,
 } from "@/routes/dds/shared";
 
 const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
@@ -345,6 +349,36 @@ export function OperationClassifyDialog({
     invoiceCounterpartyIds.map((cpId, index) => [cpId, invoiceQueries[index]?.data ?? []]),
   );
   const invoicesFor = (cpId: string) => invoicesByCounterparty.get(cpId) ?? [];
+  // Возврат переплаты, уже проведённый другим каналом (наличные ↔ выписка): пересборка гасит
+  // аванс каждым возвратным приходом, и те же деньги дважды погасили бы его вдвое. Спрашиваем
+  // по каждой возвратной строке с контрагентом ДО «Разнести» — предупреждаем, не запрещаем.
+  const refundArticleId = articles.find((a) => a.code === SUPPLIER_REFUND_ARTICLE_CODE)?.id;
+  const refundTwinParams = new Map<string, RefundTwinQuery>();
+  for (const item of rows) {
+    const amount = round2(Number(item.amount) || 0);
+    if (
+      row?.direction !== "in" ||
+      !refundArticleId ||
+      item.articleId !== refundArticleId ||
+      !item.counterpartyId ||
+      amount <= 0
+    ) {
+      continue;
+    }
+    const base = { counterparty_id: item.counterpartyId, amount: amount.toFixed(2) };
+    const params: RefundTwinQuery | null = isOperation
+      ? { ...base, bank_operation_id: targetId }
+      : row.wallet_id
+        ? { ...base, wallet_id: row.wallet_id, operation_date: row.operation_date }
+        : null;
+    if (params) refundTwinParams.set(`${base.counterparty_id}:${base.amount}`, params);
+  }
+  const refundTwinQueries = useQueries({
+    queries: Array.from(refundTwinParams.values()).map((params) => refundTwinsQuery(params)),
+  });
+  const refundTwinWarnings = refundTwinQueries
+    .map((query) => refundTwinWarning(query.data?.items))
+    .filter((text): text is string => Boolean(text));
   // Помещения строк «объектных» статей: тот же ключ, что у OperationLocationPicker (общий кэш,
   // второго запроса нет). Родителю нужен сам факт 403 — без права source.locations.read
   // помещение выбрать нечем, и «Разнести» серая не потому, что оператор поленился заполнить поле.
@@ -926,6 +960,16 @@ export function OperationClassifyDialog({
                 </label>
               </div>
             ) : null}
+
+            {refundTwinWarnings.map((text) => (
+              <div
+                className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800"
+                key={text}
+                role="alert"
+              >
+                {text}
+              </div>
+            ))}
 
             {rowMissingAsset ? (
               // Та же причина, что и у помещения: серая кнопка без объяснения читается как

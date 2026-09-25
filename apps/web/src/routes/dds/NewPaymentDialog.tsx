@@ -76,9 +76,12 @@ import { AssetPicker, assetTitle } from "@/routes/dds/AssetPicker";
 import {
   ASSETS_FORBIDDEN_HINT,
   LOCATIONS_FORBIDDEN_HINT,
+  SUPPLIER_REFUND_ARTICLE_CODE,
   assetOptionsQuery,
   formatDdsMoney,
   locationOptionsQuery,
+  refundTwinWarning,
+  refundTwinsQuery,
 } from "@/routes/dds/shared";
 import { VatRateField, kopecksOf } from "@/routes/dds/VatRateField";
 
@@ -2370,7 +2373,7 @@ function IncomeForm({
 
   const selectedArticle = articles.find((item) => item.id === articleId) ?? null;
   // Возврат от поставщика гасит его открытые предоплаты — без контрагента не провести.
-  const counterpartyRequired = selectedArticle?.code === "vozvrat_pereplaty_ot_postavschikov";
+  const counterpartyRequired = selectedArticle?.code === SUPPLIER_REFUND_ARTICLE_CODE;
 
   const cashWallets = wallets.filter((wallet) => wallet.kind === "cash");
   const safeWallet = cashWallets.find((wallet) => wallet.location === "safe") ?? null;
@@ -2413,6 +2416,19 @@ function IncomeForm({
     amountOf(amount) > 0 &&
     (!counterpartyRequired || Boolean(counterpartyId));
 
+  // Тот же возврат, уже пришедший выпиской: провести его ещё и наличными — значит погасить
+  // аванс вдвое (пересборка берёт каждый возвратный приход). Предупреждаем, не запрещаем.
+  const refundTwinParams =
+    active && counterpartyRequired && counterpartyId && walletId && amountOf(amount) > 0
+      ? {
+          counterparty_id: counterpartyId,
+          amount: amountOf(amount).toFixed(2),
+          wallet_id: walletId,
+        }
+      : null;
+  const refundTwinsResult = useQuery(refundTwinsQuery(refundTwinParams));
+  const refundTwinText = refundTwinWarning(refundTwinsResult.data?.items);
+
   const mutation = useMutation({
     mutationFn: () =>
       createNewPaymentIncome({
@@ -2444,6 +2460,9 @@ function IncomeForm({
     tone = "warning";
     summary =
       "Выберите поставщика — возврат гасит его открытые предоплаты (излишек останется обычным приходом).";
+  } else if (refundTwinText) {
+    tone = "warning";
+    summary = refundTwinText;
   } else if (counterpartyRequired && cpName) {
     summary = `Придёт ${destName} и зачтётся в предоплаты «${cpName}»; излишек — обычный приход.`;
   } else {

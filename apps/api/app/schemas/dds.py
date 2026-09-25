@@ -855,6 +855,23 @@ class NewPaymentIncomeRead(BaseModel):
     location: str
 
 
+class RefundTwinRead(BaseModel):
+    """Возврат контрагента на ту же сумму, уже проведённый другим каналом (наличные ↔ банк)."""
+
+    transaction_id: uuid.UUID
+    operation_date: date
+    amount: str
+    wallet_name: str
+    channel: Literal["cash", "bank"]
+    # bank_operation — выписка, new_payment_income — «Новый платёж», остальное — ручная проводка.
+    source_kind: str
+
+
+class RefundTwinListRead(BaseModel):
+    items: list[RefundTwinRead]
+    window_days: int
+
+
 class JournalRow(BaseModel):
     """One line of the unified DDS journal — a classified cashflow movement
     (``kind="cashflow"``) or an unclassified bank operation (``kind="operation"``)."""
