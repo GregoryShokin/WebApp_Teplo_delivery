@@ -832,7 +832,9 @@ async def list_location_options(
     и разобрать их должно быть можно. Аренды — только действовавшие на дату платежа, иначе
     оператору предложили бы собственника, которому в этом месяце уже не платят.
     """
-    effective_date = on_date or date.today()
+    # День московский: контейнер в UTC, и с 00:00 до 03:00 МСК 1-го числа ``date.today()``
+    # отдавал прошлый месяц — вместе с арендами, которые в новом месяце уже закончились.
+    effective_date = on_date or clock.moscow_today()
     locations = (
         await session.scalars(select(Location).order_by(Location.status, Location.name))
     ).all()

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -20,8 +21,16 @@ from cp_helpers import make_counterparty
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import EmailInvoiceIntake, SupplierExpenseAccrual, SupplierInvoice
+from app.core.config import get_settings
+from app.models import (
+    AccountingPeriodClose,
+    EmailInvoiceIntake,
+    SupplierExpenseAccrual,
+    SupplierInvoice,
+)
 from app.services.email_invoice_ingest import materialize_from_intake
+from app.services.invoice_recognition import RecognizedInvoice
+from app.services.mail.imap_client import FetchedAttachment
 
 BILL_NUMBER = "040726-40618-лсп"
 BILL_DATE = date(2026, 7, 4)
@@ -145,3 +154,104 @@ async def test_basis_of_another_counterparty_is_not_borrowed(
         act = await session.get(SupplierInvoice, intake.invoice_id)
         assert act is not None
         assert act.service_period_start is None
+
+
+def _act_recognition(inn: str) -> RecognizedInvoice:
+    """Тот же акт iiko, но распознанный при автоматическом приёме письма."""
+    return RecognizedInvoice(
+        recipient_name="АО АЙКО",
+        inn=inn,
+        amount=Decimal("4260.00"),
+        invoice_number="10826-9433-лсп",
+        invoice_date=date(2026, 9, 1),
+        document_kind="act",
+        basis_number=BILL_NUMBER,
+        basis_date=BILL_DATE,
+        confidence=0.95,
+        engine="deterministic",
+    )
+
+
+async def test_basis_period_of_a_closed_month_is_not_inherited(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Август закрыт — акт августовский период счёта-основания не перенимает.
+
+    Период основания для акта чужой, и наследование подчиняется тому же замку, что и в
+    остальных дверях зачёта (``inherited_period_open``): начисление в закрытом месяце
+    зависло бы «не вступившим». Акт проводится без периода, период назначает человек."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="АО АЙКО (закрытый месяц)", inn="1655166015")
+        await _paid_bill(session, cp.id)
+        session.add(AccountingPeriodClose(period_month=PERIOD[0]))
+        intake = _act_intake(cp.id)
+        session.add(intake)
+        await session.flush()
+
+        status = await materialize_from_intake(session, intake)
+        await session.commit()
+
+        assert status == "closing"
+        act = await session.get(SupplierInvoice, intake.invoice_id)
+        assert act is not None
+        assert act.service_period_start is None
+        assert act.service_period_source is None
+        accrual = await session.scalar(
+            select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == act.id)
+        )
+        assert accrual is None
+
+
+def test_automatic_email_intake_obeys_the_same_lock(
+    async_session_factory: async_sessionmaker[AsyncSession], monkeypatch
+) -> None:
+    """Автоматический приём письма — вторая почтовая дверь, и итог в ней тот же."""
+    from app.services import email_invoice_ingest as ingest
+
+    inn = "1655166016"
+
+    async def fake_recognize(pdf, *, settings, context_text=None):
+        return _act_recognition(inn)
+
+    monkeypatch.setattr(ingest, "recognize", fake_recognize)
+
+    async def run() -> uuid.UUID:
+        async with async_session_factory() as session:
+            cp = await make_counterparty(session, name="АО АЙКО (автоприём)", inn=inn)
+            await _paid_bill(session, cp.id)
+            session.add(AccountingPeriodClose(period_month=PERIOD[0]))
+            await session.commit()
+            status = await ingest.process_attachment(
+                session,
+                FetchedAttachment(
+                    mailbox="personal",
+                    message_uid="1",
+                    message_id="<act@iiko>",
+                    from_addr="rassilka_aktov@iiko.ru",
+                    subject="Документы",
+                    received_at=None,
+                    filename="act.pdf",
+                    mime="application/pdf",
+                    content=b"%PDF-act-closed-month",
+                ),
+                settings=get_settings(),
+            )
+            await session.commit()
+            assert status == "closing"
+            return cp.id
+
+    cp_id = asyncio.run(run())
+
+    async def check() -> None:
+        async with async_session_factory() as session:
+            act = await session.scalar(
+                select(SupplierInvoice).where(
+                    SupplierInvoice.counterparty_id == cp_id,
+                    SupplierInvoice.doc_kind == "closing",
+                )
+            )
+            assert act is not None
+            assert act.service_period_start is None
+            assert act.service_period_source is None
+
+    asyncio.run(check())

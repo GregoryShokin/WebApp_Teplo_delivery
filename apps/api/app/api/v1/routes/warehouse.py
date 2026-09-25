@@ -29,6 +29,7 @@ from app.api.deps import (
 from app.db.session import get_session
 from app.models import IikoProduct, SupplierInvoice, SupplierInvoiceTombstone, Wallet
 from app.schemas.types import MoscowDateTime
+from app.services.accounting_periods import PeriodClosed
 from app.services.counterparty_bank_match import (
     TimeMatchSuggestion,
     confirm_invoice_match,
@@ -462,6 +463,10 @@ async def post_loan_money_settlement(
             bank_operation_id=payload.bank_operation_id,
             actor_user_id=actor.user_id,
         )
+    except PeriodClosed as exc:
+        # Деньги учтённой операции закрытого месяца уходят на заём — пересборка её дебиторки
+        # (правило 1) правит закрытый месяц. 409: запрос верен, конфликтует состояние периода.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except WarehouseInvoiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

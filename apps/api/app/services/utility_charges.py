@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import calendar
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -55,6 +56,8 @@ from app.services import (
     supplier_prepayments,
     supplier_service_periods,
 )
+
+logger = logging.getLogger(__name__)
 
 UTILITY_INVOICE_SOURCE = "utility"
 
@@ -439,6 +442,23 @@ async def _documented_cash_advance(
         return None
 
     transaction = available[0]
+    # Факт найден, но он уже учтён в ЗАКРЫТОМ месяце: дебиторка на эти деньги появилась бы там
+    # задним числом (баланс на конец месяца), а сама выплата получила бы контрагента и ушла из
+    # расхода кассы сверенного отчёта. Тот же запрет, что у пересборки правила 1
+    # (``supplier_prepayments.ensure_prepayment_from_bank_transaction``): факт не связываем, и
+    # разрыв остаётся видимым — так же, как когда факта не нашлось вовсе.
+    for touched in {transaction.expense_month, transaction.operation_date} - {None}:
+        month = accounting_periods.month_start(touched)
+        if month < accounting_periods.ACCOUNTING_START:
+            continue
+        if await accounting_periods.is_month_closed(session, month):
+            logger.warning(
+                "Аванс по акту коммуналки не связан с выплатой %s: %s закрыт. Связать вручную "
+                "после открытия периода",
+                transaction.id,
+                f"{month:%m.%Y}",
+            )
+            return None
     prepayment = await session.scalar(
         select(SupplierPrepayment).where(
             SupplierPrepayment.cashflow_transaction_id == transaction.id

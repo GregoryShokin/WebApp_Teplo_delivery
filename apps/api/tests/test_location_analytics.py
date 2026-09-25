@@ -400,3 +400,59 @@ def test_cash_payout_carries_location_into_transaction(async_session_factory) ->
             await session.rollback()
 
     asyncio.run(run())
+
+
+def test_location_options_default_to_the_moscow_day(async_session_factory, monkeypatch) -> None:
+    """Без ``on_date`` аренды берутся на московский день, а не на UTC контейнера.
+
+    С 00:00 до 03:00 МСК 1-го числа ``date.today()`` в UTC — ещё прошлый месяц: оператору
+    предлагался арендодатель, чей договор закончился вчера, и не предлагался новый."""
+    from app.api.v1.routes.locations import list_location_options
+    from app.services import clock
+
+    new_month = date(2030, 1, 1)
+    monkeypatch.setattr(clock, "moscow_today", lambda: new_month)
+
+    async def run() -> None:
+        async with async_session_factory() as session:
+            rent, _other, location, landlord = await _fixture(session)
+            previous = Counterparty(
+                id=uuid.uuid4(), name=f"Прежний {uuid.uuid4().hex[:6]}", type="individual"
+            )
+            session.add(previous)
+            await session.flush()
+            session.add_all(
+                [
+                    LocationLease(
+                        id=uuid.uuid4(),
+                        location_id=location.id,
+                        counterparty_id=previous.id,
+                        monthly_amount=Decimal("40000"),
+                        started_on=date(2029, 1, 1),
+                        ended_on=date(2029, 12, 31),
+                        dds_article_id=rent.id,
+                    ),
+                    LocationLease(
+                        id=uuid.uuid4(),
+                        location_id=location.id,
+                        counterparty_id=landlord.id,
+                        monthly_amount=Decimal("50000"),
+                        started_on=new_month,
+                        dds_article_id=rent.id,
+                    ),
+                ]
+            )
+            await session.flush()
+
+            options = await list_location_options(rent.id, session)
+
+            offered = {
+                option.counterparty_id
+                for item in options.items
+                if item.location_id == location.id
+                for option in item.leases
+            }
+            assert offered == {landlord.id}
+            await session.rollback()
+
+    asyncio.run(run())
