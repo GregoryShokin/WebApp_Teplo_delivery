@@ -955,23 +955,20 @@ async def assert_closing_months_open(
     (``assert_month_open(None)`` молчит), а баланс считает его действующим с ``created_at`` —
     перегашение такого документа меняло ДЗ и КЗ на конец закрытого месяца. Пока снятие аванса
     мерилось месяцем денег любого вида, дыру случайно прикрывал аванс; с фильтром вида
-    (``_prepayment_waiting_months``) она открылась бы. День записи берём и тот, что считает
-    баланс (``date()`` в зоне базы), и московский — ночь на 1-е не проскочит между ними."""
+    (``_prepayment_waiting_months``) она открылась бы. День записи — московский, как у баланса
+    (``counterparty_balance_as_of._msk_date``): голый ``date()`` в зоне сессии (на проде UTC)
+    положил бы запись после полуночи МСК 1-го числа в предыдущий месяц."""
     if closing.invoice_date is not None:
         await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
     elif closing.id is not None:
         # Запросом, а не атрибутом: ``created_at`` ставит сервер, и у только что записанного
-        # документа он не загружен. Заодно день считает база — тем же ``date()``, что и баланс.
-        recorded = (
-            await session.execute(
-                select(
-                    func.date(SupplierInvoice.created_at),
-                    func.date(func.timezone("Europe/Moscow", SupplierInvoice.created_at)),
-                ).where(SupplierInvoice.id == closing.id)
+        # документа он не загружен. Заодно день считает база — тем же выражением, что и баланс.
+        recorded = await session.scalar(
+            select(func.date(func.timezone("Europe/Moscow", SupplierInvoice.created_at))).where(
+                SupplierInvoice.id == closing.id
             )
-        ).first()
-        for day in set(recorded or ()):
-            await accounting_periods.assert_month_open(session, day, action=action)
+        )
+        await accounting_periods.assert_month_open(session, recorded, action=action)
     await accounting_periods.assert_period_open(
         session, closing.service_period_start, closing.service_period_end, action=action
     )
@@ -1539,9 +1536,16 @@ async def _created_in_this_transaction(
     ``created_at`` ставит сервер значением ``now()``, а ``now()`` в Postgres — момент начала
     транзакции. Совпали — значит строку вставили в этой же транзакции: выписка только что
     пришла, выплату только что провели. Номер транзакции (``xmin``) для этого не годится —
-    вставка внутри точки сохранения получает номер подтранзакции."""
+    вставка внутри точки сохранения получает номер подтранзакции.
+
+    Именно равенство, а не «не раньше»: транзакция, начавшаяся ПОЗЖЕ нашей, ставит своим
+    строкам ``created_at`` больше нашего ``now()``, и при READ COMMITTED её зафиксированная
+    вставка видна нам посреди работы. С ``>=`` чужая, уже учтённая другой сессией проводка
+    проходила как «своя», и замок закрытого месяца пропускал её пересборку (воспроизведено
+    двумя сессиями, 25.09.2026). Явного ``created_at`` у проводок не ставит ни одна вставка —
+    только ``server_default``."""
     created_now = await session.scalar(
-        select(CashflowTransaction.created_at >= func.now()).where(
+        select(CashflowTransaction.created_at == func.now()).where(
             CashflowTransaction.id == transaction.id
         )
     )

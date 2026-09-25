@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -20,7 +21,7 @@ from decimal import Decimal
 import pytest
 from cp_helpers import make_counterparty, make_invoice, make_wallet
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
@@ -28,10 +29,14 @@ from app.models import (
     CashflowTransaction,
     DdsArticle,
     InvoicePaymentAllocation,
+    Location,
+    LocationLease,
+    Organization,
     PnlArticleRule,
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.scripts import reclassify_rent_article
 from app.services import accounting_periods
 from app.services.counterparty_balance_as_of import build_balance_as_of
 from app.services.pnl.projector import build_report
@@ -168,6 +173,47 @@ async def test_new_statement_money_in_a_closed_month_still_becomes_receivable(
 
         assert prepayment is not None
         assert prepayment.amount == Decimal("717.00")
+
+
+async def test_payment_committed_by_a_later_transaction_is_not_taken_for_our_own(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """«Своя» — только проводка, вставленная в ЭТОЙ транзакции, а не всякая с ``created_at``
+    не раньше её начала.
+
+    ``now()`` — момент начала нашей транзакции. Сессия, начавшаяся позже, ставит своей вставке
+    ``created_at`` больше него, а при READ COMMITTED её зафиксированная строка видна нам посреди
+    работы. С проверкой ``created_at >= now()`` такая проводка — уже учтённая чужой сессией —
+    проходила как новые деньги, и замок закрытого месяца пропускал её пересборку (скептик,
+    копия прода, 25.09.2026). Своя вставка при этом остаётся своей, в том числе внутри точки
+    сохранения: ``now()`` у подтранзакции тот же."""
+    async with async_session_factory() as setup:
+        cp = await make_counterparty(setup, name="Правило1-гонка", inn="6155090112")
+        wallet = await make_wallet(setup, name="Р/с гонка", wallet_type="bank")
+        await setup.commit()
+        cp_id, wallet_id = cp.id, wallet.id
+        await _close_august(setup)
+
+    async with async_session_factory() as ours, async_session_factory() as theirs:
+        # Наша транзакция открыта первой: её now() меньше created_at чужой вставки.
+        await ours.execute(select(func.now()))
+        foreign = _payment(wallet_id, cp_id, amount="1316.00", day=date(2026, 8, 15))
+        theirs.add(foreign)
+        await theirs.commit()
+
+        seen = await ours.get(CashflowTransaction, foreign.id)
+        assert seen is not None, "READ COMMITTED: зафиксированная чужая строка видна"
+        with pytest.raises(accounting_periods.PeriodClosed, match="08.2026 закрыт"):
+            await ensure_prepayment_from_bank_transaction(ours, seen)
+        assert await _prepayments_of(ours, foreign.id) == []
+
+        async with ours.begin_nested():
+            own = _payment(wallet_id, cp_id, amount="550.00", day=date(2026, 8, 20))
+            ours.add(own)
+            await ours.flush()
+        prepayment = await ensure_prepayment_from_bank_transaction(ours, own)
+        assert prepayment is not None and prepayment.amount == Decimal("550.00")
+        await ours.rollback()
 
 
 async def test_legacy_allocation_rebuilt_with_the_same_money_passes_the_lock(
@@ -506,3 +552,128 @@ async def test_closing_without_a_date_is_locked_by_the_day_it_was_recorded(
         with pytest.raises(accounting_periods.PeriodClosed, match="08.2026 закрыт"):
             await assert_closing_months_open(session, act, action="перегасить документ")
         assert await _closing_period_open(session, act) is False
+
+
+async def test_rent_reclassify_script_skips_payments_of_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Разметка аренды задним числом не трогает проводки закрытого месяца и не падает на них.
+
+    Не-арендные ветки скрипта меняли статью и помещение проводок закрытого месяца молча:
+    правило 1 они не зовут, и его замок их не видел, а ОПиУ сверенного месяца переезжал между
+    строками и точками. Арендные упирались в ``PeriodClosed`` и роняли прогон целиком. Теперь
+    такие проводки пропускаются и названы в отчёте, открытый месяц разносится как раньше."""
+    async with async_session_factory() as session:
+        rent = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == reclassify_rent_article.RENT_ARTICLE_CODE)
+        )
+        assert rent is not None, "статья аренды — из сид-данных миграций"
+        organization_id = await session.scalar(select(Organization.id).limit(1))
+        if organization_id is None:
+            organization = Organization(id=uuid.uuid4(), name="Тест-организация")
+            session.add(organization)
+            await session.flush()
+            organization_id = organization.id
+        location = Location(
+            id=uuid.uuid4(), organization_id=organization_id, name="Черникова-замок"
+        )
+        session.add(location)
+        landlord = await make_counterparty(session, name="Арендодатель-замок", inn="6155090113")
+        session.add(
+            LocationLease(
+                location_id=location.id,
+                counterparty_id=landlord.id,
+                monthly_amount=Decimal("50000.00"),
+                started_on=date(2026, 1, 1),
+                dds_article_id=rent.id,
+            )
+        )
+        wallet = await make_wallet(session, name="Р/с аренда", wallet_type="bank")
+        rows = {
+            key: CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal(amount),
+                operation_date=day,
+                article_id=rent.id,
+                source_kind="bank_operation",
+                payment_purpose="Оплата",
+                quality_status="final",
+            )
+            for key, amount, day in (
+                ("july_rent", "50000.00", date(2026, 7, 1)),
+                ("july_water", "3120.00", date(2026, 7, 14)),
+                ("august_rent", "50000.00", date(2026, 8, 1)),
+                ("august_water", "2980.00", date(2026, 8, 14)),
+            )
+        }
+        session.add_all(rows.values())
+        session.add(AccountingPeriodClose(period_month=date(2026, 7, 1)))
+        await session.commit()
+        ids = {key: txn.id for key, txn in rows.items()}
+        location_id, landlord_id = location.id, landlord.id
+
+    monkeypatch.setattr(reclassify_rent_article, "AsyncSessionLocal", async_session_factory)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["reclassify_rent_article", "--location", "Черникова-замок", "--apply"],
+    )
+    await reclassify_rent_article.async_main()
+
+    report = capsys.readouterr().out
+    assert "пропущено по замку (07.2026 закрыт)" in report
+    assert "пропущено по замку: 2" in report
+    async with async_session_factory() as session:
+        loaded = {key: await session.get(CashflowTransaction, ids[key]) for key in ids}
+        for key in ("july_rent", "july_water"):
+            txn = loaded[key]
+            assert (txn.article_id, txn.location_id, txn.lease_id, txn.counterparty_id) == (
+                rent.id,
+                None,
+                None,
+                None,
+            ), f"{key}: проводка закрытого июля переразмечена"
+        water_article = await session.get(DdsArticle, loaded["august_water"].article_id)
+        assert water_article.name == reclassify_rent_article.UTILITIES_ARTICLE_NAME
+        assert loaded["august_water"].location_id == location_id
+        assert loaded["august_rent"].lease_id is not None
+        assert loaded["august_rent"].counterparty_id == landlord_id
+
+
+async def test_undated_closing_is_locked_by_its_moscow_record_day_like_the_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ночь на 1-е: день записи документа без даты — московский, тот же, что у баланса.
+
+    Баланс датирует такой документ ``_msk_date(created_at)``. Замок проверял ещё и день по UTC и
+    запирал лишнее: запись в 00:30 МСК 1 сентября (по UTC — 31 августа) баланс относит к
+    сентябрю, и закрытый август она не меняет."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Правило1-полночь", inn="6155090114")
+
+        def undated(number: str, recorded_at: datetime) -> SupplierInvoice:
+            return SupplierInvoice(
+                counterparty_id=cp.id,
+                source="email",
+                direction="payable",
+                doc_kind="closing",
+                operational_scope="finance",
+                number=number,
+                invoice_date=None,
+                amount=Decimal("1521.00"),
+                payment_status="unpaid",
+                created_at=recorded_at,
+            )
+
+        september = undated("00:30 МСК 01.09", datetime(2026, 8, 31, 21, 30, tzinfo=UTC))
+        august = undated("00:30 МСК 01.08", datetime(2026, 7, 31, 21, 30, tzinfo=UTC))
+        session.add_all([september, august])
+        await session.commit()
+        await _close_august(session)
+
+        await assert_closing_months_open(session, september, action="перегасить документ")
+        with pytest.raises(accounting_periods.PeriodClosed, match="08.2026 закрыт"):
+            await assert_closing_months_open(session, august, action="перегасить документ")

@@ -453,7 +453,12 @@ async def _materialize(
 
     Статусы приёмки те же, что у почты, и означают то же самое: ``linked`` — счёт в очереди
     оплат, ``duplicate`` — ту же бумагу принесли второй раз, ``needs_review`` — провести нечем.
+
+    Оговорки учёта («аванс не зачтён: месяц выплаты закрыт») становятся подсказками строки: их
+    читают и ответ бота, и «Страница на оплату». Статус остаётся ``linked`` — счёт заведён и
+    платить по нему можно, но человек видит, почему кредиторка больше суммы к оплате.
     """
+    remarks: list[str] = []
     try:
         bill, closing = await utility_charges.build_utility_documents(
             session,
@@ -465,6 +470,7 @@ async def _materialize(
             paid_advance_amount=paid_advance_amount,
             paid_advance_date=paid_advance_date,
             actor_user_id=actor_user_id,
+            remarks=remarks,
         )
     except utility_charges.UtilityMonthTakenError as exc:
         # Пересняли ту же квитанцию: байты другие, дедуп по файлу не сработал, а долг тот же.
@@ -483,6 +489,16 @@ async def _materialize(
     intake.companion_invoice_id = closing.id if closing is not None else None
     intake.status = "linked"
     intake.error = None
+    if remarks:
+        # Новый словарь, а не правка на месте: JSONB без Mutable-обёртки изменений внутри не
+        # замечает, и подсказка не доехала бы до базы.
+        recognition = dict(intake.recognition or {})
+        utility = dict(recognition.get("utility") or {})
+        hints = list(utility.get("hints") or [])
+        hints.extend(remark for remark in remarks if remark not in hints)
+        utility["hints"] = hints
+        recognition["utility"] = utility
+        intake.recognition = recognition
 
 
 async def ingest_document(

@@ -190,12 +190,17 @@ async def build_utility_documents(
     paid_advance_date: date | None = None,
     actor_user_id: uuid.UUID | None = None,
     as_of: date | None = None,
+    remarks: list[str] | None = None,
 ) -> tuple[SupplierInvoice, SupplierInvoice | None]:
     """Создать по разобранной платёжке счёт и, если она несёт расход, закрывающий документ.
 
     Возвращает пару ``(счёт, закрывающий)``. Второй элемент — ``None`` у авансового акта:
     аванс это основание платежа и ничего больше, расход по нему признает будущий фактический
     акт. Не коммитит.
+
+    ``remarks`` — куда дописать то, что бумага назвала, а учёт сделать отказался, текстом для
+    человека. Документы при этом заведены: это не ошибка проведения, а оговорка к результату,
+    и вызывающий обязан показать её рядом с ним (ответ бота, строка «Страницы на оплату»).
 
     ``expense_amount`` — расход периода целиком (у воды и газа совпадает с суммой к оплате, у
     фактического акта электроэнергии больше неё на зачтённый аванс). ``payable_amount`` — то,
@@ -290,7 +295,7 @@ async def build_utility_documents(
 
     documented_prepayment = None
     if paid_advance_amount is not None and paid_advance_amount > 0:
-        documented_prepayment = await _documented_cash_advance(
+        documented_prepayment, remark = await _documented_cash_advance(
             session,
             account=account,
             amount=paid_advance_amount,
@@ -299,6 +304,8 @@ async def build_utility_documents(
             period_end=period_end,
             actor_user_id=actor_user_id,
         )
+        if remark is not None and remarks is not None:
+            remarks.append(remark)
 
     await supplier_prepayments.apply_closing_document(
         session,
@@ -341,15 +348,20 @@ async def _documented_cash_advance(
     period_start: date,
     period_end: date,
     actor_user_id: uuid.UUID | None,
-) -> SupplierPrepayment | None:
+) -> tuple[SupplierPrepayment | None, str | None]:
     """Связать строку «Оплачено аванс» с единственным существующим фактом ДДС.
 
     Бумага не создаёт деньги: без точного и единственного совпадения по дате, сумме и статье
     ничего не синтезируем. Так P&L остаётся полным расходом, а ДЗ/КЗ не закрывается чужим
     авансом лишь потому, что он оказался первым по времени.
+
+    Второй элемент — причина для человека, когда факт найден, но связать его запрещает замок
+    закрытого месяца: акт тогда встаёт полной кредиторкой, и без объяснения в ответе бота это
+    выглядит как «аванс потерялся». Не нашёлся факт или их несколько — причины нет: это давнее
+    поведение, и зачесть аванс позже могут другие двери (оплата счёта, активация акта).
     """
     if paid_on is None:
-        return None
+        return None, None
 
     existing_candidates = list(
         (
@@ -401,9 +413,9 @@ async def _documented_cash_advance(
         if paid_on in money_dates:
             existing_matches.append(prepayment)
     if len(existing_matches) == 1:
-        return existing_matches[0]
+        return existing_matches[0], None
     if len(existing_matches) > 1:
-        return None
+        return None, None
 
     transactions = list(
         (
@@ -439,15 +451,17 @@ async def _documented_cash_advance(
         if allocation is None:
             available.append(transaction)
     if len(available) != 1:
-        return None
+        return None, None
 
     transaction = available[0]
     # Факт найден, но он уже учтён в ЗАКРЫТОМ месяце: дебиторка на эти деньги появилась бы там
     # задним числом (баланс на конец месяца), а сама выплата получила бы контрагента и ушла из
     # расхода кассы сверенного отчёта. Тот же запрет, что у пересборки правила 1
     # (``supplier_prepayments.ensure_prepayment_from_bank_transaction``): факт не связываем, и
-    # разрыв остаётся видимым — так же, как когда факта не нашлось вовсе.
-    for touched in {transaction.expense_month, transaction.operation_date} - {None}:
+    # разрыв остаётся видимым — так же, как когда факта не нашлось вовсе. Видимым не только в
+    # балансе: причину получает вызывающий, иначе бот отвечал «Готово», а акт молча вставал
+    # полной кредиторкой.
+    for touched in sorted({transaction.expense_month, transaction.operation_date} - {None}):
         month = accounting_periods.month_start(touched)
         if month < accounting_periods.ACCOUNTING_START:
             continue
@@ -458,7 +472,11 @@ async def _documented_cash_advance(
                 transaction.id,
                 f"{month:%m.%Y}",
             )
-            return None
+            return None, (
+                f"Аванс {amount.quantize(Decimal('0.01'))} ₽ от {paid_on:%d.%m.%Y} не зачтён: "
+                f"выплата учтена в закрытом {month:%m.%Y}. Акт встал полной кредиторкой — "
+                "связать аванс можно после открытия периода в разделе «Учёт»"
+            )
     prepayment = await session.scalar(
         select(SupplierPrepayment).where(
             SupplierPrepayment.cashflow_transaction_id == transaction.id
@@ -483,7 +501,7 @@ async def _documented_cash_advance(
         )
         session.add(prepayment)
         await session.flush()
-    return prepayment
+    return prepayment, None
 
 
 async def settle_utility_invoices_from_cash(
