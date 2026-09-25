@@ -44,6 +44,7 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.cashflow_classify import CashflowSplitLine, apply_cashflow_split
+from app.services.counterparty_payments import CounterpartyPaymentError
 from app.services.owner_analytics import DIVIDENDS_ARTICLE_CODE, OWNER_ROLE
 from app.services.supplier_prepayments import apply_closing_document
 
@@ -653,5 +654,59 @@ def test_bank_operation_reclassification_refusal_is_409_not_500(
 
     response = classify(seeded["dividends"])
     assert response.status_code == 409, response.text
+    assert _prepayments(async_session_factory, grigoriy) == [("subscription", payment)]
+    assert _receivable(client, grigoriy) == payment - RENT_ACT
+
+
+@pytest.mark.parametrize("dividends_first", [False, True])
+def test_manual_split_refuses_dividends_share_over_a_settled_advance(
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    dividends_first: bool,
+) -> None:
+    """НАХОДКА R2-1. Ручной разбор с долей «Дивиденды» над погашенной ДЗ — отказ при любом порядке.
+
+    Платёж 80 000 ₽ с арендой стал авансом, акт на 20 000 ₽ его погасил. Разбор на «аренду
+    50 000 + дивиденды 30 000»: гейт правила 1 видит погашенную ДЗ только на первой доле (это
+    сама проводка), и дивиденды второй долей проходили молча — 30 000 ₽ оставались долгом
+    собственника. Исход не должен зависеть от порядка строк в диалоге.
+    """
+    seeded = _seed(async_session_factory)
+    grigoriy = seeded["grigoriy"]
+    payment = Decimal("80000.00")
+    txn_id = _add_txn(
+        async_session_factory,
+        wallet_id=seeded["safe"],
+        article_id=seeded["rent"],
+        amount=payment,
+        source_kind="manual",
+        operation_date=date(2026, 7, 20),
+    )
+    _patch(client, txn_id, article_id=seeded["rent"], counterparty_id=grigoriy)
+    act_id = _rent_act(async_session_factory, grigoriy, amount=RENT_ACT, day=date(2026, 7, 25))
+
+    async def close() -> None:
+        async with async_session_factory() as session:
+            act = await session.get(SupplierInvoice, act_id)
+            assert act is not None
+            await apply_closing_document(session, act, as_of=date(2026, 7, 26))
+            await session.commit()
+
+    _run(close())
+    rent_line = CashflowSplitLine(seeded["rent"], Decimal("50000.00"), counterparty_id=grigoriy)
+    dividends_line = CashflowSplitLine(
+        seeded["dividends"], Decimal("30000.00"), counterparty_id=grigoriy
+    )
+    lines = [dividends_line, rent_line] if dividends_first else [rent_line, dividends_line]
+
+    async def split() -> None:
+        async with async_session_factory() as session:
+            txn = await session.get(CashflowTransaction, txn_id)
+            assert txn is not None
+            await apply_cashflow_split(session, txn, splits=lines)
+            await session.commit()
+
+    with pytest.raises(CounterpartyPaymentError, match="дивиденд"):
+        _run(split())
     assert _prepayments(async_session_factory, grigoriy) == [("subscription", payment)]
     assert _receivable(client, grigoriy) == payment - RENT_ACT

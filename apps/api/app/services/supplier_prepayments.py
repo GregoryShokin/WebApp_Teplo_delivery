@@ -1959,8 +1959,7 @@ async def _service_cash_needs_receivable(
       признанием, накладных не бывает, значит деньги вперёд некуда деть, кроме дебиторки;
     * статья не из ``SERVICE_CASH_EXCLUDED_ARTICLE_CODES`` — аванс поставщику заводит свою
       целевую предоплату, и вторая была бы двойным долгом;
-    * на проводке нет чужих аллокаций — этими деньгами уже закрыли конкретный документ
-      (зачёты самого правила 1 не в счёт, см. ``_foreign_allocations_exist``);
+    * на проводке нет аллокаций — этими деньгами уже закрыли конкретный документ;
     * резерв Сейфа не привязан к договору аренды — арендные деньги ведёт свой контур
       (``lease_accruals``), и он заводит дебиторку САМ, с тем же видом записи. Пустить сюда
       аренду — значит отдать правилу 1 право пересобирать чужие адресные зачёты по FIFO;
@@ -1994,7 +1993,12 @@ async def _service_cash_needs_receivable(
         if article_code in SERVICE_CASH_EXCLUDED_ARTICLE_CODES:
             return False
 
-    if await _foreign_allocations_exist(session, transaction.id):
+    allocated = await session.scalar(
+        select(func.count(InvoicePaymentAllocation.id)).where(
+            InvoicePaymentAllocation.cashflow_transaction_id == transaction.id
+        )
+    )
+    if allocated:
         return False
 
     if transaction.source_id is not None:
@@ -2055,18 +2059,48 @@ async def manual_payment_money_is_free(
         # Своя дебиторка правила 1 — его зачёты тоже его, пересобрать вправе. Чужой вид записи
         # (целевой аванс, ДЗ оплаченного счёта) закрывает дверь.
         return own_kind == RULE1_PREPAYMENT_KIND
+    allocated = await session.scalar(
+        select(func.count(InvoicePaymentAllocation.id)).where(
+            InvoicePaymentAllocation.cashflow_transaction_id == transaction.id
+        )
+    )
+    return not allocated
+
+
+async def _dividends_money_to_release(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    *,
+    origin_source_kind: str | None = None,
+) -> bool:
+    """Проводка стала дивидендами, и правилу 1 есть что за собой прибрать.
+
+    Ручная дверь зовёт правило 1 только по свободным деньгам, а платёж, целиком ушедший
+    правилом 1 в зачёт кредиторки (своей ДЗ не осталось), свободным не выглядит — его
+    аллокации она считает чужими. Для обычной переразметки это старое известное ограничение,
+    но дивиденды им воспользоваться не вправе: акт аренды собственника остался бы оплаченным
+    дивидендами. Здесь правило 1 ничего не раскладывает — гейт в ``_sync_rule1_distribution``
+    только снимает его собственное, — поэтому пускаем, если чужих аллокаций нет.
+
+    Только для дивидендов: расширить свободу денег на всё подряд значило бы открыть ручным
+    проводкам пересборку после сторно расхода, которая не видит сиротскую ДЗ сторно и
+    задваивает дебиторку (у банковских проводок этот дефект есть и сейчас)."""
+    origin = origin_source_kind or transaction.source_kind
+    if (
+        transaction.source_kind in SELF_SETTLING_SOURCE_KINDS
+        or origin in SELF_SETTLING_SOURCE_KINDS
+        or not await _dividends_payout(session, transaction)
+    ):
+        return False
     return not await _foreign_allocations_exist(session, transaction.id)
 
 
 async def _foreign_allocations_exist(session: AsyncSession, transaction_id: uuid.UUID) -> bool:
-    """Деньгами проводки уже распорядился кто-то, кроме правила 1.
+    """Деньгами проводки распорядился кто-то, кроме правила 1.
 
     Зачёт, подписанный самим правилом 1 (``origin='rule1'``), — его собственный, как и его
-    дебиторка: пересобрать или снять его правило вправе. Пока ручная дверь считала занятыми
-    ЛЮБЫЕ аллокации, платёж, целиком ушедший правилом 1 в зачёт кредиторки, запирал её для
-    самого правила: переразметка в дивиденды оставляла акт аренды собственника оплаченным
-    дивидендами, а исключение проводки — зачёт без денег. Строки без метки (заведённые до её
-    появления) и зачёты оператора остаются чужими — там автора не различить."""
+    дебиторка. Строки без метки (заведённые до её появления) и зачёты оператора — чужие: там
+    автора не различить."""
     foreign = await session.scalar(
         select(func.count(InvoicePaymentAllocation.id)).where(
             InvoicePaymentAllocation.cashflow_transaction_id == transaction_id,
@@ -2100,9 +2134,10 @@ async def sync_manual_payment_receivable(
 
     Исключение для аллокаций — проводка, у которой уже есть СВОЯ дебиторка правила 1: значит
     зачёты на ней тоже его, и пересобрать/снять их он вправе (иначе смена контрагента оставила
-    бы фантом на прежнем). То же — зачёты, подписанные правилом 1 (``origin='rule1'``), когда
-    платёж целиком ушёл в КЗ и своей ДЗ не осталось. Ограничение осталось лишь у старых
-    зачётов без метки: их исключение проводки не снимет — деньги придётся отвязать вручную.
+    бы фантом на прежнем). Известное ограничение: если платёж целиком ушёл в зачёт КЗ и своей
+    ДЗ не осталось, последующее исключение проводки зачёт не снимет — деньги придётся
+    отвязать вручную. Для переразметки в дивиденды ограничения нет — см.
+    ``_dividends_money_to_release``.
 
     ``money_is_free`` передают, когда свобода уже посчитана по родительской проводке (сплит);
     иначе считается здесь по самой проводке.
@@ -2112,7 +2147,9 @@ async def sync_manual_payment_receivable(
         is_free = await manual_payment_money_is_free(
             session, transaction, origin_source_kind=origin_source_kind
         )
-    if not is_free:
+    if not is_free and not await _dividends_money_to_release(
+        session, transaction, origin_source_kind=origin_source_kind
+    ):
         return None
     return await ensure_prepayment_from_bank_transaction(session, transaction)
 
