@@ -428,9 +428,9 @@ async def _waiting_group(
                 subtitle=f"{period} · {waiting_source.state_label(item)}",
                 row_date=item.paid_on,
                 amount=item.amount,
-                # Просрочку расшифровка выделяет: из всех ожиданий строки действия требует
-                # только она, и в списке законных ожиданий её надо видеть сразу.
-                kind="overdue" if item.state == waiting_source.STATE_OVERDUE else "waiting",
+                # Тревогу расшифровка выделяет: из всех ожиданий строки действия требуют только
+                # просрочка и не вступивший документ, и в списке законных их надо видеть сразу.
+                kind="overdue" if item.state in waiting_source.ALARM_STATES else "waiting",
             )
         )
     result.groups.append(group)

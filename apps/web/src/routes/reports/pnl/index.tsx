@@ -57,6 +57,7 @@ import {
   setInvoiceServicePeriod,
   confirmWorkupReview,
   fetchWorkupReview,
+  isWaitingAlarm,
   rejectWorkupReview,
   removeGoodsClassification,
   updateGoodsClassification,
@@ -170,7 +171,7 @@ function LineAmount({ line }: { line: PnlLine }) {
     );
   }
   if (line.amount === null) {
-    const label = STATUS_LABEL[line.status] || line.status;
+    const label = stalledOnly(line) ? "не проведено" : STATUS_LABEL[line.status] || line.status;
     return (
       <Badge variant={STATUS_VARIANT[line.status] ?? "secondary"} className="font-normal">
         {label}
@@ -186,12 +187,20 @@ function LineAmount({ line }: { line: PnlLine }) {
   );
 }
 
+/** Строка красная только из-за документа, который уже в системе, но не вступил в свой день.
+ *  «Документ просрочен» о нём было бы неправдой: документ у нас, не отработала система. */
+function stalledOnly(line: PnlLine): boolean {
+  if (line.status !== "overdue_document") return false;
+  const states = line.components.map((component) => component.waiting_state);
+  return states.includes("stalled") && !states.includes("overdue");
+}
+
 /** Оплата, которую ещё не закрыл документ, — серой пометкой под названием строки.
  *
  *  Тревогой это не является: период идёт, документ уже получен и ждёт своей даты, аренду
  *  начислит договор. Пометка отвечает на вопрос «где мои 41 220 ₽», не поднимая крика там,
- *  где всё идёт по плану. Красной становится только просрочка — она же единственная из
- *  ожиданий попадает в «Требует внимания».
+ *  где всё идёт по плану. Красными становятся только просрочка и документ, не вступивший в
+ *  свой день, — они же единственные из ожиданий попадают в «Требует внимания».
  *
  *  Подпись не утверждает, что суммы нет в строке: у контрагента вне контура признания
  *  (ЛИКАРД) оплата уже стоит в ней деньгами — не хватает документа, а не расхода. */
@@ -200,7 +209,7 @@ function WaitingNotes({ line }: { line: PnlLine }) {
     .filter((component) => component.waiting_state && Number(component.unrecognized_paid) > 0)
     .sort(
       (a, b) =>
-        Number(b.waiting_state === "overdue") - Number(a.waiting_state === "overdue") ||
+        Number(isWaitingAlarm(b.waiting_state)) - Number(isWaitingAlarm(a.waiting_state)) ||
         Number(b.unrecognized_paid) - Number(a.unrecognized_paid),
     );
   if (notes.length === 0) return null;
@@ -210,7 +219,9 @@ function WaitingNotes({ line }: { line: PnlLine }) {
       {notes.map((component, index) => (
         <span key={`${component.waiting_state}-${index}`}>
           {index > 0 ? " · " : ""}
-          <span className={component.waiting_state === "overdue" ? "text-destructive" : undefined}>
+          <span
+            className={isWaitingAlarm(component.waiting_state) ? "text-destructive" : undefined}
+          >
             {formatMoney(component.unrecognized_paid)} ₽ — {component.note}
           </span>
         </span>
@@ -1353,7 +1364,7 @@ const RECOGNITION_STATUS = {
   missing_period: { label: "нет периода", variant: "destructive" as const },
 };
 
-/** Ожидание — по состоянию: красным только просрочка, остальное — спокойным контуром. */
+/** Ожидание — по состоянию: красным только тревоги, остальное — спокойным контуром. */
 const WAITING_STATUS: Record<
   WaitingState,
   { label: string; variant: "secondary" | "outline" | "destructive" }
@@ -1362,7 +1373,21 @@ const WAITING_STATUS: Record<
   period_running: { label: "период идёт", variant: "outline" },
   awaiting: { label: "ждём документ", variant: "outline" },
   overdue: { label: "документ просрочен", variant: "destructive" },
+  stalled: { label: "не проведено", variant: "destructive" },
 };
+
+/** «из них просрочено …, не проведено …» — только то, что требует действия. */
+function waitingAlarmNote(totals: RecognitionLedger["totals"]): string | undefined {
+  const parts = [
+    Number(totals.waiting_overdue) > 0
+      ? `просрочено ${formatMoney(totals.waiting_overdue)} ₽`
+      : null,
+    Number(totals.waiting_stalled) > 0
+      ? `не проведено ${formatMoney(totals.waiting_stalled)} ₽`
+      : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `из них ${parts.join(", ")}` : undefined;
+}
 
 function recognitionStatus(row: RecognitionLedgerRow) {
   if (row.status === "waiting_document" && row.waiting_state) {
@@ -1392,11 +1417,7 @@ function RecognitionLedgerView({
         <MetricCard
           title="Ждём документ"
           amount={totals.waiting_document}
-          note={
-            Number(totals.waiting_overdue) > 0
-              ? `из них просрочено ${formatMoney(totals.waiting_overdue)} ₽`
-              : undefined
-          }
+          note={waitingAlarmNote(totals)}
         />
         <MetricCard title="Не заполнен период" amount={totals.missing_period} />
         <MetricCard title="Без статьи ОПиУ" amount={totals.unattributed} />
@@ -1438,7 +1459,7 @@ function RecognitionLedgerView({
                       {row.waiting_label ? (
                         <div
                           className={`max-w-lg text-xs ${
-                            row.waiting_state === "overdue"
+                            isWaitingAlarm(row.waiting_state)
                               ? "text-destructive"
                               : "text-muted-foreground"
                           }`}

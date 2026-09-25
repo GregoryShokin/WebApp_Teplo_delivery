@@ -326,6 +326,7 @@ class RecognitionLedgerTotalsOut(BaseModel):
     unattributed: Decimal
     unrecognized: Decimal
     waiting_overdue: Decimal = Decimal("0.00")
+    waiting_stalled: Decimal = Decimal("0.00")
 
     @field_serializer(
         "recognized",
@@ -335,6 +336,7 @@ class RecognitionLedgerTotalsOut(BaseModel):
         "unattributed",
         "unrecognized",
         "waiting_overdue",
+        "waiting_stalled",
     )
     def _money(self, value: Decimal) -> str:
         return f"{value:.2f}"
@@ -776,6 +778,7 @@ async def get_recognition_ledger(
             unattributed=ledger.totals.unattributed,
             unrecognized=ledger.totals.unrecognized,
             waiting_overdue=ledger.totals.waiting_overdue,
+            waiting_stalled=ledger.totals.waiting_stalled,
         ),
         rows=[
             RecognitionLedgerRowOut(

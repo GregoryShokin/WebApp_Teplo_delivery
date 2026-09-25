@@ -25,9 +25,20 @@ export type LineStatus =
   | "before_accounting_start"
   | "incomplete";
 
-/** Состояние ожидания документа. Тревога — только `overdue`: остальные три законны и
+/** Состояние ожидания документа. Тревога — `overdue` (срок документа вышел) и `stalled`
+ *  (документ или договор уже в системе, но в свой день не вступил): остальные три законны и
  *  показываются серой пометкой на строке, а не в «Требует внимания». */
-export type WaitingState = "document_pending" | "period_running" | "awaiting" | "overdue";
+export type WaitingState =
+  | "document_pending"
+  | "period_running"
+  | "awaiting"
+  | "overdue"
+  | "stalled";
+
+/** Ожидание, которое требует действия. */
+export function isWaitingAlarm(state: WaitingState | null | undefined): boolean {
+  return state === "overdue" || state === "stalled";
+}
 
 export type PnlComponent = {
   stream: string;
@@ -309,6 +320,8 @@ export type RecognitionLedgerTotals = {
   unrecognized: string;
   /** Часть `waiting_document`, у которой срок документа вышел. */
   waiting_overdue: string;
+  /** Часть `waiting_document`, чей документ уже в системе, но не вступил в свой день. */
+  waiting_stalled: string;
 };
 
 export type RecognitionLedgerRow = {
