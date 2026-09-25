@@ -707,7 +707,8 @@ async def post_allocate_cash(
             cashflow_transaction_id=payload.cashflow_transaction_id,
             actor_user_id=actor.user_id,
         )
-    except matching.CounterpartyMatchError as exc:
+    except (matching.CounterpartyMatchError, accounting_periods.PeriodClosed) as exc:
+        # Замок месяца документа: платёж уже аванс, документ гасится его зачётом.
         raise _conflict(exc) from exc
     item = await registry.get_invoice_item(session, invoice_id)
     if item is None:
@@ -1656,7 +1657,7 @@ async def post_confirm_match(
             enrich=payload.enrich,
             actor_user_id=actor.user_id,
         )
-    except matching.CounterpartyMatchError as exc:
+    except (matching.CounterpartyMatchError, accounting_periods.PeriodClosed) as exc:
         raise _conflict(exc) from exc
 
 
@@ -1678,7 +1679,7 @@ async def post_allocate_operation(
             draft_id=payload.draft_id,
             actor_user_id=actor.user_id,
         )
-    except matching.CounterpartyMatchError as exc:
+    except (matching.CounterpartyMatchError, accounting_periods.PeriodClosed) as exc:
         raise _conflict(exc) from exc
     return DraftRead.model_validate(draft)
 

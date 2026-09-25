@@ -13,8 +13,8 @@
 арендой и деньгами другого потока, арендный акт — деньгами коммуналки, в любой двери зачёта из
 авансов — приём ботом, активация 1-го числа, обратный порядок при оплате чужого счёта. Фильтр —
 чёрный список: отвергается только ЯВНО чужое, деньги неизвестного назначения годятся, как на
-main. Акт без своих денег остаётся честной КЗ, чужая ДЗ — открытой. Мимо фильтра идёт только
-правило 1 — банковские деньги прямо на открытую КЗ (известное ограничение, как на main).
+main. Акт без своих денег остаётся честной КЗ, чужая ДЗ — открытой. Тот же фильтр держит и
+правило 1 — банковские деньги прямо на открытую КЗ (до 25.09 шло мимо, скептик A9).
 
 Плюс три стыка переноса угаданного зачёта на деньги своего счёта: своя ДЗ сначала своему
 акту; пара электричества (авансовый и фактический счёт с одинаковым номером) связывается по
@@ -1468,3 +1468,112 @@ async def test_repoint_does_not_reopen_unperioded_money_of_a_closed_month(
                 assert aug_money.amount_settled == Decimal("0.00")
                 assert own.status == "settled"
             await session.rollback()
+
+
+# --- A9: правило 1 (банк прямо на КЗ) тоже не смешивает потоки --------------------------------
+
+
+async def _bank_payment(
+    session: AsyncSession,
+    landlord: Counterparty,
+    *,
+    amount: str,
+    article_id: uuid.UUID | None = None,
+    lease_id: uuid.UUID | None = None,
+    on: date = date(2026, 9, 3),
+) -> CashflowTransaction:
+    """Платёж арендодателю выпиской: проводка классификатора, дальше — правило 1."""
+    wallet = await make_wallet(session, name="Т-Банк")
+    tx = CashflowTransaction(
+        wallet_id=wallet.id,
+        direction="out",
+        amount=Decimal(amount),
+        operation_date=on,
+        counterparty_id=landlord.id,
+        article_id=article_id,
+        lease_id=lease_id,
+        source_kind="bank_operation",
+        quality_status="auto",
+    )
+    session.add(tx)
+    await session.flush()
+    return tx
+
+
+async def test_rule1_rent_payment_does_not_pay_the_water_documents(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик A9: аренда выпиской по FIFO правила 1 оплачивала открытый счёт воды.
+
+    Правило 1 гасит открытые документы контрагента деньгами платежа напрямую, без авансов и без
+    лестницы, — и фильтр потоков арендодателя (``_other_stream_prepayment_ids``) его не видел.
+    Платёж со статьёй аренды закрывал счёт воды, ДЗ этого счёта тут же гасила водяной акт, а
+    арендный акт оставался кредиторкой. Нетто сходится, адресность — нет: вода закрыта арендой.
+    Арендные деньги идут своему акту, чужому потоку — никогда."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода")
+        rent_article = await _article(session, name="Аренда торговых точек", lease_bound=True)
+        lease = await _lease(session, landlord, location, article_id=rent_article.id)
+        water_bill, water_act = await _bot_pair(session, water, amount="9429.75")
+        rent_act = await ensure_lease_invoice(
+            session, lease, date(2026, 8, 1), as_of=date(2026, 9, 2)
+        )
+        assert rent_act is not None and rent_act.activation_status == "active"
+
+        tx = await _bank_payment(session, landlord, amount="50000.00", article_id=rent_article.id)
+        await supplier_prepayments.ensure_prepayment_from_bank_transaction(session, tx)
+        await session.flush()
+
+        assert water_bill.payment_status == "unpaid", "аренда оплатила счёт воды"
+        assert water_act.payment_status == "unpaid", "аренда закрыла акт воды"
+        assert rent_act.payment_status == "paid"
+        await session.rollback()
+
+
+async def test_rule1_payment_under_a_lease_is_rent_money_whatever_its_article(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Проводка, выданная по договору аренды, — арендные деньги при любой статье (и без неё).
+
+    Тот же признак, что у «Аренды вперёд» в фильтре потоков: договор на проводке. Открытых
+    арендных документов нет — деньги остаются авансом, а не уходят в воду."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода")
+        lease = await _lease(session, landlord, location, article_id=None)
+        water_bill, water_act = await _bot_pair(session, water, amount="9429.75")
+
+        tx = await _bank_payment(session, landlord, amount="50000.00", lease_id=lease.id)
+        rule1 = await supplier_prepayments.ensure_prepayment_from_bank_transaction(session, tx)
+        await session.flush()
+
+        assert water_bill.payment_status == "unpaid"
+        assert water_act.payment_status == "unpaid"
+        assert rule1 is not None and rule1.amount == Decimal("50000.00")
+        await session.rollback()
+
+
+async def test_rule1_water_payment_does_not_pay_the_rent_act(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Симметрично: деньги со статьёй потока коммуналки арендный акт правилом 1 не закрывают."""
+    async with async_session_factory() as session:
+        landlord, location = await _landlord(session)
+        water = await _stream(session, landlord, location, kind="water", article="Вода")
+        rent_article = await _article(session, name="Аренда торговых точек", lease_bound=True)
+        lease = await _lease(session, landlord, location, article_id=rent_article.id)
+        rent_act = await ensure_lease_invoice(
+            session, lease, date(2026, 8, 1), as_of=date(2026, 9, 2)
+        )
+        assert rent_act is not None and rent_act.activation_status == "active"
+
+        tx = await _bank_payment(
+            session, landlord, amount="3000.00", article_id=water.dds_article_id
+        )
+        rule1 = await supplier_prepayments.ensure_prepayment_from_bank_transaction(session, tx)
+        await session.flush()
+
+        assert rent_act.payment_status == "unpaid", "вода оплатила аренду"
+        assert rule1 is not None and rule1.amount == Decimal("3000.00")
+        await session.rollback()

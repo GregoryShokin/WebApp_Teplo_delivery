@@ -27,12 +27,43 @@ from app.models import (
     InvoicePaymentAllocation,
     SupplierInvoice,
 )
+from app.services.accounting_periods import PeriodClosed
 
 ACTIVE_DRAFT_STATUSES = ("created", "updated")
 
 
 class CounterpartyMatchError(RuntimeError):
     """Domain error for matching/allocation (maps to HTTP 409)."""
+
+
+# Что делал человек, когда замок месяца документа отказал двери прямой оплаты: деньги платежа
+# уже стали авансом правила 1, и документ закрывается зачётом из него датой документа.
+PAYMENT_MATCH_LOCK_ACTION = "оплата документа № {number} авансом, которым стал этот платёж,"
+
+
+def rule1_money_taken(available: Decimal) -> str:
+    """Отказ двери: деньги платежа уже стали авансом правила 1 и ушли на другие документы."""
+    return (
+        f"У платежа свободно только {max(available, Decimal('0.00'))} ₽: остальное уже ушло "
+        "на документы — напрямую или через аванс поставщику"
+    )
+
+
+def rule1_money_foreign() -> str:
+    """Отказ двери: платёж разобран на другого контрагента, его деньги — чужой аванс."""
+    return (
+        "Платёж разобран на другого контрагента, и его деньги стали авансом того контрагента. "
+        "Переразметьте платёж на поставщика этого документа или оплатите документ другим платежом"
+    )
+
+
+def rule1_money_barter() -> str:
+    """Отказ двери: бартерный документ деньгами платежа с авансом гасится только в карточке
+    займа — там аванс пересобирается под замком месяца денег."""
+    return (
+        "Деньги этого платежа уже стали авансом поставщику. Бартерный заём оплачивайте "
+        "в карточке займа («Оплатить деньгами»)"
+    )
 
 
 def _money(value: Any) -> Decimal:
@@ -247,7 +278,22 @@ async def allocate_bank_operation_to_draft(
     actor_user_id: uuid.UUID | None = None,
     commit: bool = True,
 ) -> CounterpartyPaymentDraft:
-    """Allocate a bank operation across a draft's invoices FIFO and update statuses."""
+    """Allocate a bank operation across a draft's invoices FIFO and update statuses.
+
+    Операция, чью проводку правило 1 уже сделало авансом, закрывает документы черновика
+    ЗАЧЁТОМ из этого аванса и в пределах его открытого остатка (``supplier_prepayments
+    .Rule1Money``) — иначе одни деньги числились бы и оплатой, и дебиторкой. Раскладка
+    проверяется целиком ДО первой записи: нехватка денег или закрытый месяц документа — отказ
+    без частичной оплаты (авто-сверка тогда отдаёт операцию человеку)."""
+    # Ленивый импорт: supplier_prepayments импортирует этот модуль.
+    from app.services.supplier_prepayments import (
+        PAYMENT_MATCH_BANK_ORIGIN,
+        assert_closing_months_open,
+        payment_settles_from_advance,
+        rule1_money_of_payment,
+        settle_from_payment_rule1,
+    )
+
     operation = await session.get(BankOperation, bank_operation_id)
     if operation is None:
         raise CounterpartyMatchError("Банковская операция не найдена")
@@ -260,6 +306,40 @@ async def allocate_bank_operation_to_draft(
         raise CounterpartyMatchError("К черновику не привязаны накладные")
 
     pool = _money(abs(operation.amount))
+    money = await rule1_money_of_payment(
+        session, bank_operation_id=operation.id, counterparty_id=draft.counterparty_id
+    )
+    if money is not None:
+        # Та же раскладка FIFO, что ниже, — вхолостую: потолки ``Rule1Money.for_document`` на
+        # всю раскладку сразу (документы черновика делят одни деньги платежа) и замок месяца
+        # документа. Холостая раскладка берёт остатки до записи, то есть не меньше настоящих.
+        free, open_rest, left = money.free, money.open_rest, pool
+        for invoice in invoices:
+            if left <= 0:
+                break
+            take = min(max(await _invoice_remaining(session, invoice), Decimal("0.00")), left)
+            if take <= 0:
+                continue
+            if invoice.doc_kind == "bill":
+                limit = free
+            else:
+                if money.foreign_to(invoice):
+                    raise CounterpartyMatchError(rule1_money_foreign())
+                if not payment_settles_from_advance(invoice):
+                    raise CounterpartyMatchError(rule1_money_barter())
+                limit = min(free, open_rest)
+                open_rest -= take
+            if take > limit:
+                raise CounterpartyMatchError(rule1_money_taken(limit))
+            free -= take
+            left -= take
+            if payment_settles_from_advance(invoice):
+                await assert_closing_months_open(
+                    session,
+                    invoice,
+                    action=PAYMENT_MATCH_LOCK_ACTION.format(number=invoice.number or "—"),
+                )
+
     for invoice in invoices:
         if pool <= 0:
             break
@@ -267,6 +347,17 @@ async def allocate_bank_operation_to_draft(
         if remaining <= 0:
             continue
         allocation_amount = min(remaining, pool)
+        pool -= allocation_amount
+        if money is not None and payment_settles_from_advance(invoice):
+            await settle_from_payment_rule1(
+                session,
+                invoice=invoice,
+                money=money,
+                amount=allocation_amount,
+                origin=PAYMENT_MATCH_BANK_ORIGIN,
+                actor_user_id=actor_user_id,
+            )
+            continue
         session.add(
             InvoicePaymentAllocation(
                 invoice_id=invoice.id,
@@ -276,7 +367,6 @@ async def allocate_bank_operation_to_draft(
                 created_by_user_id=actor_user_id,
             )
         )
-        pool -= allocation_amount
         await session.flush()
         await _recompute_status(session, invoice)
 
@@ -326,13 +416,22 @@ async def auto_match_bank_operations(
         op_amount = _money(abs(operation.amount))
         exact = [draft for draft in candidates if _money(draft.amount) == op_amount]
         if len(exact) == 1:
-            await allocate_bank_operation_to_draft(
-                session,
-                bank_operation_id=operation.id,
-                draft_id=exact[0].id,
-                actor_user_id=None,
-                commit=False,
-            )
+            try:
+                await allocate_bank_operation_to_draft(
+                    session,
+                    bank_operation_id=operation.id,
+                    draft_id=exact[0].id,
+                    actor_user_id=None,
+                    commit=False,
+                )
+            except (CounterpartyMatchError, PeriodClosed):
+                # Деньги операции уже ушли на документы через аванс правила 1 или месяц
+                # документа закрыт: отказ случается до записи, и решать его человеку, а не
+                # прогону по всем операциям.
+                needs_review.append(
+                    {"bank_operation_id": operation.id, "candidate_draft_ids": [exact[0].id]}
+                )
+                continue
             matched.append({"bank_operation_id": operation.id, "draft_id": exact[0].id})
         else:
             needs_review.append(
@@ -368,7 +467,20 @@ async def allocate_cash_to_invoice(
     cashflow_transaction_id: uuid.UUID | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> SupplierInvoice:
-    """Manually allocate a cash payment (nal) to one invoice — the split counterpart."""
+    """Manually allocate a cash payment (nal) to one invoice — the split counterpart.
+
+    Проводка, которую правило 1 уже сделало авансом, отдаёт документу только свободные деньги
+    платежа, а закрывающий гасит ЗАЧЁТОМ из этого аванса (``supplier_prepayments.Rule1Money``) —
+    иначе одни деньги числились бы и оплатой, и дебиторкой. Замок — месяц документа, до записи."""
+    # Ленивый импорт: supplier_prepayments импортирует этот модуль.
+    from app.services.supplier_prepayments import (
+        PAYMENT_MATCH_CASH_ORIGIN,
+        assert_closing_months_open,
+        payment_settles_from_advance,
+        rule1_money_of_payment,
+        settle_from_payment_rule1,
+    )
+
     invoice = await session.get(SupplierInvoice, invoice_id)
     if invoice is None:
         raise CounterpartyMatchError("Накладная не найдена")
@@ -378,17 +490,47 @@ async def allocate_cash_to_invoice(
     remaining = await _invoice_remaining(session, invoice)
     if requested <= 0 or requested > remaining:
         raise CounterpartyMatchError("Сумма аллокации вне допустимого остатка")
-    session.add(
-        InvoicePaymentAllocation(
-            invoice_id=invoice.id,
-            source_kind="cash",
-            cashflow_transaction_id=cashflow_transaction_id,
-            amount=requested,
-            created_by_user_id=actor_user_id,
+    money = (
+        await rule1_money_of_payment(
+            session,
+            transaction_id=cashflow_transaction_id,
+            counterparty_id=invoice.counterparty_id,
         )
+        if cashflow_transaction_id is not None
+        else None
     )
-    await session.flush()
-    await _recompute_status(session, invoice)
+    if money is not None:
+        if invoice.doc_kind != "bill":
+            if money.foreign_to(invoice):
+                raise CounterpartyMatchError(rule1_money_foreign())
+            if not payment_settles_from_advance(invoice):
+                raise CounterpartyMatchError(rule1_money_barter())
+        if requested > money.for_document(invoice):
+            raise CounterpartyMatchError(rule1_money_taken(money.for_document(invoice)))
+    if money is not None and payment_settles_from_advance(invoice):
+        await assert_closing_months_open(
+            session, invoice, action=PAYMENT_MATCH_LOCK_ACTION.format(number=invoice.number or "—")
+        )
+        await settle_from_payment_rule1(
+            session,
+            invoice=invoice,
+            money=money,
+            amount=requested,
+            origin=PAYMENT_MATCH_CASH_ORIGIN,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=cashflow_transaction_id,
+                amount=requested,
+                created_by_user_id=actor_user_id,
+            )
+        )
+        await session.flush()
+        await _recompute_status(session, invoice)
     await session.commit()
     await session.refresh(invoice)
     return invoice

@@ -564,7 +564,9 @@ async def post_match_confirm(
             actor_user_id=actor.user_id,
             allow_card=payload.allow_card,
         )
-    except CounterpartyMatchError as exc:
+    except (CounterpartyMatchError, PeriodClosed) as exc:
+        # PeriodClosed: деньги операции уже аванс, накладная гасится зачётом датой документа, а
+        # месяц документа закрыт. 409 — запрос верен, конфликтует состояние периода.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
@@ -645,7 +647,7 @@ async def post_pay_split(
             cash_parts=cash_parts,
             actor_user_id=actor.user_id,
         )
-    except (WarehousePaymentError, CounterpartyMatchError) as exc:
+    except (WarehousePaymentError, CounterpartyMatchError, PeriodClosed) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     result = await get_warehouse_invoice(session, invoice_id)
     if result is None:
@@ -733,7 +735,7 @@ async def post_pay_kassa(
         await _settle_paid_from_kassa(
             session, invoice, payload.amount, actor.user_id, do_push=False
         )
-    except (WarehousePaymentError, CounterpartyMatchError) as exc:
+    except (WarehousePaymentError, CounterpartyMatchError, PeriodClosed) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     result = await get_warehouse_invoice(session, invoice_id)
     if result is None:

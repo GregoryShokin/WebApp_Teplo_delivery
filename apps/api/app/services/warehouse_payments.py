@@ -31,9 +31,13 @@ from app.services.counterparty_bank_match import (
     assert_bank_matchable,
 )
 from app.services.counterparty_matching import (
+    PAYMENT_MATCH_LOCK_ACTION,
     _invoice_remaining,
     _op_already_allocated,
     _recompute_status,
+    payment_allocated_amount,
+    rule1_money_foreign,
+    rule1_money_taken,
 )
 from app.services.counterparty_payments import DEFAULT_SUPPLIER_ARTICLE_CODE, _apply_wallet_payment
 from app.services.settings_service import SettingNotFoundError, get_setting_model
@@ -339,7 +343,21 @@ async def pay_invoice_split(
     """Pay one payable invoice from N sources (bank operations + cash/wallet parts) in a
     SINGLE transaction. All parts are validated BEFORE any write, so an occupied operation
     or an over-payment aborts the whole split with nothing persisted. Production vs «персонал»
-    splitting is expressed by the cash parts' ``article_id`` (``build_staff_split_cash_parts``)."""
+    splitting is expressed by the cash parts' ``article_id`` (``build_staff_split_cash_parts``).
+
+    Банковская часть, чью проводку правило 1 уже сделало авансом, гасит накладную ЗАЧЁТОМ из
+    этого аванса и в пределах его открытого остатка (``supplier_prepayments.Rule1Money``), а не
+    bank-аллокацией рядом с открытым авансом. Замок месяца документа — тоже до первой записи."""
+    # Ленивый импорт: supplier_prepayments тянет классификатор, а тот — банковскую сверку.
+    from app.services.supplier_prepayments import (
+        PAYMENT_MATCH_BANK_ORIGIN,
+        Rule1Money,
+        assert_closing_months_open,
+        payment_settles_from_advance,
+        rule1_money_of_payment,
+        settle_from_payment_rule1,
+    )
+
     bank_parts = bank_parts or []
     cash_parts = cash_parts or []
     if not bank_parts and not cash_parts:
@@ -358,7 +376,7 @@ async def pay_invoice_split(
     remaining = await _invoice_remaining(session, invoice)
 
     # --- validate everything before writing anything --------------------------
-    resolved_bank: list[tuple[BankOperation, Decimal]] = []
+    resolved_bank: list[tuple[BankOperation, Decimal, Rule1Money | None]] = []
     seen_ops: set[uuid.UUID] = set()
     total = Decimal("0.00")
     for part in bank_parts:
@@ -379,7 +397,24 @@ async def pay_invoice_split(
         # «Операция = одна накладная целиком»: не дробим операцию, не аллоцируем сверх неё.
         if amount > op_amount:
             raise WarehousePaymentError("Сумма банковской части превышает сумму операции")
-        resolved_bank.append((operation, amount))
+        # Свободный остаток САМОГО платежа (как у сверки ``confirm_invoice_match``): часть денег
+        # могла уже уйти на кредиторку правилом 1 — те зачёты помечены проводкой, и проверка
+        # занятости операции выше их не видит.
+        free = op_amount - await payment_allocated_amount(session, bank_operation_id=operation.id)
+        # Деньги операции могли уже стать авансом правила 1 — тогда накладная получает их зачётом
+        # и не больше открытого остатка аванса.
+        money = await rule1_money_of_payment(
+            session, bank_operation_id=operation.id, counterparty_id=invoice.counterparty_id
+        )
+        if money is not None:
+            if invoice.doc_kind != "bill" and money.foreign_to(invoice):
+                raise WarehousePaymentError(rule1_money_foreign())
+            free = min(free, money.for_document(invoice))
+            if not payment_settles_from_advance(invoice):
+                money = None  # счёт: деньги аванс несёт и так, оплата — аллокацией
+        if amount > free:
+            raise WarehousePaymentError(rule1_money_taken(free))
+        resolved_bank.append((operation, amount, money))
         total += amount
 
     resolved_cash: list[tuple[Wallet, Decimal, uuid.UUID, date, str | None]] = []
@@ -401,10 +436,24 @@ async def pay_invoice_split(
         raise WarehousePaymentError("Сумма оплаты должна быть больше нуля")
     if total > remaining:
         raise WarehousePaymentError(f"Сумма частей {total} превышает остаток накладной {remaining}")
+    if any(money is not None for _, _, money in resolved_bank):
+        await assert_closing_months_open(
+            session, invoice, action=PAYMENT_MATCH_LOCK_ACTION.format(number=invoice.number or "—")
+        )
 
     # --- apply in one transaction --------------------------------------------
     try:
-        for operation, amount in resolved_bank:
+        for operation, amount, money in resolved_bank:
+            if money is not None:
+                await settle_from_payment_rule1(
+                    session,
+                    invoice=invoice,
+                    money=money,
+                    amount=amount,
+                    origin=PAYMENT_MATCH_BANK_ORIGIN,
+                    actor_user_id=actor_user_id,
+                )
+                continue
             await _apply_bank_allocation(
                 session,
                 invoice=invoice,

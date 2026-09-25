@@ -1744,3 +1744,66 @@ async def test_rent_activation_takes_rent_money_not_open_water_receivable(
         ]
         assert water_money.status == "open" and water_money.amount_settled == Decimal("0.00")
         await session.rollback()
+
+
+async def test_unperioded_rule1_money_of_equal_amount_does_not_beat_own_period_bill_money(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Скептик S3: август оплачен из очереди, сентябрь — выпиской, УПД за август их не путает.
+
+    Абонентка ровная, 3 700 ₽. Август оплатили из очереди — у счёта своя ДЗ ``prepaid_bill`` с
+    периодом августа. Сентябрь заплатили выпиской раньше, чем пришёл его счёт, — правило 1
+    завело аванс без периода. УПД за август основания не называет. Свои деньги гард «деньги
+    чужого счёта» роняет в хронологию, а сентябрьский аванс без периода получал ранг «сумма»
+    и выигрывал: УПД за август брал сентябрьские деньги, ДЗ августа оставалась открытой.
+
+    Равенство суммы — признак только там, где периоды ничего не различают. Если среди кандидатов
+    есть деньги с известным периодом документа, аванс без периода ранга «сумма» не получает."""
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name="Абонентка-S3", inn="7712345699")
+        august = (date(2026, 8, 1), date(2026, 8, 31))
+        august_bill = await _bill(
+            session,
+            counterparty_id=cp.id,
+            number="АБ-08",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 1),
+            period=august,
+        )
+        august_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 8, 3),
+            wallet_code="s3-aug",
+            bill=august_bill,
+            period=august,
+        )
+        september_money = await _prepaid(
+            session,
+            counterparty_id=cp.id,
+            amount="3700.00",
+            paid_on=date(2026, 8, 10),
+            wallet_code="s3-sep",
+            kind=prepayments.RULE1_PREPAYMENT_KIND,
+        )
+        act = await _closing(
+            session,
+            counterparty_id=cp.id,
+            number="УПД-08",
+            amount="3700.00",
+            invoice_date=date(2026, 8, 31),
+            period=august,
+        )
+        await session.commit()
+
+        await prepayments.auto_settle_invoice_from_open_prepayments(session, act)
+        await session.commit()
+
+        alloc = await _allocations(session, act.id)
+        assert [a.prepayment_id for a in alloc] == [august_money.id], (
+            "УПД за август погасил сентябрьские деньги без периода по равной сумме"
+        )
+        await session.refresh(september_money)
+        assert september_money.status == "open"
+        assert september_money.amount_settled == Decimal("0.00")

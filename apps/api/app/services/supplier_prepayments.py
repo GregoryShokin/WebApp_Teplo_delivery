@@ -12,8 +12,10 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import NamedTuple
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -141,6 +143,17 @@ FOREIGN_PREPAYMENT_KINDS = EARMARKED_PREPAYMENT_KINDS | {BILL_PREPAYMENT_KIND}
 # вернуло бы оплаченный документ в очередь оплат.
 RULE1_ALLOCATION_ORIGIN = "rule1"
 
+# Метки зачёта, которым ДВЕРЬ ПРЯМОЙ ОПЛАТЫ закрыла документ деньгами своего платежа, уже ставшими
+# авансом правила 1 (``settle_from_payment_rule1``). Метки две — по тому, какую аллокацию дверь
+# записала бы, не будь аванса: сверка операции выписки (``bank``) или оплата проводкой (``cash``).
+# Зачёт — та же оплата, только датированная вступлением документа: пока деньги остаются авансом
+# контрагента документа, она держится; платёж уходит из учёта — зачёт снимается, как снялась бы
+# сверка (``release_payment_match_settlements``); платёж перестаёт быть авансом этого
+# контрагента — зачёт возвращается в исходную аллокацию (``_revert_payment_match_settlements``).
+PAYMENT_MATCH_BANK_ORIGIN = "payment_match_bank"
+PAYMENT_MATCH_CASH_ORIGIN = "payment_match_cash"
+PAYMENT_MATCH_ORIGINS = (PAYMENT_MATCH_BANK_ORIGIN, PAYMENT_MATCH_CASH_ORIGIN)
+
 # ЧЕМ обоснован выбор аванса (``InvoicePaymentAllocation.match_basis``). Порядок = приоритет:
 # первое сработавшее основание и решает, а не порядок платежей.
 MATCH_BASIS_INVOICE = "basis_invoice"  # аванс за счёт, названный в «Основание» документа
@@ -193,12 +206,16 @@ async def _allocate_invoice_from_prepayment(
     amount: Decimal,
     actor_user_id: uuid.UUID | None,
     match_basis: str | None = None,
+    origin: str | None = None,
 ) -> None:
     """Аллокация «накладная ← предоплата» (денег не двигает) + списание остатка.
 
     ``match_basis`` заполняет только авто-гашение: там аванс ВЫБИРАЕТ система, и в сверке надо
     отличать «знала» от «угадала». Ручное гашение (``settle_invoice_from_prepayment``) оставляет
-    NULL — аванс там назвал человек, обосновывать нечего."""
+    NULL — аванс там назвал человек, обосновывать нечего.
+
+    ``origin`` — метка двери прямой оплаты (``PAYMENT_MATCH_ORIGINS``): зачёт, которым она
+    закрыла документ деньгами своего платежа, уже ставшими авансом правила 1."""
     session.add(
         InvoicePaymentAllocation(
             invoice_id=invoice.id,
@@ -207,6 +224,7 @@ async def _allocate_invoice_from_prepayment(
             amount=amount,
             created_by_user_id=actor_user_id,
             match_basis=match_basis,
+            origin=origin,
         )
     )
     _consume_prepayment(prepayment, amount, full_status="settled")
@@ -349,11 +367,19 @@ async def _unwind_bill_prepayment_settlements(
     target_settled: Decimal,
 ) -> None:
     """Откатить зачёты закрывающих, профинансированные этой prepaid_bill ДЗ, пока её amount_settled
-    не опустится до target_settled — оплату счёта уменьшили НИЖЕ уже зачтённого закрывающими (напр.
-    пере-разбор той же банк-операции убрал строку по счёту). Погашенные закрывающие возвращаются в
-    кредиторку (``_recompute_status``), иначе долг поставщику занижен фантомно-погашенным УПД. LIFO
-    по дате зачёта. Замороженный в банк-черновике закрывающий не трогаем (редкий край) — иначе
-    расфризили бы чужую отправку."""
+    не опустится до target_settled — деньги ДЗ по счёту стали МЕНЬШЕ уже зачтённого закрывающими
+    (пере-разбор той же банк-операции убрал строку по счёту, исключили доплату). Погашенные
+    закрывающие возвращаются в кредиторку (``_recompute_status``), иначе долг поставщику занижен
+    фантомно-погашенным УПД. LIFO по дате зачёта. Замороженный в банк-черновике закрывающий не
+    трогаем (редкий край) — иначе расфризили бы чужую отправку.
+
+    СНЯТЫЙ ЗАЧЁТ ЗДЕСЬ НЕ ЗАМЕНЯЕТСЯ, хотя деньги счёта, ушедшие из ДЗ по счёту, мог нести
+    открытый аванс правила 1, — и акт тогда висит кредиторкой рядом с открытой дебиторкой того
+    же контрагента (нетто верно, адресность — нет). Перегашение отсюда пробовали (скептик Fable,
+    25.09) и сняли: откат идёт и тогда, когда платёж выводят из учёта («Исключить операцию»,
+    снятие контрагента), а аванс этой самой проводки в тот момент ещё жив — перегашение делало
+    его тронутым, снос нетронутых его уже не снимал, и акт оставался оплаченным деньгами,
+    которых в учёте нет. К тому же оно гасило бы акт авансом закрытого замком месяца."""
     tgt = _money(target_settled)
     if _money(prepayment.amount_settled) <= tgt:
         return
@@ -542,7 +568,14 @@ async def _rule1_bill_money(
     дебиторкой», а не «числятся ли ею сейчас». Иначе пришедший УПД гасит rule-1-ДЗ (статус
     'settled'), покрытие пропадает, и следующее же касание счёта завело бы фантомную ДЗ на те же
     деньги. Если предоплату СНЕСЛИ (реклассификация/исключение), покрытия действительно нет —
-    счёт корректно берёт дебиторку на себя."""
+    счёт корректно берёт дебиторку на себя.
+
+    Контрагента здесь НЕ сверяем ни у аванса, ни у «других счетов». Платёж, перевешенный на
+    другого контрагента, деньги чужого счёта в свой аванс не берёт — это решает пересборка
+    (``_transaction_carried_bill_allocations``), и тогда «аванс − незанятое» даёт ноль сам. А
+    тронутый аванс прежнего контрагента перевес не пересобирает, и он продолжает нести деньги
+    платежа: отбрось его здесь по контрагенту — и счёт нового завёл бы ДЗ на те же деньги,
+    дебиторка вдвое (скептик Fable 25.09, F3)."""
     rule1 = _money(
         await session.scalar(
             select(func.coalesce(func.sum(SupplierPrepayment.amount), 0)).where(
@@ -562,7 +595,7 @@ async def _rule1_bill_money(
         Decimal("0.00"),
     )
     others = await _transaction_carried_bill_allocations(
-        session, transaction, exclude_invoice_id=bill.id
+        session, transaction, exclude_invoice_id=bill.id, payer_bills_only=False
     )
     return max(rule1 - free - others, Decimal("0.00"))
 
@@ -605,17 +638,21 @@ async def reconcile_bill_prepayment(
     # забирал себе и первую оплату: 14 000 ДЗ на 10 000 денег. Какие деньги аванс НЕ несёт
     # (платёж больше счёта, счёт уже со своей ДЗ), считает ``_rule1_bill_money``; пересборка
     # аванса досинхронизирует ДЗ счетов платежа сама (``_resync_transaction_bills``).
-    # ``paid`` остаётся СЫРЫМ для отката зачётов — откат обязан следовать реальной оплате
-    # счёта, иначе снимались бы зачёты закрывающих, которые никто не заменит.
     booked = max(paid - await _bill_paid_already_receivable(session, invoice), Decimal("0.00"))
 
-    # Оплату счёта уменьшили ниже уже зачтённого закрывающими → откатить избыток зачётов
+    # Деньги ДЗ по счёту стали меньше уже зачтённого закрывающими → откатить избыток зачётов
     # (закрывающие обратно в КЗ), иначе они остались бы фантомно-погашенными, долг поставщику
-    # занижен. После отката amount_settled <= paid, и CHECK amount>=amount_settled не нарушится.
-    if existing is not None and _money(existing.amount_settled) > max(paid, Decimal("0.00")):
-        await _unwind_bill_prepayment_settlements(
-            session, existing, target_settled=max(paid, Decimal("0.00"))
-        )
+    # занижен. После отката amount_settled <= booked, и CHECK amount>=amount_settled не нарушится.
+    #
+    # ЦЕЛЬ — ``booked``, А НЕ ``paid`` (скептик 25.09). Оплаченное по счёту включает деньги,
+    # которые несёт аванс правила 1, и они уже могли закрыть тот же акт авансом. Акт 10 000:
+    # 5 000 из аванса (первая оплата счёта шла выпиской) и 5 000 из ДЗ по счёту (доплата).
+    # Доплату исключили — оплачено 5 000, и откат до «оплаченного» не снимал ничего: ДЗ по счёту
+    # усаживалась до зачтённых 5 000 и оставалась на акте, одни деньги закрывали его дважды.
+    # Снятый зачёт откат не заменяет (почему — в ``_unwind_bill_prepayment_settlements``): акт
+    # остаётся честной кредиторкой, и перегасить его — решение человека.
+    if existing is not None and _money(existing.amount_settled) > booked:
+        await _unwind_bill_prepayment_settlements(session, existing, target_settled=booked)
 
     if paid <= 0:
         # Оплату счёта откатили полностью: после отката зачётов нетронутую ДЗ удаляем
@@ -629,8 +666,8 @@ async def reconcile_bill_prepayment(
 
     if booked <= 0:
         # Счёт оплачен, но все его деньги уже несёт rule-1-предоплата — своей ДЗ счёт не держит
-        # (иначе задвоение). Была своя запись — нетронутую снимаем, тронутую усаживаем до уже
-        # зачтённого: зачёты закрывающих откатывает только уменьшение самой оплаты (выше).
+        # (иначе задвоение). Была своя запись — её зачёты уже откачены выше; нетронутую снимаем,
+        # тронутую (остался замороженный в черновике зачёт) усаживаем до зачтённого.
         if existing is not None:
             if _money(existing.amount_settled) <= 0:
                 await session.delete(existing)
@@ -1166,7 +1203,10 @@ async def _settle_open_kz_from_transaction(
     в пути, и гашение его чужими деньгами привело бы к оплате дважды — сначала этим платежом,
     потом исполнением черновика. Тот же гард стоит в ``auto_settle_invoice_from_open_prepayments``;
     здесь его не было, и любой свободный платёж тому же поставщику мог закрыть документ,
-    ожидающий подтверждения в банке."""
+    ожидающий подтверждения в банке.
+
+    Документы потока арендодателя получают деньги только своего потока
+    (``_other_stream_documents``): аренда не оплачивает воду, вода — аренду."""
     pool = _money(limit)
     settled = Decimal("0.00")
     if pool <= 0:
@@ -1191,7 +1231,13 @@ async def _settle_open_kz_from_transaction(
             )
         )
     ).all()
+    # Деньги другого потока арендодателя — тот же фильтр, что у зачёта из авансов: аренда
+    # выпиской иначе оплачивала по FIFO открытый счёт воды, а его ДЗ тут же гасила водяной акт
+    # (скептик A9). Не подошедшие документы остаются кредиторкой, деньги — авансом.
+    foreign = await _other_stream_documents(session, transaction, invoices)
     for invoice in invoices:
+        if invoice.id in foreign:
+            continue
         if pool <= 0:
             break
         # Остаток спрашиваем по каждому документу заново: оплата счёта выше по списку уже могла
@@ -1301,7 +1347,12 @@ async def unwind_operation_bank_allocations(
     «Исключить операцию»/«Внутренний перевод» оставляли накладную оплаченной деньгами, которых
     в учёте больше нет, а ДЗ оплаченного счёта висела без единого рубля за ней. Пересчёт
     статуса накладной дальше сам прибирает ДЗ (чокпоинт). False — если накладная заморожена
-    в банк-черновике: снять нельзя, вызывающий блокирует операцию понятной ошибкой."""
+    в банк-черновике: снять нельзя, вызывающий блокирует операцию понятной ошибкой.
+
+    Сверка, записанная ЗАЧЁТОМ из аванса правила 1 этого платежа (``settle_from_payment_rule1``),
+    снимается здесь же: это та же оплата накладной деньгами операции, и без её снятия аванс
+    остался бы тронутым — снос нетронутых его не взял бы, и накладная осталась бы оплаченной
+    деньгами, которых в учёте нет."""
     allocs = list(
         (
             await session.scalars(
@@ -1312,9 +1363,12 @@ async def unwind_operation_bank_allocations(
             )
         ).all()
     )
-    if not allocs:
+    matched = await _payment_match_settlements(
+        session, await operation_transaction_ids(session, bank_operation_id)
+    )
+    if not allocs and not matched:
         return True
-    invoice_ids = {a.invoice_id for a in allocs}
+    invoice_ids = {a.invoice_id for a in allocs} | {alloc.invoice_id for alloc, _ in matched}
     invoices = list(
         (
             await session.scalars(
@@ -1326,10 +1380,325 @@ async def unwind_operation_bank_allocations(
         return False
     for alloc in allocs:
         await session.delete(alloc)
+    await _drop_payment_match_settlements(session, matched)
     await session.flush()
     for inv in invoices:
         await _recompute_status(session, inv)
     return True
+
+
+# --- двери прямой оплаты и аванс правила 1 -----------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Rule1Money:
+    """Аванс правила 1 платежа, которым дверь прямой оплаты собирается закрыть документ.
+
+    ДВЕРИ ПРЯМОЙ ОПЛАТЫ — сверка операции с накладной (``confirm_invoice_match``, диалог
+    «Оплатить» на складе), сплит оплаты (``pay_invoice_split``), сверка операции с черновиком
+    (``allocate_bank_operation_to_draft``), ручная оплата проводкой (``allocate_cash_to_invoice``)
+    — кладут деньги уже учтённого платежа на документ. А правило 1 могло сделать из этих денег
+    аванс: складские накладные оно не подбирает, и перевод поставщику мимо черновика целиком
+    становится дебиторкой. Пока двери этого не знали, аванс оставался открытым, а накладная —
+    оплаченной теми же деньгами: ДЗ задвоена с даты накладной и сама не лечится (планировщик
+    правило 1 не перезапускает, а открытый аванс ещё и погасит следующий акт).
+
+    ПОЧЕМУ ЗАЧЁТ, А НЕ УМЕНЬШЕНИЕ АВАНСА (решение владельца 25.09.2026). Первая версия
+    (134fe3e7) уменьшала ``amount`` аванса на оплату, но баланс на дату берёт сумму аванса с даты
+    ДЕНЕГ: платёж 31.07 → накладная 01.08, и ДЗ на 31.07 исчезала задним числом (12 000 → 0),
+    хотя 31 июля деньги были у поставщика, а товара ещё не было. Зачёт из аванса
+    (``source_kind='prepayment'``) баланс датирует вступлением документа: на 31.07 — ДЗ 12 000,
+    с 01.08 — ноль. Месяц денег не меняется, поэтому замок нужен только по месяцу документа.
+
+    ``free`` — незанятое аллокациями платежа (``payment_allocated_amount``)."""
+
+    prepayment: SupplierPrepayment
+    transaction: CashflowTransaction
+    free: Decimal
+
+    @property
+    def open_rest(self) -> Decimal:
+        """Открытый остаток аванса. Возвращённый или закрытый — ноль, даже со стейл
+        ``amount_settled < amount``: гасить им нельзя, как и ``settle_invoice_from_prepayment``."""
+        if self.prepayment.status not in OPEN_PREPAYMENT_STATUSES:
+            return Decimal("0.00")
+        return _money(self.prepayment.amount) - _money(self.prepayment.amount_settled)
+
+    def foreign_to(self, invoice: SupplierInvoice) -> bool:
+        """Деньги платежа — аванс ДРУГОГО контрагента (платёж разобран не на поставщика
+        документа). Зачесть его в чужой документ нельзя (``settle_invoice_from_prepayment``), а
+        оплатить документ деньгами мимо аванса — задвоить их: аванс того контрагента остался бы."""
+        return self.prepayment.counterparty_id != invoice.counterparty_id
+
+    def for_document(self, invoice: SupplierInvoice) -> Decimal:
+        """Сколько документ может получить от этого платежа.
+
+        ЗАКРЫВАЮЩИЙ (и бартерный заём) — не больше незанятого И не больше открытого остатка
+        аванса: погашенная часть аванса уже закрыла другой документ, второй раз её не отдать.
+
+        СЧЁТ — только незанятое. Его деньги аванс несёт и так (``_rule1_bill_money``): счёт лишь
+        называет, за что заплачено, и то, что аванс уже ушёл на УПД, — законный путь «счёт →
+        закрывающий». Потолок по остатку аванса не давал привязать к платежу счёт, пришедший
+        после УПД, и тот висел «Готов к оплате» — риск заплатить второй раз (скептик Fable, F2)."""
+        if invoice.doc_kind == "bill":
+            return max(self.free, Decimal("0.00"))
+        return max(min(self.free, self.open_rest), Decimal("0.00"))
+
+
+def payment_settles_from_advance(invoice: SupplierInvoice) -> bool:
+    """Документ, который дверь закрывает ЗАЧЁТОМ из аванса правила 1, а не деньгами напрямую.
+
+    Счёт — нет: он не долг, его оплату аванс несёт и так (чокпоинт). Бартерный заём — нет:
+    из аванса его не гасят (гард ``settle_invoice_from_prepayment``), его деньги уходят из
+    аванса пересборкой правила 1 (``barter_loan_money``), и там замок — месяц денег."""
+    return invoice.doc_kind != "bill" and invoice.barter_role is None
+
+
+async def operation_transaction_ids(
+    session: AsyncSession, bank_operation_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Проводки, которыми учтены деньги операции: якорная и все доли разбора."""
+    ids = set(
+        (
+            await session.scalars(
+                select(CashflowTransaction.id).where(
+                    CashflowTransaction.source_kind == "bank_operation",
+                    CashflowTransaction.source_id == bank_operation_id,
+                )
+            )
+        ).all()
+    )
+    anchor = await session.scalar(
+        select(BankOperation.cashflow_transaction_id).where(BankOperation.id == bank_operation_id)
+    )
+    if anchor is not None:
+        ids.add(anchor)
+    return ids
+
+
+async def rule1_money_of_payment(
+    session: AsyncSession,
+    *,
+    counterparty_id: uuid.UUID,
+    transaction_id: uuid.UUID | None = None,
+    bank_operation_id: uuid.UUID | None = None,
+) -> Rule1Money | None:
+    """Аванс правила 1 у денег платежа — проводки или операции выписки (всех её долей).
+
+    ``None`` — аванса нет: дверь пишет аллокацию деньгами, как раньше (правило 1 при следующей
+    пересборке сочтёт её занятыми деньгами). Из нескольких авансов (доли разбора на разных
+    контрагентов) берём аванс контрагента документа, а нет такого — первый чужой: дверь
+    откажет (``Rule1Money.foreign_to``). Доли и подбирает этот поиск: сверка операции не знает
+    доли (якорь — первая), и аванс доли поставщика документа иначе остался бы незамеченным."""
+    if bank_operation_id is not None:
+        transaction_ids = await operation_transaction_ids(session, bank_operation_id)
+    elif transaction_id is not None:
+        transaction_ids = {transaction_id}
+    else:
+        return None
+    if not transaction_ids:
+        return None
+    advances = list(
+        (
+            await session.scalars(
+                select(SupplierPrepayment)
+                .where(
+                    SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids),
+                    SupplierPrepayment.kind == RULE1_PREPAYMENT_KIND,
+                )
+                .order_by(SupplierPrepayment.created_at, SupplierPrepayment.id)
+            )
+        ).all()
+    )
+    if not advances:
+        return None
+    prepayment = next(
+        (advance for advance in advances if advance.counterparty_id == counterparty_id),
+        advances[0],
+    )
+    transaction = await session.get(CashflowTransaction, prepayment.cashflow_transaction_id)
+    if transaction is None:
+        return None
+    return Rule1Money(
+        prepayment=prepayment,
+        transaction=transaction,
+        free=_money(transaction.amount)
+        - await payment_allocated_amount(session, transaction_id=transaction.id),
+    )
+
+
+async def settle_from_payment_rule1(
+    session: AsyncSession,
+    *,
+    invoice: SupplierInvoice,
+    money: Rule1Money,
+    amount: Decimal,
+    origin: str,
+    actor_user_id: uuid.UUID | None,
+) -> None:
+    """Дверь прямой оплаты закрывает документ ЗАЧЁТОМ из аванса правила 1 своего платежа.
+
+    Без коммита: дверь пишет остальное (реквизиты, другие части сплита) в той же транзакции.
+    Потолок (``Rule1Money.for_document``) и замок месяца документа
+    (``assert_closing_months_open``) дверь проверяет ДО первой записи — отказ не должен
+    оставлять половину оплаты. Аванс не уменьшается: деньги были дебиторкой до вступления
+    документа, и баланс на дату это помнит (см. ``Rule1Money``)."""
+    await _allocate_invoice_from_prepayment(
+        session,
+        invoice=invoice,
+        prepayment=money.prepayment,
+        amount=_money(amount),
+        actor_user_id=actor_user_id,
+        origin=origin,
+    )
+    await _recompute_status(session, invoice)
+
+
+async def assert_rule1_money_month_open(
+    session: AsyncSession, transaction: CashflowTransaction, *, action: str
+) -> None:
+    """``PeriodClosed`` ДО записи, если деньги учтённого платежа лежат в закрытом месяце.
+
+    Для дверей, которые забирают деньги у аванса правила 1 пересборкой (оплата бартерного займа):
+    аванс ужимается с даты денег, и цифры месяца денег меняются. Центральный замок в
+    ``ensure_prepayment_from_bank_transaction`` поймал бы это только после записи самой оплаты —
+    а дверь займа её уже закоммитила бы (409 при наполовину применённой оплате). Условия те же,
+    что у него: учёт с ``ACCOUNTING_START``, проводка из этой же транзакции базы — новые деньги."""
+    money_month = accounting_periods.month_start(transaction.operation_date)
+    if money_month < accounting_periods.ACCOUNTING_START:
+        return
+    if await _created_in_this_transaction(session, transaction):
+        return
+    await accounting_periods.assert_month_open(session, money_month, action=action)
+
+
+async def release_rule1_money_to_loan(
+    session: AsyncSession, money: Rule1Money, amount: Decimal
+) -> None:
+    """Деньги, которые дверь бартерного займа отдала займу, уходят из аванса правила 1.
+
+    Заём из аванса не гасят (гард ``settle_invoice_from_prepayment``), поэтому здесь не зачёт, а
+    уменьшение аванса — и оно меняет дебиторку с даты денег; дверь проверяет месяц денег до
+    записи (``assert_rule1_money_month_open``). Пересборка правила 1 уменьшила бы только
+    нетронутый аванс и только на якорной проводке операции: гашёный аванс и аванс доли разбора
+    остались бы прежними — заём оплачен, аванс тоже, дебиторка вдвое. Потолок двери
+    (``Rule1Money.for_document``) не пускает сумму выше открытого остатка, поэтому CHECK
+    ``amount >= amount_settled`` цел; нетронутый аванс, отдавший всё, снимается."""
+    prepayment = money.prepayment
+    take = min(_money(amount), money.open_rest)
+    if take <= 0:
+        return
+    prepayment.amount = _money(prepayment.amount) - take
+    if _money(prepayment.amount) <= 0:
+        await session.delete(prepayment)
+    else:
+        _sync_bill_prepayment_status(prepayment)
+    await session.flush()
+    await _resync_transaction_bills(session, money.transaction)
+
+
+async def _payment_match_settlements(
+    session: AsyncSession, transaction_ids: set[uuid.UUID]
+) -> list[tuple[InvoicePaymentAllocation, SupplierPrepayment]]:
+    """Зачёты дверей прямой оплаты из авансов правила 1 этих проводок."""
+    if not transaction_ids:
+        return []
+    return [
+        (alloc, prepayment)
+        for alloc, prepayment in (
+            await session.execute(
+                select(InvoicePaymentAllocation, SupplierPrepayment)
+                .join(
+                    SupplierPrepayment,
+                    SupplierPrepayment.id == InvoicePaymentAllocation.prepayment_id,
+                )
+                .where(
+                    SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids),
+                    InvoicePaymentAllocation.source_kind == "prepayment",
+                    InvoicePaymentAllocation.origin.in_(PAYMENT_MATCH_ORIGINS),
+                )
+                .order_by(InvoicePaymentAllocation.created_at, InvoicePaymentAllocation.id)
+            )
+        ).all()
+    ]
+
+
+async def _drop_payment_match_settlements(
+    session: AsyncSession,
+    rows: Sequence[tuple[InvoicePaymentAllocation, SupplierPrepayment]],
+) -> None:
+    """Снять зачёты и вернуть аванс в открытый остаток (статусы документов — за вызывающим)."""
+    for alloc, prepayment in rows:
+        await session.delete(alloc)
+        prepayment.amount_settled = max(
+            _money(prepayment.amount_settled) - _money(alloc.amount), Decimal("0.00")
+        )
+        _sync_bill_prepayment_status(prepayment)
+
+
+async def release_payment_match_settlements(
+    session: AsyncSession, transaction_ids: set[uuid.UUID]
+) -> bool:
+    """Снять зачёты дверей прямой оплаты, когда деньги этих проводок уходят из учёта или
+    переразбираются (исключение, переразбор сплитом) — там же, где снимается сверка операции.
+
+    После снятия аванс снова нетронутый, и снос нетронутых авансов его забирает; не снять —
+    и тронутый аванс пережил бы свою проводку (FK обнулился бы), а новая пересборка завела бы
+    второй аванс на те же деньги. False — документ заморожен в банк-черновике."""
+    rows = await _payment_match_settlements(session, transaction_ids)
+    if not rows:
+        return True
+    invoices = list(
+        (
+            await session.scalars(
+                select(SupplierInvoice).where(
+                    SupplierInvoice.id.in_({alloc.invoice_id for alloc, _ in rows})
+                )
+            )
+        ).all()
+    )
+    if any(invoice.draft_id is not None for invoice in invoices):
+        return False
+    await _drop_payment_match_settlements(session, rows)
+    await session.flush()
+    for invoice in invoices:
+        await _recompute_status(session, invoice)
+    return True
+
+
+async def _revert_payment_match_settlements(
+    session: AsyncSession, transaction: CashflowTransaction
+) -> None:
+    """Вернуть зачёты дверей в ту аллокацию, которую дверь записала бы без аванса.
+
+    Когда деньги платежа перестают быть авансом контрагента документа (платёж перевесили на
+    другого, сняли контрагента, проводка больше не расход поставщику), зачёт терять нельзя:
+    человек сказал «этот платёж оплатил эту накладную», и на main это держала сверка операции —
+    пересборка правила 1 её не снимает, а считает занятыми деньгами. Возвращаем ровно её:
+    ``bank`` с операцией выписки или ``cash`` с проводкой. Дальше пересборка работает как
+    раньше — аванс, ставший нетронутым, пересобирается от бюджета платежа."""
+    rows = await _payment_match_settlements(session, {transaction.id})
+    if not rows:
+        return
+    operation_id = await session.scalar(
+        select(BankOperation.id).where(BankOperation.cashflow_transaction_id == transaction.id)
+    )
+    if operation_id is None and transaction.source_kind == "bank_operation":
+        operation_id = transaction.source_id
+    for alloc, _ in rows:
+        by_operation = alloc.origin == PAYMENT_MATCH_BANK_ORIGIN and operation_id is not None
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=alloc.invoice_id,
+                source_kind="bank" if by_operation else "cash",
+                bank_operation_id=operation_id if by_operation else None,
+                cashflow_transaction_id=None if by_operation else transaction.id,
+                amount=_money(alloc.amount),
+                created_by_user_id=alloc.created_by_user_id,
+            )
+        )
+    await _drop_payment_match_settlements(session, rows)
+    await session.flush()
 
 
 async def _transaction_carried_bill_allocations(
@@ -1337,6 +1706,7 @@ async def _transaction_carried_bill_allocations(
     transaction: CashflowTransaction,
     *,
     exclude_invoice_id: uuid.UUID | None = None,
+    payer_bills_only: bool = True,
 ) -> Decimal:
     """Оплаты СЧЕТОВ из этого платежа, дебиторку которых несёт правило 1 (а не чокпоинт).
 
@@ -1352,7 +1722,16 @@ async def _transaction_carried_bill_allocations(
     в бюджет этой (иначе её дебиторка занижена — см. ``payment_allocated_amount``).
 
     ``exclude_invoice_id`` — счёт, для которого чокпоинт сам решает вопрос о ДЗ
-    (``_rule1_bill_money``): его оплаты здесь не считаем."""
+    (``_rule1_bill_money``): его оплаты здесь не считаем.
+
+    ``payer_bills_only`` — ПЕРЕСБОРКА аванса (по умолчанию): берёт в аванс только счета
+    контрагента платежа. Ручную оплату чужого счёта пересборка не снимает, но и нести её деньги
+    не вправе: без фильтра перевес классифицированного платежа с X на Y уносил деньги оплаченного
+    счёта X в аванс Y — у X счёт без дебиторки, у Y аванс больше оставшихся ему денег (скептик
+    25.09). Чокпоинт (``_rule1_bill_money``) спрашивает другое — какие деньги аванс УЖЕ несёт, — и
+    там фильтра нет: до пересборки аванс несёт и чужой счёт, оплаченный той же проводкой. Отфильтруй
+    его и там — и касание своего счёта приписало бы эти деньги себе: ДЗ по счёту падала, откат
+    снимал зачёт с оплаченного акта, и деньги не числились нигде (скептик Fable, P1)."""
     own_prepaid = (
         select(SupplierPrepayment.id)
         .where(
@@ -1367,6 +1746,8 @@ async def _transaction_carried_bill_allocations(
         _paid_by_transaction(transaction),
         ~own_prepaid,
     ]
+    if payer_bills_only:
+        conditions.append(SupplierInvoice.counterparty_id == transaction.counterparty_id)
     if exclude_invoice_id is not None:
         conditions.append(InvoicePaymentAllocation.invoice_id != exclude_invoice_id)
     total = await session.scalar(
@@ -1471,9 +1852,23 @@ async def _paid_bill_period(
     периодом. Точное совпадение суммы — сильный признак: абонентские счета выставляются на
     фиксированную сумму, и промахнуться ею мимо своего счёта трудно. Если подходящих счетов
     несколько с РАЗНЫМИ периодами — не берём ни один: угадать хуже, чем спросить человека.
+
+    Счёт, у которого уже есть СВОЯ ДЗ (``prepaid_bill``), — не кандидат: его деньги уже учтены
+    его дебиторкой, этот платёж — другой. Ровная абонентка иначе отдавала сентябрьской оплате
+    выпиской период августа, оплаченного из очереди: единственный счёт на ту же сумму с готовым
+    периодом — августовский, и УПД за август гасил сентябрьские деньги рангом «период», а ДЗ
+    августа висела (скептик Fable 25.09, F5 — прод-путь S3).
     """
     if transaction.counterparty_id is None:
         return None
+    own_receivable = (
+        select(SupplierPrepayment.id)
+        .where(
+            SupplierPrepayment.bill_invoice_id == SupplierInvoice.id,
+            SupplierPrepayment.kind == BILL_PREPAYMENT_KIND,
+        )
+        .exists()
+    )
     rows = list(
         (
             await session.scalars(
@@ -1486,6 +1881,7 @@ async def _paid_bill_period(
                     SupplierInvoice.service_period_start.is_not(None),
                     SupplierInvoice.service_period_end.is_not(None),
                     SupplierInvoice.amount == _money(amount),
+                    ~own_receivable,
                 )
             )
         ).all()
@@ -1743,6 +2139,16 @@ async def _sync_rule1_distribution(
             )
         )
         should_have = profile_exists is not None
+
+    if (
+        existing is not None
+        and existing.kind == RULE1_PREPAYMENT_KIND
+        and (not should_have or existing.counterparty_id != transaction.counterparty_id)
+    ):
+        # Деньги перестают быть авансом того контрагента, чей документ дверь прямой оплаты
+        # закрыла из этого аванса: зачёт возвращается в сверку операции, как было до аванса,
+        # и аванс, ставший нетронутым, пересобирается ниже от бюджета платежа.
+        await _revert_payment_match_settlements(session, transaction)
 
     if not should_have:
         # Транзакция больше не квалифицируется (сняли контрагента / сменили на не-предоплатного /
@@ -2409,19 +2815,26 @@ def _periods_conflict(prepayment: SupplierPrepayment, invoice: SupplierInvoice) 
     (правило 1, ДЗ оплаченного счёта через ``_invoice_period_fields``, аренда, абонентка,
     коммуналка, ремонтные скрипты), а ``missing`` без дат — исторические авансы, которые и
     очередь признания не трогает до решения человека."""
-    if (
-        invoice.service_period_status != "ready"
-        or invoice.service_period_start is None
-        or invoice.service_period_end is None
-    ):
-        return False
-    if (
-        prepayment.service_period_status != "ready"
-        or prepayment.service_period_start is None
-        or prepayment.service_period_end is None
-    ):
-        return False
-    return not _periods_overlap(prepayment, invoice)
+    return _periods_known(prepayment, invoice) and not _periods_overlap(prepayment, invoice)
+
+
+def _periods_agree(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -> bool:
+    """Известный период аванса ПЕРЕСЕКАЕТСЯ с известным периодом документа.
+
+    Зеркало ``_periods_conflict`` с тем же доверием (``ready`` у обеих сторон)."""
+    return _periods_known(prepayment, invoice) and _periods_overlap(prepayment, invoice)
+
+
+def _periods_known(prepayment: SupplierPrepayment, invoice: SupplierInvoice) -> bool:
+    """Обе стороны знают свой период наверняка: статус ``ready`` и обе даты."""
+    return (
+        invoice.service_period_status == "ready"
+        and invoice.service_period_start is not None
+        and invoice.service_period_end is not None
+        and prepayment.service_period_status == "ready"
+        and prepayment.service_period_start is not None
+        and prepayment.service_period_end is not None
+    )
 
 
 def _recognition(invoice: SupplierInvoice) -> dict[str, object]:
@@ -2555,10 +2968,49 @@ async def _basis_bill_ids(session: AsyncSession, invoice: SupplierInvoice) -> fr
     return frozenset({exact[0].id}) if len(exact) == 1 else frozenset()
 
 
+class _PaymentMoney(NamedTuple):
+    """Деньги самой проводки в тех полях, по которым фильтр потоков судит аванс.
+
+    Правило 1 кладёт деньги платежа на документы напрямую, аванса ещё нет — а спросить надо
+    то же самое: чьи это деньги, аренды или коммуналки."""
+
+    id: uuid.UUID
+    lease_id: uuid.UUID | None
+    cashflow_transaction_id: uuid.UUID | None
+    article_id: uuid.UUID | None
+    bill_invoice_id: uuid.UUID | None
+
+
+async def _other_stream_documents(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    invoices: Sequence[SupplierInvoice],
+) -> set[uuid.UUID]:
+    """Документы потока арендодателя, которым деньги этого платежа чужие (правило 1).
+
+    Тот же чёрный список, что ``_other_stream_prepayment_ids``: платёж по договору аренды или со
+    статьёй аренды не оплачивает коммуналку, платёж со статьёй коммунального потока — аренду и
+    другой поток. Деньги неизвестного назначения годятся любому документу, как у авансов."""
+    money = _PaymentMoney(
+        id=transaction.id,
+        lease_id=transaction.lease_id,
+        cashflow_transaction_id=transaction.id,
+        article_id=transaction.article_id,
+        bill_invoice_id=None,
+    )
+    foreign: set[uuid.UUID] = set()
+    for invoice in invoices:
+        if invoice.source not in (UTILITY_INVOICE_SOURCE, LEASE_INVOICE_SOURCE):
+            continue
+        if await _other_stream_prepayment_ids(session, invoice, [money]):
+            foreign.add(invoice.id)
+    return foreign
+
+
 async def _other_stream_prepayment_ids(
     session: AsyncSession,
     invoice: SupplierInvoice,
-    prepayments: Sequence[SupplierPrepayment],
+    prepayments: Sequence[SupplierPrepayment | _PaymentMoney],
 ) -> set[uuid.UUID]:
     """Авансы, которые документу потока арендодателя НЕ ГОДЯТСЯ вовсе: это деньги другого потока.
 
@@ -2573,9 +3025,10 @@ async def _other_stream_prepayment_ids(
     ПОЭТОМУ ЗДЕСЬ ФИЛЬТР, А НЕ ПОРЯДОК, И ЖИВЁТ ОН В ЯДРЕ. Белый список одной двери (бот при
     немедленной активации) не закрывал остальные: активацию 1-го числа, обратный порядок при
     оплате чужого счёта, перенос угаданного и ремонтные скрипты — все они зовут авто-зачёт через
-    ``_settlement_candidates``. Мимо фильтра идёт только правило 1
-    (``_settle_open_kz_from_transaction``): банковские деньги по выписке гасят открытую КЗ
-    напрямую, без авансов и без лестницы, — известное ограничение, то же, что на main.
+    ``_settlement_candidates``. Правило 1 (``_settle_open_kz_from_transaction``) кладёт деньги
+    выписки на открытые документы напрямую, без авансов и без лестницы, и спрашивает здесь же —
+    деньгами самой проводки (``_other_stream_documents``): до 25.09 оно шло мимо фильтра, и
+    аренда выпиской по FIFO оплачивала счёт воды (скептик A9).
 
     ЧЁРНЫЙ СПИСОК, А НЕ БЕЛЫЙ. Отвергаем только деньги, про которые ЯВНО известно, что они
     чужие. Белый список («статья потока или без статьи») отверг бы и свои деньги с другой
@@ -2756,8 +3209,13 @@ def _match_basis(
     prepayment_product: str | None,
     doc_amount: Decimal,
     money_on: date | None,
+    period_money: bool = False,
 ) -> str:
-    """На каком основании этот аванс годится документу. Первое сработавшее и есть ответ."""
+    """На каком основании этот аванс годится документу. Первое сработавшее и есть ответ.
+
+    ``period_money`` — среди кандидатов документа есть деньги с его известным периодом
+    (``_periods_agree``), которые и сами годятся рангу «сумма»; тогда равенство суммы признаком
+    не служит."""
     if prepayment.bill_invoice_id is not None and prepayment.bill_invoice_id in basis_bill_ids:
         return MATCH_BASIS_INVOICE
     same_period = _periods_overlap(prepayment, invoice)
@@ -2801,19 +3259,45 @@ def _match_basis(
     # документ» за август и спрятанное законное ожидание в сентябре — каждый месяц.
     if _periods_conflict(prepayment, invoice):
         return MATCH_CHRONOLOGY
-    # Равенство суммы — САМЫЙ слабый признак, и он опасен: у подписочного поставщика с ровной
-    # абонентской платой ему совпадает любой месяц. Поэтому два ограничения. Аванс должен быть
-    # НЕТРОНУТ — совпадение хвоста частично погашенного это совпадение остатка, а не «платёж за
-    # этот документ»; и он не может быть ПОЗЖЕ документа — иначе ранг перебил бы правило
-    # хронологии (инцидент Манго: УПД за июнь съел бы июльский платёж, потому что суммы равны,
-    # оставив июньские деньги висеть непогашенными).
+    # РАВНАЯ СУММА НЕ СПОРИТ С ДЕНЬГАМИ СВОЕГО ПЕРИОДА ТОЙ ЖЕ СУММЫ (скептик S3). Аванс правила 1
+    # без периода — деньги выписки, пришедшие раньше своего счёта, — ни с чем не противоречит, и
+    # ранг ``amount`` отдавал ему документ, у которого рядом лежат деньги его собственного
+    # месяца на ту же сумму: их гард «деньги чужого счёта» роняет в хронологию. Август оплачен
+    # из очереди, сентябрь выпиской, абонентка ровная — и УПД за август гасил сентябрьские
+    # деньги, а ДЗ августа висела. Когда сумме равны и те, и другие, она ничего не различает, а
+    # период различает; выбор остаётся хронологии денег.
+    #
+    # ТОЛЬКО ПРИ РАВНОЙ СУММЕ, а не при любых деньгах периода. Деньги того же периода бывают и
+    # чужими: у арендодателя это водяная ДЗ месяца рядом с арендным актом. Там сумма как раз
+    # различает — аренда на 50 000 берёт свои 50 000 рангом «сумма», а не воду на 9 500 по
+    # хронологии (``test_rent_activation_takes_rent_money_not_open_water_receivable``).
+    if period_money:
+        return MATCH_CHRONOLOGY
+    if _amount_matches(prepayment, invoice, doc_amount=doc_amount, money_on=money_on):
+        return MATCH_AMOUNT
+    return MATCH_CHRONOLOGY
+
+
+def _amount_matches(
+    prepayment: SupplierPrepayment,
+    invoice: SupplierInvoice,
+    *,
+    doc_amount: Decimal,
+    money_on: date | None,
+) -> bool:
+    """Аванс годится рангу «сумма»: нетронут, не позже документа и ровно на его сумму.
+
+    Равенство суммы — САМЫЙ слабый признак, и он опасен: у подписочного поставщика с ровной
+    абонентской платой ему совпадает любой месяц. Поэтому два ограничения. Аванс должен быть
+    НЕТРОНУТ — совпадение хвоста частично погашенного это совпадение остатка, а не «платёж за
+    этот документ»; и он не может быть ПОЗЖЕ документа — иначе ранг перебил бы правило
+    хронологии (инцидент Манго: УПД за июнь съел бы июльский платёж, потому что суммы равны,
+    оставив июньские деньги висеть непогашенными)."""
     untouched = _money(prepayment.amount_settled) == 0
     not_after_document = (
         invoice.invoice_date is None or money_on is None or money_on <= invoice.invoice_date
     )
-    if untouched and not_after_document and _money(prepayment.amount) == doc_amount:
-        return MATCH_AMOUNT
-    return MATCH_CHRONOLOGY
+    return untouched and not_after_document and _money(prepayment.amount) == doc_amount
 
 
 async def _settlement_candidates(
@@ -2847,9 +3331,9 @@ async def _settlement_candidates(
     order = await _settlement_order(session, invoice)
     # Деньги другого потока арендодателя — не кандидаты вовсе (фильтр, в отличие от лестницы).
     # Здесь, а не в одной из дверей: сюда сходятся все двери зачёта ИЗ АВАНСОВ — приём,
-    # активация, обратный порядок, перенос угаданного и ремонтные скрипты. Мимо идёт правило 1
-    # (``_settle_open_kz_from_transaction``: банковские деньги прямо на открытую КЗ, без
-    # авансов) — известное ограничение, как на main (см. ``_other_stream_prepayment_ids``).
+    # активация, обратный порядок, перенос угаданного и ремонтные скрипты. Правило 1 (деньги
+    # выписки прямо на открытую КЗ, без авансов) спрашивает тот же фильтр своей проводкой
+    # (``_other_stream_documents``).
     foreign = await _other_stream_prepayment_ids(
         session, invoice, [prepayment for prepayment, _ in order]
     )
@@ -2863,6 +3347,11 @@ async def _settlement_candidates(
     )
     doc_product = str(_recognition(invoice).get("product_hint") or "") or None
     doc_amount = _money(invoice.amount)
+    period_money = any(
+        _periods_agree(prepayment, invoice)
+        and _amount_matches(prepayment, invoice, doc_amount=doc_amount, money_on=money_on)
+        for prepayment, money_on in order
+    )
     ranked = [
         (
             prepayment,
@@ -2874,6 +3363,7 @@ async def _settlement_candidates(
                 prepayment_product=products.get(prepayment.id),
                 doc_amount=doc_amount,
                 money_on=money_on,
+                period_money=period_money,
             ),
         )
         for prepayment, money_on in order

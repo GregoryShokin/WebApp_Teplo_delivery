@@ -875,9 +875,21 @@ async def _drop_untouched_bank_prepayments(
     (переразбор сплитом) или операцию исключают, привязанная предоплата осталась бы сиротой
     (FK ondelete=SET NULL) со статусом open — двойной учёт (аллокация счёта + открытая
     дебиторка) и риск второй предоплаты при повторной классификации. Гашёную
-    (amount_settled>0) не трогаем: её аллокации уже связаны с накладными."""
+    (amount_settled>0) не трогаем: её аллокации уже связаны с накладными.
+
+    Кроме зачётов дверей прямой оплаты (``supplier_prepayments.settle_from_payment_rule1``):
+    это сверка операции, записанная зачётом из её аванса, и снимается она вместе со сверкой —
+    переразбор снимает прежние гашения накладных операцией, исключение — тоже. Не снять — и
+    аванс, тронутый только ими, пережил бы свою проводку, а новый разбор завёл бы второй."""
     if not transaction_ids:
         return
+    from app.services.supplier_prepayments import release_payment_match_settlements
+
+    if not await release_payment_match_settlements(session, transaction_ids):
+        raise ValueError(
+            "Операция оплачивает накладную, отправленную в банк-черновик — "
+            "сначала откатите черновик"
+        )
     rows = await session.scalars(
         select(SupplierPrepayment).where(
             SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids)
@@ -1494,6 +1506,21 @@ async def _apply_operation_split(
     for alloc in prior_allocations:
         await session.delete(alloc)
     await session.flush()
+    # И сверки, записанные зачётом из аванса операции (дверь «Оплатить»): это те же гашения
+    # накладных этой операцией. Здесь, а не в сносе проводок ниже — иначе строка разбора с той же
+    # накладной увидела бы её оплаченной собственным прежним зачётом (скептик Fable 25.09).
+    from app.services.supplier_prepayments import (
+        operation_transaction_ids,
+        release_payment_match_settlements,
+    )
+
+    if not await release_payment_match_settlements(
+        session, await operation_transaction_ids(session, operation.id)
+    ):
+        raise ValueError(
+            "Операция оплачивает накладную, отправленную в банк-черновик — "
+            "сначала откатите черновик"
+        )
 
     # Остаток проверяем ПОСЛЕ снятия прежних аллокаций (иначе повторный разбор той же накладной
     # увидел бы её занятой собственной прежней аллокацией).
