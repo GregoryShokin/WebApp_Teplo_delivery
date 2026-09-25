@@ -144,3 +144,23 @@ async def find_refund_twins(
     if len(everything) > 1 and sum((p.amount for p in everything), Decimal("0")) == amount:
         return RefundTwins(items=everything, combined=True)
     return RefundTwins(items=[])
+
+
+# Правило классификации со статьёй возврата разносит выписку ФОНОМ — сторож выше спрашивает
+# только человека в окне разбора, и авторазметка прошла бы мимо него. Воспроизведено 25.09:
+# правило с возвратной статьёй провело следующую выписку само, и погашение аванса выросло
+# 34 717,95 → 35 017,95 → 35 317,95. Решение владельца 25.09: сторож остаётся
+# предупреждением, а правило с этой статьёй не заводится ни одной дверью.
+REFUND_RULE_REFUSAL = (
+    "Правило со статьёй «Возврат переплаты от поставщиков» не заводим: авторазметка гасила бы "
+    "авансы поставщика фоном, мимо проверки на задвоенный возврат. Такие возвраты разбирайте "
+    "вручную"
+)
+
+
+async def refund_rule_refusal(session: AsyncSession, article_id: uuid.UUID | None) -> str | None:
+    """Текст отказа, если правило классификации ставило бы статью возврата переплаты."""
+    if article_id is None:
+        return None
+    code = await session.scalar(select(DdsArticle.code).where(DdsArticle.id == article_id))
+    return REFUND_RULE_REFUSAL if code == SUPPLIER_REFUND_ARTICLE_CODE else None
