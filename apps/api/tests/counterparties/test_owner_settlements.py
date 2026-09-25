@@ -39,7 +39,7 @@ from app.models import (
 )
 from app.services import clock, supplier_prepayments
 from app.services.counterparty_settlement_ledger import build_ledger, list_gaps
-from app.services.owner_analytics import OWNER_ROLE
+from app.services.owner_analytics import DIVIDENDS_ARTICLE_CODE, OWNER_ROLE
 
 HEADERS = {"X-User-Role": "admin"}
 
@@ -233,7 +233,10 @@ def test_owner_settlements_are_not_gaps_in_the_ledger(
     * отбор по СТАТЬЕ: ремонт, оплаченный тому же Григорию, ждёт документ как у всех и остаётся
       в сводке. Отбор по контрагенту спрятал бы настоящую услугу вместе с займом;
     * очередь и сверка отвечают одинаково на одних и тех же деньгах;
-    * меняется только ожидание — бегущий остаток прежний: долг собственника живёт в ДЗ.
+    * меняется только ожидание — бегущий остаток прежний: долг собственника живёт в ДЗ;
+    * кроме дивидендов: решение владельца 25.09.2026 — это выплата, а не долг, и остаток
+      собственника они не двигают (иначе сверка Григория 1 070 000 ₽ против 1 020 000 ₽ в
+      «Остатках»).
     """
     seeded = _seed(async_session_factory)
     response = client.patch(
@@ -249,20 +252,18 @@ def test_owner_settlements_are_not_gaps_in_the_ledger(
         async with async_session_factory() as session:
             wallet = await session.scalar(select(Wallet).where(Wallet.code == "owner_loan_bank"))
             assert wallet is not None
-            dividends = DdsArticle(
-                code="owner_dividends",
-                name="Дивиденды",
-                movement_type="outflow",
-                activity_type="financing",
-                owner_required=True,
+            # Статья из каталога (0114/0247) — по её коду сверка узнаёт выплату дивидендов.
+            dividends = await session.scalar(
+                select(DdsArticle).where(DdsArticle.code == DIVIDENDS_ARTICLE_CODE)
             )
+            assert dividends is not None and dividends.owner_required
             repair = DdsArticle(
                 code="owner_side_repair",
                 name="Ремонт",
                 movement_type="outflow",
                 activity_type="operating",
             )
-            session.add_all([dividends, repair])
+            session.add(repair)
             await session.flush()
             # Как на проде: выдача дивидендов из Сейфа — проводка без предоплаты.
             for owner in (grigoriy, pavel):
@@ -325,7 +326,7 @@ def test_owner_settlements_are_not_gaps_in_the_ledger(
     owner_rows = [
         row
         for row in (*grigoriy_ledger.rows, *pavel_ledger.rows)
-        if row.kind == "payment" and row.amount != REPAIR
+        if row.kind in ("payment", "payout") and row.amount != REPAIR
     ]
     # Григорий: остаток + дивиденды; Павел: остаток + заём + дивиденды.
     assert sorted(row.amount for row in owner_rows) == sorted(
@@ -347,9 +348,13 @@ def test_owner_settlements_are_not_gaps_in_the_ledger(
     assert grigoriy_ledger.overdue_amount == REPAIR
     assert [(gap.counterparty_id, gap.amount) for gap in gaps] == [(grigoriy, REPAIR)]
 
-    # Остаток — прежний: ожидание документа его не касается.
-    assert grigoriy_ledger.closing_balance == OPENING["Григорий"] + DIVIDENDS + REPAIR
-    assert pavel_ledger.closing_balance == OPENING["Павел"] + LOAN_AMOUNT + DIVIDENDS
+    # Остаток — долг собственника: ожидание документа его не касается. Дивиденды в него не
+    # входят — решение владельца 25.09.2026: это выплата, а не долг (строка ``payout``).
+    assert grigoriy_ledger.closing_balance == OPENING["Григорий"] + REPAIR
+    assert pavel_ledger.closing_balance == OPENING["Павел"] + LOAN_AMOUNT
+    payouts = [row for row in (*grigoriy_ledger.rows, *pavel_ledger.rows) if row.kind == "payout"]
+    assert [row.amount for row in payouts] == [DIVIDENDS, DIVIDENDS]
+    assert all(not row.binds for row in payouts)
 
     # Очередь признания отвечает так же: из денег собственников в ней только ремонт.
     queue = client.get("/api/v1/accounting/suppliers", headers=HEADERS)

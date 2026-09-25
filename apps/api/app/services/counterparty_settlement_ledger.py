@@ -32,6 +32,29 @@
 БАРТЕР СЮДА НЕ ВХОДИТ. Бартерные документы гасятся товаром через BarterReturnLine, а не
 аллокациями: их сумма в «деньги минус документы» уводила бы остаток в минус на весь заём.
 У бартерных контрагентов свой контур и своя вкладка — здесь только денежные расчёты.
+
+ЗЕРКАЛО БАЛАНСА НА ДАТУ. Итог хронологии обязан совпадать с ``build_balance_as_of`` на сегодня.
+Само из «тех же аллокаций» это не следует: о деньгах баланс знает четыре вещи, которых голое
+«платежи минус документы» не видит. 25.09.2026 на копии прода из-за них расходились 6 карточек
+на 154 974,73 ₽. Каждое правило повторено здесь ОТДЕЛЬНОЙ строкой хронологии, а не тихой
+поправкой итога: человек должен видеть, почему остаток сдвинулся, а не верить на слово.
+
+* ``payout`` — выплата дивидендов. Решение владельца 25.09: дивиденды — выплата, а не долг
+  собственника. Строка видна, остаток не двигает (Григорий и Павел, по 50 000 ₽ из Сейфа);
+* ``refund`` — возврат денег от поставщика. Он гасит дебиторку ростом ``amount_settled``, без
+  строки гашения (``refund_counterparty_prepayments``), и аллокаций у него нет. Излишек сверх
+  открытой дебиторки остаётся обычным приходом, как и в балансе. Бартерное гашение займа
+  деньгами — не возврат (Лигай 2 822 ₽, Скачкова 10 112,13 ₽);
+* ``closure`` — предоплата, закрытая решением человека без строк гашения (``settled_on``:
+  исторический расчёт, ручная коррекция) — её датой («Поставка овощей», 38 479 ₽);
+* ``transfer`` — наш платёж закрыл документ ДРУГОГО контрагента. Баланс относит деньги по
+  документу: у того эта сумма стоит «Оплатой по проводке …», а у нас вычитается. Одна
+  проводка не может жить в двух сверках (ТОРА → УПД Скачковой, 3 561,60 ₽).
+
+Остальные расхождения с «Остатками» — вопрос к данным, а не к коду. Типичный случай: платёж
+без предоплаты и без привязки к документу. Сверка честно считает его авансом, баланс его не
+видит, и решает человек: указать месяц расхода до начала учёта или завести дебиторку. Прятать
+такие строки ради совпадения цифр нельзя — пропадёт единственный сигнал, что их надо разобрать.
 """
 
 from __future__ import annotations
@@ -46,6 +69,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    BankOperation,
     CashflowTransaction,
     Counterparty,
     CounterpartyPayableProfile,
@@ -58,9 +82,27 @@ from app.models import (
 )
 from app.models.enums import UTILITY_INVOICE_SOURCE
 from app.services import accounting_periods, clock, owner_analytics
+from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
+from app.services.supplier_prepayments import (
+    SUPPLIER_REFUND_ARTICLE_CODE,
+    not_barter_money_return,
+)
 
 # Статусы предоплат, которые ещё держат дебиторку (те же, что в плитке «Остатки»).
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
+
+# Виды строк сверки. Двигают остаток: платёж (+) и документ, возврат, закрытие решением,
+# оплата чужого документа (−). Выплата дивидендов видна, но остаток не двигает.
+ROW_PAYMENT = "payment"
+ROW_DOCUMENT = "document"
+ROW_REFUND = "refund"
+ROW_CLOSURE = "closure"
+ROW_TRANSFER = "transfer"
+ROW_PAYOUT = "payout"
+# Строки, гасящие остаток без документа: баланс на дату видит их так же, без аллокаций.
+_REDUCING_ROWS = frozenset({ROW_DOCUMENT, ROW_REFUND, ROW_CLOSURE, ROW_TRANSFER})
+# Порядок внутри дня: деньги ушли раньше, чем их закрыли, вернули или перенесли.
+_ROW_ORDER = {ROW_PAYMENT: 0, ROW_PAYOUT: 0, ROW_TRANSFER: 0}
 
 # Контуры расчётов. goods — закрывающие приходят накладными и гасятся складским контуром
 # автоматически; service — гашение ручное, и именно там копится ложная дебиторка.
@@ -136,9 +178,13 @@ def expected_by(period_end: date, expected_day: int | None) -> date:
 
 @dataclass
 class LedgerRow:
-    """Строка сверки: платёж или закрывающий документ."""
+    """Строка сверки: платёж, закрывающий документ или движение, которое баланс видит без них.
 
-    kind: str  # 'payment' | 'document'
+    ``kind`` — один из ``ROW_*``: платёж, документ, возврат денег, закрытие решением, оплата
+    чужого документа, выплата дивидендов (см. «ЗЕРКАЛО БАЛАНСА НА ДАТУ» в докстринге модуля).
+    """
+
+    kind: str
     id: uuid.UUID
     row_date: date
     amount: Decimal
@@ -149,7 +195,8 @@ class LedgerRow:
     # True, когда период выведен из даты платежа, а не сохранён пользователем/документом.
     # Предположение нужно для срока ожидания УПД, но в интерфейсе не должно выглядеть фактом.
     period_assumed: bool = False
-    # Только для платежей: сколько денег ещё не подтверждено документом.
+    # Для платежа — сколько денег ещё не подтверждено документом; для документа — неоплаченный
+    # остаток; для возврата — излишек сверх открытой дебиторки (обычный приход, остаток не гасит).
     uncovered: Decimal = Decimal("0")
     # ok — платёж закрыт документом либо документ пришёл; waiting — срок ещё не наступил;
     # overdue — срок прошёл, документа нет.
@@ -176,8 +223,13 @@ class LedgerRow:
     binds: bool = True
     # Расчёт с собственником (заём, его входящий остаток, дивиденды) — не услуга: закрывающего
     # документа по нему не будет, поэтому ни срока ожидания, ни «без документов» у строки нет.
-    # Бегущий остаток она двигает как прежде — долг собственника никуда не девается.
+    # Заём и входящий остаток двигают бегущий остаток как прежде — долг собственника никуда не
+    # девается. Дивиденды — нет: это выплата, строка ``payout``.
     owner_settlement: bool = False
+    # Только для платежа, закрытого НЕ документом: 'refund' — деньги вернул поставщик,
+    # 'decision' — предоплату закрыл человек без документа. Без признака экран писал бы у такой
+    # строки «закрыт документом», которого не было.
+    closed_by: str | None = None
 
 
 @dataclass
@@ -274,56 +326,113 @@ async def resolve_contour(session: AsyncSession, counterparty_id: uuid.UUID) -> 
     return (CONTOUR_GOODS if (warehouse or 0) > 0 else CONTOUR_SERVICE), False
 
 
-# Денежная строка до сборки в LedgerRow: (дата, id, сумма, заголовок, подпись, предоплата,
-# прямые гашения, до начала учёта, расчёт с собственником).
-_PaymentRow = tuple[
-    date, uuid.UUID, Decimal, str, str | None, SupplierPrepayment | None, Decimal, bool, bool
-]
+# Ключ денежного факта, на доли которого разнесён платёж (см. ``_money_fact``).
+_Fact = tuple[str, uuid.UUID, uuid.UUID | None]
 
 
-async def _payment_rows(session: AsyncSession, counterparty_id: uuid.UUID) -> list[_PaymentRow]:
+def _money_fact(tx: CashflowTransaction) -> _Fact:
+    """Какому денежному факту принадлежит проводка-доля: банк-операции, чеку или ей самой.
+
+    Чек делит кошелёк: безналичная и наличная части — разные деньги с разными гашениями.
+    """
+    if tx.source_id is not None and tx.source_kind == "bank_operation":
+        return ("operation", tx.source_id, None)
+    if tx.source_id is not None and tx.source_kind == "kassa_cheque":
+        return ("cheque", tx.source_id, tx.wallet_id)
+    return ("transaction", tx.id, None)
+
+
+@dataclass
+class _MoneyRow:
+    """Денежная строка до сборки в LedgerRow: всё, что нужно, без повторных запросов."""
+
+    row_date: date
+    id: uuid.UUID
+    amount: Decimal
+    title: str
+    subtitle: str | None
+    prepayment: SupplierPrepayment | None
+    # Прямые гашения закрывающих документов этим платежом.
+    direct_total: Decimal
+    # Платёж за период до начала учёта: остаток не двигает (см. ``LedgerRow.binds``).
+    before_start: bool
+    owner_settlement: bool
+    # Выплата дивидендов без предоплаты: деньги ушли собственнику, но долгом не стали.
+    dividend: bool = False
+
+
+@dataclass
+class _Transfer:
+    """Часть нашего платежа, закрывшая документ другого контрагента."""
+
+    row_date: date
+    allocation_id: uuid.UUID
+    amount: Decimal
+    counterparty_id: uuid.UUID
+    document_number: str | None
+
+
+async def _payment_rows(
+    session: AsyncSession, counterparty_id: uuid.UUID
+) -> tuple[list[_MoneyRow], list[_Transfer], list[SupplierPrepayment]]:
     """Денежные строки: ДДС-проводки контрагенту + входящие остатки без движения денег.
 
-    Возвращает кортежи ``_PaymentRow``, чтобы вызывающий собрал из них строки сверки, не
-    повторяя запросы.
+    Заодно отдаёт то, что из тех же запросов нужно вызывающему: оплаты чужих документов нашими
+    проводками и все предоплаты контрагента.
     """
     tx_rows = (
         await session.execute(
-            select(CashflowTransaction, Wallet.name, DdsArticle.name)
+            select(CashflowTransaction, Wallet.name, DdsArticle.name, DdsArticle.code)
             .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
             .outerjoin(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
             .where(
                 CashflowTransaction.direction == "out",
                 CashflowTransaction.counterparty_id == counterparty_id,
-                CashflowTransaction.quality_status != "excluded",
+                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
             )
             .order_by(CashflowTransaction.operation_date, CashflowTransaction.created_at)
         )
     ).all()
 
     tx_ids = [row[0].id for row in tx_rows]
-    # Мультисплит: у долей общий source_id банк-операции. «Ничьи» аллокации операции вешаем
-    # на первую по времени долю — иначе одно гашение попало бы в каждую строку и покрытие
-    # задвоилось бы (та же оговорка, что в реестре платежей).
-    bank_op_to_tx: dict[uuid.UUID, uuid.UUID] = {}
+    # Один денежный факт бывает разнесён на несколько долей — по контрагентам или статьям: доли
+    # разбора банк-операции делят её source_id, доли кассового чека — сам чек и кошелёк. Гашение
+    # такого факта часто помечено не долей, а операцией («ничьё»), и оно одно на все доли.
+    fact_of = {row[0].id: _money_fact(row[0]) for row in tx_rows}
+    bank_op_fact: dict[uuid.UUID, _Fact] = {}
     for row in tx_rows:
         tx = row[0]
         if tx.source_kind == "bank_operation" and tx.source_id is not None:
-            bank_op_to_tx.setdefault(tx.source_id, tx.id)
+            bank_op_fact.setdefault(tx.source_id, fact_of[tx.id])
+    # Второй конец того же моста — ссылка операции выписки на свою проводку (он же в «бюджете
+    # платежа» ``payment_allocated_amount``). Через него привязаны оплаты кассовых чеков картой:
+    # проводка у чека ``kassa_cheque``, а его оплата знает только ``bank_operation_id``. Без
+    # моста сверка «Местного закупа» не видела 149 оплат на 342 974 ₽ и писала «без документов
+    # 191 521,69 ₽», хотя документы давно оплачены. Итог остатка страдал меньше, чем вид: пара
+    # «платёж + документ» сходится в «деньги минус документы» и без привязки.
+    if tx_ids:
+        bridged = await session.execute(
+            select(BankOperation.id, BankOperation.cashflow_transaction_id).where(
+                BankOperation.cashflow_transaction_id.in_(tx_ids)
+            )
+        )
+        for op_id, tx_id in bridged.all():
+            bank_op_fact.setdefault(op_id, fact_of[tx_id])
 
-    direct_allocs: list[InvoicePaymentAllocation] = []
-    if tx_ids or bank_op_to_tx:
+    direct_allocs: list[tuple[InvoicePaymentAllocation, SupplierInvoice]] = []
+    if tx_ids or bank_op_fact:
         conditions = []
         if tx_ids:
             conditions.append(InvoicePaymentAllocation.cashflow_transaction_id.in_(tx_ids))
-        if bank_op_to_tx:
+        if bank_op_fact:
             conditions.append(
-                InvoicePaymentAllocation.bank_operation_id.in_(list(bank_op_to_tx.keys()))
+                InvoicePaymentAllocation.bank_operation_id.in_(list(bank_op_fact.keys()))
             )
-        direct_allocs = list(
-            (
-                await session.scalars(
-                    select(InvoicePaymentAllocation)
+        direct_allocs = [
+            (row[0], row[1])
+            for row in (
+                await session.execute(
+                    select(InvoicePaymentAllocation, SupplierInvoice)
                     .join(
                         SupplierInvoice,
                         SupplierInvoice.id == InvoicePaymentAllocation.invoice_id,
@@ -335,7 +444,7 @@ async def _payment_rows(session: AsyncSession, counterparty_id: uuid.UUID) -> li
                     )
                 )
             ).all()
-        )
+        ]
 
     prepayments = list(
         (
@@ -351,41 +460,86 @@ async def _payment_rows(session: AsyncSession, counterparty_id: uuid.UUID) -> li
     }
     owner_articles = await owner_analytics.settlement_article_ids(session)
 
-    out: list[_PaymentRow] = []
-    for tx, wallet_name, article_name in tx_rows:
-        allocs = [
-            a
-            for a in direct_allocs
-            if a.cashflow_transaction_id == tx.id
-            or (
-                a.cashflow_transaction_id is None
-                and a.bank_operation_id is not None
-                and bank_op_to_tx.get(a.bank_operation_id) == tx.id
-            )
-        ]
-        direct_total = sum((money(a.amount) for a in allocs), Decimal("0"))
+    # Покрытие долей. Сначала гашения, помеченные самой долей; затем «ничьи» гашения факта и
+    # излишки долей раскладываются по его долям в порядке записи. Прежде «ничьё» гашение целиком
+    # вешалось на первую долю: покрытие не задваивалось, но остальные доли того же оплаченного
+    # чека краснели «без документов» — у «Местного закупа» 81 строка на 50 558,88 ₽.
+    own_allocs: dict[uuid.UUID, list[tuple[InvoicePaymentAllocation, SupplierInvoice]]] = {}
+    pool: dict[_Fact, Decimal] = {}
+    for alloc, invoice in direct_allocs:
+        if alloc.cashflow_transaction_id in fact_of:
+            own_allocs.setdefault(alloc.cashflow_transaction_id, []).append((alloc, invoice))
+        elif alloc.cashflow_transaction_id is None and alloc.bank_operation_id in bank_op_fact:
+            fact = bank_op_fact[alloc.bank_operation_id]
+            pool[fact] = pool.get(fact, Decimal("0")) + money(alloc.amount)
+    covered: dict[uuid.UUID, Decimal] = {}
+    for row in tx_rows:
+        tx = row[0]
+        own = sum((money(a.amount) for a, _inv in own_allocs.get(tx.id, [])), Decimal("0"))
+        covered[tx.id] = min(money(tx.amount), own)
+        fact = fact_of[tx.id]
+        pool[fact] = pool.get(fact, Decimal("0")) + own - covered[tx.id]
+    for row in tx_rows:
+        tx = row[0]
+        fact = fact_of[tx.id]
+        extra = min(money(tx.amount) - covered[tx.id], pool.get(fact, Decimal("0")))
+        if extra > 0:
+            covered[tx.id] += extra
+            pool[fact] -= extra
+
+    out: list[_MoneyRow] = []
+    transfers: list[_Transfer] = []
+    for tx, wallet_name, article_name, article_code in tx_rows:
+        direct_total = covered[tx.id]
         prepayment = prepayment_by_tx.get(tx.id)
+        for alloc, invoice in own_allocs.get(tx.id, []):
+            # Ровно то условие, по которому контрагент документа показывает эти деньги у себя
+            # строкой «Оплата по проводке …» (``external_rows`` в ``build_ledger``): проводка
+            # прямо на аллокации, не зачёт предоплатой, документ денежный. Шире не брать: у
+            # доли мультисплита «ничьи» гашения операции принадлежат всем долям сразу.
+            if (
+                alloc.cashflow_transaction_id == tx.id
+                and alloc.prepayment_id is None
+                and invoice.counterparty_id is not None
+                and invoice.counterparty_id != counterparty_id
+                and invoice.direction == "payable"
+                and invoice.barter_role is None
+            ):
+                transfers.append(
+                    _Transfer(
+                        row_date=tx.operation_date,
+                        allocation_id=alloc.id,
+                        amount=money(alloc.amount),
+                        counterparty_id=invoice.counterparty_id,
+                        document_number=invoice.number,
+                    )
+                )
         out.append(
-            (
-                tx.operation_date,
-                tx.id,
-                money(tx.amount),
-                wallet_name or "Платёж",
-                article_name or (tx.payment_purpose or tx.comment),
-                prepayment,
-                direct_total,
+            _MoneyRow(
+                row_date=tx.operation_date,
+                id=tx.id,
+                amount=money(tx.amount),
+                title=wallet_name or "Платёж",
+                subtitle=article_name or (tx.payment_purpose or tx.comment),
+                prepayment=prepayment,
+                direct_total=direct_total,
                 # Платёж за период до начала учёта гасит обязательство, которого в системе
                 # нет: дебиторкой он не становится и бегущий остаток не двигает.
-                tx.expense_month is not None
+                before_start=tx.expense_month is not None
                 and tx.expense_month < accounting_periods.ACCOUNTING_START,
                 # С предоплатой — ровно те поля, что смотрит очередь признания. Без неё (выдача
                 # дивидендов из Сейфа) очереди смотреть не на что, и признак берётся со статьи
                 # самой проводки: иначе строка «ждала бы документ» до 10-го и краснела с 11-го.
-                owner_analytics.is_owner_settlement(
+                owner_settlement=owner_analytics.is_owner_settlement(
                     kind=prepayment.kind if prepayment else None,
                     article_id=prepayment.article_id if prepayment else tx.article_id,
                     owner_articles=owner_articles,
                 ),
+                # Только без предоплаты: баланс видит дебиторку ровно там, где есть её запись.
+                # Если правило 1 когда-нибудь заведёт её на дивиденды, сверка покажет долг
+                # вместе с балансом, а не спрячет расхождение.
+                dividend=prepayment is None
+                and article_code == owner_analytics.DIVIDENDS_ARTICLE_CODE,
             )
         )
 
@@ -398,22 +552,74 @@ async def _payment_rows(session: AsyncSession, counterparty_id: uuid.UUID) -> li
     for sp in prepayments:
         if sp.opening and sp.cashflow_transaction_id is None:
             out.append(
-                (
+                _MoneyRow(
                     # Дата записи — день по Москве, тот же, что у баланса на дату.
-                    clock.moscow_date(sp.created_at),
-                    sp.id,
-                    money(sp.amount),
-                    "Входящий остаток",
-                    sp.note,
-                    sp,
-                    Decimal("0"),
-                    False,
-                    owner_analytics.is_owner_settlement(
+                    row_date=clock.moscow_date(sp.created_at),
+                    id=sp.id,
+                    amount=money(sp.amount),
+                    title="Входящий остаток",
+                    subtitle=sp.note,
+                    prepayment=sp,
+                    direct_total=Decimal("0"),
+                    before_start=False,
+                    owner_settlement=owner_analytics.is_owner_settlement(
                         kind=sp.kind, article_id=sp.article_id, owner_articles=owner_articles
                     ),
                 )
             )
-    return out
+    return out, transfers, prepayments
+
+
+def _closed_on(prepayment: SupplierPrepayment, *, has_allocations: bool) -> date | None:
+    """День, когда предоплату закрыл человек без строк гашения; None — закрыта не так.
+
+    Зеркало исключения в ``build_balance_as_of``: дозачётные остатки и ручные коррекции ставят
+    ``settled`` прямым присвоением (``scripts/writeoff_pre_accounting``, разбор исторических
+    расчётов), не создавая аллокаций. Проверяется наличие аллокаций ВООБЩЕ: частично зачтённая
+    и потом закрытая предоплата — не этот случай. Дата — ``settled_on``, у строк старше миграции
+    0273 — день записи по Москве, как у баланса.
+    """
+    if prepayment.status != "settled" or has_allocations:
+        return None
+    return prepayment.settled_on or clock.moscow_date(prepayment.created_at)
+
+
+async def _refund_rows(
+    session: AsyncSession, counterparty_id: uuid.UUID
+) -> list[tuple[CashflowTransaction, str | None]]:
+    """Возвраты денег от поставщика — ровно те приходы, что баланс вычитает из дебиторки."""
+    return [
+        (row[0], row[1])
+        for row in (
+            await session.execute(
+                select(CashflowTransaction, Wallet.name)
+                .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
+                .outerjoin(Wallet, Wallet.id == CashflowTransaction.wallet_id)
+                .where(
+                    CashflowTransaction.direction == "in",
+                    CashflowTransaction.counterparty_id == counterparty_id,
+                    CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                    DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+                    not_barter_money_return(),
+                )
+                .order_by(CashflowTransaction.operation_date, CashflowTransaction.created_at)
+            )
+        ).all()
+    ]
+
+
+def _balance_delta(row: LedgerRow) -> Decimal:
+    """Как строка двигает бегущий остаток: плюс — дебиторка растёт, минус — гаснет."""
+    if not row.binds:
+        return Decimal("0")
+    if row.kind == ROW_PAYMENT:
+        return row.amount
+    if row.kind == ROW_REFUND:
+        # Излишек возврата сверх открытой дебиторки — обычный приход: гасить ему нечего.
+        return -(row.amount - row.uncovered)
+    if row.kind in _REDUCING_ROWS:
+        return -row.amount
+    return Decimal("0")
 
 
 async def build_ledger(
@@ -436,7 +642,31 @@ async def build_ledger(
     expected_day = profile.closing_doc_expected_day if profile else None
     contour, contour_manual = await resolve_contour(session, counterparty_id)
 
-    payments = await _payment_rows(session, counterparty_id)
+    payments, transfers, prepayments = await _payment_rows(session, counterparty_id)
+    # Сколько зачтено из каждой предоплаты строками гашения — без возвратов и ручных закрытий,
+    # которые растят ``amount_settled`` мимо аллокаций.
+    allocated_by_prepayment: dict[uuid.UUID, Decimal] = {}
+    if prepayments:
+        allocated_by_prepayment = {
+            row[0]: money(row[1])
+            for row in (
+                await session.execute(
+                    select(
+                        InvoicePaymentAllocation.prepayment_id,
+                        func.sum(InvoicePaymentAllocation.amount),
+                    )
+                    .where(
+                        InvoicePaymentAllocation.prepayment_id.in_([sp.id for sp in prepayments])
+                    )
+                    .group_by(InvoicePaymentAllocation.prepayment_id)
+                )
+            ).all()
+        }
+    closed_on = {
+        sp.id: day
+        for sp in prepayments
+        if (day := _closed_on(sp, has_allocations=sp.id in allocated_by_prepayment)) is not None
+    }
 
     doc_rows = (
         await session.execute(
@@ -474,7 +704,7 @@ async def build_ledger(
     # проводка, помеченная «ООО ТОРА» (либо ошибка разметки в ДДС, либо платёж за третье лицо).
     # Без этой строки документ в хронологии есть, а денег под ним нет — остаток занижается ровно
     # на её сумму и расходится с плиткой. Показываем платёж честно и подписываем, чей он.
-    seen_tx = {row[1] for row in payments}
+    seen_tx = {row.id for row in payments}
     external_rows: list[tuple[date, uuid.UUID, Decimal, str]] = []
     external_ids = [
         alloc.cashflow_transaction_id
@@ -513,17 +743,32 @@ async def build_ledger(
             )
 
     rows: list[LedgerRow] = []
-    for (
-        row_date,
-        row_id,
-        amount,
-        title,
-        subtitle,
-        prepayment,
-        direct_total,
-        before_start,
-        owner_settlement,
-    ) in payments:
+    for money_row in payments:
+        prepayment = money_row.prepayment
+        if money_row.dividend:
+            # Решение владельца 25.09.2026: дивиденды — выплата собственнику, а не его долг.
+            # Строка остаётся в хронологии (деньги ушли этому человеку), но остаток не двигает и
+            # в «заплачено» не входит. Пока она была платежом, сверка Григория показывала
+            # 1 070 000 ₽ против 1 020 000 ₽ в «Остатках» — ровно на сумму выплаты из Сейфа.
+            rows.append(
+                LedgerRow(
+                    kind=ROW_PAYOUT,
+                    id=money_row.id,
+                    row_date=money_row.row_date,
+                    amount=money_row.amount,
+                    title="Выплата дивидендов",
+                    subtitle=money_row.title,
+                    period_start=None,
+                    period_end=None,
+                    status="ok",
+                    binds=False,
+                    owner_settlement=True,
+                )
+            )
+            continue
+        row_date, row_id, amount = money_row.row_date, money_row.id, money_row.amount
+        title, subtitle = money_row.title, money_row.subtitle
+        direct_total, owner_settlement = money_row.direct_total, money_row.owner_settlement
         period_known = bool(
             prepayment
             and prepayment.service_period_start is not None
@@ -560,7 +805,7 @@ async def build_ledger(
                 status = "overdue"
         rows.append(
             LedgerRow(
-                kind="payment",
+                kind=ROW_PAYMENT,
                 id=row_id,
                 row_date=row_date,
                 amount=amount,
@@ -576,15 +821,22 @@ async def build_ledger(
                 if status == "overdue" and deadline is not None
                 else 0,
                 prepayment_id=prepayment.id if prepayment else None,
-                binds=not before_start,
+                binds=not money_row.before_start,
                 owner_settlement=owner_settlement,
+                closed_by=(
+                    "decision"
+                    if prepayment is not None and prepayment.id in closed_on
+                    else "refund"
+                    if prepayment is not None and prepayment.status == "refunded"
+                    else None
+                ),
             )
         )
 
     for row_date, row_id, amount, title in external_rows:
         rows.append(
             LedgerRow(
-                kind="payment",
+                kind=ROW_PAYMENT,
                 id=row_id,
                 row_date=row_date,
                 amount=amount,
@@ -596,6 +848,37 @@ async def build_ledger(
                 status="ok",
             )
         )
+
+    # Обратная сторона той же проводки: наш платёж закрыл документ другого контрагента. Долг он
+    # гасит у того (баланс относит деньги по документу), и у нас они дебиторкой не становятся.
+    # Пока здесь строки не было, одна проводка жила в двух сверках: 3 561,60 ₽ от 30.06 стояли
+    # и у ТОРА авансом, и у ИП Скачковой «Оплатой по проводке ТОРА».
+    if transfers:
+        payee_names = dict(
+            (
+                await session.execute(
+                    select(Counterparty.id, Counterparty.name).where(
+                        Counterparty.id.in_({t.counterparty_id for t in transfers})
+                    )
+                )
+            ).all()
+        )
+        for transfer in transfers:
+            payee = payee_names.get(transfer.counterparty_id)
+            number = f" № {transfer.document_number}" if transfer.document_number else ""
+            rows.append(
+                LedgerRow(
+                    kind=ROW_TRANSFER,
+                    id=transfer.allocation_id,
+                    row_date=transfer.row_date,
+                    amount=transfer.amount,
+                    title=f"Оплачен документ «{payee}»" if payee else "Оплачен чужой документ",
+                    subtitle=f"УПД{number}: долг гасится в сверке с ним — проверьте разметку в ДДС",
+                    period_start=None,
+                    period_end=None,
+                    status="ok",
+                )
+            )
 
     for doc in documents:
         paid = sum((money(a.amount) for a in doc_allocs.get(doc.id, [])), Decimal("0"))
@@ -643,7 +926,7 @@ async def build_ledger(
 
         rows.append(
             LedgerRow(
-                kind="document",
+                kind=ROW_DOCUMENT,
                 id=doc.id,
                 row_date=doc_date,
                 amount=money(doc.amount),
@@ -659,21 +942,70 @@ async def build_ledger(
             )
         )
 
-    rows.sort(key=lambda r: (r.row_date, 0 if r.kind == "payment" else 1))
+    # Предоплата, закрытая решением человека без документа, — событие её датой. Без этой строки
+    # платёж «Поставке овощей» 38 479 ₽ от 23.06, закрытый 20.07 историческим расчётом, висел бы
+    # авансом вечно: карточка писала «мы заплатили вперёд 22 397 ₽», а должны мы 17 398 ₽.
+    for sp in prepayments:
+        day = closed_on.get(sp.id)
+        if day is None:
+            continue
+        rows.append(
+            LedgerRow(
+                kind=ROW_CLOSURE,
+                id=sp.id,
+                row_date=day,
+                amount=money(sp.amount),
+                title="Закрыто без документа",
+                subtitle=sp.note or "предоплата закрыта решением человека",
+                period_start=sp.service_period_start,
+                period_end=sp.service_period_end,
+                status="ok",
+                prepayment_id=sp.id,
+                # Как у баланса: до дня решения предоплата — живая дебиторка.
+                binds=day <= today,
+            )
+        )
+
+    # Возврат гасит только то, что ещё открыто: излишек — обычный приход (так его оставляет
+    # ``refund_counterparty_prepayments``, так его обрезает баланс). Открытое считаем так же,
+    # как баланс: сумма предоплаты минус её строки гашения, без закрытых решением человека.
+    refundable = sum(
+        (
+            _clamp(money(sp.amount) - allocated_by_prepayment.get(sp.id, Decimal("0")))
+            for sp in prepayments
+            if not (sp.id in closed_on and closed_on[sp.id] <= today)
+        ),
+        Decimal("0"),
+    )
+    for refund, wallet_name in await _refund_rows(session, counterparty_id):
+        amount = money(refund.amount)
+        applied = min(amount, refundable)
+        refundable -= applied
+        rows.append(
+            LedgerRow(
+                kind=ROW_REFUND,
+                id=refund.id,
+                row_date=refund.operation_date,
+                amount=amount,
+                title="Возврат денег",
+                subtitle=refund.payment_purpose or refund.comment or wallet_name,
+                period_start=None,
+                period_end=None,
+                uncovered=amount - applied,
+                status="ok",
+            )
+        )
+
+    rows.sort(key=lambda r: (r.row_date, _ROW_ORDER.get(r.kind, 1)))
 
     opening = Decimal("0")
     running = Decimal("0")
     visible: list[LedgerRow] = []
     for row in rows:
-        if row.kind == "payment":
-            delta = row.amount if row.binds else Decimal("0")
-        elif row.binds:
-            delta = -row.amount
-        else:
-            # Будущий или информационный документ виден в хронологии, но остаток не двигает —
-            # обязательства по нему нет. Иначе сверка расходится с плиткой «Остатки».
-            delta = Decimal("0")
-        running += delta
+        # Будущий или информационный документ, выплата дивидендов, платёж до начала учёта видны
+        # в хронологии, но остаток не двигают — обязательства по ним нет. Иначе сверка
+        # расходится с плиткой «Остатки».
+        running += _balance_delta(row)
         if date_from is not None and row.row_date < date_from:
             opening = running
             continue
@@ -698,14 +1030,18 @@ async def build_ledger(
                 has_overdue=False,
             ),
         )
-        if row.kind == "payment":
+        if row.kind == ROW_PAYMENT:
             bucket.paid += row.amount
             bucket.gap += row.uncovered
             bucket.has_overdue = bucket.has_overdue or row.status == "overdue"
-        else:
+        elif row.kind == ROW_DOCUMENT:
             bucket.documented += row.amount
 
-    visible.sort(key=lambda r: (r.row_date, 0 if r.kind == "payment" else 1), reverse=True)
+    # Свежими сверху — ровно обратным порядком накопления, а не повторной сортировкой: у
+    # строк одного дня ключ равный, и ``sort(reverse=True)`` оставлял их в прямом порядке.
+    # Платёж и его «Оплачен документ …» за 30.06 стояли бы вверх ногами, и «остаток после»
+    # в соседних строках читался бы задом наперёд.
+    visible.reverse()
     return Ledger(
         counterparty_id=counterparty_id,
         counterparty_name=counterparty.name,
@@ -714,14 +1050,14 @@ async def build_ledger(
         closing_doc_expected_day=expected_day,
         opening_balance=opening,
         closing_balance=running,
-        total_paid=sum((r.amount for r in visible if r.kind == "payment"), Decimal("0")),
-        total_documented=sum((r.amount for r in visible if r.kind == "document"), Decimal("0")),
+        total_paid=sum((r.amount for r in visible if r.kind == ROW_PAYMENT), Decimal("0")),
+        total_documented=sum((r.amount for r in visible if r.kind == ROW_DOCUMENT), Decimal("0")),
         overdue_amount=sum(
-            (r.uncovered for r in visible if r.kind == "payment" and r.status == "overdue"),
+            (r.uncovered for r in visible if r.kind == ROW_PAYMENT and r.status == "overdue"),
             Decimal("0"),
         ),
         self_billed_amount=sum(
-            (r.amount for r in visible if r.kind == "document" and r.self_billed),
+            (r.amount for r in visible if r.kind == ROW_DOCUMENT and r.self_billed),
             Decimal("0"),
         ),
         rows=visible,
@@ -778,7 +1114,7 @@ async def list_gaps(
         ledger = await build_ledger(session, cp_id, today=today)
         buckets: dict[tuple[date, date], GapRow] = {}
         for row in ledger.rows:
-            if row.kind != "payment" or row.status != "overdue":
+            if row.kind != ROW_PAYMENT or row.status != "overdue":
                 continue
             key = (row.period_start or row.row_date, row.period_end or row.row_date)
             existing = buckets.get(key)
