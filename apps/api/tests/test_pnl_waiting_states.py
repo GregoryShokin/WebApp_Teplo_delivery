@@ -1,4 +1,4 @@
-"""Состояние ожидания документа в ОПиУ: тревога — только просрочка.
+"""Состояние ожидания документа в ОПиУ: тревога — только просрочка и не вступивший документ.
 
 До 25.09.2026 каждое «оплачено, документа нет» становилось предупреждением. За сентябрь их
 набралось восемь строк на 334 459,84 ₽ — и ни одной настоящей: период ещё шёл, документы
@@ -42,6 +42,7 @@ from app.services.pnl.sources.waiting import (
     STATE_DOCUMENT_PENDING,
     STATE_OVERDUE,
     STATE_PERIOD_RUNNING,
+    STATE_STALLED,
     WaitingItem,
     WaitingLayer,
     waiting_state,
@@ -55,7 +56,7 @@ TODAY = date(2026, 9, 25)
 
 
 class TestWaitingState:
-    """Какое из четырёх состояний у ожидания. Даты — с прода сентября 2026."""
+    """Какое из пяти состояний у ожидания. Даты — с прода сентября 2026."""
 
     def test_running_period_is_not_overdue(self) -> None:
         # Реклама О.О за сентябрь, 25.09: услуга ещё оказывается, документа быть не может.
@@ -103,6 +104,81 @@ class TestWaitingState:
             today=TODAY,
         ) == (STATE_OVERDUE, date(2026, 9, 10), 15)
 
+    def test_document_still_pending_through_its_own_day(self) -> None:
+        # Активация и признание идут ночью 01.10; весь этот день документ законно ждёт.
+        assert waiting_state(
+            period_end=date(2026, 9, 30),
+            incoming_on=date(2026, 10, 1),
+            deadline=date(2026, 10, 10),
+            today=date(2026, 10, 1),
+        ) == (STATE_DOCUMENT_PENDING, date(2026, 10, 1), 0)
+
+    def test_document_not_applied_on_its_day_is_stalled_next_day(self) -> None:
+        # 02.10 акт АЙКО всё ещё отложен — ночь 01.10 не отработала. «Вступит 01.10» — уже
+        # неправда, и срок документа (10.10) тут ни при чём: тревога сразу.
+        assert waiting_state(
+            period_end=date(2026, 9, 30),
+            incoming_on=date(2026, 10, 1),
+            deadline=date(2026, 10, 10),
+            today=date(2026, 10, 2),
+        ) == (STATE_STALLED, date(2026, 10, 1), 1)
+
+    def test_stalled_document_never_falls_into_deadline_states(self) -> None:
+        # Реплей копии прода на 15.11: до правки такое ожидание так и висело «вступит 01.10».
+        # И не «просрочка»: документ у нас, писать контрагенту незачем.
+        assert waiting_state(
+            period_end=date(2026, 9, 30),
+            incoming_on=date(2026, 10, 1),
+            deadline=date(2026, 10, 10),
+            today=date(2026, 11, 15),
+        ) == (STATE_STALLED, date(2026, 10, 1), 45)
+
+
+def _incoming(on: date, basis: str) -> waiting_source._Incoming:
+    return waiting_source._Incoming(
+        article_id=None,
+        period_start=date(2026, 9, 1),
+        period_end=date(2026, 9, 30),
+        on=on,
+        basis=basis,
+    )
+
+
+class TestMatchIncoming:
+    """Чем закроется ожидание — и почему зависшее важнее того, что вступит позже."""
+
+    def _match(self, candidates: list, today: date):
+        return waiting_source._match_incoming(
+            candidates,
+            article_id=uuid.uuid4(),
+            period_start=date(2026, 9, 1),
+            period_end=date(2026, 9, 30),
+            today=today,
+        )
+
+    def test_waiting_closes_when_the_last_one_lands(self) -> None:
+        # Начисление встанет 01.10, а сам документ датирован 05.10 — ждём до 05.10.
+        candidates = [
+            _incoming(date(2026, 10, 1), waiting_source.BASIS_AGREEMENT),
+            _incoming(date(2026, 10, 5), waiting_source.BASIS_DOCUMENT),
+        ]
+        assert self._match(candidates, TODAY) == (
+            date(2026, 10, 5),
+            waiting_source.BASIS_DOCUMENT,
+        )
+
+    def test_missed_one_is_not_hidden_behind_a_later_one(self) -> None:
+        # 03.10 начисление за сентябрь так и не встало. Документ 05.10 ещё впереди, но
+        # «вступит 05.10» заслонило бы зависшее на два дня — и неизвестно, встанет ли оно.
+        candidates = [
+            _incoming(date(2026, 10, 1), waiting_source.BASIS_AGREEMENT),
+            _incoming(date(2026, 10, 5), waiting_source.BASIS_DOCUMENT),
+        ]
+        assert self._match(candidates, date(2026, 10, 3)) == (
+            date(2026, 10, 1),
+            waiting_source.BASIS_AGREEMENT,
+        )
+
 
 class TestStateLabel:
     """Одни и те же слова в строке отчёта, расшифровке и реестре."""
@@ -140,6 +216,28 @@ class TestStateLabel:
     def test_overdue_names_days_and_deadline(self) -> None:
         item = self._item(state=STATE_OVERDUE, state_date=date(2026, 9, 10), overdue_days=15)
         assert waiting_source.state_label(item) == "документ просрочен на 15 дн. (ждали до 10.09)"
+
+    def test_stalled_says_what_should_have_happened_and_when(self) -> None:
+        labels = {
+            basis: waiting_source.state_label(
+                self._item(state=STATE_STALLED, state_date=date(2026, 10, 1), basis=basis)
+            )
+            for basis in (
+                waiting_source.BASIS_DOCUMENT,
+                waiting_source.BASIS_AGREEMENT,
+                waiting_source.BASIS_ACCRUAL,
+            )
+        }
+        assert labels == {
+            waiting_source.BASIS_DOCUMENT: (
+                "документ получен, должен был вступить 01.10 — не вступил"
+            ),
+            # Аренда: ни «документа», ни «просрочки» — арендодатель бумаг не выставляет.
+            waiting_source.BASIS_AGREEMENT: (
+                "по договору должно было начислиться 01.10 — не начислено"
+            ),
+            waiting_source.BASIS_ACCRUAL: "расход должен был начислиться 01.10 — не начислен",
+        }
 
 
 def _line(code: str) -> LineValue:
@@ -272,6 +370,52 @@ class TestWaitingOnTheLine:
         [component] = lines["telecom"].components
         assert component.unrecognized_paid == Decimal("1200.00")
         assert component.note == "документ просрочен на 34 дн. (ждали до 10.08)"
+
+    def test_stalled_raises_its_own_alarm_not_overdue(self) -> None:
+        # Аренда за сентябрь должна была начислиться 01.10 и не начислилась. Тревога — да, но
+        # «запросите документ у контрагента» о ней было бы неправдой: документ у нас.
+        lines = {"rent_chernikova": _line("rent_chernikova")}
+        layer = self._layer(
+            _waiting(
+                self.ARTICLE,
+                "50000.00",
+                STATE_STALLED,
+                state_date=date(2026, 10, 1),
+                overdue_days=45,
+                basis=waiting_source.BASIS_AGREEMENT,
+                counterparty_name="Виталий",
+            ),
+            _waiting(
+                self.ARTICLE,
+                "70000.00",
+                STATE_OVERDUE,
+                state_date=date(2026, 10, 20),
+                overdue_days=26,
+                counterparty_name="Виталий",
+            ),
+        )
+        article_lines = {self.ARTICLE: "rent_chernikova"}
+
+        projector._apply_waiting(lines, layer, article_lines)
+        overdue = projector._overdue_document_warnings(layer, article_lines, lines)
+        stalled = projector._stalled_document_warnings(layer, article_lines, lines)
+
+        assert [warning.amount for warning in overdue] == [Decimal("70000.00")]
+        assert [(warning.code, warning.amount) for warning in stalled] == [
+            ("stalled_document", Decimal("50000.00"))
+        ]
+        assert (
+            "Виталий — 50\u00a0000,00 ₽ (по договору должно было начислиться 01.10 — не начислено)"
+            in stalled[0].message
+        )
+        assert "Контрагенту писать не нужно" in stalled[0].message
+        assert {
+            component.waiting_state: component.status
+            for component in lines["rent_chernikova"].components
+        } == {
+            STATE_STALLED: LineStatus.OVERDUE_DOCUMENT,
+            STATE_OVERDUE: LineStatus.OVERDUE_DOCUMENT,
+        }
 
     def test_zero_line_waiting_for_overdue_document_says_so(self) -> None:
         line = _line("telecom")
@@ -635,5 +779,83 @@ def test_report_raises_only_the_overdue_document(async_session_factory) -> None:
                 STATE_DOCUMENT_PENDING,
                 "документ получен, вступит 01.10",
             )
+
+    asyncio.run(scenario())
+
+
+def test_document_not_applied_by_its_day_raises_alarm(async_session_factory, monkeypatch) -> None:
+    """Реплей копии прода на 15.11: ночь 01.10 не отработала — ожидание не висит «вступит 01.10».
+
+    До 25.09.2026 ``waiting_state`` держал ``document_pending`` при любой ``incoming_on``, и
+    если джоба активации или признания не отработала, отчёт вечно обещал «вступит 01.10»:
+    так стояли 137 685,59 ₽ в пяти строках, когда весь остальной сентябрь уже был
+    просрочкой. Тревога должна быть, но не «запросите документ»: документ у нас, а аренду
+    арендодатель бумагой и не закрывает.
+    """
+    from cp_helpers import make_counterparty
+
+    from app.services import clock
+    from app.services.pnl import ledgers
+
+    async def scenario() -> None:
+        async with async_session_factory() as session:
+            automation = await _article(session, "automation")
+            rent = await _article(session, "rent_chernikova")
+            aiko = await make_counterparty(session, name="АО «АЙКО»", inn="7705840005")
+            landlord = await make_counterparty(session, name="Виталий", cp_type="individual")
+            await _prepaid(session, aiko.id, automation.id, "16430.00", SEPTEMBER)
+            await _pending_closing(
+                session, aiko.id, "16430.00", invoice_date=date(2026, 9, 1), period=SEPTEMBER
+            )
+            await _advance(session, landlord.id, rent.id, "50000.00", date(2026, 9, 1))
+            await _pending_closing(
+                session,
+                landlord.id,
+                "50000.00",
+                invoice_date=date(2026, 9, 30),
+                period=SEPTEMBER,
+                source="lease",
+                article_id=rent.id,
+            )
+            await session.commit()
+
+            # В сам день 01.10 ночная проводка могла ещё не пройти — ждём законно.
+            on_the_day = await projector.build_report(
+                session, date(2026, 9, 1), today=date(2026, 10, 1)
+            )
+            assert not [
+                w for w in on_the_day.warnings if w.code in {"overdue_document", "stalled_document"}
+            ]
+
+            report = await projector.build_report(
+                session, date(2026, 9, 1), today=date(2026, 11, 15)
+            )
+            stalled = {w.line_code: w for w in report.warnings if w.code == "stalled_document"}
+            assert set(stalled) == {"automation", "rent_chernikova"}
+            assert stalled["automation"].amount == Decimal("16430.00")
+            assert "должен был вступить 01.10 — не вступил" in stalled["automation"].message
+            assert (
+                "по договору должно было начислиться 01.10 — не начислено"
+                in stalled["rent_chernikova"].message
+            )
+            # Документ у нас — просрочкой документа это не называется ни в одной строке.
+            assert not [w for w in report.warnings if w.code == "overdue_document"]
+
+            # Пометка на строке — красная. Сама строка здесь с суммой (касса аренды стоит в ней
+            # деньгами), поэтому её статус решает сумма, а не ожидание.
+            rent_line = next(line for line in report.lines if line.code == "rent_chernikova")
+            [note] = [c for c in rent_line.components if c.unrecognized_paid > 0]
+            assert (note.waiting_state, note.status) == (
+                STATE_STALLED,
+                LineStatus.OVERDUE_DOCUMENT,
+            )
+
+            # Реестр признания считает зависшее отдельно от просрочки и ставит его первым.
+            monkeypatch.setattr(clock, "moscow_today", lambda: date(2026, 11, 15))
+            ledger = await ledgers.build_recognition_ledger(session, date(2026, 9, 1))
+            assert ledger.totals.waiting_stalled == Decimal("66430.00")
+            assert ledger.totals.waiting_overdue == Decimal("0.00")
+            waiting_rows = [row for row in ledger.rows if row.status == "waiting_document"]
+            assert {row.waiting_state for row in waiting_rows} == {STATE_STALLED}
 
     asyncio.run(scenario())

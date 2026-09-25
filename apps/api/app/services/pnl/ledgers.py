@@ -1496,7 +1496,7 @@ class RecognitionLedgerRow:
     has_primary: bool | None
     reason: str
     #: Только у ожиданий: ``waiting.STATE_*`` и то же состояние словами — «документ
-    #: получен, вступит 01.10», «просрочен на 15 дн.». Тревога — только ``overdue``.
+    #: получен, вступит 01.10», «просрочен на 15 дн.». Тревога — ``waiting.ALARM_STATES``.
     waiting_state: str | None = None
     waiting_label: str | None = None
     #: Чем подтвердится ``document_pending``: бумагой контрагента или начислением по договору.
@@ -1512,6 +1512,9 @@ class RecognitionLedgerTotals:
     unattributed: Decimal
     #: Часть ``waiting_document``, у которой срок документа вышел.
     waiting_overdue: Decimal = Decimal("0.00")
+    #: Часть ``waiting_document``, чей документ или договор уже в системе, но не вступил в
+    #: свой день. Отдельно от просрочки: действие другое, контрагент тут ни при чём.
+    waiting_stalled: Decimal = Decimal("0.00")
 
     @property
     def unrecognized(self) -> Decimal:
@@ -1686,11 +1689,11 @@ async def build_recognition_ledger(session: AsyncSession, month: date) -> Recogn
         )
 
     status_order = {"waiting_document": 0, "missing_period": 1, "recognized": 2}
-    # Внутри ожиданий просрочка — первой: она единственная требует действия.
+    # Внутри ожиданий тревоги — первыми: только они требуют действия.
     rows.sort(
         key=lambda item: (
             status_order[item.status],
-            item.waiting_state != waiting_source.STATE_OVERDUE,
+            item.waiting_state not in waiting_source.ALARM_STATES,
             -item.amount,
             item.counterparty_name,
         )
@@ -1705,6 +1708,14 @@ async def build_recognition_ledger(session: AsyncSession, month: date) -> Recogn
                     item.amount
                     for item in waiting_items
                     if item.state == waiting_source.STATE_OVERDUE
+                ),
+                Decimal("0.00"),
+            ),
+            waiting_stalled=sum(
+                (
+                    item.amount
+                    for item in waiting_items
+                    if item.state == waiting_source.STATE_STALLED
                 ),
                 Decimal("0.00"),
             ),

@@ -18,6 +18,7 @@ from __future__ import annotations
 import calendar
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -238,6 +239,7 @@ async def build_report(
     report.reconciliation = _reconciliation(cash)
     report.warnings.extend(_warnings(lines, cash, recognition, article_lines))
     report.warnings.extend(_overdue_document_warnings(waiting, article_lines, lines))
+    report.warnings.extend(_stalled_document_warnings(waiting, article_lines, lines))
     report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
@@ -660,9 +662,11 @@ def _apply_waiting(
                 stream="recognition",
                 component="waiting",
                 amount=None,
+                # Не вступивший документ краснит строку так же, как просрочка: оба требуют
+                # действия. Какого — говорит пометка, а не статус строки.
                 status=(
                     LineStatus.OVERDUE_DOCUMENT
-                    if state == waiting_source.STATE_OVERDUE
+                    if state in waiting_source.ALARM_STATES
                     else LineStatus.WAITING_DOCUMENT
                 ),
                 unrecognized_paid=amount,
@@ -848,7 +852,9 @@ def _overdue_document_warnings(
 ) -> list[Warning]:
     """Оплачено, срок закрывающего документа вышел, а документа нет — вот это тревога.
 
-    Остальные ожидания законны и тревогой не становятся (``waiting_source.waiting_state``).
+    Остальные ожидания законны и тревогой не становятся (``waiting_source.waiting_state``) —
+    кроме документа, который не вступил в свой день: у него своя тревога со своим действием
+    (``_stalled_document_warnings``).
     До 24.09.2026 тревогой было каждое: за сентябрь — восемь строк на 334 459,84 ₽, из
     которых не было просрочено ни рубля, а единственная настоящая пропажа прошлого месяца —
     100 ₽ ЛИКАРДа, оплаченные 19.08 без документа, — стояла бы в том же списке неотличимой.
@@ -861,26 +867,15 @@ def _overdue_document_warnings(
     «Содержании торговых точек» деньгами. «Расход в прибыль не попал» было бы про него
     неправдой — пропал документ, а не расход.
     """
-    by_line: dict[str, list[waiting_source.WaitingItem]] = defaultdict(list)
-    for item in layer.items:
-        if item.state != waiting_source.STATE_OVERDUE:
-            continue
-        line_code = article_lines.get(item.article_id)
-        if line_code is None or line_code not in lines:
-            continue
-        by_line[line_code].append(item)
-
     result: list[Warning] = []
-    for line_code, items in by_line.items():
-        items.sort(key=lambda item: -item.amount)
+    for line_code, items in _waiting_by_line(
+        layer, waiting_source.STATE_OVERDUE, article_lines, lines
+    ).items():
         total = sum((item.amount for item in items), Decimal("0.00"))
-        listed = ", ".join(
-            f"{item.counterparty_name or 'контрагент без названия'} — {rubles(item.amount)} ₽ "
-            f"(ждали до {item.state_date:%d.%m}, просрочка {item.overdue_days} дн.)"
-            for item in items[:5]
+        listed = _listed(
+            items,
+            lambda item: f"ждали до {item.state_date:%d.%m}, просрочка {item.overdue_days} дн.",
         )
-        if len(items) > 5:
-            listed = f"{listed} и ещё {len(items) - 5}"
         result.append(
             Warning(
                 code="overdue_document",
@@ -894,6 +889,76 @@ def _overdue_document_warnings(
             )
         )
     return result
+
+
+def _stalled_document_warnings(
+    layer: waiting_source.WaitingLayer,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
+) -> list[Warning]:
+    """Документ или договорное начисление лежит в системе, его день прошёл, а он не вступил.
+
+    Тревога ОТДЕЛЬНАЯ от просрочки, потому что действие другое. Просрочка — написать
+    контрагенту. Здесь писать некому: документ уже у нас, а у аренды его и не бывает. Не
+    отработала ночная проводка (признание в 00:05, активация в 00:10) либо месяц закрыт —
+    ``recognize_due_expenses`` в закрытый месяц не пишет и оставляет начисление ждать. Сама
+    такая строка не встанет никогда: до 25.09.2026 она вечно стояла «вступит 01.10».
+    """
+    result: list[Warning] = []
+    for line_code, items in _waiting_by_line(
+        layer, waiting_source.STATE_STALLED, article_lines, lines
+    ).items():
+        total = sum((item.amount for item in items), Decimal("0.00"))
+        listed = _listed(items, waiting_source.state_label)
+        result.append(
+            Warning(
+                code="stalled_document",
+                line_code=line_code,
+                message=(
+                    f"«{lines[line_code].title}»: {rubles(total)} ₽ должны были закрыться "
+                    f"сами — документ или договор уже в системе, но в свой день не вступил: "
+                    f"{listed}. Контрагенту писать не нужно: проверьте, отработали ли ночные "
+                    "признание расходов и активация документов и не закрыт ли месяц"
+                ),
+                amount=total,
+            )
+        )
+    return result
+
+
+def _waiting_by_line(
+    layer: waiting_source.WaitingLayer,
+    state: str,
+    article_lines: dict[Any, str],
+    lines: dict[str, LineValue],
+) -> dict[str, list[waiting_source.WaitingItem]]:
+    """Ожидания в одном состоянии по строкам отчёта — крупные первыми."""
+    by_line: dict[str, list[waiting_source.WaitingItem]] = defaultdict(list)
+    for item in layer.items:
+        if item.state != state:
+            continue
+        line_code = article_lines.get(item.article_id)
+        if line_code is None or line_code not in lines:
+            continue
+        by_line[line_code].append(item)
+    for items in by_line.values():
+        items.sort(key=lambda item: -item.amount)
+    return by_line
+
+
+def _listed(
+    items: list[waiting_source.WaitingItem],
+    detail: Callable[[waiting_source.WaitingItem], str],
+) -> str:
+    """«Кто — сколько (подробность)» через запятую; больше пяти — хвостом «и ещё N»."""
+    listed = ", ".join(
+        f"{item.counterparty_name or 'контрагент без названия'} — {rubles(item.amount)} ₽ "
+        f"({detail(item)})"
+        for item in items[:5]
+    )
+    if len(items) > 5:
+        listed = f"{listed} и ещё {len(items) - 5}"
+    return listed
 
 
 def _unperiodled_warnings(
@@ -964,7 +1029,8 @@ def _warnings(
     for line in lines.values():
         # Ожидание документа здесь не тревога: оно почти всегда законно (период идёт, документ
         # лежит отложенным, аренду начислит договор) и стоит пометкой на самой строке. Тревогу
-        # поднимает только просрочка — ``_overdue_document_warnings``.
+        # поднимают только просрочка и не вступивший в свой день документ —
+        # ``_overdue_document_warnings`` и ``_stalled_document_warnings``.
         moved_out = sum(
             (component.moved_out_amount for component in line.components), Decimal("0.00")
         )
