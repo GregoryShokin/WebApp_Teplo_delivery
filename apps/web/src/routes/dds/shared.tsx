@@ -475,9 +475,13 @@ const REFUND_TWIN_SOURCE: Record<string, string> = {
 /**
  * Текст предупреждения о двойнике или ``null``. Запрета нет: два возврата одной суммы
  * бывают, решает оператор. Дату «ГГГГ-ММ-ДД» разворачиваем строкой — ``new Date`` прочёл бы её
- * как полночь по UTC.
+ * как полночь по UTC. Имя контрагента передаёт разбор выписки: возвратные доли там бывают у
+ * нескольких контрагентов сразу, и без имени предупреждения неотличимы.
  */
-export function refundTwinWarning(found: RefundTwinList | undefined): string | null {
+export function refundTwinWarning(
+  found: RefundTwinList | undefined,
+  counterpartyName?: string | null,
+): string | null {
   const twins = found?.items ?? [];
   if (!twins.length) return null;
   const list = twins
@@ -493,8 +497,9 @@ export function refundTwinWarning(found: RefundTwinList | undefined): string | n
     : twins.length === 1
       ? "уже есть возврат на ту же сумму"
       : "уже есть возвраты на ту же сумму";
+  const whose = counterpartyName ? `у контрагента «${counterpartyName}»` : "у этого контрагента";
   return (
-    `Похоже на задвоение: у этого контрагента ${lead} — ${list}. ` +
+    `Похоже на задвоение: ${whose} ${lead} — ${list}. ` +
     "Если это те же деньги, не проводите их возвратом второй раз: аванс погасится дважды. " +
     "Лишний приход исключите из ДДС."
   );

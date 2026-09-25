@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal, NamedTuple
@@ -183,6 +184,7 @@ from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundErr
 from app.services.refund_twins import (
     REFUND_TWIN_WINDOW_DAYS,
     find_refund_twins,
+    refund_rule_refusal,
     wallet_channel,
 )
 from app.services.supplier_prepayments import (
@@ -1452,6 +1454,7 @@ async def create_classification_rule(
     payload: ClassificationRuleCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
+    await _ensure_rule_article_allowed(session, payload.article_id)
     data = _classification_rule_data(payload.model_dump())
     rule = ClassificationRule(**data)
     session.add(rule)
@@ -1473,6 +1476,9 @@ async def patch_classification_rule(
     rule = await _classification_rule_or_404(session, rule_id)
     for key, value in _classification_rule_data(payload.model_dump(exclude_unset=True)).items():
         setattr(rule, key, value)
+    # Проверяем итог, а не только присланное поле: статью возврата правило могло принести из
+    # разбора владельца (exclude со статьёй), а сюда прийти правкой одного действия.
+    await _ensure_rule_article_allowed(session, rule.article_id)
     await session.commit()
     await session.refresh(rule)
     return _classification_rule_payload(rule)
@@ -1503,6 +1509,8 @@ async def toggle_classification_rule(
 ) -> dict[str, object]:
     rule = await _classification_rule_or_404(session, rule_id)
     rule.is_active = not rule.is_active
+    if rule.is_active:
+        await _ensure_rule_article_allowed(session, rule.article_id)
     await session.commit()
     await session.refresh(rule)
     return _classification_rule_payload(rule)
@@ -3000,6 +3008,14 @@ async def _counterparty_payloads(
     ]
 
 
+async def _ensure_rule_article_allowed(session: AsyncSession, article_id: UUID | None) -> None:
+    """Правило со статьёй возврата переплаты не заводится и из настроек — та же фоновая
+    авторазметка мимо сторожа, что и у «Запомнить» (``refund_rule_refusal``)."""
+    refusal = await refund_rule_refusal(session, article_id)
+    if refusal is not None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=refusal)
+
+
 def _classification_rule_data(data: dict[str, object]) -> dict[str, object]:
     for amount_key in ("amount_min", "amount_max"):
         if amount_key in data and data[amount_key] is not None:
@@ -3163,6 +3179,28 @@ def _rule_from_owner_review(
     )
 
 
+_RULE_DIRECTION_LABELS = {"in": "поступления", "out": "списания"}
+_REMEMBERED_RULE_PRIORITY = 50
+_COUNTER_DIRECTION = {"in": "out", "out": "in"}
+
+
+def _narrow_to_counter_direction(rules: Sequence[ClassificationRule], direction: str) -> int:
+    """Правило без направления ловит и приходы, и расходы. Решение по одному направлению его
+    не трогает — оно продолжает жить для встречного, а своё направление получает своё правило.
+
+    Возвращает приоритет для нового правила: не ниже суженного. Иначе пере-решение уступило бы
+    третьему правилу, которое раньше проигрывало суженному (приоритет 10 против 30 против 50)."""
+    priority = _REMEMBERED_RULE_PRIORITY
+    counter = _COUNTER_DIRECTION.get(direction)
+    if counter is None:
+        return priority
+    for rule in rules:
+        if rule.direction is None:
+            rule.direction = counter
+            priority = min(priority, rule.priority)
+    return priority
+
+
 class RememberedRule(NamedTuple):
     """Итог «запомнить»: правило (если создалось) и причина отказа для владельца."""
 
@@ -3192,26 +3230,53 @@ async def _remember_binding_rule(
       Инцидент 03.08.2026: «запомнить» на карт-оплате ihc.ru расширило правило до «любой
       расход с ИНН эквайера» и увело в IHC.ru покупки в Ozon, «Магните» и «Магистре».
 
-    По одной личности держим ОДНО правило: повторное «запомнить» обновляет существующее, а не
-    копит дубли. Человек, запоминающий заново, пере-решает — его выбор побеждает старый.
+    По одной личности держим ОДНО правило на НАПРАВЛЕНИЕ: повторное «запомнить» обновляет
+    существующее, а не копит дубли. Человек, запоминающий заново, пере-решает — его выбор
+    побеждает старый. Но только в своём направлении: поставщик, которому мы платим, иногда
+    и возвращает деньги, и статья входящего возврата — отдельное решение, а не пере-решение
+    его оплат. До 25.09 «запомнить» искало правило по одному ИНН и переписывало статью
+    встречному: 22.09 на ИНН 890307589201 входящий перевод завёл правило «Поступление —
+    перевод», а через шесть секунд зеркальный исходящий переписал ему статью на «Выбытие» —
+    и следующий приход с этого ИНН разметился бы расходной статьёй. Правило без направления
+    ловит оба — его сужаем до встречного, а своему направлению заводим своё: так решение для
+    одной стороны не меняет разметку другой.
+
     Расширять чужое правило при этом нельзя: если существующее ловит операции ДРУГОГО
     контрагента (его паттерн пересекается с нашим), молча забрать их себе — тот же инцидент
     в профиль, поэтому такой конфликт возвращается владельцу текстом, а не решается за него.
+
+    Статью возврата переплаты не запоминаем вовсе (``refund_rule_refusal``): авторазметка
+    гасила бы авансы фоном, мимо сторожа задвоенного возврата.
     """
+    refusal = await refund_rule_refusal(session, article_id)
+    if refusal is not None:
+        return RememberedRule(None, refusal)
+
+    direction = operation.direction
     inn = clean_digits(operation.counterparty_inn_raw)
     if inn and inn not in BANK_NOISE_INNS:
         # Обновляем только правило, которое УЖЕ работает по одному ИНН без уточнений.
         # Узкое правило с текстом назначения (сеяные правила банка) — чужое: обнулив ему
         # паттерн, мы бы забрали все платежи этого ИНН, а не только свои.
-        existing = await session.scalar(
-            select(ClassificationRule).where(
-                ClassificationRule.action == "set_article",
-                ClassificationRule.counterparty_inn_match.in_(
-                    tuple({inn, operation.counterparty_inn_raw or inn})
-                ),
-                ClassificationRule.purpose_pattern.is_(None),
+        candidates = (
+            await session.scalars(
+                select(ClassificationRule)
+                .where(
+                    ClassificationRule.action == "set_article",
+                    ClassificationRule.counterparty_inn_match.in_(
+                        tuple({inn, operation.counterparty_inn_raw or inn})
+                    ),
+                    ClassificationRule.purpose_pattern.is_(None),
+                    or_(
+                        ClassificationRule.direction == direction,
+                        ClassificationRule.direction.is_(None),
+                    ),
+                )
+                .order_by(ClassificationRule.priority, ClassificationRule.name)
             )
-        )
+        ).all()
+        priority = _narrow_to_counter_direction(candidates, direction)
+        existing = next((rule for rule in candidates if rule.direction == direction), None)
         if existing is not None:
             existing.is_active = True
             existing.article_id = article_id
@@ -3221,10 +3286,10 @@ async def _remember_binding_rule(
             existing.comment = comment
             return RememberedRule(existing)
         rule = ClassificationRule(
-            name=f"Привязка по ИНН {inn}",
-            priority=50,
+            name=f"Привязка по ИНН {inn}: {_RULE_DIRECTION_LABELS.get(direction, direction)}",
+            priority=priority,
             is_active=True,
-            direction=operation.direction,
+            direction=direction,
             counterparty_inn_match=inn,
             action="set_article",
             article_id=article_id,
@@ -3238,7 +3303,8 @@ async def _remember_binding_rule(
     if merchant is not None:
         # Карт-операция: имя мерчанта — и паттерн, и имя правила. Имя контрагента из выписки
         # («АО "ТБанк"») в правило не кладём — оно про банк, а не про продавца.
-        pattern, name_pattern, rule_name = merchant, None, f"Карт-списания: {merchant}"
+        card_kind = "Карт-поступления" if direction == "in" else "Карт-списания"
+        pattern, name_pattern, rule_name = merchant, None, f"{card_kind}: {merchant}"
     else:
         pattern = _short_pattern(operation.payment_purpose)
         name_pattern = (
@@ -3258,7 +3324,13 @@ async def _remember_binding_rule(
         )
     ).all()
     existing = None
+    undirected: list[ClassificationRule] = []
     for candidate in candidates:
+        # Правило встречного направления с нашими операциями не встречается: мерчант один и
+        # тот же у покупки и у её возврата («Оплата в OZON» / «Возврат средств по операции
+        # оплаты OZON»), но это разные решения — ни конфликта, ни пере-решения тут нет.
+        if candidate.direction not in (None, direction):
+            continue
         other = (candidate.purpose_pattern or "").casefold()
         if other == wanted:
             if candidate.action != "set_article":
@@ -3267,7 +3339,10 @@ async def _remember_binding_rule(
                     f"Текст «{pattern}» уже занят правилом «{candidate.name}» с действием "
                     f"«{candidate.action}» — измените его в настройках ДДС",
                 )
-            existing = candidate
+            if candidate.direction is None:
+                undirected.append(candidate)
+            else:
+                existing = candidate
             continue
         if not candidate.is_active:
             continue
@@ -3281,20 +3356,20 @@ async def _remember_binding_rule(
                 "Разрешите конфликт в настройках ДДС",
             )
 
+    priority = _narrow_to_counter_direction(undirected, direction)
     if existing is not None:
         existing.is_active = True
         existing.article_id = article_id
         existing.counterparty_id = counterparty_id
-        existing.direction = operation.direction
         existing.comment = comment
         rule = existing
     else:
         rule = ClassificationRule(
             name=rule_name,
-            priority=50,
+            priority=priority,
             is_active=True,
             provider=None if merchant else operation.provider,
-            direction=operation.direction,
+            direction=direction,
             counterparty_name_pattern=name_pattern,
             purpose_pattern=pattern,
             action="set_article",

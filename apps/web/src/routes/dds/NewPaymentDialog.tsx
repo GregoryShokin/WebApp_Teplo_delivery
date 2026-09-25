@@ -2418,11 +2418,17 @@ function IncomeForm({
 
   // Тот же возврат, уже пришедший выпиской: провести его ещё и наличными — значит погасить
   // аванс вдвое (пересборка берёт каждый возвратный приход). Предупреждаем, не запрещаем.
+  // Сумму спрашиваем с паузой: иначе «35 017,95» при наборе — восемь запросов сторожу.
+  const [debouncedAmount, setDebouncedAmount] = useState(amount);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedAmount(amount), 300);
+    return () => clearTimeout(timer);
+  }, [amount]);
   const refundTwinParams =
-    active && counterpartyRequired && counterpartyId && walletId && amountOf(amount) > 0
+    active && counterpartyRequired && counterpartyId && walletId && amountOf(debouncedAmount) > 0
       ? {
           counterparty_id: counterpartyId,
-          amount: amountOf(amount).toFixed(2),
+          amount: amountOf(debouncedAmount).toFixed(2),
           wallet_id: walletId,
         }
       : null;

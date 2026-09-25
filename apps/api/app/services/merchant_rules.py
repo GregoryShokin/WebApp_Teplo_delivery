@@ -25,6 +25,7 @@ from app.models import (
     ReconciliationCase,
 )
 from app.services.banking.classifier import apply_operation_action, close_reconciliation_case
+from app.services.refund_twins import refund_rule_refusal
 
 
 class MerchantRuleError(RuntimeError):
@@ -94,11 +95,28 @@ async def create_merchant_rule(
     if await session.get(DdsArticle, resolved_article_id) is None:
         raise MerchantRuleError("Статья ДДС не найдена")
 
+    # Правило поступлений с тем же мерчантом (возврат покупки: «Возврат средств по операции
+    # оплаты OZON») — чужое решение: перенять его значило бы привязать списания к входящей
+    # статье и направлению. Из двух своих — правило списаний раньше правила без направления.
     existing = await session.scalar(
-        select(ClassificationRule).where(
-            func.lower(ClassificationRule.purpose_pattern) == pattern.casefold()
+        select(ClassificationRule)
+        .where(
+            func.lower(ClassificationRule.purpose_pattern) == pattern.casefold(),
+            or_(
+                ClassificationRule.direction == "out",
+                ClassificationRule.direction.is_(None),
+            ),
         )
+        .order_by(ClassificationRule.direction.nulls_last(), ClassificationRule.priority)
+        .limit(1)
     )
+    # Статья, с которой правило будет работать: перенятое сохраняет свою.
+    effective_article_id = (
+        existing.article_id if existing is not None and existing.article_id else resolved_article_id
+    )
+    refusal = await refund_rule_refusal(session, effective_article_id)
+    if refusal is not None:
+        raise MerchantRuleError(refusal)
     updated_existing = False
     if existing is not None:
         if existing.counterparty_id not in (None, counterparty_id):
