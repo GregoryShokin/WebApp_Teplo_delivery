@@ -7,8 +7,9 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // выписки — значит погасить аванс вдвое (1 000 − 300 − 300). Код расчёта прав, ошибка — в
 // задвоенном приходе, поэтому окна не запрещают, а предупреждают ДО проведения.
 //
-// Проверяем, что предупреждение доезжает в оба окна, спрашивает бэкенд правильным каналом
-// (операция выписки — своей операцией, наличный приход — кошельком) и не блокирует кнопку.
+// Проверяем, что предупреждение доезжает во все три окна (разбор операции, «Новый платёж»,
+// разбор кейса собственником), спрашивает бэкенд правильным каналом (операция выписки — своей
+// операцией, наличный приход — кошельком) и не блокирует кнопку.
 
 const REFUND_ARTICLE_ID = "11111111-1111-1111-1111-111111111111";
 const CP_ID = "22222222-2222-2222-2222-222222222222";
@@ -236,4 +237,103 @@ test("«Новый платёж» — возврат наличными пред
   expect(params.get("bank_operation_id")).toBeNull();
 
   await dialog.screenshot({ path: "test-results/refund-twin-new-payment.png" });
+});
+
+test("разбор кейса собственником тоже предупреждает — так пришёл возврат Скачковой", async ({
+  page,
+}) => {
+  await mockAuth(page);
+  await page.route("**/api/v1/dds/articles**", (route) =>
+    fulfillJson(route, [
+      {
+        id: REFUND_ARTICLE_ID,
+        code: REFUND_CODE,
+        name: "Возврат переплаты от поставщиков",
+        movement_type: "inflow",
+        activity_type: "operating",
+        parent_id: null,
+        is_active: true,
+        kassa_enabled: false,
+        location_required: false,
+        lease_bound: false,
+        asset_link_kind: null,
+        description: null,
+        aliases: [],
+      },
+    ]),
+  );
+  await page.route("**/api/v1/counterparties/registry**", (route) =>
+    fulfillJson(route, [
+      {
+        counterparty_id: CP_ID,
+        name: "ИП Скачкова",
+        inn: "610000000001",
+        status: "active",
+        relationship: "official",
+      },
+    ]),
+  );
+  await page.route("**/api/v1/dds/owner-review**", (route) =>
+    fulfillJson(route, {
+      total: 1,
+      items: [
+        {
+          id: "99999999-9999-9999-9999-999999999999",
+          kind: "unclassified_operation",
+          status: "open",
+          provider: "tbank",
+          bank_operation_id: OP_ID,
+          payload: {},
+          created_at: "2026-09-22T12:00:00+03:00",
+          operation: {
+            id: OP_ID,
+            provider: "tbank",
+            provider_operation_id: "op-1",
+            account_id: null,
+            operation_date: "2026-09-22",
+            posted_at: null,
+            direction: "in",
+            amount: "300.00",
+            currency: "RUB",
+            counterparty_name_raw: "ИП Скачкова",
+            counterparty_inn_raw: "610000000001",
+            counterparty_account_raw: null,
+            payment_purpose: "Возврат переплаты по счёту 17",
+            document_number: null,
+            classification_status: "needs_review",
+            cashflow_transaction_id: null,
+            transfer_group_id: null,
+            raw_payload: null,
+            is_card: false,
+          },
+        },
+      ],
+    }),
+  );
+  const asked = await mockTwins(page, {
+    transaction_id: "77777777-7777-7777-7777-777777777777",
+    operation_date: "2026-09-20",
+    amount: "300.00",
+    wallet_name: "Сейф",
+    channel: "cash",
+    source_kind: "new_payment_income",
+  });
+
+  await page.goto("/dds/owner-review");
+  await expect(page.getByText("Возврат переплаты по счёту 17")).toBeVisible();
+  // Пока статья и контрагент не выбраны — спрашивать не о чем.
+  await expect(page.getByText(/Похоже на задвоение/)).toBeHidden();
+
+  const selects = page.getByRole("combobox");
+  await selects.nth(1).click();
+  await page.getByRole("option", { name: /Возврат переплаты от поставщиков/ }).click();
+  await selects.nth(2).click();
+  await page.getByRole("option", { name: /ИП Скачкова/ }).click();
+
+  const warning = page.getByRole("alert").filter({ hasText: "Похоже на задвоение" });
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText("наличными на «Сейф» («Новый платёж»)");
+  expect(asked.at(-1)!.get("bank_operation_id")).toBe(OP_ID);
+
+  await page.screenshot({ path: "test-results/refund-twin-owner-review.png", fullPage: true });
 });
