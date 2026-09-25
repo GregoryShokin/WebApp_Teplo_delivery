@@ -17,6 +17,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from cp_helpers import (
     admin_headers,
     make_counterparty,
@@ -35,6 +36,7 @@ from app.models import (
     SupplierExpenseAccrual,
     SupplierPrepayment,
 )
+from app.services import clock
 from app.services.supplier_service_periods import set_invoice_service_period
 
 BASE = "/api/v1/accounting/suppliers"
@@ -529,7 +531,9 @@ def test_patch_service_period_answers_with_full_item(
 
 
 def test_agreement_counterparty_shows_one_eternal_accrual_row(
-    client: TestClient, async_session_factory: async_sessionmaker[AsyncSession]
+    client: TestClient,
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Договорный контрагент в очереди — одна вечная строка начисления, платежей нет.
 
@@ -540,6 +544,11 @@ def test_agreement_counterparty_shows_one_eternal_accrual_row(
     аренды добавлял вторую строку — плитка складывала одну аренду дважды.
     """
     from app.models import CounterpartyServiceAgreement, SupplierExpenseAccrual
+
+    # «Аренда 08.2026» заведена заранее и датирована 31.08 — прячет её именно то, что эта дата
+    # ещё в будущем. С 31.08 документ законно выходит на экран (дата прошла, а он всё ещё
+    # pending), и без заморозки тест с сентября 2026 проверял бы другой случай.
+    monkeypatch.setattr(clock, "moscow_today", lambda: date(2026, 8, 3))
 
     async def seed() -> tuple[uuid.UUID, uuid.UUID]:
         async with async_session_factory() as session:

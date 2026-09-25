@@ -12,7 +12,6 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,9 +24,9 @@ from app.models import (
     SupplierServicePeriodChange,
 )
 
-# Признание идёт по московской дате: джоба запускается в 00:05 МСК, а UTC-дата в этот
-# момент ещё вчерашняя — по ней расход признавался бы на сутки позже срока.
-MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+# Признание идёт по московской дате (``clock.moscow_today``): джоба запускается в 00:05 МСК, а
+# UTC-дата в этот момент ещё вчерашняя — по ней расход признавался бы на сутки позже срока.
+from app.services import clock
 
 
 class ServicePeriodError(ValueError):
@@ -216,7 +215,7 @@ async def sync_invoice_accrual(
     # (УПД «Назад в будущее» на 83 092 ₽, 03.08.2026). Условие признания у джобы и здесь одно и
     # то же (``recognize_due_expenses``), включая отказ дописывать расход в закрытый месяц, —
     # разница только в моменте вызова, поэтому расхождения двух путей быть не может.
-    if existing.status == "scheduled" and end < datetime.now(MOSCOW_TZ).date():
+    if existing.status == "scheduled" and end < clock.moscow_today():
         await recognize_due_expenses(session, invoice_ids=[invoice.id], commit=False)
     return existing
 
@@ -449,7 +448,7 @@ async def recognize_due_expenses(
     созревшие начисления системы — корректно по сути, но для человека это неожиданный
     побочный эффект действия, которое он адресовал одному платежу.
     """
-    cutoff = as_of or datetime.now(MOSCOW_TZ).date()
+    cutoff = as_of or clock.moscow_today()
     conditions = [
         SupplierExpenseAccrual.status == "scheduled",
         SupplierExpenseAccrual.service_period_end < cutoff,
@@ -523,7 +522,7 @@ async def change_accrual_period(
     # Признанный расход, чей НОВЫЙ период ещё не закончился, признанным быть не может:
     # услуга ещё оказывается. Возвращаем в scheduled — ночная джоба признает его заново,
     # когда период реально завершится (та же строгая граница end < today, что и у неё).
-    today = datetime.now(MOSCOW_TZ).date()
+    today = clock.moscow_today()
     revert_to_scheduled = accrual.status == "recognized" and end >= today
     new_month = (
         recognition_month(end)
@@ -580,7 +579,7 @@ async def change_accrual_period(
     if (
         accrual.status == "scheduled"
         and accrual.invoice_id is not None
-        and end < datetime.now(MOSCOW_TZ).date()
+        and end < clock.moscow_today()
     ):
         await recognize_due_expenses(session, invoice_ids=[accrual.invoice_id], commit=False)
     await session.commit()
@@ -653,7 +652,7 @@ async def _resync_activation_after_period_change(
     from app.services import supplier_prepayments as prepayments
 
     effective = prepayments._closing_effective_date(invoice)
-    today = datetime.now(MOSCOW_TZ).date()
+    today = clock.moscow_today()
     should_wait = effective is not None and effective > today
     if should_wait and invoice.activation_status == "active":
         await prepayments.release_invoice_prepayment_allocations(session, invoice)

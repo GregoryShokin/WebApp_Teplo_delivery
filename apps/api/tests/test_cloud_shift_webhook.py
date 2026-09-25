@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import date
+from datetime import UTC, date
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -145,13 +145,13 @@ def test_webhook_ignores_non_courier(
 
 
 async def _run_attendance_sync(
-    factory: async_sessionmaker[AsyncSession], xml: str
+    factory: async_sessionmaker[AsyncSession], xml: str, *, day: date
 ) -> None:
     async with factory() as session:
         await sync_attendance(
             session,
-            from_date=date.today(),
-            to_date=date.today(),
+            from_date=day,
+            to_date=day,
             attendance_xml=xml,
             courier_role_ids={"courier-role"},
             recalculate=False,
@@ -167,17 +167,22 @@ def test_polling_adopts_webhook_shift(
 
     # 1) вебхук открыл смену (opened_at ≈ now, помечена cloud_webhook)
     client.post(BASE, json=_event(COURIER_IIKO_ID, opened=True))
-    # 2) поллинг приносит ту же смену с ТОЧНЫМ временем (другой opened_at), тот же день
-    today = date.today().isoformat()
+    # 2) поллинг приносит ту же смену с ТОЧНЫМ временем (другой opened_at), тот же день.
+    # «Тот же день» — UTC-сутки вебхук-смены: по ним сервис ищет кандидата на усыновление.
+    # Прежде тест брал ``date.today()`` — дату по часам машины, где идёт прогон, — и на хосте
+    # восточнее UTC после местной полуночи (МСК 00–03, +04 00–04) она обгоняла UTC-дату
+    # вебхука: поллинг приходил «завтрашним» днём, и тест находил дубль при исправном коде.
+    (webhook_shift,) = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
+    day = webhook_shift.opened_at.astimezone(UTC).date()
     xml = (
         "<attendances><attendance>"
         f"<employeeId>{COURIER_IIKO_ID}</employeeId>"
         "<roleId>courier-role</roleId>"
-        f"<dateFrom>{today}T08:00:00+03:00</dateFrom>"
+        f"<dateFrom>{day.isoformat()}T08:00:00+03:00</dateFrom>"
         "<attendanceType>P</attendanceType>"
         "</attendance></attendances>"
     )
-    asyncio.run(_run_attendance_sync(async_session_factory, xml))
+    asyncio.run(_run_attendance_sync(async_session_factory, xml, day=day))
 
     shifts = asyncio.run(_shifts(async_session_factory, COURIER_IIKO_ID))
     assert len(shifts) == 1  # усыновлена, НЕ дубль

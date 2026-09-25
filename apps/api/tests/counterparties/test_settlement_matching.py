@@ -33,11 +33,13 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
-from app.services import counterparty_matching
+from app.services import clock, counterparty_matching
 from app.services import supplier_prepayments as prepayments
 
 COURIER = "courierica"
 LICENSE = "iiko_license"
+# День, когда акт за август пришёл почтой: услуга ещё идёт.
+AUGUST_INTAKE = date(2026, 8, 4)
 
 
 async def _bill(
@@ -165,6 +167,16 @@ async def _allocations(
             )
         ).all()
     )
+
+
+def _freeze_today(monkeypatch: pytest.MonkeyPatch, today: date) -> None:
+    """Заморозить «сегодня» сервисов на дне сценария.
+
+    Правка периода и приём документа сверяют конец услуги с ``clock.moscow_today()``, а не с
+    ``as_of`` вызова. Без заморозки сценарий «август ещё идёт» верен только в августе: с 31.08
+    период уже кончился, и тест молча проверяет другой случай — так оба теста, которым это
+    нужно, покраснели в сентябре 2026 при исправном коде."""
+    monkeypatch.setattr(clock, "moscow_today", lambda: today)
 
 
 async def test_closing_takes_prepayment_of_its_basis_invoice(
@@ -763,6 +775,7 @@ async def test_product_beats_bare_period_for_two_lines_of_one_month(
 
 async def test_period_edit_reopens_the_settlement(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Правка периода задним числом пересматривает и вступление документа в силу.
 
@@ -771,6 +784,7 @@ async def test_period_edit_reopens_the_settlement(
     а баланс на дату уже считал его недействующим: два источника правды расходились."""
     from app.services import supplier_service_periods as periods
 
+    _freeze_today(monkeypatch, AUGUST_INTAKE)
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Правка периода", inn="1655160013")
         prepaid = await _prepaid(
@@ -790,7 +804,7 @@ async def test_period_edit_reopens_the_settlement(
         )
         await session.commit()
 
-        await prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 4))
+        await prepayments.apply_closing_document(session, act, as_of=AUGUST_INTAKE)
         await session.commit()
         assert act.activation_status == "active"
         await session.refresh(prepaid)
@@ -814,6 +828,7 @@ async def test_period_edit_reopens_the_settlement(
 
 async def test_settlement_and_recognition_happen_in_one_run(
     async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Гашение аванса и признание расхода происходят одним прогоном — дыры в ночь нет.
 
@@ -824,6 +839,9 @@ async def test_settlement_and_recognition_happen_in_one_run(
     """
     from app.services import supplier_service_periods as periods
 
+    # Акт приходит 04.08, пока август идёт. Позже ``sync_invoice_accrual`` признал бы расход
+    # сразу, как опоздавший документ, — и «вечера 31 августа» в тесте не было бы вовсе.
+    _freeze_today(monkeypatch, AUGUST_INTAKE)
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Один прогон", inn="1655160014")
         bill = await _bill(
@@ -854,7 +872,7 @@ async def test_settlement_and_recognition_happen_in_one_run(
         )
         await session.commit()
         # Тот же порядок, что у почтового приёма: провести документ, затем завести начисление.
-        await prepayments.apply_closing_document(session, act, as_of=date(2026, 8, 4))
+        await prepayments.apply_closing_document(session, act, as_of=AUGUST_INTAKE)
         await periods.sync_invoice_accrual(session, act)
         await session.commit()
 

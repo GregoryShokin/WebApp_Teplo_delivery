@@ -12,9 +12,8 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Sequence
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -36,7 +35,7 @@ from app.models import (
     invoice_binds_settlement,
 )
 from app.models.enums import SELF_ACCRUED_INVOICE_SOURCES
-from app.services import accounting_periods
+from app.services import accounting_periods, clock
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.counterparty_matching import (
     _invoice_remaining,
@@ -46,8 +45,6 @@ from app.services.counterparty_matching import (
 from app.services.counterparty_payments import CounterpartyPaymentError, _money
 
 logger = logging.getLogger(__name__)
-
-MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 PREPAYMENT_ARTICLE_CODE = "advance_to_supplier"
 # Приходная статья «Возврат переплаты от поставщиков» — возврат гасит открытые предоплаты.
@@ -2713,7 +2710,7 @@ async def apply_closing_document(
     if invoice.doc_kind != "closing":
         invoice.activation_status = "active"
         return Decimal("0.00")
-    today = as_of or datetime.now(MOSCOW_TZ).date()
+    today = as_of or clock.moscow_today()
     effective = _closing_effective_date(invoice)
     if effective is not None and effective > today:
         invoice.activation_status = "pending"
@@ -2773,7 +2770,7 @@ async def activate_due_closing_invoices(
     же УПД учитывался по-разному в зависимости от того, вчерашней он датой или завтрашней: акт
     Микроэля на 9 000 ₽ за апрель-июнь, пришедший датой 30.06, оставлял апрель и май
     признанными дважды — 6 000 ₽ лишнего расхода."""
-    today = as_of or datetime.now(MOSCOW_TZ).date()
+    today = as_of or clock.moscow_today()
     from app.services import supplier_service_periods
 
     rows = list(
