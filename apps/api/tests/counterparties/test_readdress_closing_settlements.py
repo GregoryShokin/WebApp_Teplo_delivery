@@ -266,6 +266,130 @@ async def test_refuses_in_closed_month(
         await _assert_untouched(session, act, september_money)
 
 
+async def _september_act_on_august_money(
+    session: AsyncSession, *, tag: str, act_period: bool = True, august_has_period: bool = True
+):
+    """Документ, датированный открытым сентябрём, висит «наугад» на авансе, оплаченном в августе.
+
+    ``act_period`` — у документа свой период «сентябрь»; иначе периода нет, и документ называет
+    августовский счёт основанием. ``august_has_period`` — у августовского аванса готовый период;
+    иначе периода нет, и ОПиУ относит его к месяцу денег (05.08)."""
+    cp = await make_counterparty(
+        session, name=f"Синапсис-{tag}", inn=f"78{uuid.uuid4().int % 10**8:08d}"
+    )
+    august_bill = await _bill(
+        session, counterparty_id=cp.id, number="70221/1/У", on=date(2026, 8, 1), period=AUGUST
+    )
+    september_bill = await _bill(
+        session, counterparty_id=cp.id, number="73163/1/У", on=date(2026, 9, 1), period=SEPTEMBER
+    )
+    august_money = await _prepaid(
+        session,
+        counterparty_id=cp.id,
+        bill=august_bill,
+        paid_on=date(2026, 8, 5),
+        wallet_code=f"{tag}-aug",
+        period=AUGUST,
+    )
+    if not august_has_period:
+        august_money.service_period_start = None
+        august_money.service_period_end = None
+        august_money.service_period_status = "missing"
+    september_money = await _prepaid(
+        session,
+        counterparty_id=cp.id,
+        bill=september_bill,
+        paid_on=date(2026, 9, 5),
+        wallet_code=f"{tag}-sep",
+        period=SEPTEMBER,
+    )
+    act = SupplierInvoice(
+        counterparty_id=cp.id,
+        source="sbis",
+        direction="payable",
+        doc_kind="closing",
+        operational_scope="finance",
+        number="521921",
+        invoice_date=date(2026, 9, 30) if act_period else date(2026, 9, 3),
+        amount=Decimal("3700.00"),
+        payment_status="paid",
+        activation_status="active",
+        service_period_start=SEPTEMBER[0] if act_period else None,
+        service_period_end=SEPTEMBER[1] if act_period else None,
+        service_period_status="ready" if act_period else "missing",
+        raw_payload=None if act_period else {"recognition": {"basis_number": "70221/1/У"}},
+    )
+    session.add(act)
+    await session.flush()
+    guessed = august_money if act_period else september_money
+    session.add(
+        InvoicePaymentAllocation(
+            invoice_id=act.id,
+            source_kind="prepayment",
+            prepayment_id=guessed.id,
+            amount=Decimal("3700.00"),
+            match_basis="chronology",
+        )
+    )
+    guessed.amount_settled = Decimal("3700.00")
+    guessed.status = "settled"
+    await session.flush()
+    await session.commit()
+    return act, august_money, september_money
+
+
+async def test_refuses_to_reopen_money_of_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ открытого сентября висит на авансе закрытого августа — скрипт его не снимает.
+
+    Свой замок скрипта смотрел только на месяц и период документа. Снятие аванса снова открывает
+    его ДЗ, и ОПиУ закрытого месяца начинает «ждать документ»: слой ожидания относит аванс к его
+    периоду, а без периода — к месяцу денег. Перенос угаданного зачёта такое снятие запрещает и
+    в предупреждении велит «перегасить вручную скриптом после открытия периода» — значит, пока
+    период закрыт, скрипт обязан отказывать так же, иначе ручной путь обходит замок."""
+    async with async_session_factory() as session:
+        session.add(AccountingPeriodClose(period_month=AUGUST[0]))
+        await session.commit()
+    for august_has_period in (True, False):
+        async with async_session_factory() as session:
+            act, august_money, september_money = await _september_act_on_august_money(
+                session, tag=f"rel{int(august_has_period)}", august_has_period=august_has_period
+            )
+
+            with pytest.raises(script.ReaddressRefused, match="08.2026 закрыт"):
+                await script.readdress_closing(
+                    session,
+                    closing_id=act.id,
+                    prepayment_id=september_money.id,
+                    out=lambda _: None,
+                )
+            await _assert_untouched(session, act, august_money)
+
+
+async def test_refuses_target_of_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Документ без периода от открытого сентября называет счёт за закрытый август.
+
+    Целевой аванс — ДЗ того самого счёта, адресность доказуема. Но его ДЗ числится в ОПиУ
+    закрытого августа, и зачёт убрал бы оттуда ожидание — правка сверенного месяца задним
+    числом. Наследование августа заперто и так (``_inherit_period_from_prepayment_allocations``),
+    поэтому контроль периода документа такой зачёт пропускал бы молча."""
+    async with async_session_factory() as session:
+        act, august_money, september_money = await _september_act_on_august_money(
+            session, tag="target", act_period=False
+        )
+        session.add(AccountingPeriodClose(period_month=AUGUST[0]))
+        await session.commit()
+
+        with pytest.raises(script.ReaddressRefused, match="08.2026 закрыт"):
+            await script.readdress_closing(
+                session, closing_id=act.id, prepayment_id=august_money.id, out=lambda _: None
+            )
+        await _assert_untouched(session, act, september_money)
+
+
 async def test_refuses_prepayment_of_unrelated_period(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

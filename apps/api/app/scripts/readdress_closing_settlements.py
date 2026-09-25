@@ -30,7 +30,9 @@
 ЧТО ДЕЛАЕТ С КАЖДОЙ ПАРОЙ. Снимает с документа ТОЛЬКО его ``prepayment``-зачёты (наличные и
 банковские оплаты не трогает), пересчитывает статус и проводит штатный авто-зачёт, ограниченный
 одним целевым авансом. Начисления не трогает. Все пары — одна транзакция: откажет хоть одна,
-не применится ни одна. Отказ — до любых изменений, с объяснением; контроль после зачёта
+не применится ни одна. Отказ — до любых изменений, с объяснением (в том числе замок закрытого
+месяца: и месяцы документа, и месяцы, к которым ОПиУ относит целевой и снимаемые авансы —
+замок не мягче, чем у переноса угаданного зачёта); контроль после зачёта
 (документ закрыт целиком целевым авансом, период документа не сдвинулся, нетто ДЗ − КЗ по
 контрагенту то же) при расхождении откатывает всё.
 
@@ -68,6 +70,7 @@ from app.services.supplier_prepayments import (
     _basis_bill_ids,
     _money,
     _periods_overlap,
+    assert_prepayment_months_open,
     auto_settle_invoice_from_open_prepayments,
     release_invoice_prepayment_allocations,
 )
@@ -309,6 +312,32 @@ async def readdress_closing(
         return ReaddressResult(
             closing.id, target.id, Decimal("0.00"), Decimal("0.00"), net, net, changed=False
         )
+    # Замок и на ДЕНЬГАХ, а не только на документе. Снятый аванс снова открывает свою ДЗ, и ОПиУ
+    # его месяца начинает «ждать документ»; целевой, наоборот, закрывает свою и ожидание оттуда
+    # убирает. Месяц аванса — тот, к которому его относит слой ожидания ОПиУ: готовый период, а
+    # без периода — месяц денег. Перенос угаданного зачёта такие авансы не снимает и велит
+    # перегасить скриптом «после открытия периода» — значит, пока период закрыт, скрипт обязан
+    # отказывать так же, иначе ручной путь обходит замок.
+    released_ids = dict.fromkeys(
+        a.prepayment_id
+        for a in prepayment_allocs
+        if a.prepayment_id is not None and a.prepayment_id != target.id
+    )
+    try:
+        await assert_prepayment_months_open(
+            session, target, action=f"{action} (зачёт аванса {str(target.id)[:8]})"
+        )
+        for released_id in released_ids:
+            released_prepayment = await session.get(SupplierPrepayment, released_id)
+            if released_prepayment is not None:
+                await assert_prepayment_months_open(
+                    session,
+                    released_prepayment,
+                    action=f"{action} (снятие аванса {str(released_id)[:8]})",
+                )
+    except accounting_periods.PeriodClosed as exc:
+        raise ReaddressRefused(str(exc)) from exc
+
     freed_on_target = sum(
         (_money(a.amount) for a in prepayment_allocs if a.prepayment_id == target.id),
         Decimal("0.00"),

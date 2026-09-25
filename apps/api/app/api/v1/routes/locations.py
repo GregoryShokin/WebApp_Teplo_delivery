@@ -35,7 +35,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
-from app.services import counterparty_matching, iiko_directory, lease_accruals
+from app.services import clock, counterparty_matching, iiko_directory, lease_accruals
 from app.services import counterparty_registry as registry
 from app.services.location_analytics import leases_for_location
 
@@ -657,8 +657,10 @@ async def update_location_lease(
     # Смена ставки/условий доходит до ДЗ/КЗ: пересобираем открытое обязательство текущего месяца
     # (прошлые — в силе, их не трогаем). Новое здесь не заводим — начисление стартует джобой или
     # кнопкой пересбора, а правка договора не должна начислять там, где начисления ещё не было.
+    # Месяц московский: контейнер в UTC, и с 00:00 до 03:00 МСК 1-го числа ``date.today()``
+    # отдавал прошлый месяц.
     await lease_accruals.rebuild_lease_invoice(
-        session, lease, date.today(), create_if_missing=False
+        session, lease, clock.moscow_today(), create_if_missing=False
     )
     await session.commit()
     await session.refresh(lease)
@@ -917,7 +919,7 @@ async def rebuild_lease_accrual(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Аренда не относится к этому помещению"
         )
-    await lease_accruals.rebuild_lease_invoice(session, lease, month or date.today())
+    await lease_accruals.rebuild_lease_invoice(session, lease, month or clock.moscow_today())
     await session.commit()
     return await _lease_ledger(session, lease)
 

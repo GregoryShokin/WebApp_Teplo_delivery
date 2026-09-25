@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import uuid
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +38,10 @@ from app.services.supplier_prepayments import (
     activate_due_closing_invoices,
     counterparty_prepayment_balance,
 )
+
+sys.path.append(str(Path(__file__).parent / "counterparties"))
+
+from cp_helpers import admin_headers  # noqa: E402
 
 
 async def _lease(
@@ -528,3 +534,79 @@ def test_safe_payout_with_lease_creates_receivable_end_to_end(async_session_fact
             await session.rollback()
 
     asyncio.run(run())
+
+
+# --- «Текущий месяц» аренды — московский, а не по часам контейнера -----------------------------
+#
+# Контейнеры api и scheduler живут в UTC. Ночная джоба аренды стоит на 00:03 МСК (планировщик
+# считает время по Москве), а в UTC это ещё 21:03 ПРОШЛОГО дня: 1-го числа ``date.today()``
+# возвращал последний день прошлого месяца. Джоба начисляла прошлый месяц повторно
+# (идемпотентно — ничего не создавала), а новый месяц появлялся только следующей ночью. Та же
+# ошибка сидела в кнопке «Начислить» и в правке условий договора — с 00:00 до 03:00 МСК они
+# работали с прошлым месяцем.
+
+
+def test_nightly_job_accrues_the_moscow_month(monkeypatch) -> None:
+    """00:03 МСК 1 октября — джоба начисляет октябрь, а не сентябрь по часам UTC."""
+    from app.jobs import lease_accrual_job
+    from app.services import clock
+
+    accrued: list[date] = []
+
+    async def fake_accrue_month(session: AsyncSession, month: date) -> list[SupplierInvoice]:
+        accrued.append(month)
+        return []
+
+    monkeypatch.setattr(clock, "moscow_today", lambda: date(2026, 10, 1))
+    monkeypatch.setattr(lease_accrual_job, "accrue_month", fake_accrue_month)
+
+    asyncio.run(lease_accrual_job._run())
+
+    assert accrued == [date(2026, 10, 1)]
+
+
+def test_manual_accrual_and_terms_edit_use_the_moscow_month(
+    client, async_session_factory, monkeypatch
+) -> None:
+    """Кнопка «Начислить» без месяца и правка ставки работают с московским текущим месяцем."""
+    from app.services import clock
+    from app.services.lease_accruals import lease_external_id
+
+    monkeypatch.setattr(clock, "moscow_today", lambda: date(2026, 10, 1))
+    headers = asyncio.run(admin_headers(async_session_factory))
+
+    async def seed() -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+        async with async_session_factory() as session:
+            lease = await _lease(session)
+            article = await session.get(DdsArticle, lease.dds_article_id)
+            article.lease_bound = True
+            await session.commit()
+            return lease.id, lease.location_id, article.id
+
+    lease_id, location_id, article_id = asyncio.run(seed())
+    base = f"/api/v1/locations/{location_id}/leases/{lease_id}"
+
+    async def october_amount() -> Decimal | None:
+        async with async_session_factory() as session:
+            return await session.scalar(
+                select(SupplierInvoice.amount).where(
+                    SupplierInvoice.external_id == lease_external_id(lease_id, date(2026, 10, 1))
+                )
+            )
+
+    rebuilt = client.post(f"{base}/accruals/rebuild", headers=headers)
+    assert rebuilt.status_code == 200, rebuilt.text
+    assert asyncio.run(october_amount()) == Decimal("100000"), "начислен не московский месяц"
+
+    edited = client.patch(
+        base,
+        headers=headers,
+        json={
+            "monthly_amount": 120000,
+            "payment_mode": "postpaid",
+            "started_on": "2026-01-01",
+            "dds_article_id": str(article_id),
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    assert asyncio.run(october_amount()) == Decimal("120000"), "ставка не дошла до октября"

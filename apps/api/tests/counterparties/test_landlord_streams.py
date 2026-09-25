@@ -917,63 +917,105 @@ async def test_repoint_never_releases_money_of_the_acts_own_basis_bills(
             assert {row[0] for row in trail} == {advance_money.id, due_money.id}
 
 
-# --- R4-3: замок унаследованного периода -----------------------------------------------------
+# --- R4-3 → R6-1: закрытый период основания — один итог при любом порядке «акт/оплата» ------
 
 
-async def test_repoint_does_not_inherit_a_closed_period_into_an_unperioded_act(
+async def test_closed_basis_period_settles_the_act_the_same_whatever_comes_first(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Бумажный акт без периода, датированный открытым сентябрём, называет августовский счёт.
+    """Бумажный акт без периода, датированный открытым сентябрём, называет счёт за август.
 
-    Сам акт в замок не попадает: месяц документа открыт, периода нет. Но перенос на деньги
-    счёта даёт акту АДРЕСНЫЙ зачёт, акт наследует период счёта (август) и заводит начисление —
-    в закрытом месяце. Замок обязан смотреть и на период, который акт унаследует."""
-    async with async_session_factory() as session:
-        landlord, _location_ = await _landlord(session)
-        stranger = await _bare_rent_money(session, landlord, on=date(2026, 8, 10))
-        bill = SupplierInvoice(
-            counterparty_id=landlord.id,
-            source="email",
-            direction="payable",
-            doc_kind="bill",
-            operational_scope="finance",
-            number="С-5",
-            invoice_date=date(2026, 8, 20),
-            amount=Decimal("5000.00"),
-            payment_status="unpaid",
-            service_period_start=AUGUST[0],
-            service_period_end=AUGUST[1],
-            service_period_status="ready",
-        )
-        act = SupplierInvoice(
-            counterparty_id=landlord.id,
-            source="email",
-            direction="payable",
-            doc_kind="closing",
-            operational_scope="finance",
-            number="А-7",
-            invoice_date=date(2026, 9, 5),
-            amount=Decimal("5000.00"),
-            payment_status="unpaid",
-            service_period_status="missing",
-            raw_payload={"recognition": {"basis_number": "С-5"}},
-        )
-        session.add_all([bill, act])
-        await session.flush()
-        await _legacy_guess(session, act, stranger)
-        session.add(AccountingPeriodClose(period_month=date(2026, 8, 1)))
-        await session.commit()
-        trail_before = await _trail(session, act.id)
+    «Оплата, потом акт»: акт гасится ДЗ своего счёта (счёт-основание), а август не наследует —
+    замок стоит в самом ``_inherit_period_from_prepayment_allocations`` (скептик L1). «Акт,
+    потом оплата»: акт сперва закрыт свободными деньгами «хронологией», и оплата счёта должна
+    перенести его на свои. Замок переноса, написанный до L1, смотрел ещё и на периоды оснований
+    и перенос пропускал: акт оставался на чужих деньгах, а ДЗ счёта с периодом закрытого
+    августа — открытой, и ОПиУ сверенного августа начинал ждать документ, который уже пришёл.
+    Наследование, которого тот замок боялся, заперто в самом наследовании для всех дверей, —
+    итог обязан не зависеть от того, что пришло раньше.
 
-        await _pay_bill(session, bill, on=date(2026, 9, 6))
-        await session.commit()
+    Чужие деньги ушли в открытом сентябре: деньги закрытого месяца перенос не снимает вовсе
+    (``test_repoint_does_not_reopen_unperioded_money_of_a_closed_month``)."""
+    for august_closed in (False, True):
+        for order in ("payment_then_act", "act_then_payment"):
+            async with async_session_factory() as session:
+                landlord, _location_ = await _landlord(session)
+                stranger = await _bare_rent_money(session, landlord, on=date(2026, 9, 1))
+                bill = SupplierInvoice(
+                    counterparty_id=landlord.id,
+                    source="email",
+                    direction="payable",
+                    doc_kind="bill",
+                    operational_scope="finance",
+                    number="С-5",
+                    invoice_date=date(2026, 8, 20),
+                    amount=Decimal("5000.00"),
+                    payment_status="unpaid",
+                    service_period_start=AUGUST[0],
+                    service_period_end=AUGUST[1],
+                    service_period_status="ready",
+                )
+                act = SupplierInvoice(
+                    counterparty_id=landlord.id,
+                    source="email",
+                    direction="payable",
+                    doc_kind="closing",
+                    operational_scope="finance",
+                    number="А-7",
+                    invoice_date=date(2026, 9, 5),
+                    amount=Decimal("5000.00"),
+                    payment_status="unpaid",
+                    service_period_status="missing",
+                    raw_payload={"recognition": {"basis_number": "С-5"}},
+                )
+                session.add(bill)
+                if august_closed:
+                    session.add(AccountingPeriodClose(period_month=AUGUST[0]))
+                await session.flush()
+                if order == "act_then_payment":
+                    session.add(act)
+                    await session.flush()
+                    await supplier_prepayments.apply_closing_document(
+                        session, act, as_of=date(2026, 9, 5)
+                    )
+                    assert await _trail(session, act.id) == [
+                        (stranger.id, Decimal("5000.00"), supplier_prepayments.MATCH_CHRONOLOGY)
+                    ]
+                    await _pay_bill(session, bill, on=date(2026, 9, 6))
+                else:
+                    await _pay_bill(session, bill, on=date(2026, 9, 6))
+                    session.add(act)
+                    await session.flush()
+                    await supplier_prepayments.apply_closing_document(
+                        session, act, as_of=date(2026, 9, 7)
+                    )
+                await session.flush()
 
-        await session.refresh(act)
-        assert await _trail(session, act.id) == trail_before
-        assert act.service_period_start is None, "акт унаследовал закрытый август"
-        own = await _own(session, bill)
-        assert own.status == "open"
-        await session.rollback()
+                where = f"({order=}, {august_closed=})"
+                own = await _own(session, bill)
+                await session.refresh(stranger)
+                assert await _trail(session, act.id) == [
+                    (own.id, Decimal("5000.00"), supplier_prepayments.MATCH_BASIS_INVOICE)
+                ], f"акт не на деньгах своего счёта {where}"
+                assert own.status == "settled", f"ДЗ своего счёта открыта {where}"
+                assert stranger.amount_settled == Decimal("0.00"), where
+                accrual = await session.scalar(
+                    select(SupplierExpenseAccrual).where(
+                        SupplierExpenseAccrual.invoice_id == act.id
+                    )
+                )
+                if august_closed:
+                    assert act.service_period_start is None, f"унаследован закрытый август {where}"
+                    assert act.service_period_status == "missing", where
+                    assert accrual is None, f"начисление в закрытом месяце {where}"
+                    waiting = await build_waiting_layer(session, *AUGUST)
+                    assert own.id not in {item.prepayment_id for item in waiting.items}, (
+                        f"ОПиУ закрытого августа ждёт документ по оплаченному счёту {where}"
+                    )
+                else:
+                    assert (act.service_period_start, act.service_period_end) == AUGUST, where
+                    assert accrual is not None, where
+                await session.rollback()
 
 
 # --- R5-1: перенос не снимает переплату своего потока и деньги закрытого периода -----------
@@ -1267,10 +1309,13 @@ async def test_ambiguous_act_with_own_dates_is_repointed_despite_a_closed_basis_
     ``ambiguous`` с проставленными датами тоже, хотя такой акт наследовать не может
     (``_inherit_period_from_prepayment_allocations`` требует пустые даты). Перенос
     пропускался зря: акт оставался на чужих деньгах, ДЗ счёта — открытой (скептик L2).
-    Месяцы акта — его собственные даты; открыты они — перенос законен."""
+    Месяцы акта — его собственные даты; открыты они — перенос законен.
+
+    Чужие деньги ушли в открытом сентябре: аванс, оплаченный в закрытом августе, перенос не
+    снимает вовсе (``test_repoint_does_not_reopen_unperioded_money_of_a_closed_month``)."""
     async with async_session_factory() as session:
         landlord, _location_ = await _landlord(session)
-        stranger = await _bare_rent_money(session, landlord, on=date(2026, 8, 10))
+        stranger = await _bare_rent_money(session, landlord, on=date(2026, 9, 1))
         bill = SupplierInvoice(
             counterparty_id=landlord.id,
             source="email",
@@ -1320,3 +1365,106 @@ async def test_ambiguous_act_with_own_dates_is_repointed_despite_a_closed_basis_
         assert (act.service_period_start, act.service_period_end) == SEPTEMBER
         assert act.service_period_status == "ambiguous"
         await session.rollback()
+
+
+# --- R6-3: замок снятия смотрит на месяц, которым аванс без периода живёт в ОПиУ -------------
+
+
+async def test_repoint_does_not_reopen_unperioded_money_of_a_closed_month(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Тот же перенос, что в T2b, но у снятого аванса периода нет: деньги ушли 10.08.
+
+    Замок снятия видел только аванс с готовым периодом. Слой ожидания ОПиУ относит аванс без
+    периода к месяцу его денег (``waiting.month_share``), и снятие такого аванса с акта снова
+    открывало ДЗ в закрытом августе: сверенный месяц начинал «ждать документ» без единого
+    нового события в нём. Мерило замка — то же, что у отчёта: готовый период, а без него —
+    месяц проводки аванса."""
+    for august_closed in (False, True):
+        async with async_session_factory() as session:
+            supplier = await make_counterparty(
+                session,
+                name=f"Синапсис {uuid.uuid4().hex[:4]}",
+                inn=f"7709{uuid.uuid4().int % 10**6:06d}",
+            )
+            wallet = await make_wallet(session, name="Т-Банк")
+            tx = CashflowTransaction(
+                wallet_id=wallet.id,
+                direction="out",
+                amount=Decimal("13000.00"),
+                operation_date=date(2026, 8, 10),
+                counterparty_id=supplier.id,
+                source_kind="bank_feed",
+            )
+            session.add(tx)
+            await session.flush()
+            aug_money = SupplierPrepayment(
+                counterparty_id=supplier.id,
+                kind=supplier_prepayments.RULE1_PREPAYMENT_KIND,
+                wallet_id=wallet.id,
+                amount=Decimal("13000.00"),
+                amount_settled=Decimal("0.00"),
+                status="open",
+                cashflow_transaction_id=tx.id,
+                service_period_status="missing",
+            )
+            bill = SupplierInvoice(
+                counterparty_id=supplier.id,
+                source="email",
+                direction="payable",
+                doc_kind="bill",
+                operational_scope="finance",
+                number="С-9",
+                invoice_date=date(2026, 9, 1),
+                amount=Decimal("13000.00"),
+                payment_status="unpaid",
+                service_period_start=SEPTEMBER[0],
+                service_period_end=SEPTEMBER[1],
+                service_period_status="ready",
+            )
+            upd = SupplierInvoice(
+                counterparty_id=supplier.id,
+                source="email",
+                direction="payable",
+                doc_kind="closing",
+                operational_scope="finance",
+                number="У-30",
+                invoice_date=SEPTEMBER[1],
+                amount=Decimal("13000.00"),
+                payment_status="unpaid",
+                service_period_start=SEPTEMBER[0],
+                service_period_end=SEPTEMBER[1],
+                service_period_status="ready",
+                raw_payload={"recognition": {"basis_number": "С-9"}},
+            )
+            session.add_all([aug_money, bill, upd])
+            await session.flush()
+            await _legacy_guess(session, upd, aug_money)
+            if august_closed:
+                session.add(AccountingPeriodClose(period_month=AUGUST[0]))
+            await session.commit()
+            trail_before = await _trail(session, upd.id)
+            waiting_before = await build_waiting_layer(session, *AUGUST)
+
+            await _pay_bill(session, bill, on=date(2026, 10, 3))
+            await session.commit()
+
+            own = await _own(session, bill)
+            await session.refresh(aug_money)
+            if august_closed:
+                assert await _trail(session, upd.id) == trail_before
+                assert aug_money.amount_settled == Decimal("13000.00"), (
+                    "аванс без периода, оплаченный в закрытом августе, снова открылся"
+                )
+                assert own.status == "open"
+                waiting_after = await build_waiting_layer(session, *AUGUST)
+                assert [i.prepayment_id for i in waiting_after.items] == [
+                    i.prepayment_id for i in waiting_before.items
+                ], "ОПиУ закрытого августа начал ждать документ"
+            else:
+                assert await _trail(session, upd.id) == [
+                    (own.id, Decimal("13000.00"), supplier_prepayments.MATCH_BASIS_INVOICE)
+                ]
+                assert aug_money.amount_settled == Decimal("0.00")
+                assert own.status == "settled"
+            await session.rollback()

@@ -712,16 +712,20 @@ async def _repoint_guessed_settlements_to_bill(
     ЗАКРЫТЫЙ МЕСЯЦ НЕ ПЕРЕПИСЫВАЕМ. Перенос меняет остатки ДЗ/КЗ на прошлые даты: зачёт акта
     датирован его вступлением в силу, и на 31.08 акт воды, переехавший с аренды на деньги
     сентябрьской оплаты, превращает «ДЗ 40 570,25 / КЗ 0» в «ДЗ 50 000 / КЗ 9 429,75»
-    (скептик S6). Поэтому акт, чей месяц документа, любой месяц периода или период, который он
-    унаследует от счёта-основания, закрыт замком, пропускаем (``_closing_period_open``) и пишем
-    предупреждение в лог. ДЗ своего счёта тогда остаётся открытой — видимо и честно, до ручного
-    перегашения скриптом ``readdress_closing_settlements`` после открытия периода: сам перенос
-    повторно не запускается, он идёт только побочным шагом оплаты счёта.
+    (скептик S6). Поэтому акт, чей месяц документа или любой месяц своего периода закрыт
+    замком, пропускаем (``_closing_period_open``) и пишем предупреждение в лог. ДЗ своего
+    счёта тогда остаётся открытой — видимо и честно, до ручного перегашения скриптом
+    ``readdress_closing_settlements`` после открытия периода: сам перенос повторно не
+    запускается, он идёт только побочным шагом оплаты счёта. Период, который акт без периода
+    унаследовал бы от счёта-основания, замок переноса не смотрит: наследование закрытого месяца
+    заперто в самом ``_inherit_period_from_prepayment_allocations``, и акт переезжает на свои
+    деньги без периода — так же, как если бы пришёл после оплаты.
 
-    Замок сторожит и СНИМАЕМЫЕ деньги: аванс, чей готовый период задевает закрытый месяц, с акта
+    Замок сторожит и СНИМАЕМЫЕ деньги: аванс, который ОПиУ относит к закрытому месяцу, с акта
     не снимается (``_release_guessed_settlements``). Снятие снова открывает его ДЗ, и ОПиУ того
-    месяца начинает «ждать документ» (``pnl/sources/waiting.py`` смотрит на открытые авансы
-    по периоду) — в сверенном месяце, без единого нового события в нём (скептик T2b).
+    месяца начинает «ждать документ» (``pnl/sources/waiting.py`` смотрит на открытые авансы —
+    по готовому периоду, а без периода по месяцу денег) — в сверенном месяце, без единого
+    нового события в нём (скептик T2b).
 
     Возврат чужому авансу — та же арифметика, что у ``release_invoice_prepayment_allocations``.
     Затем акт гасится заново штатным авто-зачётом, и лестница отдаёт ему деньги оснований
@@ -769,7 +773,7 @@ async def _repoint_guessed_settlements_to_bill(
         basis_ids = await _basis_bill_ids(session, closing)
         if bill.id not in basis_ids:
             continue
-        if not await _closing_period_open(session, closing, basis_ids):
+        if not await _closing_period_open(session, closing):
             continue
         # Акты по очереди: каждый сразу перегашается, и следующий видит уже уменьшенный остаток
         # общих оснований (два акта, называющие один счёт).
@@ -790,7 +794,7 @@ async def _release_guessed_settlements(
 
     Шаг ``_repoint_guessed_settlements_to_bill``: там же объяснено, почему лимит общий для всех
     счетов-оснований, почему не снимаются деньги оснований и своего потока, почему не снимается
-    аванс закрытого периода и в каком порядке снимается прочее. Без flush статуса акта и без
+    аванс закрытого месяца и в каком порядке снимается прочее. Без flush статуса акта и без
     перегашения — это делает вызывающий."""
     free = sum(
         (
@@ -842,25 +846,18 @@ async def _release_guessed_settlements(
             if (key := _utility_stream(bill)) is not None and key[0] == stream[0]
         }
         rows = [row for row in rows if row[1].bill_invoice_id not in own_stream]
-    # Аванс, чей готовый период задевает закрытый месяц, не снимаем: его ДЗ снова открылась бы
-    # в сверенном месяце. Мерило то же, что у слоя ожидания ОПиУ, — готовый период аванса.
+    # Аванс, который ОПиУ относит к закрытому месяцу, не снимаем: его ДЗ снова открылась бы в
+    # сверенном месяце. Мерило то же, что у слоя ожидания ОПиУ (``_prepayment_waiting_months``):
+    # готовый период аванса, а без периода — месяц его денег.
     closed = await accounting_periods.closed_months(session)
     if closed:
+        months = await _prepayment_waiting_months(session, [prepayment for _, prepayment in rows])
         unlocked = []
         for alloc, prepayment in rows:
-            if (
-                prepayment.service_period_status == "ready"
-                and prepayment.service_period_start is not None
-                and prepayment.service_period_end is not None
-                and closed.intersection(
-                    accounting_periods.months_between(
-                        prepayment.service_period_start, prepayment.service_period_end
-                    )
-                )
-            ):
+            if closed.intersection(months.get(prepayment.id, ())):
                 logger.warning(
-                    "Угаданный зачёт аванса %s на закрывающем %s не снят: период аванса задевает "
-                    "закрытый месяц. Перегасить вручную после открытия периода",
+                    "Угаданный зачёт аванса %s на закрывающем %s не снят: ОПиУ относит аванс к "
+                    "закрытому месяцу. Перегасить вручную после открытия периода",
                     prepayment.id,
                     closing.id,
                 )
@@ -892,51 +889,34 @@ async def _release_guessed_settlements(
     return released
 
 
-async def _closing_period_open(
-    session: AsyncSession, closing: SupplierInvoice, basis_ids: frozenset[uuid.UUID]
-) -> bool:
-    """Переразметку зачёта можно делать: ни один месяц, который она заденет, не закрыт.
+async def _closing_period_open(session: AsyncSession, closing: SupplierInvoice) -> bool:
+    """Переразметку зачёта можно делать: месяцы самого документа не закрыты.
 
     Та же проверка, что у ``readdress_closing_settlements``: единица замка и отчёта одна (см.
     ``accounting_periods.assert_period_open``) — месяц документа и все месяцы его периода.
 
-    Плюс УНАСЛЕДОВАННЫЙ период. Месяцы акта — это его собственный период, а у акта без
-    периода — тот, что он перенимает от денег счёта-основания
-    (``_inherit_period_from_prepayment_allocations``). Бумажный акт от сентября, называющий
-    августовский счёт, в замок сам не попадает — месяц документа открыт, периода нет, — а
-    перенос ради того и делается, чтобы он унаследовал август. Само наследование закрытого
-    месяца запрещено в ``_inherit_period_from_prepayment_allocations`` для всех дверей; здесь
-    такой акт пропускаем целиком, как акт закрытого месяца.
+    ПЕРИОДЫ СЧЕТОВ-ОСНОВАНИЙ СЮДА НЕ ВХОДЯТ, хотя до 25.09 входили у акта без периода. Замок
+    боялся наследования: бумажный акт от сентября, перенесённый на деньги августовского счёта,
+    перенял бы август и завёл начисление в закрытом месяце. Но это наследование заперто в самом
+    ``_inherit_period_from_prepayment_allocations`` для всех дверей (скептик L1), и второй
+    замок здесь делал итог зависимым от порядка событий. «Оплата, потом акт» — акт гасится ДЗ
+    своего счёта и остаётся без периода. «Акт, потом оплата» — перенос пропускался: акт висел
+    на чужих деньгах, а ДЗ счёта с периодом закрытого месяца — открытой, и ОПиУ сверенного
+    месяца начинал «ждать документ», который уже пришёл. Теперь оба порядка дают одно: зачёт
+    деньгами своего счёта, а период акту назначает человек (он виден в «оплачено, расход не
+    признан» месяца своей даты).
 
-    Условие ровно то же, что у наследования (``_can_inherit_period``): акт с проставленными
-    датами — в том числе ``ambiguous`` — чужой период не перенимает никогда, и периоды его
-    оснований замку безразличны. Раньше их проверяли у любого акта без готового периода, и
-    перенос такого акта пропускался зря (скептик L2).
+    Снимаемые с акта деньги сторожит свой замок (``_release_guessed_settlements``): аванс,
+    который ОПиУ относит к закрытому месяцу, не снимается.
 
     Закрытый — пропуск с предупреждением в лог, а не исключение: перенос идёт побочным шагом
     оплаты счёта, и валить из-за него саму оплату нельзя."""
     action = f"перенос зачёта документа № {closing.number} на деньги его счёта"
-    periods: list[tuple[date | None, date | None]] = [
-        (closing.service_period_start, closing.service_period_end)
-    ]
-    if _can_inherit_period(closing):
-        bills = (
-            await session.scalars(select(SupplierInvoice).where(SupplierInvoice.id.in_(basis_ids)))
-        ).all()
-        periods += [(b.service_period_start, b.service_period_end) for b in bills]
-        receivables = (
-            await session.scalars(
-                select(SupplierPrepayment).where(
-                    SupplierPrepayment.bill_invoice_id.in_(basis_ids),
-                    SupplierPrepayment.kind == BILL_PREPAYMENT_KIND,
-                )
-            )
-        ).all()
-        periods += [(p.service_period_start, p.service_period_end) for p in receivables]
     try:
         await accounting_periods.assert_month_open(session, closing.invoice_date, action=action)
-        for start, end in periods:
-            await accounting_periods.assert_period_open(session, start, end, action=action)
+        await accounting_periods.assert_period_open(
+            session, closing.service_period_start, closing.service_period_end, action=action
+        )
     except accounting_periods.PeriodClosed as exc:
         logger.warning(
             "Перенос угаданного зачёта пропущен: закрывающий %s задевает закрытый период (%s). "
@@ -946,6 +926,65 @@ async def _closing_period_open(
         )
         return False
     return True
+
+
+async def _prepayment_waiting_months(
+    session: AsyncSession, prepayments: Sequence[SupplierPrepayment]
+) -> dict[uuid.UUID, list[date]]:
+    """Месяцы, в которых ОПиУ ждёт документ по открытому остатку каждого аванса.
+
+    Зеркало ``pnl/sources/waiting.month_share``: готовый период — все его месяцы; без периода —
+    месяц денег, то есть проводки аванса (``CashflowTransaction.operation_date``). Аванс без
+    периода и без проводки (ДЗ оплаченного счёта без периода, входящий остаток) ОПиУ не
+    относит ни к одному месяцу — пустой список.
+
+    Щит признанного месяца («у пары контрагент × статья месяц уже признан») здесь не
+    учитывается намеренно: он зависит от чужих начислений и может отпасть, а замок, который на
+    эти месяцы опирается, обязан держать сверенный месяц всегда."""
+    transaction_ids = {
+        p.cashflow_transaction_id for p in prepayments if p.cashflow_transaction_id is not None
+    }
+    paid_on: dict[uuid.UUID, date] = {}
+    if transaction_ids:
+        paid_on = dict(
+            (
+                await session.execute(
+                    select(CashflowTransaction.id, CashflowTransaction.operation_date).where(
+                        CashflowTransaction.id.in_(transaction_ids)
+                    )
+                )
+            ).all()
+        )
+    months: dict[uuid.UUID, list[date]] = {}
+    for prepayment in prepayments:
+        if (
+            prepayment.service_period_status == "ready"
+            and prepayment.service_period_start is not None
+            and prepayment.service_period_end is not None
+        ):
+            months[prepayment.id] = accounting_periods.months_between(
+                prepayment.service_period_start, prepayment.service_period_end
+            )
+            continue
+        money_on = paid_on.get(prepayment.cashflow_transaction_id)
+        months[prepayment.id] = [accounting_periods.month_start(money_on)] if money_on else []
+    return months
+
+
+async def assert_prepayment_months_open(
+    session: AsyncSession, prepayment: SupplierPrepayment, *, action: str
+) -> None:
+    """``PeriodClosed``, если ОПиУ относит аванс к закрытому месяцу.
+
+    Месяцы аванса — те же, что у слоя ожидания ОПиУ (``_prepayment_waiting_months``).
+
+    Для разметки, которая меняет ОТКРЫТЫЙ остаток уже существующего аванса: снятие зачёта
+    открывает его ДЗ и дописывает ожидание в месяц аванса, новый зачёт закрывает ДЗ и ожидание
+    оттуда убирает. Если месяц сверен и закрыт, то и другое — правка закрытого отчёта задним
+    числом."""
+    months = (await _prepayment_waiting_months(session, [prepayment]))[prepayment.id]
+    if months:
+        await accounting_periods.assert_period_open(session, months[0], months[-1], action=action)
 
 
 async def _settle_counterparty_closing_from_prepayments(
@@ -2544,8 +2583,8 @@ def _period_may_be_inherited(
 def _can_inherit_period(invoice: SupplierInvoice) -> bool:
     """Может ли документ перенять период погасивших его авансов: закрывающий без своих дат.
 
-    Одно условие на наследование и на замок переноса (``_closing_period_open``): документ с
-    проставленными датами — даже ``ambiguous`` — чужой период не перенимает никогда."""
+    Документ с проставленными датами — даже ``ambiguous`` — чужой период не перенимает никогда
+    (скептик L2: его перенос раньше пропускался зря из-за периодов оснований)."""
     return (
         invoice.doc_kind == "closing"
         and invoice.service_period_status != "ready"
