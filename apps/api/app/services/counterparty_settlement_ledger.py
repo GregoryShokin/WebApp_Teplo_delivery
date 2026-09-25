@@ -53,7 +53,7 @@ from app.models import (
     Wallet,
 )
 from app.models.enums import UTILITY_INVOICE_SOURCE
-from app.services import accounting_periods
+from app.services import accounting_periods, clock
 
 # Статусы предоплат, которые ещё держат дебиторку (те же, что в плитке «Остатки»).
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
@@ -380,7 +380,8 @@ async def _payment_rows(
         if sp.opening and sp.cashflow_transaction_id is None:
             out.append(
                 (
-                    sp.created_at.date(),
+                    # Дата записи — день по Москве, тот же, что у баланса на дату.
+                    clock.moscow_date(sp.created_at),
                     sp.id,
                     money(sp.amount),
                     "Входящий остаток",

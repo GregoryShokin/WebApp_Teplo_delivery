@@ -2134,8 +2134,11 @@ async def _settlement_order(
 
     def money_date(row: tuple[SupplierPrepayment, date | None, date | None]) -> date:
         prepayment, operation_date, bill_date = row
-        # День, когда деньги реально ушли: своя проводка → оплата счёта → дата записи.
-        return operation_date or bill_date or prepayment.created_at.date()
+        # День, когда деньги реально ушли: своя проводка → оплата счёта → дата записи. Дата
+        # записи — день по Москве, как в балансе на дату (``_prepayment_money_date``): иначе
+        # входящий остаток, заведённый после полуночи МСК, стоял бы в очереди днём раньше, чем
+        # появляется в балансе.
+        return operation_date or bill_date or clock.moscow_date(prepayment.created_at)
 
     def sort_key(row: tuple[SupplierPrepayment, date | None, date | None]) -> tuple:
         prepayment = row[0]

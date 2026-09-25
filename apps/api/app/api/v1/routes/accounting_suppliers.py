@@ -572,8 +572,11 @@ async def list_supplier_accounting(
         if period_known and periods_service.before_accounting_start(prepayment.service_period_end):
             continue
         # Дата денег, а не дата записи: своя проводка → оплата счёта → дата счёта. ``created_at``
-        # остаётся последним фолбэком, когда денежного следа нет вовсе (входящие остатки).
-        paid_on = operation_date or bill_paid_on or bill_date or prepayment.created_at.date()
+        # остаётся последним фолбэком, когда денежного следа нет вовсе (входящие остатки), — днём
+        # по Москве, как в балансе на дату.
+        paid_on = (
+            operation_date or bill_paid_on or bill_date or clock.moscow_date(prepayment.created_at)
+        )
         # Период для срока: явный, а при его отсутствии — месяц платежа. Фолбэк не выдумка,
         # а рабочая гипотеза: услуга почти всегда оплачивается в своём же месяце, и ждать
         # документ по ней всё равно надо. Строка честно помечена ``period_assumed``.
@@ -1190,7 +1193,7 @@ async def list_counterparty_balances(
                 SupplierPrepayment.counterparty_id,
                 func.sum(SupplierPrepayment.amount - SupplierPrepayment.amount_settled),
                 func.count(SupplierPrepayment.id),
-                func.max(func.date(SupplierPrepayment.created_at)),
+                func.max(balance_as_of._msk_date(SupplierPrepayment.created_at)),
             )
             .where(SupplierPrepayment.status.in_(OPEN_PREPAYMENT_STATUSES))
             .group_by(SupplierPrepayment.counterparty_id)
@@ -1248,7 +1251,7 @@ async def list_counterparty_balances(
         await session.execute(
             select(
                 SupplierPrepayment.counterparty_id,
-                func.max(func.date(SupplierPrepayment.created_at)),
+                func.max(balance_as_of._msk_date(SupplierPrepayment.created_at)),
             ).group_by(SupplierPrepayment.counterparty_id)
         )
     ).all()
@@ -1496,10 +1499,14 @@ async def list_payment_register(
     ]
     if counterparty_id is not None:
         opening_filters.append(SupplierPrepayment.counterparty_id == counterparty_id)
+    # День записи — по Москве, как дата строки ниже и дата денег в балансе на дату: голый
+    # ``date()`` считается в зоне сессии (на проде UTC), и остаток, записанный после полуночи
+    # МСК, фильтр относил бы к одному дню, а строка показывала бы другой.
+    opening_day = balance_as_of._msk_date(SupplierPrepayment.created_at)
     if date_from is not None:
-        opening_filters.append(func.date(SupplierPrepayment.created_at) >= date_from)
+        opening_filters.append(opening_day >= date_from)
     if date_to is not None:
-        opening_filters.append(func.date(SupplierPrepayment.created_at) <= date_to)
+        opening_filters.append(opening_day <= date_to)
     opening_rows = (
         await session.execute(
             select(SupplierPrepayment, Counterparty.name, DdsArticle.name)
@@ -1590,7 +1597,7 @@ async def list_payment_register(
             PaymentRegisterRow(
                 id=sp.id,
                 row_kind="opening_prepayment",
-                operation_date=sp.created_at.date(),
+                operation_date=clock.moscow_date(sp.created_at),
                 amount=_float(sp.amount),
                 counterparty_id=sp.counterparty_id,
                 counterparty_name=cp_name,
