@@ -39,9 +39,12 @@ import {
   DirectionBadge,
   PaginationControls,
   ProviderBadge,
+  SUPPLIER_REFUND_ARTICLE_CODE,
   compactText,
   formatDate,
   formatDdsMoney,
+  refundTwinWarning,
+  refundTwinsQuery,
 } from "@/routes/dds/shared";
 
 const LIMIT = 20;
@@ -164,6 +167,23 @@ function OwnerReviewCard({
   const [chosenChequeId, setChosenChequeId] = useState(
     refundCandidates.length === 1 ? refundCandidates[0].invoice_id : "none",
   );
+  // Возврат переплаты, уже проведённый наличными («Новый платёж»): разметить ещё и выписку —
+  // погасить аванс вдвое. Так пришёл возврат Скачковой — через этот разбор. Предупреждаем.
+  const refundArticleId = articles.find((a) => a.code === SUPPLIER_REFUND_ARTICLE_CODE)?.id;
+  const refundTwinParams =
+    operation &&
+    operation.direction === "in" &&
+    refundArticleId &&
+    articleId === refundArticleId &&
+    counterpartyId !== "none"
+      ? {
+          counterparty_id: counterpartyId,
+          amount: operation.amount,
+          bank_operation_id: operation.id,
+        }
+      : null;
+  const refundTwinsResult = useQuery(refundTwinsQuery(refundTwinParams));
+  const refundTwinText = refundTwinWarning(refundTwinsResult.data);
 
   const invalidate = async () => {
     await Promise.all([
@@ -506,6 +526,15 @@ function OwnerReviewCard({
                     контрагента.
                   </p>
                 ) : null}
+              </div>
+            ) : null}
+
+            {refundTwinText ? (
+              <div
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+                role="alert"
+              >
+                {refundTwinText}
               </div>
             ) : null}
 

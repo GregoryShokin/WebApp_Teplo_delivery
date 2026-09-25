@@ -3073,6 +3073,42 @@ export async function getDdsOperationSplit(operationId: string): Promise<DdsOper
   return response.data;
 }
 
+// Сторож задвоенного возврата: тот же возврат контрагента на ту же сумму, уже проведённый
+// ДРУГИМ каналом (наличные ↔ банк) рядом по дате. Пересборка возвратов гасит аванс каждым
+// приходом с возвратной статьёй, поэтому один возврат, проведённый дважды, гасит его вдвое.
+export type RefundTwin = {
+  transaction_id: string;
+  operation_date: string;
+  amount: string;
+  wallet_name: string;
+  channel: "cash" | "bank";
+  // bank_operation — выписка, new_payment_income — «Новый платёж», иное — ручная проводка.
+  source_kind: string;
+};
+
+export type RefundTwinList = {
+  items: RefundTwin[];
+  // Совпал не один платёж, а сумма всех возвратов другим каналом в окне (150 + 150 против 300).
+  combined: boolean;
+  window_days: number;
+};
+
+// Операция выписки даёт канал и дату сама; «Новый платёж» и ручная проводка — кошельком
+// (без даты бэк берёт сегодняшний день по Москве). amount — сумма ВСЕХ возвратных строк
+// контрагента в разборе: доли 150 + 150 гасят аванс как один возврат на 300.
+export type RefundTwinQuery = {
+  counterparty_id: string;
+  amount: string;
+  bank_operation_id?: string;
+  wallet_id?: string;
+  operation_date?: string;
+};
+
+export async function getRefundTwins(params: RefundTwinQuery): Promise<RefundTwinList> {
+  const response = await api.get<RefundTwinList>("/dds/refund-twins", { params });
+  return response.data;
+}
+
 // Сотрудники для привязки выплаты при разборе операции журнала (зарплатная статья):
 // активные + увольняемые + уволенные. on_demand — режим оклада «по востребованию».
 export type DdsPayoutEmployee = {
