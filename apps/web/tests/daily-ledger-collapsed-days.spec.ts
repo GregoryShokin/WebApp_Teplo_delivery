@@ -176,17 +176,25 @@ function ledgerBonuses(percent = "3150", revenue = "140000") {
   };
 }
 
-test("shows daily revenue and bonus with collapsed times and formula details", async ({ page }) => {
+test("shows bonus only in an expanded employee row, including one shift", async ({ page }) => {
   await page.goto("/schedule/shifts-ledger");
   await page.locator("#shift-ledger-date").fill("2026-05-30");
   const bonus = page.getByTestId(`daily-ledger-bonus-employee-1-${firstDay}`);
+  await expect(bonus).toHaveCount(0);
+  await expandEmployee(page);
   await expect(bonus).toContainText(/3\s?150 ₽/);
   await expect(bonus).toContainText("≈");
   await expect(bonus).toHaveAttribute("title", /коэффициент 10/);
   await expect(page.getByTestId(`daily-ledger-revenue-${firstDay}`)).toContainText(/140\s?000 ₽/);
   await expect(page.getByTestId(`daily-ledger-revenue-${firstDay}`)).toContainText("4,5%");
   await expect(page.getByTestId(`daily-ledger-open-header-${firstDay}`)).toHaveCount(0);
-  await page.screenshot({ path: "test-results/shift-bonuses-preview.png", fullPage: true });
+  await page.screenshot({
+    path: "test-results/shift-bonuses-expanded-preview.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Свернуть строку Иван Петров", exact: true }).click();
+  await expect(bonus).toHaveCount(0);
+  await expect(page.getByTestId(`daily-ledger-revenue-${firstDay}`)).toBeVisible();
 });
 
 test("refreshes bonuses every minute without closing or rebuilding shifts", async ({ page }) => {
@@ -197,6 +205,7 @@ test("refreshes bonuses every minute without closing or rebuilding shifts", asyn
     return fulfillJson(route, count === 1 ? ledgerBonuses() : ledgerBonuses("5225", "190000"));
   });
   await page.goto("/payroll/daily-ledger");
+  await expandEmployee(page);
   const bonus = page.getByTestId(`daily-ledger-bonus-employee-1-${firstDay}`);
   await expect(bonus).toContainText(/3\s?150 ₽/);
   await page.clock.fastForward(60_000);
@@ -206,6 +215,7 @@ test("refreshes bonuses every minute without closing or rebuilding shifts", asyn
 
 test("retains previous result but labels it stale when revenue refresh fails", async ({ page }) => {
   await page.goto("/payroll/daily-ledger");
+  await expandEmployee(page);
   const bonus = page.getByTestId(`daily-ledger-bonus-employee-1-${firstDay}`);
   await expect(bonus).toContainText(/3\s?150 ₽/);
   await page.route("**/api/v1/shifts/ledger/bonuses**", (route) =>
@@ -234,7 +244,10 @@ test("does not show zero bonuses on an initial revenue failure", async ({ page }
   );
   await page.goto("/payroll/daily-ledger");
   await expect(page.getByRole("alert")).toContainText("Не удалось обновить выручку и премии");
-  await expect(page.getByText("Премия: —", { exact: true }).first()).toBeVisible();
+  await expandEmployee(page);
+  await expect(
+    page.getByTestId("daily-ledger-bonus-row-employee-1").getByText("—", { exact: true }).first(),
+  ).toBeVisible();
   await expect(page.getByTestId(`daily-ledger-bonus-employee-1-${firstDay}`)).toHaveCount(0);
 });
 
@@ -246,9 +259,16 @@ test("marks the whole day for review when a participant has unresolved inputs", 
   data.days[0].employees = [];
   await page.route("**/api/v1/shifts/ledger/bonuses**", (route) => fulfillJson(route, data));
   await page.goto("/payroll/daily-ledger");
-  await expect(page.getByText("Премия: уточните смены дня", { exact: true })).toBeVisible();
+  await expandEmployee(page);
+  await expect(page.getByText("Уточните смены дня", { exact: true })).toBeVisible();
   await expect(page.getByTestId(`daily-ledger-bonus-employee-1-${firstDay}`)).toHaveCount(0);
   await expect(page.getByTestId(`daily-ledger-bonus-employee-1-${days[1]}`)).toContainText(
     /3\s?150 ₽/,
   );
 });
+
+async function expandEmployee(page: Page) {
+  const toggle = page.getByRole("button", { name: "Развернуть строку Иван Петров", exact: true });
+  await expect(toggle).toBeEnabled();
+  await toggle.click();
+}

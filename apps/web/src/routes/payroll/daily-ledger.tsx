@@ -528,7 +528,7 @@ function ShiftLedgerMatrixTable({
                       )}
                       data-testid={`daily-ledger-role-header-${day.date}`}
                     >
-                      Роль / премия
+                      Роль
                     </th>
                     {areTimesCollapsed ? null : (
                       <>
@@ -558,8 +558,6 @@ function ShiftLedgerMatrixTable({
               employees.map((employee) => (
                 <Fragment key={employee.id}>
                   <SummaryRow
-                    bonusByDate={bonusByDate}
-                    bonusesStale={bonusesStale}
                     canCorrect={canCorrect}
                     collapsedTimeDayDates={collapsedTimeDayDates}
                     employee={employee}
@@ -570,14 +568,24 @@ function ShiftLedgerMatrixTable({
                     savingIds={savingIds}
                   />
                   {expandedEmployees[employee.id] ? (
-                    <DetailRows
-                      canCorrect={canCorrect}
-                      collapsedTimeDayDates={collapsedTimeDayDates}
-                      employee={employee}
-                      onRoleChange={onRoleChange}
-                      roleOverrides={roleOverrides}
-                      savingIds={savingIds}
-                    />
+                    <>
+                      {employee.days.some((day) => day.shifts.length > 1) ? (
+                        <DetailRows
+                          canCorrect={canCorrect}
+                          collapsedTimeDayDates={collapsedTimeDayDates}
+                          employee={employee}
+                          onRoleChange={onRoleChange}
+                          roleOverrides={roleOverrides}
+                          savingIds={savingIds}
+                        />
+                      ) : null}
+                      <EmployeeBonusRow
+                        bonusByDate={bonusByDate}
+                        bonusesStale={bonusesStale}
+                        collapsedTimeDayDates={collapsedTimeDayDates}
+                        employee={employee}
+                      />
+                    </>
                   ) : null}
                 </Fragment>
               ))
@@ -590,8 +598,6 @@ function ShiftLedgerMatrixTable({
 }
 
 function SummaryRow({
-  bonusByDate,
-  bonusesStale,
   canCorrect,
   collapsedTimeDayDates,
   employee,
@@ -601,8 +607,6 @@ function SummaryRow({
   roleOverrides,
   savingIds,
 }: {
-  bonusByDate: Map<string, ShiftLedgerBonusDay>;
-  bonusesStale: boolean;
   canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
@@ -612,13 +616,15 @@ function SummaryRow({
   roleOverrides: Record<string, string>;
   savingIds: Record<string, boolean>;
 }) {
-  const canExpand = employee.days.some((day) => day.shifts.length > 1);
+  const canExpand = employee.days.some((day) => day.shifts.length > 0);
 
   return (
     <tr className="transition-colors hover:bg-muted/40">
       <td className={stickyBodyCellClassName("bg-card")}>
         <div className="flex items-center gap-2">
           <Button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Свернуть" : "Развернуть"} строку ${employee.full_name}`}
             className="h-7 w-7 shrink-0"
             disabled={!canExpand}
             onClick={onToggle}
@@ -649,13 +655,6 @@ function SummaryRow({
                 roleOverrides={roleOverrides}
                 savingIds={savingIds}
               />
-              {day.shifts.length ? (
-                <DailyBonusCell
-                  day={bonusByDate.get(day.date)}
-                  employeeId={employee.id}
-                  stale={bonusesStale}
-                />
-              ) : null}
             </td>
             {areTimesCollapsed ? null : (
               <>
@@ -678,6 +677,43 @@ function SummaryRow({
   );
 }
 
+function EmployeeBonusRow({
+  bonusByDate,
+  bonusesStale,
+  collapsedTimeDayDates,
+  employee,
+}: {
+  bonusByDate: Map<string, ShiftLedgerBonusDay>;
+  bonusesStale: boolean;
+  collapsedTimeDayDates: Set<string>;
+  employee: ShiftLedgerMatrixEmployee;
+}) {
+  return (
+    <tr className="bg-muted/20" data-testid={`daily-ledger-bonus-row-${employee.id}`}>
+      <td className={stickyBodyCellClassName("bg-muted")}>
+        <span className="ml-9 text-xs font-medium text-muted-foreground">Премия от выручки</span>
+      </td>
+      {employee.days.map((day) => (
+        <td
+          className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}
+          colSpan={collapsedTimeDayDates.has(day.date) ? 1 : 3}
+          key={day.date}
+        >
+          {day.shifts.length ? (
+            <DailyBonusCell
+              day={bonusByDate.get(day.date)}
+              employeeId={employee.id}
+              stale={bonusesStale}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 function formatBonusMoney(value: string) {
   return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
 }
@@ -691,18 +727,18 @@ function DailyBonusCell({
   employeeId: string;
   stale: boolean;
 }) {
-  if (!day) return <div className="mt-2 text-xs text-muted-foreground">Премия: —</div>;
+  if (!day) return <div className="text-xs text-muted-foreground">—</div>;
   if (day.status === "needs_review")
     return (
       <div
-        className="mt-2 text-xs text-amber-700"
+        className="text-xs text-amber-700"
         title="Для расчёта долей нужно уточнить роли и время всех участников дня."
       >
-        Премия: уточните смены дня
+        Уточните смены дня
       </div>
     );
   const employee = day.employees.find((item) => item.employee_id === employeeId);
-  if (!employee) return <div className="mt-2 text-xs text-muted-foreground">Премия: —</div>;
+  if (!employee) return <div className="text-xs text-muted-foreground">—</div>;
   const explanation = employee.shifts
     .map(
       (shift) =>
@@ -712,13 +748,13 @@ function DailyBonusCell({
   return (
     <div
       className={cn(
-        "mt-2 text-xs tabular-nums",
+        "text-xs tabular-nums",
         stale ? "text-amber-700" : "text-emerald-700 dark:text-emerald-400",
       )}
       data-testid={`daily-ledger-bonus-${employeeId}-${day.date}`}
       title={`${explanation}\nОбщая премия делится по весам: коэффициент × min(часы, 12) / 12. Доля округляется вниз до рубля. До удержаний.${stale ? " Данные могут быть устаревшими." : ""}`}
     >
-      Премия: <span className="font-semibold">{formatBonusMoney(employee.percent)}</span>
+      <span className="font-semibold">{formatBonusMoney(employee.percent)}</span>
       {day.has_open_shifts ? " ≈" : ""}
     </div>
   );
