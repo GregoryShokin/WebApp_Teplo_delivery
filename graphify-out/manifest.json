@@ -1025,9 +1025,9 @@
     "semantic_hash": "5543cda5b7c766b456ef473dd692953f"
   },
   "apps/api/app/api/v1/routes/shifts.py": {
-    "mtime": 1780761925.38178,
-    "ast_hash": "a11e2ef304ffc2aa6252be0628abb0c3",
-    "semantic_hash": "a11e2ef304ffc2aa6252be0628abb0c3"
+    "mtime": 1790529943.4189546,
+    "ast_hash": "a663645f5f1f3d757522a1df8e9c78ed",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/vacations.py": {
     "mtime": 1785680736.2376437,
@@ -1360,9 +1360,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll.py": {
-    "mtime": 1785838511.4370763,
-    "ast_hash": "bf2534d350dbf6b62254ef8f96d1760a",
-    "semantic_hash": "bf2534d350dbf6b62254ef8f96d1760a"
+    "mtime": 1790529943.4197628,
+    "ast_hash": "fa28e872a1d376740b710e375b223694",
+    "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll_adjustments.py": {
     "mtime": 1781091380.93325,
@@ -1615,9 +1615,9 @@
     "semantic_hash": "e82f4a65e6a8b5e34d99d5d0be5767f4"
   },
   "apps/api/app/services/daily_percent_service.py": {
-    "mtime": 1783589719.8878758,
-    "ast_hash": "4020757717caeb989d29fa1a9aa7087c",
-    "semantic_hash": "4020757717caeb989d29fa1a9aa7087c"
+    "mtime": 1790529943.420184,
+    "ast_hash": "058c769e0e8e204fc13179043c329c70",
+    "semantic_hash": ""
   },
   "apps/api/app/services/deferred_audit_charge_service.py": {
     "mtime": 1783083478.1746576,
@@ -1910,9 +1910,9 @@
     "semantic_hash": "a80304e07f252333f177df835c4efcbd"
   },
   "apps/api/app/services/shift_ledger.py": {
-    "mtime": 1784752574.3266401,
-    "ast_hash": "9beee76611a5a39d80f553a6070700df",
-    "semantic_hash": "9beee76611a5a39d80f553a6070700df"
+    "mtime": 1790529943.4209588,
+    "ast_hash": "f45e3ab1f9e28b1a3b4e02ffae250c3b",
+    "semantic_hash": ""
   },
   "apps/api/app/services/shift_schedule_service.py": {
     "mtime": 1783697900.6177816,
@@ -2905,9 +2905,9 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "apps/web/src/lib/api.ts": {
-    "mtime": 1787149600.691851,
-    "ast_hash": "db69a015b160c5cef40ca255c1c74170",
-    "semantic_hash": "db69a015b160c5cef40ca255c1c74170"
+    "mtime": 1790529943.4222865,
+    "ast_hash": "e36ec74ffa783ba139830b7aac9e2f97",
+    "semantic_hash": ""
   },
   "apps/web/src/lib/auth.ts": {
     "mtime": 1780747833.0947237,
@@ -3235,9 +3235,9 @@
     "semantic_hash": "aaabeb3d823197ac6dce3997041ad865"
   },
   "apps/web/src/routes/payroll/daily-ledger.tsx": {
-    "mtime": 1781783489.163657,
-    "ast_hash": "ecf3c9abc41f2c345b1b3395d121e95a",
-    "semantic_hash": "ecf3c9abc41f2c345b1b3395d121e95a"
+    "mtime": 1790529943.4229517,
+    "ast_hash": "a1c4aa142d5e52f5aff7bf89756afbd1",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/deposits.tsx": {
     "mtime": 1785750535.1224296,
@@ -3360,9 +3360,9 @@
     "semantic_hash": "7eee565b42d8cb6a55f2303735ce1118"
   },
   "apps/web/tests/daily-ledger-collapsed-days.spec.ts": {
-    "mtime": 1780162250.7650769,
-    "ast_hash": "64463a71d4ff18c1dcec3604ff73103d",
-    "semantic_hash": "64463a71d4ff18c1dcec3604ff73103d"
+    "mtime": 1790529943.4236004,
+    "ast_hash": "b5d9dc323c20e940f883eacb63d5dcca",
+    "semantic_hash": ""
   },
   "apps/web/tests/deposits.spec.ts": {
     "mtime": 1785750535.1230302,
@@ -16073,5 +16073,20 @@
     "mtime": 1790362087.108442,
     "ast_hash": "ab46035d6b477749d5ec00d2466670f4",
     "semantic_hash": "ab46035d6b477749d5ec00d2466670f4"
+  },
+  "apps/api/app/services/shift_ledger_bonus.py": {
+    "mtime": 1790529943.4211805,
+    "ast_hash": "1ef2f1de1fa484a4b2358faf77c87cc6",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_shift_ledger_bonus.py": {
+    "mtime": 1790529943.4213817,
+    "ast_hash": "47364f294a0b4ea2122716be1d33d8c5",
+    "semantic_hash": ""
+  },
+  "docs/features/shift-ledger-live-bonus.md": {
+    "mtime": 1790529943.423781,
+    "ast_hash": "bdc89fe5d0c19fae5d19b71a4728994a",
+    "semantic_hash": "bdc89fe5d0c19fae5d19b71a4728994a"
   }
 }
