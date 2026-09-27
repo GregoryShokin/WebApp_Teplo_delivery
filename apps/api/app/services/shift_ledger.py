@@ -211,9 +211,9 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
     ]
 
 
-async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict[str, Any]:
-    start_date, end_date = ledger_week_bounds(selected_date)
-    days = list(iter_dates(start_date, end_date))
+async def load_ledger_matrix_rows(
+    session: AsyncSession, start_date: date, end_date: date
+) -> list[tuple[ShiftLedgerEntry, Employee]]:
     # Учёт смен показывает штатных поваров/кассиров, уже размеченные payroll-смены
     # и нецелевых сотрудников с доступными payroll-ролями для ручного разбора.
     result = await session.execute(
@@ -239,7 +239,13 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
         )
         .order_by(Employee.full_name, ShiftLedgerEntry.work_date, ShiftLedgerEntry.opened_at)
     )
-    rows = result.all()
+    return list(result.all())
+
+
+async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict[str, Any]:
+    start_date, end_date = ledger_week_bounds(selected_date)
+    days = list(iter_dates(start_date, end_date))
+    rows = await load_ledger_matrix_rows(session, start_date, end_date)
     employee_ids = {entry.employee_id for entry, _employee in rows}
     roles_by_employee = await load_currently_active_role_assignments(session, employee_ids)
     latest_locked_date = await get_latest_locked_payroll_date(session)

@@ -28,6 +28,8 @@ import { PageHeader } from "@/components/ui-app/PageHeader";
 import {
   buildShiftLedgerWeek,
   getShiftLedgerMatrix,
+  getShiftLedgerBonuses,
+  type ShiftLedgerBonusDay,
   patchShiftLedgerEntry,
   apiErrorMessage,
   type ShiftLedgerAvailableRole,
@@ -37,7 +39,7 @@ import {
   type ShiftLedgerMatrixEmployee,
   type ShiftLedgerMatrixShift,
 } from "@/lib/api";
-import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
+import { EMPLOYEE_CATEGORY_LABELS, PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { usePermissions } from "@/lib/permissions";
 import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
@@ -48,7 +50,7 @@ type SaveRoleVariables = {
   payrollRole: string;
 };
 
-type DayHeader = ShiftLedgerMatrix["days"][number];
+type DayHeader = ShiftLedgerMatrix["days"][number] & { bonus?: ShiftLedgerBonusDay };
 
 type PayrollDailyLedgerRouteProps = {
   embedded?: boolean;
@@ -88,10 +90,29 @@ export function PayrollDailyLedgerRoute({
   const matrixQuery = useQuery({
     queryKey: matrixQueryKey,
     queryFn: () => getShiftLedgerMatrix(selectedDate),
+    refetchInterval: 60_000,
   });
 
+  const bonusQuery = useQuery({
+    queryKey: ["shift-ledger-bonuses", selectedDate],
+    queryFn: () => getShiftLedgerBonuses(selectedDate),
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+  const bonusByDate = useMemo(
+    () => new Map((bonusQuery.data?.days ?? []).map((day) => [day.date, day])),
+    [bonusQuery.data],
+  );
+
   const fallbackDays = useMemo(() => buildWeekHeaders(selectedDate), [selectedDate]);
-  const days = matrixQuery.data?.days ?? fallbackDays;
+  const days = useMemo(
+    () =>
+      (matrixQuery.data?.days ?? fallbackDays).map((day) => ({
+        ...day,
+        bonus: bonusByDate.get(day.date),
+      })),
+    [matrixQuery.data?.days, fallbackDays, bonusByDate],
+  );
   const collapsedTimeDayDates = useMemo(
     () => new Set(collapsedTimeDays ?? days.map((day) => day.date)),
     [collapsedTimeDays, days],
@@ -125,6 +146,7 @@ export function PayrollDailyLedgerRoute({
     mutationFn: () => buildShiftLedgerWeek(selectedDate),
     onSuccess: (matrix) => {
       queryClient.setQueryData(matrixQueryKey, matrix);
+      void queryClient.invalidateQueries({ queryKey: ["shift-ledger-bonuses", selectedDate] });
       toast.success("Неделя обновлена из iiko");
     },
     onError: (error) => toast.error((error as Error).message),
@@ -142,6 +164,9 @@ export function PayrollDailyLedgerRoute({
         current ? updateShiftInMatrix(current, entry) : current,
       );
       clearRoleOverride(variables.shift.ledger_entry_id);
+      void queryClient.invalidateQueries({
+        queryKey: ["shift-ledger-bonuses", variables.queryKey[1]],
+      });
       toast.success("Роль сохранена");
     },
     onError: (error, variables) => {
@@ -239,7 +264,10 @@ export function PayrollDailyLedgerRoute({
   }
 
   const buildButton = (
-    <Button disabled={!canInputLedger || buildMutation.isPending} onClick={() => buildMutation.mutate()}>
+    <Button
+      disabled={!canInputLedger || buildMutation.isPending}
+      onClick={() => buildMutation.mutate()}
+    >
       {buildMutation.isPending ? (
         <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
       ) : (
@@ -295,7 +323,46 @@ export function PayrollDailyLedgerRoute({
         </div>
       </section>
 
-      {!matrixQuery.isLoading && employees.length === 0 ? (
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+        <p>
+          Премия от выручки пересчитывается каждую минуту. Открытые смены — по отработанному
+          времени. Это текущий расчёт до удержаний.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={bonusQuery.isFetching}
+          onClick={() => void bonusQuery.refetch()}
+        >
+          <RefreshCw
+            size={14}
+            className={cn(bonusQuery.isFetching && "animate-spin")}
+            aria-hidden="true"
+          />
+          Обновить премии
+        </Button>
+        {bonusQuery.data ? (
+          <span>Выручка обновлена в {formatTime(bonusQuery.data.calculated_at)}</span>
+        ) : null}
+      </div>
+      {bonusQuery.isError ? (
+        <div
+          role="alert"
+          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          Не удалось обновить выручку и премии.
+          {bonusQuery.data
+            ? " Показан предыдущий расчёт — данные могут быть устаревшими."
+            : " Попробуйте обновить ещё раз."}
+        </div>
+      ) : null}
+      {matrixQuery.isError ? (
+        <div role="alert" className="text-sm text-destructive">
+          Не удалось загрузить учёт смен.
+        </div>
+      ) : null}
+
+      {!matrixQuery.isLoading && !matrixQuery.isError && employees.length === 0 ? (
         <EmptyState
           icon={<AlertTriangle className="h-5 w-5" aria-hidden="true" />}
           title="За выбранную неделю нет открытых смен"
@@ -303,6 +370,8 @@ export function PayrollDailyLedgerRoute({
       ) : (
         <ShiftLedgerMatrixTable
           collapsedTimeDayDates={collapsedTimeDayDates}
+          bonusByDate={bonusByDate}
+          bonusesStale={bonusQuery.isError}
           days={days}
           employees={employees}
           expandedEmployees={expandedEmployees}
@@ -325,6 +394,8 @@ export function PayrollDailyLedgerRoute({
 }
 
 function ShiftLedgerMatrixTable({
+  bonusByDate,
+  bonusesStale,
   canCorrect,
   collapsedTimeDayDates,
   days,
@@ -337,6 +408,8 @@ function ShiftLedgerMatrixTable({
   roleOverrides,
   savingIds,
 }: {
+  bonusByDate: Map<string, ShiftLedgerBonusDay>;
+  bonusesStale: boolean;
   canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   days: DayHeader[];
@@ -379,7 +452,7 @@ function ShiftLedgerMatrixTable({
                 return (
                   <th
                     className={cn(
-                      "sticky top-0 z-30 h-11 border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
+                      "sticky top-0 z-30 h-28 border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
                       day.is_today
                         ? "bg-primary/10 text-primary"
                         : "bg-muted text-muted-foreground",
@@ -418,6 +491,25 @@ function ShiftLedgerMatrixTable({
                         )}
                       </Button>
                     </div>
+                    <div
+                      className="mt-1 space-y-0.5 text-xs font-normal"
+                      data-testid={`daily-ledger-revenue-${day.date}`}
+                    >
+                      <div>
+                        Выручка:{" "}
+                        <span className="font-medium tabular-nums">
+                          {day.bonus ? formatBonusMoney(day.bonus.daily_revenue) : "—"}
+                        </span>
+                      </div>
+                      {day.bonus ? (
+                        <div>
+                          Премии: {formatBonusMoney(day.bonus.percent_pool)} ·{" "}
+                          {Number(day.bonus.rate_percent).toLocaleString("ru-RU")}%
+                        </div>
+                      ) : null}
+                      {day.bonus?.has_open_shifts ? <div>Предварительно</div> : null}
+                      {bonusesStale ? <div className="text-amber-700">Данные устарели</div> : null}
+                    </div>
                   </th>
                 );
               })}
@@ -436,7 +528,7 @@ function ShiftLedgerMatrixTable({
                       )}
                       data-testid={`daily-ledger-role-header-${day.date}`}
                     >
-                      Роль
+                      Роль / премия
                     </th>
                     {areTimesCollapsed ? null : (
                       <>
@@ -466,6 +558,8 @@ function ShiftLedgerMatrixTable({
               employees.map((employee) => (
                 <Fragment key={employee.id}>
                   <SummaryRow
+                    bonusByDate={bonusByDate}
+                    bonusesStale={bonusesStale}
                     canCorrect={canCorrect}
                     collapsedTimeDayDates={collapsedTimeDayDates}
                     employee={employee}
@@ -496,6 +590,8 @@ function ShiftLedgerMatrixTable({
 }
 
 function SummaryRow({
+  bonusByDate,
+  bonusesStale,
   canCorrect,
   collapsedTimeDayDates,
   employee,
@@ -505,6 +601,8 @@ function SummaryRow({
   roleOverrides,
   savingIds,
 }: {
+  bonusByDate: Map<string, ShiftLedgerBonusDay>;
+  bonusesStale: boolean;
   canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
@@ -551,6 +649,13 @@ function SummaryRow({
                 roleOverrides={roleOverrides}
                 savingIds={savingIds}
               />
+              {day.shifts.length ? (
+                <DailyBonusCell
+                  day={bonusByDate.get(day.date)}
+                  employeeId={employee.id}
+                  stale={bonusesStale}
+                />
+              ) : null}
             </td>
             {areTimesCollapsed ? null : (
               <>
@@ -570,6 +675,52 @@ function SummaryRow({
         );
       })}
     </tr>
+  );
+}
+
+function formatBonusMoney(value: string) {
+  return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽`;
+}
+
+function DailyBonusCell({
+  day,
+  employeeId,
+  stale,
+}: {
+  day?: ShiftLedgerBonusDay;
+  employeeId: string;
+  stale: boolean;
+}) {
+  if (!day) return <div className="mt-2 text-xs text-muted-foreground">Премия: —</div>;
+  if (day.status === "needs_review")
+    return (
+      <div
+        className="mt-2 text-xs text-amber-700"
+        title="Для расчёта долей нужно уточнить роли и время всех участников дня."
+      >
+        Премия: уточните смены дня
+      </div>
+    );
+  const employee = day.employees.find((item) => item.employee_id === employeeId);
+  if (!employee) return <div className="mt-2 text-xs text-muted-foreground">Премия: —</div>;
+  const explanation = employee.shifts
+    .map(
+      (shift) =>
+        `${roleLabel(shift.role)}, категория ${EMPLOYEE_CATEGORY_LABELS[shift.category] ?? shift.category}: ${Number(shift.hours).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ч × коэффициент ${Number(shift.coefficient).toLocaleString("ru-RU")} → ${formatBonusMoney(shift.percent)}`,
+    )
+    .join("\n");
+  return (
+    <div
+      className={cn(
+        "mt-2 text-xs tabular-nums",
+        stale ? "text-amber-700" : "text-emerald-700 dark:text-emerald-400",
+      )}
+      data-testid={`daily-ledger-bonus-${employeeId}-${day.date}`}
+      title={`${explanation}\nОбщая премия делится по весам: коэффициент × min(часы, 12) / 12. Доля округляется вниз до рубля. До удержаний.${stale ? " Данные могут быть устаревшими." : ""}`}
+    >
+      Премия: <span className="font-semibold">{formatBonusMoney(employee.percent)}</span>
+      {day.has_open_shifts ? " ≈" : ""}
+    </div>
   );
 }
 
@@ -814,7 +965,7 @@ function stickyBodyCellClassName(backgroundClassName: "bg-card" | "bg-muted") {
 
 function subHeaderClassName(isToday: boolean) {
   return cn(
-    "sticky top-11 z-30 border-b border-r px-2 py-2 text-center text-xs font-semibold uppercase text-muted-foreground",
+    "sticky top-28 z-30 border-b border-r px-2 py-2 text-center text-xs font-semibold uppercase text-muted-foreground",
     isToday ? "bg-primary/10" : "bg-muted",
   );
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date
 from typing import Annotated
@@ -11,6 +12,7 @@ from app.api.deps import CurrentActor, get_current_actor, require_permission
 from app.db.session import get_session
 from app.models import ShiftLedgerEntry
 from app.schemas.payroll import (
+    ShiftLedgerBonusesRead,
     ShiftLedgerBuildRequest,
     ShiftLedgerEntryRead,
     ShiftLedgerMatrixRead,
@@ -29,7 +31,9 @@ from app.services.shift_ledger import (
     list_ledger_matrix,
     manually_correct,
 )
+from app.services.shift_ledger_bonus import calculate_ledger_bonuses
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 SHIFTS_READ_ACCESS = (Depends(require_permission("source.shift_ledger.read")),)
 SHIFTS_INPUT_ACCESS = (Depends(require_permission("source.shift_ledger.input")),)
@@ -53,6 +57,25 @@ async def get_shift_ledger_matrix(
 ) -> dict:
     ensure_not_future(selected_date)
     return await list_ledger_matrix(session, selected_date)
+
+
+@router.get(
+    "/ledger/bonuses", response_model=ShiftLedgerBonusesRead, dependencies=SHIFTS_READ_ACCESS
+)
+async def get_shift_ledger_bonuses(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+    selected_date: Annotated[date, Query(alias="date")],
+) -> dict:
+    ensure_not_future(selected_date)
+    try:
+        return await calculate_ledger_bonuses(session, selected_date)
+    except Exception as exc:
+        logger.exception("Could not calculate live shift bonuses for %s", selected_date)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось обновить выручку и премии. Попробуйте ещё раз.",
+        ) from exc
 
 
 @router.post(

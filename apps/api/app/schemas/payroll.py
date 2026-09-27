@@ -769,3 +769,33 @@ class ShiftLedgerMatrixRead(BaseModel):
     end_date: date
     days: list[ShiftLedgerMatrixDayHeaderRead]
     employees: list[ShiftLedgerMatrixEmployeeRead]
+
+
+class ShiftLedgerBonusShiftRead(BaseModel):
+    role: str
+    category: str
+    hours: Decimal
+    coefficient: Decimal
+    weight: Decimal
+    percent: Decimal
+
+
+class ShiftLedgerBonusEmployeeRead(BaseModel):
+    employee_id: uuid.UUID
+    percent: Decimal
+    shifts: list[ShiftLedgerBonusShiftRead]
+
+
+class ShiftLedgerBonusDayRead(BaseModel):
+    date: date
+    daily_revenue: Decimal
+    percent_pool: Decimal
+    rate_percent: Decimal
+    status: Literal["ready", "needs_review"]
+    has_open_shifts: bool
+    employees: list[ShiftLedgerBonusEmployeeRead]
+
+
+class ShiftLedgerBonusesRead(BaseModel):
+    calculated_at: datetime
+    days: list[ShiftLedgerBonusDayRead]

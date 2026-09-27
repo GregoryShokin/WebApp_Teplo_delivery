@@ -1790,6 +1790,32 @@ export type ShiftLedgerMatrix = {
   employees: ShiftLedgerMatrixEmployee[];
 };
 
+export type ShiftLedgerBonusDay = {
+  date: string;
+  daily_revenue: string;
+  percent_pool: string;
+  rate_percent: string;
+  status: "ready" | "needs_review";
+  has_open_shifts: boolean;
+  employees: Array<{
+    employee_id: string;
+    percent: string;
+    shifts: Array<{
+      role: string;
+      category: EmployeeCategory;
+      hours: string;
+      coefficient: string;
+      weight: string;
+      percent: string;
+    }>;
+  }>;
+};
+
+export type ShiftLedgerBonuses = {
+  calculated_at: string;
+  days: ShiftLedgerBonusDay[];
+};
+
 export type ShiftLedgerPatch = {
   payroll_role: PayrollRole | string;
 };
@@ -5477,6 +5503,13 @@ export async function buildShiftLedger(workDate: string): Promise<ShiftLedgerEnt
 
 export async function getShiftLedgerMatrix(workDate: string): Promise<ShiftLedgerMatrix> {
   const response = await api.get<ShiftLedgerMatrix>("/shifts/ledger/matrix", {
+    params: { date: workDate },
+  });
+  return response.data;
+}
+
+export async function getShiftLedgerBonuses(workDate: string): Promise<ShiftLedgerBonuses> {
+  const response = await api.get<ShiftLedgerBonuses>("/shifts/ledger/bonuses", {
     params: { date: workDate },
   });
   return response.data;

@@ -16,13 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### agent-shiftbonus — ветка `agent/shiftbonus-live-revenue-bonus`
-- worktree: `../Teplo-agent-shiftbonus`
-- задача: дневная премия производственного персонала от актуальной выручки в Учёте смен
-- трогает: `services/daily_percent_service.py`, новый сервис премий учёта смен, `routes/shifts.py`, `schemas/payroll.py`, `routes/payroll/daily-ledger.tsx`, типы/метод учёта смен в `lib/api.ts`, профильные тесты
-- ресурсы: тестовая БД `teplo_test_shiftbonus`, web 5263
-- статус: в работе
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
