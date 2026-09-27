@@ -60,9 +60,11 @@ type PayrollDailyLedgerRouteProps = {
 const COLLAPSED_TIMES_STORAGE_KEY = "daily-ledger-times-collapsed-days";
 const ROLE_COLUMN_WIDTH = 154;
 const TIME_COLUMN_WIDTH = 88;
+const BONUS_COLUMN_WIDTH = 112;
 const EMPLOYEE_COLUMN_WIDTH = 240;
 const ROLE_COLUMN_CLASS = "w-[154px] min-w-[154px]";
 const TIME_COLUMN_CLASS = "w-[88px] min-w-[88px]";
+const BONUS_COLUMN_CLASS = "w-[112px] min-w-[112px]";
 const EMPLOYEE_COLUMN_CLASS = "w-[240px] min-w-[240px]";
 
 export function PayrollDailyLedgerRoute({
@@ -426,7 +428,7 @@ function ShiftLedgerMatrixTable({
   const tableMinWidth =
     EMPLOYEE_COLUMN_WIDTH +
     days.length * ROLE_COLUMN_WIDTH +
-    expandedTimeDayCount * TIME_COLUMN_WIDTH * 2;
+    expandedTimeDayCount * (TIME_COLUMN_WIDTH * 2 + BONUS_COLUMN_WIDTH);
 
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
@@ -452,12 +454,12 @@ function ShiftLedgerMatrixTable({
                 return (
                   <th
                     className={cn(
-                      "sticky top-0 z-30 h-28 border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
+                      "sticky top-0 z-30 h-24 border-b border-r px-3 py-2 text-center font-medium transition-all duration-200",
                       day.is_today
                         ? "bg-primary/10 text-primary"
                         : "bg-muted text-muted-foreground",
                     )}
-                    colSpan={areTimesCollapsed ? 1 : 3}
+                    colSpan={areTimesCollapsed ? 1 : 4}
                     key={day.date}
                   >
                     <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
@@ -473,14 +475,14 @@ function ShiftLedgerMatrixTable({
                       <Button
                         aria-label={
                           areTimesCollapsed
-                            ? `Развернуть время ${formatDayHeader(day.date)}`
-                            : `Свернуть время ${formatDayHeader(day.date)}`
+                            ? `Развернуть день ${formatDayHeader(day.date)}`
+                            : `Свернуть день ${formatDayHeader(day.date)}`
                         }
                         className="h-7 w-7"
                         data-testid={`daily-ledger-day-toggle-${day.date}`}
                         onClick={() => onToggleTimeColumns(day.date)}
                         size="icon"
-                        title={areTimesCollapsed ? "Развернуть время" : "Свернуть время"}
+                        title={areTimesCollapsed ? "Развернуть день" : "Свернуть день"}
                         type="button"
                         variant="ghost"
                       >
@@ -501,14 +503,6 @@ function ShiftLedgerMatrixTable({
                           {day.bonus ? formatBonusMoney(day.bonus.daily_revenue) : "—"}
                         </span>
                       </div>
-                      {day.bonus ? (
-                        <div>
-                          Премии: {formatBonusMoney(day.bonus.percent_pool)} ·{" "}
-                          {Number(day.bonus.rate_percent).toLocaleString("ru-RU")}%
-                        </div>
-                      ) : null}
-                      {day.bonus?.has_open_shifts ? <div>Предварительно</div> : null}
-                      {bonusesStale ? <div className="text-amber-700">Данные устарели</div> : null}
                     </div>
                   </th>
                 );
@@ -544,6 +538,12 @@ function ShiftLedgerMatrixTable({
                         >
                           Закрытие
                         </th>
+                        <th
+                          className={cn(BONUS_COLUMN_CLASS, subHeaderClassName(day.is_today))}
+                          data-testid={`daily-ledger-bonus-header-${day.date}`}
+                        >
+                          Премия
+                        </th>
                       </>
                     )}
                   </Fragment>
@@ -558,6 +558,8 @@ function ShiftLedgerMatrixTable({
               employees.map((employee) => (
                 <Fragment key={employee.id}>
                   <SummaryRow
+                    bonusByDate={bonusByDate}
+                    bonusesStale={bonusesStale}
                     canCorrect={canCorrect}
                     collapsedTimeDayDates={collapsedTimeDayDates}
                     employee={employee}
@@ -568,24 +570,14 @@ function ShiftLedgerMatrixTable({
                     savingIds={savingIds}
                   />
                   {expandedEmployees[employee.id] ? (
-                    <>
-                      {employee.days.some((day) => day.shifts.length > 1) ? (
-                        <DetailRows
-                          canCorrect={canCorrect}
-                          collapsedTimeDayDates={collapsedTimeDayDates}
-                          employee={employee}
-                          onRoleChange={onRoleChange}
-                          roleOverrides={roleOverrides}
-                          savingIds={savingIds}
-                        />
-                      ) : null}
-                      <EmployeeBonusRow
-                        bonusByDate={bonusByDate}
-                        bonusesStale={bonusesStale}
-                        collapsedTimeDayDates={collapsedTimeDayDates}
-                        employee={employee}
-                      />
-                    </>
+                    <DetailRows
+                      canCorrect={canCorrect}
+                      collapsedTimeDayDates={collapsedTimeDayDates}
+                      employee={employee}
+                      onRoleChange={onRoleChange}
+                      roleOverrides={roleOverrides}
+                      savingIds={savingIds}
+                    />
                   ) : null}
                 </Fragment>
               ))
@@ -598,6 +590,8 @@ function ShiftLedgerMatrixTable({
 }
 
 function SummaryRow({
+  bonusByDate,
+  bonusesStale,
   canCorrect,
   collapsedTimeDayDates,
   employee,
@@ -607,6 +601,8 @@ function SummaryRow({
   roleOverrides,
   savingIds,
 }: {
+  bonusByDate: Map<string, ShiftLedgerBonusDay>;
+  bonusesStale: boolean;
   canCorrect: boolean;
   collapsedTimeDayDates: Set<string>;
   employee: ShiftLedgerMatrixEmployee;
@@ -616,7 +612,8 @@ function SummaryRow({
   roleOverrides: Record<string, string>;
   savingIds: Record<string, boolean>;
 }) {
-  const canExpand = employee.days.some((day) => day.shifts.length > 0);
+  const detailRowCount = Math.max(...employee.days.map((day) => day.shifts.length));
+  const canExpand = detailRowCount > 1;
 
   return (
     <tr className="transition-colors hover:bg-muted/40">
@@ -668,48 +665,26 @@ function SummaryRow({
                 >
                   {formatTime(day.summary.latest_close)}
                 </td>
+                <td
+                  className={cn(BONUS_COLUMN_CLASS, bodyCellClassName, "text-center")}
+                  data-testid={`daily-ledger-bonus-cell-${employee.id}-${day.date}`}
+                  rowSpan={expanded ? detailRowCount + 1 : 1}
+                >
+                  {day.shifts.length ? (
+                    <DailyBonusCell
+                      day={bonusByDate.get(day.date)}
+                      employeeId={employee.id}
+                      stale={bonusesStale}
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </td>
               </>
             )}
           </Fragment>
         );
       })}
-    </tr>
-  );
-}
-
-function EmployeeBonusRow({
-  bonusByDate,
-  bonusesStale,
-  collapsedTimeDayDates,
-  employee,
-}: {
-  bonusByDate: Map<string, ShiftLedgerBonusDay>;
-  bonusesStale: boolean;
-  collapsedTimeDayDates: Set<string>;
-  employee: ShiftLedgerMatrixEmployee;
-}) {
-  return (
-    <tr className="bg-muted/20" data-testid={`daily-ledger-bonus-row-${employee.id}`}>
-      <td className={stickyBodyCellClassName("bg-muted")}>
-        <span className="ml-9 text-xs font-medium text-muted-foreground">Премия от выручки</span>
-      </td>
-      {employee.days.map((day) => (
-        <td
-          className={cn(ROLE_COLUMN_CLASS, bodyCellClassName)}
-          colSpan={collapsedTimeDayDates.has(day.date) ? 1 : 3}
-          key={day.date}
-        >
-          {day.shifts.length ? (
-            <DailyBonusCell
-              day={bonusByDate.get(day.date)}
-              employeeId={employee.id}
-              stale={bonusesStale}
-            />
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
-          )}
-        </td>
-      ))}
     </tr>
   );
 }
@@ -978,6 +953,9 @@ function LoadingRows({
                     <td className={cn(TIME_COLUMN_CLASS, bodyCellClassName)}>
                       <Skeleton className="mx-auto h-5 w-12" />
                     </td>
+                    <td className={cn(BONUS_COLUMN_CLASS, bodyCellClassName)}>
+                      <Skeleton className="mx-auto h-5 w-16" />
+                    </td>
                   </>
                 )}
               </Fragment>
@@ -1001,7 +979,7 @@ function stickyBodyCellClassName(backgroundClassName: "bg-card" | "bg-muted") {
 
 function subHeaderClassName(isToday: boolean) {
   return cn(
-    "sticky top-28 z-30 border-b border-r px-2 py-2 text-center text-xs font-semibold uppercase text-muted-foreground",
+    "sticky top-24 z-30 border-b border-r px-2 py-2 text-center text-xs font-semibold uppercase text-muted-foreground",
     isToday ? "bg-primary/10" : "bg-muted",
   );
 }
