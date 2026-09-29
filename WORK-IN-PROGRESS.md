@@ -16,6 +16,15 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-depositfixes — ветка `codex/deposit-report-integrity`
+- worktree: `../Teplo-agent-depositfixes`
+- задача: удержания и отдельные выдачи в персональном отчёте, фактические даты депозитов, получатель и защита депозитных расходов ДДС, автор операций и проверка получателя при выдаче
+- трогает: `apps/api/app/{api/v1/routes/{deposits,dds},services/{deposit_service,deposit_payout,payroll_personal_report,banking/cashflow_classify},schemas}`, `apps/web/src/routes/{payroll,dds}`, связанные API-типы и тесты
+- НЕ трогает: `_wallet_movement_deltas`, `apply_operation_split`, баланс на дату, чужие миграции и стенды
+- тестовая БД: `teplo_test_depositfixes`, только один последовательный pytest-процесс; порт уточняется по живой среде
+- статус: в работе с 29.09.2026, main не изменяется
+
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
