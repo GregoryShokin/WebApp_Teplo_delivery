@@ -29,6 +29,7 @@ from app.services.deposit_bank_draft import (
     create_deposit_payout_draft,
     deposit_in_flight_amount,
 )
+from app.services.deposit_dates import effective_deposit_date_expression
 from app.services.deposit_iiko_payout_production import post_production_deposit_payout_to_iiko
 from app.services.deposit_payout import execute_deposit_payout
 from app.services.payroll_calculator import (
@@ -87,6 +88,8 @@ class DepositTransactionRead(BaseModel):
     run_id: uuid.UUID | None = None
     transaction_type: str
     amount: str
+    happened_on: str | None = None
+    effective_date: str | None = None
     created_at: str | None = None
 
 
@@ -220,7 +223,7 @@ async def get_deposit_transactions(
     result = await session.scalars(
         select(DepositTransaction)
         .where(DepositTransaction.employee_id == employee_id)
-        .order_by(DepositTransaction.created_at.desc())
+        .order_by(effective_deposit_date_expression().desc(), DepositTransaction.created_at.desc())
     )
     return [deposit_service.transaction_payload(transaction) for transaction in result.all()]
 
@@ -455,6 +458,7 @@ async def payout_deposit(
         transaction_type="payout",
         now=now,
         comment=payload.comment,
+        created_by_user_id=actor.user_id,
     )
     transaction = payout.transaction
     payout_wallet = payout.payout_wallet
@@ -480,7 +484,10 @@ async def payout_deposit(
     # касса). После commit: БД — источник истины, ошибка iiko не откатывает выдачу.
     if payout_wallet is not None and payout_wallet.code == "tk_chernikova":
         await post_production_deposit_payout_to_iiko(
-            session, amount=amount, payout_date=now.date(), source_id=str(transaction.id)
+            session,
+            amount=amount,
+            payout_date=transaction.happened_on,
+            source_id=str(transaction.id),
         )
     return _operation_payload(account, transaction)
 

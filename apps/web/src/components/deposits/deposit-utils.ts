@@ -145,17 +145,92 @@ export function formatDateTime(value: string | null | undefined) {
     dateStyle: "short",
     timeStyle: "short",
     timeZone: "Europe/Moscow",
-  }).format(new Date(value));
+  }).format(parseDepositRecordedAt(value) ?? new Date(value));
+}
+
+function parseDepositRecordedAt(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  // Older API timestamps without an offset represent UTC, as on the backend.
+  const normalized =
+    /[T ]\d{2}:\d{2}/.test(value) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(value)
+      ? `${value.replace(" ", "T")}Z`
+      : value;
+  const recordedAt = new Date(normalized);
+  return Number.isNaN(recordedAt.getTime()) ? null : recordedAt;
+}
+
+type DepositTransactionDates = {
+  effective_date?: string | null;
+  happened_on?: string | null;
+  created_at?: string | null;
+};
+
+export function depositTransactionEffectiveDate(transaction: DepositTransactionDates) {
+  const effectiveDate = transaction.effective_date || transaction.happened_on;
+  if (effectiveDate) {
+    return effectiveDate;
+  }
+  const recordedAt = parseDepositRecordedAt(transaction.created_at);
+  if (!recordedAt) {
+    return null;
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(recordedAt);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export function sortDepositTransactions<T extends DepositTransactionDates>(transactions: T[]) {
+  return [...transactions].sort((left, right) => {
+    const dayOrder = (depositTransactionEffectiveDate(right) ?? "").localeCompare(
+      depositTransactionEffectiveDate(left) ?? "",
+    );
+    return (
+      dayOrder ||
+      (parseDepositRecordedAt(right.created_at)?.getTime() ?? 0) -
+        (parseDepositRecordedAt(left.created_at)?.getTime() ?? 0)
+    );
+  });
+}
+
+export function depositPayoutChannelLabel(method: string) {
+  switch (method) {
+    case "cash_tk":
+      return "Торговая касса Черникова";
+    case "cash_safe":
+      return "Сейф";
+    case "bank_draft":
+      return "Т-Банк → Сейф (черновик)";
+    case "bank_draft_sber":
+      return "Сбербанк → Сейф (черновик)";
+    default:
+      return "Счёт не выбран";
+  }
 }
 
 export function transactionTypeLabel(type: string) {
-  if (type === "payout") {
-    return "Выплата";
+  switch (type) {
+    case "accrual":
+      return "Накопление";
+    case "payout":
+      return "Выплата";
+    case "write_off":
+    case "writeoff":
+      return "Списание";
+    case "dismissal_payout":
+      return "Выдача при увольнении";
+    case "dismissal_writeoff":
+      return "Списание при увольнении";
+    default:
+      return "Неизвестная операция";
   }
-  if (type === "write_off" || type === "writeoff") {
-    return "Списание";
-  }
-  return "Накопление";
 }
 
 export function isDepositTargetPosition(position: string | null | undefined) {

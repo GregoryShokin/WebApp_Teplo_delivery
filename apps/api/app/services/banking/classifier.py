@@ -34,6 +34,12 @@ from app.services.asset_analytics import (
 )
 from app.services.banking.base import clean_digits
 from app.services.banking.merchant_text import merchant_token, normalized_name
+from app.services.deposit_cashflow_integrity import (
+    DEPOSIT_CLASSIFICATION_REFUSAL,
+    DEPOSIT_PAYOUT_ARTICLE_CODE,
+    ensure_generic_deposit_article_allowed,
+    linked_deposit_cashflow_reclassification_reason,
+)
 from app.services.location_analytics import (
     LocationAnalyticsError,
     LocationContext,
@@ -83,7 +89,8 @@ PREBOOKABLE_SOURCE_KINDS = (
     "supplier_bank_to_safe",
     # Выдача депозита банк-каналом (производственники и курьеры) → транзит р/с→Сейф:
     # банк-нога prebooked, её забирает исходящая операция выписки (перевод на карту ИП).
-    # Значения — deposit_bank_draft.{PRODUCTION_DEPOSIT_PAYOUT,COURIER_DEPOSIT_RETURN}_DRAFT_SOURCE_KIND
+    # Значения — PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND /
+    # COURIER_DEPOSIT_RETURN_DRAFT_SOURCE_KIND из deposit_bank_draft.
     # (литералами, как остальные, чтобы не тянуть сюда импорт ради двух строк).
     "production_deposit_payout_draft",
     "courier_deposit_return_draft",
@@ -135,6 +142,9 @@ async def run_classification_rules(
     claimed_transaction_ids: set[UUID] = set()
 
     for operation in operations:
+        if await _guard_deposit_operation_cashflow(session, operation, quality_status="auto"):
+            counts[operation.classification_status] += 1
+            continue
         if operation.cashflow_transaction_id is None:
             prebooked = await _find_prebooked_payment(
                 session, operation, claimed=claimed_transaction_ids
@@ -158,12 +168,7 @@ async def run_classification_rules(
                 counterparty_id=rule.counterparty_id,
                 quality_status="auto",
             )
-            if rule.action == "set_article":
-                counts["classified"] += 1
-            elif rule.action == "mark_internal_transfer":
-                counts["internal_transfer"] += 1
-            elif rule.action == "exclude":
-                counts["excluded"] += 1
+            counts[operation.classification_status] += 1
             break
         if not matched:
             # Правила молчат — спрашиваем реестр: имя продавца из назначения могло уже
@@ -178,10 +183,14 @@ async def run_classification_rules(
                     counterparty_id=registry.counterparty_id,
                     quality_status="auto",
                 )
-                # Кошелёк мог не найтись — тогда операция уже уехала в needs_review сама.
-                if operation.classification_status == "classified":
-                    matched = True
-                    counts["classified"] += 1
+                # Сам разбор уже создал кейс с конкретной причиной отказа (например,
+                # выдача депозита без сотрудника). Не заменяем её общим payload ниже.
+                matched = True
+                counts[
+                    "classified"
+                    if operation.classification_status == "classified"
+                    else "needs_review"
+                ] += 1
         if not matched:
             operation.classification_status = "needs_review"
             await create_or_update_reconciliation_case(
@@ -222,6 +231,8 @@ async def reconcile_needs_review_prebooked(session: AsyncSession) -> int:
     claimed: set[UUID] = set()
     linked = 0
     for operation in operations:
+        if await _guard_deposit_operation_cashflow(session, operation, quality_status="auto"):
+            continue
         prebooked = await _find_prebooked_payment(session, operation, claimed=claimed)
         if prebooked is None:
             continue
@@ -330,6 +341,8 @@ async def absorb_auto_classified_counterparty_payment(session: AsyncSession) -> 
         ).first()
         if operation is None:
             continue
+        if await _guard_deposit_operation_cashflow(session, operation, quality_status="auto"):
+            continue
         auto_row = await session.get(CashflowTransaction, operation.cashflow_transaction_id)
         if auto_row is None or await _cashflow_row_has_dependents(session, auto_row.id):
             continue
@@ -401,6 +414,9 @@ async def apply_operation_action(
     """Разбор операции выписки одним действием (статья, исключение, внутренний перевод) —
     ``_apply_operation_action`` — и следом зачёт возвратов переплаты
     (``_resync_operation_refunds``)."""
+    # Все доли и доменный якорь защищены до снятия зачётов, исключения или смены статьи.
+    if await _guard_deposit_operation_cashflow(session, operation, quality_status=quality_status):
+        return
     refunds_before = await _operation_refund_counterparties(session, operation)
     await _apply_operation_action(
         session,
@@ -456,6 +472,22 @@ async def _apply_operation_action(
                 operation.cashflow_transaction_id = prebooked.id
                 operation.classification_status = "classified"
                 return
+        target_article = await session.get(DdsArticle, article_id)
+        if target_article is not None and target_article.code == DEPOSIT_PAYOUT_ARTICLE_CODE:
+            if quality_status != "auto":
+                raise ValueError(DEPOSIT_CLASSIFICATION_REFUSAL)
+            operation.classification_status = "needs_review"
+            await create_or_update_reconciliation_case(
+                session,
+                kind="unclassified_operation",
+                provider=operation.provider,
+                bank_operation_id=operation.id,
+                payload={
+                    **_operation_review_payload(operation),
+                    "reason": "deposit_recipient_required",
+                },
+            )
+            return
         if transaction is None:
             # Операцию уже исключали: её собственная строка жива, но помечена ``excluded``.
             # Поднимаем ЕЁ, а не заводим вторую — иначе рядом с новым расходом навсегда
@@ -1004,6 +1036,67 @@ async def _operation_cashflow_rows(
     return rows
 
 
+async def _guard_deposit_operation_cashflow(
+    session: AsyncSession,
+    operation: BankOperation,
+    *,
+    quality_status: str,
+    source_kinds: tuple[str, ...] = ("bank_operation",),
+) -> bool:
+    """Общий ДДС не меняет депозит ни в якоре, ни в другой доле банковского разбора.
+
+    Автомат сохраняет проводку депозитного контура. Старую банковскую строку с
+    депозитной статьёй и без доменной связи оставляем для разбора без изменения денег.
+    """
+    rows = await _operation_cashflow_rows(session, operation, source_kinds=source_kinds)
+    if not rows:
+        return False
+    article_ids = {row.article_id for row in rows if row.article_id is not None}
+    article_codes = (
+        dict(
+            (
+                await session.execute(
+                    select(DdsArticle.id, DdsArticle.code).where(DdsArticle.id.in_(article_ids))
+                )
+            ).all()
+        )
+        if article_ids
+        else {}
+    )
+    protected = False
+    recipient_required = False
+    for row in rows:
+        reason = await linked_deposit_cashflow_reclassification_reason(
+            session, row, article_code=article_codes.get(row.article_id)
+        )
+        if reason is None:
+            continue
+        if quality_status != "auto":
+            # HTTP-входы исключения/перевода уже возвращают для этого subtype понятный 409.
+            raise OperationAlreadyBooked(reason)
+        protected = True
+        # Одного ярлыка недостаточно: проверяем доменный вид или связь с резервом.
+        if await linked_deposit_cashflow_reclassification_reason(session, row) is None:
+            recipient_required = True
+    if not protected:
+        return False
+    if recipient_required:
+        operation.classification_status = "needs_review"
+        await create_or_update_reconciliation_case(
+            session,
+            kind="unclassified_operation",
+            provider=operation.provider,
+            bank_operation_id=operation.id,
+            payload={
+                **_operation_review_payload(operation),
+                "reason": "deposit_recipient_required",
+            },
+        )
+    else:
+        operation.classification_status = "classified"
+    return True
+
+
 class OperationAlreadyBooked(ValueError):
     """Деньги операции уже несёт проводка другого контура — второй раз их разносить нельзя."""
 
@@ -1356,6 +1449,9 @@ async def _apply_operation_split(
     )
     from app.services.counterparty_matching import _invoice_remaining, _recompute_status
 
+    # Сервис вызывают также налоговая проекция и другие входы без route-валидации.
+    # Проверяем все исходные доли до удаления аллокаций, выплат и проводок.
+    await _guard_deposit_operation_cashflow(session, operation, quality_status="owner_review")
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
     # Совместимость: доля — (article, amount, comment, invoice_id[, employee_id
@@ -1364,6 +1460,8 @@ async def _apply_operation_split(
         line if isinstance(line, OperationSplitLine) else OperationSplitLine(*line)
         for line in splits
     ]
+    for line in lines:
+        ensure_generic_deposit_article_allowed(await session.get(DdsArticle, line.article_id))
     total = sum((line.amount for line in lines), Decimal("0"))
     if total != Decimal(operation.amount):
         raise ValueError(f"Сумма по статьям ({total}) не равна сумме операции ({operation.amount})")
@@ -1731,6 +1829,12 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
     Перезапуск идемпотентен: прежние ноги этой операции (обычный сплит или прошлый
     topup) удаляются перед перепроведением.
     """
+    await _guard_deposit_operation_cashflow(
+        session,
+        operation,
+        quality_status="owner_review",
+        source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
     if operation.direction != "out":
         raise ValueError(
             "Пополнение Сейфа доступно только для исходящей операции (перевод с расчётного счёта)"

@@ -36,6 +36,10 @@ from app.models import (
     Wallet,
 )
 from app.services.counterparty_registry import ARCHIVED_STATUSES, NON_PAYOUT_WALLET_CODES
+from app.services.deposit_cashflow_integrity import (
+    DEPOSIT_PAYOUT_ARTICLE_CODE,
+    ensure_generic_deposit_article_allowed,
+)
 from app.services.kassa.payouts import (
     EMPLOYEE_ADVANCE_ARTICLE_CODE,
     EMPLOYEE_LOAN_ARTICLE_CODE,
@@ -118,18 +122,18 @@ def _allowed_flows(permissions: frozenset[str]) -> set[str]:
 def new_payment_article_flow(article: DdsArticle) -> str | None:
     """Маршрут окна для статьи; ``None`` — статья в окне недоступна.
 
-    Каталог ДДС открыт целиком: любая активная статья платится из окна. Сначала
+    Активный каталог доступен, кроме выдачи депозита через её собственный контур. Сначала
     статьи-маршруты по коду (у них в окне своя форма — аванс, заём, выплата по ЗП,
     предоплата поставщику, перевод), остальные — по направлению движения: расход →
     свободный вывод (``expense``), приход → ручное поступление (``income``).
 
     Флаги статьи маршрут не меняют: «доступна в кассе» — про форму «Выплата из кассы»,
     а не про банк; статьи с собственными контурами (депозиты, ЗП, накладные, движковые
-    цели правил классификации) тоже доступны — ручной платёж по ним заводит проводку
-    ДДС, но НЕ двигает леджер профильного модуля (долг по депозиту, ведомость,
-    остаток накладной гасятся своими механизмами).
+    цели правил классификации) тоже доступны. Исключение — выдача депозита: её
+    оформляют только в депозитном контуре, который фиксирует сотрудника и списывает
+    депозитный баланс вместе с расходом ДДС.
     """
-    if not article.is_active:
+    if not article.is_active or article.code == DEPOSIT_PAYOUT_ARTICLE_CODE:
         return None
     # Статьи-маршруты (в т.ч. «Внутренний перевод» с movement_type=internal) — по коду,
     # до гейта по направлению: у перевода своё направление на ногах, не «outflow».
@@ -146,11 +150,13 @@ def new_payment_article_flow(article: DdsArticle) -> str | None:
 def ensure_expense_article_allowed(article: DdsArticle) -> None:
     """Статья годится для свободного вывода на Сейф (маршрут ``expense``)?
 
-    Бэкенд-страховка симметрично фильтру селекта: свободным выводом не платятся только
+    Бэкенд-страховка симметрично фильтру селекта: свободным выводом не платятся
     статьи-маршруты — у них в окне своя форма (аванс/заём/выплата по ЗП/предоплата
     поставщику/перевод), и голая трата по такой статье не завела бы ни удержание, ни
-    дебиторку. Остальной каталог открыт.
+    дебиторку. Выдачу депозита тоже оформляют через её собственный контур.
+    Остальной каталог открыт.
     """
+    ensure_generic_deposit_article_allowed(article)
     if not article.is_active:
         raise ValueError("Статья ДДС неактивна")
     if article.movement_type != "outflow":

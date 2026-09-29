@@ -2960,6 +2960,7 @@ def _patch_dismiss_money_flow(monkeypatch: pytest.MonkeyPatch) -> dict[str, list
         payout_method: str,
         transaction_date: Any,
         comment: str | None,
+        **_kwargs: Any,
     ) -> Any:
         calls["cashflow"].append(payout_method)
         return _FakeWallet("tk_chernikova" if payout_method == "cash_tk" else "cash_safe")

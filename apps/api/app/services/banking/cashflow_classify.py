@@ -24,14 +24,13 @@ from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
     CashflowTransaction,
     DdsArticle,
     EmployeePayout,
-    InvoicePaymentAllocation,
     TransferGroup,
     Wallet,
 )
@@ -47,6 +46,11 @@ from app.services.banking.classifier import (
     SUPPLIER_PAYMENT_ARTICLE_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
+)
+from app.services.deposit_cashflow_integrity import (
+    deposit_cashflow_reclassification_reason,
+    ensure_generic_deposit_article_allowed,
+    linked_deposit_cashflow_reclassification_reason,
 )
 from app.services.location_analytics import (
     LocationAnalyticsError,
@@ -72,18 +76,36 @@ class CashflowClassificationConflictError(ValueError):
     """Проводка принадлежит доменному контуру и не может правиться общим классификатором."""
 
 
-def ensure_cashflow_reclassifiable(txn: CashflowTransaction) -> None:
-    """Не дать общему ДДС-разбору рассинхронизировать зарплату и её проводки.
+def ensure_cashflow_reclassifiable(
+    txn: CashflowTransaction, *, article_code: str | None = None
+) -> None:
+    """Не дать общему ДДС-разбору рассинхронизировать депозит или зарплату с их проводками.
 
     Зарплатные расходы и транзит банк→Сейф создаются из ведомости. Их исключение/сплит
     меняет баланс, но не ``PayrollPayment.booked_amount`` и не резерв ведомости, поэтому
     исправлять такие строки можно только доменной корректировкой внутри ведомости.
+    Депозитная выдача тоже исправляется только вместе с её депозитным леджером.
     """
+    deposit_reason = deposit_cashflow_reclassification_reason(txn, article_code=article_code)
+    if deposit_reason is not None:
+        raise CashflowClassificationConflictError(deposit_reason)
     if txn.source_kind in PAYROLL_PROTECTED_SOURCE_KINDS:
         raise CashflowClassificationConflictError(
             "Зарплатную проводку нельзя исправлять через разбор ДДС — "
             "скорректируйте выплату в ведомости"
         )
+
+
+async def ensure_cashflow_domain_reclassifiable(
+    session: AsyncSession, txn: CashflowTransaction
+) -> None:
+    ensure_cashflow_reclassifiable(txn)
+    article = await session.get(DdsArticle, txn.article_id) if txn.article_id else None
+    reason = await linked_deposit_cashflow_reclassification_reason(
+        session, txn, article_code=article.code if article is not None else None
+    )
+    if reason is not None:
+        raise CashflowClassificationConflictError(reason)
 
 
 async def _transfer_article_ids(session: AsyncSession) -> tuple[UUID | None, UUID | None]:
@@ -209,7 +231,7 @@ async def apply_cashflow_split(
     ``EmployeePayout`` («выплачено») на эту долю — расчёт ЗП вычтет её из «к выдаче» (как и при
     разборе операции выписки). ``employee_id`` на не-зарплатной статье — ошибка.
     """
-    ensure_cashflow_reclassifiable(txn)
+    await ensure_cashflow_domain_reclassifiable(session, txn)
     if not splits:
         raise ValueError("Нужна хотя бы одна статья")
     refunds_before = await _refund_counterparties(session, {txn.id})
@@ -226,6 +248,7 @@ async def apply_cashflow_split(
         ).all()
     )
     for line in splits:
+        ensure_generic_deposit_article_allowed(await session.get(DdsArticle, line.article_id))
         if line.employee_id is not None and line.article_id not in salary_article_ids:
             raise ValueError("Сотрудника можно указать только для зарплатной статьи")
 
@@ -563,7 +586,7 @@ async def apply_cashflow_exclude(session: AsyncSession, txn: CashflowTransaction
     (``manual_split``) — самостоятельные строки журнала со своими выплатами: их исключают
     отдельно, поэтому здесь трогаем только выплаты ЭТОЙ строки.
     """
-    ensure_cashflow_reclassifiable(txn)
+    await ensure_cashflow_domain_reclassifiable(session, txn)
     refunds_before = await _refund_counterparties(session, {txn.id})
 
     # ИСКЛЮЧЕНИЕ ВЫНИМАЕТ РАСХОД ИЗ МЕСЯЦА, И ЭТОТ МЕСЯЦ МОЖЕТ БЫТЬ ЗАКРЫТ. Проверка качества

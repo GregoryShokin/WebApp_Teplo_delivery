@@ -46,6 +46,7 @@ from app.services.counterparty_payments import (
     create_expense_payment_draft,
     create_payment_draft_for_invoices,
 )
+from app.services.deposit_cashflow_integrity import DEPOSIT_PAYOUT_ARTICLE_CODE
 from app.services.employee_payouts import DEFAULT_PAYOUT_ARTICLE_CODE
 from app.services.kassa.payouts import PROTECTED_ARTICLE_CODES
 from app.services.new_payment import (
@@ -544,10 +545,10 @@ async def test_official_without_requisites_requires_explicit_ip_card_confirmatio
         assert saved_line.counterparty_id == supplier.id
 
 
-async def test_expense_rejects_only_articles_with_own_form(
+async def test_expense_rejects_routes_and_deposit_payout(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Свободным выводом не платятся лишь статьи-маршруты — остальной каталог открыт."""
+    """Статьи-маршруты и выдачу депозита оформляют через их собственный контур."""
     async with async_session_factory() as session:
         prepayment = await session.scalar(
             select(DdsArticle).where(DdsArticle.code == PREPAYMENT_ARTICLE_CODE)
@@ -558,14 +559,31 @@ async def test_expense_rejects_only_articles_with_own_form(
                 session, article_id=prepayment.id, amount=Decimal("100"), purpose="x"
             )
 
-        # Статья с собственным контуром гашения (депозиты/ЗП/накладные) теперь платится:
-        # проводка ДДС встаёт, леджер профильного модуля живёт своей жизнью.
+        deposit = await session.scalar(
+            select(DdsArticle).where(DdsArticle.code == DEPOSIT_PAYOUT_ARTICLE_CODE)
+        )
+        if deposit is None:
+            deposit = DdsArticle(
+                code=DEPOSIT_PAYOUT_ARTICLE_CODE,
+                name="Выдача депозита сотруднику",
+                movement_type="outflow",
+                activity_type="operating",
+            )
+            session.add(deposit)
+            await session.flush()
+        with pytest.raises(CounterpartyPaymentError, match="Депозиты"):
+            await create_expense_payment_draft(
+                session, article_id=deposit.id, amount=Decimal("100"), purpose="x"
+            )
+
+        # Остальные статьи с собственными контурами остаются доступны в общем окне.
         protected = await session.scalar(
             select(DdsArticle).where(
                 DdsArticle.code.in_(tuple(PROTECTED_ARTICLE_CODES)),
                 DdsArticle.movement_type == "outflow",
                 DdsArticle.is_active.is_(True),
                 DdsArticle.code.notin_(tuple(FLOW_BY_ARTICLE_CODE)),
+                DdsArticle.code != DEPOSIT_PAYOUT_ARTICLE_CODE,
                 DdsArticle.location_required.is_(False),
             )
         )
@@ -640,8 +658,9 @@ async def test_context_articles_follow_permissions(
         assert {item["flow"] for item in expense_only} == {"expense", "internal_transfer"}
         expense_codes = {item["code"] for item in expense_only}
         assert expense_codes & set(FLOW_BY_ARTICLE_CODE) == {"internal_transfer"}
-        # Каталог открыт целиком: «Оплата поставщикам» и статьи с собственными
-        # контурами гашения (депозиты, переводы) — обычные расходные статьи окна.
+        # Получатель выдачи депозита обязателен: общий расход не заменяет депозитный контур.
+        assert DEPOSIT_PAYOUT_ARTICLE_CODE not in expense_codes
+        # Остальные статьи с собственными контурами по-прежнему доступны.
         assert DEFAULT_SUPPLIER_ARTICLE_CODE in expense_codes
         assert expense_codes & PROTECTED_ARTICLE_CODES
 
@@ -659,7 +678,7 @@ async def test_context_articles_follow_permissions(
         # У каждой статьи окна есть вид деятельности (леджер-фильтр палитры).
         assert all(item["activity"] for item in income_only + expense_only)
 
-        # Весь активный каталог доступен: ни одна статья не выпала из окна.
+        # Активный каталог доступен, кроме выдачи депозита через её собственный контур.
         everyone = await list_new_payment_articles(
             session,
             permissions=frozenset(
@@ -679,7 +698,7 @@ async def test_context_articles_follow_permissions(
                 await session.scalars(select(DdsArticle.code).where(DdsArticle.is_active.is_(True)))
             ).all()
         )
-        assert {item["code"] for item in everyone} == active_codes
+        assert {item["code"] for item in everyone} == active_codes - {DEPOSIT_PAYOUT_ARTICLE_CODE}
 
         # Займ-статья видна только с правом займов ПОВЕРХ issue-права авансов:
         # POST /payroll/advances требует issue-право по должности до allow_loan,

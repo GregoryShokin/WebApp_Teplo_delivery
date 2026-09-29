@@ -73,7 +73,7 @@ test("recalculates a blocked payroll run from detail header", async ({ page }) =
 function fulfillJson(route: Route, body: unknown) {
   if (route.request().method() === "OPTIONS") {
     return route.fulfill({
-      headers: corsHeaders(),
+      headers: corsHeaders(route),
       status: 204,
     });
   }
@@ -81,17 +81,17 @@ function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
     body: JSON.stringify(body),
     contentType: "application/json",
-    headers: corsHeaders(),
+    headers: corsHeaders(route),
     status: 200,
   });
 }
 
-function corsHeaders() {
+function corsHeaders(route: Route) {
   return {
     "access-control-allow-credentials": "true",
     "access-control-allow-headers": "authorization, content-type",
     "access-control-allow-methods": "GET, POST, OPTIONS",
-    "access-control-allow-origin": "http://127.0.0.1:5174",
+    "access-control-allow-origin": route.request().headers()["origin"] ?? new URL(route.request().url()).origin,
   };
 }
 

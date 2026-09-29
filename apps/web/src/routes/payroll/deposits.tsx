@@ -4,6 +4,9 @@ import { Banknote, History, LoaderCircle, RefreshCw, Search, WalletCards } from 
 import { toast } from "sonner";
 
 import {
+  depositPayoutChannelLabel,
+  depositTransactionEffectiveDate,
+  formatDate,
   formatDateTime,
   formatMoney,
   formatMoneyPrecise,
@@ -11,6 +14,7 @@ import {
   isDepositTargetPosition,
   normalizeDecimalInput,
   progressValue,
+  sortDepositTransactions,
   validNonNegativeDecimalInput,
 } from "@/components/deposits/deposit-utils";
 import {
@@ -182,8 +186,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
       toast.success("Запланированная выдача отменена");
       await queryClient.invalidateQueries({ queryKey: [DEPOSITS_QUERY_KEY] });
     },
-    onError: (error) =>
-      toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
+    onError: (error) => toast.error(apiErrorMessage(error, "Не удалось отменить выдачу")),
   });
 
   const targetRows = useMemo(
@@ -195,9 +198,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
     const searchValue = search.trim().toLocaleLowerCase("ru");
     return [...targetRows]
       .filter((row) => categoryFilter === "all" || row.category === categoryFilter)
-      .filter(
-        (row) => !searchValue || row.full_name.toLocaleLowerCase("ru").includes(searchValue),
-      )
+      .filter((row) => !searchValue || row.full_name.toLocaleLowerCase("ru").includes(searchValue))
       .sort((left, right) => {
         const rankDiff = depositGroupRank(left) - depositGroupRank(right);
         if (rankDiff !== 0) {
@@ -212,7 +213,9 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
 
   const summary = useMemo(() => {
     const totalBalance = targetRows.reduce((sum, row) => sum + balanceNumber(row), 0);
-    const collecting = targetRows.filter((row) => balanceNumber(row) > 0 && !isCollected(row)).length;
+    const collecting = targetRows.filter(
+      (row) => balanceNumber(row) > 0 && !isCollected(row),
+    ).length;
     return { count: targetRows.length, totalBalance, collecting };
   }, [targetRows]);
 
@@ -424,11 +427,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
                             </DropdownMenuContent>
                           </DropdownMenu>
                         ) : null}
-                        <Button
-                          onClick={() => setHistoryEmployee(row)}
-                          size="sm"
-                          variant="outline"
-                        >
+                        <Button onClick={() => setHistoryEmployee(row)} size="sm" variant="outline">
                           <History size={16} aria-hidden="true" />
                           История
                         </Button>
@@ -450,10 +449,7 @@ export function PayrollDepositsRoute({ onNavigate }: PayrollDepositsRouteProps) 
         scheduledEnabled={scheduledEnabled}
       />
 
-      <DepositHistoryDialog
-        employee={historyEmployee}
-        onClose={() => setHistoryEmployee(null)}
-      />
+      <DepositHistoryDialog employee={historyEmployee} onClose={() => setHistoryEmployee(null)} />
     </div>
   );
 }
@@ -484,6 +480,7 @@ function DepositOperationDialog({
   const [cashMode, setCashMode] = useState<"immediate" | "reserve">("immediate");
   const [submitted, setSubmitted] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cashConfirmed, setCashConfirmed] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const type = operation?.type ?? "payout";
@@ -492,6 +489,7 @@ function DepositOperationDialog({
   // Наличный резерв доступен только для наличного канала при немедленной (не отложенной) выдаче.
   const useCashReserve =
     type === "payout" && !isScheduled && isCashChannel && cashMode === "reserve";
+  const isImmediateCash = type === "payout" && !isScheduled && isCashChannel && !useCashReserve;
   // Каналы немедленной выдачи, доступные по правам.
   const allowedChannels = (
     [
@@ -512,6 +510,18 @@ function DepositOperationDialog({
     : validNonNegativeDecimalInput(normalized) && amountNumber > 0;
   const withinBalance = !amountProvided || amountNumber <= balance + 1e-9;
   const reasonValid = type !== "writeoff" || comment.trim().length > 0;
+
+  useEffect(() => {
+    setCashConfirmed(false);
+  }, [
+    operation?.row.id,
+    operation?.row.full_name,
+    normalized,
+    payoutMethod,
+    payoutMode,
+    cashMode,
+    confirmOpen,
+  ]);
 
   useEffect(() => {
     if (!operation) {
@@ -557,7 +567,8 @@ function DepositOperationDialog({
       });
     },
     onSuccess: async () => {
-      const isBankDraft = type === "payout" && !isScheduled && payoutMethod.startsWith("bank_draft");
+      const isBankDraft =
+        type === "payout" && !isScheduled && payoutMethod.startsWith("bank_draft");
       const reserveMsg =
         payoutMethod === "cash_tk"
           ? "Передано в кассу — выдать во вкладке «К выдаче»"
@@ -772,12 +783,7 @@ function DepositOperationDialog({
           </div>
 
           <DialogFooter>
-            <Button
-              disabled={mutation.isPending}
-              onClick={onClose}
-              type="button"
-              variant="outline"
-            >
+            <Button disabled={mutation.isPending} onClick={onClose} type="button" variant="outline">
               Отмена
             </Button>
             <Button disabled={mutation.isPending} onClick={submit} type="button">
@@ -795,32 +801,85 @@ function DepositOperationDialog({
       <AlertDialog onOpenChange={setConfirmOpen} open={confirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Подтвердить операцию?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {!operation
-                ? ""
-                : isScheduled
-                  ? `Запланировать выдачу депозита ${
-                      amountProvided ? `на ${formatMoneyPrecise(normalized)}` : "(весь остаток)"
-                    } для «${operation.row.full_name}» в ближайшей ведомости?`
-                  : `${OPERATION_TITLE[operation.type]} на ${formatMoneyPrecise(
-                      normalized,
-                    )} для «${operation.row.full_name}»? Баланс депозита уменьшится.`}
+            <AlertDialogTitle>
+              {isImmediateCash ? "Подтвердить выдачу денег?" : "Подтвердить операцию?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="grid gap-3">
+                <dl className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Получатель</dt>
+                    <dd className="font-semibold text-foreground">{operation?.row.full_name}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Сумма</dt>
+                    <dd className="font-semibold text-foreground">
+                      {isScheduled && !amountProvided
+                        ? "Весь остаток на момент выплаты"
+                        : formatMoneyPrecise(normalized)}
+                    </dd>
+                  </div>
+                  {type === "payout" ? (
+                    <div>
+                      <dt className="text-muted-foreground">Счёт выдачи</dt>
+                      <dd className="font-semibold text-foreground">
+                        {isScheduled
+                          ? "Определится при выплате ведомости"
+                          : depositPayoutChannelLabel(payoutMethod)}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+                <p>
+                  {type === "writeoff"
+                    ? "Депозит будет списан без выдачи денег сотруднику."
+                    : isScheduled
+                      ? "Выдача будет запланирована в ближайшей ведомости. Деньги сейчас не выдаются."
+                      : useCashReserve
+                        ? "Будет создан резерв. Деньги сотруднику ещё не выданы; депозит спишется при выдаче резерва."
+                        : isImmediateCash
+                          ? "Деньги выданы сейчас. Баланс депозита уменьшится на эту сумму."
+                          : "Будет создан банковский черновик. Деньги сотруднику ещё не выданы; депозит спишется при выдаче."}
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {isImmediateCash ? (
+            <label className="flex items-start gap-3 text-sm">
+              <input
+                checked={cashConfirmed}
+                disabled={mutation.isPending}
+                onChange={(event) => setCashConfirmed(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Подтверждаю: деньги выданы сейчас сотруднику {operation?.row.full_name}.</span>
+            </label>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={mutation.isPending}>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              disabled={mutation.isPending}
+              className="h-auto whitespace-normal py-2"
+              disabled={mutation.isPending || (isImmediateCash && !cashConfirmed)}
               onClick={(event) => {
                 event.preventDefault();
+                if (isImmediateCash && !cashConfirmed) {
+                  return;
+                }
                 mutation.mutate();
               }}
             >
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : null}
-              Подтвердить
+              {isImmediateCash
+                ? `Выдать ${formatMoneyPrecise(normalized)} · ${operation?.row.full_name}`
+                : isScheduled
+                  ? "Запланировать выдачу"
+                  : useCashReserve
+                    ? "Создать резерв"
+                    : type === "payout"
+                      ? "Создать банковский черновик"
+                      : "Подтвердить"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -843,7 +902,7 @@ function DepositHistoryDialog({
     staleTime: 30_000,
   });
 
-  const transactions = historyQuery.data ?? [];
+  const transactions = sortDepositTransactions(historyQuery.data ?? []);
 
   return (
     <Dialog
@@ -900,9 +959,17 @@ function DepositHistoryDialog({
 
 function DepositHistoryRow({ transaction }: { transaction: DepositTransaction }) {
   const positive = isPositiveDepositTx(transaction.transaction_type);
+  const effectiveDate = depositTransactionEffectiveDate(transaction);
   return (
     <TableRow>
-      <TableCell className="tabular-nums">{formatDateTime(transaction.created_at)}</TableCell>
+      <TableCell className="tabular-nums">
+        <time
+          dateTime={effectiveDate ?? undefined}
+          title={`Записано: ${formatDateTime(transaction.created_at)}`}
+        >
+          {effectiveDate ? formatDate(effectiveDate) : "Не указана"}
+        </time>
+      </TableCell>
       <TableCell>
         <Badge
           className={cn(

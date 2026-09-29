@@ -25,11 +25,12 @@ import {
   getEmployeePayrollReport,
   getEmployees,
   type PayrollPersonalReport,
+  type PayrollPersonalReportDepositTransaction,
 } from "@/lib/api";
 import { PAYROLL_ROLE_LABELS } from "@/lib/i18n/employee";
 import { roleColorClasses } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
-import { formatDate, formatMoney } from "./runs";
+import { formatDate } from "./runs";
 
 function payrollRoleLabel(role: string | null | undefined): string {
   if (!role) {
@@ -74,6 +75,7 @@ type OperationKind =
   | "percent_pay"
   | "vacation_pay"
   | "ndfl"
+  | "payroll_rounding"
   | "premium"
   | "manual_penalty"
   | "audit_penalty"
@@ -153,6 +155,11 @@ const KIND_META: Record<
     badgeClass: "bg-teal-50 text-teal-600",
     isDeduction: false,
   },
+  payroll_rounding: {
+    label: "Округление выплаты",
+    badgeClass: "bg-gray-100 text-gray-700",
+    isDeduction: true,
+  },
   ndfl: {
     label: "НДФЛ",
     badgeClass: "bg-gray-100 text-gray-700",
@@ -173,6 +180,7 @@ const KIND_ORDER: Record<OperationKind, number> = {
   fund_accrual: 10,
   fund_payout: 11,
   ndfl: 12,
+  payroll_rounding: 13,
 };
 
 export function PayrollPersonalReportPageTab() {
@@ -261,6 +269,15 @@ export function PayrollPersonalReportPageTab() {
 
   const report = reportQuery.data;
   const operations = useMemo(() => (report ? buildOperations(report) : []), [report]);
+  const unassignedManualPayouts = useMemo(() => {
+    if (!report) return [];
+    const assigned = new Set(report.periods.flatMap((period) =>
+      (period.manual_deposit_transactions ?? []).map((transaction) => transaction.id),
+    ));
+    return manualPayoutOperations(report.deposit_transactions.filter((transaction) =>
+      !assigned.has(transaction.id),
+    ));
+  }, [report]);
   const openWeekOperations = useMemo(() => {
     if (!openWeek) {
       return [];
@@ -345,9 +362,23 @@ export function PayrollPersonalReportPageTab() {
       headerClassName: "text-right",
     },
     {
+      key: "deposit_withholding",
+      header: "В депозит",
+      cell: (row) => formatMoney(row.deposit_withholding),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
       key: "deposit_payout",
-      header: "Выдача депозита",
+      header: "Депозит по ведомости",
       cell: (row) => formatMoney(row.deposit_payout),
+      className: "text-right tabular-nums",
+      headerClassName: "text-right",
+    },
+    {
+      key: "manual_deposit_payout",
+      header: "Депозит выдан отдельно",
+      cell: (row) => formatMoney(row.manual_deposit_payout ?? 0),
       className: "text-right tabular-nums",
       headerClassName: "text-right",
     },
@@ -437,7 +468,7 @@ export function PayrollPersonalReportPageTab() {
             />
           ) : (
             <>
-              <section className="grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
+              <section className="grid gap-3 md:grid-cols-3 2xl:grid-cols-7">
                 <PersonalMetric
                   title="К выплате"
                   value={formatMoney(report.totals.total_payable + report.totals.deposit_payout)}
@@ -462,6 +493,11 @@ export function PayrollPersonalReportPageTab() {
                   title="Удержано"
                   value={formatMoney(report.totals.deduction)}
                   description="Штрафы и депозит"
+                />
+                <PersonalMetric
+                  title="Депозит выдан отдельно"
+                  value={formatMoney(report.totals.manual_deposit_payout ?? 0)}
+                  description="Вне зарплатных ведомостей"
                 />
                 <PersonalMetric
                   title="Фонд"
@@ -499,6 +535,12 @@ export function PayrollPersonalReportPageTab() {
                       onRowClick={setOpenWeek}
                       periods={report.periods}
                     />
+                    {unassignedManualPayouts.length > 0 ? (
+                      <section className="mt-4 space-y-2">
+                        <div className="text-sm font-semibold">Выдачи депозита без ведомости</div>
+                        <OperationsTable rows={unassignedManualPayouts} />
+                      </section>
+                    ) : null}
                   </TabsContent>
                   <TabsContent value="daily">
                     <OperationsTable rows={operations} />
@@ -675,7 +717,7 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
   }
 
   for (const tx of report.deposit_transactions) {
-    const date = tx.created_at?.slice(0, 10) ?? "";
+    const date = tx.effective_date ?? tx.happened_on ?? tx.created_at?.slice(0, 10) ?? "";
     let kind: OperationKind;
     if (tx.transaction_type === "accrual") {
       kind = "deposit_accrual";
@@ -689,7 +731,8 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
       date,
       kind,
       amount: String(tx.amount),
-      comment: null,
+      comment: tx.run_id === null && kind === "deposit_payout"
+        ? "Выдано отдельно от ведомости" : null,
     });
   }
 
@@ -703,6 +746,18 @@ function buildOperations(report: PayrollPersonalReport): OperationRow[] {
   });
 
   return rows;
+}
+
+function manualPayoutOperations(transactions: PayrollPersonalReportDepositTransaction[]): OperationRow[] {
+  return transactions.filter((transaction) => transaction.run_id === null &&
+    ["payout", "dismissal_payout"].includes(transaction.transaction_type),
+  ).map<OperationRow>((transaction) => ({
+    id: `manual-dep-${transaction.id}`,
+    date: transaction.effective_date ?? transaction.happened_on ?? transaction.created_at.slice(0, 10),
+    kind: "deposit_payout",
+    amount: String(transaction.amount),
+    comment: "Выдано отдельно от ведомости",
+  }));
 }
 
 function buildPayslipOperations(period: PayrollPersonalReportPeriod): OperationRow[] {
@@ -752,6 +807,22 @@ function buildPayslipOperations(period: PayrollPersonalReportPeriod): OperationR
     }
   }
 
+  // Удержание принадлежит расчётке, а не всем историческим начислениям депозита
+  // с такой же календарной датой. Из объединённого периода добавляем его один раз.
+  for (const [kind, amount] of [
+    ["deposit_accrual", period.deposit_withholding],
+    ["payroll_rounding", period.payroll_rounding],
+  ] as const) {
+    if (Number(amount ?? 0) > 0) {
+      rows.push({
+        id: `${period.run_id}-${kind}`,
+        date: period.period_end,
+        kind,
+        amount: String(amount),
+        comment: null,
+      });
+    }
+  }
   rows.sort((left, right) => {
     if (left.date !== right.date) return left.date < right.date ? 1 : -1;
     return KIND_ORDER[left.kind] - KIND_ORDER[right.kind] || left.id.localeCompare(right.id);
@@ -833,12 +904,16 @@ const PAYSLIP_COLUMNS: Array<{ kind: OperationKind; withComment: boolean }> = [
   { kind: "deposit_accrual", withComment: false },
   { kind: "deposit_writeoff", withComment: false },
   { kind: "ndfl", withComment: false },
+  { kind: "payroll_rounding", withComment: false },
 ];
 // Фонд показываем отдельным KPI-виджетом, а не колонкой детализации (накопление вне «к выплате»).
 const PAYSLIP_FUND_KINDS = new Set<OperationKind>(["fund_accrual", "fund_payout"]);
 
 function formatPlainAmount(value: number) {
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Math.abs(value));
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: Math.abs(value % 1) > 0.000001 ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value));
 }
 
 // Pivot-ведомость: строки — даты, колонки — типы операций (с парным комментарием у премии и
@@ -905,7 +980,13 @@ function PayslipDialog({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <KpiSmall label="Оклад" value={formatMoney(period.base_pay)} />
               <KpiSmall label="Процент" value={formatMoney(period.percent_pay)} />
-              <KpiSmall label="Удержано" value={formatMoney(period.deduction)} />
+              <KpiSmall
+                label="Удержано"
+                value={formatMoney(period.deduction)}
+                description={period.deposit_withholding > 0
+                  ? `В том числе депозит: ${formatMoney(period.deposit_withholding)}`
+                  : undefined}
+              />
               <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
                 <div className="text-xs text-emerald-700">К выплате</div>
                 <div className="mt-1 font-semibold tabular-nums text-emerald-700">
@@ -1005,9 +1086,29 @@ function PayslipDialog({
                       );
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t bg-muted/35 font-semibold">
+                      <td className="px-2 py-2" colSpan={1 + columns.reduce((count, column) =>
+                        count + 1 + Number(column.withComment), 0)}>
+                        К выплате по ведомости
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">
+                        {formatMoney(period.total_payable + period.deposit_payout)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
+            {(period.manual_deposit_transactions ?? []).length > 0 ? (
+              <section className="space-y-2">
+                <div className="text-sm font-semibold">Выдачи депозита вне ведомости</div>
+                <p className="text-xs text-muted-foreground">
+                  Выдано отдельно: {formatMoney(period.manual_deposit_payout)}. Зарплата по ведомости не увеличивается.
+                </p>
+                <OperationsTable rows={manualPayoutOperations(period.manual_deposit_transactions)} />
+              </section>
+            ) : null}
           </>
         ) : null}
       </DialogContent>
@@ -1025,11 +1126,12 @@ function formatOperationMoney(row: OperationRow) {
   return `${sign}${formatMoney(Math.abs(amount))}`;
 }
 
-function KpiSmall({ label, value }: { label: string; value: string }) {
+function KpiSmall({ label, value, description }: { label: string; value: string; description?: string }) {
   return (
     <div className="rounded-md border bg-background p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 font-semibold tabular-nums">{value}</div>
+      {description ? <div className="mt-1 text-xs text-muted-foreground">{description}</div> : null}
     </div>
   );
 }
@@ -1061,6 +1163,15 @@ function defaultPersonalReportRange() {
     from: dateInputValue(from),
     to: dateInputValue(to),
   };
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    minimumFractionDigits: Math.abs(value % 1) > 0.000001 ? 2 : 0,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function formatReportMoney(value: number | string | null | undefined) {

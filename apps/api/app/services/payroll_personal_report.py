@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -21,6 +21,7 @@ from app.models import (
     PayrollRun,
     ShiftLedgerEntry,
 )
+from app.services.deposit_dates import effective_deposit_date, effective_deposit_date_expression
 from app.services.payroll_runner import PayrollNotFoundError
 
 RUN_STATUSES = ("completed", "finalized", "final")
@@ -53,7 +54,7 @@ async def build_personal_report(
             PayrollPeriod.end_date >= date_from,
             PayrollRun.status.in_(RUN_STATUSES),
         )
-        .order_by(PayrollPeriod.start_date.desc())
+        .order_by(PayrollPeriod.start_date.desc(), PayrollRun.started_at.desc(), PayrollRun.id)
     )
     line_rows = line_rows_result.all()
 
@@ -122,18 +123,33 @@ async def build_personal_report(
     )
     adjustments = adjustments_result.all()
 
-    period_start = datetime.combine(date_from, time.min, tzinfo=UTC)
-    period_end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=UTC)
+    # Хозяйственная дата совпадает с депозитной историей и балансом. Для старых
+    # записей без happened_on используем московскую дату регистрации.
+    deposit_effective_date = effective_deposit_date_expression()
     deposit_result = await session.scalars(
         select(DepositTransaction)
         .where(
             DepositTransaction.employee_id == employee_id,
-            DepositTransaction.created_at >= period_start,
-            DepositTransaction.created_at < period_end,
+            deposit_effective_date >= date_from,
+            deposit_effective_date <= date_to,
         )
-        .order_by(DepositTransaction.created_at.desc())
+        .order_by(deposit_effective_date.desc(), DepositTransaction.created_at.desc())
     )
     deposit_transactions = deposit_result.all()
+    serialized_deposit_transactions = [
+        {
+            "id": transaction.id,
+            "transaction_type": transaction.transaction_type,
+            "amount": money_float(transaction.amount),
+            "created_at": transaction.created_at,
+            "happened_on": transaction.happened_on,
+            "effective_date": effective_date,
+            "run_id": transaction.run_id,
+        }
+        for transaction in deposit_transactions
+        if (effective_date := effective_deposit_date(transaction)) is not None
+        and date_from <= effective_date <= date_to
+    ]
 
     ledger_result = await session.scalars(
         select(ShiftLedgerEntry)
@@ -156,6 +172,8 @@ async def build_personal_report(
         "deduction": 0.0,
         "deposit_withholding": 0.0,
         "deposit_payout": 0.0,
+        "manual_deposit_payout": 0.0,
+        "payroll_rounding": 0.0,
         "bonus_total": 0.0,
         "penalty_total": 0.0,
         "total_payable": 0.0,
@@ -192,6 +210,7 @@ async def build_personal_report(
             fund_runs_seen.add(run.id)
         else:
             period_fund = money_float(line.fund_accrual)
+        rounding = component_value(line.components, "payroll_rounding")
         amounts = {
             "base_pay": money_float(line.base_pay),
             "premium": money_float(line.premium),
@@ -202,6 +221,9 @@ async def build_personal_report(
             "deduction": money_float(line.deduction),
             "deposit_withholding": deposit_withholding,
             "deposit_payout": deposit_payout,
+            "payroll_rounding": money_float(rounding.get("amount", 0))
+            if isinstance(rounding, dict)
+            else 0.0,
             "bonus_total": bonus_total,
             "penalty_total": penalty_total,
             "total_payable": money_float(line.total_payable),
@@ -209,7 +231,12 @@ async def build_personal_report(
         # totals считаются ПОСТРОЧНО (как раньше) — объединение ролей влияет только на
         # представление «расчёток», не на итоги.
         for key in totals:
-            if key in {"bonus_total", "penalty_total", "audit_penalty_total"}:
+            if key in {
+                "bonus_total",
+                "penalty_total",
+                "audit_penalty_total",
+                "manual_deposit_payout",
+            }:
                 continue
             totals[key] += amounts[key]
         apply_line_days_to_daily_rows(daily_rows, line, period, date_from, date_to, ledger_by_date)
@@ -229,6 +256,8 @@ async def build_personal_report(
                 "roles": [],
                 "days": [],
                 "adjustments": {"bonuses": [], "penalties": []},
+                "manual_deposit_payout": 0.0,
+                "manual_deposit_transactions": [],
                 **amounts,
             }
             period_groups[group_key] = group
@@ -266,6 +295,34 @@ async def build_personal_report(
         if joined:
             group["role"] = joined
     periods = list(period_groups.values())
+    run_started_at = {run.id: run.started_at for _line, run, _period in line_rows}
+    for transaction in serialized_deposit_transactions:
+        if transaction["run_id"] is not None or transaction["transaction_type"] not in {
+            "payout",
+            "dismissal_payout",
+        }:
+            continue
+        totals["manual_deposit_payout"] += transaction["amount"]
+        candidates = [
+            group
+            for group in periods
+            if group["period_start"] <= transaction["effective_date"] <= group["period_end"]
+        ]
+        if candidates:
+            # Самостоятельная выдача относится к календарной неделе один раз, а не
+            # к каждой роли, замещающему контуру или старому пересчёту этой недели.
+            group = max(
+                candidates,
+                key=lambda item: (
+                    not item["is_substitute"],
+                    run_started_at[item["run_id"]].timestamp()
+                    if run_started_at[item["run_id"]] is not None
+                    else 0,
+                    str(item["run_id"]),
+                ),
+            )
+            group["manual_deposit_payout"] += transaction["amount"]
+            group["manual_deposit_transactions"].append(transaction)
 
     serialized_adjustments = []
     for adjustment in adjustments:
@@ -298,15 +355,12 @@ async def build_personal_report(
         if comment:
             daily_row["comments"].append(comment)
 
-    for transaction in deposit_transactions:
-        transaction_date = transaction.created_at.date()
-        if transaction_date < date_from or transaction_date > date_to:
-            continue
-        daily_row = daily_report_row(daily_rows, transaction_date)
-        if transaction.transaction_type == "accrual":
-            daily_row["deposit_in"] += money_decimal(transaction.amount)
-        if transaction.transaction_type in {"payout", "dismissal_payout"}:
-            daily_row["deposit_out"] += money_decimal(transaction.amount)
+    for transaction in serialized_deposit_transactions:
+        daily_row = daily_report_row(daily_rows, transaction["effective_date"])
+        if transaction["transaction_type"] == "accrual":
+            daily_row["deposit_in"] += money_decimal(transaction["amount"])
+        if transaction["transaction_type"] in {"payout", "dismissal_payout"}:
+            daily_row["deposit_out"] += money_decimal(transaction["amount"])
 
     totals["audit_penalty_total"] = money_string(audit_penalty_total)
     daily = [
@@ -342,16 +396,7 @@ async def build_personal_report(
         "fund_outstanding": money_float(fund_outstanding),
         "shifts_count": shifts_count,
         "adjustments": serialized_adjustments,
-        "deposit_transactions": [
-            {
-                "id": transaction.id,
-                "transaction_type": transaction.transaction_type,
-                "amount": money_float(transaction.amount),
-                "created_at": transaction.created_at,
-                "run_id": transaction.run_id,
-            }
-            for transaction in deposit_transactions
-        ],
+        "deposit_transactions": serialized_deposit_transactions,
         "totals": totals,
     }
 

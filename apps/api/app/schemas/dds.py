@@ -891,6 +891,11 @@ class JournalRow(BaseModel):
     amount: str
     article_id: uuid.UUID | None = None
     counterparty_id: uuid.UUID | None = None
+    # Получатель депозитной выдачи берётся из её исходной операции, не из контрагентов.
+    employee_id: uuid.UUID | None = None
+    employee_name: str | None = None
+    source_kind: str | None = None
+    classification_blocked_reason: str | None = None
     wallet_id: uuid.UUID | None = None
     provider: str | None = None
     payment_purpose: str | None = None

@@ -545,12 +545,25 @@ class PayrollPersonalReportRoleRead(BaseModel):
     deduction: float
     deposit_withholding: float
     deposit_payout: float = 0
+    payroll_rounding: float = 0
     bonus_total: float
     penalty_total: float
     total_payable: float
 
 
+class PayrollPersonalReportDepositTransactionRead(BaseModel):
+    id: uuid.UUID
+    transaction_type: str
+    amount: float
+    created_at: datetime
+    happened_on: date | None = None
+    effective_date: date
+    run_id: uuid.UUID | None = None
+
+
 class PayrollPersonalReportPeriodRead(BaseModel):
+    manual_deposit_payout: float = 0
+    manual_deposit_transactions: list[PayrollPersonalReportDepositTransactionRead] = []
     period_id: uuid.UUID
     run_id: uuid.UUID
     run_status: str
@@ -568,6 +581,7 @@ class PayrollPersonalReportPeriodRead(BaseModel):
     deduction: float
     deposit_withholding: float
     deposit_payout: float = 0
+    payroll_rounding: float = 0
     bonus_total: float
     penalty_total: float
     total_payable: float
@@ -612,15 +626,8 @@ class PayrollPersonalReportAdjustmentRead(BaseModel):
     comment: str | None = None
 
 
-class PayrollPersonalReportDepositTransactionRead(BaseModel):
-    id: uuid.UUID
-    transaction_type: str
-    amount: float
-    created_at: datetime
-    run_id: uuid.UUID | None = None
-
-
 class PayrollPersonalReportTotalsRead(BaseModel):
+    manual_deposit_payout: float = 0
     base_pay: float
     premium: float
     percent_pay: float
@@ -630,6 +637,7 @@ class PayrollPersonalReportTotalsRead(BaseModel):
     deduction: float
     deposit_withholding: float
     deposit_payout: float = 0
+    payroll_rounding: float = 0
     bonus_total: float
     penalty_total: float
     audit_penalty_total: str

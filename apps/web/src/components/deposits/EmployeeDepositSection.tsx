@@ -42,7 +42,9 @@ import { usePermissions } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 import {
+  depositPayoutChannelLabel,
   depositRuleValue,
+  depositTransactionEffectiveDate,
   depositSourceLabel,
   formatDate,
   formatDateTime,
@@ -53,6 +55,7 @@ import {
   isDepositTargetPosition,
   normalizeDecimalInput,
   progressValue,
+  sortDepositTransactions,
   transactionTypeLabel,
   validNonNegativeDecimalInput,
   type DepositRulesByKey,
@@ -190,6 +193,7 @@ function IndividualDepositDialog({
   const [discardOpen, setDiscardOpen] = useState(false);
   const [dangerOpen, setDangerOpen] = useState(false);
   const [payoutOpen, setPayoutOpen] = useState(false);
+  const [cashConfirmed, setCashConfirmed] = useState(false);
   const [writeoffAmount, setWriteoffAmount] = useState("");
   const [writeoffReason, setWriteoffReason] = useState("");
   const employeeId = deposit?.id ?? "";
@@ -248,6 +252,10 @@ function IndividualDepositDialog({
     setWriteoffReason("");
   }, [defaultTarget, defaultWithholding, deposit, open]);
 
+  useEffect(() => {
+    setCashConfirmed(false);
+  }, [employeeId, employeeName, deposit?.balance, open, payoutOpen]);
+
   const transactionsQuery = useQuery({
     queryKey: ["deposits", employeeId, "transactions"],
     queryFn: () => getDepositTransactions(employeeId),
@@ -281,6 +289,8 @@ function IndividualDepositDialog({
       postDepositPayout(employeeId, {
         amount: normalizeDecimalInput(deposit?.balance ?? "0"),
         comment: "Ручная выплата",
+        payout_method: "cash_tk",
+        payout_mode: "immediate",
       }),
     onSuccess: async () => {
       toast.success("Остаток выплачен");
@@ -310,10 +320,7 @@ function IndividualDepositDialog({
   });
 
   const sortedTransactions = useMemo(
-    () =>
-      [...(transactionsQuery.data ?? [])].sort((left, right) =>
-        String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")),
-      ),
+    () => sortDepositTransactions(transactionsQuery.data ?? []),
     [transactionsQuery.data],
   );
 
@@ -466,15 +473,14 @@ function IndividualDepositDialog({
                   ) : null}
                   {floorBlocked ? (
                     <div className="text-sm text-destructive">
-                      Индивидуальная цель ниже дефолта категории (
-                      {formatMoney(defaultTarget)}). Сохранение заблокировано — нужно право
-                      «Ставить индивидуальную цель депозита ниже дефолта категории».
+                      Индивидуальная цель ниже дефолта категории ({formatMoney(defaultTarget)}).
+                      Сохранение заблокировано — нужно право «Ставить индивидуальную цель депозита
+                      ниже дефолта категории».
                     </div>
                   ) : targetBelowDefault ? (
                     <div className="text-sm text-amber-700">
-                      Цель ниже дефолта категории ({formatMoney(defaultTarget)}) — будет
-                      применена по вашему праву. Если собрано больше новой цели, излишек
-                      нужно будет выдать.
+                      Цель ниже дефолта категории ({formatMoney(defaultTarget)}) — будет применена
+                      по вашему праву. Если собрано больше новой цели, излишек нужно будет выдать.
                     </div>
                   ) : null}
                 </section>
@@ -557,7 +563,14 @@ function IndividualDepositDialog({
                         {sortedTransactions.map((transaction) => (
                           <tr key={transaction.id}>
                             <td className="border-b p-3">
-                              {formatDateTime(transaction.created_at)}
+                              <time
+                                dateTime={depositTransactionEffectiveDate(transaction) ?? undefined}
+                                title={`Записано: ${formatDateTime(transaction.created_at)}`}
+                              >
+                                {depositTransactionEffectiveDate(transaction)
+                                  ? formatDate(depositTransactionEffectiveDate(transaction))
+                                  : "Не указана"}
+                              </time>
                             </td>
                             <td className="border-b p-3">
                               {transactionTypeLabel(transaction.transaction_type)}
@@ -633,21 +646,53 @@ function IndividualDepositDialog({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Выплатить остаток?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Выплатить {formatMoneyPrecise(deposit?.balance)} сотруднику {employeeName}? Депозит
-              обнулится.
+            <AlertDialogDescription asChild>
+              <div className="grid gap-3">
+                <dl className="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Получатель</dt>
+                    <dd className="font-semibold text-foreground">{employeeName}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Сумма</dt>
+                    <dd className="font-semibold text-foreground">
+                      {formatMoneyPrecise(deposit?.balance)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Счёт выдачи</dt>
+                    <dd className="font-semibold text-foreground">
+                      {depositPayoutChannelLabel("cash_tk")}
+                    </dd>
+                  </div>
+                </dl>
+                <p>Деньги выданы сейчас. Остаток депозита будет выплачен полностью.</p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              checked={cashConfirmed}
+              disabled={payoutMutation.isPending}
+              onChange={(event) => setCashConfirmed(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Подтверждаю: деньги выданы сейчас сотруднику {employeeName}.</span>
+          </label>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={payoutMutation.isPending}>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              disabled={payoutMutation.isPending || balance <= 0}
+              className="h-auto whitespace-normal py-2"
+              disabled={payoutMutation.isPending || balance <= 0 || !cashConfirmed}
               onClick={(event) => {
                 event.preventDefault();
+                if (!cashConfirmed) {
+                  return;
+                }
                 payoutMutation.mutate();
               }}
             >
-              Выплатить
+              Выдать {formatMoneyPrecise(deposit?.balance)} · {employeeName}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -703,6 +748,7 @@ function SurplusPayoutDialog({
   const scheduledEnabled = scheduledQuery.data ?? false;
   const [mode, setMode] = useState<"scheduled" | "immediate">("scheduled");
   const [method, setMethod] = useState<DepositPayoutMethod>("cash_tk");
+  const [cashConfirmed, setCashConfirmed] = useState(false);
 
   const employeeId = deposit?.id ?? "";
   const surplusAmount = normalizeDecimalInput(deposit?.surplus ?? "0");
@@ -737,13 +783,16 @@ function SurplusPayoutDialog({
         amount: surplusAmount,
         comment: "Выдача излишка депозита",
         payout_method: method,
+        payout_mode: "immediate",
       });
     },
     onSuccess: async () => {
       toast.success(
         mode === "scheduled"
           ? "Излишек включён в ближайшую ведомость"
-          : "Излишек выдан",
+          : method.startsWith("bank_draft")
+            ? "Банковский черновик создан"
+            : "Излишек выдан",
       );
       await invalidateDepositQueries(queryClient, employeeId);
       onOpenChange(false);
@@ -754,11 +803,16 @@ function SurplusPayoutDialog({
   });
 
   const immediatePossible = allowedChannels.length > 0;
+  const isImmediateCash = mode === "immediate" && (method === "cash_tk" || method === "cash_safe");
+  useEffect(() => {
+    setCashConfirmed(false);
+  }, [employeeId, employeeName, surplusAmount, method, mode, open]);
   const canSubmit =
     Boolean(deposit) &&
     hasSurplus &&
     canPayout &&
-    (mode === "scheduled" ? scheduledEnabled : immediatePossible);
+    (mode === "scheduled" ? scheduledEnabled : immediatePossible) &&
+    (!isImmediateCash || cashConfirmed);
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -766,15 +820,15 @@ function SurplusPayoutDialog({
         <DialogHeader>
           <DialogTitle>Излишек депозита</DialogTitle>
           <DialogDescription>
-            У {employeeName} собрано больше текущей цели. Излишек{" "}
-            {formatMoney(deposit?.surplus)} — долг перед сотрудником, выберите, как его выдать.
+            У {employeeName} собрано больше текущей цели. Излишек {formatMoney(deposit?.surplus)} —
+            долг перед сотрудником, выберите, как его выдать.
           </DialogDescription>
         </DialogHeader>
 
         {!canPayout ? (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            У вас нет права на выдачу депозитов — излишек останется подсвеченным, выдать его
-            сможет пользователь с правом «Выдавать депозиты производственного персонала».
+            У вас нет права на выдачу депозитов — излишек останется подсвеченным, выдать его сможет
+            пользователь с правом «Выдавать депозиты производственного персонала».
           </div>
         ) : (
           <div className="grid gap-3">
@@ -842,6 +896,46 @@ function SurplusPayoutDialog({
           </div>
         )}
 
+        {canPayout && hasSurplus ? (
+          <section className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+            <dl className="grid gap-2">
+              <div>
+                <dt className="text-muted-foreground">Получатель</dt>
+                <dd className="font-semibold">{employeeName}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Сумма</dt>
+                <dd className="font-semibold">{formatMoneyPrecise(surplusAmount)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Счёт выдачи</dt>
+                <dd className="font-semibold">
+                  {mode === "scheduled"
+                    ? "Определится при выплате ведомости"
+                    : depositPayoutChannelLabel(method)}
+                </dd>
+              </div>
+            </dl>
+            {isImmediateCash ? (
+              <label className="flex items-start gap-3">
+                <input
+                  checked={cashConfirmed}
+                  disabled={mutation.isPending}
+                  onChange={(event) => setCashConfirmed(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Подтверждаю: деньги выданы сейчас сотруднику {employeeName}.</span>
+              </label>
+            ) : (
+              <p>
+                {mode === "scheduled"
+                  ? "Выдача будет запланирована в ведомости. Деньги сейчас не выдаются."
+                  : "Будет создан банковский черновик. Деньги сотруднику ещё не выданы."}
+              </p>
+            )}
+          </section>
+        ) : null}
+
         <DialogFooter>
           <Button
             disabled={mutation.isPending}
@@ -852,11 +946,23 @@ function SurplusPayoutDialog({
             Позже
           </Button>
           {canPayout ? (
-            <Button disabled={!canSubmit || mutation.isPending} onClick={() => mutation.mutate()}>
+            <Button
+              className="h-auto whitespace-normal py-2"
+              disabled={!canSubmit || mutation.isPending}
+              onClick={() => {
+                if (canSubmit) {
+                  mutation.mutate();
+                }
+              }}
+            >
               {mutation.isPending ? (
                 <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />
               ) : null}
-              {mode === "scheduled" ? "В ведомость" : "Выдать"}
+              {mode === "scheduled"
+                ? "В ведомость"
+                : isImmediateCash
+                  ? `Выдать ${formatMoneyPrecise(surplusAmount)} · ${employeeName}`
+                  : "Создать банковский черновик"}
             </Button>
           ) : null}
         </DialogFooter>

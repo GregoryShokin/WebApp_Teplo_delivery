@@ -87,6 +87,7 @@ from app.services import employee_change_events as employee_change_event_service
 from app.services import employee_effective_events as employee_effective_event_service
 from app.services.accumulation_fund_service import forfeit_active_fund_on_dismiss
 from app.services.banking.payout import channel_provider
+from app.services.clock import MOSCOW_TZ
 from app.services.deposit_bank_draft import (
     create_deposit_payout_draft,
     deposit_in_flight_amount,
@@ -1439,7 +1440,7 @@ async def dismiss_employee(
         await post_production_deposit_payout_to_iiko(
             session,
             amount=payout_effect.amount,
-            payout_date=now.date(),
+            payout_date=now.astimezone(MOSCOW_TZ).date(),
             source_id=str(payout_effect.transaction_id),
         )
     if isinstance(session, AsyncSession):
@@ -4011,6 +4012,7 @@ async def _apply_dismiss_deposit_decision(
                 transaction_type="dismissal_payout",
                 now=now,
                 comment=comment,
+                created_by_user_id=actor.user_id,
             )
             payout_tx = payout.transaction
             transactions.append(payout_tx)

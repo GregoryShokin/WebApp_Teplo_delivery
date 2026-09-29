@@ -16,10 +16,12 @@ from app.models import (
     DdsArticle,
     DepositAccount,
     DepositTransaction,
+    Employee,
     PayrollRun,
     Wallet,
 )
 from app.services.clock import MOSCOW_TZ
+from app.services.deposit_dates import effective_deposit_date
 from app.services.payroll_calculator import decimal
 from app.services.wallets import SAFE_WALLET_CODE
 
@@ -133,6 +135,8 @@ async def book_production_deposit_payout_cashflow(
     payout_method: str,
     transaction_date: date,
     comment: str | None,
+    employee_full_name: str | None = None,
+    created_by_user_id: uuid.UUID | None = None,
 ) -> Wallet | None:
     """Провести немедленную выдачу производственного депозита в ДДС (расход с наличного счёта).
 
@@ -145,9 +149,7 @@ async def book_production_deposit_payout_cashflow(
     (возврат None / без записи), но выдачу не валим.
     """
     wallet_code = (
-        PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE
-        if payout_method == "cash_tk"
-        else SAFE_WALLET_CODE
+        PRODUCTION_DEPOSIT_PAYOUT_TK_WALLET_CODE if payout_method == "cash_tk" else SAFE_WALLET_CODE
     )
     wallet = await session.scalar(
         select(Wallet).where(Wallet.code == wallet_code, Wallet.status == "active")
@@ -167,6 +169,14 @@ async def book_production_deposit_payout_cashflow(
     )
     if article_id is None:
         return wallet
+    if employee_full_name is None:
+        employee = await session.get(Employee, transaction.employee_id)
+        employee_full_name = employee.full_name if employee is not None else None
+    purpose = (
+        f"Выдача депозита — {employee_full_name} (операция {transaction.id})"
+        if employee_full_name
+        else f"Выдача депозита сотруднику (операция {transaction.id})"
+    )
     session.add(
         CashflowTransaction(
             wallet_id=wallet.id,
@@ -176,7 +186,8 @@ async def book_production_deposit_payout_cashflow(
             article_id=article_id,
             source_kind=PRODUCTION_DEPOSIT_PAYOUT_SOURCE_KIND,
             source_id=transaction.id,
-            payment_purpose=f"Выдача депозита сотруднику (операция {transaction.id})",
+            payment_purpose=purpose,
+            created_by_user_id=created_by_user_id,
             comment=comment,
             quality_status="final",
         )
@@ -206,6 +217,7 @@ async def add_deposit_action(
         status="success",
         params={
             "employee_id": str(employee_id),
+            "actor_user_id": str(actor.user_id) if actor.user_id is not None else None,
             "actor_roles": sorted(actor.roles),
             "comment": comment,
         },
@@ -240,6 +252,7 @@ def deposit_account_snapshot(account: DepositAccount | None) -> dict[str, Any] |
 
 
 def transaction_payload(transaction: DepositTransaction) -> dict[str, Any]:
+    effective_date = effective_deposit_date(transaction)
     return {
         "id": str(transaction.id) if transaction.id is not None else None,
         "employee_id": str(transaction.employee_id)
@@ -248,6 +261,10 @@ def transaction_payload(transaction: DepositTransaction) -> dict[str, Any]:
         "run_id": str(transaction.run_id) if transaction.run_id is not None else None,
         "transaction_type": transaction.transaction_type,
         "amount": decimal_string(transaction.amount),
+        "happened_on": (
+            transaction.happened_on.isoformat() if transaction.happened_on is not None else None
+        ),
+        "effective_date": (effective_date.isoformat() if effective_date is not None else None),
         "created_at": (
             transaction.created_at.isoformat() if transaction.created_at is not None else None
         ),

@@ -6030,6 +6030,238 @@ async def test_personal_report_exposes_scheduled_deposit_payout() -> None:
     assert report["totals"]["deposit_payout"] == 15000
 
 
+async def test_personal_report_deposit_breakdown_keeps_merged_payslip_amounts() -> None:
+    """Депозит 2000 и ревизия 2255.90 объясняют удержание 4255.90, округление — 4335."""
+    employee = make_employee(position="Повар")
+    period = make_period(
+        start=date(2026, 9, 8), end=date(2026, 9, 14), payroll_date=date(2026, 9, 15)
+    )
+    run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 9, 15, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    pizza = make_payroll_line(
+        run.id,
+        employee.id,
+        role="pizza",
+        base_pay=Decimal("4400"),
+        premium=Decimal("0"),
+        percent_pay=Decimal("0"),
+        fund_accrual=Decimal("0"),
+        deduction=Decimal("4255.90"),
+        total_payable=Decimal("141.10"),
+        components={
+            "days": [
+                {"date": "2026-09-11", "base_pay": "2200"},
+                {"date": "2026-09-12", "base_pay": "2200"},
+            ],
+            "deposit_withholding": "2000",
+            "payroll_rounding": {"amount": "3.00", "unit": "5.00"},
+            "adjustments": {
+                "penalties": [
+                    {
+                        "id": "audit",
+                        "work_date": "2026-09-09",
+                        "amount": "2255.90",
+                        "comment": "Недостача по ревизии",
+                    }
+                ]
+            },
+        },
+    )
+    sushi = make_payroll_line(
+        run.id,
+        employee.id,
+        role="sushi",
+        base_pay=Decimal("4000"),
+        premium=Decimal("193.90"),
+        percent_pay=Decimal("0"),
+        fund_accrual=Decimal("0"),
+        deduction=Decimal("0"),
+        total_payable=Decimal("4193.90"),
+        components={
+            "days": [
+                {"date": "2026-09-13", "base_pay": "2000"},
+                {"date": "2026-09-14", "base_pay": "2000"},
+            ],
+            "adjustments": {
+                "bonuses": [
+                    {
+                        "id": "return",
+                        "work_date": "2026-09-14",
+                        "amount": "193.90",
+                        "comment": "Возврат ревизии",
+                    }
+                ]
+            },
+        },
+    )
+    historical_accrual = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=uuid.uuid4(),
+        transaction_type="accrual",
+        amount=Decimal("2000"),
+        happened_on=date(2026, 9, 8),
+        created_at=datetime(2026, 9, 8, 10, tzinfo=UTC),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[(pizza, run, period), (sushi, run, period)],
+        deposit_transactions=[historical_accrual],
+    )
+    report = await build_personal_report(session, employee.id, date(2026, 9, 8), date(2026, 9, 14))  # type: ignore[arg-type]
+    payslip = report["periods"][0]
+    assert len(report["periods"]) == 1
+    assert payslip["deposit_withholding"] == 2000
+    assert payslip["deduction"] == 4255.90
+    assert payslip["deduction"] == payslip["deposit_withholding"] + 2255.90
+    assert payslip["payroll_rounding"] == 3
+    assert payslip["total_payable"] == 4335
+    assert payslip["manual_deposit_payout"] == 0
+    assert report["totals"]["deposit_withholding"] == 2000
+    assert {role["role"] for role in payslip["roles"]} == {"pizza", "sushi"}
+    assert len(payslip["adjustments"]["penalties"]) == 1
+
+
+async def test_personal_report_manual_payout_is_separate_and_assigned_once() -> None:
+    """Самостоятельная выдача не дублируется по пересчётам, ролям и замещению."""
+    employee = make_employee(position="Повар")
+    period = make_period(
+        start=date(2026, 9, 8), end=date(2026, 9, 14), payroll_date=date(2026, 9, 15)
+    )
+    old_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 9, 15, tzinfo=UTC),
+        status="completed",
+        blocking_issues=[],
+        summary={},
+    )
+    new_run = PayrollRun(
+        id=uuid.uuid4(),
+        period_id=period.id,
+        started_at=datetime(2026, 9, 16, tzinfo=UTC),
+        status="finalized",
+        blocking_issues=[],
+        summary={},
+    )
+    old_line = make_payroll_line(old_run.id, employee.id, components={"days": []})
+    new_line = make_payroll_line(
+        new_run.id,
+        employee.id,
+        total_payable=Decimal("4335"),
+        components={"days": [], "deposit_payout": "2000"},
+    )
+    substitute = make_payroll_line(
+        new_run.id,
+        employee.id,
+        role="Помощник менеджера",
+        components={"days": [], "kind": "admin_oklad"},
+    )
+    scheduled = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=new_run.id,
+        transaction_type="payout",
+        amount=Decimal("2000"),
+        happened_on=date(2026, 9, 14),
+        created_at=datetime(2026, 9, 15, 10, tzinfo=UTC),
+    )
+    manual = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=None,
+        transaction_type="payout",
+        amount=Decimal("2000"),
+        happened_on=date(2026, 9, 8),
+        created_at=datetime(2026, 9, 7, 18, tzinfo=UTC),
+    )
+    session = PersonalReportFakeSession(
+        employees=[employee],
+        line_rows=[
+            (old_line, old_run, period),
+            (substitute, new_run, period),
+            (new_line, new_run, period),
+        ],
+        deposit_transactions=[scheduled, manual],
+    )
+    report = await build_personal_report(session, employee.id, date(2026, 9, 8), date(2026, 9, 14))  # type: ignore[arg-type]
+    primary = next(
+        item
+        for item in report["periods"]
+        if item["run_id"] == new_run.id and not item["is_substitute"]
+    )
+    assert primary["total_payable"] == 4335
+    assert primary["deposit_payout"] == 2000
+    assert primary["manual_deposit_payout"] == 2000
+    assert [transaction["id"] for transaction in primary["manual_deposit_transactions"]] == [
+        manual.id
+    ]
+    assert sum(item["manual_deposit_payout"] for item in report["periods"]) == 2000
+    assert report["totals"]["deposit_payout"] == 2000
+    assert report["totals"]["manual_deposit_payout"] == 2000
+    assert report["daily"][0]["date"] == date(2026, 9, 8)
+    assert report["daily"][0]["deposit_out"] == 2000
+
+
+async def test_personal_report_filters_deposits_by_business_day_without_payroll(
+    async_session_factory,
+) -> None:
+    """Записанная 07.09 выдача за 08.09 видна 08.09 даже без ведомости этой недели."""
+    employee = make_employee()
+    actual_eighth = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=None,
+        transaction_type="payout",
+        amount=Decimal("2000"),
+        happened_on=date(2026, 9, 8),
+        created_at=datetime(2026, 9, 7, 10, tzinfo=UTC),
+    )
+    actual_seventh = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=None,
+        transaction_type="payout",
+        amount=Decimal("100"),
+        happened_on=date(2026, 9, 7),
+        created_at=datetime(2026, 9, 8, 10, tzinfo=UTC),
+    )
+    legacy_eighth = DepositTransaction(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
+        run_id=None,
+        transaction_type="payout",
+        amount=Decimal("500"),
+        happened_on=None,
+        created_at=datetime(2026, 9, 7, 22, tzinfo=UTC),
+    )
+    async with async_session_factory() as session:
+        session.add(employee)
+        await session.flush()
+        session.add_all([actual_eighth, actual_seventh, legacy_eighth])
+        await session.flush()
+        report = await build_personal_report(
+            session, employee.id, date(2026, 9, 8), date(2026, 9, 8)
+        )
+        assert report["periods"] == []
+        assert report["totals"]["manual_deposit_payout"] == 2500
+        assert report["totals"]["total_payable"] == 0
+        assert {item["id"] for item in report["deposit_transactions"]} == {
+            actual_eighth.id,
+            legacy_eighth.id,
+        }
+        assert all(
+            item["effective_date"] == date(2026, 9, 8) for item in report["deposit_transactions"]
+        )
+        assert report["daily"][0]["deposit_out"] == 2500
+
+
 async def test_personal_report_opening_balance_excludes_period_range() -> None:
     employee = make_employee()
     previous_period = make_period(

@@ -59,6 +59,9 @@ import {
   refundTwinsQuery,
 } from "@/routes/dds/shared";
 
+const DEPOSIT_PAYOUT_ARTICLE_CODE = "vydacha_depozita_sotrudniku";
+const DEPOSIT_DOMAIN_HINT =
+  "Выдача депозита обязательно связана с сотрудником. Оформите или скорректируйте её в разделе «Зарплата → Депозиты».";
 const PREPAYMENT_ARTICLE_CODE = "advance_to_supplier";
 const SUPPLIER_PAYMENT_ARTICLE_CODE = "payment_to_supplier";
 // Транзитные статьи «перевод между счетами» — у строки с ними выбираем счёт-получатель (проводка).
@@ -317,6 +320,18 @@ export function OperationClassifyDialog({
       )
       .map((a) => a.id),
   );
+  const depositArticleIds = new Set(
+    articles.filter((a) => a.code === DEPOSIT_PAYOUT_ARTICLE_CODE).map((a) => a.id),
+  );
+  const usesDepositArticle = rows.some((item) => depositArticleIds.has(item.articleId));
+  const classificationBlockedReason =
+    row?.classification_blocked_reason ??
+    (row?.source_kind === "production_deposit_payout" ||
+    row?.source_kind === "production_deposit_payout_draft" ||
+    (row?.article_id && depositArticleIds.has(row.article_id))
+      ? DEPOSIT_DOMAIN_HINT
+      : null);
+  const canEdit = canClassify && !classificationBlockedReason;
   const usesSalaryArticle = rows.some((item) => salaryArticleIds.has(item.articleId));
 
   // Карт-операция (получатель в банке — эквайер, не поставщик): её оплату не привязывают к
@@ -467,6 +482,7 @@ export function OperationClassifyDialog({
     item.articleId !== "none" &&
     !isTransferRow(item.articleId) &&
     !salaryArticleIds.has(item.articleId) &&
+    !depositArticleIds.has(item.articleId) &&
     !employeeAdvanceArticleIds.has(item.articleId);
 
   function updateRow(key: string, patch: Partial<SplitRow>) {
@@ -510,6 +526,10 @@ export function OperationClassifyDialog({
   }
 
   function submitSplit() {
+    if (classificationBlockedReason || usesDepositArticle) {
+      toast.error(classificationBlockedReason ?? DEPOSIT_DOMAIN_HINT);
+      return;
+    }
     if (rows.some((item) => item.articleId === "none")) {
       toast.error("Выберите статью в каждой строке");
       return;
@@ -647,9 +667,10 @@ export function OperationClassifyDialog({
   // Контрагента НЕ выносим отдельным блоком — он живёт прямо в строке нужной статьи.
   const rowDetailKind = (
     item: SplitRow,
-  ): "employee" | "advance" | "transfer" | "counterparty" | null => {
+  ): "employee" | "advance" | "deposit" | "transfer" | "counterparty" | null => {
     if (item.articleId === "none") return null;
     if (isOperation && employeeAdvanceArticleIds.has(item.articleId)) return "advance";
+    if (depositArticleIds.has(item.articleId)) return "deposit";
     if (salaryArticleIds.has(item.articleId)) return "employee";
     if (!isOperation && isTransferRow(item.articleId)) return "transfer";
     return "counterparty";
@@ -690,6 +711,10 @@ export function OperationClassifyDialog({
         : "";
   const rowDetailSummary = (item: SplitRow): { text: string; missing: boolean } => {
     switch (rowDetailKind(item)) {
+      case "deposit":
+        return row.employee_name
+          ? { text: `Сотрудник: ${row.employee_name}`, missing: false }
+          : { text: "нужен сотрудник (выдача депозита)", missing: true };
       case "employee": {
         const emp = (payoutEmployeesQuery.data ?? []).find((e) => e.id === item.employeeId);
         return emp
@@ -746,6 +771,10 @@ export function OperationClassifyDialog({
   // «Пополнение Сейфа»: если строки размечены статьёй/получателем — это уже целёвки-резервы
   // (спрашивать отдельно не нужно); голое пополнение без разметки — просто транзит р/с→Сейф.
   function submitSafeTopup() {
+    if (classificationBlockedReason || usesDepositArticle) {
+      toast.error(classificationBlockedReason ?? DEPOSIT_DOMAIN_HINT);
+      return;
+    }
     const marked =
       rows.every((item) => item.articleId !== "none") && balanced && !salaryRowMissingEmployee;
     if (marked) {
@@ -810,7 +839,16 @@ export function OperationClassifyDialog({
           <div className="mt-1 break-words text-sm">{compactText(row.payment_purpose)}</div>
         </div>
 
-        {canClassify ? (
+        {row.employee_id || classificationBlockedReason ? (
+          <div className="rounded-md border bg-muted/20 p-3">
+            <Label className="text-xs text-muted-foreground">Сотрудник-получатель (обязательно)</Label>
+            <div className="mt-1 font-medium">
+              {row.employee_name ?? "Не удалось определить сотрудника — проверьте исходную выдачу депозита"}
+            </div>
+          </div>
+        ) : null}
+
+        {canEdit ? (
           <div className="grid gap-3 border-t pt-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label className="text-base font-semibold">Разнести по статьям ДДС</Label>
@@ -986,6 +1024,10 @@ export function OperationClassifyDialog({
               </div>
             ))}
 
+            {usesDepositArticle ? (
+              <p className="text-sm text-amber-700" role="alert">{DEPOSIT_DOMAIN_HINT}</p>
+            ) : null}
+
             {rowMissingAsset ? (
               // Та же причина, что и у помещения: серая кнопка без объяснения читается как
               // поломка. Отдельно случай без права — объект выбрать нечем.
@@ -1017,6 +1059,7 @@ export function OperationClassifyDialog({
                   salaryRowMissingEmployee ||
                   transferRowMissingWallet ||
                   usesAdvanceArticle ||
+                  usesDepositArticle ||
                   (bindsInvoiceOnCard && !cardBindAck)
                 }
                 onClick={submitSplit}
@@ -1042,7 +1085,7 @@ export function OperationClassifyDialog({
               ) : null}
               {isOperation && row.direction === "out" ? (
                 <Button
-                  disabled={isBusy || salaryRowMissingEmployee}
+                  disabled={isBusy || salaryRowMissingEmployee || usesDepositArticle}
                   onClick={submitSafeTopup}
                   variant="outline"
                   title="Перевод на карту «Сейф». Со статьёй и получателем — целёвка-резерв (выплата и учёт в ЗП по «Выплачено»); без разметки — просто пополнение."
@@ -1057,7 +1100,7 @@ export function OperationClassifyDialog({
           </div>
         ) : (
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            Режим просмотра. Разбор недоступен.
+            {classificationBlockedReason ?? "Режим просмотра. Разбор недоступен."}
           </div>
         )}
       </DialogContent>
@@ -1072,7 +1115,7 @@ export function OperationClassifyDialog({
                 ? detailRow.articleId === loanArticleId
                   ? "Заём сотруднику"
                   : "Аванс сотруднику"
-                : rowDetailKind(detailRow) === "employee"
+                : rowDetailKind(detailRow) === "employee" || rowDetailKind(detailRow) === "deposit"
                   ? "Сотрудник-получатель"
                   : rowDetailKind(detailRow) === "transfer"
                     ? "Счёт-получатель перевода"
@@ -1175,6 +1218,9 @@ export function OperationClassifyDialog({
                   </>
                 ) : null}
               </div>
+            ) : null}
+            {rowDetailKind(detailRow) === "deposit" ? (
+              <p className="text-sm text-muted-foreground">{DEPOSIT_DOMAIN_HINT}</p>
             ) : null}
             {rowDetailKind(detailRow) === "employee" ? (
               <InlineOptionList

@@ -48,6 +48,7 @@ async def execute_deposit_payout(
     transaction_type: str,
     now: datetime,
     comment: str | None = None,
+    created_by_user_id: uuid.UUID | None = None,
 ) -> DepositPayoutResult:
     """Провести НЕМЕДЛЕННУЮ (наличную) выдачу депозита: запись в леджер + расход в ДДС.
 
@@ -72,8 +73,10 @@ async def execute_deposit_payout(
         session,
         transaction=transaction,
         payout_method=payout_method,
-        transaction_date=now.date(),
+        transaction_date=transaction.happened_on,
         comment=comment,
+        employee_full_name=employee_full_name,
+        created_by_user_id=created_by_user_id,
     )
     return DepositPayoutResult(
         transaction=transaction,

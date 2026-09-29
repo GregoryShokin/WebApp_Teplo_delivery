@@ -688,6 +688,16 @@ export type AdminSalaryOverridePayload = {
   effective_from: string | null;
 };
 
+export type PayrollPersonalReportDepositTransaction = {
+  id: string;
+  transaction_type: string;
+  amount: number;
+  created_at: string;
+  happened_on: string | null;
+  effective_date: string;
+  run_id: string | null;
+};
+
 export type PayrollPersonalReport = {
   employee_id: string;
   employee_name: string;
@@ -712,10 +722,13 @@ export type PayrollPersonalReport = {
     deduction: number;
     deposit_withholding: number;
     deposit_payout: number;
+    payroll_rounding: number;
     bonus_total: number;
     penalty_total: number;
     total_payable: number;
     is_substitute: boolean;
+    manual_deposit_payout: number;
+    manual_deposit_transactions: PayrollPersonalReportDepositTransaction[];
     // Разбивка объединённой расчётки по ролям (для секций/чипов внутри расчётки).
     roles: Array<{
       role: string;
@@ -728,6 +741,7 @@ export type PayrollPersonalReport = {
       deduction: number;
       deposit_withholding: number;
       deposit_payout: number;
+      payroll_rounding: number;
       bonus_total: number;
       penalty_total: number;
       total_payable: number;
@@ -769,14 +783,9 @@ export type PayrollPersonalReport = {
     amount: number;
     comment: string | null;
   }>;
-  deposit_transactions: Array<{
-    id: string;
-    transaction_type: string;
-    amount: number;
-    created_at: string;
-    run_id: string | null;
-  }>;
+  deposit_transactions: PayrollPersonalReportDepositTransaction[];
   totals: {
+    manual_deposit_payout: number;
     base_pay: number;
     premium: number;
     percent_pay: number;
@@ -786,6 +795,7 @@ export type PayrollPersonalReport = {
     deduction: number;
     deposit_withholding: number;
     deposit_payout: number;
+    payroll_rounding: number;
     bonus_total: number;
     penalty_total: number;
     audit_penalty_total: string;
@@ -1957,6 +1967,8 @@ export type DepositTransaction = {
   run_id: string | null;
   transaction_type: string;
   amount: string;
+  happened_on?: string | null;
+  effective_date?: string | null;
   created_at: string | null;
   comment?: string | null;
   reason?: string | null;
@@ -2758,6 +2770,10 @@ export type JournalRow = {
   amount: string;
   article_id: string | null;
   counterparty_id: string | null;
+  employee_id?: string | null;
+  employee_name?: string | null;
+  source_kind?: string | null;
+  classification_blocked_reason?: string | null;
   wallet_id: string | null;
   provider: string | null;
   payment_purpose: string | null;

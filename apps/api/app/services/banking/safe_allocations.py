@@ -27,9 +27,11 @@ from app.models import (
     Wallet,
 )
 from app.services.banking.classifier import (
+    SAFE_TOPUP_SOURCE_KIND,
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
+    _guard_deposit_operation_cashflow,
     book_safe_topup,
 )
 
@@ -165,6 +167,13 @@ async def book_safe_topup_reserves(
 
     Идемпотентно: прежние НЕоплаченные резервы этой операции снимаем; если по любому уже была
     оплата — блокируем (деньги с Сейфа уже выданы)."""
+    # Отказ по депозитному источнику должен сохранить и деньги, и прежние резервы.
+    await _guard_deposit_operation_cashflow(
+        session,
+        operation,
+        quality_status="owner_review",
+        source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
     prior = (
         await session.scalars(
             select(SafeAllocation).where(SafeAllocation.source_operation_id == operation.id)
@@ -313,7 +322,11 @@ async def pay_allocation(
     # пересборку при смене контрагента, снятие при исключении, разбор по статьям. Страховка,
     # поставленная только на выплату, заводила долг, который потом не снимала ни одна из них.
     # Здесь остаётся лишь общий вызов правила 1 после адресных механизмов выше.
-    if allocation.lease_id is None and allocation.counterparty_id is not None and not utility_handled:
+    if (
+        allocation.lease_id is None
+        and allocation.counterparty_id is not None
+        and not utility_handled
+    ):
         from app.services.supplier_prepayments import sync_manual_payment_receivable
 
         await sync_manual_payment_receivable(session, leg)

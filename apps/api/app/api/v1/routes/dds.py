@@ -33,6 +33,9 @@ from app.models import (
     CounterpartyPaymentDraft,
     DdsArticle,
     DdsArticleAlias,
+    DepositBankDraft,
+    DepositTransaction,
+    Employee,
     EmployeePayout,
     InvoicePaymentAllocation,
     ReconciliationCase,
@@ -110,7 +113,7 @@ from app.services.banking.cashflow_classify import (
     CashflowSplitLine,
     apply_cashflow_exclude,
     apply_cashflow_split,
-    ensure_cashflow_reclassifiable,
+    ensure_cashflow_domain_reclassifiable,
 )
 from app.services.banking.classifier import (
     AWAITING_BANK_QUALITY,
@@ -155,6 +158,12 @@ from app.services.counterparty_payments import (
 from app.services.deposit_bank_draft import (
     allocation_deposit_draft,
     sync_deposit_after_allocation_change,
+)
+from app.services.deposit_cashflow_integrity import (
+    DEPOSIT_CLASSIFICATION_REFUSAL,
+    DEPOSIT_PAYOUT_ARTICLE_CODE,
+    deposit_cashflow_reclassification_reason,
+    ensure_generic_deposit_article_allowed,
 )
 from app.services.kassa.payins import KassaPayinError, ensure_article_payin_eligible
 from app.services.kassa.payouts import (
@@ -456,6 +465,11 @@ async def list_journal(
                     )
                 ).all()
             }
+        # Получателя берём из депозитной операции, без создания контрагента или EmployeePayout.
+        deposit_recipients = await _journal_deposit_recipients(session, cashflow_list)
+        deposit_article_id = await session.scalar(
+            select(DdsArticle.id).where(DdsArticle.code == DEPOSIT_PAYOUT_ARTICLE_CODE)
+        )
         posted_at_by_op: dict[UUID, datetime | None] = {}
         if bank_source_ids:
             posted_at_by_op = dict(
@@ -496,6 +510,17 @@ async def list_journal(
                     "amount": _money(cf.amount),
                     "article_id": cf.article_id,
                     "counterparty_id": cf.counterparty_id,
+                    "employee_id": deposit_recipients.get(cf.id, (None, None))[0],
+                    "employee_name": deposit_recipients.get(cf.id, (None, None))[1],
+                    "source_kind": cf.source_kind,
+                    "classification_blocked_reason": DEPOSIT_CLASSIFICATION_REFUSAL
+                    if cf.id in deposit_recipients
+                    else deposit_cashflow_reclassification_reason(
+                        cf,
+                        article_code=DEPOSIT_PAYOUT_ARTICLE_CODE
+                        if deposit_article_id is not None and cf.article_id == deposit_article_id
+                        else None,
+                    ),
                     "wallet_id": cf.wallet_id,
                     "provider": None,
                     "payment_purpose": cf.payment_purpose,
@@ -572,6 +597,79 @@ async def list_journal(
         "unmarked_total": unmarked_total,
         "transfer_total": transfer_total,
     }
+
+
+async def _journal_deposit_recipients(
+    session: AsyncSession, transactions: list[CashflowTransaction]
+) -> dict[UUID, tuple[UUID, str]]:
+    direct_ids = {
+        txn.source_id
+        for txn in transactions
+        if txn.source_kind == "production_deposit_payout" and txn.source_id is not None
+    }
+    recipients: dict[UUID, tuple[UUID, str]] = {}
+    if direct_ids:
+        direct = {
+            tx_id: (employee_id, name)
+            for tx_id, employee_id, name in (
+                await session.execute(
+                    select(DepositTransaction.id, Employee.id, Employee.full_name)
+                    .join(Employee, Employee.id == DepositTransaction.employee_id)
+                    .where(DepositTransaction.id.in_(direct_ids))
+                )
+            ).all()
+        }
+        recipients.update(
+            (txn.id, direct[txn.source_id])
+            for txn in transactions
+            if txn.source_kind == "production_deposit_payout" and txn.source_id in direct
+        )
+
+    # Банк сначала переносит деньги на Сейф, затем расход идёт по резерву. Имя живёт
+    # в DepositBankDraft, а employee_id резерва пуст, чтобы выдача не срезала зарплату.
+    draft_ids = {
+        txn.source_id
+        for txn in transactions
+        if txn.source_kind == "production_deposit_payout_draft" and txn.source_id is not None
+    }
+    allocation_ids = {
+        txn.source_id
+        for txn in transactions
+        if txn.source_kind in {"safe_payout", "kassa_target_payout"} and txn.source_id is not None
+    }
+    if draft_ids or allocation_ids:
+        draft_rows = (
+            await session.execute(
+                select(
+                    DepositBankDraft.id,
+                    DepositBankDraft.safe_allocation_id,
+                    Employee.id,
+                    Employee.full_name,
+                )
+                .join(Employee, Employee.id == DepositBankDraft.employee_id)
+                .where(
+                    or_(
+                        DepositBankDraft.id.in_(draft_ids),
+                        DepositBankDraft.safe_allocation_id.in_(allocation_ids),
+                    )
+                )
+            )
+        ).all()
+        by_draft = {draft_id: (employee_id, name) for draft_id, _, employee_id, name in draft_rows}
+        by_allocation = {
+            allocation_id: (employee_id, name)
+            for _, allocation_id, employee_id, name in draft_rows
+            if allocation_id is not None
+        }
+        for txn in transactions:
+            if txn.source_kind == "production_deposit_payout_draft" and txn.source_id in by_draft:
+                recipients[txn.id] = by_draft[txn.source_id]
+            elif (
+                txn.source_kind in {"safe_payout", "kassa_target_payout"}
+                and txn.source_id in by_allocation
+            ):
+                recipients[txn.id] = by_allocation[txn.source_id]
+    return recipients
 
 
 @router.get("/wallets", response_model=list[DdsWalletRead], dependencies=DDS_WALLETS_READ_ACCESS)
@@ -1692,6 +1790,10 @@ async def classify_owner_review_case(
     # разные объекты. Отправляем в обычный разбор, где строки есть.
     if payload.action == "set_article" and payload.article_id is not None:
         article = await session.get(DdsArticle, payload.article_id)
+        try:
+            ensure_generic_deposit_article_allowed(article)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
         if article is not None and article.asset_link_kind is not None:
             raise HTTPException(
                 status_code=422,
@@ -2005,6 +2107,13 @@ async def classify_operation(
     if operation is None:
         raise HTTPException(status_code=404, detail="Bank operation not found")
 
+    for item in payload.splits:
+        article = await session.get(DdsArticle, item.article_id)
+        try:
+            ensure_generic_deposit_article_allowed(article)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
     created_ids: list[UUID] = []
     if payload.action == "split":
         if not payload.splits:
@@ -2273,20 +2382,22 @@ async def classify_transaction(
     txn = await session.get(CashflowTransaction, transaction_id)
     if txn is None:
         raise HTTPException(status_code=404, detail="Проводка не найдена")
+    previous_article = await session.get(DdsArticle, txn.article_id) if txn.article_id else None
     try:
-        ensure_cashflow_reclassifiable(txn)
+        await ensure_cashflow_domain_reclassifiable(session, txn)
     except CashflowClassificationConflictError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     previous_counterparty_id = txn.counterparty_id
-    previous_article_code: str | None = None
-    if txn.article_id is not None:
-        previous_article = await session.get(DdsArticle, txn.article_id)
-        previous_article_code = previous_article.code if previous_article is not None else None
+    previous_article_code = previous_article.code if previous_article is not None else None
     article = None
     if payload.article_id is not None:
         article = await session.get(DdsArticle, payload.article_id)
         if article is None:
             raise HTTPException(status_code=400, detail="Статья не найдена")
+        try:
+            ensure_generic_deposit_article_allowed(article)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     try:
         context = await resolve_location_context(
             session,
@@ -2542,6 +2653,8 @@ async def create_safe_allocation(
         ensure_permission(actor, "finance.safe.confirm_paid")
     free = await _safe_free_amount(session, wallet)
     try:
+        article = await session.get(DdsArticle, payload.article_id) if payload.article_id else None
+        ensure_generic_deposit_article_allowed(article)
         allocation = await create_allocation(
             session,
             wallet_id=wallet.id,
@@ -3015,6 +3128,13 @@ async def _counterparty_payloads(
 async def _ensure_rule_article_allowed(session: AsyncSession, article_id: UUID | None) -> None:
     """Правило со статьёй возврата переплаты не заводится и из настроек — та же фоновая
     авторазметка мимо сторожа, что и у «Запомнить» (``refund_rule_refusal``)."""
+    article = await session.get(DdsArticle, article_id) if article_id else None
+    try:
+        ensure_generic_deposit_article_allowed(article)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from error
     refusal = await refund_rule_refusal(session, article_id)
     if refusal is not None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=refusal)

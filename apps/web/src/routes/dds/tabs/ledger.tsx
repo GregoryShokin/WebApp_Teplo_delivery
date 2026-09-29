@@ -168,11 +168,17 @@ export function LedgerTab() {
     },
     {
       key: "counterparty",
-      header: "Контрагент",
+      header: "Контрагент / сотрудник",
       cell: (row) =>
-        row.counterparty_id
-          ? (counterpartyById.get(row.counterparty_id)?.name ?? "—")
-          : compactText(row.counterparty_name_raw),
+        row.employee_name ? (
+          <span>{row.employee_name}</span>
+        ) : row.counterparty_id ? (
+          (counterpartyById.get(row.counterparty_id)?.name ?? "—")
+        ) : row.classification_blocked_reason ? (
+          <span className="text-amber-700">Сотрудник не определён</span>
+        ) : (
+          compactText(row.counterparty_name_raw)
+        ),
       className: "min-w-[150px]",
     },
     {
