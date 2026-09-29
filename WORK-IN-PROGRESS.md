@@ -16,6 +16,17 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-owner-card-purpose — ветка `codex/deposit-report-integrity`
+- worktree: `../Teplo-agent-depositfixes`
+- задача: единое назначение банковских переводов р/с → карта ИП / Сейф и устойчивый код связи с внутренним платежом
+- трогает: `apps/api/app/services/banking/ip_card_requisites.py`, общий helper назначения/кода,
+  банковские sendpoints в `counterparty_payments.py`, `payroll_payouts.py`, `payroll_advance_service.py`,
+  `employee_payouts.py`, `deposit_bank_draft.py`; при необходимости сохранение внутреннего описания
+  в `bank_payment_status.py` и сопоставление кода в банковском классификаторе; профильные backend/frontend тесты
+- НЕ трогать другим: перечисленные sendpoints; денежные формулы и `apply_operation_split` не меняю
+- compose: стенд не поднимаю; только своя БД `teplo_test_depositfixes` (контейнер `teplo-pg-msk`, порт 5602), UI тесты порт 5423
+- статус: в работе; продолжение исправлений депозитов перед деплоем
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
