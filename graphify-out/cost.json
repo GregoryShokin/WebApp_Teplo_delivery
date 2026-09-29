@@ -426,6 +426,13 @@
       "output_tokens": null,
       "files": 10,
       "note": "9 code files extracted with AST; 1 document with a subagent. Actual semantic token usage unavailable; cumulative known totals unchanged."
+    },
+    {
+      "date": "2026-09-29T14:03:55.042740+00:00",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "files": 61,
+      "note": "61 changed code files re-extracted with AST for release ea0b506c; no LLM usage. Existing semantic graph/cache and 59 hyperedges preserved."
     }
   ],
   "total_input_tokens": 3323153,
