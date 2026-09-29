@@ -1027,6 +1027,15 @@ function PaletteItem({
 // --------------------------------------------------------------------------- //
 // Общие блоки форм («живое резюме»)
 
+function OwnerCardPurposePreview() {
+  return (
+    <p aria-live="polite" className="text-xs text-muted-foreground">
+      В банк уйдёт:{" "}
+      <span className="font-medium text-foreground">Вывод собственных средств на карту ИП</span>
+    </p>
+  );
+}
+
 function FormHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="mb-4">
@@ -1737,13 +1746,25 @@ function ExpenseForm({
                   </Button>
                 </div>
                 <div className={cn("gap-2", showRecipient ? "grid grid-cols-2" : "")}>
-                  <Input
-                    className="h-8 text-sm"
-                    maxLength={210}
-                    onChange={(event) => onUpdateRow(row.key, { purpose: event.target.value })}
-                    placeholder="Назначение (необязательно)"
-                    value={row.purpose}
-                  />
+                  <Label className="space-y-1">
+                    {isCashSource || !requiresRequisites ? (
+                      <span className="text-xs text-muted-foreground">Описание для учёта</span>
+                    ) : null}
+                    <Input
+                      aria-label={
+                        isCashSource || !requiresRequisites ? "Описание для учёта" : "Назначение"
+                      }
+                      className="h-8 text-sm"
+                      maxLength={210}
+                      onChange={(event) => onUpdateRow(row.key, { purpose: event.target.value })}
+                      placeholder={
+                        isCashSource || !requiresRequisites
+                          ? "Необязательно"
+                          : "Назначение (необязательно)"
+                      }
+                      value={row.purpose}
+                    />
+                  </Label>
                   {showRecipient ? (
                     <CounterpartyCombobox
                       counterparties={counterparties}
@@ -1843,6 +1864,9 @@ function ExpenseForm({
             onChange={setVatRate}
             purposeBase={bankPurposeBase}
           />
+        ) : null}
+        {selectedWallet?.kind === "bank" && !requiresRequisites ? (
+          <OwnerCardPurposePreview />
         ) : null}
 
         <SummaryPanel tone={tone} total={total}>
@@ -3210,7 +3234,7 @@ function TransferPlainForm({
             />
           </Label>
           <Label className="block space-y-1">
-            <span className="text-sm">Назначение</span>
+            <span className="text-sm">Описание для учёта</span>
             <Input
               maxLength={210}
               onChange={(event) => setPurpose(event.target.value)}
@@ -3220,6 +3244,7 @@ function TransferPlainForm({
           </Label>
         </div>
 
+        {isBankSource ? <OwnerCardPurposePreview /> : null}
         <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>
           {sourceWallet == null ? (
             "Выберите счёт-источник."

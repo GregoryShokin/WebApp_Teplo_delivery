@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_admin_payout_split import _payer_wallet, _safe_wallet
@@ -26,9 +27,11 @@ from app.models import (
     ReconciliationCase,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payment_purpose import owner_card_payment_purpose, payment_match_marker
 from app.services.deposit_bank_draft import (
     PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
     book_deposit_bank_to_safe_transfer,
+    create_deposit_payout_draft,
     send_deposit_payout_bank_draft,
 )
 from app.services.deposit_service import (
@@ -75,15 +78,12 @@ async def _seed_employee(session: AsyncSession) -> Employee:
     return employee
 
 
-async def _transfer_txns(
-    session: AsyncSession, source_id: uuid.UUID
-) -> list[CashflowTransaction]:
+async def _transfer_txns(session: AsyncSession, source_id: uuid.UUID) -> list[CashflowTransaction]:
     return list(
         (
             await session.scalars(
                 select(CashflowTransaction).where(
-                    CashflowTransaction.source_kind
-                    == PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
+                    CashflowTransaction.source_kind == PRODUCTION_DEPOSIT_PAYOUT_DRAFT_SOURCE_KIND,
                     CashflowTransaction.source_id == source_id,
                 )
             )
@@ -170,12 +170,50 @@ async def test_send_bank_draft_calls_client_with_requisites(
         draft = client.drafts[0]
         assert draft["document_id"] == "teplo-deposit-abc"
         assert draft["amount"] == Decimal("5000")
+        assert draft["purpose"] == (
+            f"Вывод собственных средств на карту ИП {payment_match_marker('teplo-deposit-abc')}"
+        )
         assert draft["requisites"]["recipientName"] == "Шокина Кристина Юрьевна"
         assert draft["requisites"]["inn"] == "890307589201"
         assert "kpp" not in draft["requisites"]
         assert draft["requisites"]["bankAcnt"] == "40817810800023540968"
         assert draft["requisites"]["bankBik"] == "044525974"
         assert draft["requisites"]["corrAccount"] == "30101810145250000974"
+
+
+@pytest.mark.parametrize("recipient_kind", ["production", "courier"])
+@pytest.mark.parametrize("provider", ["tbank", "sber"])
+async def test_deposit_draft_separates_bank_purpose_from_internal_recipient_details(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    recipient_kind: str,
+    provider: str,
+) -> None:
+    async with async_session_factory() as session:
+        employee = await _seed_employee(session)
+        internal_purpose = (
+            f"Выдача депозита {employee.full_name} (через Сейф)"
+            if recipient_kind == "production"
+            else f"Возврат депозита курьеру {employee.full_name} (через Сейф)"
+        )
+        client = RecordingBankClient()
+        draft = await create_deposit_payout_draft(
+            session,
+            recipient_kind=recipient_kind,
+            amount=Decimal("2000"),
+            purpose=internal_purpose,
+            provider=provider,
+            employee_id=employee.id,
+            bank_client=client,
+        )
+        expected = (
+            f"Вывод собственных средств на карту ИП {payment_match_marker(draft.document_id)}"
+        )
+        assert client.drafts[0]["purpose"] == expected
+        assert draft.payload["request"]["paymentPurpose"] == expected
+        assert draft.payload["internal_purpose"] == internal_purpose
+        assert internal_purpose not in expected
+        assert draft.bank_provider == provider
+        assert expected == owner_card_payment_purpose(draft.document_id)
 
 
 async def test_send_bank_draft_uses_code_constant_without_setting(
@@ -204,9 +242,7 @@ async def test_production_payout_bank_draft_books_expense_from_safe(
     """payout_method='bank_draft' → расход «Выдача депозита» списывается с Сейфа, не с ТК."""
     async with async_session_factory() as session:
         safe_wallet = await _safe_wallet(session)
-        await _seed_article(
-            session, PRODUCTION_DEPOSIT_PAYOUT_ARTICLE_CODE, "Выдача депозита"
-        )
+        await _seed_article(session, PRODUCTION_DEPOSIT_PAYOUT_ARTICLE_CODE, "Выдача депозита")
         employee = await _seed_employee(session)
         tx = DepositTransaction(
             id=uuid.uuid4(),
@@ -267,9 +303,7 @@ async def test_failed_bank_draft_opens_owner_case(
     """
     async with async_session_factory() as session:
         await session.execute(
-            delete(ReconciliationCase).where(
-                ReconciliationCase.kind == "deposit_bank_draft_failed"
-            )
+            delete(ReconciliationCase).where(ReconciliationCase.kind == "deposit_bank_draft_failed")
         )
         await session.commit()
 

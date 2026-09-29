@@ -30,6 +30,7 @@ from app.services.banking.base import (
     required_credential,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.banking.ip_card_requisites import bank_purpose_for_recipient
 
 # Сбер Fintech API создания рублёвого платёжного поручения (РПП). Без блока `digestSignatures`
 # документ создаётся в статусе ЧЕРНОВИК (bankStatus=CREATED) — оператор подписывает его в
@@ -110,6 +111,9 @@ class SberClient:
         ``payroll.bank_payout_requisites``); блок ПЛАТЕЛЬЩИКА берётся из
         ``payroll.sber_payer_requisites``. ``provider_ref`` = наш ``externalId`` (по нему потом
         читаем статус). В mock банк не вызывается."""
+        purpose = bank_purpose_for_recipient(
+            document_id=document_id, purpose=purpose, requisites=requisites
+        )
         external_id = _sber_external_id(document_id)
         if self.settings.teplo_bank_client_mode == "mock":
             return PaymentDraftResult(

@@ -46,13 +46,14 @@ from app.models import (
 from app.services import clock
 from app.services.advance_iiko_payout import post_advance_payout_to_iiko
 from app.services.bank_payment_status import classify_payment_status
-from app.services.banking import BankClient, TbankClient
+from app.services.banking import BankClient
 from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.safe_allocations import cancel_allocation, pay_allocation
 from app.services.banking.tbank import build_payment_draft_api_payload
@@ -60,7 +61,7 @@ from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import _upsert_setting
 from app.services.payroll_advance_availability import available_to_advance
 from app.services.payroll_calculator import decimal, money
-from app.services.payroll_payouts import _bank_payout_requisites, _payer_account
+from app.services.payroll_payouts import _bank_payout_requisites
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.position_registry import admin_payroll_positions
 
@@ -1095,7 +1096,7 @@ async def create_advance_bank_draft(
     payer_account = payer_account_for(settings, provider)
     requisites = await _bank_payout_requisites(session)
     document_id = _advance_document_id(advance.id)
-    purpose = f"Перевод под выдачу {_kind_label(advance)} сотруднику"
+    purpose = owner_card_payment_purpose(document_id)
     try:
         api_payload = build_payment_draft_api_payload(
             document_id=document_id,

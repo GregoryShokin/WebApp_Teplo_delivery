@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.services.banking.base import PaymentDraftResult
 from app.services.banking.classifier import SAFE_WALLET_CODE
+from app.services.banking.payment_purpose import payment_match_marker
 from app.services.employee_payouts import (
     EMPLOYEE_PAYOUT_BANK_TO_SAFE_SOURCE_KIND,
     EMPLOYEE_PAYOUT_SOURCE_KIND,
@@ -128,7 +129,9 @@ async def test_bank_wallet_rejected(
                 payout_date=date(2026, 5, 20),
             )
         # Ничего не создано.
-        count = await session.scalar(select(EmployeePayout.id).where(EmployeePayout.employee_id == employee.id))
+        count = await session.scalar(
+            select(EmployeePayout.id).where(EmployeePayout.employee_id == employee.id)
+        )
         assert count is None
 
 
@@ -243,9 +246,7 @@ async def test_bank_payout_confirm_books_transit_and_reserve(
         session.add(bank_wallet)
         await session.flush()
         # Сейф-кошелёк уже засеян миграциями; создаём только если его нет.
-        safe_wallet = await session.scalar(
-            select(Wallet).where(Wallet.code == SAFE_WALLET_CODE)
-        )
+        safe_wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
         if safe_wallet is None:
             safe_wallet = Wallet(
                 id=uuid.uuid4(),
@@ -459,9 +460,7 @@ async def test_payout_card_shows_bank_of_debit_account(
         sber_payout = await _pending_bank_payout(session, bank_code="sber")
         await session.commit()
 
-        row = next(
-            item for item in await _payout_rows(session) if item.ref_id == sber_payout.id
-        )
+        row = next(item for item in await _payout_rows(session) if item.ref_id == sber_payout.id)
         assert row.bank_channel == "sber"
 
 
@@ -624,9 +623,11 @@ async def test_apply_status_paid_without_wallets_keeps_pending(
         )
 
 
-async def test_sber_debit_account_creates_draft(
+@pytest.mark.parametrize("bank_code", ["tbank", "sber"])
+async def test_supported_debit_account_creates_owner_funds_draft(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    bank_code: str,
 ) -> None:
     """Сбер как счёт списания выписывает черновик тем же интерфейсом, что Т-Банк.
 
@@ -645,7 +646,7 @@ async def test_sber_debit_account_creates_draft(
     )
     async with async_session_factory() as session:
         employee = await _make_employee(session)
-        bank_wallet = await _bank_and_safe_wallets(session, bank_code="sber")
+        bank_wallet = await _bank_and_safe_wallets(session, bank_code=bank_code)
         article = await session.scalar(select(DdsArticle.id).limit(1))
         await session.commit()
 
@@ -665,6 +666,12 @@ async def test_sber_debit_account_creates_draft(
         assert payout.provider_ref is not None  # есть чем опрашивать статус в поллинге
         assert len(recorder.drafts) == 1
         assert recorder.drafts[0]["amount"] == Decimal("30000.00")
+        expected = (
+            f"Вывод собственных средств на карту ИП {payment_match_marker(payout.document_id)}"
+        )
+        assert recorder.drafts[0]["purpose"] == expected
+        assert payout.payload["request"]["paymentPurpose"] == expected
+        assert employee.full_name not in expected
 
 
 async def test_transit_debits_the_account_money_left_from(

@@ -54,6 +54,7 @@ from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
 )
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.safe_allocations import create_allocation, safe_reserved_total
 from app.services.banking.tbank import build_payment_draft_api_payload
@@ -204,10 +205,11 @@ async def send_deposit_payout_bank_draft(
             )
             return False
         # Валидация полей платежа (выкинет ValueError при нехватке реквизитов) — до сетевого вызова.
+        bank_purpose = owner_card_payment_purpose(document_id)
         build_payment_draft_api_payload(
             document_id=document_id,
             amount=amount,
-            purpose=purpose,
+            purpose=bank_purpose,
             requisites=requisites,
             payer_account=payer_account,
         )
@@ -215,7 +217,7 @@ async def send_deposit_payout_bank_draft(
         result = await client.create_payment_draft(
             document_id=document_id,
             amount=amount,
-            purpose=purpose,
+            purpose=bank_purpose,
             requisites=dict(requisites),
             payer_account=payer_account,
         )
@@ -317,17 +319,22 @@ async def create_deposit_payout_draft(
     amount = _money(amount)
     draft_id = uuid.uuid4()
     document_id = f"teplo-deposit-{draft_id}"
+    bank_purpose = owner_card_payment_purpose(document_id)
     settings = get_settings()
     payer_account = payer_account_for(settings, provider)
     requisites = await _bank_payout_requisites(session)
     api_payload = build_payment_draft_api_payload(
         document_id=document_id,
         amount=amount,
-        purpose=purpose,
+        purpose=bank_purpose,
         requisites=requisites,
         payer_account=payer_account,
     )
-    stored_payload: dict[str, Any] = {"accountNumber": payer_account, "request": api_payload}
+    stored_payload: dict[str, Any] = {
+        "accountNumber": payer_account,
+        "request": api_payload,
+        "internal_purpose": purpose,
+    }
     if created_by_user_id is not None:
         stored_payload["created_by"] = str(created_by_user_id)
 
@@ -353,7 +360,7 @@ async def create_deposit_payout_draft(
         result = await client.create_payment_draft(
             document_id=document_id,
             amount=amount,
-            purpose=purpose,
+            purpose=bank_purpose,
             requisites=dict(requisites),
             payer_account=payer_account,
         )

@@ -35,6 +35,7 @@ from app.services.banking.classifier import (
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
 )
+from app.services.banking.payment_purpose import payment_match_marker
 from app.services.banking.safe_allocations import SAFE_PAYOUT_SOURCE_KIND, pay_allocation
 from app.services.payments_aggregator import list_payments
 from app.services.payroll_advance_service import (
@@ -109,6 +110,7 @@ async def _issue_bank_advance(
     amount: Decimal = Decimal("10000"),
     requested_kind: str | None = None,
     allow_loan: bool = False,
+    bank_client: RecordingBankClient | None = None,
 ) -> SalaryAdvance:
     emp = await _make_okladnik(session)
     await _set_oklad(session, position="Управляющий", amount=Decimal("90000"))
@@ -122,25 +124,32 @@ async def _issue_bank_advance(
         issued_on=AS_OF,
         payout_method="transfer",
         wallet_id=wallet.id,
-        bank_client=RecordingBankClient(),
+        bank_client=bank_client or RecordingBankClient(),
     )
 
 
 async def _draft(factory: async_sessionmaker[AsyncSession], advance_id: uuid.UUID):
     async with factory() as session:
         return await session.scalar(
-            select(SalaryAdvanceBankDraft).where(
-                SalaryAdvanceBankDraft.advance_id == advance_id
-            )
+            select(SalaryAdvanceBankDraft).where(SalaryAdvanceBankDraft.advance_id == advance_id)
         )
 
 
+@pytest.mark.parametrize("requested_kind", ["advance", "loan"])
 async def test_issue_bank_advance_creates_draft_awaiting_payout(
     async_session_factory: async_sessionmaker[AsyncSession],
+    requested_kind: str,
 ) -> None:
+    client = RecordingBankClient()
     async with async_session_factory() as session:
         wallet = await _make_bank_wallet(session)
-        advance = await _issue_bank_advance(session, wallet=wallet)
+        advance = await _issue_bank_advance(
+            session,
+            wallet=wallet,
+            requested_kind=requested_kind,
+            allow_loan=requested_kind == "loan",
+            bank_client=client,
+        )
 
     assert advance.status == "awaiting_payout"
     draft = await _draft(async_session_factory, advance.id)
@@ -148,15 +157,23 @@ async def test_issue_bank_advance_creates_draft_awaiting_payout(
     assert draft.status == "created"
     assert draft.provider_ref and draft.provider_ref.startswith("mock-")
     assert draft.safe_allocation_id is None
+    expected = f"Вывод собственных средств на карту ИП {payment_match_marker(draft.document_id)}"
+    assert client.drafts[0]["purpose"] == expected
+    assert draft.payload["request"]["paymentPurpose"] == expected
+    assert advance.kind == requested_kind
     # До исполнения банком расхода/резерва ещё нет.
-    assert await _cashflows(
-        async_session_factory, source_kind="salary_advance", source_id=advance.id
-    ) == []
-    assert await _cashflows(
-        async_session_factory,
-        source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
-        source_id=advance.id,
-    ) == []
+    assert (
+        await _cashflows(async_session_factory, source_kind="salary_advance", source_id=advance.id)
+        == []
+    )
+    assert (
+        await _cashflows(
+            async_session_factory,
+            source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
+            source_id=advance.id,
+        )
+        == []
+    )
 
 
 async def test_bank_advance_paid_books_transit_and_reserve(
@@ -191,9 +208,7 @@ async def test_bank_advance_paid_books_transit_and_reserve(
             DdsArticle,
             next(leg.article_id for leg in legs if leg.direction == "in"),
         )
-        safe_wallet = await session.scalar(
-            select(Wallet).where(Wallet.code == SAFE_WALLET_CODE)
-        )
+        safe_wallet = await session.scalar(select(Wallet).where(Wallet.code == SAFE_WALLET_CODE))
     assert out_article.code == TRANSFER_OUT_ARTICLE_CODE
     assert in_article.code == TRANSFER_IN_ARTICLE_CODE
 
@@ -211,9 +226,12 @@ async def test_bank_advance_paid_books_transit_and_reserve(
     assert article.code == "employee_advance"
     # Долга ещё нет — аванс ждёт фактической выдачи.
     assert refreshed.status == "awaiting_payout"
-    assert await _cashflows(
-        async_session_factory, source_kind=SAFE_PAYOUT_SOURCE_KIND, source_id=allocation.id
-    ) == []
+    assert (
+        await _cashflows(
+            async_session_factory, source_kind=SAFE_PAYOUT_SOURCE_KIND, source_id=allocation.id
+        )
+        == []
+    )
 
 
 async def test_deleted_in_bank_advance_draft_leaves_active_payments(
@@ -355,9 +373,12 @@ async def test_cancel_after_paid_frees_reserve_keeps_money_in_safe(
         allocation = await session.get(SafeAllocation, draft.safe_allocation_id)
     assert allocation.status == "cancelled"
     # Резерв освобождён, но выдачи не было — расхода с Сейфа нет (деньги остаются в Сейфе).
-    assert await _cashflows(
-        async_session_factory, source_kind=SAFE_PAYOUT_SOURCE_KIND, source_id=allocation.id
-    ) == []
+    assert (
+        await _cashflows(
+            async_session_factory, source_kind=SAFE_PAYOUT_SOURCE_KIND, source_id=allocation.id
+        )
+        == []
+    )
 
 
 async def test_disburse_rejected_before_bank_executes(
@@ -400,11 +421,14 @@ async def test_paid_without_wallets_keeps_draft_pending_for_retry(
     draft = await _draft(async_session_factory, advance.id)
     assert draft.status in ("created", "updated")
     assert draft.safe_allocation_id is None
-    assert await _cashflows(
-        async_session_factory,
-        source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
-        source_id=advance.id,
-    ) == []
+    assert (
+        await _cashflows(
+            async_session_factory,
+            source_kind=ADVANCE_BANK_TO_SAFE_SOURCE_KIND,
+            source_id=advance.id,
+        )
+        == []
+    )
 
 
 async def test_disburse_triggers_iiko_bank(
@@ -452,12 +476,8 @@ async def test_pay_reserve_from_safe_card_signals_disbursement(
         allocation = await session.get(
             SafeAllocation, draft.safe_allocation_id, with_for_update=True
         )
-        await pay_allocation(
-            session, allocation, amount=allocation.amount, operation_date=AS_OF
-        )
-        disbursed = await sync_advance_after_allocation_change(
-            session, allocation_id=allocation.id
-        )
+        await pay_allocation(session, allocation, amount=allocation.amount, operation_date=AS_OF)
+        disbursed = await sync_advance_after_allocation_change(session, allocation_id=allocation.id)
         await session.commit()
     # sync вернул аванс → роут проведёт iiko после commit; аванс выдан, черновик disbursed.
     assert disbursed is not None

@@ -33,6 +33,10 @@ from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
 )
+from app.services.banking.payment_purpose import (
+    OWNER_CARD_PAYMENT_PURPOSE,
+    owner_card_payment_purpose,
+)
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_payout_allocation import (
@@ -729,7 +733,7 @@ async def create_or_update_run_draft(
     provider: str = "tbank",
 ) -> PayrollBankDraft | None:
     run = await _get_payout_run(session, run_id)
-    period = await _get_run_period(session, run)
+    await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
     settings = get_settings()
     payer_account = payer_account_for(settings, provider)
@@ -759,7 +763,7 @@ async def create_or_update_run_draft(
         if is_deleted_retry
         else run_payout_document_id(run_id)
     )
-    purpose = _payment_purpose(requisites, run_id=run_id, period=period)
+    purpose = owner_card_payment_purpose(document_id)
     try:
         payload = build_payment_draft_api_payload(
             document_id=document_id,
@@ -1256,12 +1260,12 @@ async def _apply_topup_delta(
     actor_user_id: uuid.UUID | None,
     bank_client: BankClient | None,
 ) -> None:
-    period = await _get_run_period(session, run)
+    await _get_run_period(session, run)
     requisites = await _bank_payout_requisites(session)
     settings = get_settings()
     payer_account = payer_account_for(settings, draft.bank_provider)
     document_id = await next_topup_document_id(session, run.id)
-    purpose = _payment_purpose(requisites, run_id=run.id, period=period)
+    purpose = owner_card_payment_purpose(document_id)
     try:
         payload = build_payment_draft_api_payload(
             document_id=document_id,
@@ -1517,6 +1521,10 @@ def _payment_purpose(
         or requisites.get("paymentPurposeTemplate")
         or DEFAULT_PAYMENT_PURPOSE_TEMPLATE
     )
+    # This helper now describes only legacy DDS expenses. Bank drafts use a
+    # document-specific owner_card_payment_purpose; keep the internal period text.
+    if template == OWNER_CARD_PAYMENT_PURPOSE:
+        template = DEFAULT_PAYMENT_PURPOSE_TEMPLATE
     try:
         return template.format(
             start=period.start_date.isoformat(),

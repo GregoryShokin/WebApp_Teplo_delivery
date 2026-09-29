@@ -149,11 +149,11 @@ async def _settle_draft_via_safe(
         )
         return
 
-    # У транша ``target_purpose`` пуст (разбивка живёт в строках), и назначение приходится
-    # брать из банковского текста — а он несёт долю НДС и техметку. В журнал ДДС ни то, ни
-    # другое не идёт: это проводка перевода между своими счетами.
+    # Новые выводы на карту ИП несут в банк общий текст. Описание закупа/транша берём
+    # из внутренних полей; для уже отправленных черновиков сохраняем старый fallback.
     purpose = (
         (draft.target_purpose or "").strip()
+        or str((draft.payload or {}).get("internal_purpose") or "").strip()
         or strip_bank_only_tail(str((draft.payload or {}).get("paymentPurpose") or ""))
         or "Закуп у неофициального поставщика"
     )
@@ -378,14 +378,17 @@ async def _payment_booked_by_statement_row(
     берётся от суммы своей проводки, а мост «операция↔проводка» для только что созданной строки
     ещё пуст, поэтому «бюджет платежа» дубля не видит.
 
-    Ключ поиска — тот же детерминированный, что у ``absorb_auto_classified_counterparty_payment``:
-    номер документа черновика (мы сами его отправляли банку) + сумма + направление. Признак
-    «уже разобрано» — зависимости на строке операции (зачёты кредиторки или предоплата).
+    Кандидаты ищутся по номеру документа, сумме и направлению. Если черновик или выписка
+    содержит TPL-код, он обязан совпадать с фактическим банковским запросом этого черновика:
+    совпавший короткий номер другого документа не означает повторную оплату.
+    Признак «уже разобрано» — зависимости на строке операции (зачёты кредиторки или предоплата).
     """
     if not draft.document_id:
         return False
     from app.models import BankOperation
     from app.services.banking.classifier import _cashflow_row_has_dependents
+    from app.services.banking.payment_purpose import extract_payment_match_markers
+    from app.services.banking.prebooked_identity import bank_draft_matches_payment_identity
     from app.services.banking.tbank import _document_number
 
     docnum = _document_number(draft.document_id)
@@ -401,7 +404,13 @@ async def _payment_booked_by_statement_row(
             )
         )
     ).all()
+    request = draft.payload if isinstance(draft.payload, dict) else {}
+    draft_markers = extract_payment_match_markers(request.get("paymentPurpose"))
     for operation in rows:
+        if (draft_markers or extract_payment_match_markers(operation.payment_purpose)) and not (
+            await bank_draft_matches_payment_identity(session, draft, operation)
+        ):
+            continue
         if await _cashflow_row_has_dependents(session, operation.cashflow_transaction_id):
             return True
     return False
@@ -522,6 +531,12 @@ async def apply_payment_status(
             )
             session.add(prepayment)
             await session.flush()
+            # The bank marker identifies the draft; the DDS source identifies its
+            # prepayment. Preserve their exact relationship for statement matching.
+            draft.payload = {
+                **(draft.payload or {}),
+                "dds_prepayment_id": str(prepayment.id),
+            }
             if prepay_txn is not None:
                 prepay_txn.source_id = prepayment.id
         # Свободный расход официальному контрагенту из окна «Новый платёж»: деньги уходят

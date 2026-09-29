@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -14,14 +15,32 @@ from test_payroll_payouts import (
 
 from app.api.deps import CurrentActor
 from app.api.v1.routes import payroll as payroll_routes
-from app.models import AppSetting, PayrollBankDraft, PayrollLine, PayrollRunEvent
+from app.models import AppSetting, PayrollBankDraft, PayrollLine, PayrollPeriod, PayrollRunEvent
 from app.services.banking.ip_card_requisites import PAYOUT_REQUISITES_KEY
+from app.services.banking.payment_purpose import owner_card_payment_purpose, payment_match_marker
 from app.services.payroll_payouts import (
+    _payment_purpose,
     apply_run_payout_delta,
     create_or_update_run_draft,
     get_run_payout_delta,
     set_run_payout_cash,
 )
+
+
+def test_legacy_payroll_cashflow_keeps_internal_period_description() -> None:
+    period = PayrollPeriod(
+        start_date=date(2026, 9, 8),
+        end_date=date(2026, 9, 14),
+        payroll_date=date(2026, 9, 15),
+    )
+    assert _payment_purpose(
+        {"paymentPurpose": "Вывод собственных средств на карту ИП"},
+        run_id=uuid.uuid4(),
+        period=period,
+    ) == (
+        "Перевод собственных средств на Сейф. "
+        "Период выплаты: 2026-09-08–2026-09-14. НДС не облагается"
+    )
 
 
 async def test_run_delta_routes_call_run_level_services(monkeypatch) -> None:
@@ -107,6 +126,7 @@ async def test_run_draft_is_idempotent_by_document_id(
         await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
 
         first = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        first_purpose = first.payload["paymentPurpose"]
         second = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
         rows = (
             await session.scalars(select(PayrollBankDraft).where(PayrollBankDraft.run_id == run.id))
@@ -116,6 +136,8 @@ async def test_run_draft_is_idempotent_by_document_id(
         assert second.id == first.id
         assert second.document_id == f"teplo-payroll-{run.id}"
         assert second.status == "updated"
+        assert second.payload["paymentPurpose"] == first_purpose
+        assert first_purpose == owner_card_payment_purpose(second.document_id)
 
 
 async def test_deleted_run_draft_retries_with_new_document_id(
@@ -136,6 +158,8 @@ async def test_deleted_run_draft_retries_with_new_document_id(
             bank_client=first_client,
         )
         first_id = first.id
+        first_purpose = first_client.drafts[0]["purpose"]
+        assert first_purpose == owner_card_payment_purpose(first.document_id)
         first.status = "deleted"
         first.last_error = "Черновик удалён в банке"
         await session.commit()
@@ -155,6 +179,10 @@ async def test_deleted_run_draft_retries_with_new_document_id(
         assert retry.provider_ref == f"mock-teplo-payroll-{run.id}-retry-1"
         assert retry.bank_provider == "sber"
         assert retry_client.drafts[0]["document_id"] == retry.document_id
+        retry_purpose = retry_client.drafts[0]["purpose"]
+        assert retry_purpose == retry.payload["paymentPurpose"]
+        assert retry_purpose == owner_card_payment_purpose(retry.document_id)
+        assert retry_purpose != first_purpose
         event = await _event(session, run.id, "bank_draft_retried")
         assert event.payload["document_id"] == retry.document_id
 
@@ -169,6 +197,10 @@ async def test_deleted_run_draft_retries_with_new_document_id(
             bank_client=second_retry_client,
         )
         assert second_retry.document_id == f"teplo-payroll-{run.id}-retry-2"
+        second_retry_purpose = second_retry_client.drafts[0]["purpose"]
+        assert second_retry_purpose == second_retry.payload["paymentPurpose"]
+        assert second_retry_purpose == owner_card_payment_purpose(second_retry.document_id)
+        assert len({first_purpose, retry_purpose, second_retry_purpose}) == 3
 
 
 async def test_run_draft_ignores_requisites_setting_drift(
@@ -176,7 +208,7 @@ async def test_run_draft_ignores_requisites_setting_drift(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        period, run, _employees = await create_payroll_run(session)
+        _period, run, _employees = await create_payroll_run(session)
         await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
         setting = await session.scalar(
             select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
@@ -207,9 +239,7 @@ async def test_run_draft_ignores_requisites_setting_drift(
         assert draft.payload["kpp"] == "0"
         assert draft.payload["bankAcnt"] == "40817810800023540968"
         assert draft.payload["paymentPurpose"] == (
-            "Перевод собственных средств на Сейф. "
-            f"Период выплаты: {period.start_date.isoformat()}–{period.end_date.isoformat()}. "
-            "НДС не облагается"
+            f"Вывод собственных средств на карту ИП {payment_match_marker(draft.document_id)}"
         )
         assert bank_client.drafts[0]["purpose"] == draft.payload["paymentPurpose"]
         sent_requisites = bank_client.drafts[0]["requisites"]
@@ -223,7 +253,7 @@ async def test_sber_run_draft_uses_own_funds_purpose(
 ) -> None:
     async with async_session_factory() as session:
         actor = await create_actor_user(session)
-        period, run, _employees = await create_payroll_run(session)
+        _period, run, _employees = await create_payroll_run(session)
         await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
         bank_client = RecordingBankClient()
 
@@ -236,9 +266,7 @@ async def test_sber_run_draft_uses_own_funds_purpose(
         )
 
         expected = (
-            "Перевод собственных средств на Сейф. "
-            f"Период выплаты: {period.start_date.isoformat()}–{period.end_date.isoformat()}. "
-            "НДС не облагается"
+            f"Вывод собственных средств на карту ИП {payment_match_marker(draft.document_id)}"
         )
         assert draft.bank_provider == "sber"
         assert draft.payload["paymentPurpose"] == expected
@@ -252,7 +280,8 @@ async def test_run_delta_topup_creates_separate_draft_and_down_records_overpaid(
         actor = await create_actor_user(session)
         _period, run, _employees = await create_payroll_run(session)
         await set_run_payout_cash(session, run.id, amount_cash=Decimal("0"), actor_user_id=actor.id)
-        await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        initial_draft = await create_or_update_run_draft(session, run.id, actor_user_id=actor.id)
+        initial_purpose = initial_draft.payload["paymentPurpose"]
         line = await session.scalar(select(PayrollLine).where(PayrollLine.run_id == run.id))
         assert line is not None
 
@@ -273,6 +302,10 @@ async def test_run_delta_topup_creates_separate_draft_and_down_records_overpaid(
         assert applied == 1
         assert bank_client.drafts[0]["document_id"] == f"teplo-payroll-{run.id}-topup-1"
         assert topup_event.payload["delta"] == "250.00"
+        topup_purpose = bank_client.drafts[0]["purpose"]
+        assert topup_purpose == owner_card_payment_purpose(topup_event.payload["document_id"])
+        assert topup_purpose == initial_draft.payload["payload"]["paymentPurpose"]
+        assert topup_purpose != initial_purpose
 
         line.total_payable = Decimal("900.00")
         await session.commit()

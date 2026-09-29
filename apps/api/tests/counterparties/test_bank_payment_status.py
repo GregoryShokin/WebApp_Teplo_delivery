@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -21,12 +22,17 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
+    BankOperation,
     CashflowTransaction,
     InvoicePaymentAllocation,
     ReconciliationCase,
     SupplierInvoice,
+    SupplierPrepayment,
 )
 from app.services.bank_payment_status import apply_payment_status, classify_payment_status
+from app.services.banking.payment_purpose import payment_match_marker
+from app.services.banking.tbank import _document_number
+from app.services.counterparty_matching import _recompute_status
 
 
 async def _no_payer_wallet(session, draft):  # noqa: ANN001, ANN202 - тестовый стаб
@@ -382,3 +388,131 @@ async def test_paid_uses_invoice_dds_article(
             select(CashflowTransaction).where(CashflowTransaction.article_id == service_article.id)
         )
         assert service_txn is not None
+
+
+@pytest.mark.parametrize("statement_marker", ["foreign", "missing", "matching"])
+async def test_free_payment_status_skips_rule1_only_for_its_statement_marker(
+    async_session_factory: async_sessionmaker[AsyncSession], statement_marker: str
+) -> None:
+    """Чужой/потерянный TPL при том же номере и сумме не доказывает учёт этого платежа."""
+    async with async_session_factory() as session:
+        account = await make_account(session, account_number="40802810000000056789")
+        wallet = await make_wallet(
+            session, wallet_type="bank", code="marker-rule1-payer", account_id=account.id
+        )
+        article = await make_expense_article(session)
+        recipient = await make_counterparty(session, name="Получатель нового платежа")
+        invoice = await make_invoice(
+            session,
+            counterparty_id=recipient.id,
+            amount="1500.00",
+            operational_scope="finance",
+            invoice_date=date(2026, 9, 1),
+        )
+        document = "teplo-cp-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaa123456"
+        foreign_document = "teplo-cp-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbb123456"
+        assert _document_number(document) == _document_number(foreign_document)
+        draft = await make_draft(
+            session, counterparty_id=recipient.id, amount="1000.00", document_id=document
+        )
+        draft.bank_provider = "tbank"
+        draft.target_article_id = article.id
+        draft.target_purpose = "Оплата услуг"
+        draft.payload = {
+            "accountNumber": account.account_number,
+            "documentNumber": _document_number(document),
+            "paymentPurpose": f"Оплата услуг. Без НДС. {payment_match_marker(document)}",
+        }
+
+        if statement_marker == "matching":
+            statement_recipient = recipient
+            statement_invoice = invoice
+            statement_purpose = draft.payload["paymentPurpose"]
+        else:
+            statement_recipient = await make_counterparty(
+                session, name="Получатель другого платежа"
+            )
+            statement_invoice = await make_invoice(
+                session,
+                counterparty_id=statement_recipient.id,
+                amount="1500.00",
+                operational_scope="finance",
+                invoice_date=date(2026, 9, 1),
+            )
+            statement_purpose = "Оплата услуг. Без НДС."
+            if statement_marker == "foreign":
+                statement_purpose += f" {payment_match_marker(foreign_document)}"
+
+        # Выписка уже погасила долг своего получателя. Новый черновик ещё не исполнен.
+        operation_id = uuid.uuid4()
+        statement_txn = CashflowTransaction(
+            wallet_id=wallet.id,
+            direction="out",
+            amount=Decimal("1000.00"),
+            operation_date=date(2026, 9, 8),
+            article_id=article.id,
+            counterparty_id=statement_recipient.id,
+            source_kind="bank_operation",
+            source_id=operation_id,
+            payment_purpose=statement_purpose,
+            quality_status="auto",
+        )
+        session.add(statement_txn)
+        await session.flush()
+        session.add(
+            InvoicePaymentAllocation(
+                invoice_id=statement_invoice.id,
+                source_kind="cash",
+                cashflow_transaction_id=statement_txn.id,
+                amount=Decimal("1000.00"),
+            )
+        )
+        operation = BankOperation(
+            id=operation_id,
+            provider="tbank",
+            provider_operation_id=f"marker-rule1-{operation_id}",
+            account_id=account.id,
+            operation_date=date(2026, 9, 8),
+            direction="out",
+            amount=Decimal("1000.00"),
+            document_number=_document_number(document),
+            payment_purpose=statement_purpose,
+            raw_payload={},
+            classification_status="classified",
+            cashflow_transaction_id=statement_txn.id,
+        )
+        session.add(operation)
+        await session.flush()
+        await _recompute_status(session, statement_invoice)
+        await session.commit()
+        assert await _alloc_count(session, invoice.id) == (
+            1 if statement_marker == "matching" else 0
+        )
+
+        assert (
+            await apply_payment_status(
+                session, draft=draft, raw_status="executed", operation_date=date(2026, 9, 8)
+            )
+            == "paid"
+        )
+
+        await session.refresh(invoice)
+        assert invoice.payment_status == "partially_paid"
+        assert await _alloc_count(session, invoice.id) == 1
+        assert await session.scalar(
+            select(func.sum(InvoicePaymentAllocation.amount)).where(
+                InvoicePaymentAllocation.invoice_id == invoice.id
+            )
+        ) == Decimal("1000.00")
+        # Совпавший TPL не должен превратить повторное погашение 500 ₽ в фиктивную ДЗ.
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(SupplierPrepayment)
+                .where(SupplierPrepayment.counterparty_id == recipient.id)
+            )
+            == 0
+        )
+        assert await _alloc_count(session, statement_invoice.id) == 1
+        await session.refresh(operation)
+        assert operation.cashflow_transaction_id == statement_txn.id

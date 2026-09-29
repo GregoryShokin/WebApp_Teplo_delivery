@@ -252,7 +252,16 @@ export function SendDialog({
               value={vat}
               onChange={setVat}
               invoiceAmount={intake.amount}
+              bankPurposeApplies={!viaIpCard}
             />
+          ) : null}
+          {viaIpCard ? (
+            <p aria-live="polite" className="text-xs text-muted-foreground">
+              В банк уйдёт:{" "}
+              <span className="font-medium text-foreground">
+                Вывод собственных средств на карту ИП
+              </span>
+            </p>
           ) : null}
 
           <div className="grid gap-2">

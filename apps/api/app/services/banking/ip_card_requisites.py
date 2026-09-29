@@ -17,6 +17,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AppSetting
+from app.services.banking.payment_purpose import (
+    OWNER_CARD_PAYMENT_PURPOSE,
+    owner_card_payment_purpose,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +45,7 @@ OWNER_APPROVED_IP_CARD_REQUISITES: Final[Mapping[str, Any]] = MappingProxyType(
         "corrAccount": "30101810145250000974",
         "recipientCorrAccountNumber": "30101810145250000974",
         "executionOrder": 5,
-        "paymentPurpose": (
-            "Перевод собственных средств на Сейф. Период выплаты: {start}–{end}. НДС не облагается"
-        ),
+        "paymentPurpose": OWNER_CARD_PAYMENT_PURPOSE,
     }
 )
 
@@ -70,9 +72,36 @@ async def load_owner_approved_ip_card_requisites(
         select(AppSetting).where(AppSetting.key == PAYOUT_REQUISITES_KEY)
     )
     stored = setting.value if setting is not None and isinstance(setting.value, Mapping) else None
-    if stored != canonical:
+    # A previously stored purpose template is display metadata, not recipient drift.
+    # The bank-facing description is enforced separately for every owner-card payment.
+    purpose_keys = {"paymentPurpose", "paymentPurposeTemplate"}
+    stored_recipient = (
+        {key: value for key, value in stored.items() if key not in purpose_keys}
+        if stored is not None
+        else None
+    )
+    canonical_recipient = {
+        key: value for key, value in canonical.items() if key not in purpose_keys
+    }
+    if stored_recipient != canonical_recipient:
         logger.error(
             "%s differs from the owner-approved code constant; ignoring database value",
             PAYOUT_REQUISITES_KEY,
         )
     return canonical
+
+
+def bank_purpose_for_recipient(
+    *, document_id: str, purpose: str, requisites: Mapping[str, Any]
+) -> str:
+    """Keep the owner-card rule at the provider boundary as well as in services."""
+    account = str(
+        requisites.get("bankAcnt")
+        or requisites.get("bank_acnt")
+        or requisites.get("payeeAccount")
+        or ""
+    )
+    account = "".join(character for character in account if character.isdigit())
+    if account == OWNER_APPROVED_IP_CARD_REQUISITES["bankAcnt"]:
+        return owner_card_payment_purpose(document_id)
+    return purpose

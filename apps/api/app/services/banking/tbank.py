@@ -30,6 +30,7 @@ from app.services.banking.base import (
     scalar,
 )
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
+from app.services.banking.ip_card_requisites import bank_purpose_for_recipient
 from app.services.banking.tls import russian_trusted_ssl_context
 
 PAYMENT_DRAFT_PATH = "/api/v1/payment/create"
@@ -576,6 +577,9 @@ def build_payment_draft_api_payload(
     requisites: Mapping[str, Any],
     payer_account: str,
 ) -> dict[str, Any]:
+    purpose = bank_purpose_for_recipient(
+        document_id=document_id, purpose=purpose, requisites=requisites
+    )
     payload: dict[str, Any] = {
         "documentNumber": _document_number(document_id),
         "amount": _json_amount(amount),

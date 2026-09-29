@@ -34,6 +34,7 @@ from app.models import (
 from app.schemas.payroll import PayrollRunPayoutCashPatch
 from app.services import payroll_runner
 from app.services.banking import PaymentDraftResult
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.tbank import TbankClient
 from app.services.payroll_payments import mark_payment
 from app.services.payroll_payouts import (
@@ -643,7 +644,7 @@ async def test_tbank_live_payment_draft_posts_payload_and_bearer_header(
         "bankAcnt": "40817810800023540968",
         "bankBik": "044525974",
         "accountNumber": "40702810900000000001",
-        "paymentPurpose": "Выплата заработной платы",
+        "paymentPurpose": owner_card_payment_purpose("teplo-payroll-live-test"),
         "executionOrder": 5,
         "recipientCorrAccountNumber": "30101810145250000974",
         "taxPayerStatus": "0",

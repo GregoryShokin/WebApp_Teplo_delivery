@@ -74,6 +74,7 @@ function intake(overrides: Record<string, unknown> = {}) {
 async function mockCommon(
   page: import("@playwright/test").Page,
   card: Record<string, string> = {},
+  intakeOverrides: Record<string, unknown> = {},
 ) {
   await page.route("**/api/v1/auth/refresh", (route) =>
     fulfillJson(route, {
@@ -104,7 +105,7 @@ async function mockCommon(
   );
   await page.route("**/api/v1/payment-page/intakes**", (route) => {
     if (route.request().method() !== "GET") return route.fallback();
-    return fulfillJson(route, [intake()]);
+    return fulfillJson(route, [intake(intakeOverrides)]);
   });
 }
 
@@ -136,6 +137,10 @@ test("без реквизитов кнопка мертва, галочка вы
 
   // Маршрут назван прямо: деньги пойдут на карту ИП и осядут на Сейфе до выдачи.
   await expect(dialog.getByText(/деньги придут на Сейф/)).toBeVisible();
+  await expect(dialog.getByText("В банк уйдёт: Вывод собственных средств на карту ИП")).toBeVisible();
+  await expect(dialog.getByText("НДС в счёте", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/В назначение платежа уйдёт:/)).toHaveCount(0);
+  await expect(dialog.getByText(/иначе банк/)).toHaveCount(0);
   await dialog.getByRole("button", { name: "Отправить в банк" }).click();
 
   await expect.poll(() => calls.map((call) => call.url)).toEqual(["confirm", "send-to-bank"]);
@@ -163,5 +168,50 @@ test("у контрагента есть реквизиты — выбора «�
   await expect(dialog.getByLabel("Расчётный счёт")).toHaveValue("40702810400000012349");
   // Счёт получателя известен — платим по нему, и обойти это галочкой нельзя.
   await expect(dialog.locator("label", { hasText: "нет реквизитов" })).toHaveCount(0);
+  await expect(dialog.getByText("НДС в платёжке", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/В назначение платежа уйдёт:/)).toBeVisible();
+  await expect(dialog.getByText("В банк уйдёт: Вывод собственных средств на карту ИП")).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Отправить в банк" })).toBeEnabled();
+});
+
+
+test("вывод на карту ИП сохраняет НДС счёта при смене маршрута и подтверждении", async ({ page }) => {
+  await mockCommon(page, {}, { vat_mode: "included", vat_amount: "1439.90", vat_rate: "22" });
+  const calls: { url: string; body: Record<string, unknown> }[] = [];
+  await page.route(`**/api/v1/payment-page/intakes/${INTAKE_ID}/confirm`, (route) => {
+    calls.push({ url: "confirm", body: route.request().postDataJSON() });
+    return fulfillJson(route, intake());
+  });
+  await page.route(`**/api/v1/payment-page/intakes/${INTAKE_ID}/send-to-bank`, (route) => {
+    calls.push({ url: "send-to-bank", body: route.request().postDataJSON() });
+    return fulfillJson(route, intake({ invoice_in_draft: true }));
+  });
+
+  await page.goto("/finance/payments");
+  await page.getByRole("button", { name: "В банк" }).first().click();
+  const dialog = page.getByRole("dialog");
+  const consent = dialog.locator("label", { hasText: "нет реквизитов" }).locator("input");
+  await expect(dialog.getByText("В т.ч. НДС: 22% - 1439,90 руб.", { exact: true })).toBeVisible();
+  await consent.check();
+  await expect(dialog.getByText("В банк уйдёт: Вывод собственных средств на карту ИП")).toBeVisible();
+  await expect(dialog.getByText("НДС в счёте", { exact: true })).toBeVisible();
+  await expect(dialog.getByText(/В назначение платежа уйдёт:/)).toHaveCount(0);
+  await expect(dialog.getByLabel("Сумма НДС")).toHaveValue("1439.90");
+  await expect(dialog.getByLabel("Ставка, %")).toHaveValue("22");
+  await dialog.getByLabel("Сумма НДС").fill("1440.00");
+
+  await consent.uncheck();
+  await expect(dialog.getByText("В банк уйдёт: Вывод собственных средств на карту ИП")).toHaveCount(0);
+  await expect(dialog.getByText("НДС в платёжке", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("В т.ч. НДС: 22% - 1440,00 руб.", { exact: true })).toBeVisible();
+  await consent.check();
+  await dialog.getByRole("button", { name: "Отправить в банк" }).click();
+
+  await expect.poll(() => calls.map((call) => call.url)).toEqual(["confirm", "send-to-bank"]);
+  expect(calls[0].body).toMatchObject({
+    apply_requisites: false, vat_amount: "1440.00", vat_rate: "22",
+    service_period_start: "2026-07-01", service_period_end: "2026-07-31",
+  });
+  expect(calls[0].body.requisites).toBeUndefined();
+  expect(calls[1].body.pays_via_safe).toBe(true);
 });

@@ -28,6 +28,7 @@ from app.services.bank_payment_status import (
     SUPPLIER_BANK_TO_SAFE_SOURCE_KIND,
     apply_payment_status,
 )
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.safe_allocations import (
     SAFE_PAYOUT_SOURCE_KIND,
     pay_allocation,
@@ -91,10 +92,9 @@ async def test_informal_draft_targets_ip_card(
         )
         assert draft.payload["recipientName"] == payout_setting.value["recipientName"]
         assert draft.payload["recipientName"] != supplier.name
-        purpose = draft.payload["paymentPurpose"]
-        assert purpose.startswith("Закуп: Местный закуп Ромашка")
-        assert "№14" in purpose and "№16" in purpose
-        assert "НДС" not in purpose
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.target_purpose.startswith("Закуп: Местный закуп Ромашка")
+        assert "№14" in draft.target_purpose and "№16" in draft.target_purpose
 
         await session.refresh(inv1)
         await session.refresh(inv2)

@@ -12,11 +12,16 @@ from datetime import date
 from decimal import Decimal
 
 from cp_helpers import make_counterparty, make_draft, make_invoice
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from test_admin_payout_split import _payer_wallet, _safe_wallet
+from test_new_payment_window import _free_expense_article
 
+from app.models import CashflowTransaction, SafeAllocation
 from app.scheduler import settle_counterparty_draft_from_operation
 from app.services.banking.base import NormalizedBankOperation
 from app.services.banking.tbank import _document_number
+from app.services.counterparty_payments import create_expense_payment_draft
 
 
 def _op(
@@ -230,3 +235,55 @@ async def test_no_matching_draft_is_noop(
         op = _op(amount="1000.00", document_number="1")  # заведомо не совпадёт
         status = await settle_counterparty_draft_from_operation(session, operation=op)
         assert status is None
+
+
+async def test_generic_owner_card_drafts_settle_by_code_without_document_number(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with async_session_factory() as session:
+        await _payer_wallet(session)
+        await _safe_wallet(session)
+        article = await _free_expense_article(session)
+        first = await create_expense_payment_draft(
+            session, article_id=article.id, amount=Decimal("1000"), purpose="Первый расход"
+        )
+        second = await create_expense_payment_draft(
+            session, article_id=article.id, amount=Decimal("1000"), purpose="Второй расход"
+        )
+        assert first.payload["paymentPurpose"] != second.payload["paymentPurpose"]
+        for draft, other in ((second, first), (first, second)):
+            operation = _op(
+                amount="1000.00", document_number="", purpose=draft.payload["paymentPurpose"]
+            )
+            assert await settle_counterparty_draft_from_operation(
+                session, operation=operation
+            ) == "paid"
+            await session.refresh(draft)
+            await session.refresh(other)
+            assert draft.status == "paid"
+            if draft.id == second.id:
+                assert other.status == "created"
+            # Re-delivery of the same bank fact must not create another reserve/transfer.
+            assert await settle_counterparty_draft_from_operation(
+                session, operation=operation
+            ) is None
+        legs = list(
+            await session.scalars(
+                select(CashflowTransaction).where(
+                    CashflowTransaction.source_kind == "supplier_bank_to_safe",
+                    CashflowTransaction.source_id.in_([first.id, second.id]),
+                )
+            )
+        )
+        reserves = list(
+            await session.scalars(
+                select(SafeAllocation).where(
+                    SafeAllocation.source_draft_id.in_([first.id, second.id])
+                )
+            )
+        )
+        assert len(legs) == 4
+        assert len(reserves) == 2
+        by_draft = {reserve.source_draft_id: reserve for reserve in reserves}
+        assert by_draft[first.id].purpose == "Первый расход"
+        assert by_draft[second.id].purpose == "Второй расход"

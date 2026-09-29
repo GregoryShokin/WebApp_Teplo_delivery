@@ -21,6 +21,7 @@ from cp_helpers import make_counterparty, make_invoice
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_admin_payout_split import _payer_wallet, _safe_wallet
+from test_payroll_payouts import RecordingBankClient
 
 from app.api.v1.routes.counterparties import DraftRead
 from app.models import (
@@ -38,6 +39,7 @@ from app.services.bank_payment_status import (
     SUPPLIER_BANK_TO_SAFE_SOURCE_KIND,
     apply_payment_status,
 )
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.counterparty_payments import (
     DEFAULT_SUPPLIER_ARTICLE_CODE,
     CounterpartyPaymentError,
@@ -152,15 +154,13 @@ async def test_expense_draft_targets_ip_card(
         assert draft.target_article_id == article.id
         assert draft.target_purpose == "Аренда помещения за июль"
         assert draft.status == "created"
-        # Получатель — карта ИП (реквизиты зарплатных выплат), назначение — из формы.
+        # Получатель — карта ИП; описание формы остаётся внутренним полем.
         payout_setting = await session.scalar(
             select(AppSetting).where(AppSetting.key == "payroll.bank_payout_requisites")
         )
         assert draft.payload["recipientName"] == payout_setting.value["recipientName"]
-        # В банк назначение уходит с меткой связи черновик↔операция и с НДС-хвостом
-        # (ставку не задавали → «Без НДС.»); человеческое target_purpose остаётся чистым.
-        marker = f"[TPL-{draft.id.hex[:12].upper()}]"
-        assert draft.payload["paymentPurpose"] == f"Аренда помещения за июль. Без НДС. {marker}"
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.payload["internal_purpose"] == "Аренда помещения за июль"
         # Регрессия: контрагентские схемы переваривают черновик без контрагента
         # (GET /counterparties/drafts/list гоняет все черновики через DraftRead).
         assert DraftRead.model_validate(draft).counterparty_id is None
@@ -331,7 +331,9 @@ async def test_expense_multiline_tranche_splits_into_per_line_reserves(
         assert safe_in == Decimal("2500.00")
         assert any(t.wallet_id == payer_wallet.id for t in legs)
         # В банк транш уходит с меткой, а в назначение транзита (журнал ДДС) она не течёт.
-        assert f"[TPL-{draft.id.hex[:12].upper()}]" in draft.payload["paymentPurpose"]
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.payload["internal_purpose"] == "Транш 2 платежей: Аренда; Реклама"
+        assert all("Транш 2 платежей: Аренда; Реклама" in t.payment_purpose for t in legs)
         assert all("[TPL-" not in (t.payment_purpose or "") for t in legs)
 
         reserves = (
@@ -607,14 +609,12 @@ async def test_expense_optional_purpose_defaults_to_article_name(
 ) -> None:
     async with async_session_factory() as session:
         article = await _free_expense_article(session)
-        # Пустое назначение допустимо — подставляется имя статьи (в банк и в целёвку).
+        # Пустое описание допустимо — имя статьи остаётся в учёте и целёвке.
         draft = await create_expense_payment_draft(
             session, article_id=article.id, amount=Decimal("100"), purpose="   "
         )
         assert draft.target_purpose == article.name
-        assert draft.payload["paymentPurpose"] == (
-            f"{article.name}. Без НДС. [TPL-{draft.id.hex[:12].upper()}]"
-        )
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
         # Нулевая/отрицательная сумма всё так же запрещена.
         with pytest.raises(CounterpartyPaymentError, match="больше нуля"):
             await create_expense_payment_draft(
@@ -632,8 +632,7 @@ async def test_bank_safe_topup_draft_carries_match_marker(
         )
         assert draft.topup_only is True
         assert draft.target_purpose == "Пополнение под инкассацию"
-        marker = f"[TPL-{draft.id.hex[:12].upper()}]"
-        assert draft.payload["paymentPurpose"] == f"Пополнение под инкассацию {marker}"
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
 
 
 async def test_context_articles_follow_permissions(
@@ -1021,3 +1020,27 @@ async def test_refund_settles_prepayments_fifo(
         assert await refund_counterparty_prepayments(
             session, counterparty_id=cp.id, amount=Decimal("10")
         ) == Decimal("0.00")
+
+
+@pytest.mark.parametrize("channel", ["bank_draft", "bank_draft_sber"])
+async def test_safe_expense_bank_request_keeps_only_generic_purpose(
+    async_session_factory: async_sessionmaker[AsyncSession], channel: str
+) -> None:
+    async with async_session_factory() as session:
+        article = await _free_expense_article(session)
+        bank = RecordingBankClient()
+        description = "Хозрасходы: " + "личное описание расходов " * 15
+        draft = await create_expense_payment_draft(
+            session,
+            article_id=article.id,
+            amount=Decimal("2000.00"),
+            purpose=description,
+            channel=channel,
+            bank_client=bank,
+        )
+        assert len(bank.drafts) == 1
+        assert bank.drafts[0]["purpose"] == draft.payload["paymentPurpose"]
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.target_purpose == description.strip()
+        assert draft.payload["internal_purpose"] == description.strip()
+        assert "личное описание" not in bank.drafts[0]["purpose"]

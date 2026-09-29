@@ -51,6 +51,7 @@ export function VatFields({
   value,
   onChange,
   invoiceAmount,
+  bankPurposeApplies = true,
 }: {
   /** vat_mode из распознавания: 'included' | 'none' | '' (не распознан). */
   mode: string;
@@ -58,6 +59,8 @@ export function VatFields({
   onChange: (next: VatValue) => void;
   /** Сумма счёта — для проверки «налог не больше платежа» (её же делает бэк). */
   invoiceAmount?: string | null;
+  /** При выводе на карту ИП НДС остаётся данными счёта, а назначение перевода фиксировано. */
+  bankPurposeApplies?: boolean;
 }) {
   // Метки связаны с полями явно (htmlFor/id): иначе к ним не добраться ни скринридеру,
   // ни тесту — в соседнем блоке реквизитов сделано так же.
@@ -69,12 +72,14 @@ export function VatFields({
   const tooBig = filled && Number.isFinite(total) && total > 0 && parsed >= total;
   // Предупреждаем только там, где молчание обманет: налог не распознан, а платёжка при этом
   // уверенно скажет «Без НДС.». Явное «без НДС» из счёта — не повод дёргать человека.
-  const silentlyClaimsNoVat = !filled && mode !== "none";
+  const silentlyClaimsNoVat = bankPurposeApplies && !filled && mode !== "none";
 
   return (
     <div className="grid gap-2 rounded-md border p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-medium uppercase text-muted-foreground">НДС в платёжке</div>
+        <div className="text-xs font-medium uppercase text-muted-foreground">
+          {bankPurposeApplies ? "НДС в платёжке" : "НДС в счёте"}
+        </div>
         <SourceBadge mode={mode} />
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -102,10 +107,12 @@ export function VatFields({
           />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        В назначение платежа уйдёт:{" "}
-        <span className="font-medium text-foreground">{vatSuffixPreview(value)}</span>
-      </p>
+      {bankPurposeApplies ? (
+        <p className="text-xs text-muted-foreground">
+          В назначение платежа уйдёт:{" "}
+          <span className="font-medium text-foreground">{vatSuffixPreview(value)}</span>
+        </p>
+      ) : null}
       {tooBig ? (
         <p className="text-xs text-amber-600">
           НДС не может быть больше суммы счёта — проверьте, не попал ли в поле итог.

@@ -34,6 +34,7 @@ from app.services.banking.classifier import (
     TRANSFER_OUT_ARTICLE_CODE,
 )
 from app.services.banking.exceptions import BankFetchError
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.payroll_calculator import decimal
@@ -251,7 +252,7 @@ async def create_bank_employee_payout(
         raise PayrollConflictError(f"Не настроен расчётный счёт плательщика ({provider})")
     requisites = await _bank_payout_requisites(session)
     document_id = _employee_payout_document_id(payout.id)
-    purpose = f"Выплата сотруднику — {employee.full_name}"
+    purpose = owner_card_payment_purpose(document_id)
     try:
         api_payload = build_payment_draft_api_payload(
             document_id=document_id,

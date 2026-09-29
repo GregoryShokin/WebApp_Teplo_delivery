@@ -205,10 +205,11 @@ test("период не подставляется сам — платёж бе�
 
   // Настройка карточки живёт кнопкой-подсказкой: один клик, но клик человека.
   await dialog.getByRole("button", { name: /нужен период оказания услуги/ }).click();
-  const period = page.getByRole("dialog").filter({ hasText: "Период оказания услуги" });
-  await expect(period.getByLabel("Месяц начала периода")).toHaveValue("");
+  const period = page.getByRole("dialog", { name: "Период оказания услуги", exact: true });
+  const firstMonth = period.getByRole("combobox", { name: "Первый месяц услуги", exact: true });
+  await expect(firstMonth).toHaveText("Выберите месяц");
   await period.getByRole("button", { name: /Обычно у этого контрагента/ }).click();
-  await expect(period.getByLabel("Месяц начала периода")).not.toHaveValue("");
+  await expect(firstMonth).toHaveText(/[а-я]+ \d{4}/i);
   await period.getByRole("button", { name: "Готово" }).click();
 
   await expect(dialog.getByRole("button", { name: "Отправить в банк" })).toBeEnabled();
@@ -227,11 +228,12 @@ test("период задаётся отдельным окном и возвр�
   await expect(dialog.getByLabel("Сколько месяцев")).toBeHidden();
   await dialog.getByRole("button", { name: /нужен период оказания услуги/ }).click();
 
-  const period = page.getByRole("dialog").filter({ hasText: "Период оказания услуги" });
+  const period = page.getByRole("dialog", { name: "Период оказания услуги", exact: true });
   await expect(period).toBeVisible();
   await expect(period.getByText(/период обязателен/)).toBeVisible();
 
-  await period.getByLabel("Месяц начала периода").fill("2026-04");
+  await period.getByRole("combobox", { name: "Первый месяц услуги", exact: true }).click();
+  await page.getByRole("option").first().click();
   await period.getByLabel("Сколько месяцев").click();
   await page.getByRole("option", { name: "3 мес." }).click();
   // Разбивка считается сразу — по ней видно, что признание разложит расход помесячно.

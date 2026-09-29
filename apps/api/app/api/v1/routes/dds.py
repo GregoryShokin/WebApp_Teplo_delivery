@@ -129,6 +129,10 @@ from app.services.banking.classifier import (
 )
 from app.services.banking.credentials import set_credential
 from app.services.banking.merchant_text import merchant_token
+from app.services.banking.prebooked_identity import (
+    SOURCE_PAYMENT_REFUSAL,
+    tagged_source_payment_reclassification_reason,
+)
 from app.services.banking.safe_allocations import (
     CASH_WITHDRAWAL_WALLET_CODE,
     allocation_advance_draft_id,
@@ -1813,6 +1817,8 @@ async def classify_owner_review_case(
             counterparty_id=payload.counterparty_id,
             quality_status="owner_review",
         )
+    except OperationAlreadyBooked as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except (accounting_periods.PeriodClosed, CounterpartyPaymentError) as error:
         # Замок обязан объяснять, а не падать: без этого отказ выходил бы к владельцу как 500.
         # Отказ правила 1 (зачёт в банк-черновике, погашенная предоплата под дивиденды) —
@@ -2115,6 +2121,10 @@ async def classify_operation(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
     created_ids: list[UUID] = []
+    if payload.action != "set_article" and await tagged_source_payment_reclassification_reason(
+        session, operation
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SOURCE_PAYMENT_REFUSAL)
     if payload.action == "split":
         if not payload.splits:
             raise HTTPException(status_code=400, detail="Нужна хотя бы одна статья")

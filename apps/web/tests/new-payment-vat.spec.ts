@@ -75,6 +75,17 @@ test.beforeEach(async ({ page }) => {
           asset_link_kind: null,
         },
         {
+          id: "55555555-5555-5555-5555-555555555555",
+          code: "internal_transfer",
+          name: "Внутренний перевод",
+          flow: "internal_transfer",
+          activity: "financing",
+          counterparties: [],
+          location_required: false,
+          lease_bound: false,
+          asset_link_kind: null,
+        },
+        {
           id: PREPAYMENT_ARTICLE_ID,
           code: "advance_to_supplier",
           name: "Авансы поставщикам",
@@ -92,6 +103,14 @@ test.beforeEach(async ({ page }) => {
           code: "tbank",
           name: "Т-Банк",
           bank_code: "tbank",
+          kind: "bank",
+          location: null,
+        },
+        {
+          id: "wallet-sber",
+          code: "sber",
+          name: "Сбербанк",
+          bank_code: "sber",
           kind: "bank",
           location: null,
         },
@@ -138,7 +157,17 @@ function vatGroup(dialog: Dialog) {
 
 /** Живая строка «В назначение платежа уйдёт: …» видимой формы. */
 function vatPreview(dialog: Dialog) {
-  return dialog.locator("p[aria-live='polite']").filter({ visible: true });
+  return dialog
+    .locator("p[aria-live='polite']")
+    .filter({ hasText: "В назначение платежа уйдёт:" })
+    .filter({ visible: true });
+}
+
+function ownerCardPreview(dialog: Dialog) {
+  return dialog
+    .locator("p[aria-live='polite']")
+    .filter({ hasText: "В банк уйдёт:" })
+    .filter({ visible: true });
 }
 
 /** Открыть «Новый платёж», выбрать свободную статью, вписать сумму и (по умолчанию)
@@ -277,11 +306,23 @@ test("на транше на карту ИП блока НДС нет — это
   const dialog = await openExpense(page, { recipient: false });
   await expect(vatGroup(dialog)).toHaveCount(0);
   await expect(vatPreview(dialog)).toHaveCount(0);
+  await expect(ownerCardPreview(dialog)).toHaveText(
+    "В банк уйдёт: Вывод собственных средств на карту ИП",
+  );
+  await dialog.getByRole("textbox", { name: "Описание для учёта", exact: true }).fill(
+    "Услуги доставки для учёта",
+  );
+  await expect(ownerCardPreview(dialog)).not.toContainText("Услуги доставки");
 
   // Стоит выбрать получателя с подтверждёнными реквизитами — платёж уходит наружу, и блок есть.
   await dialog.getByLabel("Кому платим").click();
   await dialog.getByRole("button", { name: /ООО Поставщик/ }).click();
   await expect(vatGroup(dialog)).toBeVisible();
+  await expect(ownerCardPreview(dialog)).toHaveCount(0);
+  await expect(dialog.getByRole("textbox", { name: "Назначение", exact: true })).toHaveValue(
+    "Услуги доставки для учёта",
+  );
+  await expect(vatPreview(dialog)).toContainText("Услуги доставки для учёта. Без НДС.");
 });
 
 test("у наличного счёта блока НДС нет — платёж в банк не уходит", async ({ page }) => {
@@ -289,6 +330,8 @@ test("у наличного счёта блока НДС нет — платёж
   await dialog.getByRole("button", { name: "Сейф", exact: true }).click();
   await expect(vatGroup(dialog)).toHaveCount(0);
   await expect(vatPreview(dialog)).toHaveCount(0);
+  await expect(ownerCardPreview(dialog)).toHaveCount(0);
+  await expect(dialog.getByRole("textbox", { name: "Описание для учёта", exact: true })).toBeVisible();
 });
 
 test("ставка не уезжает с платежом, если получателя сменили после выбора", async ({ page }) => {
@@ -356,3 +399,69 @@ test("предоплата наличными: блока НДС нет", async 
   await dialog.getByRole("button", { name: "Сейф", exact: true }).click();
   await expect(vatGroup(dialog)).toHaveCount(0);
 });
+
+
+for (const bank of [
+  { label: "Т-Банк", walletId: "wallet-tbank", channel: "bank_draft" },
+  { label: "Сбер", walletId: "wallet-sber", channel: "bank_draft_sber" },
+]) {
+  test(`расход через ${bank.label}: описание остаётся в учёте, назначение банка фиксировано`, async ({ page }) => {
+    const dialog = await openExpense(page, { recipient: false });
+    await dialog.getByRole("button", { name: bank.label, exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Описание для учёта", exact: true }).fill(
+      "Оплата аренды за сентябрь",
+    );
+    await expect(ownerCardPreview(dialog)).toHaveText(
+      "В банк уйдёт: Вывод собственных средств на карту ИП",
+    );
+    await expect(ownerCardPreview(dialog)).not.toContainText("[TPL-");
+
+    let sent: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/dds/new-payment/expense-draft", (route) => {
+      sent = route.request().postDataJSON();
+      return fulfillJson(route, {
+        id: "owner-card-expense", amount: 7984.9, status: "created", provider_ref: "mock",
+        last_error: null, created_at: "2026-09-29T09:00:00Z",
+      });
+    });
+    await dialog.getByRole("button", { name: "Отправить в банк" }).click();
+    await expect.poll(() => sent).not.toBeNull();
+    expect(sent!.channel).toBe(bank.channel);
+    expect(sent!.vat_rate).toBeNull();
+    expect(sent!.lines).toEqual([
+      expect.objectContaining({
+        article_id: ARTICLE_ID, amount: 7984.9, purpose: "Оплата аренды за сентябрь",
+      }),
+    ]);
+  });
+
+  test(`перевод через ${bank.label}: описание отправляется отдельно от назначения банка`, async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Активные платежи" }).click();
+    const payments = page.getByRole("dialog").filter({ hasText: "Активные платежи" });
+    await payments.getByRole("button", { name: "Создать", exact: true }).click();
+    const dialog = page.getByRole("dialog").filter({ hasText: "Новый платёж" });
+    await dialog.getByRole("button", { name: "Внутренний перевод", exact: true }).click();
+    await dialog.getByRole("button", { name: bank.label, exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Сумма, ₽", exact: true }).fill("1500");
+    await dialog.getByRole("textbox", { name: "Описание для учёта", exact: true }).fill(
+      "Пополнение на раздачу сотрудникам",
+    );
+    await expect(ownerCardPreview(dialog)).toHaveText(
+      "В банк уйдёт: Вывод собственных средств на карту ИП",
+    );
+    await expect(ownerCardPreview(dialog)).not.toContainText("[TPL-");
+
+    let sent: Record<string, unknown> | null = null;
+    await page.route("**/api/v1/dds/new-payment/internal-transfer", (route) => {
+      sent = route.request().postDataJSON();
+      return fulfillJson(route, { kind: "draft", amount: 1500, draft_id: "owner-card-transfer" });
+    });
+    await dialog.getByRole("button", { name: "Отправить в банк" }).click();
+    await expect.poll(() => sent).not.toBeNull();
+    expect(sent).toEqual({
+      source_wallet_id: bank.walletId, dest_wallet_id: "wallet-safe", amount: 1500,
+      purpose: "Пополнение на раздачу сотрудникам",
+    });
+  });
+}

@@ -34,6 +34,17 @@ from app.services.asset_analytics import (
 )
 from app.services.banking.base import clean_digits
 from app.services.banking.merchant_text import merchant_token, normalized_name
+from app.services.banking.payment_purpose import (
+    extract_payment_match_markers,
+    is_owner_card_payment_purpose,
+)
+from app.services.banking.prebooked_identity import (
+    SOURCE_PAYMENT_REFUSAL,
+    cashflow_matches_payment_identity,
+    cashflow_requires_payment_marker,
+    defer_unmatched_owner_card_operation,
+    tagged_source_payment_reclassification_reason,
+)
 from app.services.deposit_cashflow_integrity import (
     DEPOSIT_CLASSIFICATION_REFUSAL,
     DEPOSIT_PAYOUT_ARTICLE_CODE,
@@ -155,6 +166,9 @@ async def run_classification_rules(
                 claimed_transaction_ids.add(prebooked.id)
                 counts["classified"] += 1
                 continue
+            if await defer_unmatched_owner_card_operation(session, operation):
+                counts["needs_review"] += 1
+                continue
         matched = False
         for rule in rules:
             if not await _rule_matches(session, rule, operation):
@@ -235,6 +249,7 @@ async def reconcile_needs_review_prebooked(session: AsyncSession) -> int:
             continue
         prebooked = await _find_prebooked_payment(session, operation, claimed=claimed)
         if prebooked is None:
+            await defer_unmatched_owner_card_operation(session, operation)
             continue
         operation.cashflow_transaction_id = prebooked.id
         operation.classification_status = "classified"
@@ -325,7 +340,7 @@ async def absorb_auto_classified_counterparty_payment(session: AsyncSession) -> 
         if draft is None or not draft.document_id:
             continue
         docnum = _document_number(draft.document_id)
-        operation = (
+        candidates = (
             await session.scalars(
                 select(BankOperation)
                 .join(auto_txn, auto_txn.id == BankOperation.cashflow_transaction_id)
@@ -338,7 +353,18 @@ async def absorb_auto_classified_counterparty_payment(session: AsyncSession) -> 
                     auto_txn.wallet_id == prebooked.wallet_id,
                 )
             )
-        ).first()
+        ).all()
+        operation = None
+        for candidate in candidates:
+            requires_identity = bool(
+                extract_payment_match_markers(candidate.payment_purpose)
+            ) or await cashflow_requires_payment_marker(session, prebooked)
+            if requires_identity and not await cashflow_matches_payment_identity(
+                session, prebooked, candidate
+            ):
+                continue
+            operation = candidate
+            break
         if operation is None:
             continue
         if await _guard_deposit_operation_cashflow(session, operation, quality_status="auto"):
@@ -417,6 +443,14 @@ async def apply_operation_action(
     # Все доли и доменный якорь защищены до снятия зачётов, исключения или смены статьи.
     if await _guard_deposit_operation_cashflow(session, operation, quality_status=quality_status):
         return
+    if action != "set_article" and await tagged_source_payment_reclassification_reason(
+        session, operation
+    ):
+        if quality_status != "auto":
+            raise OperationAlreadyBooked(SOURCE_PAYMENT_REFUSAL)
+        if operation.cashflow_transaction_id is None:
+            await defer_unmatched_owner_card_operation(session, operation)
+        return
     refunds_before = await _operation_refund_counterparties(session, operation)
     await _apply_operation_action(
         session,
@@ -472,6 +506,16 @@ async def _apply_operation_action(
                 operation.cashflow_transaction_id = prebooked.id
                 operation.classification_status = "classified"
                 return
+            if await tagged_source_payment_reclassification_reason(session, operation):
+                if quality_status != "auto":
+                    raise OperationAlreadyBooked(SOURCE_PAYMENT_REFUSAL)
+                await defer_unmatched_owner_card_operation(session, operation)
+                return
+        elif await tagged_source_payment_reclassification_reason(session, operation):
+            # Re-running rules cannot rewrite the source document's internal article/purpose.
+            if quality_status != "auto":
+                raise OperationAlreadyBooked(SOURCE_PAYMENT_REFUSAL)
+            return
         target_article = await session.get(DdsArticle, article_id)
         if target_article is not None and target_article.code == DEPOSIT_PAYOUT_ARTICLE_CODE:
             if quality_status != "auto":
@@ -716,8 +760,13 @@ async def _find_prebooked_payment(
     expense — is what prevents a double expense in the ДДС. Conservative on purpose:
     same wallet (so cash/card entries on other wallets are never touched), same
     direction, exact amount, a small date drift, not yet linked to any bank operation,
-    and the same payee INN whenever the statement carries one.
+    and the same payee INN whenever the statement carries one. A marked operation
+    must also identify exactly one source payment document; unknown tags never use FIFO.
     """
+    markers = extract_payment_match_markers(operation.payment_purpose)
+    if not markers and is_owner_card_payment_purpose(operation.payment_purpose):
+        # No amount/date FIFO can recover a missing owner-card document identifier safely.
+        return None
     wallet = await _wallet_for_operation(session, operation)
     if wallet is None:
         return None
@@ -749,6 +798,28 @@ async def _find_prebooked_payment(
     candidates = (await session.scalars(query)).all()
     if not candidates:
         return None
+
+    if markers:
+        # A tagged operation cannot claim another same-amount payment by FIFO.
+        if len(markers) != 1:
+            return None
+        identified = [
+            candidate
+            for candidate in candidates
+            if await cashflow_matches_payment_identity(session, candidate, operation)
+        ]
+        if len(identified) != 1:
+            return None
+        candidates = identified
+    else:
+        # Only legacy requests that actually had no tag may retain untagged FIFO matching.
+        candidates = [
+            candidate
+            for candidate in candidates
+            if not await cashflow_requires_payment_marker(session, candidate)
+        ]
+        if not candidates:
+            return None
 
     op_inn = clean_digits(operation.counterparty_inn_raw)
     if not op_inn:
@@ -1138,6 +1209,8 @@ async def _assert_not_prebooked(
     Правило не новое: ровно так рассуждает налоговая проекция ДДС («операция привязана к чужой
     проводке — отбирать её назад не наше дело»). Здесь оно поднято в общую функцию.
     """
+    if await tagged_source_payment_reclassification_reason(session, operation):
+        raise OperationAlreadyBooked(SOURCE_PAYMENT_REFUSAL)
     rows = await _foreign_booked_rows(session, operation, own_source_kinds=own_source_kinds)
     if not rows:
         return
@@ -1834,6 +1907,12 @@ async def book_safe_topup(session: AsyncSession, operation: BankOperation) -> li
         operation,
         quality_status="owner_review",
         source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
+    await _assert_not_prebooked(
+        session,
+        operation,
+        action="пополнить Сейф",
+        own_source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
     )
     if operation.direction != "out":
         raise ValueError(

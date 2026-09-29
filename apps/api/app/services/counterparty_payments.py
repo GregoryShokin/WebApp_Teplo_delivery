@@ -40,6 +40,10 @@ from app.services.banking.exceptions import BankFetchError
 from app.services.banking.ip_card_requisites import (
     load_owner_approved_ip_card_requisites,
 )
+from app.services.banking.payment_purpose import (
+    owner_card_payment_purpose,
+    payment_match_marker,
+)
 from app.services.banking.payout import (
     channel_provider,
     payer_account_for,
@@ -197,7 +201,7 @@ def _purpose_with_match_marker(purpose: str, draft_id: uuid.UUID) -> str:
     текст без метки.
     """
     normalized = " ".join(purpose.split())
-    marker = f"[TPL-{draft_id.hex[:12].upper()}]"
+    marker = payment_match_marker(f"teplo-cp-{draft_id}")
     tagged = f"{normalized} {marker}"
     return tagged if len(tagged) <= 210 else normalized
 
@@ -408,6 +412,7 @@ async def create_payment_draft_for_invoices(
         amount=total,
         status="created",
         pays_via_safe=pays_via_safe,
+        target_purpose=purpose if pays_via_safe else None,
         service_period_start=period_start,
         service_period_end=period_end,
         created_by_user_id=actor_user_id,
@@ -415,7 +420,11 @@ async def create_payment_draft_for_invoices(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-    purpose = _purpose_with_match_marker(purpose, draft.id)
+    purpose = (
+        owner_card_payment_purpose(document_id)
+        if pays_via_safe
+        else _purpose_with_match_marker(purpose, draft.id)
+    )
 
     try:
         payload = build_payment_draft_api_payload(
@@ -831,17 +840,22 @@ async def create_expense_payment_draft(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-    # Назначение в банк (лимит платёжки): одиночный — назначение строки, транш — сводка.
-    # НДС-хвост общий на черновик: банк списывает одну сумму, из неё налог и выделяется.
-    if single:
-        bank_purpose = prepared[0].purpose
-    else:
-        summary = "; ".join(line.purpose for line in prepared)
-        bank_purpose = f"Транш {len(prepared)} платежей: {summary}"
-    bank_purpose = _with_vat_suffix(
-        bank_purpose, vat_suffix_for_rate(total, vat_rate_clean), reserve=MATCH_MARKER_BUDGET
+    # Описание строк остаётся внутри учёта; вывод на карту ИП не является оплатой этих
+    # расходов банком. По реквизитам получателя сохраняем описание и НДС в платёжке.
+    internal_purpose = (
+        prepared[0].purpose
+        if single
+        else f"Транш {len(prepared)} платежей: {'; '.join(line.purpose for line in prepared)}"
     )
-    bank_purpose = _purpose_with_match_marker(bank_purpose, draft.id)
+    if is_direct:
+        bank_purpose = _with_vat_suffix(
+            internal_purpose,
+            vat_suffix_for_rate(total, vat_rate_clean),
+            reserve=MATCH_MARKER_BUDGET,
+        )
+        bank_purpose = _purpose_with_match_marker(bank_purpose, draft.id)
+    else:
+        bank_purpose = owner_card_payment_purpose(document_id)
 
     try:
         # payload — запись черновика в едином (Т-Банк) формате; ``accountNumber`` = счёт
@@ -855,6 +869,9 @@ async def create_expense_payment_draft(
         )
     except ValueError as exc:
         raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
+
+    if not is_direct:
+        payload["internal_purpose"] = internal_purpose
 
     client = bank_client or payout_client_for(provider, session)
     try:
@@ -947,7 +964,7 @@ async def create_bank_safe_topup_draft(
     )
     document_id = f"teplo-cp-{draft.id}"
     draft.document_id = document_id[:64]
-    bank_purpose = _purpose_with_match_marker(text[:210], draft.id)
+    bank_purpose = owner_card_payment_purpose(document_id)
     try:
         payload = build_payment_draft_api_payload(
             document_id=document_id,

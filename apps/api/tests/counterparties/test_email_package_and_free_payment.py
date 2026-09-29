@@ -462,7 +462,13 @@ async def test_free_payment_does_not_double_book_when_statement_row_came_first(
                 )
             ],
         )
+        # Исторический платёж без TPL-кода: запрос и выписка используют один номер.
         draft.document_id = f"doc-{_uuid.uuid4()}"
+        draft.payload = {
+            **draft.payload,
+            "paymentPurpose": "Услуги доставки",
+            "documentNumber": _document_number(draft.document_id),
+        }
         await session.flush()
 
         # Выписка пришла первой: своя проводка + зачёт кредиторки правилом 1 (как это делает

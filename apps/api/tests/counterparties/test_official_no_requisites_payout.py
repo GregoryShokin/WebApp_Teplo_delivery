@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import AppSetting, EmailInvoiceIntake
 from app.services import email_invoice_ingest as ingest
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.counterparty_payments import (
     RequisitesNotVerifiedError,
     create_payment_draft_for_invoices,
@@ -65,7 +66,8 @@ async def test_official_without_requisites_goes_to_ip_card(
         assert draft.payload["recipientName"] == await _ip_card_name(session)
         assert draft.payload["recipientName"] != landlord.name
         # Кому и за что — в назначении: по нему потом узнаётся целевой резерв Сейфа.
-        assert "Станислав Юрьевич" in draft.payload["paymentPurpose"]
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert "Станислав Юрьевич" in draft.target_purpose
         await session.refresh(invoice)
         assert invoice.draft_id == draft.id
 

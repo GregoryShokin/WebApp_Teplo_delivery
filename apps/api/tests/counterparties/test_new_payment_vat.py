@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from test_new_payment_window import _free_expense_article
 
 from app.models import CounterpartyPaymentDraft
+from app.services.banking.payment_purpose import owner_card_payment_purpose
 from app.services.counterparty_payments import (
     CounterpartyPaymentError,
     ExpenseLineInput,
@@ -124,20 +125,17 @@ def test_rate_normalisation_and_validation() -> None:
     assert all(validate_vat_rate(rate) == rate for rate in VAT_RATES)
 
 
-async def test_expense_draft_without_rate_says_no_vat(
+async def test_owner_card_expense_does_not_describe_invoice_tax(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Ставку не задали — в банк уходит «Без НДС.», а не молчание.
-
-    До этой правки свободный расход не говорил о налоге вообще: банк получал назначение,
-    из которого не следует ни наличие налога, ни его отсутствие.
-    """
+    """Вывод себе не является оплатой канцтоваров банком и не несёт НДС счёта."""
     async with async_session_factory() as session:
         article = await _free_expense_article(session)
         draft = await create_expense_payment_draft(
             session, article_id=article.id, amount=Decimal("1000.00"), purpose="Канцтовары"
         )
-        assert "Без НДС." in draft.payload["paymentPurpose"]
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.target_purpose == "Канцтовары"
         assert draft.vat_rate is None
         assert draft.vat_amount is None
 
@@ -346,7 +344,7 @@ async def test_vat_is_refused_on_the_ip_card_route(
                 ],
                 vat_rate="10",
             )
-        # Без ставки тот же транш проходит и уходит в банк с «Без НДС.».
+        # Без ставки транш проходит; в банк идёт вывод собственных средств на карту ИП.
         draft = await create_expense_payment_draft(
             session,
             lines=[
@@ -355,7 +353,8 @@ async def test_vat_is_refused_on_the_ip_card_route(
             ],
         )
         assert draft.pays_via_safe is True
-        assert "Без НДС." in draft.payload["paymentPurpose"]
+        assert draft.payload["paymentPurpose"] == owner_card_payment_purpose(draft.document_id)
+        assert draft.payload["internal_purpose"] == "Транш 2 платежей: Раз; Два"
         assert draft.vat_rate is None
 
 

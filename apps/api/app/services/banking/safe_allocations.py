@@ -31,6 +31,7 @@ from app.services.banking.classifier import (
     SAFE_WALLET_CODE,
     TRANSFER_IN_ARTICLE_CODE,
     TRANSFER_OUT_ARTICLE_CODE,
+    _assert_not_prebooked,
     _guard_deposit_operation_cashflow,
     book_safe_topup,
 )
@@ -173,6 +174,12 @@ async def book_safe_topup_reserves(
         operation,
         quality_status="owner_review",
         source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
+    )
+    await _assert_not_prebooked(
+        session,
+        operation,
+        action="разобрать платёж через Сейф",
+        own_source_kinds=("bank_operation", SAFE_TOPUP_SOURCE_KIND),
     )
     prior = (
         await session.scalars(
