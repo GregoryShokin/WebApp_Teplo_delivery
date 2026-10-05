@@ -114,27 +114,68 @@ async def get_allowances_on_date(
     on_date: date,
 ) -> dict[str, bool]:
     employee = await session.get(Employee, employee_id)
+    if employee is None:
+        return {"is_senior": False, "is_deputy_senior": False}
+    return (await get_allowances_for_employees_on_date(session, [employee], on_date))[employee_id]
+
+
+async def get_allowances_for_employees_on_date(
+    session: AsyncSession,
+    employees: Iterable[Employee],
+    on_date: date,
+) -> dict[uuid.UUID, dict[str, bool]]:
+    """Resolve current flags in two queries for a whole staff/roster response."""
+
+    employee_rows = list(employees)
+    employee_ids = [employee.id for employee in employee_rows]
     result = {
-        "is_senior": bool(employee.is_senior) if employee is not None else False,
-        "is_deputy_senior": bool(employee.is_deputy_senior) if employee is not None else False,
+        employee.id: {
+            "is_senior": bool(employee.is_senior),
+            "is_deputy_senior": bool(employee.is_deputy_senior),
+        }
+        for employee in employee_rows
     }
-    event_types = set(
-        (
-            await session.scalars(
-                select(EmployeeAllowanceEvent.allowance_type).where(
-                    EmployeeAllowanceEvent.employee_id == employee_id
-                )
-            )
-        ).all()
+    if not employee_ids:
+        return result
+
+    event_type_rows = await session.execute(
+        select(
+            EmployeeAllowanceEvent.employee_id,
+            EmployeeAllowanceEvent.allowance_type,
+        )
+        .where(EmployeeAllowanceEvent.employee_id.in_(employee_ids))
+        .distinct()
     )
-    for allowance_type in event_types:
+    for employee_id, allowance_type in event_type_rows.all():
         field = ALLOWANCE_FIELD_BY_TYPE.get(allowance_type)
         if field is not None:
-            result[field] = False
-    events = await get_allowance_events_on_date(session, employee_id, on_date)
-    for event in events:
-        field = ALLOWANCE_FIELD_BY_TYPE[event.allowance_type]
-        result[field] = bool(event.is_enabled)
+            result[employee_id][field] = False
+
+    active_events = await session.scalars(
+        select(EmployeeAllowanceEvent)
+        .where(
+            EmployeeAllowanceEvent.employee_id.in_(employee_ids),
+            EmployeeAllowanceEvent.effective_from <= on_date,
+            or_(
+                EmployeeAllowanceEvent.effective_to.is_(None),
+                EmployeeAllowanceEvent.effective_to > on_date,
+            ),
+        )
+        .order_by(
+            EmployeeAllowanceEvent.employee_id,
+            EmployeeAllowanceEvent.allowance_type,
+            EmployeeAllowanceEvent.effective_from.desc(),
+        )
+    )
+    resolved_types: set[tuple[uuid.UUID, str]] = set()
+    for event in active_events.all():
+        key = (event.employee_id, event.allowance_type)
+        if key in resolved_types:
+            continue
+        resolved_types.add(key)
+        result[event.employee_id][ALLOWANCE_FIELD_BY_TYPE[event.allowance_type]] = bool(
+            event.is_enabled
+        )
     return result
 
 
@@ -187,7 +228,7 @@ async def set_allowance(
     *,
     effective_from: date,
     comment: str | None = None,
-) -> EmployeeAllowanceEvent:
+) -> EmployeeAllowanceEvent | None:
     if allowance_type not in ALLOWANCE_TYPES:
         raise EmployeeEffectiveEventError("Invalid allowance type")
 
@@ -210,6 +251,14 @@ async def set_allowance(
         effective_from,
     )
     if existing is not None:
+        if bool(existing.is_enabled) == bool(is_enabled):
+            await _refresh_allowance_snapshot(
+                session,
+                employee,
+                allowance_type,
+                fallback_event=existing,
+            )
+            return None
         existing.is_enabled = is_enabled
         existing.comment = comment
         event = existing
@@ -220,6 +269,14 @@ async def set_allowance(
             allowance_type,
             effective_from,
         )
+        if active is not None and bool(active.is_enabled) == bool(is_enabled):
+            await _refresh_allowance_snapshot(
+                session,
+                employee,
+                allowance_type,
+                fallback_event=active,
+            )
+            return None
         if active is not None and active.effective_from < effective_from:
             active.effective_to = effective_from
         next_event = await _next_allowance_event_after(
@@ -228,29 +285,68 @@ async def set_allowance(
             allowance_type,
             effective_from,
         )
-        event = EmployeeAllowanceEvent(
-            employee_id=employee_id,
-            allowance_type=allowance_type,
-            is_enabled=is_enabled,
-            effective_from=effective_from,
-            effective_to=next_event.effective_from if next_event is not None else None,
-            comment=comment,
-        )
-        session.add(event)
-
-    if effective_from <= date.today():
-        field = ALLOWANCE_FIELD_BY_TYPE[allowance_type]
-        active_today = await _allowance_event_on_date(
-            session,
-            employee_id,
-            allowance_type,
-            date.today(),
-        )
-        if active_today is None or active_today.id == event.id:
-            setattr(employee, field, bool(is_enabled))
+        if next_event is not None and bool(next_event.is_enabled) == bool(is_enabled):
+            # Перенос границы уже записанного состояния на более раннюю
+            # дату не должен рождать два соседних интерва с одинаковым
+            # значением. Корректируем начало существующего интерва.
+            next_event.effective_from = effective_from
+            if comment is not None:
+                next_event.comment = comment
+            event = next_event
+        else:
+            event = EmployeeAllowanceEvent(
+                employee_id=employee_id,
+                allowance_type=allowance_type,
+                is_enabled=is_enabled,
+                effective_from=effective_from,
+                effective_to=next_event.effective_from if next_event is not None else None,
+                comment=comment,
+            )
+            session.add(event)
 
     await session.flush()
+    await _refresh_allowance_snapshot(
+        session,
+        employee,
+        allowance_type,
+        fallback_event=event,
+    )
+    await session.flush()
     return event
+
+
+async def _refresh_allowance_snapshot(
+    session: AsyncSession,
+    employee: Employee,
+    allowance_type: str,
+    *,
+    fallback_event: EmployeeAllowanceEvent,
+) -> None:
+    """Keep the legacy current-state columns aligned with the effective-dated ledger."""
+
+    if not isinstance(session, AsyncSession):
+        today = date.today()
+        if fallback_event.effective_from <= today and (
+            fallback_event.effective_to is None or fallback_event.effective_to > today
+        ):
+            setattr(
+                employee,
+                ALLOWANCE_FIELD_BY_TYPE[allowance_type],
+                bool(fallback_event.is_enabled),
+            )
+        return
+
+    active_today = await _allowance_event_on_date(
+        session,
+        employee.id,
+        allowance_type,
+        date.today(),
+    )
+    setattr(
+        employee,
+        ALLOWANCE_FIELD_BY_TYPE[allowance_type],
+        bool(active_today.is_enabled) if active_today is not None else False,
+    )
 
 
 async def schedule_iiko_position_update(

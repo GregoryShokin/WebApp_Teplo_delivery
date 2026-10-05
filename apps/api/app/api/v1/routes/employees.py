@@ -361,7 +361,7 @@ async def list_employees(
     present_from: Annotated[date | None, Query()] = None,
     present_to: Annotated[date | None, Query()] = None,
     actor: Annotated[CurrentActor | None, Depends(get_current_actor)] = None,
-) -> list[Employee] | list[EmployeeRead]:
+) -> list[EmployeeRead]:
     today = date.today()
     query = select(Employee).options(
         selectinload(Employee.role_assignments),
@@ -416,10 +416,29 @@ async def list_employees(
         employees = filter_employees_by_staff_access(employees, actor, StaffAction.READ)
     await _attach_active_notices(session, employees, today)
     _redact_freelancer_pins(employees, can_see_pin=_actor_can_see_freelancer_pin(actor))
-    if include_pending:
-        rows: list[EmployeeRead] = []
-        for employee in employees:
-            payload = EmployeeRead.model_validate(employee)
+    if isinstance(session, AsyncSession):
+        allowance_flags = (
+            await employee_effective_event_service.get_allowances_for_employees_on_date(
+                session,
+                employees,
+                today,
+            )
+        )
+    else:
+        allowance_flags = {
+            employee.id: {
+                "is_senior": bool(employee.is_senior),
+                "is_deputy_senior": bool(employee.is_deputy_senior),
+            }
+            for employee in employees
+        }
+    rows: list[EmployeeRead] = []
+    for employee in employees:
+        payload = EmployeeRead.model_validate(employee)
+        flags = allowance_flags[employee.id]
+        payload.is_senior = flags["is_senior"]
+        payload.is_deputy_senior = flags["is_deputy_senior"]
+        if include_pending:
             pending_assignments = await employee_assignment_service.get_assignments_with_pending(
                 session,
                 employee.id,
@@ -429,9 +448,8 @@ async def list_employees(
                 EmployeeRoleAssignmentRead.model_validate(assignment)
                 for assignment in pending_assignments
             ]
-            rows.append(payload)
-        return rows
-    return employees
+        rows.append(payload)
+    return rows
 
 
 @router.post("/sync", response_model=SyncResultRead, dependencies=STAFF_SYNC_ACCESS)
@@ -2559,7 +2577,8 @@ async def patch_employee(
                 effective_from=effective_from,
                 comment=effective_comment,
             )
-            allowance_events.append((employee.id, event))
+            if event is not None:
+                allowance_events.append((employee.id, event))
     except employee_effective_event_service.EmployeeEffectiveEventNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except employee_position_service.ClosedPayrollPeriodConflict as exc:
@@ -2852,6 +2871,14 @@ async def _get_employee_or_404(
     if actor is not None:
         ensure_employee_access(actor, employee, action)
     _redact_freelancer_pin(employee, can_see_pin=_actor_can_see_freelancer_pin(actor))
+    if isinstance(session, AsyncSession):
+        flags = await employee_effective_event_service.get_allowances_on_date(
+            session,
+            employee.id,
+            date.today(),
+        )
+        employee.is_senior = flags["is_senior"]
+        employee.is_deputy_senior = flags["is_deputy_senior"]
     return employee
 
 
@@ -3449,7 +3476,8 @@ async def _ensure_or_transfer_premium_capacity(
             effective_from=effective_from,
             comment=comment or "Перенос надбавки другому сотруднику",
         )
-        transferred_events.append((existing.id, event))
+        if event is not None:
+            transferred_events.append((existing.id, event))
     return transferred_events
 
 
@@ -3462,12 +3490,28 @@ async def _active_premium_holders(
 ) -> list[Employee]:
     employees = list((await session.scalars(select(Employee))).all())
     today = date.today()
+    if isinstance(session, AsyncSession):
+        allowance_flags = (
+            await employee_effective_event_service.get_allowances_for_employees_on_date(
+                session,
+                employees,
+                today,
+            )
+        )
+    else:
+        allowance_flags = {
+            employee.id: {
+                "is_senior": bool(employee.is_senior),
+                "is_deputy_senior": bool(employee.is_deputy_senior),
+            }
+            for employee in employees
+        }
     return [
         employee
         for employee in employees
         if employee.id != exclude_employee_id
         and canonical_position_name(employee.position) == position
-        and getattr(employee, field)
+        and allowance_flags[employee.id][field]
         and _employee_counts_as_active(employee, today)
     ]
 

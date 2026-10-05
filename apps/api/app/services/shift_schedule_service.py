@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentActor
 from app.models import Employee, ScheduledShift, ShiftSchedule
-from app.services import employee_assignments, payroll_config, vacation_service
+from app.services import (
+    employee_assignments,
+    employee_effective_events,
+    payroll_config,
+    vacation_service,
+)
 from app.services.position_registry import schedule_positions
 from app.services.staff_taxonomy import (
     PAYROLL_ROLE_LABELS,
@@ -559,8 +564,23 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
         )
         .order_by(Employee.full_name)
     )
+    employees = list(result.all())
+    if isinstance(session, AsyncSession):
+        allowance_flags = await employee_effective_events.get_allowances_for_employees_on_date(
+            session,
+            employees,
+            today,
+        )
+    else:
+        allowance_flags = {
+            employee.id: {
+                "is_senior": bool(employee.is_senior),
+                "is_deputy_senior": bool(employee.is_deputy_senior),
+            }
+            for employee in employees
+        }
     roster: list[dict[str, Any]] = []
-    for employee in result.all():
+    for employee in employees:
         assignments = await employee_assignments.get_assignments(session, employee.id, today)
         visible_assignments = [
             assignment
@@ -595,8 +615,8 @@ async def list_employees_roster(session: AsyncSession) -> list[dict[str, Any]]:
                     for assignment in visible_assignments
                 ],
                 "allowances": {
-                    "senior": bool(employee.is_senior),
-                    "deputy": bool(employee.is_deputy_senior),
+                    "senior": allowance_flags[employee.id]["is_senior"],
+                    "deputy": allowance_flags[employee.id]["is_deputy_senior"],
                 },
             },
         )
