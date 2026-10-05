@@ -433,6 +433,13 @@
       "output_tokens": 0,
       "files": 61,
       "note": "61 changed code files re-extracted with AST for release ea0b506c; no LLM usage. Existing semantic graph/cache and 59 hyperedges preserved."
+    },
+    {
+      "date": "2026-10-05T16:28:01.712564+00:00",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "files": 4,
+      "note": "4 changed code files re-extracted with AST for release 9ee6c4be; no LLM usage. Edge reduction is fully localized to the replaced files."
     }
   ],
   "total_input_tokens": 3323153,

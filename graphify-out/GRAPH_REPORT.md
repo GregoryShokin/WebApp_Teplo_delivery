@@ -1,22 +1,22 @@
-# Graph Report - .  (2026-09-29)
+# Graph Report - .  (2026-10-05)
 
 ## Corpus Check
 - 61 files · ~191,441 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 27296 nodes · 82319 edges · 1158 communities (1000 shown, 158 thin omitted)
+- 27303 nodes · 81434 edges · 1158 communities (1000 shown, 158 thin omitted)
 - Extraction: 78% EXTRACTED · 22% INFERRED · 0% AMBIGUOUS · INFERRED: 18290 edges (avg confidence: 0.62)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ea0b506c`
+- Built from commit: `9ee6c4be`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Incremental Update
-- Re-extracted 61 changed code files with AST; the corpus check above describes this changed subset.
-- Preserved the complete repository graph covering 1452 source files, including 933 prior semantic nodes and all 59 hyperedges.
+- Re-extracted 4 changed code files with AST; the corpus check above describes this changed subset.
+- Preserved the complete repository graph covering 1453 source files, including 933 prior semantic nodes and all 59 hyperedges.
 - Preserved all 190 semantic cache files; no document, image, or LLM extraction was run.
 - Recomputed community labels from each community's top two source directories.
 - Manifest paths are relative to the repository root; unchanged historical entries remain available.

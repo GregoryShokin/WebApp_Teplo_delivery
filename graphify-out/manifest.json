@@ -1855,8 +1855,8 @@
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/employees.py": {
-    "mtime": 1790685644.3408616,
-    "ast_hash": "e2b8e320d4874600e73a0dda12eb7e0f",
+    "mtime": 1791216384.7509766,
+    "ast_hash": "4385c3a63b4f0c1d1e8fbd56cb215a31",
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/finance_payments.py": {
@@ -2925,9 +2925,9 @@
     "semantic_hash": "ca0dc4b957bcc9ca450e21050b4f49b3"
   },
   "apps/api/app/services/employee_effective_events.py": {
-    "mtime": 1780841032.5807946,
-    "ast_hash": "6baac4698620a08147cb19ec7200e8a6",
-    "semantic_hash": "6baac4698620a08147cb19ec7200e8a6"
+    "mtime": 1791216072.8782787,
+    "ast_hash": "ce1e41dbe91f1e7345294c913332ceb1",
+    "semantic_hash": ""
   },
   "apps/api/app/services/employee_payouts.py": {
     "mtime": 1790687880.5064077,
@@ -3430,9 +3430,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/services/shift_schedule_service.py": {
-    "mtime": 1783697900.6177816,
-    "ast_hash": "6d2f47f965ffb5d234b1d323cefb533d",
-    "semantic_hash": "6d2f47f965ffb5d234b1d323cefb533d"
+    "mtime": 1791215742.1714852,
+    "ast_hash": "4f840e19c0bad0962516ebf891c6521e",
+    "semantic_hash": ""
   },
   "apps/api/app/services/staff_access.py": {
     "mtime": 1781347104.2656586,
@@ -8147,6 +8147,11 @@
   "Фото ТК Черникова/Акты списания .pdf": {
     "mtime": 1785149184.7014294,
     "ast_hash": "35cc3cbaad31a9c4ebe191ca01fc636c",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_employee_effective_events.py": {
+    "mtime": 1791216495.2630782,
+    "ast_hash": "c325aaec73a31050db69445b7f9ab166",
     "semantic_hash": ""
   }
 }
