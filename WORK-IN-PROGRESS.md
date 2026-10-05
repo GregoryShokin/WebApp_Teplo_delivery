@@ -25,6 +25,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 - статус: <в работе / на ревью>
 -->
 
+### codex-seniority-effective-state — ветка `codex/seniority-effective-state`
+- worktree: `~/.codex/worktrees/seniority-effective-state/Teplo-all-for-business`
+- compose: стенд не поднимаю; для тестов отдельная БД `teplo_test_seniorityfix`
+- трогает: `apps/api/app/services/employee_effective_events.py`, точечно staff/schedule consumers текущих флагов, регрессионные API-тесты
+- НЕ трогать другим: логику effective-dated надбавок и вывод флагов старшинства в графике
+- статус: в работе
+
 ### agent-balance — ветка `agent/balance-as-of-foundation`
 - worktree: `../Teplo-agent-balance`
 - compose: стенд не поднимаю; тестовая БД `teplo_test_balance` (контейнер `teplo-postgres`, порт 5432)
