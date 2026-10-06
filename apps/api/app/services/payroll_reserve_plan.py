@@ -186,6 +186,16 @@ def check_plan_version(plan: dict, expected: str | None) -> None:
         raise PayrollConflictError("План или остаток изменился. Обновите окно и проверьте суммы")
 
 
+def require_plan_version(expected: str | None) -> str:
+    """Old clients must reload the saved unpaid plan before any money action."""
+    if expected is None or not expected.strip():
+        raise PayrollConflictError(
+            "Обновите страницу и проверьте сохранённый план выплаты. "
+            "Выплата и перенос без актуального плана запрещены; остаток остаётся в резерве"
+        )
+    return expected
+
+
 async def save_reserve_plan(
     session: AsyncSession, reserve: SafeAllocation, items: dict, actor_user_id: uuid.UUID | None
 ) -> None:

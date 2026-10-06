@@ -103,6 +103,75 @@ async def test_pay_only_saved_amount_leaves_deferred_reserved(async_session_fact
         assert (await _payment(session, run, employees[0])).status == "paid"
 
 
+@pytest.mark.parametrize("destination", ["kassa", "safe"])
+async def test_fifty_rubles_remain_employee_debt_until_explicit_payment(
+    async_session_factory, destination
+):
+    async with async_session_factory() as session:
+        run, employees, actor = await _setup_run_with_reserves(
+            session, totals=[[Decimal("6390")], [Decimal("9000")]], cash=Decimal("6390")
+        )
+        source = await _reserve(session, run, "kassa")
+        plan = await edit(session, source, employees[0], "6340", actor)
+        await pay_run_from_pool(
+            session,
+            reserve_id=source.id,
+            selected_ids={employees[0]},
+            plan_version=plan["version"],
+            allow_overflow=False,
+            paid_at=PAID_AT,
+            actor_user_id=actor,
+        )
+        payment = await _payment(session, run, employees[0])
+        assert payment.amount == payment.booked_amount == Decimal("6340")
+        assert payment.status == "partially_paid"
+        assert source.amount - source.amount_paid == Decimal("50")
+        assert source.status == "partially_paid"
+        assert await _payment(session, run, employees[1]) is None
+
+    # The 50 survive a reload and remain earmarked for this employee only.
+    async with async_session_factory() as session:
+        source = await _reserve(session, run, "kassa")
+        plan = await get_reserve_plan(session, source.id)
+        assert plan["outstanding"] == Decimal("50")
+        assert item(plan, employees[0])["deferred"] == Decimal("50")
+        assert item(plan, employees[0])["amount"] == 0
+        assert item(plan, employees[1])["amount"] == 0
+        plan = await edit(session, source, employees[0], "50", actor)
+        target = source
+        if destination == "safe":
+            transfer = await transfer_planned_reserve(
+                session,
+                reserve_id=source.id,
+                selected_ids={employees[0]},
+                expected_version=plan["version"],
+                operation_date=PAID_AT,
+                actor_user_id=actor,
+            )
+            assert transfer.amount == Decimal("50")
+            target = await _reserve(session, run, "safe")
+            plan = await get_reserve_plan(session, target.id)
+            assert item(plan, employees[0])["amount"] == Decimal("50")
+            assert source.status == "cancelled"  # Transferred history stays immutable.
+            assert (await get_reserve_plan(session, source.id))["outstanding"] == 0
+            # Transferring the reserve is not a payment to the employee.
+            assert (await _payment(session, run, employees[0])).amount == Decimal("6340")
+        result = await pay_run_from_pool(
+            session,
+            reserve_id=target.id,
+            selected_ids={employees[0]},
+            plan_version=plan["version"],
+            allow_overflow=False,
+            paid_at=PAID_AT,
+            actor_user_id=actor,
+        )
+        assert result.primary_booked == Decimal("50")
+        payment = await _payment(session, run, employees[0])
+        assert payment.amount == payment.booked_amount == Decimal("6390")
+        assert payment.status == "paid"
+        assert await _payment(session, run, employees[1]) is None
+
+
 async def test_move_only_remainder_to_safe_keeps_employee_unpaid(async_session_factory):
     async with async_session_factory() as session:
         run, employees, actor = await setup(session)

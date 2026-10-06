@@ -109,6 +109,7 @@ from app.services.payroll_advance_service import (
     cancel_kassa_advance,
     disburse_kassa_advance,
 )
+from app.services.payroll_reserve_plan import require_plan_version
 from app.services.payroll_reserves import pay_run_from_pool
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 from app.services.settings_service import SettingNotFoundError, get_setting
@@ -868,12 +869,13 @@ async def pay_kassa_payroll_target_endpoint(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> dict:
-    """Выдать полные остатки выбранным сотрудникам из зарплатного резерва кассы.
+    """Выдать подтверждённые суммы выбранным сотрудникам из зарплатного резерва кассы.
 
     Кассиру не нужны права на payroll: endpoint узко принимает только резерв торговой
     кассы, а проводку выполняет общий зарплатный движок (ведомость + резерв + ДДС).
     """
     try:
+        plan_version = require_plan_version(payload.plan_version)
         await pay_run_from_pool(
             session,
             reserve_id=allocation_id,
@@ -881,7 +883,7 @@ async def pay_kassa_payroll_target_endpoint(
             boundary_override=payload.boundary_id,
             allow_overflow=False,
             expected_location="kassa",
-            plan_version=payload.plan_version,
+            plan_version=plan_version,
             paid_at=datetime.now(MOSCOW_TZ).date(),
             actor_user_id=actor.user_id,
         )

@@ -127,6 +127,7 @@ from app.services.payroll_personal_report import build_personal_report
 from app.services.payroll_reserve_plan import (
     edit_reserve_plan,
     get_reserve_plan,
+    require_plan_version,
     transfer_planned_reserve,
 )
 from app.services.payroll_reserves import (
@@ -135,7 +136,6 @@ from app.services.payroll_reserves import (
     pay_employee_from_reserve,
     pay_run_from_pool,
     run_solvency,
-    transfer_run_reserve,
 )
 from app.services.payroll_runner import (
     PayrollConflictError,
@@ -1166,15 +1166,16 @@ async def post_pay_run_from_pool(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollPoolPayoutResponse:
-    """Выплатить сотрудникам ведомости из пула-резерва (Сейф/касса) с перетоком на второй пул."""
+    """Выплатить только подтверждённый план выбранного пула-резерва (Сейф/касса)."""
     try:
+        plan_version = require_plan_version(payload.plan_version)
         result = await pay_run_from_pool(
             session,
             reserve_id=reserve_id,
             selected_ids=set(payload.selected_ids) if payload.selected_ids is not None else None,
             boundary_override=payload.boundary_id,
             allow_overflow=payload.allow_overflow,
-            plan_version=payload.plan_version,
+            plan_version=plan_version,
             paid_at=payload.paid_at,
             actor_user_id=actor.user_id,
         )
@@ -1198,24 +1199,15 @@ async def post_transfer_run_reserve(
 ) -> PayrollReserveTransferResponse:
     """Перенести выбранную часть зарплатного резерва Сейф↔касса вместе с деньгами."""
     try:
-        if payload.plan_version is not None:
-            result = await transfer_planned_reserve(
-                session,
-                reserve_id=reserve_id,
-                selected_ids=set(payload.selected_ids),
-                expected_version=payload.plan_version,
-                operation_date=payload.operation_date,
-                actor_user_id=actor.user_id,
-            )
-        else:
-            result = await transfer_run_reserve(
-                session,
-                reserve_id=reserve_id,
-                selected_ids=set(payload.selected_ids),
-                boundary_override=payload.boundary_id,
-                operation_date=payload.operation_date,
-                actor_user_id=actor.user_id,
-            )
+        plan_version = require_plan_version(payload.plan_version)
+        result = await transfer_planned_reserve(
+            session,
+            reserve_id=reserve_id,
+            selected_ids=set(payload.selected_ids),
+            expected_version=plan_version,
+            operation_date=payload.operation_date,
+            actor_user_id=actor.user_id,
+        )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
