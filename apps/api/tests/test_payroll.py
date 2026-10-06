@@ -1812,14 +1812,20 @@ class ShiftLedgerMatrixFakeSession:
         self.role_assignments = role_assignments or []
         self.latest_locked_date = latest_locked_date
 
-    async def execute(self, _stmt: Any) -> Any:
-        return ShiftLedgerExecuteResult(self.rows)
+    async def execute(self, stmt: Any) -> Any:
+        return ShiftLedgerExecuteResult(self.rows if query_entity(stmt) is ShiftLedgerEntry else [])
 
     async def scalars(self, _stmt: Any) -> Any:
         return ShiftLedgerScalarResult(self.role_assignments)
 
     async def scalar(self, _stmt: Any) -> date | None:
         return self.latest_locked_date
+
+    async def flush(self) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
 
 
 class ShiftLedgerExecuteResult:
@@ -2644,7 +2650,7 @@ async def test_build_shift_ledger_prefers_schedule_assignment(
     assert entries[0].is_resolved is True
 
 
-async def test_build_shift_ledger_falls_back_to_primary_assignment(
+async def test_build_shift_ledger_primary_does_not_replace_explicit_choice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     employee = make_employee()
@@ -2667,10 +2673,10 @@ async def test_build_shift_ledger_falls_back_to_primary_assignment(
         work_date,
     )
 
-    assert entries[0].payroll_role == "sushi"
-    assert entries[0].category == "category_1"
+    assert entries[0].payroll_role is None
+    assert entries[0].category is None
     assert entries[0].source == "fallback_primary"
-    assert entries[0].is_resolved is True
+    assert entries[0].is_resolved is False
 
 
 async def test_build_shift_ledger_single_assignment_resolves_without_dropdown(
@@ -7053,6 +7059,11 @@ class FinalizeFakeSession:
         del query
         return None
 
+    async def execute(self, _query: Any) -> ShiftLedgerExecuteResult:
+        # В этих unit-кейсах нет смен; полнота реального табеля проверяется
+        # интеграционными тестами test_payroll_shift_completeness.py.
+        return ShiftLedgerExecuteResult([])
+
     async def scalars(self, query: Any) -> FinalizeScalarResult:
         entity = query_entity(query)
         if entity is DepositTransaction:
@@ -7216,20 +7227,18 @@ class AttendanceLoaderFakeScalarResult:
 class AttendanceLoaderFakeSession:
     """Минимальный fake-session для проверки position-фильтра в load_attendance_entries.
 
-    Возвращает по очереди: пустой список существующих записей → словарь сотрудников.
+    Возвращает сотрудников по типу запроса; сохранённых явок и строк табеля нет.
     """
 
     def __init__(self, employees: list[Employee], scalar_results: list[Any] | None = None) -> None:
         self._employees = employees
         self._scalar_results = scalar_results or []
-        self._scalars_calls = 0
         self.added: list[Any] = []
 
-    async def scalars(self, _stmt: Any) -> AttendanceLoaderFakeScalarResult:
-        self._scalars_calls += 1
-        if self._scalars_calls == 1:
-            return AttendanceLoaderFakeScalarResult([])
-        return AttendanceLoaderFakeScalarResult(self._employees)
+    async def scalars(self, stmt: Any) -> AttendanceLoaderFakeScalarResult:
+        return AttendanceLoaderFakeScalarResult(
+            self._employees if query_entity(stmt) is Employee else []
+        )
 
     async def scalar(self, _stmt: Any) -> Any:
         if self._scalar_results:

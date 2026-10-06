@@ -3440,6 +3440,9 @@ function issueTitle(type: string) {
     attendance_quality_review: "Явка требует проверки",
     post_termination_attendance: "Явка после увольнения",
     missing_attendance: "Нет явок за период",
+    unresolved_shift: "Не выбрана роль или категория смены",
+    missing_shift_attendance: "Смена не вошла в расчёт — пересчитайте ведомость",
+    stale_shift_calculation: "Смена изменена после расчёта — пересчитайте ведомость",
   };
   return labels[type] ?? "Блокер расчёта";
 }

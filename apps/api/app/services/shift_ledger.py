@@ -199,6 +199,12 @@ async def list_ledger_for_date(session: AsyncSession, work_date: date) -> list[d
         .order_by(ShiftLedgerEntry.opened_at, Employee.full_name)
     )
     rows = result.all()
+    if await resolve_unassigned_entries(
+        session,
+        [entry for entry, _employee in rows],
+        latest_locked_date=await get_latest_locked_payroll_date(session),
+    ):
+        await session.commit()
     employee_ids = {entry.employee_id for entry, _employee in rows}
     roles_by_employee = await load_available_role_assignments(session, work_date, employee_ids)
     return [
@@ -249,6 +255,12 @@ async def list_ledger_matrix(session: AsyncSession, selected_date: date) -> dict
     employee_ids = {entry.employee_id for entry, _employee in rows}
     roles_by_employee = await load_currently_active_role_assignments(session, employee_ids)
     latest_locked_date = await get_latest_locked_payroll_date(session)
+    if await resolve_unassigned_entries(
+        session,
+        [entry for entry, _employee in rows],
+        latest_locked_date=latest_locked_date,
+    ):
+        await session.commit()
     employee_rows: dict[uuid.UUID, dict[str, Any]] = {}
 
     for entry, employee in rows:
@@ -458,6 +470,14 @@ async def load_available_role_assignments(
         ledger_assignment = coerce_assignment(assignment)
         if ledger_assignment is not None:
             assignments.setdefault(assignment.employee_id, []).append(ledger_assignment)
+    # Первую роль нередко назначают после фактического первого выхода. Если на
+    # дату смены ещё нет истории ролей, используем назначенные сейчас роли.
+    # Существующую историю категорий/ролей на дату смены сохраняем.
+    missing_employee_ids = employee_ids - assignments.keys()
+    if missing_employee_ids:
+        assignments.update(
+            await load_currently_active_role_assignments(session, missing_employee_ids)
+        )
     return assignments
 
 
@@ -588,13 +608,51 @@ def resolve_default_assignment(
             return scheduled_role, "schedule"
     if len(available_roles) == 1:
         return available_roles[0], "fallback_primary"
-    primary_assignment = next(
-        (assignment for assignment in available_roles if assignment.is_primary),
-        None,
-    )
-    if primary_assignment is not None:
-        return primary_assignment, "fallback_primary"
     return LedgerAssignment(payroll_role=None, category=None), "fallback_primary"
+
+
+async def resolve_unassigned_entries(
+    session: AsyncSession,
+    entries: Iterable[ShiftLedgerEntry],
+    *,
+    latest_locked_date: date | None = None,
+) -> bool:
+    """Разобрать старые незаполненные смены после назначения роли в Штате.
+
+    Ручной выбор и закрытые зарплатные периоды сохраняются. Несколько ролей без
+    опубликованного графика остаются неразобранными, даже если есть основная роль.
+    Вызывающий код сам управляет транзакцией.
+    """
+    entries_by_date: dict[date, list[ShiftLedgerEntry]] = {}
+    for entry in entries:
+        if (
+            entry.source == "manual_correction"
+            or (entry.is_resolved and entry.payroll_role and entry.category)
+            or is_payroll_locked(entry.work_date, latest_locked_date)
+        ):
+            continue
+        entries_by_date.setdefault(entry.work_date, []).append(entry)
+
+    changed = False
+    for work_date, day_entries in entries_by_date.items():
+        employee_ids = {entry.employee_id for entry in day_entries}
+        roles = await load_available_role_assignments(session, work_date, employee_ids)
+        schedule = await load_schedule_assignments(session, work_date, employee_ids)
+        for entry in day_entries:
+            assignment, source = resolve_default_assignment(
+                assignment_for_employee(schedule, entry.employee_id),
+                assignments_for_employee(roles, entry.employee_id),
+            )
+            if not assignment.payroll_role or not assignment.category:
+                continue
+            entry.payroll_role = assignment.payroll_role
+            entry.category = assignment.category
+            entry.source = source
+            entry.is_resolved = True
+            changed = True
+    if changed:
+        await session.flush()
+    return changed
 
 
 def assignment_for_employee(
@@ -676,7 +734,7 @@ def serialize_ledger_entry(
     employee: Employee,
     available_roles: list[LedgerAssignment],
 ) -> dict[str, Any]:
-    category = category_for_role(entry.payroll_role, available_roles)
+    category = category_for_role(entry.payroll_role, available_roles) or entry.category
     is_resolved = entry.is_resolved and entry.payroll_role is not None and category is not None
     return ledger_entry_snapshot(entry) | {
         "employee_name": employee.full_name,
@@ -694,7 +752,7 @@ def serialize_matrix_shift(
     *,
     payroll_locked: bool = False,
 ) -> dict[str, Any]:
-    category = category_for_role(entry.payroll_role, available_roles)
+    category = category_for_role(entry.payroll_role, available_roles) or entry.category
     is_resolved = entry.is_resolved and entry.payroll_role is not None and category is not None
     return {
         "ledger_entry_id": str(entry.id) if entry.id is not None else None,
@@ -742,10 +800,10 @@ def category_for_role(
 
 
 def ledger_status(available_roles: list[LedgerAssignment], is_resolved: bool) -> str:
-    if not available_roles:
-        return "needs_employee_setup"
     if is_resolved:
         return "resolved"
+    if not available_roles:
+        return "needs_employee_setup"
     return "needs_role_selection"
 
 

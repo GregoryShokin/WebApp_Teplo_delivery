@@ -250,6 +250,8 @@ async def book_bank_to_safe_transfer(
     *,
     operation_date: date | None = None,
     provider: str = "tbank",
+    amount_override: Decimal | None = None,
+    payment_purpose: str | None = None,
 ) -> bool:
     """Шаг 2: при оплате черновика завести внутренний перевод банк→Сейф на безналичную часть.
 
@@ -274,15 +276,24 @@ async def book_bank_to_safe_transfer(
     """
     if not _uses_safe_payout(run):
         return False
-    existing = await session.scalar(
-        select(CashflowTransaction.id).where(
-            CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
-            CashflowTransaction.source_id == run.id,
-        )
+    existing_query = select(CashflowTransaction.id).where(
+        CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
+        CashflowTransaction.source_id == run.id,
     )
+    if payment_purpose is not None:
+        # Доплата — самостоятельная банковская операция с собственным OP-маркером.
+        # Сохраняем run.id для аудита, но не смешиваем её с первым переводом.
+        existing_query = existing_query.where(
+            CashflowTransaction.payment_purpose == payment_purpose
+        )
+    existing = await session.scalar(existing_query.limit(1))
     if existing is not None:
         return False
-    amount = await _run_account_amount(session, run)
+    amount = (
+        _money(amount_override)
+        if amount_override is not None
+        else await _run_account_amount(session, run)
+    )
     if amount <= 0:
         return False
 
@@ -310,7 +321,7 @@ async def book_bank_to_safe_transfer(
     # числом «сегодня» и в журнале выглядит позже выплат с Сейфа. Фолбэк (поллинг без операции
     # под рукой) — текущая дата.
     operation_date = operation_date or datetime.now(UTC).date()
-    purpose = "Перевод на Сейф под выплату ЗП"
+    purpose = payment_purpose or "Перевод на Сейф под выплату ЗП"
     session.add(
         CashflowTransaction(
             wallet_id=bank_wallet.id,
@@ -342,7 +353,16 @@ async def book_bank_to_safe_transfer(
     # «Активных платежах»). Деньги только что пришли — резерв earmark'ит ровно эту сумму.
     from app.services.payroll_reserves import ensure_run_safe_reserve
 
-    await ensure_run_safe_reserve(session, run, account_amount=amount)
+    funded_total = await session.scalar(
+        select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
+            CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
+            CashflowTransaction.source_id == run.id,
+            CashflowTransaction.wallet_id == safe_wallet.id,
+            CashflowTransaction.direction == "in",
+            CashflowTransaction.quality_status != "excluded",
+        )
+    )
+    await ensure_run_safe_reserve(session, run, account_amount=_money(funded_total))
     # Исторические/конкурентные выплаты этой ведомости с Сейфа должны быть зачтены в новый
     # резерв в той же транзакции. В нормальном новом контуре до резерва они запрещены, но
     # сверка не даёт старым данным создать завышенный непогашенный резерв.
@@ -376,8 +396,21 @@ async def apply_payroll_draft_status(
     if outcome == "paid" and draft.status in ("created", "updated"):
         run = await session.get(PayrollRun, draft.run_id)
         if run is not None:
+            request = draft.payload or {}
+            is_topup = request.get("last_action") == "topup"
+            if is_topup:
+                request = request.get("payload") or {}
+            paid_amount = _money(request.get("amount", draft.amount))
+            purpose = request.get("paymentPurpose") if is_topup else None
+            if is_topup and (paid_amount <= 0 or not purpose):
+                raise PayrollConflictError("У банковской доплаты отсутствует сумма или назначение")
             await book_bank_to_safe_transfer(
-                session, run, operation_date=operation_date, provider=draft.bank_provider
+                session,
+                run,
+                operation_date=operation_date,
+                provider=draft.bank_provider,
+                amount_override=paid_amount,
+                payment_purpose=purpose,
             )
         draft.status = "paid"
         draft.synced_at = datetime.now(UTC)
@@ -757,6 +790,10 @@ async def create_or_update_run_draft(
     await _ensure_bank_source_funds(session, provider, total_account)
 
     existing = await _get_bank_draft(session, run_id)
+    if existing is not None and existing.status == "paid":
+        raise PayrollConflictError(
+            "Банковский перевод ведомости уже оплачен. После пересчёта оформите доплату на разницу."
+        )
     is_deleted_retry = existing is not None and existing.status == "deleted"
     document_id = (
         await next_retry_document_id(session, run_id)

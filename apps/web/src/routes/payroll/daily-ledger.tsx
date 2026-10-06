@@ -857,7 +857,15 @@ function RoleSelectCell({
   }
 
   if (availableRoles.length === 0) {
-    return <DisabledRoleSelect placeholder="Нет ролей" />;
+    return shift.is_resolved && value ? (
+      <LockedRoleSelect showLock={false} value={value} />
+    ) : (
+      <DisabledRoleSelect placeholder="Нет ролей" />
+    );
+  }
+
+  if (availableRoles.length === 1 && shift.is_resolved) {
+    return <LockedRoleSelect showLock={false} value={value} />;
   }
 
   return (
@@ -888,7 +896,7 @@ function RoleSelectCell({
   );
 }
 
-function LockedRoleSelect({ value }: { value: string }) {
+function LockedRoleSelect({ value, showLock = true }: { value: string; showLock?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <Select disabled value={value || undefined}>
@@ -902,13 +910,15 @@ function LockedRoleSelect({ value }: { value: string }) {
           <span className="truncate">{value ? roleLabel(value) : "Нет ролей"}</span>
         </SelectTrigger>
       </Select>
-      <span
-        aria-label="ЗП за эту неделю закрыта"
-        className="inline-flex"
-        title="ЗП за эту неделю закрыта"
-      >
-        <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-      </span>
+      {showLock ? (
+        <span
+          aria-label="ЗП за эту неделю закрыта"
+          className="inline-flex"
+          title="ЗП за эту неделю закрыта"
+        >
+          <Lock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </span>
+      ) : null}
     </div>
   );
 }

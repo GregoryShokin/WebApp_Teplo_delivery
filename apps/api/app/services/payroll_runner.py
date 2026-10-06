@@ -74,6 +74,7 @@ from app.services.payroll_freelancer_settlement import (
     run_has_stale_freelancer_settlements,
 )
 from app.services.payroll_rounding import apply_employee_payable_rounding
+from app.services.payroll_shift_validation import collect_period_shift_issues
 from app.services.position_registry import production_payroll_positions
 
 
@@ -421,6 +422,10 @@ async def run_payroll(
             session, period, iiko_records=iiko_records, force_reload=refresh_attendance
         )
         blocking_issues = await collect_blocking_issues(session, entries, period=period)
+        blocking_issues = deduplicate_issues(
+            blocking_issues
+            + await collect_period_shift_issues(session, period, attendance_entries=entries)
+        )
         if blocking_issues:
             run.status = "blocked"
             run.finished_at = datetime.now(UTC)
@@ -1283,6 +1288,13 @@ async def finalize_payroll_run(
         raise PayrollNotFoundError("Payroll period not found")
     if period.status == "finalized":
         raise PayrollConflictError("Payroll period is already finalized")
+    shift_issues = await collect_period_shift_issues(session, period, run_id=run.id)
+    if shift_issues:
+        details = "; ".join(
+            f"{issue['employee_name']}, {issue['work_date']}: {issue['message']}"
+            for issue in shift_issues[:5]
+        )
+        raise PayrollConflictError(f"Учёт смен неполный. Финализация запрещена. {details}")
     if await run_has_unaccounted_advances(session, run, period):
         raise PayrollConflictError(
             "Ведомость устарела: появились авансы/займы, не учтённые в расчёте. "
@@ -1699,7 +1711,13 @@ async def get_run(session: AsyncSession, run_id: uuid.UUID) -> dict[str, Any]:
     needs_recalc = False
     if run.status == "completed":
         needs_recalc = await run_has_unaccounted_advances(session, run, period)
-    return serialize_run(run, period, needs_recalc=needs_recalc)
+    payload = serialize_run(run, period, needs_recalc=needs_recalc)
+    if run.status == "completed" and not run.is_imported_legacy:
+        payload["blocking_issues"] = deduplicate_issues(
+            list(payload["blocking_issues"])
+            + await collect_period_shift_issues(session, period, run_id=run.id)
+        )
+    return payload
 
 
 async def get_run_lines(session: AsyncSession, run_id: uuid.UUID) -> list[PayrollLine]:

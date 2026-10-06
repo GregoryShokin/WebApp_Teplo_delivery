@@ -168,7 +168,7 @@ async def test_build_ledger_uses_published_schedule_role_over_primary(
     assert entries[0].is_resolved is True
 
 
-async def test_build_ledger_falls_back_to_primary_without_published_schedule(
+async def test_build_ledger_requires_choice_without_published_schedule(
     async_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,5 +185,6 @@ async def test_build_ledger_falls_back_to_primary_without_published_schedule(
         )
         entries = await build_ledger_for_date(session, WORK_DATE)
 
-    assert entries[0].payroll_role == "pizza", "без опубликованного графика — главная роль"
+    assert entries[0].payroll_role is None, "две роли без опубликованного графика — выбор"
     assert entries[0].source == "fallback_primary"
+    assert entries[0].is_resolved is False

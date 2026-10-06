@@ -72,6 +72,17 @@ test("keeps role visible while toggling time and bonus columns with localStorage
   await expect.poll(() => storedCollapsedTimes(page)).toEqual(days);
 });
 
+test("single resolved sushi role is blue and does not offer a choice or payroll lock", async ({
+  page,
+}) => {
+  await page.goto("/payroll/daily-ledger");
+  const sushi = page.getByRole("combobox").filter({ hasText: "Сушист" }).first();
+  await expect(sushi).toBeVisible();
+  await expect(sushi).toBeDisabled();
+  await expect(sushi).not.toHaveClass(/bg-amber/);
+  await expect(page.getByLabel("ЗП за эту неделю закрыта")).toHaveCount(0);
+});
+
 function storedCollapsedTimes(page: Page) {
   return page.evaluate((key) => {
     const value = window.localStorage.getItem(key);

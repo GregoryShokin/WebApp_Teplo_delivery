@@ -52,6 +52,10 @@ async def load_attendance_entries(
     iiko_records: Iterable[Mapping[str, Any]] | None = None,
     force_reload: bool = False,
 ) -> list[AttendanceEntry]:
+    # Локальный импорт разрывает цикл: shift_ledger читает парсер iiko из этого модуля.
+    from app.services.payroll_shift_validation import prepare_period_shift_roles
+
+    ledger_entries = await prepare_period_shift_roles(session, period)
     # ЗП считаем только для поваров и кассиров; курьеры, управляющий, менеджер
     # и прочие должности из канона имеют отдельные правила оплаты (см. taxonomy.md).
     all_existing_entries = (
@@ -83,6 +87,16 @@ async def load_attendance_entries(
             employees_for_existing.get(entry.employee_id),
         )
     ]
+    loaded_days = {(entry.employee_id, entry.work_date) for entry in existing_entries}
+    if existing_entries and any(
+        entry.is_resolved
+        and entry.payroll_role
+        and (entry.employee_id, entry.work_date) not in loaded_days
+        for entry in ledger_entries
+    ):
+        # Старый снапшот мог исключить первый выход до назначения роли. После
+        # автоподстановки нужно перечитать его, а не вернуть неполную старую явку.
+        force_reload = True
     if existing_entries and iiko_records is None and not force_reload:
         return list(existing_entries)
 
@@ -346,6 +360,10 @@ async def _attendance_entry_is_payroll_relevant(
     if ledger_entry is None or ledger_entry.payroll_role is None:
         return False
     if ledger_entry.source == "manual_correction" and ledger_entry.is_resolved:
+        return True
+    if position_on_date is None and ledger_entry.is_resolved and ledger_entry.category:
+        # Первая роль могла быть назначена позднее первого фактического выхода.
+        # Разобранный табель — основание включить этот выход в производственную ЗП.
         return True
 
     substitute_assignment = await session.scalar(
