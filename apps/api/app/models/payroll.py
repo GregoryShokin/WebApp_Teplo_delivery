@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import (
@@ -399,6 +399,8 @@ class PayrollPayoutBooking(Base):
 class PayrollBankDraft(Base):
     """Сводный банковский черновик ведомости.
 
+    ``amount`` — накопленная сумма созданных переводов для расчёта следующей дельты.
+    ``payment_amount`` — сумма текущего банковского документа, для доплаты только дельта.
     ``deleted`` означает подтверждённое банком удаление без движения денег; такую
     невыплаченную финализированную ведомость можно отправить повторно с новым document id.
     """
@@ -432,6 +434,23 @@ class PayrollBankDraft(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+    @property
+    def payment_amount(self) -> Decimal:
+        """Amount of the current bank request, not the cumulative delta baseline."""
+        payload = self.payload or {}
+        is_topup = payload.get("last_action") == "topup"
+        request = payload.get("payload") if is_topup else payload
+        if not isinstance(request, dict) or "amount" not in request:
+            return Decimal("0.00") if is_topup else self.amount
+        try:
+            amount = Decimal(str(request.get("amount", "0")))
+            if amount.is_finite() and amount >= 0:
+                return amount.quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            pass
+        # Never present the whole payroll as a top-up if request metadata is incomplete.
+        return Decimal("0.00")
 
 
 class PayrollLine(Base):

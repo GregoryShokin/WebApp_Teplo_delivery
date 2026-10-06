@@ -778,6 +778,15 @@ async def create_or_update_run_draft(
             return await _get_bank_draft(session, run_id)
         raise PayrollConflictError("РС-часть ведомости равна нулю")
 
+    existing = await _get_bank_draft(session, run_id)
+    if existing is not None and (
+        existing.status == "paid" or (existing.payload or {}).get("last_action") == "topup"
+    ):
+        raise PayrollConflictError(
+            "Банковский перевод ведомости уже оплачен или доплата уже создана. "
+            "После пересчёта оформите только дельту выплаты."
+        )
+
     # Split fields predate payroll pool reserves and may also arrive from an import/seed.
     # Creating the bank draft is the last safe point to repair a missing cash-side reserve,
     # otherwise «Активные платежи» shows only the bank leg and hides the Kassa obligation.
@@ -789,11 +798,6 @@ async def create_or_update_run_draft(
     )
     await _ensure_bank_source_funds(session, provider, total_account)
 
-    existing = await _get_bank_draft(session, run_id)
-    if existing is not None and existing.status == "paid":
-        raise PayrollConflictError(
-            "Банковский перевод ведомости уже оплачен. После пересчёта оформите доплату на разницу."
-        )
     is_deleted_retry = existing is not None and existing.status == "deleted"
     document_id = (
         await next_retry_document_id(session, run_id)
@@ -1343,6 +1347,7 @@ async def _apply_topup_delta(
         raise
 
     draft.amount = new_amount
+    draft.document_id = document_id
     draft.status = "updated"
     draft.provider_ref = result.provider_ref
     draft.payload = {"last_action": "topup", "payload": payload}

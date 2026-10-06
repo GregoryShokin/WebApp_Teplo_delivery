@@ -662,8 +662,20 @@ export function PayrollRunDetailRoute({ runId, onNavigate }: PayrollRunDetailRou
               Разбивка нал/безнал и черновик в банк
             </span>
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
-              наличными {formatMoney(payoutCashTotal)} · безнал {formatMoney(totalAccountAmount)} ·{" "}
-              {bankDraftQuery.data ? "черновик создан" : "не создан"}
+              наличными {formatMoney(payoutCashTotal)} · безнал всего{" "}
+              {formatMoney(totalAccountAmount)}
+              {bankDraftQuery.data ? (
+                <>
+                  {" "}
+                  · текущий платёж{" "}
+                  {formatMoney(
+                    moneyValue(bankDraftQuery.data.payment_amount ?? bankDraftQuery.data.amount),
+                  )}{" "}
+                  · {bankDraftStatusLabel(bankDraftQuery.data.status)}
+                </>
+              ) : (
+                " · черновик не создан"
+              )}
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </span>
           </button>
@@ -717,6 +729,7 @@ function PayoutSplitDialog({
   const [walletCode, setWalletCode] = useState<string>("");
   const [bankProvider, setBankProvider] = useState<"tbank" | "sber">("tbank");
   const hasDraft = Boolean(draft);
+  const isProtectedDraft = draft?.status === "paid" || draft?.payload.last_action === "topup";
 
   const fundingQuery = useQuery({
     queryKey: ["run-funding-sources", runId],
@@ -806,6 +819,7 @@ function PayoutSplitDialog({
   });
 
   const canSubmit =
+    !isProtectedDraft &&
     cashValid &&
     walletValid &&
     cashFundsValid &&
@@ -877,11 +891,26 @@ function PayoutSplitDialog({
               !bankFundsValid && "border-destructive bg-destructive/5",
             )}
           >
-            <span className="text-muted-foreground">Безналичный остаток → черновик на счёт ИП</span>
+            <span className="text-muted-foreground">Банковская часть ведомости — всего</span>
             <span className="font-medium tabular-nums">
               {previewAccount === null ? "—" : formatMoney(previewAccount)}
             </span>
           </div>
+
+          {draft ? (
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span>Текущий банковский платёж</span>
+                <span className="font-medium tabular-nums">
+                  {formatMoney(moneyValue(draft.payment_amount ?? draft.amount))}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {bankDraftStatusLabel(draft.status)}
+                {isProtectedDraft ? " · После пересчёта отправляйте только дельту выплаты." : null}
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label>Банк для черновика</Label>
@@ -1403,7 +1432,7 @@ function RunBankDraftCard({
   const [walletCode, setWalletCode] = useState<string>("");
   // Банк, в котором формируется черновик выплаты (через Сейф). По умолчанию Тинькофф.
   const [bankProvider, setBankProvider] = useState<"tbank" | "sber">("tbank");
-  const draftAmount = moneyValue(draft?.amount ?? totalAccountAmount);
+  const draftAmount = moneyValue(draft?.payment_amount ?? draft?.amount ?? totalAccountAmount);
   const hasDraft = Boolean(draft);
 
   const fundingQuery = useQuery({

@@ -315,6 +315,70 @@ test("offers a full payment from the employee modal after finalization", async (
   await expect(dialog.getByRole("button", { name: "Выплатить частично" })).toBeVisible();
 });
 
+test("shows the current bank top-up separately from the cumulative payroll amount", async ({
+  page,
+}) => {
+  await page.unroute(`**/api/v1/payroll/runs/${runId}`);
+  await page.route(`**/api/v1/payroll/runs/${runId}`, (route) =>
+    fulfillJson(route, {
+      ...payrollRun(),
+      status: "finalized",
+      summary: { ...payrollRun().summary, total_payable: 130360 },
+      period: { ...payrollRun().period, status: "finalized" },
+    }),
+  );
+  await page.unroute(`**/api/v1/payroll/runs/${runId}/lines`);
+  await page.route(`**/api/v1/payroll/runs/${runId}/lines`, (route) =>
+    fulfillJson(route, [{ ...payrollLine(), total_payable: 130360, amount_account: 130360 }]),
+  );
+  await page.route(`**/api/v1/payroll/runs/${runId}/bank-draft`, (route) =>
+    fulfillJson(route, {
+      id: "topup-draft",
+      run_id: runId,
+      document_id: `teplo-payroll-${runId}-topup-1`,
+      amount: "130360.00",
+      payment_amount: "1510.00",
+      status: "updated",
+      payload: { last_action: "topup", payload: { amount: 1510 } },
+      provider_ref: "bank-topup-1",
+      last_error: null,
+      created_at: "2026-10-06T08:18:00Z",
+      synced_at: "2026-10-06T11:56:00Z",
+    }),
+  );
+  await page.route(`**/api/v1/payroll/runs/${runId}/bank-draft/delta`, (route) =>
+    fulfillJson(route, {
+      run_id: runId,
+      previous_amount: "130360.00",
+      new_amount: "130360.00",
+      delta: "0.00",
+      classification: "unchanged",
+    }),
+  );
+  await page.route(`**/api/v1/payroll/runs/${runId}/funding-sources`, (route) =>
+    fulfillJson(route, {
+      run_id: runId,
+      cash_sources: [],
+      bank_sources: [
+        { provider: "tbank", name: "Т-Банк", available: "200000", is_configured: true },
+      ],
+    }),
+  );
+  await page.goto(`/payroll/runs/${runId}`);
+  const splitButton = page.getByRole("button", { name: /Разбивка нал\/безнал и черновик в банк/ });
+  await expect(splitButton).toContainText("безнал всего 130 360 ₽");
+  await expect(splitButton).toContainText("текущий платёж 1 510 ₽");
+  await splitButton.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Текущий банковский платёж").locator("..")).toContainText(
+    "1 510 ₽",
+  );
+  await expect(dialog.getByText("Банковская часть ведомости — всего").locator("..")).toContainText(
+    "130 360 ₽",
+  );
+  await expect(dialog.getByRole("button", { name: /Обновить черновик/ })).toBeDisabled();
+});
+
 function fulfillJson(route: Route, body: unknown) {
   if (route.request().method() === "OPTIONS") {
     return route.fulfill({ status: 204 });

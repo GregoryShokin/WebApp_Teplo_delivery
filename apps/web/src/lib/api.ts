@@ -584,6 +584,7 @@ export type PayrollBankDraft = {
   run_id: string;
   document_id: string;
   amount: number | string;
+  payment_amount?: number | string;
   status: "created" | "updated" | "paid" | "failed" | string;
   provider_ref: string | null;
   payload: Record<string, unknown>;

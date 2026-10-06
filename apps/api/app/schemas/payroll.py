@@ -335,6 +335,7 @@ class PayrollBankDraftRead(BaseModel):
     run_id: uuid.UUID
     document_id: str
     amount: Decimal
+    payment_amount: Decimal
     status: str
     provider_ref: str | None = None
     payload: dict[str, Any]

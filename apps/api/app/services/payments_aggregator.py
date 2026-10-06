@@ -570,6 +570,8 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
 
     items: list[PaymentItem] = []
     for draft, summary, run_status in rows:
+        is_topup = (draft.payload or {}).get("last_action") == "topup"
+        payment_amount = draft.payment_amount
         status_map = {
             "created": "in_bank",
             "updated": "in_bank",
@@ -584,7 +586,7 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
         if run_status != "finalized" and state in ("in_bank", "ready_to_send"):
             state = "cancelled"
         # Уже полностью выплаченную ведомость нельзя реанимировать старым удалённым черновиком.
-        if state in ("in_bank", "ready_to_send") and _run_fully_paid(draft.run_id):
+        if not is_topup and state in ("in_bank", "ready_to_send") and _run_fully_paid(draft.run_id):
             state = "paid"
         is_admin = isinstance(summary, dict) and summary.get("kind") == "admin"
         label = PAYROLL_RESERVE_LABEL_ADMIN if is_admin else PAYROLL_RESERVE_LABEL_PRODUCTION
@@ -594,10 +596,10 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                 source="payroll_draft",
                 kind="payroll_bank_draft",
                 ref_id=draft.id,
-                title=f"{label} · {_fmt_money(Decimal(draft.amount))}",
+                title=f"{'Доплата · ' if is_topup else ''}{label} · {_fmt_money(payment_amount)}",
                 counterparty_id=None,
                 counterparty_name=None,
-                amount=Decimal(draft.amount),
+                amount=payment_amount,
                 amount_paid=None,
                 article_id=None,
                 article_name=None,
@@ -614,6 +616,8 @@ async def _payroll_bank_draft_items(session: AsyncSession) -> list[PaymentItem]:
                     "run_id": str(draft.run_id),
                     "payroll": True,
                     "last_error": draft.last_error,
+                    "is_topup": is_topup,
+                    "cumulative_amount": str(draft.amount),
                 },
             )
         )
