@@ -2,10 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 
 test.use({ channel: "chrome" });
 
-async function setup(page: Page) {
-  let amount = 7500;
+async function setup(page: Page, salary = 7500, deposit = 0) {
+  let amount = salary + deposit;
   let deferred = 0;
-  let outstanding = 7500;
+  let outstanding = amount;
   let version = "initial";
   const edits: Record<string, unknown>[] = [];
   const payouts: Record<string, unknown>[] = [];
@@ -13,7 +13,16 @@ async function setup(page: Page) {
     reserve_id: "reserve",
     version,
     outstanding,
-    allocations: [{ employee_id: "sofia", amount, deferred }],
+    allocations: [
+      {
+        employee_id: "sofia",
+        amount,
+        deferred,
+        remaining: salary + deposit,
+        salary_remaining: salary,
+        deposit_remaining: deposit,
+      },
+    ],
     transferred: 0,
   });
   await page.route("**/api/v1/**", async (route) => {
@@ -60,10 +69,11 @@ async function setup(page: Page) {
         {
           id: "line",
           employee_id: "sofia",
-          total_payable: 7500,
+          total_payable: salary,
           payment_status: "pending",
           paid_amount: 0,
-          deposit_payout_scheduled: 0,
+          deposit_payout_scheduled: deposit,
+          deposit_paid_amount: 0,
         },
       ];
     if (path.endsWith("/payroll/runs/run/solvency")) body = { solvent: true };
@@ -111,6 +121,20 @@ async function editAmount(page: Page, value: string, enter = false) {
   if (enter) await input.press("Enter");
   else await page.getByRole("button", { name: "Сохранить сумму", exact: true }).click();
 }
+
+test("salary plus deposit is visible and confirmed together with separate DDS articles", async ({
+  page,
+}) => {
+  const { payouts } = await setup(page, 10205, 20000);
+  const employee = page.getByRole("row", { name: /София Колесникова/ });
+  await expect(employee).toContainText("Зарплата 10 205 ₽ · возврат депозита 20 000 ₽");
+  await expect(employee).toContainText("30 205 ₽");
+  await page.getByRole("button", { name: "Выплатить", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toContainText("Будет выплачено 30 205 ₽");
+  await expect(confirmation).toContainText("по отдельным статьям ДДС");
+  expect(payouts).toHaveLength(0);
+});
 
 test("checkmark edits unpaid plan; remainder remains reserved and survives reopening", async ({
   page,

@@ -32,7 +32,6 @@ from app.models import (
     CashflowTransaction,
     DdsArticle,
     PayrollLine,
-    PayrollPayment,
     PayrollRun,
     PayrollRunEvent,
     SafeAllocation,
@@ -228,38 +227,14 @@ async def _resolve_wallet(session: AsyncSession, code: str) -> Wallet:
 
 
 async def run_pool_shares(session: AsyncSession, run_id: uuid.UUID) -> list[EmployeeShare]:
-    """Доли сотрудников ведомости для раскладки пула: ``remaining = ФОТ − уже выплачено``.
+    """Все долги ведомости: зарплата и ещё не выданный назначенный депозит."""
+    from app.services.payroll_obligations import run_obligations
 
-    Исключены сотрудники с запланированной выдачей депозита (``deposit_payout_scheduled>0``) —
-    они идут только полным путём «Выплатить» (гейт в ``apply_pool_tranche``).
-    """
-    rows = (
-        await session.execute(
-            select(
-                PayrollLine.employee_id,
-                func.sum(PayrollLine.total_payable),
-                func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0),
-            )
-            .where(PayrollLine.run_id == run_id)
-            .group_by(PayrollLine.employee_id)
-        )
-    ).all()
-    paid_rows = (
-        await session.execute(
-            select(PayrollPayment.employee_id, PayrollPayment.amount).where(
-                PayrollPayment.run_id == run_id
-            )
-        )
-    ).all()
-    paid_by = {emp: Decimal(amount) for emp, amount in paid_rows}
-    shares: list[EmployeeShare] = []
-    for employee_id, accrued, deposit in rows:
-        if Decimal(deposit or 0) > 0:
-            continue
-        remaining = Decimal(accrued or 0) - paid_by.get(employee_id, Decimal("0"))
-        if remaining > 0:
-            shares.append(EmployeeShare(employee_id, _q(remaining)))
-    return shares
+    return [
+        EmployeeShare(eid, _q(item.remaining))
+        for eid, item in (await run_obligations(session, run_id)).items()
+        if item.remaining > 0
+    ]
 
 
 async def run_payment_settlement(session: AsyncSession, run_id: uuid.UUID) -> RunPaymentSettlement:
@@ -269,29 +244,18 @@ async def run_payment_settlement(session: AsyncSession, run_id: uuid.UUID) -> Ru
     проведённую сумму ДДС. Только совпадение обеих сумм с ФОТ позволяет освободить остатки
     резервов: это защищает от ситуации «отметили выплаченным, но расход ещё не создался».
     """
-    required = _q(
-        await session.scalar(
-            select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
-                PayrollLine.run_id == run_id
-            )
-        )
-        or 0
-    )
-    paid, booked = (
-        await session.execute(
-            select(
-                func.coalesce(func.sum(PayrollPayment.amount), 0),
-                func.coalesce(func.sum(PayrollPayment.booked_amount), 0),
-            ).where(PayrollPayment.run_id == run_id)
-        )
-    ).one()
-    paid_q = _q(paid or 0)
-    booked_q = _q(booked or 0)
+    from app.services.payroll_obligations import run_obligations
+
+    obligations = list((await run_obligations(session, run_id)).values())
+    required = _q(sum((i.salary + i.deposit for i in obligations), Decimal(0)))
+    paid_q = _q(sum((i.salary_paid + i.deposit_paid for i in obligations), Decimal(0)))
+    booked_q = _q(sum((i.salary_booked + i.deposit_paid for i in obligations), Decimal(0)))
     return RunPaymentSettlement(
         required=required,
         paid=paid_q,
         booked=booked_q,
-        settled=required > 0 and paid_q >= required and booked_q >= required,
+        settled=required > 0
+        and all(i.remaining == 0 and i.salary_booked >= i.salary for i in obligations),
     )
 
 
@@ -869,7 +833,8 @@ async def pay_run_from_pool(
         raise PayrollConflictError("Сначала финализируйте ведомость")
 
     # Лениво (разрыв цикла payments↔payouts↔reserves на загрузке модулей).
-    from app.services.payroll_payments import apply_pool_tranche
+    from app.services.payroll_payments import _post_deposit_payout_iiko, apply_pool_tranche
+    from app.services.payroll_payouts import PayoutExpenseResult
 
     shares = await run_pool_shares(session, run.id)
     if allow_overflow and await session.scalar(
@@ -904,8 +869,11 @@ async def pay_run_from_pool(
         if allow_overflow:
             raise PayrollConflictError("План выплачивается только с выбранного счёта")
     paid_by_emp: dict[uuid.UUID, Decimal] = {}
+    deposit_iiko_amount = Decimal(0)
+    deposit_iiko_items: list[tuple[uuid.UUID, Decimal]] = []
 
     async def _drain(reserve: SafeAllocation, share_list: list[EmployeeShare]) -> Decimal:
+        nonlocal deposit_iiko_amount
         pool = _q(Decimal(reserve.amount) - Decimal(reserve.amount_paid))
         allocs = (
             allocations_override
@@ -918,7 +886,7 @@ async def pay_run_from_pool(
         is_cash = reserve.location == "kassa"
         booked = Decimal("0")
         for alloc in allocs:
-            delta = await apply_pool_tranche(
+            expense = await apply_pool_tranche(
                 session,
                 run,
                 alloc.employee_id,
@@ -928,9 +896,11 @@ async def pay_run_from_pool(
                 paid_at=paid_at,
                 actor_user_id=actor_user_id,
             )
-            booked += delta
+            booked += expense.booked_total
+            deposit_iiko_amount += expense.deposit_iiko_amount
+            deposit_iiko_items.extend(expense.deposit_iiko_items)
             paid_by_emp[alloc.employee_id] = (
-                paid_by_emp.get(alloc.employee_id, Decimal("0")) + alloc.amount
+                paid_by_emp.get(alloc.employee_id, Decimal("0")) + expense.booked_total
             )
         return _q(booked)
 
@@ -975,6 +945,16 @@ async def pay_run_from_pool(
         actor_user_id=actor_user_id,
     )
     await session.commit()
+    await _post_deposit_payout_iiko(
+        session,
+        PayoutExpenseResult(
+            booked=True,
+            deposit_iiko_amount=deposit_iiko_amount,
+            deposit_iiko_items=tuple(deposit_iiko_items),
+        ),
+        run,
+        paid_at,
+    )
     return PoolPayoutResult(
         reserve_id=primary.id,
         primary_booked=_q(primary_booked),
@@ -1027,16 +1007,11 @@ async def pay_employee_from_reserve(
     начисленного сотруднику. Проводка — через ``apply_pool_tranche`` (кошелёк резерва, ДДС по
     ``booked_amount``), затем сверка резерва. Атомарно.
     """
-    reserve = await session.get(SafeAllocation, reserve_id, with_for_update=True)
-    if reserve is None or reserve.source_run_id is None:
-        raise PayrollNotFoundError("Резерв ведомости не найден")
+    reserve, run = await locked_run_reserve(session, reserve_id)
     if reserve.employee_id is not None:
         raise PayrollConflictError("Это не пул-резерв ведомости")
     if reserve.status not in ACTIVE_RESERVE_STATUSES:
         raise PayrollConflictError("Резерв уже оплачен или отменён")
-    run = await session.get(PayrollRun, reserve.source_run_id)
-    if run is None:
-        raise PayrollNotFoundError("Ведомость не найдена")
     if run.status != "finalized":
         raise PayrollConflictError("Сначала финализируйте ведомость")
 
@@ -1049,9 +1024,10 @@ async def pay_employee_from_reserve(
             f"В резерве осталось {outstanding} — уменьшите сумму или пополните резерв"
         )
 
-    from app.services.payroll_payments import apply_pool_tranche
+    from app.services.payroll_obligations import run_obligations
+    from app.services.payroll_payments import _post_deposit_payout_iiko, apply_pool_tranche
 
-    booked = await apply_pool_tranche(
+    expense = await apply_pool_tranche(
         session,
         run,
         employee_id,
@@ -1063,31 +1039,23 @@ async def pay_employee_from_reserve(
     )
     await reconcile_run_reserves(session, run.id)
 
-    accrued = await session.scalar(
-        select(func.coalesce(func.sum(PayrollLine.total_payable), 0)).where(
-            PayrollLine.run_id == run.id, PayrollLine.employee_id == employee_id
-        )
-    )
-    total_paid = await session.scalar(
-        select(func.coalesce(PayrollPayment.amount, 0)).where(
-            PayrollPayment.run_id == run.id, PayrollPayment.employee_id == employee_id
-        )
-    )
+    obligation = (await run_obligations(session, run.id))[employee_id]
     _add_pool_payout_event(
         session,
         run=run,
         reserve=reserve,
-        primary_booked=_q(booked),
+        primary_booked=_q(expense.booked_total),
         overflow_booked=Decimal("0"),
         actor_user_id=actor_user_id,
     )
     await session.commit()
+    await _post_deposit_payout_iiko(session, expense, run, paid_at)
     await session.refresh(reserve)
-    total_paid_q = _q(total_paid or 0)
+    total_paid_q = _q(obligation.salary_paid + obligation.deposit_paid)
     return EmployeeReservePayResult(
-        booked=_q(booked),
+        booked=_q(expense.booked_total),
         employee_total_paid=total_paid_q,
-        employee_remaining=_q(max(Decimal("0"), _q(accrued or 0) - total_paid_q)),
+        employee_remaining=_q(obligation.remaining),
         reserve_status=reserve.status,
         reserve_outstanding=_q(Decimal(reserve.amount) - Decimal(reserve.amount_paid)),
     )
@@ -1237,12 +1205,17 @@ async def _run_grand_total(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
 
 
 async def _run_paid_total(session: AsyncSession, run_id: uuid.UUID) -> Decimal:
-    total = await session.scalar(
-        select(func.coalesce(func.sum(PayrollPayment.amount), 0)).where(
-            PayrollPayment.run_id == run_id
+    from app.services.payroll_obligations import run_obligations
+
+    return _q(
+        sum(
+            (
+                i.salary_paid + i.deposit_paid
+                for i in (await run_obligations(session, run_id)).values()
+            ),
+            Decimal(0),
         )
     )
-    return _q(total or 0)
 
 
 async def run_solvency(session: AsyncSession, run: PayrollRun) -> SolvencyBreakdown:

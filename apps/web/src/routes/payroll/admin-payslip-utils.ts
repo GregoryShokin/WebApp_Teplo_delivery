@@ -147,7 +147,11 @@ export function lineOnHand(line: PayrollLine) {
 
 export function linePaidOnHand(line: PayrollLine) {
   const salaryPaid = moneyValue(line.paid_amount ?? 0);
-  return salaryPaid + (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0);
+  return (
+    salaryPaid +
+    (line.deposit_paid_amount ??
+      (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0))
+  );
 }
 
 export type AdjustmentComponent = {

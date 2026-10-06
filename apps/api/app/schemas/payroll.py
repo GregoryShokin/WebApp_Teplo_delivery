@@ -216,6 +216,9 @@ class PayrollReservePlanAllocation(BaseModel):
     amount: float
     deferred: float
     other_amount: float = 0
+    remaining: float = 0
+    salary_remaining: float = 0
+    deposit_remaining: float = 0
 
 
 class PayrollReservePlanRead(BaseModel):
@@ -415,9 +418,9 @@ class PayrollLineRead(BaseModel):
     deduction: float
     deposit_withholding: float = 0
     deposit_payout: float = 0
-    # Запланированная выдача депозита: такой сотрудник идёт только полным путём «Выплатить»
-    # (исключён из раскладки пула-резерва). Нужно фронту, чтобы превью совпало с фактом.
+    # Назначенный возврат входит в общую сумму к выдаче, но имеет свою статью ДДС.
     deposit_payout_scheduled: float = 0
+    deposit_paid_amount: float | None = None
     advance_issued: float = 0
     ndfl_deduction: float = 0
     total_payable: float

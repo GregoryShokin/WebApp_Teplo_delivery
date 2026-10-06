@@ -54,6 +54,9 @@ type RegisterRow = {
   remaining: number;
   status: string;
   depositScheduled: number;
+  depositPaid: number;
+  salaryRemaining: number;
+  depositRemaining: number;
 };
 
 // Окно работы с пулом-резервом ЗП (Сейф/касса): выбранную раскладку можно выплатить из
@@ -127,26 +130,36 @@ export function PayPayrollReserveDialog({
         remaining: 0,
         status: "pending",
         depositScheduled: 0,
+        depositPaid: 0,
+        salaryRemaining: 0,
+        depositRemaining: 0,
       };
       cur.accrued += line.total_payable;
       cur.depositScheduled += line.deposit_payout_scheduled ?? 0;
+      cur.depositPaid =
+        line.deposit_paid_amount ??
+        (line.payment_status === "paid" ? (line.deposit_payout ?? 0) : 0);
       if (line.payment_status === "paid" || line.payment_status === "partially_paid") {
         cur.paid = line.paid_amount ?? 0;
         cur.status = line.payment_status;
       }
       byEmployee.set(line.employee_id, cur);
     }
-    return Array.from(byEmployee.values()).map((r) => ({
-      ...r,
-      remaining: Math.max(0, Math.round((r.accrued - r.paid) * 100) / 100),
-    }));
-  }, [linesQuery.data, employeesQuery.data]);
+    return Array.from(byEmployee.values()).map((r) => {
+      const item = planned.get(r.employeeId);
+      const salaryRemaining = item?.salary_remaining ?? Math.max(0, r.accrued - r.paid);
+      const depositRemaining =
+        item?.deposit_remaining ?? Math.max(0, r.depositScheduled - r.depositPaid);
+      return {
+        ...r,
+        salaryRemaining,
+        depositRemaining,
+        remaining: item?.remaining ?? Math.round((salaryRemaining + depositRemaining) * 100) / 100,
+      };
+    });
+  }, [linesQuery.data, employeesQuery.data, planned]);
 
-  // Депозит-сотрудники исключены (как backend run_pool_shares) — идут полным путём «Выплатить».
-  const payable = useMemo(
-    () => rows.filter((r) => r.remaining > 0.001 && r.depositScheduled <= 0.001),
-    [rows],
-  );
+  const payable = useMemo(() => rows.filter((r) => r.remaining > 0.001), [rows]);
 
   // По умолчанию отмечаем всех с долгом; остаток пула — из резерва.
   useEffect(() => {
@@ -169,6 +182,10 @@ export function PayPayrollReserveDialog({
     [plan, selected],
   );
   const covered = Array.from(preview.values()).reduce((a, b) => a + b, 0);
+  const depositCovered = payable.reduce(
+    (sum, r) => sum + Math.max(0, (preview.get(r.employeeId) ?? 0) - r.salaryRemaining),
+    0,
+  );
   const selectedRemaining = payable
     .filter((r) => selected.has(r.employeeId))
     .reduce((a, r) => a + r.remaining, 0);
@@ -403,7 +420,15 @@ export function PayPayrollReserveDialog({
                             onChange={() => toggle(r.employeeId)}
                           />
                         </td>
-                        <td className="py-2">{r.name}</td>
+                        <td className="py-2">
+                          {r.name}
+                          {r.depositRemaining > 0.001 ? (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Зарплата {money.format(r.salaryRemaining)} · возврат депозита{" "}
+                              {money.format(r.depositRemaining)}
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="py-2 text-right tabular-nums">
                           {money.format(r.remaining)}
                         </td>
@@ -504,6 +529,9 @@ export function PayPayrollReserveDialog({
             <div className="text-xs text-muted-foreground">
               Покроет {money.format(covered)} из {money.format(selectedRemaining)}
               {uncoveredHere > 0.001 ? ` · ${money.format(uncoveredHere)} останется к выплате` : ""}
+              {depositCovered > 0.001
+                ? ` · в том числе возврат депозита ${money.format(depositCovered)}`
+                : ""}
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
@@ -607,6 +635,9 @@ export function PayPayrollReserveDialog({
             <AlertDialogTitle>Подтвердить выдачу зарплаты?</AlertDialogTitle>
             <AlertDialogDescription>
               Будет выплачено {money.format(covered)} из {channel} по сохранённым суммам.
+              {depositCovered > 0.001
+                ? ` В том числе зарплата ${money.format(covered - depositCovered)} и возврат депозита ${money.format(depositCovered)} — по отдельным статьям ДДС.`
+                : ""}{" "}
               Оставленные в резерве суммы не выплачиваются.
             </AlertDialogDescription>
           </AlertDialogHeader>

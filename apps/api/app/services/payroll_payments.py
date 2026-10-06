@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,9 @@ from app.models import (
     PayrollRunEvent,
 )
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError, money_text
+
+if TYPE_CHECKING:
+    from app.services.payroll_payouts import PayoutExpenseResult
 
 PAYROLL_PAYMENT_METHODS = frozenset({"business_card", "cash", "transfer", "other"})
 
@@ -48,6 +51,9 @@ async def mark_payment(
     _validate_method(method)
     pay_wallet_id = await _payroll_cash_wallet_id(session, cash_wallet_code)
     amount = await _employee_payable_amount(session, run_id, employee_id)
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposit_paid_snapshot = await deposit_paid_by_employee(session, run_id)
 
     payment = await session.scalar(
         select(PayrollPayment).where(
@@ -79,7 +85,11 @@ async def mark_payment(
     from app.services.payroll_payouts import book_payout_expense_for_employees
 
     payout_result = await book_payout_expense_for_employees(
-        session, run, [employee_id], pay_wallet_id=pay_wallet_id
+        session,
+        run,
+        [employee_id],
+        pay_wallet_id=pay_wallet_id,
+        deposit_paid_snapshot=deposit_paid_snapshot,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -154,7 +164,7 @@ async def unmark_payment(
         reversal_ids.append(str(reversal.id))
 
     await session.execute(delete(PayrollPayment).where(PayrollPayment.id == payment.id))
-    await _reconcile_pool_reserves(session, run_id)
+    await _reconcile_pool_reserves(session, run_id, include_paid=True)
     _add_payment_event(
         session,
         run=run,
@@ -323,6 +333,9 @@ async def mark_all_payments(
     if not rows:
         return 0
 
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposit_paid_snapshot = await deposit_paid_by_employee(session, run_id)
     for employee_id, amount, payment in rows:
         if payment is None:
             session.add(
@@ -354,6 +367,7 @@ async def mark_all_payments(
         run,
         [employee_id for employee_id, _amount, _payment in rows],
         pay_wallet_id=pay_wallet_id,
+        deposit_paid_snapshot=deposit_paid_snapshot,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -401,6 +415,9 @@ async def mark_payments_selected(
     if not rows:
         return 0
 
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposit_paid_snapshot = await deposit_paid_by_employee(session, run_id)
     for employee_id, amount, payment in rows:
         if payment is None:
             session.add(
@@ -432,6 +449,7 @@ async def mark_payments_selected(
         run,
         [employee_id for employee_id, _amount, _payment in rows],
         pay_wallet_id=pay_wallet_id,
+        deposit_paid_snapshot=deposit_paid_snapshot,
     )
     await _reconcile_pool_reserves(session, run_id)
     _add_payment_event(
@@ -576,7 +594,7 @@ async def apply_pool_tranche(
     is_cash: bool,
     paid_at: date,
     actor_user_id: uuid.UUID | None,
-) -> Decimal:
+) -> PayoutExpenseResult:
     """Провести ОДИН транш выплаты ЗП сотруднику из пула-резерва — БЕЗ commit.
 
     Отличия от ``mark_partial_payment``: (1) кошелёк выплаты явный (``pay_wallet_id`` —
@@ -585,21 +603,15 @@ async def apply_pool_tranche(
     (оркестратор пишет одно сводное); (4) возвращает забронированную дельту — на неё
     оркестратор наращивает ``amount_paid`` резерва.
 
-    Депозит-гейт и учёт ``booked_amount`` (защита от задвоения ДДС) — те же, что в частичной
-    выплате. ``tranche`` приходит из ``allocate_pool`` (уже ≤ остатка); дополнительно клампится
-    остатком на случай гонки. Возвращает 0, если проводить нечего.
+    Транш погашает сначала зарплату, затем назначенный возврат депозита. Обе части
+    проводятся по своим статьям, только дельтой; остаток остаётся долгом.
     """
-    scheduled_deposit = await session.scalar(
-        select(func.coalesce(func.sum(PayrollLine.deposit_payout_scheduled), 0)).where(
-            PayrollLine.run_id == run.id,
-            PayrollLine.employee_id == employee_id,
-        )
-    )
-    if scheduled_deposit and Decimal(scheduled_deposit) > 0:
-        raise PayrollConflictError(
-            "У сотрудника запланирована выдача депозита — выплатите полностью через «Выплатить»"
-        )
-    accrued = await _employee_payable_amount(session, run.id, employee_id)
+    from app.services.payroll_obligations import run_obligations
+    from app.services.payroll_payouts import PayoutExpenseResult, book_payout_expense_for_employees
+
+    obligation = (await run_obligations(session, run.id)).get(employee_id)
+    if obligation is None:
+        raise PayrollConflictError("У сотрудника нет начислений в этой ведомости")
     payment = await session.scalar(
         select(PayrollPayment).where(
             PayrollPayment.run_id == run.id,
@@ -607,13 +619,14 @@ async def apply_pool_tranche(
         )
     )
     already = Decimal(payment.amount) if payment is not None else Decimal("0")
-    remaining = accrued - already
-    tranche = min(Decimal(tranche), remaining).quantize(Decimal("0.01"))
+    tranche = min(Decimal(tranche), obligation.remaining).quantize(Decimal("0.01"))
     if tranche <= 0:
-        return Decimal("0")
+        return PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal(0))
     method = "cash" if is_cash else None
-    new_total = already + tranche
-    status = "paid" if new_total >= accrued else "partially_paid"
+    salary_tranche = min(tranche, obligation.salary_remaining)
+    deposit_tranche = tranche - salary_tranche
+    new_total = already + salary_tranche
+    status = "paid" if tranche >= obligation.remaining else "partially_paid"
     if payment is None:
         payment = PayrollPayment(
             id=uuid.uuid4(),
@@ -637,25 +650,27 @@ async def apply_pool_tranche(
         payment.status = status
     await session.flush()
 
-    from app.services.payroll_payouts import book_payout_expense_for_employees
-
     result = await book_payout_expense_for_employees(
         session,
         run,
         [employee_id],
         amount_by_employee={employee_id: new_total},
         pay_wallet_id=pay_wallet_id,
+        deposit_amount_by_employee={employee_id: obligation.deposit_paid + deposit_tranche},
+        deposit_paid_snapshot={employee_id: obligation.deposit_paid},
     )
-    return result.booked_total
+    return result
 
 
-async def _reconcile_pool_reserves(session: AsyncSession, run_id: uuid.UUID) -> None:
+async def _reconcile_pool_reserves(
+    session: AsyncSession, run_id: uuid.UUID, *, include_paid: bool = False
+) -> None:
     """Сверить пул-резервы ЗП после ручной/bulk выплаты — их amount_paid должен учесть расход
     на том же Сейфе/кассе (иначе резерв застрянет в partially_paid с фантомным earmark'ом).
     Ленивый импорт — разрыв цикла payments↔reserves."""
     from app.services.payroll_reserves import reconcile_run_reserves
 
-    await reconcile_run_reserves(session, run_id)
+    await reconcile_run_reserves(session, run_id, include_paid=include_paid)
 
 
 async def _post_deposit_payout_iiko(
@@ -672,13 +687,24 @@ async def _post_deposit_payout_iiko(
             post_production_deposit_payout_to_iiko,
         )
 
-        await post_production_deposit_payout_to_iiko(
-            session, amount=amount, payout_date=paid_at, source_id=str(run.id)
-        )
+        # Each real deposit DDS expense has its own idempotency key. A run-level key
+        # would suppress subsequent employees/partial tranches in the iiko journal.
+        items = getattr(payout_result, "deposit_iiko_items", ()) or ((run.id, amount),)
+        for transaction_id, tranche in items:
+            await post_production_deposit_payout_to_iiko(
+                session, amount=tranche, payout_date=paid_at, source_id=str(transaction_id)
+            )
 
 
 async def _get_payment_run(session: AsyncSession, run_id: uuid.UUID) -> PayrollRun:
-    run = await session.get(PayrollRun, run_id)
+    # All payout screens serialize on the run, before reserve/wallet locks. This
+    # prevents a simultaneous manual payout and active-payments tranche doubling DDS.
+    run = await session.scalar(
+        select(PayrollRun)
+        .where(PayrollRun.id == run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if run is None:
         raise PayrollNotFoundError("Payroll run not found")
     if run.is_imported_legacy:

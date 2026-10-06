@@ -3213,11 +3213,15 @@ function lineOnHand(line: PayrollLine) {
   return moneyValue(line.total_payable) + moneyValue(line.deposit_payout);
 }
 
-// paid_amount хранит только зарплатную часть. Для полностью закрытой строки выдача депозита
-// также уже проведена отдельной корзиной и должна входить в показанное «выплачено».
+// paid_amount хранит только зарплату; фактически выданный депозит учитывается отдельно,
+// в том числе при частичной выдаче. Старый API поддерживаем fallback'ом полного статуса.
 function linePaidOnHand(line: PayrollLine) {
   const salaryPaid = moneyValue(line.paid_amount ?? 0);
-  return salaryPaid + (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0);
+  return (
+    salaryPaid +
+    (line.deposit_paid_amount ??
+      (line.payment_status === "paid" ? moneyValue(line.deposit_payout) : 0))
+  );
 }
 
 function lineRemainingOnHand(line: PayrollLine) {

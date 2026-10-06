@@ -429,13 +429,20 @@ async def get_lines(
     payments_by_employee = await get_payments_by_employee(
         session, run_id, (line.employee_id for line in lines)
     )
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposit_paid = await deposit_paid_by_employee(session, run_id)
     on_demand_ids = [line.employee_id for line in lines if line_is_on_demand(line)]
     on_demand_debt_by_employee = (
         await compute_on_demand_debt(session, on_demand_ids) if on_demand_ids else {}
     )
     return [
         serialize_payroll_line(
-            line, payouts_by_employee, payments_by_employee, on_demand_debt_by_employee
+            line,
+            payouts_by_employee,
+            payments_by_employee,
+            on_demand_debt_by_employee,
+            deposit_paid,
         )
         for line in lines
     ]
@@ -565,7 +572,14 @@ async def patch_line_deposit_override(
     await session.refresh(line)
     payouts = await get_deposit_payouts_by_employee(session, line.run_id, [line.employee_id])
     payments = await get_payments_by_employee(session, line.run_id, [line.employee_id])
-    return serialize_payroll_line(line, payouts, payments)
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    return serialize_payroll_line(
+        line,
+        payouts,
+        payments,
+        deposit_paid_by_employee=await deposit_paid_by_employee(session, line.run_id),
+    )
 
 
 @router.post(
@@ -1425,6 +1439,7 @@ def serialize_payroll_line(
     payouts_by_employee: dict[uuid.UUID, float],
     payments_by_employee: dict[uuid.UUID, PayrollPayment] | None = None,
     on_demand_debt_by_employee: dict[uuid.UUID, dict[str, Any]] | None = None,
+    deposit_paid_by_employee: dict[uuid.UUID, Decimal] | None = None,
 ) -> PayrollLineRead:
     components = line.components if isinstance(line.components, dict) else {}
     if getattr(line, "ndfl_withheld", None) is None:
@@ -1441,6 +1456,11 @@ def serialize_payroll_line(
         update={
             "deposit_withholding": money_float(components.get("deposit_withholding", 0)),
             "deposit_payout": payouts_by_employee.get(line.employee_id, 0),
+            "deposit_paid_amount": (
+                money_float(deposit_paid_by_employee.get(line.employee_id, 0))
+                if deposit_paid_by_employee is not None
+                else None
+            ),
             "advance_issued": money_float(components.get("advance_issued", 0)),
             "ndfl_deduction": money_float(getattr(line, "ndfl_withheld", 0)),
             "payment_status": (

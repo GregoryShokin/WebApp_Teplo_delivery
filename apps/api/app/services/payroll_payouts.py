@@ -39,6 +39,7 @@ from app.services.banking.payment_purpose import (
 )
 from app.services.banking.payout import payer_account_for, payout_client_for
 from app.services.banking.tbank import build_payment_draft_api_payload
+from app.services.payroll_obligations import DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_paid_by_employee
 from app.services.payroll_payout_allocation import (
     DDS_ARTICLE_ADMIN_PAYROLL,
     DDS_ARTICLE_PRODUCTION_PAYROLL,
@@ -76,7 +77,6 @@ BANK_TO_SAFE_SOURCE_KIND = "payroll_bank_to_safe"
 # (не смешивать с зарплатными статьями). «На руки» = ФОТ + выдача депозита; банк-черновик и
 # наличный сплит считаются от этой суммы. iiko-изъятие «Выдача депозита» — для наличной части
 # с ТК Черникова (= iiko Главная касса). Когда выдач нет (deposit_payout_scheduled=0) — инертно.
-DDS_ARTICLE_DEPOSIT_PAYOUT = "vydacha_depozita_sotrudniku"
 DEPOSIT_PAYOUT_TK_WALLET_CODE = "tk_chernikova"
 PAYROLL_CASH_WALLET_CODES = frozenset({SAFE_WALLET_CODE, DEPOSIT_PAYOUT_TK_WALLET_CODE})
 
@@ -91,6 +91,7 @@ class PayoutExpenseResult:
 
     booked: bool
     deposit_iiko_amount: Decimal
+    deposit_iiko_items: tuple[tuple[uuid.UUID, Decimal], ...] = ()
     booked_total: Decimal = Decimal("0")
 
 
@@ -453,6 +454,8 @@ async def book_payout_expense_for_employees(
     *,
     amount_by_employee: dict[uuid.UUID, Decimal] | None = None,
     pay_wallet_id: uuid.UUID | None = None,
+    deposit_amount_by_employee: dict[uuid.UUID, Decimal] | None = None,
+    deposit_paid_snapshot: dict[uuid.UUID, Decimal] | None = None,
 ) -> PayoutExpenseResult:
     """Шаг 3: расход ЗП + выдача депозита по статьям для выплаченных сотрудников («Выплатить»).
 
@@ -473,8 +476,8 @@ async def book_payout_expense_for_employees(
     ``amount_by_employee`` — целевая ВЫПЛАЧЕННАЯ сумма по сотруднику (бегущий итог для
     частичной выплаты). Книжится только дельта ``target − booked_amount`` (инкрементально, без
     задвоения при partial→bulk). Когда не задан — полная выплата по ``total_payable`` (прежнее
-    поведение). В режиме частичной выплаты корзина «Выдача депозита» не заводится — депозит
-    идёт полным путём «Выплатить».
+    поведение). ``deposit_amount_by_employee`` — отдельный накопительный итог выдачи
+    депозита. У зарплаты и депозита независимые дельты и статьи ДДС.
 
     ``pay_wallet_id`` — контур выплаты ЗП из пула-резерва: вся дельта книжится ОДНИМ кошельком
     (Сейф ЛИБО касса), без run-level каскада нал/безнал. Так «оплата из Сейфа» садится на Сейф,
@@ -482,7 +485,7 @@ async def book_payout_expense_for_employees(
     кошельком). Выбранный кошелёк обязан иметь активный резерв именно этой ведомости, а сумма
     выплаты не может превышать непогашенный остаток резерва. Свободный остаток кошелька не
     является источником зарплаты. Статьи ДДС по-прежнему разносятся по должностям.
-    ``deposit_iiko_amount`` в этом режиме не считается (депозит идёт полным путём «Выплатить»).
+    Наличная выдача депозита с ТК возвращается в ``deposit_iiko_amount`` для iiko после commit.
     """
     empty = PayoutExpenseResult(booked=False, deposit_iiko_amount=Decimal("0"))
     if not _uses_safe_payout(run) or not employee_ids:
@@ -525,29 +528,42 @@ async def book_payout_expense_for_employees(
         payment = payments.get(employee_id)
         already_booked = _money(payment.booked_amount) if payment is not None else Decimal("0")
         delta = target - already_booked
-        if delta <= 0:
-            continue
-        distributed = _distribute_amount(delta, employee_lines)
+        distributed = _distribute_amount(max(Decimal(0), delta), employee_lines)
         row_amounts.extend(distributed)
         employee_buckets[employee_id] = build_payout_buckets(
             distributed, default_article_code=default_article
         )
-        booked_targets[employee_id] = target
+        booked_targets[employee_id] = max(target, already_booked)
     buckets = build_payout_buckets(row_amounts, default_article_code=default_article)
     # Выдача депозита — отдельной корзиной В КОНЦЕ (наличные гасят сначала ЗП, потом выдачу).
-    # Только при полной выплате: в режиме частичной выплаты депозит не трогаем.
-    if amount_by_employee is None:
+    # Отдельная инкрементальная дельта депозита, в том числе после полной выдачи зарплаты.
+    if amount_by_employee is None or deposit_amount_by_employee is not None:
+        deposit_paid = (
+            deposit_paid_snapshot
+            if deposit_paid_snapshot is not None
+            else await deposit_paid_by_employee(session, run.id)
+        )
         deposit_total = Decimal("0")
         for employee_id, employee_lines in lines_by_employee.items():
             employee_deposit = sum(
                 (_money(getattr(line, "deposit_payout_scheduled", 0)) for line in employee_lines),
                 Decimal("0"),
             )
-            if employee_deposit <= 0 or employee_id not in booked_targets:
+            target_deposit = (
+                _money(deposit_amount_by_employee.get(employee_id, 0))
+                if deposit_amount_by_employee is not None
+                else employee_deposit
+            )
+            if target_deposit < 0 or target_deposit > employee_deposit:
+                raise PayrollConflictError("Сумма выдачи депозита превышает назначенный возврат")
+            delta_deposit = max(
+                Decimal(0), target_deposit - deposit_paid.get(employee_id, Decimal(0))
+            )
+            if delta_deposit <= 0:
                 continue
-            deposit_total += employee_deposit
+            deposit_total += delta_deposit
             employee_buckets.setdefault(employee_id, []).append(
-                PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, employee_deposit)
+                PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, delta_deposit)
             )
         if deposit_total > 0:
             buckets = [*buckets, PayoutBucket(DDS_ARTICLE_DEPOSIT_PAYOUT, deposit_total)]
@@ -561,8 +577,13 @@ async def book_payout_expense_for_employees(
         )
     ).all()
     article_ids = {code: article_id for code, article_id in article_rows}
+    if DDS_ARTICLE_DEPOSIT_PAYOUT in codes and DDS_ARTICLE_DEPOSIT_PAYOUT not in article_ids:
+        raise PayrollConflictError("Не найдена статья ДДС для выдачи депозита")
+    if codes - article_ids.keys():
+        raise PayrollConflictError("Не найдена статья ДДС для выплаты зарплаты")
     operation_date = datetime.now(UTC).date()
     deposit_iiko_amount = Decimal("0")
+    deposit_iiko_items: list[tuple[uuid.UUID, Decimal]] = []
 
     if pay_wallet_id is not None:
         # Сначала блокируем целевой резерв, затем кошелёк. Такой же порядок использует
@@ -639,6 +660,7 @@ async def book_payout_expense_for_employees(
                 )
                 if is_deposit and pay_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE:
                     deposit_iiko_amount += bucket.total
+                    deposit_iiko_items.append((transaction.id, bucket.total))
     else:
         safe_wallet = await session.scalar(
             select(Wallet).where(Wallet.code == SAFE_WALLET_CODE, Wallet.status == "active")
@@ -712,19 +734,19 @@ async def book_payout_expense_for_employees(
                     )
                 )
             if alloc.cash > 0:
-                session.add(
-                    CashflowTransaction(
-                        wallet_id=cash_target,
-                        direction="out",
-                        amount=alloc.cash,
-                        operation_date=operation_date,
-                        article_id=article_id,
-                        source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
-                        source_id=run.id,
-                        payment_purpose=purpose,
-                        quality_status="final",
-                    )
+                cash_transaction = CashflowTransaction(
+                    id=uuid.uuid4(),
+                    wallet_id=cash_target,
+                    direction="out",
+                    amount=alloc.cash,
+                    operation_date=operation_date,
+                    article_id=article_id,
+                    source_kind=PAYROLL_PAYOUT_SOURCE_KIND,
+                    source_id=run.id,
+                    payment_purpose=purpose,
+                    quality_status="final",
                 )
+                session.add(cash_transaction)
                 # iiko-изъятие «Выдача депозита» — только наличная часть выдачи с ТК Черникова.
                 if (
                     is_deposit
@@ -732,6 +754,7 @@ async def book_payout_expense_for_employees(
                     and (cash_wallet.code == DEPOSIT_PAYOUT_TK_WALLET_CODE)
                 ):
                     deposit_iiko_amount += alloc.cash
+                    deposit_iiko_items.append((cash_transaction.id, alloc.cash))
     await session.flush()
     # Отмечаем забронированную сумму по каждому проведённому сотруднику (защита от задвоения).
     for employee_id, target in booked_targets.items():
@@ -741,6 +764,7 @@ async def book_payout_expense_for_employees(
     return PayoutExpenseResult(
         booked=True,
         deposit_iiko_amount=_money(deposit_iiko_amount),
+        deposit_iiko_items=tuple(deposit_iiko_items),
         booked_total=_money(rows_total),
     )
 

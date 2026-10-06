@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.services.banking.safe_allocations import ACTIVE_RESERVE_STATUSES
 from app.services.payroll_reserves import (
+    EmployeeShare,
     PoolAllocation,
     _active_run_reserve,
     _q,
@@ -35,6 +36,40 @@ from app.services.payroll_reserves import (
 from app.services.payroll_runner import PayrollConflictError, PayrollNotFoundError
 
 PLAN_ACTION = "reserve_plan_updated"
+
+
+async def _latest_plan_event(
+    session: AsyncSession, reserve: SafeAllocation
+) -> PayrollRunEvent | None:
+    return await session.scalar(
+        select(PayrollRunEvent)
+        .where(
+            PayrollRunEvent.run_id == reserve.source_run_id,
+            PayrollRunEvent.action == PLAN_ACTION,
+            PayrollRunEvent.payload["reserve_id"].astext == str(reserve.id),
+        )
+        .order_by(PayrollRunEvent.created_at.desc(), PayrollRunEvent.id.desc())
+        .limit(1)
+    )
+
+
+def _saved_items(event: PayrollRunEvent | None, remaining: dict, booked: dict) -> dict:
+    items = {}
+    for raw in event.payload["allocations"] if event else []:
+        eid = uuid.UUID(raw["employee_id"])
+        if eid not in remaining:
+            continue
+        consumed = max(Decimal(0), booked.get(eid, Decimal(0)) - Decimal(raw["booked_baseline"]))
+        amount = min(remaining[eid], max(Decimal(0), Decimal(raw["amount"]) - consumed))
+        deferred = min(
+            remaining[eid] - amount,
+            max(
+                Decimal(0),
+                Decimal(raw["deferred"]) - max(Decimal(0), consumed - Decimal(raw["amount"])),
+            ),
+        )
+        items[eid] = {"amount": amount, "deferred": deferred}
+    return items
 
 
 async def _booked(session: AsyncSession, reserve: SafeAllocation) -> dict[uuid.UUID, Decimal]:
@@ -58,88 +93,73 @@ async def _booked(session: AsyncSession, reserve: SafeAllocation) -> dict[uuid.U
 
 
 async def read_reserve_plan(session: AsyncSession, reserve: SafeAllocation) -> dict:
-    shares = await run_pool_shares(session, reserve.source_run_id)
+    from app.services.payroll_obligations import run_obligations
+
+    obligations = await run_obligations(session, reserve.source_run_id)
+    shares = [
+        EmployeeShare(eid, item.remaining)
+        for eid, item in obligations.items()
+        if item.remaining > 0
+    ]
     remaining = {s.employee_id: s.remaining for s in shares}
     outstanding = (
         _q(max(Decimal(0), reserve.amount - reserve.amount_paid))
         if reserve.status in ACTIVE_RESERVE_STATUSES
         else Decimal(0)
     )
-    event = await session.scalar(
-        select(PayrollRunEvent)
-        .where(
-            PayrollRunEvent.run_id == reserve.source_run_id,
-            PayrollRunEvent.action == PLAN_ACTION,
-            PayrollRunEvent.payload["reserve_id"].astext == str(reserve.id),
-        )
-        .order_by(PayrollRunEvent.created_at.desc(), PayrollRunEvent.id.desc())
-        .limit(1)
-    )
+    event = await _latest_plan_event(session, reserve)
     booked = await _booked(session, reserve)
-    items = {eid: {"amount": Decimal(0), "deferred": Decimal(0)} for eid in remaining}
-    if event is None:
-        # The two unpaid plans must not promise the same wage twice. Cash is the
-        # deterministic first pool; an explicit plan on either side takes priority.
-        other = await _active_run_reserve(
-            session, reserve.source_run_id, "safe" if reserve.location == "kassa" else "kassa"
-        )
-        claims = {}
-        if other is not None:
-            other_event = await session.scalar(
-                select(PayrollRunEvent)
-                .where(
-                    PayrollRunEvent.run_id == reserve.source_run_id,
-                    PayrollRunEvent.action == PLAN_ACTION,
-                    PayrollRunEvent.payload["reserve_id"].astext == str(other.id),
-                )
-                .order_by(PayrollRunEvent.created_at.desc(), PayrollRunEvent.id.desc())
-                .limit(1)
+    saved = _saved_items(event, remaining, booked)
+    items = {
+        eid: saved.get(eid, {"amount": Decimal(0), "deferred": Decimal(0)}) for eid in remaining
+    }
+    # Preserve every explicitly edited amount, including zero/deferred. Only employees
+    # missing from an older plan (previously hidden deposit returns) may be auto-filled.
+    other = await _active_run_reserve(
+        session, reserve.source_run_id, "safe" if reserve.location == "kassa" else "kassa"
+    )
+    claims = {}
+    if other is not None:
+        other_event = await _latest_plan_event(session, other)
+        other_items = _saved_items(other_event, remaining, await _booked(session, other))
+        claims = {eid: i["amount"] + i["deferred"] for eid, i in other_items.items()}
+        # Cash is first for unplanned amounts; explicit promises on either account win.
+        if reserve.location == "safe":
+            other_free = max(
+                Decimal(0), _q(other.amount - other.amount_paid) - sum(claims.values(), Decimal(0))
             )
-            if other_event is not None:
-                other_booked = await _booked(session, other)
-                for raw in other_event.payload["allocations"]:
-                    eid = uuid.UUID(raw["employee_id"])
-                    claims[eid] = max(
-                        Decimal(0),
-                        Decimal(raw["amount"])
-                        + Decimal(raw["deferred"])
-                        - max(
+            for alloc in allocate_pool(
+                other_free,
+                [
+                    EmployeeShare(
+                        s.employee_id,
+                        max(
                             Decimal(0),
-                            other_booked.get(eid, Decimal(0)) - Decimal(raw["booked_baseline"]),
+                            s.remaining
+                            - items[s.employee_id]["amount"]
+                            - items[s.employee_id]["deferred"],
                         ),
                     )
-            elif reserve.location == "safe":
-                claims = {
-                    a.employee_id: a.amount
-                    for a in allocate_pool(_q(other.amount - other.amount_paid), shares)
-                }
-        from app.services.payroll_reserves import EmployeeShare
-
-        available_shares = [
+                    for s in shares
+                    if s.employee_id not in other_items
+                ],
+            ):
+                claims[alloc.employee_id] = alloc.amount
+    free = max(
+        Decimal(0),
+        outstanding - sum((i["amount"] + i["deferred"] for i in items.values()), Decimal(0)),
+    )
+    for alloc in allocate_pool(
+        free,
+        [
             EmployeeShare(
                 s.employee_id, max(Decimal(0), s.remaining - claims.get(s.employee_id, Decimal(0)))
             )
             for s in shares
-        ]
-        for alloc in allocate_pool(outstanding, available_shares):
-            items[alloc.employee_id]["amount"] = alloc.amount
-    else:
-        for raw in event.payload["allocations"]:
-            eid = uuid.UUID(raw["employee_id"])
-            if eid not in remaining:
-                continue
-            consumed = max(
-                Decimal(0), booked.get(eid, Decimal(0)) - Decimal(raw["booked_baseline"])
-            )
-            amount = max(Decimal(0), Decimal(raw["amount"]) - consumed)
-            deferred = max(
-                Decimal(0),
-                Decimal(raw["deferred"]) - max(Decimal(0), consumed - Decimal(raw["amount"])),
-            )
-            items[eid] = {
-                "amount": min(amount, remaining[eid]),
-                "deferred": min(deferred, max(Decimal(0), remaining[eid] - amount)),
-            }
+            if s.employee_id not in saved
+        ],
+    ):
+        items[alloc.employee_id]["amount"] = alloc.amount
     # Any changed financial fact invalidates an open editor/payout confirmation.
     fingerprint = [
         str(event.id) if event else None,
@@ -149,13 +169,26 @@ async def read_reserve_plan(session: AsyncSession, reserve: SafeAllocation) -> d
         sorted(
             (str(eid), str(due), str(booked.get(eid, Decimal(0)))) for eid, due in remaining.items()
         ),
+        sorted(
+            (str(eid), str(i.salary_remaining), str(i.deposit_remaining))
+            for eid, i in obligations.items()
+        ),
     ]
     version = hashlib.sha256(json.dumps(fingerprint).encode()).hexdigest()
     return {
         "reserve_id": reserve.id,
         "version": version,
         "outstanding": outstanding,
-        "allocations": [{"employee_id": eid, **item} for eid, item in items.items()],
+        "allocations": [
+            {
+                "employee_id": eid,
+                **item,
+                "remaining": remaining[eid],
+                "salary_remaining": obligations[eid].salary_remaining,
+                "deposit_remaining": obligations[eid].deposit_remaining,
+            }
+            for eid, item in items.items()
+        ],
     }
 
 

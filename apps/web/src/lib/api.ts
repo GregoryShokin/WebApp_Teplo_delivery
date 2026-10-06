@@ -616,6 +616,7 @@ export type PayrollLine = {
   deposit_withholding: number;
   deposit_payout: number;
   deposit_payout_scheduled: number;
+  deposit_paid_amount?: number | null;
   advance_issued: number;
   ndfl_deduction: number;
   total_payable: number;
@@ -4388,7 +4389,15 @@ export type PayrollReservePlan = {
   reserve_id: string;
   version: string;
   outstanding: number;
-  allocations: Array<{ employee_id: string; amount: number; deferred: number; other_amount: number }>;
+  allocations: Array<{
+    employee_id: string;
+    amount: number;
+    deferred: number;
+    other_amount: number;
+    remaining?: number;
+    salary_remaining?: number;
+    deposit_remaining?: number;
+  }>;
   transferred: number;
   other_location: "safe" | "kassa" | null;
 };

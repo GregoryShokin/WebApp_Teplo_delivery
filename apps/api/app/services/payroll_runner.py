@@ -1647,7 +1647,7 @@ async def _run_payment_metrics(
         select(
             PayrollLine.run_id,
             PayrollLine.employee_id,
-            func.sum(PayrollLine.total_payable),
+            func.sum(PayrollLine.total_payable + PayrollLine.deposit_payout_scheduled),
         )
         .where(PayrollLine.run_id.in_(run_ids))
         .group_by(PayrollLine.run_id, PayrollLine.employee_id)
@@ -1669,12 +1669,15 @@ async def _run_payment_metrics(
     shortfall: dict[uuid.UUID, Decimal] = defaultdict(lambda: Decimal("0"))
     underpaid_count: dict[uuid.UUID, int] = defaultdict(int)
     fully_paid_count: dict[uuid.UUID, int] = defaultdict(int)
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposits = {run_id: await deposit_paid_by_employee(session, run_id) for run_id in run_ids}
     for run_id, employee_id, amount, status in payment_rows:
-        paid = Decimal(amount or 0)
+        paid = Decimal(amount or 0) + deposits[run_id].get(employee_id, Decimal(0))
         paid_total[run_id] += paid
-        if status == "partially_paid":
+        accrued = accrued_by_employee[run_id].get(employee_id, paid)
+        if status == "partially_paid" or (status == "paid" and paid < accrued):
             underpaid_count[run_id] += 1
-            accrued = accrued_by_employee[run_id].get(employee_id, paid)
             shortfall[run_id] += max(Decimal("0"), accrued - paid)
         elif status == "paid":
             fully_paid_count[run_id] += 1

@@ -610,9 +610,18 @@ async def _payroll_employees_by_run(
         (run_id, employee_id): _money(amount) for run_id, employee_id, amount in paid_rows
     }
     result: dict[uuid.UUID, list[dict[str, Any]]] = {run_id: [] for run_id in run_ids}
+    from app.services.payroll_obligations import deposit_paid_by_employee
+
+    deposits_by_run = {
+        run_id: await deposit_paid_by_employee(session, run_id) for run_id in run_ids
+    }
     for run_id, employee_id, employee_name, accrued, deposit_scheduled in accrued_rows:
-        accrued_q = _money(accrued or 0)
-        paid_q = min(accrued_q, paid_by_employee.get((run_id, employee_id), Decimal("0")))
+        salary = _money(accrued or 0)
+        deposit = _money(deposit_scheduled or 0)
+        deposit_paid = min(deposit, deposits_by_run[run_id].get(employee_id, Decimal(0)))
+        salary_paid = min(salary, paid_by_employee.get((run_id, employee_id), Decimal("0")))
+        accrued_q = salary + deposit
+        paid_q = salary_paid + deposit_paid
         remaining = _money(max(Decimal("0"), accrued_q - paid_q))
         result[run_id].append(
             {
@@ -624,8 +633,7 @@ async def _payroll_employees_by_run(
                 "payment_status": (
                     "paid" if remaining == 0 else "partially_paid" if paid_q > 0 else "pending"
                 ),
-                # Депозитная выдача имеет отдельный полный контур и из кассового пула не идёт.
-                "payable": _money(deposit_scheduled or 0) == 0,
+                "payable": True,
             }
         )
     for employees in result.values():
