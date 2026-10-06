@@ -3205,8 +3205,8 @@
     "semantic_hash": "de19466c8418e4dfd190ace3b3c70cc7"
   },
   "apps/api/app/services/payroll_payouts.py": {
-    "mtime": 1791288938.7179024,
-    "ast_hash": "29117f02538c7b9075f008805f3830f8",
+    "mtime": 1791291180.62728,
+    "ast_hash": "dc509fe45196209a874ad4da43a143d5",
     "semantic_hash": ""
   },
   "apps/api/app/services/payroll_percent.py": {
@@ -3225,9 +3225,9 @@
     "semantic_hash": "f932b8ea8919d788dc565ee4569c1052"
   },
   "apps/api/app/services/payroll_reserves.py": {
-    "mtime": 1786188800.4985008,
-    "ast_hash": "7fba8052e9d73c30a9c4541de0eb4d27",
-    "semantic_hash": "7fba8052e9d73c30a9c4541de0eb4d27"
+    "mtime": 1791291180.6281185,
+    "ast_hash": "c0467e7c393462a642dbe680ca76a537",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payroll_rounding.py": {
     "mtime": 1784714052.3666036,
@@ -3235,8 +3235,8 @@
     "semantic_hash": "d02c7bb9a86e489ce7e122a9f541c43f"
   },
   "apps/api/app/services/payroll_runner.py": {
-    "mtime": 1791278428.3497567,
-    "ast_hash": "aa0cec707dc4b336342899799ad532bb",
+    "mtime": 1791291180.6291203,
+    "ast_hash": "3a8407383520d0ef89bb297c5cc1ce6c",
     "semantic_hash": ""
   },
   "apps/api/app/services/plan_fact_service.py": {
@@ -8167,6 +8167,11 @@
   "apps/api/tests/test_payroll_shift_completeness.py": {
     "mtime": 1791278428.3522556,
     "ast_hash": "46cc2a6037e5f0f6a961d444b0981f31",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_reserve_restoration.py": {
+    "mtime": 1791291180.6297982,
+    "ast_hash": "9dcce228242a6e84862e131831874264",
     "semantic_hash": ""
   }
 }
