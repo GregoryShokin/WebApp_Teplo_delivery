@@ -1885,8 +1885,8 @@
     "semantic_hash": "6f85d81ef0c540dc2a4e5effa9892e9d"
   },
   "apps/api/app/api/v1/routes/kassa.py": {
-    "mtime": 1787834738.0751786,
-    "ast_hash": "7296bd994d6bb726d06999a2c2221ab9",
+    "mtime": 1791296058.6922808,
+    "ast_hash": "56d5b608c66bee7e9eed62ecedf66274",
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/locations.py": {
@@ -1905,9 +1905,9 @@
     "semantic_hash": "2c10d96ddb970cc924ce3aa5e7dad3ba"
   },
   "apps/api/app/api/v1/routes/payroll.py": {
-    "mtime": 1786099613.5659494,
-    "ast_hash": "da98a5bde26da61bc5016b41291125f0",
-    "semantic_hash": "da98a5bde26da61bc5016b41291125f0"
+    "mtime": 1791296058.6932535,
+    "ast_hash": "6f9a114b0dbcf59ef399fd55a49c5cb0",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/payroll_adjustments.py": {
     "mtime": 1786099613.5662785,
@@ -2370,13 +2370,13 @@
     "semantic_hash": "4c174800f9c03eb2d10148863f4a7c07"
   },
   "apps/api/app/schemas/kassa.py": {
-    "mtime": 1787834738.0756378,
-    "ast_hash": "47b7fb2e8eed4562d6d9f048c9097e35",
+    "mtime": 1791296058.694107,
+    "ast_hash": "f2caf08fb5191dac24a5e44f605efc2d",
     "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll.py": {
-    "mtime": 1791288938.716537,
-    "ast_hash": "da72e5d7ef7f7a6ae52797538708c94e",
+    "mtime": 1791296058.6948454,
+    "ast_hash": "261e6537f1d0059aede741e917a9e658",
     "semantic_hash": ""
   },
   "apps/api/app/schemas/payroll_adjustments.py": {
@@ -3085,9 +3085,9 @@
     "semantic_hash": ""
   },
   "apps/api/app/services/kassa/payouts.py": {
-    "mtime": 1786188800.4963114,
-    "ast_hash": "3d46a893dca6d07c0fa16309b50a4e1f",
-    "semantic_hash": "3d46a893dca6d07c0fa16309b50a4e1f"
+    "mtime": 1791296058.69571,
+    "ast_hash": "43edf5df125bb782e836fcd5e36d23aa",
+    "semantic_hash": ""
   },
   "apps/api/app/services/lease_accruals.py": {
     "mtime": 1785668249.2511365,
@@ -3225,8 +3225,8 @@
     "semantic_hash": "f932b8ea8919d788dc565ee4569c1052"
   },
   "apps/api/app/services/payroll_reserves.py": {
-    "mtime": 1791291180.6281185,
-    "ast_hash": "c0467e7c393462a642dbe680ca76a537",
+    "mtime": 1791296058.6968963,
+    "ast_hash": "973d15e0abed3cf3132b2de83f5c5152",
     "semantic_hash": ""
   },
   "apps/api/app/services/payroll_rounding.py": {
@@ -5660,8 +5660,8 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "apps/web/src/lib/api.ts": {
-    "mtime": 1791288938.7191694,
-    "ast_hash": "6b6caa31a1a48f5932f35883b0b81ab6",
+    "mtime": 1791296058.6982708,
+    "ast_hash": "b50b8e366af1b2f07184fdfb24f4029d",
     "semantic_hash": ""
   },
   "apps/web/src/lib/auth.ts": {
@@ -5940,9 +5940,9 @@
     "semantic_hash": "a6778547332426381520c7cc315ba5b1"
   },
   "apps/web/src/routes/finance/PayPayrollReserveDialog.tsx": {
-    "mtime": 1784562714.8443031,
-    "ast_hash": "26fc6631ca212af07ad61673929307fe",
-    "semantic_hash": "26fc6631ca212af07ad61673929307fe"
+    "mtime": 1791296058.6989686,
+    "ast_hash": "3f821bb511b0aa76e3d11d3b46ccf9e7",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/finance/TaxSendDialog.tsx": {
     "mtime": 1785173434.912417,
@@ -6000,8 +6000,8 @@
     "semantic_hash": "1f152894fcd58f8cfbd5f2c518897f80"
   },
   "apps/web/src/routes/kassa/api.ts": {
-    "mtime": 1787834738.0788374,
-    "ast_hash": "bb2e75624530e779401de483216ac78d",
+    "mtime": 1791296058.6996994,
+    "ast_hash": "13b820be55283ae690b331a9d4c61ac2",
     "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/index.tsx": {
@@ -6025,9 +6025,9 @@
     "semantic_hash": "c4dce349a7802319c95d04d8e0248f00"
   },
   "apps/web/src/routes/kassa/tabs/pending.tsx": {
-    "mtime": 1785337610.723657,
-    "ast_hash": "32593b3d160649a1e5673eadf672b5e9",
-    "semantic_hash": "32593b3d160649a1e5673eadf672b5e9"
+    "mtime": 1791296058.700679,
+    "ast_hash": "0334718c1b20314a89de412309bc37d9",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/kassa/tabs/shift-close.tsx": {
     "mtime": 1787225769.2038906,
@@ -8172,6 +8172,21 @@
   "apps/api/tests/test_payroll_reserve_restoration.py": {
     "mtime": 1791291180.6297982,
     "ast_hash": "9dcce228242a6e84862e131831874264",
+    "semantic_hash": ""
+  },
+  "apps/api/app/services/payroll_reserve_plan.py": {
+    "mtime": 1791296058.6960192,
+    "ast_hash": "bb31cb5dc327b9584522b6f301703c88",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_reserve_plan.py": {
+    "mtime": 1791296058.6971853,
+    "ast_hash": "0a3877b43e3c5fdf590bef11ff0694e4",
+    "semantic_hash": ""
+  },
+  "apps/web/tests/payroll-reserve-plan.spec.ts": {
+    "mtime": 1791296058.7009873,
+    "ast_hash": "894fafb8292515593e217cdbe4d8128c",
     "semantic_hash": ""
   }
 }
