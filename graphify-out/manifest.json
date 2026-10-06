@@ -2615,9 +2615,9 @@
     "semantic_hash": "8e3af88a76410dc60e3d7077fb7a5091"
   },
   "apps/api/app/services/attendance_loader.py": {
-    "mtime": 1785337610.716226,
-    "ast_hash": "18897efae21788b6dd28f579a0aa763a",
-    "semantic_hash": "18897efae21788b6dd28f579a0aa763a"
+    "mtime": 1791278428.3480532,
+    "ast_hash": "1f652a1eb3fa824782f0f68abd9b5153",
+    "semantic_hash": ""
   },
   "apps/api/app/services/bank_payment_status.py": {
     "mtime": 1790689084.7997897,
@@ -3205,8 +3205,8 @@
     "semantic_hash": "de19466c8418e4dfd190ace3b3c70cc7"
   },
   "apps/api/app/services/payroll_payouts.py": {
-    "mtime": 1790688058.456963,
-    "ast_hash": "eb62cf179cdf580b2cdb0f10e7df1e69",
+    "mtime": 1791278428.348917,
+    "ast_hash": "1f59a1cfafc72f9a9d6a1efed3879cfd",
     "semantic_hash": ""
   },
   "apps/api/app/services/payroll_percent.py": {
@@ -3235,9 +3235,9 @@
     "semantic_hash": "d02c7bb9a86e489ce7e122a9f541c43f"
   },
   "apps/api/app/services/payroll_runner.py": {
-    "mtime": 1786188800.4993045,
-    "ast_hash": "aad7879994e6d7a788f792709c5dd4c8",
-    "semantic_hash": "aad7879994e6d7a788f792709c5dd4c8"
+    "mtime": 1791278428.3497567,
+    "ast_hash": "aa0cec707dc4b336342899799ad532bb",
+    "semantic_hash": ""
   },
   "apps/api/app/services/plan_fact_service.py": {
     "mtime": 1783589719.8914633,
@@ -3420,8 +3420,8 @@
     "semantic_hash": "a80304e07f252333f177df835c4efcbd"
   },
   "apps/api/app/services/shift_ledger.py": {
-    "mtime": 1790529943.4209588,
-    "ast_hash": "f45e3ab1f9e28b1a3b4e02ffae250c3b",
+    "mtime": 1791278428.3506842,
+    "ast_hash": "794a55123caba4dac04328736fa7115c",
     "semantic_hash": ""
   },
   "apps/api/app/services/shift_ledger_bonus.py": {
@@ -4885,8 +4885,8 @@
     "semantic_hash": "b6334b2c1361d286daae34de60530e79"
   },
   "apps/api/tests/test_payroll.py": {
-    "mtime": 1790685071.9032092,
-    "ast_hash": "182417182587134c8e8760d41be526e0",
+    "mtime": 1791278428.3517327,
+    "ast_hash": "1d2884251fb3816834cbd04b86f45aa9",
     "semantic_hash": ""
   },
   "apps/api/tests/test_payroll_admin.py": {
@@ -5110,9 +5110,9 @@
     "semantic_hash": ""
   },
   "apps/api/tests/test_shift_ledger_schedule_role.py": {
-    "mtime": 1783684765.8460126,
-    "ast_hash": "f0ac9362326625305d3f3a84162cf851",
-    "semantic_hash": "f0ac9362326625305d3f3a84162cf851"
+    "mtime": 1791278428.3528183,
+    "ast_hash": "7006998c16f192c4a4ea3572c56d23ab",
+    "semantic_hash": ""
   },
   "apps/api/tests/test_shift_schedule.py": {
     "mtime": 1780926254.5329466,
@@ -6150,8 +6150,8 @@
     "semantic_hash": "aaabeb3d823197ac6dce3997041ad865"
   },
   "apps/web/src/routes/payroll/daily-ledger.tsx": {
-    "mtime": 1790529943.4229517,
-    "ast_hash": "a1c4aa142d5e52f5aff7bf89756afbd1",
+    "mtime": 1791278428.3535514,
+    "ast_hash": "21599e6367385947ff38797877a7f432",
     "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/deposits.tsx": {
@@ -6190,8 +6190,8 @@
     "semantic_hash": "55b7b94462c45e486bf6d76ff371a656"
   },
   "apps/web/src/routes/payroll/run-detail.tsx": {
-    "mtime": 1789458784.333217,
-    "ast_hash": "9b5d1e2b10127ef11f6bbdd4597d1e0f",
+    "mtime": 1791278428.3543127,
+    "ast_hash": "62c6e3b21a23d1d009cc89b9f5db9c78",
     "semantic_hash": ""
   },
   "apps/web/src/routes/payroll/runs.tsx": {
@@ -6355,8 +6355,8 @@
     "semantic_hash": "72d99193ff823a46fe6e955277638e99"
   },
   "apps/web/tests/daily-ledger-collapsed-days.spec.ts": {
-    "mtime": 1790529943.4236004,
-    "ast_hash": "b5d9dc323c20e940f883eacb63d5dcca",
+    "mtime": 1791278428.3548439,
+    "ast_hash": "2bbbda213031692b9f2dd2ccd0cee1f9",
     "semantic_hash": ""
   },
   "apps/web/tests/dds-asset-picker.spec.ts": {
@@ -6724,7 +6724,7 @@
     "ast_hash": "2799386bca657299e3811b312ade633d",
     "semantic_hash": "2799386bca657299e3811b312ade633d"
   },
-  "disign/1.1 — копия.png": {
+  "disign/1.1\u00a0\u2014 \u043a\u043e\u043f\u0438\u044f.png": {
     "mtime": 1781532390.1550362,
     "ast_hash": "2799386bca657299e3811b312ade633d",
     "semantic_hash": "2799386bca657299e3811b312ade633d"
@@ -6739,32 +6739,32 @@
     "ast_hash": "05086b87a8d78c72164a4b9f2fa82129",
     "semantic_hash": "05086b87a8d78c72164a4b9f2fa82129"
   },
-  "disign/cutouts/трайфл-краб-вырезка.png": {
+  "disign/cutouts/\u0442\u0440\u0430\u0439\u0444\u043b-\u043a\u0440\u0430\u0431-\u0432\u044b\u0440\u0435\u0437\u043a\u0430.png": {
     "mtime": 1783599033.359711,
     "ast_hash": "96bc5c45ca4320eb1ac92be1a1278693",
     "semantic_hash": "96bc5c45ca4320eb1ac92be1a1278693"
   },
-  "disign/cutouts/трайфл-креветка-вырезка.png": {
+  "disign/cutouts/\u0442\u0440\u0430\u0439\u0444\u043b-\u043a\u0440\u0435\u0432\u0435\u0442\u043a\u0430-\u0432\u044b\u0440\u0435\u0437\u043a\u0430.png": {
     "mtime": 1783599033.3631654,
     "ast_hash": "63e1695c6cd404d55eaf45632e583ddc",
     "semantic_hash": "63e1695c6cd404d55eaf45632e583ddc"
   },
-  "disign/раскадровка-промо.html": {
+  "disign/\u0440\u0430\u0441\u043a\u0430\u0434\u0440\u043e\u0432\u043a\u0430-\u043f\u0440\u043e\u043c\u043e.html": {
     "mtime": 1783599033.368335,
     "ast_hash": "2444cb958b82fb4acaa813a273597aee",
     "semantic_hash": "2444cb958b82fb4acaa813a273597aee"
   },
-  "disign/с крабом.png": {
+  "disign/\u0441 \u043a\u0440\u0430\u0431\u043e\u043c.png": {
     "mtime": 1781532450.0637324,
     "ast_hash": "f358710ac0dd81c8c48c3fd2445acc6b",
     "semantic_hash": "f358710ac0dd81c8c48c3fd2445acc6b"
   },
-  "disign/с креветкой_1510x1262.jpg": {
+  "disign/\u0441 \u043a\u0440\u0435\u0432\u0435\u0442\u043a\u043e\u0438\u0306_1510x1262.jpg": {
     "mtime": 1781532479.41372,
     "ast_hash": "459d643412df9fe8e451a9f7b8f45195",
     "semantic_hash": "459d643412df9fe8e451a9f7b8f45195"
   },
-  "disign/с креветкой_1510x1262.jpg": {
+  "disign/\u0441 \u043a\u0440\u0435\u0432\u0435\u0442\u043a\u043e\u0439_1510x1262.jpg": {
     "mtime": 1790060962.1518533,
     "ast_hash": "459d643412df9fe8e451a9f7b8f45195",
     "semantic_hash": ""
@@ -6824,247 +6824,247 @@
     "ast_hash": "5132140968feec44382dafb67ebd69c6",
     "semantic_hash": "5132140968feec44382dafb67ebd69c6"
   },
-  "graphify-out/memory/query_20260713_110054_посмотри_ветку_main__найди_окно_новый_контрагент_и.md": {
+  "graphify-out/memory/query_20260713_110054_\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438_\u0432\u0435\u0442\u043a\u0443_main__\u043d\u0430\u0439\u0434\u0438_\u043e\u043a\u043d\u043e_\u043d\u043e\u0432\u044b\u0439_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442_\u0438.md": {
     "mtime": 1785071794.5605266,
     "ast_hash": "0505c723af69a44314c2ce4c39356f9c",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_110808_расспиши_что_в_этих_9_коммитах.md": {
+  "graphify-out/memory/query_20260713_110808_\u0440\u0430\u0441\u0441\u043f\u0438\u0448\u0438_\u0447\u0442\u043e_\u0432_\u044d\u0442\u0438\u0445_9_\u043a\u043e\u043c\u043c\u0438\u0442\u0430\u0445.md": {
     "mtime": 1785071794.5606525,
     "ast_hash": "1394d43483072fda8fc3ef7fcde2f5eb",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_115403_логика_создания_нового_контрагента__три_вкладки.md": {
+  "graphify-out/memory/query_20260713_115403_\u043b\u043e\u0433\u0438\u043a\u0430_\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u044f_\u043d\u043e\u0432\u043e\u0433\u043e_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442\u0430__\u0442\u0440\u0438_\u0432\u043a\u043b\u0430\u0434\u043a\u0438.md": {
     "mtime": 1785071794.560726,
     "ast_hash": "b387a88a429dac69d48bd8b7e87c6cb4",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_121802_как_связаны_тип_отношений__реквизиты_и_способы_опл.md": {
+  "graphify-out/memory/query_20260713_121802_\u043a\u0430\u043a_\u0441\u0432\u044f\u0437\u0430\u043d\u044b_\u0442\u0438\u043f_\u043e\u0442\u043d\u043e\u0448\u0435\u043d\u0438\u0439__\u0440\u0435\u043a\u0432\u0438\u0437\u0438\u0442\u044b_\u0438_\u0441\u043f\u043e\u0441\u043e\u0431\u044b_\u043e\u043f\u043b.md": {
     "mtime": 1785071794.5608208,
     "ast_hash": "ee74390584a469f9e4cc2c1d4c793b42",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_172152_на_текущий_момент_система_для_создания_контрагента.md": {
+  "graphify-out/memory/query_20260713_172152_\u043d\u0430_\u0442\u0435\u043a\u0443\u0449\u0438\u0439_\u043c\u043e\u043c\u0435\u043d\u0442_\u0441\u0438\u0441\u0442\u0435\u043c\u0430_\u0434\u043b\u044f_\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u044f_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442\u0430.md": {
     "mtime": 1785071794.560897,
     "ast_hash": "250e48444c27a5058d84be90007e79f0",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_175042_как_встроить_предоплату_и_постоплату_контрагентов.md": {
+  "graphify-out/memory/query_20260713_175042_\u043a\u0430\u043a_\u0432\u0441\u0442\u0440\u043e\u0438\u0442\u044c_\u043f\u0440\u0435\u0434\u043e\u043f\u043b\u0430\u0442\u0443_\u0438_\u043f\u043e\u0441\u0442\u043e\u043f\u043b\u0430\u0442\u0443_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442\u043e\u0432.md": {
     "mtime": 1785071794.5609803,
     "ast_hash": "66729112c72ae656c7ebabef3ea5479f",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_180924_в_принципе_да_я_согласен__обычно_для_подтверждения.md": {
+  "graphify-out/memory/query_20260713_180924_\u0432_\u043f\u0440\u0438\u043d\u0446\u0438\u043f\u0435_\u0434\u0430_\u044f_\u0441\u043e\u0433\u043b\u0430\u0441\u0435\u043d__\u043e\u0431\u044b\u0447\u043d\u043e_\u0434\u043b\u044f_\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u044f.md": {
     "mtime": 1785071794.5610495,
     "ast_hash": "888a1fdf94fd94e2c40d4efb8a182c9e",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_181427_внесет_этого_контрагента_сразу_на_прод_как_официал.md": {
+  "graphify-out/memory/query_20260713_181427_\u0432\u043d\u0435\u0441\u0435\u0442_\u044d\u0442\u043e\u0433\u043e_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442\u0430_\u0441\u0440\u0430\u0437\u0443_\u043d\u0430_\u043f\u0440\u043e\u0434_\u043a\u0430\u043a_\u043e\u0444\u0438\u0446\u0438\u0430\u043b.md": {
     "mtime": 1785071794.5611162,
     "ast_hash": "c4f337a3e283d361ba3d816ce175a33f",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_182546_изучи_работу_окно_активных_платежей_и_логику_созда.md": {
+  "graphify-out/memory/query_20260713_182546_\u0438\u0437\u0443\u0447\u0438_\u0440\u0430\u0431\u043e\u0442\u0443_\u043e\u043a\u043d\u043e_\u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445_\u043f\u043b\u0430\u0442\u0435\u0436\u0435\u0439_\u0438_\u043b\u043e\u0433\u0438\u043a\u0443_\u0441\u043e\u0437\u0434\u0430.md": {
     "mtime": 1785071794.5611825,
     "ast_hash": "d9ba1adffe567375b3c09459559ad94e",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_182559_смотри__в_проекте_есть_доступ_к_iika__тебе_нужно_ч.md": {
+  "graphify-out/memory/query_20260713_182559_\u0441\u043c\u043e\u0442\u0440\u0438__\u0432_\u043f\u0440\u043e\u0435\u043a\u0442\u0435_\u0435\u0441\u0442\u044c_\u0434\u043e\u0441\u0442\u0443\u043f_\u043a_iika__\u0442\u0435\u0431\u0435_\u043d\u0443\u0436\u043d\u043e_\u0447.md": {
     "mtime": 1785071794.561246,
     "ast_hash": "5cac947964061094ee8825e044864a9e",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_184745_хорошо__на_почте_g_shokin_mail_ru__есть_счета_от_о.md": {
+  "graphify-out/memory/query_20260713_184745_\u0445\u043e\u0440\u043e\u0448\u043e__\u043d\u0430_\u043f\u043e\u0447\u0442\u0435_g_shokin_mail_ru__\u0435\u0441\u0442\u044c_\u0441\u0447\u0435\u0442\u0430_\u043e\u0442_\u043e.md": {
     "mtime": 1785071794.5613177,
     "ast_hash": "5e474a2899536a1434d05b10c1235ad7",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_191747_как_работает_окно_активных_платежей_и_создание_нов.md": {
+  "graphify-out/memory/query_20260713_191747_\u043a\u0430\u043a_\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442_\u043e\u043a\u043d\u043e_\u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445_\u043f\u043b\u0430\u0442\u0435\u0436\u0435\u0439_\u0438_\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0435_\u043d\u043e\u0432.md": {
     "mtime": 1785071794.5613892,
     "ast_hash": "fb839ff8c19c17626e3eda8901e1a733",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_200522_реализовать_логику_окна_активных_платежей__официал.md": {
+  "graphify-out/memory/query_20260713_200522_\u0440\u0435\u0430\u043b\u0438\u0437\u043e\u0432\u0430\u0442\u044c_\u043b\u043e\u0433\u0438\u043a\u0443_\u043e\u043a\u043d\u0430_\u0430\u043a\u0442\u0438\u0432\u043d\u044b\u0445_\u043f\u043b\u0430\u0442\u0435\u0436\u0435\u0439__\u043e\u0444\u0438\u0446\u0438\u0430\u043b.md": {
     "mtime": 1785071794.5614567,
     "ast_hash": "da670d6a4d19d130ff2f312da1e63060",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_201922_кати_на_прод.md": {
+  "graphify-out/memory/query_20260713_201922_\u043a\u0430\u0442\u0438_\u043d\u0430_\u043f\u0440\u043e\u0434.md": {
     "mtime": 1785071794.5615194,
     "ast_hash": "9b76b491cade7f1597d38c739e3c15cb",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_204517_выбран_официальный_контрагент_с_реквизитами_вишнев.md": {
+  "graphify-out/memory/query_20260713_204517_\u0432\u044b\u0431\u0440\u0430\u043d_\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u044b\u0439_\u043a\u043e\u043d\u0442\u0440\u0430\u0433\u0435\u043d\u0442_\u0441_\u0440\u0435\u043a\u0432\u0438\u0437\u0438\u0442\u0430\u043c\u0438_\u0432\u0438\u0448\u043d\u0435\u0432.md": {
     "mtime": 1785071794.5615873,
     "ast_hash": "677af33e0013e7d6238a74fb4639cba3",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260713_210111_почему_оплаченный_платеж_ип_вишневецкому_остается.md": {
+  "graphify-out/memory/query_20260713_210111_\u043f\u043e\u0447\u0435\u043c\u0443_\u043e\u043f\u043b\u0430\u0447\u0435\u043d\u043d\u044b\u0439_\u043f\u043b\u0430\u0442\u0435\u0436_\u0438\u043f_\u0432\u0438\u0448\u043d\u0435\u0432\u0435\u0446\u043a\u043e\u043c\u0443_\u043e\u0441\u0442\u0430\u0435\u0442\u0441\u044f.md": {
     "mtime": 1785071794.5616531,
     "ast_hash": "f5e783e28adc1b0969c74ae3f9ff4366",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_080549_интеграция_приложения_со_сбис_эдо__методы_по_контр.md": {
+  "graphify-out/memory/query_20260714_080549_\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u044f_\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f_\u0441\u043e_\u0441\u0431\u0438\u0441_\u044d\u0434\u043e__\u043c\u0435\u0442\u043e\u0434\u044b_\u043f\u043e_\u043a\u043e\u043d\u0442\u0440.md": {
     "mtime": 1785071794.5617185,
     "ast_hash": "d95b9beb5c76c95736efe10136ec2b44",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_100056_изучить_текущий_расчёт_зарплат_производственного_п.md": {
+  "graphify-out/memory/query_20260714_100056_\u0438\u0437\u0443\u0447\u0438\u0442\u044c_\u0442\u0435\u043a\u0443\u0449\u0438\u0439_\u0440\u0430\u0441\u0447\u0451\u0442_\u0437\u0430\u0440\u043f\u043b\u0430\u0442_\u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u0433\u043e_\u043f.md": {
     "mtime": 1784023256.0357306,
     "ast_hash": "1fb95aac5abda45ec00fc02cbafaab3b",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_170356_смотри_сейчас_при_создании_черновика_для_выплаты_н.md": {
+  "graphify-out/memory/query_20260714_170356_\u0441\u043c\u043e\u0442\u0440\u0438_\u0441\u0435\u0439\u0447\u0430\u0441_\u043f\u0440\u0438_\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0438_\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a\u0430_\u0434\u043b\u044f_\u0432\u044b\u043f\u043b\u0430\u0442\u044b_\u043d.md": {
     "mtime": 1784048636.2926655,
     "ast_hash": "a3ae9fc9e183cb1d7cfc16b840e4c283",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_171621_смотри__тебе_нужно_сейчас_изучить_то__как_работает.md": {
+  "graphify-out/memory/query_20260714_171621_\u0441\u043c\u043e\u0442\u0440\u0438__\u0442\u0435\u0431\u0435_\u043d\u0443\u0436\u043d\u043e_\u0441\u0435\u0439\u0447\u0430\u0441_\u0438\u0437\u0443\u0447\u0438\u0442\u044c_\u0442\u043e__\u043a\u0430\u043a_\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442.md": {
     "mtime": 1784049381.5291348,
     "ast_hash": "319e0cff725499e8b242e29f22162afa",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_172033_хорошо_давай_теперь_план_по_исправлению_этой_ситуа.md": {
+  "graphify-out/memory/query_20260714_172033_\u0445\u043e\u0440\u043e\u0448\u043e_\u0434\u0430\u0432\u0430\u0439_\u0442\u0435\u043f\u0435\u0440\u044c_\u043f\u043b\u0430\u043d_\u043f\u043e_\u0438\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u044e_\u044d\u0442\u043e\u0439_\u0441\u0438\u0442\u0443\u0430.md": {
     "mtime": 1784049633.5599043,
     "ast_hash": "005cda6671c9579802b292f47988b2ea",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_172501_получатель__шокина_кристина_юрьевна__счёт_4081_781.md": {
+  "graphify-out/memory/query_20260714_172501_\u043f\u043e\u043b\u0443\u0447\u0430\u0442\u0435\u043b\u044c__\u0448\u043e\u043a\u0438\u043d\u0430_\u043a\u0440\u0438\u0441\u0442\u0438\u043d\u0430_\u044e\u0440\u044c\u0435\u0432\u043d\u0430__\u0441\u0447\u0451\u0442_4081_781.md": {
     "mtime": 1784049901.2331696,
     "ast_hash": "7468480f6fa38ab4a09b985670a16d96",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_172712_хорошо_теперь_все_то_же_самое_для_сбера__какие_там.md": {
+  "graphify-out/memory/query_20260714_172712_\u0445\u043e\u0440\u043e\u0448\u043e_\u0442\u0435\u043f\u0435\u0440\u044c_\u0432\u0441\u0435_\u0442\u043e_\u0436\u0435_\u0441\u0430\u043c\u043e\u0435_\u0434\u043b\u044f_\u0441\u0431\u0435\u0440\u0430__\u043a\u0430\u043a\u0438\u0435_\u0442\u0430\u043c.md": {
     "mtime": 1784050032.048082,
     "ast_hash": "84c1ac566e70c3a52f4e6d008df24f9e",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_173203_почему_резерв_зарплатной_ведомости_в_сейфе_станови.md": {
+  "graphify-out/memory/query_20260714_173203_\u043f\u043e\u0447\u0435\u043c\u0443_\u0440\u0435\u0437\u0435\u0440\u0432_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u043d\u043e\u0439_\u0432\u0435\u0434\u043e\u043c\u043e\u0441\u0442\u0438_\u0432_\u0441\u0435\u0439\u0444\u0435_\u0441\u0442\u0430\u043d\u043e\u0432\u0438.md": {
     "mtime": 1784050323.9820375,
     "ast_hash": "74f1ef1167ecb5280cc421bdae14f3d3",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_174021_смотри_какой_момент__эти_исключенные_проводки_с_се.md": {
+  "graphify-out/memory/query_20260714_174021_\u0441\u043c\u043e\u0442\u0440\u0438_\u043a\u0430\u043a\u043e\u0439_\u043c\u043e\u043c\u0435\u043d\u0442__\u044d\u0442\u0438_\u0438\u0441\u043a\u043b\u044e\u0447\u0435\u043d\u043d\u044b\u0435_\u043f\u0440\u043e\u0432\u043e\u0434\u043a\u0438_\u0441_\u0441\u0435.md": {
     "mtime": 1784050821.3741317,
     "ast_hash": "1bd7e3e162621680a93dd575bdf1ecab",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_174718_все_сотрудники_получили_зарплату__имеет_ли_значени.md": {
+  "graphify-out/memory/query_20260714_174718_\u0432\u0441\u0435_\u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u0438_\u043f\u043e\u043b\u0443\u0447\u0438\u043b\u0438_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u0443__\u0438\u043c\u0435\u0435\u0442_\u043b\u0438_\u0437\u043d\u0430\u0447\u0435\u043d\u0438.md": {
     "mtime": 1784051238.272848,
     "ast_hash": "41c2b8ac2e7255ddd4e8cab383ba8243",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_180354_как_безопасно_исправлять_ошибочно_выбранный_счёт_в.md": {
+  "graphify-out/memory/query_20260714_180354_\u043a\u0430\u043a_\u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e_\u0438\u0441\u043f\u0440\u0430\u0432\u043b\u044f\u0442\u044c_\u043e\u0448\u0438\u0431\u043e\u0447\u043d\u043e_\u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439_\u0441\u0447\u0451\u0442_\u0432.md": {
     "mtime": 1784052234.9664166,
     "ast_hash": "9b86d4fda4cfde602715ba9bea160c8a",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_180457_смотри__какой_еще_момент__по_текущей_логике_при_сф.md": {
+  "graphify-out/memory/query_20260714_180457_\u0441\u043c\u043e\u0442\u0440\u0438__\u043a\u0430\u043a\u043e\u0439_\u0435\u0449\u0435_\u043c\u043e\u043c\u0435\u043d\u0442__\u043f\u043e_\u0442\u0435\u043a\u0443\u0449\u0435\u0439_\u043b\u043e\u0433\u0438\u043a\u0435_\u043f\u0440\u0438_\u0441\u0444.md": {
     "mtime": 1784052297.367622,
     "ast_hash": "89f19c114d74b6abdc8c43ad1f137b77",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_181448_менеджер_отправил_в_банк_черновик_выплаты_зарплаты.md": {
+  "graphify-out/memory/query_20260714_181448_\u043c\u0435\u043d\u0435\u0434\u0436\u0435\u0440_\u043e\u0442\u043f\u0440\u0430\u0432\u0438\u043b_\u0432_\u0431\u0430\u043d\u043a_\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0432\u044b\u043f\u043b\u0430\u0442\u044b_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u044b.md": {
     "mtime": 1784052888.2510948,
     "ast_hash": "46dd90180a4fecdde2463270a830c22f",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_181909_засей_ветку_нормальными_данными__чтобы_при_разбивк.md": {
+  "graphify-out/memory/query_20260714_181909_\u0437\u0430\u0441\u0435\u0439_\u0432\u0435\u0442\u043a\u0443_\u043d\u043e\u0440\u043c\u0430\u043b\u044c\u043d\u044b\u043c\u0438_\u0434\u0430\u043d\u043d\u044b\u043c\u0438__\u0447\u0442\u043e\u0431\u044b_\u043f\u0440\u0438_\u0440\u0430\u0437\u0431\u0438\u0432\u043a.md": {
     "mtime": 1784053149.1052454,
     "ast_hash": "e293410f799313fc2a8f7335b4f5ac59",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_192758_нет_целевых_в_окне_модальной_торговой_кассы__плитк.md": {
+  "graphify-out/memory/query_20260714_192758_\u043d\u0435\u0442_\u0446\u0435\u043b\u0435\u0432\u044b\u0445_\u0432_\u043e\u043a\u043d\u0435_\u043c\u043e\u0434\u0430\u043b\u044c\u043d\u043e\u0439_\u0442\u043e\u0440\u0433\u043e\u0432\u043e\u0439_\u043a\u0430\u0441\u0441\u044b__\u043f\u043b\u0438\u0442\u043a.md": {
     "mtime": 1784057278.36077,
     "ast_hash": "a1e40308b4879c1669f19d79f994861b",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_204237_почему_удалённый_в_банке_зарплатный_черновик_не_во.md": {
+  "graphify-out/memory/query_20260714_204237_\u043f\u043e\u0447\u0435\u043c\u0443_\u0443\u0434\u0430\u043b\u0451\u043d\u043d\u044b\u0439_\u0432_\u0431\u0430\u043d\u043a\u0435_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u043d\u044b\u0439_\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u043d\u0435_\u0432\u043e.md": {
     "mtime": 1784061757.3816354,
     "ast_hash": "0c5a1bb6854a37954971a8eb9d943fd9",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_211520_переделать_окно_выплаты_зарплатного_резерва__выпла.md": {
+  "graphify-out/memory/query_20260714_211520_\u043f\u0435\u0440\u0435\u0434\u0435\u043b\u0430\u0442\u044c_\u043e\u043a\u043d\u043e_\u0432\u044b\u043f\u043b\u0430\u0442\u044b_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u043d\u043e\u0433\u043e_\u0440\u0435\u0437\u0435\u0440\u0432\u0430__\u0432\u044b\u043f\u043b\u0430.md": {
     "mtime": 1784063720.7536325,
     "ast_hash": "b76ee9355a3194df11f2b1a0d8a2c8d8",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_215029_есть_ли_валидация_остатка_выбранного_счёта_при_раз.md": {
+  "graphify-out/memory/query_20260714_215029_\u0435\u0441\u0442\u044c_\u043b\u0438_\u0432\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u044f_\u043e\u0441\u0442\u0430\u0442\u043a\u0430_\u0432\u044b\u0431\u0440\u0430\u043d\u043d\u043e\u0433\u043e_\u0441\u0447\u0451\u0442\u0430_\u043f\u0440\u0438_\u0440\u0430\u0437.md": {
     "mtime": 1784065829.1224873,
     "ast_hash": "57ae605a7222003b69c3e6f2e58b249f",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_220906_сделать_окна_сейфа_и_торговой_кассы_только_информа.md": {
+  "graphify-out/memory/query_20260714_220906_\u0441\u0434\u0435\u043b\u0430\u0442\u044c_\u043e\u043a\u043d\u0430_\u0441\u0435\u0439\u0444\u0430_\u0438_\u0442\u043e\u0440\u0433\u043e\u0432\u043e\u0439_\u043a\u0430\u0441\u0441\u044b_\u0442\u043e\u043b\u044c\u043a\u043e_\u0438\u043d\u0444\u043e\u0440\u043c\u0430.md": {
     "mtime": 1785071794.5617838,
     "ast_hash": "30d7586bfe1f449f1dfe0f376007aacb",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260714_224240_привести_счета_тепла_в_порядок_после_старой_выплат.md": {
+  "graphify-out/memory/query_20260714_224240_\u043f\u0440\u0438\u0432\u0435\u0441\u0442\u0438_\u0441\u0447\u0435\u0442\u0430_\u0442\u0435\u043f\u043b\u0430_\u0432_\u043f\u043e\u0440\u044f\u0434\u043e\u043a_\u043f\u043e\u0441\u043b\u0435_\u0441\u0442\u0430\u0440\u043e\u0439_\u0432\u044b\u043f\u043b\u0430\u0442.md": {
     "mtime": 1784068960.5148287,
     "ast_hash": "c0f3c47d170979f31b84af59f9e29dfd",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260715_094159_проверь__как_сейчас_рассчитывается_зарплата_админи.md": {
+  "graphify-out/memory/query_20260715_094159_\u043f\u0440\u043e\u0432\u0435\u0440\u044c__\u043a\u0430\u043a_\u0441\u0435\u0439\u0447\u0430\u0441_\u0440\u0430\u0441\u0441\u0447\u0438\u0442\u044b\u0432\u0430\u0435\u0442\u0441\u044f_\u0437\u0430\u0440\u043f\u043b\u0430\u0442\u0430_\u0430\u0434\u043c\u0438\u043d\u0438.md": {
     "mtime": 1784108519.4530685,
     "ast_hash": "fd9fdd1cc24f2ab7ba45ebd02972f31b",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260715_094500_почему_в_ведомости_1_15_июля_у_посудомоек_показано.md": {
+  "graphify-out/memory/query_20260715_094500_\u043f\u043e\u0447\u0435\u043c\u0443_\u0432_\u0432\u0435\u0434\u043e\u043c\u043e\u0441\u0442\u0438_1_15_\u0438\u044e\u043b\u044f_\u0443_\u043f\u043e\u0441\u0443\u0434\u043e\u043c\u043e\u0435\u043a_\u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e.md": {
     "mtime": 1784108700.7758563,
     "ast_hash": "cf38b81ce30ad9b2d1338886537d0c53",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260715_102446_почему_два_платежа_ооо_экоцентр_из_страницы_на_опл.md": {
+  "graphify-out/memory/query_20260715_102446_\u043f\u043e\u0447\u0435\u043c\u0443_\u0434\u0432\u0430_\u043f\u043b\u0430\u0442\u0435\u0436\u0430_\u043e\u043e\u043e_\u044d\u043a\u043e\u0446\u0435\u043d\u0442\u0440_\u0438\u0437_\u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b_\u043d\u0430_\u043e\u043f\u043b.md": {
     "mtime": 1784111086.9681277,
     "ast_hash": "be625ac1e7836c2fd9356d0c9e60e456",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260715_110227_ну_так__давай_в_таком_случае_лучше_мэтчить_не_по_с.md": {
+  "graphify-out/memory/query_20260715_110227_\u043d\u0443_\u0442\u0430\u043a__\u0434\u0430\u0432\u0430\u0439_\u0432_\u0442\u0430\u043a\u043e\u043c_\u0441\u043b\u0443\u0447\u0430\u0435_\u043b\u0443\u0447\u0448\u0435_\u043c\u044d\u0442\u0447\u0438\u0442\u044c_\u043d\u0435_\u043f\u043e_\u0441.md": {
     "mtime": 1784113347.3317754,
     "ast_hash": "c322a6aee4cc0895094db8f40c735f09",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260716_110128_распиши_суть_изменений__которые_ты_задеплоил_в_кач.md": {
+  "graphify-out/memory/query_20260716_110128_\u0440\u0430\u0441\u043f\u0438\u0448\u0438_\u0441\u0443\u0442\u044c_\u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439__\u043a\u043e\u0442\u043e\u0440\u044b\u0435_\u0442\u044b_\u0437\u0430\u0434\u0435\u043f\u043b\u043e\u0438\u043b_\u0432_\u043a\u0430\u0447.md": {
     "mtime": 1784199688.6495528,
     "ast_hash": "823053287b71c53def5b04eae3fbe597",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260720_153955_нам_нужно_создать_скилл__агент_берёт_сканы_инвента.md": {
+  "graphify-out/memory/query_20260720_153955_\u043d\u0430\u043c_\u043d\u0443\u0436\u043d\u043e_\u0441\u043e\u0437\u0434\u0430\u0442\u044c_\u0441\u043a\u0438\u043b\u043b__\u0430\u0433\u0435\u043d\u0442_\u0431\u0435\u0440\u0451\u0442_\u0441\u043a\u0430\u043d\u044b_\u0438\u043d\u0432\u0435\u043d\u0442\u0430.md": {
     "mtime": 1784561995.0716963,
     "ast_hash": "c428d9e136a9e13c639ac9d5d6e3af68",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260721_102012_почему_выплата_производственному_персоналу_75_629.md": {
+  "graphify-out/memory/query_20260721_102012_\u043f\u043e\u0447\u0435\u043c\u0443_\u0432\u044b\u043f\u043b\u0430\u0442\u0430_\u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0441\u0442\u0432\u0435\u043d\u043d\u043e\u043c\u0443_\u043f\u0435\u0440\u0441\u043e\u043d\u0430\u043b\u0443_75_629.md": {
     "mtime": 1784629212.8625855,
     "ast_hash": "ee7c61efa46df0b74b008a5fead3156c",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260722_110010_логика_видимости_уволенных_сотрудников_в_накопител.md": {
+  "graphify-out/memory/query_20260722_110010_\u043b\u043e\u0433\u0438\u043a\u0430_\u0432\u0438\u0434\u0438\u043c\u043e\u0441\u0442\u0438_\u0443\u0432\u043e\u043b\u0435\u043d\u043d\u044b\u0445_\u0441\u043e\u0442\u0440\u0443\u0434\u043d\u0438\u043a\u043e\u0432_\u0432_\u043d\u0430\u043a\u043e\u043f\u0438\u0442\u0435\u043b.md": {
     "mtime": 1785071794.561855,
     "ast_hash": "65f8d4a08cf870890caddb2adee6160c",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260722_111627_как_правильно_связать_накопительный_фонд_с_учетом.md": {
+  "graphify-out/memory/query_20260722_111627_\u043a\u0430\u043a_\u043f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e_\u0441\u0432\u044f\u0437\u0430\u0442\u044c_\u043d\u0430\u043a\u043e\u043f\u0438\u0442\u0435\u043b\u044c\u043d\u044b\u0439_\u0444\u043e\u043d\u0434_\u0441_\u0443\u0447\u0435\u0442\u043e\u043c.md": {
     "mtime": 1784718987.0265703,
     "ast_hash": "a5ef70b8b925ac89690d4c8718bd543e",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260818_090444_в_группе_selman_учитываем_пересорт_семги_хк_и_семг.md": {
+  "graphify-out/memory/query_20260818_090444_\u0432_\u0433\u0440\u0443\u043f\u043f\u0435_selman_\u0443\u0447\u0438\u0442\u044b\u0432\u0430\u0435\u043c_\u043f\u0435\u0440\u0435\u0441\u043e\u0440\u0442_\u0441\u0435\u043c\u0433\u0438_\u0445\u043a_\u0438_\u0441\u0435\u043c\u0433.md": {
     "mtime": 1787043884.9506679,
     "ast_hash": "d2e4720d14bc8b4972219ec3076bba16",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260818_093234_почему_депозит_вероники_супрун_10000_рублей_отправ.md": {
+  "graphify-out/memory/query_20260818_093234_\u043f\u043e\u0447\u0435\u043c\u0443_\u0434\u0435\u043f\u043e\u0437\u0438\u0442_\u0432\u0435\u0440\u043e\u043d\u0438\u043a\u0438_\u0441\u0443\u043f\u0440\u0443\u043d_10000_\u0440\u0443\u0431\u043b\u0435\u0439_\u043e\u0442\u043f\u0440\u0430\u0432.md": {
     "mtime": 1787045554.7177052,
     "ast_hash": "fd621a7314cac91b306375bb6ca010af",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260901_081721_смотри__при_создании_аванса__вернее_займа__есть_по.md": {
+  "graphify-out/memory/query_20260901_081721_\u0441\u043c\u043e\u0442\u0440\u0438__\u043f\u0440\u0438_\u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0438_\u0430\u0432\u0430\u043d\u0441\u0430__\u0432\u0435\u0440\u043d\u0435\u0435_\u0437\u0430\u0439\u043c\u0430__\u0435\u0441\u0442\u044c_\u043f\u043e.md": {
     "mtime": 1788250641.6157002,
     "ast_hash": "25689c2eab31d140e538237195d97a95",
     "semantic_hash": ""
   },
-  "graphify-out/memory/query_20260914_190440_посмотри__как_это_реализовано_в_тепле__сейчас_оста.md": {
+  "graphify-out/memory/query_20260914_190440_\u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0438__\u043a\u0430\u043a_\u044d\u0442\u043e_\u0440\u0435\u0430\u043b\u0438\u0437\u043e\u0432\u0430\u043d\u043e_\u0432_\u0442\u0435\u043f\u043b\u0435__\u0441\u0435\u0439\u0447\u0430\u0441_\u043e\u0441\u0442\u0430.md": {
     "mtime": 1789412680.3581643,
     "ast_hash": "83495756bcb26c8bbb2e54c840d0faf1",
     "semantic_hash": ""
@@ -7269,122 +7269,122 @@
     "ast_hash": "9facee72fb20469c3d50ab3c64577b5c",
     "semantic_hash": "9facee72fb20469c3d50ab3c64577b5c"
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/контрольная_ревизия_API_2026-07-20_09-00/payload.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u043a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430\u044f_\u0440\u0435\u0432\u0438\u0437\u0438\u044f_API_2026-07-20_09-00/payload.json": {
     "mtime": 1784725324.4068174,
     "ast_hash": "bd981339cbb6f5f5f3b3c123588da422",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/контрольная_ревизия_API_2026-07-20_09-00/review.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u043a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430\u044f_\u0440\u0435\u0432\u0438\u0437\u0438\u044f_API_2026-07-20_09-00/review.json": {
     "mtime": 1784725385.656161,
     "ast_hash": "23d2bf8f890349c8e436f2d2212ffbcf",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/проверочные_таблицы_2026-07-20/preview-step1.png": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u043f\u0440\u043e\u0432\u0435\u0440\u043e\u0447\u043d\u044b\u0435_\u0442\u0430\u0431\u043b\u0438\u0446\u044b_2026-07-20/preview-step1.png": {
     "mtime": 1784718445.5068953,
     "ast_hash": "a099ed51543dfc9cb36359a9ddd7fa79",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/проверочные_таблицы_2026-07-20/preview-step2.png": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u043f\u0440\u043e\u0432\u0435\u0440\u043e\u0447\u043d\u044b\u0435_\u0442\u0430\u0431\u043b\u0438\u0446\u044b_2026-07-20/preview-step2.png": {
     "mtime": 1784718445.5967798,
     "ast_hash": "66c5a40606a2b36080e492f90be62d0f",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/проверочные_таблицы_2026-07-20/preview-summary.png": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u043f\u0440\u043e\u0432\u0435\u0440\u043e\u0447\u043d\u044b\u0435_\u0442\u0430\u0431\u043b\u0438\u0446\u044b_2026-07-20/preview-summary.png": {
     "mtime": 1784718445.3395967,
     "ast_hash": "f765add8c9d271d67c6ac2afae440923",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/draft/payload.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/payload.json": {
     "mtime": 1785152923.1484296,
     "ast_hash": "fbf9d906cca505b0da5554f8341ee55b",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/draft/recipe-request.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/recipe-request.json": {
     "mtime": 1785152923.1437814,
     "ast_hash": "bb670c91a686fef251ac849727234605",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/draft/review.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/draft/review.json": {
     "mtime": 1785152923.1477678,
     "ast_hash": "74297b4a9ccbb468b5a6e151773022f3",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/iiko-last-inventory-after-import.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-last-inventory-after-import.json": {
     "mtime": 1785153079.2216814,
     "ast_hash": "39bfeb4b9628c99d47c9b606d63a224c",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/iiko-last-inventory.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-last-inventory.json": {
     "mtime": 1785151348.7692058,
     "ast_hash": "6554e3b1ec6a872a456bcd9829c22bb8",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/iiko-products.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-products.json": {
     "mtime": 1785151329.985034,
     "ast_hash": "e58940075c564c50c76e9ce63acba4ba",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/iiko-stores.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/iiko-stores.json": {
     "mtime": 1785151341.993346,
     "ast_hash": "3b1635b50de65370deb1889b5d668567",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/ocr-items.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/ocr-items.json": {
     "mtime": 1785152914.2103465,
     "ast_hash": "3ae461c0e3daa21b3f1a123eeced1be2",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/ревизия_2026-07-27_09-00/prepared-recipes.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0440\u0435\u0432\u0438\u0437\u0438\u044f_2026-07-27_09-00/prepared-recipes.json": {
     "mtime": 1785151715.3346248,
     "ast_hash": "d5701c7c05a721729d6100beb80d5681",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/сухой_расчет_с_техкартами_2026-07-20_09-00/payload.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0441\u0443\u0445\u043e\u0439_\u0440\u0430\u0441\u0447\u0435\u0442_\u0441_\u0442\u0435\u0445\u043a\u0430\u0440\u0442\u0430\u043c\u0438_2026-07-20_09-00/payload.json": {
     "mtime": 1784723939.4085746,
     "ast_hash": "d700c3b775cba9b79c9ed092a5301ca5",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/сухой_расчет_с_техкартами_2026-07-20_09-00/prepared-recipes.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0441\u0443\u0445\u043e\u0439_\u0440\u0430\u0441\u0447\u0435\u0442_\u0441_\u0442\u0435\u0445\u043a\u0430\u0440\u0442\u0430\u043c\u0438_2026-07-20_09-00/prepared-recipes.json": {
     "mtime": 1784723884.870972,
     "ast_hash": "73c7844830e41bd90e8c6d0ad1d76513",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/сухой_расчет_с_техкартами_2026-07-20_09-00/recipe-request.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0441\u0443\u0445\u043e\u0439_\u0440\u0430\u0441\u0447\u0435\u0442_\u0441_\u0442\u0435\u0445\u043a\u0430\u0440\u0442\u0430\u043c\u0438_2026-07-20_09-00/recipe-request.json": {
     "mtime": 1784723884.8457754,
     "ast_hash": "4b4d5e694699ebd6e580b6fe63799a5a",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/сухой_расчет_с_техкартами_2026-07-20_09-00/review.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0441\u0443\u0445\u043e\u0439_\u0440\u0430\u0441\u0447\u0435\u0442_\u0441_\u0442\u0435\u0445\u043a\u0430\u0440\u0442\u0430\u043c\u0438_2026-07-20_09-00/review.json": {
     "mtime": 1784723939.3839731,
     "ast_hash": "23d2bf8f890349c8e436f2d2212ffbcf",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/batch-mapping.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/batch-mapping.json": {
     "mtime": 1784715728.780783,
     "ast_hash": "02cc99560fa1d81758d998ba353124a9",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/iiko-last-inventory-after-import-20260722.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/iiko-last-inventory-after-import-20260722.json": {
     "mtime": 1784716344.9984426,
     "ast_hash": "39bfeb4b9628c99d47c9b606d63a224c",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/mapping-audit.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/mapping-audit.json": {
     "mtime": 1784715728.7812262,
     "ast_hash": "549ae19efc1c285ee2e5de27e157f8c3",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/ocr-items.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/ocr-items.json": {
     "mtime": 1784715728.7805643,
     "ast_hash": "2d931bf4a7bd7114fb943e6d0503f9b7",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/payload.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/payload.json": {
     "mtime": 1784715728.7816553,
     "ast_hash": "6790485797d18649dd7f16afe0a944e8",
     "semantic_hash": ""
   },
-  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/черновик_инвентаризации_2026-07-20_09-00/review.json": {
+  "outputs/019f5b2c-12d3-7812-8188-f0c00240007d/\u0447\u0435\u0440\u043d\u043e\u0432\u0438\u043a_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_2026-07-20_09-00/review.json": {
     "mtime": 1784715728.7814612,
     "ast_hash": "505f1dbf08bbf0a826f7a35311c5bf2e",
     "semantic_hash": ""
@@ -8089,7 +8089,7 @@
     "ast_hash": "6266c2e780e4e8dc0b4705e54cc6d27f",
     "semantic_hash": "6266c2e780e4e8dc0b4705e54cc6d27f"
   },
-  "tmp/Сопоставление_инвентаризации_IIKO_превью.png": {
+  "tmp/\u0421\u043e\u043f\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u0438\u0435_\u0438\u043d\u0432\u0435\u043d\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438_IIKO_\u043f\u0440\u0435\u0432\u044c\u044e.png": {
     "mtime": 1783942445.577764,
     "ast_hash": "8e07b124f8a3142af7b5904c90300b2b",
     "semantic_hash": "8e07b124f8a3142af7b5904c90300b2b"
@@ -8099,52 +8099,52 @@
     "ast_hash": "9e48b53a2e82f54ffa81e4e60c60ec8e",
     "semantic_hash": "9e48b53a2e82f54ffa81e4e60c60ec8e"
   },
-  "Фото ОС Склад/IMG_0973.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0973.JPG": {
     "mtime": 1784464764.0,
     "ast_hash": "c17d3f31a2653fbdbeb92bf299b43e74",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0974.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0974.JPG": {
     "mtime": 1784464768.0,
     "ast_hash": "05743c0283c5f9a472ff7b33bcc09508",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0975.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0975.JPG": {
     "mtime": 1784464770.0,
     "ast_hash": "084f330f0dd4a1dbcab2923ec5ace96a",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0976.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0976.JPG": {
     "mtime": 1784464772.0,
     "ast_hash": "a0485a9e92704a985813987ef7cddbd2",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0977.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0977.JPG": {
     "mtime": 1784464774.0,
     "ast_hash": "73fc4b61e14804918652fd3ea2e69363",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0978.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0978.JPG": {
     "mtime": 1784464776.0,
     "ast_hash": "53d922715ee8950aaebf4df925e0bc9b",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0979.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0979.JPG": {
     "mtime": 1784464778.0,
     "ast_hash": "c3771c1a7f73016beee619a2f26f1a54",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0980.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0980.JPG": {
     "mtime": 1784464781.0,
     "ast_hash": "a06e08b301a77cf16ceffc07e64957da",
     "semantic_hash": ""
   },
-  "Фото ОС Склад/IMG_0981.JPG": {
+  "\u0424\u043e\u0442\u043e \u041e\u0421 \u0421\u043a\u043b\u0430\u0434/IMG_0981.JPG": {
     "mtime": 1784464783.0,
     "ast_hash": "ef0d780bf31fdd4f38bc4ba9b598ad15",
     "semantic_hash": ""
   },
-  "Фото ТК Черникова/Акты списания .pdf": {
+  "\u0424\u043e\u0442\u043e \u0422\u041a \u0427\u0435\u0440\u043d\u0438\u043a\u043e\u0432\u0430/\u0410\u043a\u0442\u044b \u0441\u043f\u0438\u0441\u0430\u043d\u0438\u044f .pdf": {
     "mtime": 1785149184.7014294,
     "ast_hash": "35cc3cbaad31a9c4ebe191ca01fc636c",
     "semantic_hash": ""
@@ -8152,6 +8152,21 @@
   "apps/api/tests/test_employee_effective_events.py": {
     "mtime": 1791216495.2630782,
     "ast_hash": "c325aaec73a31050db69445b7f9ab166",
+    "semantic_hash": ""
+  },
+  "apps/api/app/services/payroll_shift_validation.py": {
+    "mtime": 1791278428.3500175,
+    "ast_hash": "32cf849033e0410f1d5de2fc7dc46110",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_paid_topup.py": {
+    "mtime": 1791278428.3519907,
+    "ast_hash": "45c11ed4e5cb7882c190f6981d6bb201",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_shift_completeness.py": {
+    "mtime": 1791278428.3522556,
+    "ast_hash": "46cc2a6037e5f0f6a961d444b0981f31",
     "semantic_hash": ""
   }
 }
