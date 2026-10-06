@@ -331,6 +331,8 @@ class KassaPayrollEmployeeRead(BaseModel):
     remaining: float
     payment_status: str
     payable: bool
+    planned_amount: float | None = None
+    deferred_amount: float = 0
 
 
 class KassaTargetRead(BaseModel):
@@ -352,6 +354,7 @@ class KassaTargetRead(BaseModel):
     is_payroll: bool
     run_id: uuid.UUID | None = None
     payroll_employees: list[KassaPayrollEmployeeRead] = Field(default_factory=list)
+    payroll_plan_version: str | None = None
     created_at: datetime
 
 
@@ -424,6 +427,7 @@ class KassaPayrollPayoutRequest(BaseModel):
 
     employee_ids: list[uuid.UUID] = Field(min_length=1)
     boundary_id: uuid.UUID | None = None
+    plan_version: str | None = None
 
 
 class KassaFreelancerShiftPayoutRequest(BaseModel):

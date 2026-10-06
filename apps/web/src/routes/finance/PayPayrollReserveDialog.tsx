@@ -28,7 +28,8 @@ import {
   getEmployees,
   getPayrollRunLines,
   getRunSolvency,
-  payEmployeeFromReserve,
+  getPayrollReservePlan,
+  editPayrollReservePlan,
   payRunFromPool,
   transferPayrollReserve,
   type PayrollLine,
@@ -41,9 +42,9 @@ import { todayIso } from "@/lib/date";
 const money = new Intl.NumberFormat("ru-RU", {
   style: "currency",
   currency: "RUB",
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
 });
-
 
 type RegisterRow = {
   employeeId: string;
@@ -55,40 +56,9 @@ type RegisterRow = {
   depositScheduled: number;
 };
 
-// Клиентское превью раскладки пула — зеркалит backend allocate_pool: меньшие первыми, ручной
-// граничный уходит в конец (получает остаток пула). Тай-брейк по код-поинтам (как str(uuid)).
-function previewAllocate(
-  pool: number,
-  rows: RegisterRow[],
-  selected: Set<string>,
-  boundaryId: string | null,
-): Map<string, number> {
-  let cand = rows.filter((r) => r.remaining > 0.001 && selected.has(r.employeeId));
-  cand = [...cand].sort(
-    (a, b) => a.remaining - b.remaining || (a.employeeId < b.employeeId ? -1 : 1),
-  );
-  if (boundaryId && cand.some((r) => r.employeeId === boundaryId)) {
-    cand = [
-      ...cand.filter((r) => r.employeeId !== boundaryId),
-      ...cand.filter((r) => r.employeeId === boundaryId),
-    ];
-  }
-  const result = new Map<string, number>();
-  let left = pool;
-  for (const r of cand) {
-    if (left <= 0.001) break;
-    const take = Math.min(r.remaining, left);
-    if (take > 0.001) {
-      result.set(r.employeeId, Math.round(take * 100) / 100);
-      left -= take;
-    }
-  }
-  return result;
-}
-
 // Окно работы с пулом-резервом ЗП (Сейф/касса): выбранную раскладку можно выплатить из
 // текущего счёта, перенести вместе с деньгами на второй наличный счёт или отменить резерв.
-// Карандаш в колонке «Получит» оставляет быстрый путь ручной выплаты конкретной суммы.
+// Карандаш сохраняет только план. Факт выдачи создаёт отдельная кнопка «Выплатить».
 export function PayPayrollReserveDialog({
   row,
   onOpenChange,
@@ -105,13 +75,28 @@ export function PayPayrollReserveDialog({
   const channel = isKassa ? "кассы" : "Сейфа";
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [boundaryId, setBoundaryId] = useState<string | null>(null);
-  // Остаток пула держим локально: ручная выплата карандашом обновляет его, не закрывая окно
-  // (row-проп от родителя отстаёт до рефетча).
-  const [poolLeft, setPoolLeft] = useState(0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [payConfirmOpen, setPayConfirmOpen] = useState(false);
+  const [remainderEdit, setRemainderEdit] = useState<{
+    employeeId: string;
+    name: string;
+    amount: number;
+    remainder: number;
+  } | null>(null);
+
+  const planQuery = useQuery({
+    queryKey: ["payroll-reserve-plan", reserveId],
+    queryFn: () => getPayrollReservePlan(reserveId as string),
+    enabled: Boolean(row && reserveId),
+  });
+  const plan = planQuery.data;
+  const poolLeft = plan?.outstanding ?? 0;
+  const planned = useMemo(
+    () => new Map((plan?.allocations ?? []).map((i) => [i.employee_id, i])),
+    [plan],
+  );
 
   const linesQuery = useQuery({
     queryKey: ["payroll-run-lines", runId],
@@ -167,16 +152,21 @@ export function PayPayrollReserveDialog({
   useEffect(() => {
     if (row) {
       setSelected(new Set(payable.map((r) => r.employeeId)));
-      setBoundaryId(null);
-      setPoolLeft(row.amount - (row.amount_paid ?? 0));
       setEditingId(null);
+      setRemainderEdit(null);
+      setPayConfirmOpen(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row?.id, payable.length]);
 
   const preview = useMemo(
-    () => previewAllocate(poolLeft, rows, selected, boundaryId),
-    [poolLeft, rows, selected, boundaryId],
+    () =>
+      new Map(
+        (plan?.allocations ?? [])
+          .filter((i) => selected.has(i.employee_id))
+          .map((i) => [i.employee_id, i.amount]),
+      ),
+    [plan, selected],
   );
   const covered = Array.from(preview.values()).reduce((a, b) => a + b, 0);
   const selectedRemaining = payable
@@ -185,7 +175,7 @@ export function PayPayrollReserveDialog({
   const uncoveredHere = Math.max(0, Math.round((selectedRemaining - covered) * 100) / 100);
 
   const solvency = solvencyQuery.data;
-  const loading = linesQuery.isLoading || employeesQuery.isLoading;
+  const loading = linesQuery.isLoading || employeesQuery.isLoading || planQuery.isLoading;
 
   async function refreshAfterPay() {
     // Полная связка с ведомостью: обновляем и деталь (строки/шапка/черновик/дельта), и список
@@ -197,6 +187,7 @@ export function PayPayrollReserveDialog({
       queryClient.invalidateQueries({ queryKey: ["run-bank-draft", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-payout-delta", runId] }),
       queryClient.invalidateQueries({ queryKey: ["run-solvency", runId] }),
+      queryClient.invalidateQueries({ queryKey: ["payroll-reserve-plan"] }),
     ]);
     await onPaid();
   }
@@ -206,11 +197,12 @@ export function PayPayrollReserveDialog({
     mutationFn: () =>
       payRunFromPool(reserveId as string, {
         selected_ids: Array.from(selected),
-        boundary_id: boundaryId,
+        plan_version: plan!.version,
         allow_overflow: false,
         paid_at: todayIso(),
       }),
     onSuccess: async (res) => {
+      setPayConfirmOpen(false);
       await refreshAfterPay();
       toast.success(
         `Выплачено ${money.format(res.primary_booked)} из ${channel} — ${res.employees_paid} чел.`,
@@ -229,7 +221,7 @@ export function PayPayrollReserveDialog({
     mutationFn: () =>
       transferPayrollReserve(reserveId as string, {
         selected_ids: Array.from(selected),
-        boundary_id: boundaryId,
+        plan_version: plan!.version,
         operation_date: todayIso(),
       }),
     onSuccess: async (res) => {
@@ -264,44 +256,55 @@ export function PayPayrollReserveDialog({
     },
   });
 
-  // Ручная выплата карандашом одному сотруднику; остаток резерва остаётся.
-  const payEmployeeMutation = useMutation({
-    mutationFn: (vars: { employeeId: string; amount: number }) =>
-      payEmployeeFromReserve(reserveId as string, {
+  const editPlanMutation = useMutation({
+    mutationFn: (vars: {
+      employeeId: string;
+      amount: number;
+      destination: "safe" | "kassa" | null;
+    }) =>
+      editPayrollReservePlan(reserveId as string, {
         employee_id: vars.employeeId,
         amount: vars.amount,
-        paid_at: todayIso(),
+        expected_version: plan!.version,
+        remainder_destination: vars.destination,
+        operation_date: todayIso(),
       }),
     onSuccess: async (res) => {
-      setPoolLeft(res.reserve_outstanding);
+      queryClient.setQueryData(["payroll-reserve-plan", reserveId], res);
       setEditingId(null);
+      setRemainderEdit(null);
       await refreshAfterPay();
-      toast.success(`Выплачено ${money.format(res.booked)} из ${channel}`);
-      if (res.reserve_status === "paid") {
-        toast.info("Резерв исчерпан");
-        onOpenChange(false);
-      }
+      toast.success(
+        res.transferred > 0
+          ? `План сохранён · ${money.format(res.transferred)} перенесены ${isKassa ? "на Сейф" : "в кассу"}. Зарплата не выплачена`
+          : "План сохранён. Зарплата не выплачена",
+      );
+      if (res.outstanding < 0.01) onOpenChange(false);
     },
     onError: (error: unknown) => {
       const detail =
         (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        "Не удалось провести выплату";
+        "Не удалось сохранить план";
       toast.error(detail);
+      setRemainderEdit(null);
+      setEditingId(null);
+      void planQuery.refetch();
     },
   });
 
   const busy =
     payMutation.isPending ||
-    payEmployeeMutation.isPending ||
+    editPlanMutation.isPending ||
     transferMutation.isPending ||
     cancelMutation.isPending;
+  const unavailable =
+    loading || !plan || planQuery.isError || linesQuery.isError || employeesQuery.isError;
 
   function toggle(employeeId: string) {
     setSelected((cur) => {
       const next = new Set(cur);
       if (next.has(employeeId)) {
         next.delete(employeeId);
-        if (boundaryId === employeeId) setBoundaryId(null);
       } else {
         next.add(employeeId);
       }
@@ -311,34 +314,45 @@ export function PayPayrollReserveDialog({
 
   function startEdit(r: RegisterRow) {
     setEditingId(r.employeeId);
-    const cap = Math.min(r.remaining, poolLeft);
-    // Дефолт — то, что дала бы авто-раскладка (или максимум), можно поправить.
-    setEditValue(String(preview.get(r.employeeId) ?? Math.round(cap * 100) / 100));
+    setEditValue(String(planned.get(r.employeeId)?.amount ?? 0));
   }
 
   function submitEdit(r: RegisterRow) {
     const value = Number(editValue.replace(",", ".").replace(/\s/g, ""));
-    const cap = Math.min(r.remaining, poolLeft);
-    if (!Number.isFinite(value) || value <= 0) {
-      toast.error("Введите сумму больше нуля");
+    const other = (plan?.allocations ?? [])
+      .filter((i) => i.employee_id !== r.employeeId)
+      .reduce((sum, i) => sum + i.amount + i.deferred, 0);
+    const cap = Math.min(r.remaining, poolLeft - other);
+    if (
+      !editValue.trim() ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      Math.abs(value * 100 - Math.round(value * 100)) > 0.00001
+    ) {
+      toast.error("Введите сумму от нуля, не более двух знаков после запятой");
       return;
     }
-    if (value > cap + 0.01) {
+    if (value > cap + 0.001) {
       toast.error(`Максимум ${money.format(cap)} (остаток сотрудника / резерва)`);
       return;
     }
-    payEmployeeMutation.mutate({ employeeId: r.employeeId, amount: value });
+    const remainder = Math.round(((planned.get(r.employeeId)?.amount ?? 0) - value) * 100) / 100;
+    if (remainder > 0.001) {
+      setRemainderEdit({ employeeId: r.employeeId, name: r.name, amount: value, remainder });
+    } else {
+      editPlanMutation.mutate({ employeeId: r.employeeId, amount: value, destination: null });
+    }
   }
 
   return (
     <>
-      <Dialog open={Boolean(row)} onOpenChange={(next) => !next && onOpenChange(false)}>
+      <Dialog open={Boolean(row)} onOpenChange={(next) => !next && !busy && onOpenChange(false)}>
         <DialogContent className="flex max-h-[86vh] max-w-xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4">
             <DialogTitle className="text-lg">Выплата ЗП из {channel}</DialogTitle>
             <DialogDescription className="mt-0.5">
-              В резерве {money.format(poolLeft)} · отметь сотрудников и выбери: выплатить, передать
-              резерв на другой наличный счёт или отменить его
+              В резерве {money.format(poolLeft)}. Карандаш меняет только план. Деньги выдаются после
+              отдельного подтверждения «Выплатить».
             </DialogDescription>
           </DialogHeader>
 
@@ -354,7 +368,11 @@ export function PayPayrollReserveDialog({
               </div>
             ) : null}
 
-            {loading ? (
+            {planQuery.isError || linesQuery.isError || employeesQuery.isError ? (
+              <div role="alert" className="py-6 text-sm text-destructive">
+                Не удалось загрузить актуальный план. Закройте окно и откройте снова.
+              </div>
+            ) : loading ? (
               <div className="flex items-center justify-center py-10 text-muted-foreground">
                 <Loader2 className="animate-spin" size={18} />
               </div>
@@ -365,8 +383,7 @@ export function PayPayrollReserveDialog({
                     <th className="w-8 py-2" />
                     <th className="py-2 text-left font-medium">Сотрудник</th>
                     <th className="py-2 text-right font-medium">Остаток</th>
-                    <th className="py-2 text-right font-medium">Получит</th>
-                    <th className="w-16 py-2 text-center font-medium">Гранич.</th>
+                    <th className="py-2 text-right font-medium">К выплате здесь</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -375,9 +392,7 @@ export function PayPayrollReserveDialog({
                     const isSelected = selected.has(r.employeeId);
                     const partial = take > 0.001 && take < r.remaining - 0.001;
                     const editing = editingId === r.employeeId;
-                    const paying =
-                      payEmployeeMutation.isPending &&
-                      payEmployeeMutation.variables?.employeeId === r.employeeId;
+                    const deferred = planned.get(r.employeeId)?.deferred ?? 0;
                     return (
                       <tr key={r.employeeId} className="border-b last:border-0">
                         <td className="py-2">
@@ -402,19 +417,22 @@ export function PayPayrollReserveDialog({
                                 value={editValue}
                                 onChange={(e) => setEditValue(e.target.value)}
                                 onKeyDown={(e) => {
-                                  if (e.key === "Enter") submitEdit(r);
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    if (!busy) submitEdit(r);
+                                  }
                                   if (e.key === "Escape") setEditingId(null);
                                 }}
                               />
                               <Button
-                                aria-label="Выплатить"
+                                aria-label="Сохранить сумму"
                                 size="icon"
                                 variant="outline"
                                 className="h-8 w-8"
                                 disabled={busy}
                                 onClick={() => submitEdit(r)}
                               >
-                                {paying ? (
+                                {editPlanMutation.isPending ? (
                                   <Loader2 className="animate-spin" size={14} />
                                 ) : (
                                   <Check size={14} />
@@ -448,29 +466,31 @@ export function PayPayrollReserveDialog({
                                 size="icon"
                                 variant="ghost"
                                 className="h-8 w-8 text-muted-foreground"
-                                disabled={busy || poolLeft < 0.01}
+                                disabled={busy || unavailable || poolLeft < 0.01}
                                 onClick={() => startEdit(r)}
                               >
                                 <Pencil size={14} />
                               </Button>
                             </div>
                           )}
-                        </td>
-                        <td className="py-2 text-center">
-                          <input
-                            type="radio"
-                            name="boundary"
-                            disabled={!isSelected || busy || editing}
-                            checked={boundaryId === r.employeeId}
-                            onChange={() => setBoundaryId(r.employeeId)}
-                          />
+                          {deferred > 0.001 ? (
+                            <div className="mt-1 text-right text-xs text-amber-700">
+                              Ещё {money.format(deferred)} оставлены здесь в резерве
+                            </div>
+                          ) : null}
+                          {(planned.get(r.employeeId)?.other_amount ?? 0) > 0.001 ? (
+                            <div className="mt-1 text-right text-xs text-muted-foreground">
+                              {money.format(planned.get(r.employeeId)!.other_amount)} к выплате{" "}
+                              {plan?.other_location === "safe" ? "на Сейфе" : "в кассе"}
+                            </div>
+                          ) : null}
                         </td>
                       </tr>
                     );
                   })}
                   {payable.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                      <td colSpan={4} className="py-6 text-center text-muted-foreground">
                         Все сотрудники ведомости уже выплачены
                       </td>
                     </tr>
@@ -478,19 +498,9 @@ export function PayPayrollReserveDialog({
                 </tbody>
               </table>
             )}
-
-            {boundaryId ? (
-              <button
-                type="button"
-                className="text-xs text-muted-foreground underline"
-                onClick={() => setBoundaryId(null)}
-              >
-                Сбросить граничного (авто)
-              </button>
-            ) : null}
           </div>
 
-          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 border-t px-6 py-3 sm:items-stretch">
+          <DialogFooter className="shrink-0 flex-col items-stretch gap-3 border-t px-6 py-3 sm:flex-col sm:items-stretch">
             <div className="text-xs text-muted-foreground">
               Покроет {money.format(covered)} из {money.format(selectedRemaining)}
               {uncoveredHere > 0.001 ? ` · ${money.format(uncoveredHere)} останется к выплате` : ""}
@@ -499,14 +509,16 @@ export function PayPayrollReserveDialog({
               <Button
                 variant="outline"
                 className="text-destructive hover:text-destructive"
-                disabled={busy || poolLeft < 0.01}
+                disabled={busy || unavailable || Boolean(editingId) || poolLeft < 0.01}
                 onClick={() => setCancelConfirmOpen(true)}
               >
                 Отменить
               </Button>
               <Button
                 variant="outline"
-                disabled={busy || selected.size === 0 || covered < 0.01}
+                disabled={
+                  busy || unavailable || Boolean(editingId) || selected.size === 0 || covered < 0.01
+                }
                 onClick={() => transferMutation.mutate()}
               >
                 {transferMutation.isPending ? (
@@ -519,8 +531,10 @@ export function PayPayrollReserveDialog({
                 )}
               </Button>
               <Button
-                disabled={busy || selected.size === 0 || poolLeft < 0.01}
-                onClick={() => payMutation.mutate()}
+                disabled={
+                  busy || unavailable || Boolean(editingId) || selected.size === 0 || covered < 0.01
+                }
+                onClick={() => setPayConfirmOpen(true)}
               >
                 {payMutation.isPending ? (
                   <Loader2 className="animate-spin" size={16} />
@@ -532,6 +546,84 @@ export function PayPayrollReserveDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={Boolean(remainderEdit)}
+        onOpenChange={(open) => !open && !busy && setRemainderEdit(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Откуда выплатить остаток?</DialogTitle>
+            <DialogDescription>
+              {remainderEdit?.name}: {money.format(remainderEdit?.amount ?? 0)} к выплате из{" "}
+              {channel}. Остаток {money.format(remainderEdit?.remainder ?? 0)} остаётся долгом
+              сотруднику. Ничего сейчас не выплачивается.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                remainderEdit &&
+                editPlanMutation.mutate({
+                  employeeId: remainderEdit.employeeId,
+                  amount: remainderEdit.amount,
+                  destination: null,
+                })
+              }
+            >
+              Оставить на этом счёте
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() =>
+                remainderEdit &&
+                editPlanMutation.mutate({
+                  employeeId: remainderEdit.employeeId,
+                  amount: remainderEdit.amount,
+                  destination: isKassa ? "safe" : "kassa",
+                })
+              }
+            >
+              Перенести {money.format(remainderEdit?.remainder ?? 0)}{" "}
+              {isKassa ? "на Сейф" : "в кассу"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Перенос переместит только этот остаток вместе с резервом между счетами. Это не выплата
+              зарплаты.
+            </p>
+            <Button variant="ghost" disabled={busy} onClick={() => setRemainderEdit(null)}>
+              Назад к сумме
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={payConfirmOpen} onOpenChange={(open) => !busy && setPayConfirmOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Подтвердить выдачу зарплаты?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Будет выплачено {money.format(covered)} из {channel} по сохранённым суммам.
+              Оставленные в резерве суммы не выплачиваются.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Назад</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || unavailable || covered < 0.01}
+              onClick={(event) => {
+                event.preventDefault();
+                payMutation.mutate();
+              }}
+            >
+              {payMutation.isPending ? "Проводим выплату…" : "Подтвердить выплату"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
         <AlertDialogContent>

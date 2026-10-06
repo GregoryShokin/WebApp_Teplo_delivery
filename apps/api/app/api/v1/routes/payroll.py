@@ -60,6 +60,8 @@ from app.schemas.payroll import (
     PayrollReserveCancelResponse,
     PayrollReserveEmployeePayRequest,
     PayrollReserveEmployeePayResponse,
+    PayrollReservePlanEdit,
+    PayrollReservePlanRead,
     PayrollReserveTransferAllocationRead,
     PayrollReserveTransferRequest,
     PayrollReserveTransferResponse,
@@ -122,6 +124,11 @@ from app.services.payroll_payouts import (
     set_run_payout_cash,
 )
 from app.services.payroll_personal_report import build_personal_report
+from app.services.payroll_reserve_plan import (
+    edit_reserve_plan,
+    get_reserve_plan,
+    transfer_planned_reserve,
+)
 from app.services.payroll_reserves import (
     PoolPayoutResult,
     cancel_run_reserve,
@@ -1167,6 +1174,7 @@ async def post_pay_run_from_pool(
             selected_ids=set(payload.selected_ids) if payload.selected_ids is not None else None,
             boundary_override=payload.boundary_id,
             allow_overflow=payload.allow_overflow,
+            plan_version=payload.plan_version,
             paid_at=payload.paid_at,
             actor_user_id=actor.user_id,
         )
@@ -1190,14 +1198,24 @@ async def post_transfer_run_reserve(
 ) -> PayrollReserveTransferResponse:
     """Перенести выбранную часть зарплатного резерва Сейф↔касса вместе с деньгами."""
     try:
-        result = await transfer_run_reserve(
-            session,
-            reserve_id=reserve_id,
-            selected_ids=set(payload.selected_ids),
-            boundary_override=payload.boundary_id,
-            operation_date=payload.operation_date,
-            actor_user_id=actor.user_id,
-        )
+        if payload.plan_version is not None:
+            result = await transfer_planned_reserve(
+                session,
+                reserve_id=reserve_id,
+                selected_ids=set(payload.selected_ids),
+                expected_version=payload.plan_version,
+                operation_date=payload.operation_date,
+                actor_user_id=actor.user_id,
+            )
+        else:
+            result = await transfer_run_reserve(
+                session,
+                reserve_id=reserve_id,
+                selected_ids=set(payload.selected_ids),
+                boundary_override=payload.boundary_id,
+                operation_date=payload.operation_date,
+                actor_user_id=actor.user_id,
+            )
     except PayrollNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except PayrollConflictError as exc:
@@ -1216,6 +1234,50 @@ async def post_transfer_run_reserve(
             for item in result.allocations
         ],
     )
+
+
+@router.get(
+    "/reserves/{reserve_id}/plan",
+    response_model=PayrollReservePlanRead,
+    dependencies=PAYROLL_RUNS_READ_ACCESS,
+)
+async def get_payroll_reserve_plan(
+    reserve_id: uuid.UUID, session: Annotated[AsyncSession, Depends(get_session)]
+) -> dict:
+    try:
+        return await get_reserve_plan(session, reserve_id)
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.put(
+    "/reserves/{reserve_id}/plan",
+    response_model=PayrollReservePlanRead,
+    dependencies=PAYROLL_RUNS_MARK_PAID_ACCESS,
+)
+async def put_payroll_reserve_plan(
+    reserve_id: uuid.UUID,
+    payload: PayrollReservePlanEdit,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> dict:
+    try:
+        return await edit_reserve_plan(
+            session,
+            reserve_id=reserve_id,
+            employee_id=payload.employee_id,
+            amount=payload.amount,
+            expected_version=payload.expected_version,
+            remainder_destination=payload.remainder_destination,
+            operation_date=payload.operation_date,
+            actor_user_id=actor.user_id,
+        )
+    except PayrollNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PayrollConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post(
@@ -1257,8 +1319,15 @@ async def post_pay_employee_from_reserve(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> PayrollReserveEmployeePayResponse:
-    """Выплатить одному сотруднику ручную сумму из резерва (карандаш → сумма → ✓); остаток
-    резерва остаётся earmark'ом для следующей выплаты."""
+    """Explicit single-employee payout; editing uses PUT /plan instead."""
+    if not payload.confirm_payout:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Редактирование суммы не является выплатой. "
+                "Обновите окно и используйте кнопку «Выплатить»"
+            ),
+        )
     try:
         result = await pay_employee_from_reserve(
             session,

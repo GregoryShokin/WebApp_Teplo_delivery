@@ -440,6 +440,7 @@ export type KassaTarget = {
   is_payroll: boolean;
   run_id: string | null;
   payroll_employees: KassaPayrollEmployee[];
+  payroll_plan_version?: string | null;
   created_at: string;
 };
 
@@ -451,6 +452,8 @@ export type KassaPayrollEmployee = {
   remaining: number;
   payment_status: "pending" | "partially_paid" | "paid";
   payable: boolean;
+  planned_amount?: number | null;
+  deferred_amount?: number;
 };
 
 export type KassaAdvancePermission = {
@@ -535,9 +538,7 @@ export async function payKassaFreelancerShifts(
  * не за ту смену). Деньги снимаются, смена возвращается в «К выдаче». Сумму выданного
  * контур не пересчитывает никогда — отменяется операция целиком.
  */
-export async function voidKassaFreelancerShift(
-  attendanceEntryId: string,
-): Promise<KassaPending> {
+export async function voidKassaFreelancerShift(attendanceEntryId: string): Promise<KassaPending> {
   const response = await api.post<KassaPending>(`${BASE}/freelancer-shifts/void`, {
     attendance_entry_id: attendanceEntryId,
   });
@@ -557,10 +558,12 @@ export async function payKassaPayrollTarget(
   allocationId: string,
   employeeIds: string[],
   boundaryId: string | null,
+  planVersion?: string | null,
 ): Promise<KassaPending> {
   const response = await api.post<KassaPending>(`${BASE}/targets/${allocationId}/payroll-payout`, {
     employee_ids: employeeIds,
     boundary_id: boundaryId,
+    plan_version: planVersion,
   });
   return response.data;
 }

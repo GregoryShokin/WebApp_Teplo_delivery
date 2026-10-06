@@ -112,11 +112,13 @@ export function KassaPendingTab() {
       id,
       employeeIds,
       boundaryId,
+      planVersion,
     }: {
       id: string;
       employeeIds: string[];
       boundaryId: string | null;
-    }) => payKassaPayrollTarget(id, employeeIds, boundaryId),
+      planVersion?: string | null;
+    }) => payKassaPayrollTarget(id, employeeIds, boundaryId, planVersion),
     onSuccess: (_pending, variables) => {
       toast.success(`Зарплата выдана: ${variables.employeeIds.length} сотрудникам`);
       invalidate();
@@ -252,7 +254,12 @@ export function KassaPendingTab() {
               onPay={(amount) => payTargetMutation.mutate({ id: target.id, amount })}
               onPayPayroll={(employeeIds, boundaryId) =>
                 payPayrollMutation
-                  .mutateAsync({ id: target.id, employeeIds, boundaryId })
+                  .mutateAsync({
+                    id: target.id,
+                    employeeIds,
+                    boundaryId,
+                    planVersion: target.payroll_plan_version,
+                  })
                   .then(() => undefined)
               }
             />
@@ -604,12 +611,18 @@ function TargetCard({
     (total, employee) => total + employee.remaining,
     0,
   );
-  const payrollPreview = previewPayrollAllocation(
-    target.outstanding,
-    target.payroll_employees,
-    selectedEmployees,
-    boundaryId,
-  );
+  const payrollPreview = target.payroll_plan_version
+    ? new Map(
+        target.payroll_employees
+          .filter((e) => selectedEmployees.has(e.employee_id))
+          .map((e) => [e.employee_id, e.planned_amount ?? 0]),
+      )
+    : previewPayrollAllocation(
+        target.outstanding,
+        target.payroll_employees,
+        selectedEmployees,
+        boundaryId,
+      );
   const selectedPayrollTotal = Array.from(payrollPreview.values()).reduce(
     (total, amount) => total + amount,
     0,
@@ -759,6 +772,9 @@ function TargetCard({
                                   : checked && previewAmount <= 0.005
                                     ? "не покрывается выбранным резервом"
                                     : "ожидает выдачи"}
+                          {(employee.deferred_amount ?? 0) > 0.005
+                            ? ` · ещё ${formatRub(employee.deferred_amount!)} оставлены в резерве`
+                            : ""}
                         </div>
                       </div>
                     </div>
@@ -779,7 +795,9 @@ function TargetCard({
             </div>
           )}
 
-          {payrollUncovered > 0.005 && selectedPayrollRows.length > 1 ? (
+          {!target.payroll_plan_version &&
+          payrollUncovered > 0.005 &&
+          selectedPayrollRows.length > 1 ? (
             <div className="grid gap-1.5 rounded-md border bg-muted/30 p-3">
               <Label className="text-xs font-medium">Кому отдать неполный остаток резерва</Label>
               <Select

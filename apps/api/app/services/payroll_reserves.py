@@ -660,6 +660,30 @@ async def cancel_run_reserves(session: AsyncSession, run_id: uuid.UUID) -> int:
     return count
 
 
+async def locked_run_reserve(
+    session: AsyncSession, reserve_id: uuid.UUID
+) -> tuple[SafeAllocation, PayrollRun]:
+    """Lock run first, then reserve: opposite-account edits cannot deadlock each other."""
+    source = await session.get(SafeAllocation, reserve_id)
+    if source is None or source.source_run_id is None:
+        raise PayrollNotFoundError("Резерв ведомости не найден")
+    run = await session.scalar(
+        select(PayrollRun)
+        .where(PayrollRun.id == source.source_run_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if run is None:
+        raise PayrollNotFoundError("Ведомость не найдена")
+    source = await session.scalar(
+        select(SafeAllocation)
+        .where(SafeAllocation.id == reserve_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return source, run
+
+
 async def transfer_run_reserve(
     session: AsyncSession,
     *,
@@ -668,6 +692,8 @@ async def transfer_run_reserve(
     boundary_override: uuid.UUID | None = None,
     operation_date: date,
     actor_user_id: uuid.UUID | None,
+    allocations_override: list[PoolAllocation] | None = None,
+    commit: bool = True,
 ) -> ReserveTransferResult:
     """Перенести выбранную часть зарплатного пула Сейф↔касса вместе с деньгами.
 
@@ -680,29 +706,29 @@ async def transfer_run_reserve(
     if not selected_ids:
         raise PayrollConflictError("Выберите сотрудников для передачи резерва")
 
-    source = await session.get(SafeAllocation, reserve_id, with_for_update=True)
-    if source is None or source.source_run_id is None:
-        raise PayrollNotFoundError("Резерв ведомости не найден")
+    source, run = await locked_run_reserve(session, reserve_id)
     if source.employee_id is not None:
         raise PayrollConflictError("Это не пул-резерв ведомости")
     if source.status not in ACTIVE_RESERVE_STATUSES:
         raise PayrollConflictError("Резерв уже оплачен или отменён")
 
-    run = await session.get(PayrollRun, source.source_run_id)
-    if run is None:
-        raise PayrollNotFoundError("Ведомость не найдена")
     if run.status != "finalized":
         raise PayrollConflictError("Сначала финализируйте ведомость")
 
     destination_location = "safe" if source.location == "kassa" else "kassa"
     source_outstanding = _q(Decimal(source.amount) - Decimal(source.amount_paid))
-    allocations = allocate_pool(
-        source_outstanding,
-        await run_pool_shares(session, run.id),
-        selected_ids=selected_ids,
-        boundary_override=boundary_override,
+    allocations = (
+        allocations_override
+        if allocations_override is not None
+        else allocate_pool(
+            source_outstanding,
+            await run_pool_shares(session, run.id),
+            selected_ids=selected_ids,
+            boundary_override=boundary_override,
+        )
     )
     transfer_amount = allocated_total(allocations)
+    await validate_pool_allocations(session, run.id, source_outstanding, allocations)
     if transfer_amount <= 0:
         raise PayrollConflictError("У выбранных сотрудников нет остатка к выплате")
 
@@ -765,7 +791,8 @@ async def transfer_run_reserve(
         allocations=allocations,
         actor_user_id=actor_user_id,
     )
-    await session.commit()
+    if commit:
+        await session.commit()
     return ReserveTransferResult(
         source_reserve_id=source.id,
         destination_reserve_id=destination.id,
@@ -819,6 +846,8 @@ async def pay_run_from_pool(
     expected_location: str | None = None,
     paid_at: date,
     actor_user_id: uuid.UUID | None,
+    allocations_override: list[PoolAllocation] | None = None,
+    plan_version: str | None = None,
 ) -> PoolPayoutResult:
     """Выплатить сотрудникам ведомости из пула-резерва (Сейф ИЛИ касса) с перетоком.
 
@@ -829,18 +858,13 @@ async def pay_run_from_pool(
     остаётся долгом (``partially_paid`` в ``PayrollPayment``). ``expected_location`` не даёт
     кассовому интерфейсу подставить резерв другого наличного счёта. Атомарно (один commit).
     """
-    primary = await session.get(SafeAllocation, reserve_id, with_for_update=True)
-    if primary is None or primary.source_run_id is None:
-        raise PayrollNotFoundError("Резерв ведомости не найден")
+    primary, run = await locked_run_reserve(session, reserve_id)
     if primary.employee_id is not None:
         raise PayrollConflictError("Это не пул-резерв ведомости")
     if expected_location is not None and primary.location != expected_location:
         raise PayrollConflictError("Этот резерв относится к другому наличному счёту")
     if primary.status not in ACTIVE_RESERVE_STATUSES:
         raise PayrollConflictError("Резерв уже оплачен или отменён")
-    run = await session.get(PayrollRun, primary.source_run_id)
-    if run is None:
-        raise PayrollNotFoundError("Ведомость не найдена")
     if run.status != "finalized":
         raise PayrollConflictError("Сначала финализируйте ведомость")
 
@@ -848,13 +872,49 @@ async def pay_run_from_pool(
     from app.services.payroll_payments import apply_pool_tranche
 
     shares = await run_pool_shares(session, run.id)
+    if allow_overflow and await session.scalar(
+        select(PayrollRunEvent.id)
+        .where(PayrollRunEvent.run_id == run.id, PayrollRunEvent.action == "reserve_plan_updated")
+        .limit(1)
+    ):
+        raise PayrollConflictError("План выплачивается только с выбранного счёта")
+    saved_plan = await session.scalar(
+        select(PayrollRunEvent.id)
+        .where(
+            PayrollRunEvent.run_id == run.id,
+            PayrollRunEvent.action == "reserve_plan_updated",
+            PayrollRunEvent.payload["reserve_id"].astext == str(primary.id),
+        )
+        .limit(1)
+    )
+    if plan_version is not None or saved_plan is not None:
+        from app.services.payroll_reserve_plan import check_plan_version, read_reserve_plan
+
+        plan = await read_reserve_plan(session, primary)
+        check_plan_version(plan, plan_version)
+        planned = {item["employee_id"]: item["amount"] for item in plan["allocations"]}
+        if allocations_override is None:
+            allocations_override = [
+                PoolAllocation(eid, amount)
+                for eid, amount in planned.items()
+                if amount > 0 and (selected_ids is None or eid in selected_ids)
+            ]
+        if any(a.amount > planned.get(a.employee_id, Decimal(0)) for a in allocations_override):
+            raise PayrollConflictError("Суммы выплаты не совпадают с сохранённым планом")
+        if allow_overflow:
+            raise PayrollConflictError("План выплачивается только с выбранного счёта")
     paid_by_emp: dict[uuid.UUID, Decimal] = {}
 
     async def _drain(reserve: SafeAllocation, share_list: list[EmployeeShare]) -> Decimal:
         pool = _q(Decimal(reserve.amount) - Decimal(reserve.amount_paid))
-        allocs = allocate_pool(
-            pool, share_list, selected_ids=selected_ids, boundary_override=boundary_override
+        allocs = (
+            allocations_override
+            if reserve.id == primary.id and allocations_override is not None
+            else allocate_pool(
+                pool, share_list, selected_ids=selected_ids, boundary_override=boundary_override
+            )
         )
+        await validate_pool_allocations(session, run.id, pool, allocs)
         is_cash = reserve.location == "kassa"
         booked = Decimal("0")
         for alloc in allocs:
@@ -875,6 +935,8 @@ async def pay_run_from_pool(
         return _q(booked)
 
     primary_booked = await _drain(primary, shares)
+    if primary_booked <= 0 and not allow_overflow:
+        raise PayrollConflictError("В плане нет выбранных сумм к выплате")
 
     overflow_reserve_id: uuid.UUID | None = None
     overflow_booked = Decimal("0")
@@ -922,9 +984,25 @@ async def pay_run_from_pool(
     )
 
 
+async def validate_pool_allocations(
+    session: AsyncSession, run_id: uuid.UUID, pool: Decimal, allocations: list[PoolAllocation]
+) -> None:
+    """Validate explicit tranches before writing any payments or transfers."""
+    due = {s.employee_id: s.remaining for s in await run_pool_shares(session, run_id)}
+    ids = [a.employee_id for a in allocations]
+    if any(
+        not a.amount.is_finite() or a.amount <= 0 or _q(a.amount) != a.amount for a in allocations
+    ):
+        raise PayrollConflictError("Сумма должна быть положительной, с точностью до копейки")
+    if len(ids) != len(set(ids)) or allocated_total(allocations) > pool:
+        raise PayrollConflictError("Сумма превышает остаток резерва или сотрудник указан дважды")
+    if any(a.amount > due.get(a.employee_id, Decimal(0)) for a in allocations):
+        raise PayrollConflictError("План превышает остаток к выплате сотруднику")
+
+
 @dataclass(frozen=True, slots=True)
 class EmployeeReservePayResult:
-    """Итог ручной выплаты одному сотруднику из резерва (карандаш → сумма → ✓)."""
+    """Итог явно подтверждённой выплаты одному сотруднику из резерва."""
 
     booked: Decimal
     employee_total_paid: Decimal
@@ -944,7 +1022,7 @@ async def pay_employee_from_reserve(
 ) -> EmployeeReservePayResult:
     """Выплатить ОДНОМУ сотруднику ручную сумму из пула-резерва (Сейф/касса).
 
-    Карандаш-контур: пользователь сам вводит сумму по сотруднику, остаток резерва остаётся
+    Явный контур выдачи: пользователь подтверждает выплату, остаток резерва остаётся
     earmark'ом для следующей выплаты. Сумма ограничена и остатком резерва, и остатком
     начисленного сотруднику. Проводка — через ``apply_pool_tranche`` (кошелёк резерва, ДДС по
     ``booked_amount``), затем сверка резерва. Атомарно.

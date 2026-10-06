@@ -188,6 +188,7 @@ class PayrollPoolPayoutRequest(BaseModel):
     selected_ids: list[uuid.UUID] | None = None
     boundary_id: uuid.UUID | None = None
     allow_overflow: bool = True
+    plan_version: str | None = None
     paid_at: date
 
 
@@ -206,6 +207,33 @@ class PayrollReserveTransferRequest(BaseModel):
 
     selected_ids: list[uuid.UUID] = Field(min_length=1)
     boundary_id: uuid.UUID | None = None
+    operation_date: date
+    plan_version: str | None = None
+
+
+class PayrollReservePlanAllocation(BaseModel):
+    employee_id: uuid.UUID
+    amount: float
+    deferred: float
+    other_amount: float = 0
+
+
+class PayrollReservePlanRead(BaseModel):
+    reserve_id: uuid.UUID
+    version: str
+    outstanding: float
+    allocations: list[PayrollReservePlanAllocation]
+    transferred: float = 0
+    other_location: Literal["safe", "kassa"] | None = None
+
+
+class PayrollReservePlanEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: uuid.UUID
+    amount: Decimal = Field(ge=0, max_digits=18, decimal_places=2)
+    expected_version: str
+    remainder_destination: Literal["safe", "kassa"] | None = None
     operation_date: date
 
 
@@ -230,13 +258,14 @@ class PayrollReserveCancelResponse(BaseModel):
 
 
 class PayrollReserveEmployeePayRequest(BaseModel):
-    """Ручная выплата одному сотруднику из резерва (карандаш → сумма → ✓)."""
+    """Explicit payout only; old pencil requests lack confirmation and are rejected."""
 
     model_config = ConfigDict(extra="forbid")
 
     employee_id: uuid.UUID
     amount: Decimal = Field(gt=0)
     paid_at: date
+    confirm_payout: bool = False
 
 
 class PayrollReserveEmployeePayResponse(BaseModel):

@@ -881,6 +881,7 @@ async def pay_kassa_payroll_target_endpoint(
             boundary_override=payload.boundary_id,
             allow_overflow=False,
             expected_location="kassa",
+            plan_version=payload.plan_version,
             paid_at=datetime.now(MOSCOW_TZ).date(),
             actor_user_id=actor.user_id,
         )

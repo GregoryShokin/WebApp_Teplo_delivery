@@ -4335,6 +4335,7 @@ export type PoolPayoutPayload = {
   boundary_id?: string | null;
   allow_overflow?: boolean;
   paid_at: string;
+  plan_version?: string;
 };
 
 export type PoolPayoutResponse = {
@@ -4369,13 +4370,44 @@ export type PayrollReserveTransferResponse = {
 // Перенос выбранной части зарплатного резерва между Сейфом и кассой вместе с деньгами.
 export async function transferPayrollReserve(
   reserveId: string,
-  payload: { selected_ids: string[]; boundary_id?: string | null; operation_date: string },
+  payload: {
+    selected_ids: string[];
+    boundary_id?: string | null;
+    operation_date: string;
+    plan_version?: string;
+  },
 ): Promise<PayrollReserveTransferResponse> {
   const response = await api.post<PayrollReserveTransferResponse>(
     `/payroll/reserves/${reserveId}/transfer`,
     payload,
   );
   return response.data;
+}
+
+export type PayrollReservePlan = {
+  reserve_id: string;
+  version: string;
+  outstanding: number;
+  allocations: Array<{ employee_id: string; amount: number; deferred: number; other_amount: number }>;
+  transferred: number;
+  other_location: "safe" | "kassa" | null;
+};
+
+export async function getPayrollReservePlan(reserveId: string): Promise<PayrollReservePlan> {
+  return (await api.get<PayrollReservePlan>(`/payroll/reserves/${reserveId}/plan`)).data;
+}
+
+export async function editPayrollReservePlan(
+  reserveId: string,
+  payload: {
+    employee_id: string;
+    amount: number;
+    expected_version: string;
+    remainder_destination: "safe" | "kassa" | null;
+    operation_date: string;
+  },
+): Promise<PayrollReservePlan> {
+  return (await api.put<PayrollReservePlan>(`/payroll/reserves/${reserveId}/plan`, payload)).data;
 }
 
 export type PayrollReserveCancelResponse = {
@@ -4402,10 +4434,10 @@ export type ReserveEmployeePayResponse = {
   reserve_outstanding: number;
 };
 
-// Ручная выплата одному сотруднику из резерва (карандаш → сумма → ✓); остаток лежит резервом.
+// Явная выплата одному сотруднику. Редактирование плана использует editPayrollReservePlan.
 export async function payEmployeeFromReserve(
   reserveId: string,
-  payload: { employee_id: string; amount: number; paid_at: string },
+  payload: { employee_id: string; amount: number; paid_at: string; confirm_payout: true },
 ): Promise<ReserveEmployeePayResponse> {
   const response = await api.post<ReserveEmployeePayResponse>(
     `/payroll/reserves/${reserveId}/pay-employee`,

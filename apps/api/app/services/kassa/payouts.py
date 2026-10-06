@@ -691,6 +691,20 @@ async def kassa_pending_payload(
         }
         for allocation, article_name, counterparty_name in rows
     ]
+    # The cashier sees the same unpaid plan that the owner edited in active payments.
+    from app.services.payroll_reserve_plan import read_reserve_plan
+
+    for allocation, _article_name, _counterparty_name in rows:
+        if allocation.source_run_id is None:
+            continue
+        plan = await read_reserve_plan(session, allocation)
+        planned = {i["employee_id"]: i for i in plan["allocations"]}
+        target = next(t for t in targets if t["id"] == allocation.id)
+        target["payroll_plan_version"] = plan["version"]
+        for employee in target["payroll_employees"]:
+            item = planned.get(employee["employee_id"], {})
+            employee["planned_amount"] = float(item.get("amount", 0))
+            employee["deferred_amount"] = float(item.get("deferred", 0))
     permissions = await _kassa_pending_advances(session)
     freelancers = await _kassa_pending_freelancers(session)
     targets_total = sum(Decimal(str(target["outstanding"])) for target in targets)
