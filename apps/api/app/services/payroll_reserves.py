@@ -34,12 +34,14 @@ from app.models import (
     PayrollLine,
     PayrollPayment,
     PayrollRun,
+    PayrollRunEvent,
     SafeAllocation,
     Wallet,
 )
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.banking.safe_allocations import (
     ACTIVE_RESERVE_STATUSES,
+    INTERNAL_TRANSFER_SOURCE_KIND,
     book_internal_transfer,
     create_allocation,
 )
@@ -455,6 +457,187 @@ async def reconcile_run_reserves(
         else:
             reserve.status = "partially_paid"
     await session.flush()
+
+
+async def restore_run_reserves(
+    session: AsyncSession,
+    run: PayrollRun,
+    *,
+    created_by_user_id: uuid.UUID | None = None,
+) -> int:
+    """Restore finalized payroll earmarks without creating transfers or payments.
+
+    Kassa uses the saved cash split; Safe uses only recorded bank receipts (never an
+    unpaid draft). Recorded pool transfers keep funds in their actual location, and
+    reconciliation deducts already booked payouts. Cancelled history stays immutable.
+    The run lock serializes refinalization, top-up callbacks and repair of missing pools.
+    """
+    if run.is_imported_legacy:
+        return 0
+    from app.services.payroll_payouts import BANK_TO_SAFE_SOURCE_KIND, PAYROLL_PAYOUT_SOURCE_KIND
+
+    locked_status = await session.scalar(
+        select(PayrollRun.status).where(PayrollRun.id == run.id).with_for_update()
+    )
+    if locked_status != "finalized":
+        return 0
+    await session.refresh(run)
+    cash = _q(run.payout_cash_total or 0)
+    funded = _q(
+        await session.scalar(
+            select(func.coalesce(func.sum(CashflowTransaction.amount), 0))
+            .join(Wallet, Wallet.id == CashflowTransaction.wallet_id)
+            .where(
+                CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
+                CashflowTransaction.source_id == run.id,
+                CashflowTransaction.direction == "in",
+                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                Wallet.code == SAFE_WALLET_CODE,
+            )
+        )
+        or 0
+    )
+    if cash <= 0 and funded <= 0:
+        return 0
+    if (await run_payment_settlement(session, run.id)).settled:
+        await reconcile_run_reserves(session, run.id)
+        return 0
+    # Refresh counters from real postings before using amount_paid as a lower bound.
+    await reconcile_run_reserves(session, run.id)
+
+    wallets = {
+        wallet.code: wallet
+        for wallet in (
+            await session.scalars(
+                select(Wallet).where(
+                    Wallet.code.in_((KASSA_WALLET_CODE, SAFE_WALLET_CODE)),
+                    Wallet.status == "active",
+                )
+            )
+        ).all()
+    }
+    cash_wallet = (
+        await session.get(Wallet, run.payout_cash_wallet_id)
+        if run.payout_cash_wallet_id is not None
+        else None
+    )
+    if cash > 0 and (cash_wallet is None or cash_wallet.code not in wallets):
+        raise PayrollConflictError("Для восстановления резерва не найден наличный счёт ведомости")
+    grand_total = await _run_grand_total(session, run.id)
+    cash = min(cash, grand_total)
+    bank_required = max(Decimal("0"), grand_total - cash)
+    targets = {
+        KASSA_WALLET_CODE: cash
+        if cash_wallet and cash_wallet.code == KASSA_WALLET_CODE
+        else Decimal("0"),
+        SAFE_WALLET_CODE: min(funded, bank_required)
+        + (cash if cash_wallet and cash_wallet.code == SAFE_WALLET_CODE else Decimal("0")),
+    }
+
+    # Pool transfers are already real two-legged cash postings. Do not move them back.
+    transfers = (
+        await session.scalars(
+            select(PayrollRunEvent).where(
+                PayrollRunEvent.run_id == run.id, PayrollRunEvent.action == "reserve_transferred"
+            )
+        )
+    ).all()
+    transfer_ids = [uuid.UUID(event.payload["transfer_id"]) for event in transfers]
+    if transfer_ids:
+        for wallet_id, net in (
+            await session.execute(
+                select(
+                    CashflowTransaction.wallet_id,
+                    func.sum(
+                        case(
+                            (CashflowTransaction.direction == "in", CashflowTransaction.amount),
+                            else_=-CashflowTransaction.amount,
+                        )
+                    ),
+                )
+                .where(
+                    CashflowTransaction.source_kind == INTERNAL_TRANSFER_SOURCE_KIND,
+                    CashflowTransaction.source_id.in_(transfer_ids),
+                    CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                )
+                .group_by(CashflowTransaction.wallet_id)
+            )
+        ).all():
+            for code, wallet in wallets.items():
+                if wallet.id == wallet_id:
+                    targets[code] += _q(net)
+
+    paid_by_wallet = dict(
+        (
+            await session.execute(
+                select(
+                    CashflowTransaction.wallet_id,
+                    func.sum(
+                        case(
+                            (CashflowTransaction.direction == "out", CashflowTransaction.amount),
+                            else_=-CashflowTransaction.amount,
+                        )
+                    ),
+                )
+                .where(
+                    CashflowTransaction.source_kind == PAYROLL_PAYOUT_SOURCE_KIND,
+                    CashflowTransaction.source_id == run.id,
+                    CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                )
+                .group_by(CashflowTransaction.wallet_id)
+            )
+        ).all()
+    )
+    changes = []
+    for code, location in ((KASSA_WALLET_CODE, "kassa"), (SAFE_WALLET_CODE, "safe")):
+        target = max(Decimal("0"), _q(targets[code]))
+        existing = await _active_run_reserve(session, run.id, location)
+        wallet = wallets.get(code)
+        posted = max(Decimal("0"), _q(paid_by_wallet.get(wallet.id, 0))) if wallet else Decimal("0")
+        if existing is None and target <= posted:
+            continue  # fully consumed pools must not be recreated on every callback
+        if target <= 0:
+            if existing is not None:
+                existing.amount = posted
+                if existing.amount <= 0:
+                    existing.status = "cancelled"
+            continue
+        before = _q(existing.amount) if existing else None
+        reserve = (
+            await ensure_run_kassa_reserve(
+                session, run, cash_amount=target, created_by_user_id=created_by_user_id
+            )
+            if location == "kassa"
+            else await ensure_run_safe_reserve(
+                session, run, account_amount=target, created_by_user_id=created_by_user_id
+            )
+        )
+        if before is None or before != _q(reserve.amount):
+            changes.append(
+                {
+                    "reserve_id": str(reserve.id),
+                    "location": location,
+                    "previous_amount": str(before) if before is not None else None,
+                    "amount": str(_q(reserve.amount)),
+                }
+            )
+    await reconcile_run_reserves(session, run.id)
+    if changes:
+        session.add(
+            PayrollRunEvent(
+                run_id=run.id,
+                period_id=run.period_id,
+                action="reserves_restored",
+                actor_user_id=created_by_user_id,
+                payload={
+                    "bank_received": str(funded),
+                    "cash_configured": str(cash),
+                    "reserves": changes,
+                },
+            )
+        )
+    await session.flush()
+    return len(changes)
 
 
 async def cancel_run_reserves(session: AsyncSession, run_id: uuid.UUID) -> int:

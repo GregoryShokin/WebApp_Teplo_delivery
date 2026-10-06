@@ -288,6 +288,9 @@ async def book_bank_to_safe_transfer(
         )
     existing = await session.scalar(existing_query.limit(1))
     if existing is not None:
+        from app.services.payroll_reserves import restore_run_reserves
+
+        await restore_run_reserves(session, run)
         return False
     amount = (
         _money(amount_override)
@@ -351,24 +354,9 @@ async def book_bank_to_safe_transfer(
     await session.flush()
     # Момент транзита: безналичный пул-резерв ЗП материализуется на Сейфе (кликабелен в
     # «Активных платежах»). Деньги только что пришли — резерв earmark'ит ровно эту сумму.
-    from app.services.payroll_reserves import ensure_run_safe_reserve
+    from app.services.payroll_reserves import restore_run_reserves
 
-    funded_total = await session.scalar(
-        select(func.coalesce(func.sum(CashflowTransaction.amount), 0)).where(
-            CashflowTransaction.source_kind == BANK_TO_SAFE_SOURCE_KIND,
-            CashflowTransaction.source_id == run.id,
-            CashflowTransaction.wallet_id == safe_wallet.id,
-            CashflowTransaction.direction == "in",
-            CashflowTransaction.quality_status != "excluded",
-        )
-    )
-    await ensure_run_safe_reserve(session, run, account_amount=_money(funded_total))
-    # Исторические/конкурентные выплаты этой ведомости с Сейфа должны быть зачтены в новый
-    # резерв в той же транзакции. В нормальном новом контуре до резерва они запрещены, но
-    # сверка не даёт старым данным создать завышенный непогашенный резерв.
-    from app.services.payroll_reserves import reconcile_run_reserves
-
-    await reconcile_run_reserves(session, run.id)
+    await restore_run_reserves(session, run)
     return True
 
 
@@ -1168,6 +1156,10 @@ async def apply_run_payout_delta(
     draft = await _get_bank_draft(session, run_id)
     if draft is None:
         raise PayrollConflictError("Сначала создайте банковский черновик ведомости")
+
+    from app.services.payroll_reserves import restore_run_reserves
+
+    await restore_run_reserves(session, run, created_by_user_id=actor_user_id)
 
     new_amount = await _run_account_amount(session, run)
     previous_amount = _money(draft.amount)

@@ -1340,6 +1340,9 @@ async def finalize_payroll_run(
     period.status = "finalized"
     period.finalized_at = now
     period.finalized_by_user_id = finalized_by_user_id
+    from app.services.payroll_reserves import restore_run_reserves
+
+    await restore_run_reserves(session, run, created_by_user_id=finalized_by_user_id)
     session.add(
         PayrollRunEvent(
             run_id=run.id,
