@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### agent-unit-economics — ветка `codex/teplo-unit-economics-skill`
+- worktree: `../Teplo-agent-unit-economics`
+- задача: скилл рассуждения о постепенном росте чистой прибыли Тепла до 500 000 руб./месяц
+- трогает: `skills/teplo-profit-strategy/**`, ссылки в `skills/teplo-unit-economics/SKILL.md` и `skills/teplo-rolls-analysis/SKILL.md`
+- shared-ресурсы: не используются; production, БД, меню и тарифы не меняются
+- статус: в работе; публикация ветки ранее недоступна (GitHub 403), работа локальная
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
