@@ -16,12 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### agent-unit-economics — ветка `codex/teplo-unit-economics-skill`
-- worktree: `../Teplo-agent-unit-economics`
-- задача: учесть комиссию и разные цены Яндекс Еды в исследовании конкурентов
-- трогает: `skills/teplo-competitor-research/**`, `business-docs/marketing/competitor-research/2026-10-08/**`
-- статус: в работе; только документы и установленная копия навыка
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`

@@ -567,5 +567,50 @@
     "Yobi direct site CAPTCHA; no bypass",
     "Sushivesla local menu not obtained",
     "No orders/messages/reviews posted; no precise delivery destination retained"
-  ]
+  ],
+  "channel_pricing_context": {
+    "id": "owner-yandex-channel-pricing-2026-10-08",
+    "source_type": "owner_report",
+    "source": "Direct user message in this conversation",
+    "reported_on": "2026-10-08",
+    "market_report": {
+      "reason_for_higher_eda_prices": "Sellers compensate platform commission",
+      "approximate_commission_range": [
+        0.25,
+        0.35
+      ],
+      "depends_on": "Model of work, including own couriers vs Yandex couriers",
+      "contract_verified": false
+    },
+    "teplo_report": {
+      "separate_yandex_prices": true,
+      "owner_reported_commission_to_compensate": 0.25,
+      "contract_verified_commission_rate": null,
+      "observed_price_uplift": null,
+      "note": "25% is the owner-reported amount to compensate; exact price uplift and commission basis not verified."
+    },
+    "comparison_rules": [
+      "Compare direct channels with direct channels and Eda with Eda.",
+      "Do not infer product quality or margin from higher aggregator prices.",
+      "Do not mechanically subtract 25–35% or divide by1.25 to reconstruct unknown direct prices.",
+      "Observed price uplift is not observed commission rate."
+    ],
+    "conditional_formula": {
+      "assumption": "Commission c applies to whole aggregator sale price; all other costs equal for the same-retained-amount comparison",
+      "retained_after_commission": "P_eda * (1 - c)",
+      "required_aggregator_price": "P_direct / (1 - c)",
+      "required_uplift": "c / (1 - c)",
+      "examples": [
+        {
+          "commission_rate": 0.25,
+          "required_uplift": 0.33333333333333326
+        },
+        {
+          "commission_rate": 0.35,
+          "required_uplift": 0.5384615384615383
+        }
+      ],
+      "limitation": "Retained amount is not net profit or the competitor actual direct price; delivery model, promotion funding, other fees and taxes need separate treatment."
+    }
+  }
 }

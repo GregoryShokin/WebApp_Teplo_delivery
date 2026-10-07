@@ -482,7 +482,10 @@
         "delta_rub": 299,
         "delta_percent": 24.94,
         "match_status": "same name and weight; Eda dialog has no composition, exact recipe equivalence unverified",
-        "basket_extras_and_delivery": "not included"
+        "basket_extras_and_delivery": "not included",
+        "interpretation": "The observed 24.94% price uplift is not a verified commission rate. Commission compensation is a possible explanation under the owner-reported market context; this competitor contract/rationale was not inspected.",
+        "commission_rate_verified": null,
+        "owner_context_ref": "registry.json#channel_pricing_context"
       }
     },
     {
