@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### agent-unit-economics — ветка `codex/teplo-unit-economics-skill`
+- worktree: `../Teplo-agent-unit-economics`
+- задача: скиллы технической реализуемости акций iiko и Starter
+- трогает: `skills/teplo-iiko-promotion-capabilities/**`, `skills/teplo-starter-promotion-capabilities/**`, перекрёстные ссылки навыков Тепла
+- shared-ресурсы: только чтение UI/документации iiko и Starter
+- статус: в работе, локальная ветка
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
