@@ -1,0 +1,393 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-07T23:15:34.851829+00:00",
+  "source_file": "/private/tmp/teplo-scenarios-20261008/product-costs.json",
+  "source_sha256": "3e43b88d5d1b985f7abcfe2001ca650c962d5db1c3e2981e2ccb421a4f2d6f57",
+  "warnings_before_numbers": [
+    "Результат — условный вклад до изменения постоянных и ступенчатых расходов, не чистая прибыль и не прогноз спроса.",
+    "Прайс до прочих скидок и баллов условно принят за фактически оплаченную выручку. Если сумма оплаты иная, все применимые базы пересчитать.",
+    "Резерв 5% — гипотеза полного будущего списания вновь начисленных бонусов; не доказанное начисление каждого заказа и не разрешение одновременного списания с подарком. В Starter совместное списание со скидками и промокодами выключено. Текущие уровни начисления могут быть 5/7/10%, поэтому 5% не универсален.",
+    "Базы Starter, эквайринга, бонусов и часть налоговой базы приняты одинаковыми для сравнения; договорные базы и исключения не подтверждены.",
+    "Кухня 3.5% допустима только при сохранении дневного диапазона 50000–140000 RUB и существующей мощности; при росте20% диапазон может измениться. Формула не заменяет пересчёт всего дневного ФОТ.",
+    "Курьер130 RUB взят на один доставленный заказ, а не на каждое блюдо. Сменные доплаты курьеров и кухни в росте не учтены.",
+    "30 RUB — дополнительный резерв сверх уже включённой в рецептуры упаковки 11/33 RUB; не повторное начисление той же упаковки.",
+    "Подарочная база включает Биг бэн, Соломон и Денег нет. Замена подарка требует другой настройки предложения; фактическая применимость подарка в checkout здесь условная.",
+    "При увеличении начинки меняются выбранные полуфабрикаты на20%, включая компоненты внутри них; это не равнозначно увеличению чистой рыбы на20%.",
+    "Списание запасов оценено последними закупочными ценами, не средневзвешенной исторической стоимостью. Вода1 RUB/l — допущение.",
+    "Плата клиента за доставку=0 условно только для подтверждённой зоны, где сумма корзины достаточна. Владелец08.10: минимальный порог1000 RUB, в других зонах выше; зона наших корзин пока не подтверждена. Это нельзя переносить на весь поток. Курьер130 и новые выходы — отдельные расходы.",
+    "Расчёт20% означает120 аналогичных оплаченных заказов вместо100, при неизменном составе, канале, промо и качестве обслуживания."
+  ],
+  "assumptions": {
+    "ad_valorem_rates": {
+      "starter": 0.03,
+      "appmodel_income_tax": 0.06,
+      "acquiring_assumption": 0.02,
+      "future_bonus_redemption_reserve_assumption": 0.05,
+      "kitchen_same_daily_tier": 0.035
+    },
+    "sum_ad_valorem_rates": 0.195,
+    "retained_revenue_after_rates": 0.805,
+    "courier_per_order_rub": 130,
+    "additional_order_reserve_rub": 30,
+    "water_rub_per_l": 1,
+    "tax_status": "6% application P&L model, not verified complete tax computation",
+    "starter_status": "3% owner input; exact base/channel scope unverified",
+    "acquiring_status": "2% analyst assumption",
+    "bonus_status": "5% analyst future redemption reserve",
+    "courier_status": "130 RUB upper edge of owner approximate120–130, not exact zone tariff",
+    "customer_delivery_fee_rub": 0,
+    "customer_delivery_fee_status": "0 only conditionally for a zone and basket qualifying for free delivery. Owner minimum threshold1000; other zones higher. Zone mapping and qualifying base unverified.",
+    "owner_free_delivery_minimum_threshold_rub": 1000,
+    "free_delivery_threshold_is_universal": false,
+    "zone_qualification_confirmed": false
+  },
+  "formulas": {
+    "m": "paid_revenue*(1-.195)-materials_ex_water-water_l*1-130-30",
+    "required_volume_growth": "m0/m1-1; only positive m1 and positive m0",
+    "same_count_delta": "100*(m1-m0)",
+    "20pct_growth_delta": "120*m1-100*m0"
+  },
+  "baskets": [
+    {
+      "basket": "Соломон + Камчатский",
+      "baseline": {
+        "assumed_paid_revenue_rub": 1459.0,
+        "costs": {
+          "materials_including_recipe_packaging_ex_water": 342.0783388505309,
+          "water": 0.36209020807980735,
+          "starter": 43.77,
+          "appmodel_income_tax": 87.54,
+          "acquiring_assumption": 29.18,
+          "future_bonus_redemption_reserve_assumption": 72.95,
+          "kitchen_same_daily_tier": 51.065,
+          "courier_per_order": 130.0,
+          "additional_packaging_consumables_other_reserve": 30.0
+        },
+        "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+        "total_cost_rub": 786.9454290586107,
+        "contribution_rub": 672.0545709413893,
+        "contribution_share": 0.46062684780081514
+      },
+      "gift_status": "not presumed or assessed; other promotion/loyalty rules are outside this material calculation",
+      "baseline_includes_gift": false,
+      "variants": [
+        {
+          "id": "price_minus100",
+          "unit": {
+            "assumed_paid_revenue_rub": 1359.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 342.0783388505309,
+              "water": 0.36209020807980735,
+              "starter": 40.77,
+              "appmodel_income_tax": 81.54,
+              "acquiring_assumption": 27.18,
+              "future_bonus_redemption_reserve_assumption": 67.95,
+              "kitchen_same_daily_tier": 47.565,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+            "total_cost_rub": 767.4454290586107,
+            "contribution_rub": 591.5545709413893,
+            "contribution_share": 0.4352866600010223
+          },
+          "baseline_contribution_rub": 672.0545709413893,
+          "variant_contribution_rub": 591.5545709413893,
+          "contribution_delta_per_order_rub": -80.5,
+          "volume_growth_to_preserve_contribution": 0.1360821198150726,
+          "threshold_interpretation": "needs_more_orders",
+          "delta_contribution_100_previous_orders_same_volume_rub": -8050.0,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 3781.0914188277857,
+          "baseline_100_order_contribution_rub": 67205.45709413892,
+          "variant_120_order_contribution_rub": 70986.54851296672,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        },
+        {
+          "id": "selected_fillings_plus20_same_price",
+          "unit": {
+            "assumed_paid_revenue_rub": 1459.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 361.6899355704164,
+              "water": 0.36209020807980735,
+              "starter": 43.77,
+              "appmodel_income_tax": 87.54,
+              "acquiring_assumption": 29.18,
+              "future_bonus_redemption_reserve_assumption": 72.95,
+              "kitchen_same_daily_tier": 51.065,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+            "total_cost_rub": 806.5570257784962,
+            "contribution_rub": 652.4429742215038,
+            "contribution_share": 0.44718504059047554
+          },
+          "baseline_contribution_rub": 672.0545709413893,
+          "variant_contribution_rub": 652.4429742215038,
+          "contribution_delta_per_order_rub": -19.6115967198855,
+          "volume_growth_to_preserve_contribution": 0.030058713933253853,
+          "threshold_interpretation": "needs_more_orders",
+          "delta_contribution_100_previous_orders_same_volume_rub": -1961.15967198855,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 11087.699812441526,
+          "baseline_100_order_contribution_rub": 67205.45709413892,
+          "variant_120_order_contribution_rub": 78293.15690658045,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        }
+      ]
+    },
+    {
+      "basket": "Токио + Хоккайдо",
+      "baseline": {
+        "assumed_paid_revenue_rub": 1384.0,
+        "costs": {
+          "materials_including_recipe_packaging_ex_water": 353.91789156483935,
+          "water": 0.29330805224326456,
+          "starter": 41.52,
+          "appmodel_income_tax": 83.04,
+          "acquiring_assumption": 27.68,
+          "future_bonus_redemption_reserve_assumption": 69.2,
+          "kitchen_same_daily_tier": 48.44,
+          "courier_per_order": 130.0,
+          "additional_packaging_consumables_other_reserve": 30.0
+        },
+        "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+        "total_cost_rub": 784.0911996170826,
+        "contribution_rub": 599.9088003829174,
+        "contribution_share": 0.43346011588361083
+      },
+      "gift_status": "not presumed or assessed; other promotion/loyalty rules are outside this material calculation",
+      "baseline_includes_gift": false,
+      "variants": [
+        {
+          "id": "price_minus100",
+          "unit": {
+            "assumed_paid_revenue_rub": 1284.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 353.91789156483935,
+              "water": 0.29330805224326456,
+              "starter": 38.52,
+              "appmodel_income_tax": 77.04,
+              "acquiring_assumption": 25.68,
+              "future_bonus_redemption_reserve_assumption": 64.2,
+              "kitchen_same_daily_tier": 44.94,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+            "total_cost_rub": 764.5911996170826,
+            "contribution_rub": 519.4088003829174,
+            "contribution_share": 0.4045239878371631
+          },
+          "baseline_contribution_rub": 599.9088003829174,
+          "variant_contribution_rub": 519.4088003829174,
+          "contribution_delta_per_order_rub": -80.5,
+          "volume_growth_to_preserve_contribution": 0.15498389696257356,
+          "threshold_interpretation": "needs_more_orders",
+          "delta_contribution_100_previous_orders_same_volume_rub": -8050.0,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 2338.1760076583478,
+          "baseline_100_order_contribution_rub": 59990.88003829174,
+          "variant_120_order_contribution_rub": 62329.056045950085,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        },
+        {
+          "id": "selected_fillings_plus20_same_price",
+          "unit": {
+            "assumed_paid_revenue_rub": 1384.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 369.74397786939113,
+              "water": 0.29330805224326456,
+              "starter": 41.52,
+              "appmodel_income_tax": 83.04,
+              "acquiring_assumption": 27.68,
+              "future_bonus_redemption_reserve_assumption": 69.2,
+              "kitchen_same_daily_tier": 48.44,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 11.0,
+            "total_cost_rub": 799.9172859216344,
+            "contribution_rub": 584.0827140783656,
+            "contribution_share": 0.4220250824265647
+          },
+          "baseline_contribution_rub": 599.9088003829174,
+          "variant_contribution_rub": 584.0827140783656,
+          "contribution_delta_per_order_rub": -15.82608630455178,
+          "volume_growth_to_preserve_contribution": 0.02709562519672242,
+          "threshold_interpretation": "needs_more_orders",
+          "delta_contribution_100_previous_orders_same_volume_rub": -1582.608630455178,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 10099.045651112134,
+          "baseline_100_order_contribution_rub": 59990.88003829174,
+          "variant_120_order_contribution_rub": 70089.92568940387,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        }
+      ]
+    },
+    {
+      "basket": "Биг бэн + Соломон с условным подарком",
+      "baseline": {
+        "assumed_paid_revenue_rub": 3298.0,
+        "costs": {
+          "materials_including_recipe_packaging_ex_water": 988.3312125975541,
+          "water": 1.0555085485028801,
+          "starter": 98.94,
+          "appmodel_income_tax": 197.88,
+          "acquiring_assumption": 65.96,
+          "future_bonus_redemption_reserve_assumption": 164.9,
+          "kitchen_same_daily_tier": 115.43,
+          "courier_per_order": 130.0,
+          "additional_packaging_consumables_other_reserve": 30.0
+        },
+        "recipe_packaging_in_materials_do_not_add_again_rub": 33.0,
+        "total_cost_rub": 1792.4967211460569,
+        "contribution_rub": 1505.5032788539431,
+        "contribution_share": 0.45648977527408824
+      },
+      "gift_status": "conditional, not verified actual checkout; apply current qualifying amount and compatibility rules",
+      "baseline_includes_gift": true,
+      "variants": [
+        {
+          "id": "replace_gift_with_discount99",
+          "unit": {
+            "assumed_paid_revenue_rub": 3199.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 866.5403436636356,
+              "water": 0.8920533365468691,
+              "starter": 95.97,
+              "appmodel_income_tax": 191.94,
+              "acquiring_assumption": 63.98,
+              "future_bonus_redemption_reserve_assumption": 159.95,
+              "kitchen_same_daily_tier": 111.965,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 33.0,
+            "total_cost_rub": 1651.2373970001825,
+            "contribution_rub": 1547.7626029998175,
+            "contribution_share": 0.48382700937787354
+          },
+          "baseline_contribution_rub": 1505.5032788539431,
+          "variant_contribution_rub": 1547.7626029998175,
+          "contribution_delta_per_order_rub": 42.25932414587451,
+          "volume_growth_to_preserve_contribution": -0.027303492191870393,
+          "threshold_interpretation": "can_tolerate_volume_decline",
+          "delta_contribution_100_previous_orders_same_volume_rub": 4225.932414587451,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 35181.1844745838,
+          "baseline_100_order_contribution_rub": 150550.3278853943,
+          "variant_120_order_contribution_rub": 185731.5123599781,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        },
+        {
+          "id": "replace_gift_with_selected_fillings_plus20_same_price",
+          "unit": {
+            "assumed_paid_revenue_rub": 3298.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 900.6489885722667,
+              "water": 0.8920533365468691,
+              "starter": 98.94,
+              "appmodel_income_tax": 197.88,
+              "acquiring_assumption": 65.96,
+              "future_bonus_redemption_reserve_assumption": 164.9,
+              "kitchen_same_daily_tier": 115.43,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 33.0,
+            "total_cost_rub": 1704.6510419088136,
+            "contribution_rub": 1593.3489580911864,
+            "contribution_share": 0.4831258211313482
+          },
+          "baseline_contribution_rub": 1505.5032788539431,
+          "variant_contribution_rub": 1593.3489580911864,
+          "contribution_delta_per_order_rub": 87.84567923724342,
+          "volume_growth_to_preserve_contribution": -0.055132730837870896,
+          "threshold_interpretation": "can_tolerate_volume_decline",
+          "delta_contribution_100_previous_orders_same_volume_rub": 8784.56792372434,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 40651.54708554807,
+          "baseline_100_order_contribution_rub": 150550.3278853943,
+          "variant_120_order_contribution_rub": 191201.87497094236,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        },
+        {
+          "id": "replace_gift_with_discount99_and_selected_fillings_plus20",
+          "unit": {
+            "assumed_paid_revenue_rub": 3199.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 900.6489885722667,
+              "water": 0.8920533365468691,
+              "starter": 95.97,
+              "appmodel_income_tax": 191.94,
+              "acquiring_assumption": 63.98,
+              "future_bonus_redemption_reserve_assumption": 159.95,
+              "kitchen_same_daily_tier": 111.965,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 33.0,
+            "total_cost_rub": 1685.3460419088135,
+            "contribution_rub": 1513.6539580911865,
+            "contribution_share": 0.47316472588033337
+          },
+          "baseline_contribution_rub": 1505.5032788539431,
+          "variant_contribution_rub": 1513.6539580911865,
+          "contribution_delta_per_order_rub": 8.150679237243411,
+          "volume_growth_to_preserve_contribution": -0.005384770537330695,
+          "threshold_interpretation": "can_tolerate_volume_decline",
+          "delta_contribution_100_previous_orders_same_volume_rub": 815.0679237243411,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 31088.14708554807,
+          "baseline_100_order_contribution_rub": 150550.3278853943,
+          "variant_120_order_contribution_rub": 181638.47497094236,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        },
+        {
+          "id": "retain_gift_and_selected_fillings_plus20_global_recipe_change",
+          "unit": {
+            "assumed_paid_revenue_rub": 3298.0,
+            "costs": {
+              "materials_including_recipe_packaging_ex_water": 1023.784135767055,
+              "water": 1.0555085485028801,
+              "starter": 98.94,
+              "appmodel_income_tax": 197.88,
+              "acquiring_assumption": 65.96,
+              "future_bonus_redemption_reserve_assumption": 164.9,
+              "kitchen_same_daily_tier": 115.43,
+              "courier_per_order": 130.0,
+              "additional_packaging_consumables_other_reserve": 30.0
+            },
+            "recipe_packaging_in_materials_do_not_add_again_rub": 33.0,
+            "total_cost_rub": 1827.9496443155579,
+            "contribution_rub": 1470.0503556844421,
+            "contribution_share": 0.4457399501772111
+          },
+          "baseline_contribution_rub": 1505.5032788539431,
+          "variant_contribution_rub": 1470.0503556844421,
+          "contribution_delta_per_order_rub": -35.4529231695009,
+          "volume_growth_to_preserve_contribution": 0.0241168086742133,
+          "threshold_interpretation": "needs_more_orders",
+          "delta_contribution_100_previous_orders_same_volume_rub": -3545.29231695009,
+          "delta_contribution_100_previous_orders_20pct_volume_growth_rub": 25855.714796738754,
+          "baseline_100_order_contribution_rub": 150550.3278853943,
+          "variant_120_order_contribution_rub": 176406.04268213306,
+          "volume_growth20_is_assumption_not_forecast": true,
+          "bridge_check_passed": true
+        }
+      ]
+    }
+  ],
+  "decision_use": {
+    "can_choose": "Показывает стоимость улучшения выбранных начинок, цену скидки и высвобождаемый бюджет подарка; даёт минимальный рост количества заказов или допустимое снижение объёма при принятых издержках. Можно выбрать ограниченный проверяемый продуктовый тест.",
+    "cannot_choose": "Не доказывает, какую ценность предпочитает клиент, эластичность спроса, повторные покупки, отток после отмены подарка, доступную мощность кухни и итоговую чистую прибыль. Три направления сравниваются как гипотезы; объективного победителя без данных спроса нет."
+  },
+  "integrity": {
+    "source_unchanged": true,
+    "delta_bridge_checks_passed": true,
+    "baseline_gift_included": true
+  },
+  "independent_check_scope": "Три корзины и восемь вариантов; Филадельфия в итоговом отчёте проверена отдельно с текущей базой685 ₽ и не входит в этот JSON."
+}

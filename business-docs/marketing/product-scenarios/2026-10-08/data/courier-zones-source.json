@@ -1,0 +1,11 @@
+{
+  "endpoint": "/api/1/delivery_restrictions",
+  "method": "POST read dictionary",
+  "request": {
+    "organizationIds": [
+      "5c7e51f9-93c6-450c-9299-440ac1c889e8"
+    ]
+  },
+  "status": 200,
+  "retrieved_at": "2026-10-07T23:06:42.999414+00:00"
+}

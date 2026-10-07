@@ -1,0 +1,627 @@
+{
+  "as_of_local": "2026-10-08 Europe/Istanbul",
+  "retrieved_at_utc": "2026-10-07T23:02:23.601678+00:00",
+  "scope": "Read-only cost driver evidence for scenario, no runs/settings/UI mutation",
+  "baseline_status": "August2026 unclosed working baseline; 1819 sales orders across channels, not delivery count",
+  "drivers": [
+    {
+      "id": "production_percent_pool",
+      "status": "live_db_confirmed",
+      "value": [
+        {
+          "min_revenue": "50000.00",
+          "max_revenue": "140000.00",
+          "rate_percent": "0.03500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "min_revenue": "140000.00",
+          "max_revenue": "190000.00",
+          "rate_percent": "0.04500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "min_revenue": "190000.00",
+          "max_revenue": "550000.00",
+          "rate_percent": "0.05500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "min_revenue": "550000.00",
+          "max_revenue": null,
+          "rate_percent": "0.06500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        }
+      ],
+      "unit": "fraction of daily revenue",
+      "base": "iiko DishDiscountSumInt after discounts, selected department; before acquiring/tax",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:tiers; payroll_percent.py::compute_daily_percent_pool",
+      "unknown": "Actual paid sum needs shift weights and floor per employee-role-day-station; gaps below 50000 mean no_rate (pool zero), not default 3.5%. Demand distribution and capacity unknown.",
+      "formula": "P(R)=R*r(R); delta=sum_d(P(R1_d)-P(R0_d)); applied to whole revenue, not excess"
+    },
+    {
+      "id": "production_coefficients",
+      "status": "live_db_confirmed",
+      "value": [
+        {
+          "category": "category_1",
+          "coefficient": "10.000",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "category": "category_2",
+          "coefficient": "7.500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "category": "category_3",
+          "coefficient": "5.000",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "category": "category_4",
+          "coefficient": "2.500",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "category": "freelancer",
+          "coefficient": "0.000",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "category": "intern",
+          "coefficient": "0.000",
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        }
+      ],
+      "unit": "weight",
+      "base": "category * min(hours,12)/12",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:coefficient; payroll_percent.py::distribute_percent_pool",
+      "unknown": "Legacy payroll.category_rules coefficient for category_4 is zero but current CategoryCoefficient is 2.5; use the versioned current source.",
+      "formula": null
+    },
+    {
+      "id": "production_base_daily_rates",
+      "status": "live_db_confirmed",
+      "value": [
+        {
+          "position_group": "Администратор",
+          "category": "category_2",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "2200.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Администратор",
+          "category": "category_3",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "2000.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Администратор",
+          "category": "category_4",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "1800.00",
+          "is_active": true,
+          "effective_from": "2026-04-21",
+          "effective_to": null
+        },
+        {
+          "position_group": "Администратор",
+          "category": "intern",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "1800.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Заготовщик",
+          "category": "category_3",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "2200.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Заготовщик",
+          "category": "intern",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "2200.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Пиццерист",
+          "category": "category_1",
+          "station": "pizza",
+          "rate_type": "daily",
+          "amount": "2600.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Пиццерист",
+          "category": "category_2",
+          "station": "pizza",
+          "rate_type": "daily",
+          "amount": "2200.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Пиццерист",
+          "category": "category_3",
+          "station": "pizza",
+          "rate_type": "daily",
+          "amount": "2000.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Пиццерист",
+          "category": "intern",
+          "station": "pizza",
+          "rate_type": "daily",
+          "amount": "2000.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Сушист",
+          "category": "category_1",
+          "station": "sushi",
+          "rate_type": "daily",
+          "amount": "2800.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Сушист",
+          "category": "category_2",
+          "station": "sushi",
+          "rate_type": "daily",
+          "amount": "2400.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Сушист",
+          "category": "category_3",
+          "station": "sushi",
+          "rate_type": "daily",
+          "amount": "2200.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Сушист",
+          "category": "intern",
+          "station": "sushi",
+          "rate_type": "daily",
+          "amount": "2000.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Шаурмист",
+          "category": "category_3",
+          "station": "shawarma",
+          "rate_type": "daily",
+          "amount": "2000.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        },
+        {
+          "position_group": "Шаурмист",
+          "category": "category_4",
+          "station": null,
+          "rate_type": "daily",
+          "amount": "1800.00",
+          "is_active": true,
+          "effective_from": "2026-03-09",
+          "effective_to": null
+        },
+        {
+          "position_group": "Шаурмист",
+          "category": "intern",
+          "station": "shawarma",
+          "rate_type": "daily",
+          "amount": "1800.00",
+          "is_active": true,
+          "effective_from": "2026-01-01",
+          "effective_to": null
+        }
+      ],
+      "unit": "RUB/12h",
+      "base": "role/category/station and dated availability",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:rates,availability; payroll_calculator.py::base_shift_pay",
+      "unknown": "Selected added person category, hours and station must be specified. Freelancers use employee.freelancer_shift_rate, not this grid.",
+      "formula": "base=rate*minutes/720"
+    },
+    {
+      "id": "production_friday_saturday_premium",
+      "status": "live_db_confirmed",
+      "value": {
+        "amount": 200,
+        "threshold_hours": 8.0
+      },
+      "unit": "RUB/person/day",
+      "base": "Friday or Saturday, total minutes >=480; ordinary eligible employee",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:settings; payroll_calculator.py::weekday_premium_for_employee_day",
+      "unknown": "One per day; no proportional 12h multiplier; freelancers excluded. Business-effective date is not proved by updated_at.",
+      "formula": null
+    },
+    {
+      "id": "production_senior_premium",
+      "status": "live_db_confirmed",
+      "value": [
+        {
+          "position": "Кассир",
+          "role": "deputy_senior",
+          "amount": "300.00",
+          "percent_of_base": null,
+          "effective_from": "2026-06-09",
+          "effective_to": null
+        },
+        {
+          "position": "Кассир",
+          "role": "senior",
+          "amount": "300.00",
+          "percent_of_base": null,
+          "effective_from": "2026-06-09",
+          "effective_to": null
+        },
+        {
+          "position": "Повар",
+          "role": "deputy_senior",
+          "amount": "300.00",
+          "percent_of_base": null,
+          "effective_from": "2026-06-09",
+          "effective_to": null
+        },
+        {
+          "position": "Повар",
+          "role": "senior",
+          "amount": "500.00",
+          "percent_of_base": null,
+          "effective_from": "2026-06-09",
+          "effective_to": null
+        }
+      ],
+      "unit": "RUB/12h",
+      "base": "cook/cashier senior/deputy designation",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:premiums",
+      "unknown": "Not automatic for every added cook; cashier recipient resolution separate.",
+      "formula": "allowance=amount*minutes/720"
+    },
+    {
+      "id": "production_fund",
+      "status": "live_db_confirmed",
+      "value": [
+        {
+          "rate": 0.0,
+          "min_months": 0
+        },
+        {
+          "rate": 0.05,
+          "min_months": 6
+        },
+        {
+          "rate": 0.1,
+          "min_months": 12
+        },
+        {
+          "rate": 0.15,
+          "min_months": 18
+        }
+      ],
+      "unit": "fraction of shift base including allowances",
+      "base": "completed months of tenure; excludes percent pool/manual bonuses",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json:settings; payroll_calculator.py::fund_accrual_for_day",
+      "unknown": "Selected person tenure and exclusions unknown; accrual is a cost/liability even if not paid now.",
+      "formula": "floor((base+senior+weekday)*fund_rate) per day group"
+    },
+    {
+      "id": "new_sushi_shift_examples",
+      "status": "derived_from_live_rules",
+      "value": {
+        "ordinary_weekday_12h_no_senior_range": [
+          2200,
+          3220
+        ],
+        "fri_sat_12h_no_senior_range": [
+          2400,
+          3450
+        ],
+        "cat2_lt6months_weekday": 2400,
+        "cat2_lt6months_fri_sat": 2600,
+        "cat2_ge18months_weekday": 2760,
+        "cat2_ge18months_fri_sat": 2990
+      },
+      "unit": "RUB/added12h shift",
+      "base": "ordinary sushi categories 1-3; fund 0-15%; no senior/deputy, same existing revenue and pool",
+      "period": "2026-10-08",
+      "source": "cost-config-live.json; verified payroll formula",
+      "unknown": "Excludes employer official payroll charges, meals, recruiting, workwear and capacity effects. New employee does not create another percent pool. Not universal full shift cost.",
+      "formula": null
+    },
+    {
+      "id": "courier_variable_tariff",
+      "status": "owner_reported_range",
+      "value": {
+        "per_delivery_range_rub": [
+          120,
+          130
+        ],
+        "shift_tiers_rub": [
+          500,
+          700,
+          1000
+        ]
+      },
+      "unit": "RUB/order and/or shift",
+      "base": "actual courier contract, zone/distance/shift guarantee",
+      "period": "2026-10-08",
+      "source": "Owner2026-10-08; courier-tariffs.json; live zone directory08.10",
+      "unknown": "Per-zone exact rates not yet read; exact5/10h boundaries, completed/cancelled eligibility, batching, proration unknown. Zone dictionary is customer rules, not pay.",
+      "formula": "courier_cost = sum(shift_pay(hours)) + sum(deliveries_by_zone * courier_rate_by_zone) + other_proved_adjustments"
+    },
+    {
+      "id": "acquiring_tariff",
+      "status": "unknown",
+      "value": null,
+      "unit": "fraction/card or SBP receipts plus minimum",
+      "base": "separate payment instruments and period minimum",
+      "period": "2026-10-08",
+      "source": "issues.json:acquiring; pnl/sources/acquiring.py",
+      "unknown": "No bank contract rates or full minimum found. August total46092.57 includes5636.95 minimum top-up. Do not apply total/revenue as marginal rate.",
+      "formula": "if contract confirms: fee=max(F,r*B); delta=max(F,r*(B+dB))-max(F,r*B)"
+    },
+    {
+      "id": "starter_tariff",
+      "status": "owner_reported",
+      "value": 0.03,
+      "unit": "fraction/order",
+      "base": "owner:3%сзаказа; exact net/gross, channels, refunds and VAT not confirmed",
+      "period": "2026-10-08",
+      "source": "Owner2026-10-08; August snapshot",
+      "unknown": "Apply3% only with explicit scenario billing base/channel assumption; exact contract minimum/fixed/additional services unresolved.",
+      "formula": null
+    },
+    {
+      "id": "yandex_eda_commission",
+      "status": "owner_reported",
+      "value": 0.25,
+      "unit": "fraction",
+      "base": "Teplo Eda channel turnover; exact contract base unresolved",
+      "period": "2026-10-08",
+      "source": "Owner message 2026-10-08 in this conversation",
+      "unknown": "Other merchants 25-35% is owner context not Teplo tariff. VAT/additional delivery/services/refunds and contractual base not verified. Do not apply to direct channel.",
+      "formula": null
+    },
+    {
+      "id": "alice_partner_commission",
+      "status": "application_snapshot_rule",
+      "value": 0.2,
+      "unit": "fraction of partner net sales",
+      "base": "partner В гостях у Алисы; sales after discount",
+      "period": "2026-08 / read2026-10-07",
+      "source": "reports.json:reports.8.lines.partner_commission source_note; nonpayroll-sources.md",
+      "unknown": "Current DB rule not separately refreshed, no effective dates on rule; confirm contract for future scenario. Not all-channel fee.",
+      "formula": null
+    },
+    {
+      "id": "business_tax_application_model",
+      "status": "code_confirmed_not_full_tax",
+      "value": {
+        "usn_rate": 0.06,
+        "fixed_contribution_annual": 57390,
+        "fixed_monthly": 4782.5
+      },
+      "unit": "fraction/RUB",
+      "base": "year2026; pnl_iiko_fact direction total revenue_net before partner commission/refunds",
+      "period": "2026",
+      "source": "apps/api/app/services/pnl/sources/taxes.py::income_tax_for_month; taxes/engine.py::YearConfig/YEAR_CONFIGS",
+      "unknown": "Application adapter excludes contribution deduction, additional1%, separateVAT. Not a legally verified complete marginal tax; separate actual tax contour confirmation needed.",
+      "formula": "round(revenue_net*0.06)+round(57390/12); fixed part delta=0 within same horizon"
+    },
+    {
+      "id": "payroll_employer_tax_increment",
+      "status": "unknown",
+      "value": null,
+      "unit": "RUB/new employee or shift",
+      "base": "official payroll contour and employee-specific liabilities",
+      "period": "2026-10-08",
+      "source": "August tax_payroll_ledger total20013.93; live payroll.ndfl.enabled=false",
+      "unknown": "Disabled internal withholding does not mean zero employer tax; do not charge13% as extra on all informal payroll. Official employer rate/threshold/year parameters require matching official salary and employee state.",
+      "formula": null
+    },
+    {
+      "id": "packaging_normative",
+      "status": "unknown",
+      "value": null,
+      "unit": "RUB/item, gift or order",
+      "base": "actual packaging SKU quantities and purchase units",
+      "period": "2026-10-08",
+      "source": "nonpayroll-sources.md section4; recipe analysis",
+      "unknown": "Inventory differences26401.43+9074.23 are inventory losses, not normative packaging cost/order. Ordinary packaging may already be in recipe/food cost; reconcile first.",
+      "formula": null
+    },
+    {
+      "id": "gift_cost",
+      "status": "recipe_specific_unknown",
+      "value": null,
+      "unit": "RUB/issued unit",
+      "base": "active gift SKU actual tech card + extra packaging/labor/delivery",
+      "period": "2026-10-08",
+      "source": "teplo-promotions/economics-and-compatibility.md; teplo-rolls-analysis",
+      "unknown": "Retail gift price is not cost. Count all actual free units, not another expense if already included in food-cost baseline. Incrementality unproved.",
+      "formula": null
+    },
+    {
+      "id": "staff_meals_increment",
+      "status": "unknown",
+      "value": null,
+      "unit": "RUB/shift",
+      "base": "actual extra employee meals or allowance",
+      "period": "2026-10-08",
+      "source": "August P&L staff_meals",
+      "unknown": "30479.73 monthly expense is not confirmed tariff per added shift.",
+      "formula": null
+    },
+    {
+      "id": "push_unit_cost",
+      "status": "owner_reported",
+      "value": 0,
+      "unit": "RUB/message",
+      "base": "push transport only",
+      "period": "2026-10-08",
+      "source": "Owner in conversation: push free",
+      "unknown": "Does not make granted points, implementation or prizes free.",
+      "formula": null
+    }
+  ],
+  "historical_ratios_for_explicit_sensitivity_only": [
+    {
+      "line_code": "courier_service",
+      "period": "2026-08",
+      "amount_rub": "263664.00",
+      "per_all_channel_accounted_order": "144.9500",
+      "divided_by_all_channel_net_sales": "0.080326",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "acquiring",
+      "period": "2026-08",
+      "amount_rub": "46092.57",
+      "per_all_channel_accounted_order": "25.3395",
+      "divided_by_all_channel_net_sales": "0.014042",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "website_app",
+      "period": "2026-08",
+      "amount_rub": "77171.00",
+      "per_all_channel_accounted_order": "42.4250",
+      "divided_by_all_channel_net_sales": "0.023510",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "staff_meals",
+      "period": "2026-08",
+      "amount_rub": "30479.73",
+      "per_all_channel_accounted_order": "16.7563",
+      "divided_by_all_channel_net_sales": "0.009286",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "packaging_inventory",
+      "period": "2026-08",
+      "amount_rub": "26401.43",
+      "per_all_channel_accounted_order": "14.5143",
+      "divided_by_all_channel_net_sales": "0.008043",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "pizza_box_inventory",
+      "period": "2026-08",
+      "amount_rub": "9074.23",
+      "per_all_channel_accounted_order": "4.9886",
+      "divided_by_all_channel_net_sales": "0.002764",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "partner_commission",
+      "period": "2026-08",
+      "amount_rub": "41550.00",
+      "per_all_channel_accounted_order": "22.8422",
+      "divided_by_all_channel_net_sales": "0.012658",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "taxes",
+      "period": "2026-08",
+      "amount_rub": "201728.34",
+      "per_all_channel_accounted_order": "110.9007",
+      "divided_by_all_channel_net_sales": "0.061457",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    },
+    {
+      "line_code": "payroll_taxes",
+      "period": "2026-08",
+      "amount_rub": "20013.93",
+      "per_all_channel_accounted_order": "11.0027",
+      "divided_by_all_channel_net_sales": "0.006097",
+      "not_a_marginal_tariff": true,
+      "source": "reports.json:reports.8.lines; 1819orders; net3282430.64"
+    }
+  ],
+  "source_snapshots": [
+    "cost-config-live.json",
+    "/private/tmp/teplo-economics-baseline-20261007/details.json",
+    "/private/tmp/teplo-economics-baseline-20261007/reports.json",
+    "/private/tmp/teplo-economics-baseline-20261007/issues.json"
+  ],
+  "confidence_note": "live_db confirms configuration as read, not retrospective personnel state or legally complete net profit",
+  "owner_reported_customer_free_delivery": {
+    "as_of": "2026-10-08",
+    "source": "owner explicit clarification in conversation",
+    "minimum_free_delivery_threshold_rub": 1000,
+    "scope": "Minimum across service zones; other zones have higher thresholds. NOT universal threshold per zone.",
+    "status": "owner_reported_current_policy",
+    "unknown": [
+      "Zone-to-threshold mapping",
+      "Qualifying basket base after discounts/points",
+      "Actual customer delivery charge and application in a particular order"
+    ],
+    "snapshot_reconciliation": "Existing Cloud response includes minSum1100/1500. Preserve it as observed configuration; do not use it to override owner statement or infer actual customer payment. Reconcile separately by zone and checkout.",
+    "scenario_zero_fee_condition": "Only for basket and zone confirmed to meet their free-delivery conditions; not a whole-stream assumption."
+  }
+}

@@ -1,0 +1,441 @@
+{
+  "as_of_local": "2026-10-08 Europe/Istanbul",
+  "status": "zones verified; courier per-zone remuneration still not read",
+  "owner_reported_shift_pay": {
+    "source": "Owner message2026-10-08 relayed in active task",
+    "raw": "Больше10ч —1000рубза выход;5–10ч —700;меньше —500",
+    "tiers": [
+      {
+        "description": "больше10часов",
+        "amount_rub": 1000
+      },
+      {
+        "description": "5–10часов",
+        "amount_rub": 700
+      },
+      {
+        "description": "меньше5часов из контекста",
+        "amount_rub": 500
+      }
+    ],
+    "exact_5h_boundary_confirmed": false,
+    "exact_10h_boundary_confirmed": false,
+    "proration_rounding_breaks": null,
+    "status": "owner_reported_not_iiko_rule_read"
+  },
+  "owner_reported_delivery_pay": {
+    "range_rub": [
+      120,
+      130
+    ],
+    "basis": "one delivery, depends on zone",
+    "status": "approximate owner input; not exact per-zone configuration"
+  },
+  "zone_dictionary": {
+    "source": {
+      "endpoint": "/api/1/delivery_restrictions",
+      "method": "POST read dictionary",
+      "request": {
+        "organizationIds": [
+          "5c7e51f9-93c6-450c-9299-440ac1c889e8"
+        ]
+      },
+      "status": 200,
+      "retrieved_at": "2026-10-07T23:06:42.999414+00:00"
+    },
+    "polygon_count": 14,
+    "unique_name_count": 13,
+    "restriction_count": 20,
+    "zones": [
+      {
+        "name": "\"5-ый канал \" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"5-ый канал \" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 90,
+            "deliveryServiceProductId": "ed45bb7c-a4b1-4636-be84-a97ee0878dc6"
+          }
+        ]
+      },
+      {
+        "name": "\"Базы отдыха\" (Гагарина)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"Базы отдыха\" (Гагарина)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 150,
+            "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+          }
+        ]
+      },
+      {
+        "name": "\"Лагутники\" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"Лагутники\" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 140,
+            "deliveryServiceProductId": "b250bed4-9078-4772-acd2-2283bead7b0c"
+          }
+        ]
+      },
+      {
+        "name": "\"Мокросоленый\" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"Мокросоленый\" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 120,
+            "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+          }
+        ]
+      },
+      {
+        "name": "\"Ростовская АЭС\" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"Ростовская АЭС\" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 120,
+            "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+          }
+        ]
+      },
+      {
+        "name": "\"Станица Романовская\" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "\"Станица Романовская\" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 140,
+            "deliveryServiceProductId": "b250bed4-9078-4772-acd2-2283bead7b0c"
+          }
+        ]
+      },
+      {
+        "name": "Дачи \"Мирный Атом\" (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Дачи \"Мирный Атом\" (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 120,
+            "deliveryServiceProductId": "1241169c-c47e-4d82-83b1-c26813c1c4b3"
+          }
+        ]
+      },
+      {
+        "name": "Новый Город",
+        "polygon_count": 2,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 1100.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Новый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": null
+          },
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Новый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": "21e8dd57-6931-4a86-b451-c9ac13cca814"
+          },
+          {
+            "minSum": 1100.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Новый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": null
+          },
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Новый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": "21e8dd57-6931-4a86-b451-c9ac13cca814"
+          }
+        ]
+      },
+      {
+        "name": "Отдаленный район СГ (Черникова)",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Отдаленный район СГ (Черникова)",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 80,
+            "deliveryServiceProductId": "ed45bb7c-a4b1-4636-be84-a97ee0878dc6"
+          }
+        ]
+      },
+      {
+        "name": "Старый Город",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Старый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": "13b9d8c5-03f0-4ea0-96fc-33f8f565b0cc"
+          },
+          {
+            "minSum": 1100.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Старый Город",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": null
+          }
+        ]
+      },
+      {
+        "name": "Старый Город средняя часть",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Старый Город средняя часть",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 70,
+            "deliveryServiceProductId": "2aaef08e-f3ea-4a7c-8108-49aefcd0b07c"
+          },
+          {
+            "minSum": 1100.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Старый Город средняя часть",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 70,
+            "deliveryServiceProductId": null
+          }
+        ]
+      },
+      {
+        "name": "Удаленные районы заводских улиц",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Удаленные районы заводских улиц",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": "2aaef08e-f3ea-4a7c-8108-49aefcd0b07c"
+          },
+          {
+            "minSum": 1100.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Удаленные районы заводских улиц",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 60,
+            "deliveryServiceProductId": null
+          }
+        ]
+      },
+      {
+        "name": "Удаленный район СГ (Черникова",
+        "polygon_count": 1,
+        "courier_payment_rub": null,
+        "client_delivery_restrictions": [
+          {
+            "minSum": 0.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Удаленный район СГ (Черникова",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 2,
+            "deliveryDurationInMinutes": 80,
+            "deliveryServiceProductId": "d2cd9fb9-edfd-4ef3-aafa-feaba203e063"
+          },
+          {
+            "minSum": 1500.0,
+            "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "zone": "Удаленный район СГ (Черникова",
+            "weekMap": 127,
+            "from": null,
+            "to": null,
+            "priority": 1,
+            "deliveryDurationInMinutes": 80,
+            "deliveryServiceProductId": null
+          }
+        ]
+      }
+    ],
+    "client_service_product_ids": [
+      "1241169c-c47e-4d82-83b1-c26813c1c4b3",
+      "13b9d8c5-03f0-4ea0-96fc-33f8f565b0cc",
+      "21e8dd57-6931-4a86-b451-c9ac13cca814",
+      "2aaef08e-f3ea-4a7c-8108-49aefcd0b07c",
+      "b250bed4-9078-4772-acd2-2283bead7b0c",
+      "d2cd9fb9-edfd-4ef3-aafa-feaba203e063",
+      "ea8a25f8-f449-49af-9598-4f8110515fa3",
+      "ed45bb7c-a4b1-4636-be84-a97ee0878dc6"
+    ],
+    "warning": "minSum, deliveryServiceProductId and customer price are NOT courier wages; duplicate polygon names preserved"
+  },
+  "server_read_evidence": {
+    "wadl": "GET /application.wadl successful; server-contract.xml; contract cannot prove absence of nonpublic functionality",
+    "wadl_sha256": "e25246ed7944851f2020cf3e8261de9f4a71935b18ed104c9b66269ff931f31c",
+    "scheduleTypes": {
+      "method": "GET /v2/entities/scheduleTypes?includeDeleted=false",
+      "status": 200,
+      "count": 34,
+      "names_containing_courier": 0,
+      "meaning": "Existing shift-type list, not proof of courier shift or per-zone wage"
+    },
+    "deliverySettings": {
+      "method": "GET /deliverySettings/getDeliveryRestrictions",
+      "status": 500,
+      "outcome": "No response body used; Cloud dictionary succeeded separately"
+    },
+    "public_cloud_schema": "/api/1/delivery_restrictions has no courier-wage field; /api/1/employees/couriers/by_role gives people not rates"
+  },
+  "scenario_formula": {
+    "expression": "courier_cost = sum(shift_pay(hours)) + sum(deliveries_by_zone * courier_rate_by_zone) + other_proved_adjustments",
+    "status": "owner-informed scenario; additive structure and exact boundary/eligibility need actual rule check",
+    "marginal": "At same staffed shifts, extra completed eligible deliveries cost their zone rate; extra shifts add fixed step. Pickup adds no courier-delivery count. Multiorder trip payment basis unconfirmed."
+  },
+  "next_exact_source": {
+    "ui_route_candidate": "iikoOffice/iikoChain: Сотрудники → Мотивационные программы → type Курьер заказа → restrictions by zone + compensation; then rules/schedule types for shift duration",
+    "source": "https://ru.iiko.help/resources/Storage/archive/PDF/UG_iikoChain_3.3.pdf",
+    "limitation": "Official historical platform manual supports route/type concept, not actual Teplo current tariffs; UI is being independently checked"
+  },
+  "not_concluded": [
+    "Customer delivery fees equal courier pay",
+    "263664/1819 is courier tariff",
+    "No matched public API means tariff cannot exist",
+    "Default old kitchen schedules set courier shift pay"
+  ],
+  "owner_reported_customer_free_delivery": {
+    "as_of": "2026-10-08",
+    "source": "owner explicit clarification in conversation",
+    "minimum_free_delivery_threshold_rub": 1000,
+    "scope": "Minimum across service zones; other zones have higher thresholds. NOT universal threshold per zone.",
+    "status": "owner_reported_current_policy",
+    "unknown": [
+      "Zone-to-threshold mapping",
+      "Qualifying basket base after discounts/points",
+      "Actual customer delivery charge and application in a particular order"
+    ],
+    "snapshot_reconciliation": "Existing Cloud response includes minSum1100/1500. Preserve it as observed configuration; do not use it to override owner statement or infer actual customer payment. Reconcile separately by zone and checkout.",
+    "scenario_zero_fee_condition": "Only for basket and zone confirmed to meet their free-delivery conditions; not a whole-stream assumption."
+  }
+}

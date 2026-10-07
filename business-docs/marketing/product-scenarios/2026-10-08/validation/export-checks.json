@@ -1,0 +1,68 @@
+{
+  "sheets": [
+    {
+      "path": "xl/worksheets/sheet1.xml",
+      "formula_count": 124,
+      "errors": [],
+      "pane": {
+        "xSplit": "1",
+        "ySplit": "6",
+        "topLeftCell": "B7",
+        "activePane": "bottomRight",
+        "state": "frozen"
+      }
+    },
+    {
+      "path": "xl/worksheets/sheet2.xml",
+      "formula_count": 3,
+      "errors": [],
+      "pane": {
+        "ySplit": "6",
+        "topLeftCell": "A7",
+        "activePane": "bottomLeft",
+        "state": "frozen"
+      }
+    },
+    {
+      "path": "xl/worksheets/sheet3.xml",
+      "formula_count": 94,
+      "errors": [],
+      "pane": {
+        "ySplit": "6",
+        "topLeftCell": "A7",
+        "activePane": "bottomLeft",
+        "state": "frozen"
+      }
+    },
+    {
+      "path": "xl/worksheets/sheet4.xml",
+      "formula_count": 688,
+      "errors": [],
+      "pane": {
+        "xSplit": "2",
+        "ySplit": "6",
+        "topLeftCell": "C7",
+        "activePane": "bottomRight",
+        "state": "frozen"
+      }
+    },
+    {
+      "path": "xl/worksheets/sheet5.xml",
+      "formula_count": 1,
+      "errors": [],
+      "pane": {
+        "xSplit": "1",
+        "ySplit": "6",
+        "topLeftCell": "B7",
+        "activePane": "bottomRight",
+        "state": "frozen"
+      }
+    }
+  ],
+  "restored_parameters": {
+    "C15": "100",
+    "C17": "0"
+  },
+  "threshold_shift_formula_verified": true,
+  "errors": []
+}

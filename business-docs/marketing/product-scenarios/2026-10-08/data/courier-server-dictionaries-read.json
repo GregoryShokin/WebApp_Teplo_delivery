@@ -1,0 +1,1 @@
+[{"path": "/v2/entities/scheduleTypes", "status": 200, "bytes": 10051}, {"path": "/deliverySettings/getDeliveryRestrictions", "error_type": "IikoHTTPError", "status": 500}]

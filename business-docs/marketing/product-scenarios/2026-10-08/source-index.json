@@ -1,0 +1,62 @@
+{
+  "as_of": "2026-10-08",
+  "scope": "sanitized business source fields; no personal payroll, customers, supplier contact data or credentials",
+  "files": [
+    {
+      "path": "data/candidates.json",
+      "sha256": "88be6458983598babdfbdbad04a380637a08ee6b944f50fe114c069972c0948c"
+    },
+    {
+      "path": "data/flattened-recipes.json",
+      "sha256": "dd63b66c2b4c1201da699fceff4c1b97e3dcb3773a008eea45be8eca51e1f466"
+    },
+    {
+      "path": "data/pricebook.json",
+      "sha256": "0a7babb50bca911b7a96ce6a59bb097bda767361654002cd3887a9822019eb62"
+    },
+    {
+      "path": "data/purchase-lines-jul-oct.json",
+      "sha256": "f3366dfb5bcf4a206016d9c2adb3e4904fd0acb576b6c38926a669a1c5ed4d67"
+    },
+    {
+      "path": "data/product-costs.json",
+      "sha256": "3e43b88d5d1b985f7abcfe2001ca650c962d5db1c3e2981e2ccb421a4f2d6f57"
+    },
+    {
+      "path": "data/cost-config-live.json",
+      "sha256": "5dd4c649e31a8bcfcc1dddf6ac51bc9b504ee2670935b3e5b1f81d2e97c7a65b"
+    },
+    {
+      "path": "data/cost-drivers.json",
+      "sha256": "a2cb6a68bd5fbf308fed5e37f47735d1f1527ecab408881b09aac99fd8751d08"
+    },
+    {
+      "path": "data/courier-tariffs.json",
+      "sha256": "47579d8ab25bd3bcf7c009121a910c2802a56e1e512251a6f3bb6e081c434469"
+    },
+    {
+      "path": "data/courier-zones-live.json",
+      "sha256": "69eb36a6cf56b4fb4f703d05cc6c82d5ed1b5baf3e2dc11a8a13416cfcc3603c"
+    },
+    {
+      "path": "data/courier-zones-source.json",
+      "sha256": "273c3be88df01a20dde32a88b067c7a730dee36370b43062ca74753f4555d755"
+    },
+    {
+      "path": "data/courier-server-dictionaries-read.json",
+      "sha256": "afbacf60a7baff5ae615d8a9edadb7f4b813715e130c94e40a9691f717cbfa27"
+    },
+    {
+      "path": "data/server-contract-read.json",
+      "sha256": "ab091538ce7af6a7d84e9fefcb626adae73aafc515aae7887fad5942ba8058c8"
+    },
+    {
+      "path": "data/model.json",
+      "sha256": "2ddb7176ea3d65a7b80e837ddd760a60e5972ee54ef52af52dadd07f89f2ecfa"
+    },
+    {
+      "path": "data/independent-scenario-check.json",
+      "sha256": "e3c18ec96e746f1b993ff1d973ac37f866691212919514b65478a53bbcbeccbd"
+    }
+  ]
+}

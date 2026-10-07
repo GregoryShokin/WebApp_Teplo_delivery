@@ -1,0 +1,930 @@
+{
+  "correlationId": "46db88d8-b544-4688-8bab-4f493f2ffc5a",
+  "deliveryRestrictions": [
+    {
+      "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+      "deliveryGeocodeServiceType": 4,
+      "deliveryRegionsMapUrl": "https://www.google.com/maps/d/view?mid=1pGLjS0rLg9qwIl7Ywpu9H8vGVAFcMTM",
+      "defaultDeliveryDurationInMinutes": 60,
+      "defaultSelfServiceDurationInMinutes": 15,
+      "useSameDeliveryDuration": false,
+      "useSameMinSum": false,
+      "defaultMinSum": 0.0,
+      "useSameWorkTimeInterval": true,
+      "defaultFrom": null,
+      "defaultTo": null,
+      "useSameRestrictionsOnAllWeek": true,
+      "restrictions": [
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Удаленные районы заводских улиц",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": "2aaef08e-f3ea-4a7c-8108-49aefcd0b07c"
+        },
+        {
+          "minSum": 1100.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Удаленные районы заводских улиц",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": null
+        },
+        {
+          "minSum": 1100.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Новый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": null
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Новый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": "21e8dd57-6931-4a86-b451-c9ac13cca814"
+        },
+        {
+          "minSum": 1100.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Новый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": null
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Новый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": "21e8dd57-6931-4a86-b451-c9ac13cca814"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Дачи \"Мирный Атом\" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 120,
+          "deliveryServiceProductId": "1241169c-c47e-4d82-83b1-c26813c1c4b3"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"Мокросоленый\" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 120,
+          "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"Ростовская АЭС\" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 120,
+          "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"Лагутники\" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 140,
+          "deliveryServiceProductId": "b250bed4-9078-4772-acd2-2283bead7b0c"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"Станица Романовская\" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 140,
+          "deliveryServiceProductId": "b250bed4-9078-4772-acd2-2283bead7b0c"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"Базы отдыха\" (Гагарина)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 150,
+          "deliveryServiceProductId": "ea8a25f8-f449-49af-9598-4f8110515fa3"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "\"5-ый канал \" (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 90,
+          "deliveryServiceProductId": "ed45bb7c-a4b1-4636-be84-a97ee0878dc6"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Старый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": "13b9d8c5-03f0-4ea0-96fc-33f8f565b0cc"
+        },
+        {
+          "minSum": 1100.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Старый Город",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 60,
+          "deliveryServiceProductId": null
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Старый Город средняя часть",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 70,
+          "deliveryServiceProductId": "2aaef08e-f3ea-4a7c-8108-49aefcd0b07c"
+        },
+        {
+          "minSum": 1100.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Старый Город средняя часть",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 70,
+          "deliveryServiceProductId": null
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Отдаленный район СГ (Черникова)",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 80,
+          "deliveryServiceProductId": "ed45bb7c-a4b1-4636-be84-a97ee0878dc6"
+        },
+        {
+          "minSum": 0.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Удаленный район СГ (Черникова",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 2,
+          "deliveryDurationInMinutes": 80,
+          "deliveryServiceProductId": "d2cd9fb9-edfd-4ef3-aafa-feaba203e063"
+        },
+        {
+          "minSum": 1500.0,
+          "terminalGroupId": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+          "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+          "zone": "Удаленный район СГ (Черникова",
+          "weekMap": 127,
+          "from": null,
+          "to": null,
+          "priority": 1,
+          "deliveryDurationInMinutes": 80,
+          "deliveryServiceProductId": null
+        }
+      ],
+      "deliveryZones": [
+        {
+          "name": "\"5-ый канал \" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5292153,
+              "longitude": 42.1204162
+            },
+            {
+              "latitude": 47.5351262,
+              "longitude": 42.1250933
+            },
+            {
+              "latitude": 47.5392983,
+              "longitude": 42.1330333
+            },
+            {
+              "latitude": 47.5417898,
+              "longitude": 42.1405864
+            },
+            {
+              "latitude": 47.5508277,
+              "longitude": 42.136724
+            },
+            {
+              "latitude": 47.5508277,
+              "longitude": 42.1211028
+            },
+            {
+              "latitude": 47.5529132,
+              "longitude": 42.1151805
+            },
+            {
+              "latitude": 47.5472359,
+              "longitude": 42.1101165
+            },
+            {
+              "latitude": 47.5292153,
+              "longitude": 42.1204162
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "\"Базы отдыха\" (Гагарина)",
+          "coordinates": [
+            {
+              "latitude": 47.5423695,
+              "longitude": 42.0999885
+            },
+            {
+              "latitude": 47.5532609,
+              "longitude": 42.1152661
+            },
+            {
+              "latitude": 47.5517547,
+              "longitude": 42.1365519
+            },
+            {
+              "latitude": 47.5869635,
+              "longitude": 42.1372386
+            },
+            {
+              "latitude": 47.600277,
+              "longitude": 42.1268985
+            },
+            {
+              "latitude": 47.6059492,
+              "longitude": 42.1107172
+            },
+            {
+              "latitude": 47.5871951,
+              "longitude": 42.102735
+            },
+            {
+              "latitude": 47.573763,
+              "longitude": 42.0383626
+            },
+            {
+              "latitude": 47.5651925,
+              "longitude": 42.0338995
+            },
+            {
+              "latitude": 47.5423695,
+              "longitude": 42.0999885
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "\"Лагутники\" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5239427,
+              "longitude": 42.0524382
+            },
+            {
+              "latitude": 47.5111899,
+              "longitude": 42.0651412
+            },
+            {
+              "latitude": 47.5179145,
+              "longitude": 42.0805907
+            },
+            {
+              "latitude": 47.5267247,
+              "longitude": 42.0816207
+            },
+            {
+              "latitude": 47.53252,
+              "longitude": 42.0641112
+            },
+            {
+              "latitude": 47.5239427,
+              "longitude": 42.0524382
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "\"Мокросоленый\" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.4969041,
+              "longitude": 42.3026493
+            },
+            {
+              "latitude": 47.487509,
+              "longitude": 42.3014477
+            },
+            {
+              "latitude": 47.4786922,
+              "longitude": 42.347453
+            },
+            {
+              "latitude": 47.4856529,
+              "longitude": 42.3610142
+            },
+            {
+              "latitude": 47.5039784,
+              "longitude": 42.3172406
+            },
+            {
+              "latitude": 47.4969041,
+              "longitude": 42.3026493
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "\"Ростовская АЭС\" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5824386,
+              "longitude": 42.3441308
+            },
+            {
+              "latitude": 47.5532513,
+              "longitude": 42.3674767
+            },
+            {
+              "latitude": 47.5574219,
+              "longitude": 42.3966591
+            },
+            {
+              "latitude": 47.57827,
+              "longitude": 42.3815529
+            },
+            {
+              "latitude": 47.5954056,
+              "longitude": 42.3987191
+            },
+            {
+              "latitude": 47.6146185,
+              "longitude": 42.3760598
+            },
+            {
+              "latitude": 47.5824386,
+              "longitude": 42.3441308
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "\"Станица Романовская\" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5519878,
+              "longitude": 42.0038002
+            },
+            {
+              "latitude": 47.5399372,
+              "longitude": 41.9948738
+            },
+            {
+              "latitude": 47.530202,
+              "longitude": 41.9952171
+            },
+            {
+              "latitude": 47.5318246,
+              "longitude": 42.0147865
+            },
+            {
+              "latitude": 47.5297383,
+              "longitude": 42.0336692
+            },
+            {
+              "latitude": 47.5322882,
+              "longitude": 42.0480888
+            },
+            {
+              "latitude": 47.5397054,
+              "longitude": 42.0480888
+            },
+            {
+              "latitude": 47.5510609,
+              "longitude": 42.0364158
+            },
+            {
+              "latitude": 47.5489754,
+              "longitude": 42.0213096
+            },
+            {
+              "latitude": 47.5519878,
+              "longitude": 42.0038002
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Дачи \"Мирный Атом\" (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5732791,
+              "longitude": 42.2647122
+            },
+            {
+              "latitude": 47.5569472,
+              "longitude": 42.2669438
+            },
+            {
+              "latitude": 47.5561363,
+              "longitude": 42.2928646
+            },
+            {
+              "latitude": 47.5723526,
+              "longitude": 42.2944096
+            },
+            {
+              "latitude": 47.5732791,
+              "longitude": 42.2647122
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Новый Город",
+          "coordinates": [
+            {
+              "latitude": 47.53805,
+              "longitude": 42.1687813
+            },
+            {
+              "latitude": 47.5096496,
+              "longitude": 42.1856042
+            },
+            {
+              "latitude": 47.5197944,
+              "longitude": 42.2043582
+            },
+            {
+              "latitude": 47.5149251,
+              "longitude": 42.2105809
+            },
+            {
+              "latitude": 47.5238235,
+              "longitude": 42.2267592
+            },
+            {
+              "latitude": 47.5176067,
+              "longitude": 42.2335619
+            },
+            {
+              "latitude": 47.524953,
+              "longitude": 42.246544
+            },
+            {
+              "latitude": 47.5388613,
+              "longitude": 42.2233756
+            },
+            {
+              "latitude": 47.5491741,
+              "longitude": 42.1955605
+            },
+            {
+              "latitude": 47.53805,
+              "longitude": 42.1687813
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Новый Город",
+          "coordinates": [
+            {
+              "latitude": 47.520432,
+              "longitude": 42.2388192
+            },
+            {
+              "latitude": 47.5176067,
+              "longitude": 42.2335619
+            },
+            {
+              "latitude": 47.5238235,
+              "longitude": 42.2267592
+            },
+            {
+              "latitude": 47.5149251,
+              "longitude": 42.2105809
+            },
+            {
+              "latitude": 47.5197944,
+              "longitude": 42.2043582
+            },
+            {
+              "latitude": 47.5096496,
+              "longitude": 42.1856042
+            },
+            {
+              "latitude": 47.4970316,
+              "longitude": 42.2058864
+            },
+            {
+              "latitude": 47.5009457,
+              "longitude": 42.2134396
+            },
+            {
+              "latitude": 47.4957267,
+              "longitude": 42.2199413
+            },
+            {
+              "latitude": 47.4992751,
+              "longitude": 42.226078
+            },
+            {
+              "latitude": 47.4960965,
+              "longitude": 42.2305196
+            },
+            {
+              "latitude": 47.4987277,
+              "longitude": 42.2345325
+            },
+            {
+              "latitude": 47.5023774,
+              "longitude": 42.2306694
+            },
+            {
+              "latitude": 47.5057662,
+              "longitude": 42.2368486
+            },
+            {
+              "latitude": 47.5094479,
+              "longitude": 42.2434147
+            },
+            {
+              "latitude": 47.5144336,
+              "longitude": 42.2391608
+            },
+            {
+              "latitude": 47.5163466,
+              "longitude": 42.2426799
+            },
+            {
+              "latitude": 47.520432,
+              "longitude": 42.2388192
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Отдаленный район СГ (Черникова)",
+          "coordinates": [
+            {
+              "latitude": 47.5167982,
+              "longitude": 42.1131706
+            },
+            {
+              "latitude": 47.5080444,
+              "longitude": 42.1027851
+            },
+            {
+              "latitude": 47.5032033,
+              "longitude": 42.1106392
+            },
+            {
+              "latitude": 47.4994051,
+              "longitude": 42.1187925
+            },
+            {
+              "latitude": 47.5092039,
+              "longitude": 42.1314525
+            },
+            {
+              "latitude": 47.5167982,
+              "longitude": 42.1131706
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Старый Город",
+          "coordinates": [
+            {
+              "latitude": 47.488097,
+              "longitude": 42.1991191
+            },
+            {
+              "latitude": 47.4973181,
+              "longitude": 42.1953855
+            },
+            {
+              "latitude": 47.520929,
+              "longitude": 42.1661387
+            },
+            {
+              "latitude": 47.5120961,
+              "longitude": 42.1527482
+            },
+            {
+              "latitude": 47.5064217,
+              "longitude": 42.1445308
+            },
+            {
+              "latitude": 47.487227,
+              "longitude": 42.1596799
+            },
+            {
+              "latitude": 47.4875186,
+              "longitude": 42.1775325
+            },
+            {
+              "latitude": 47.488097,
+              "longitude": 42.1991191
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Старый Город средняя часть",
+          "coordinates": [
+            {
+              "latitude": 47.5064217,
+              "longitude": 42.1445308
+            },
+            {
+              "latitude": 47.520929,
+              "longitude": 42.1661387
+            },
+            {
+              "latitude": 47.5299413,
+              "longitude": 42.154809
+            },
+            {
+              "latitude": 47.5273333,
+              "longitude": 42.149745
+            },
+            {
+              "latitude": 47.5308106,
+              "longitude": 42.1425353
+            },
+            {
+              "latitude": 47.5319117,
+              "longitude": 42.1394453
+            },
+            {
+              "latitude": 47.5319696,
+              "longitude": 42.1351538
+            },
+            {
+              "latitude": 47.5299993,
+              "longitude": 42.1315489
+            },
+            {
+              "latitude": 47.5267538,
+              "longitude": 42.1304331
+            },
+            {
+              "latitude": 47.5241456,
+              "longitude": 42.1333514
+            },
+            {
+              "latitude": 47.520552,
+              "longitude": 42.1291457
+            },
+            {
+              "latitude": 47.5159727,
+              "longitude": 42.1363554
+            },
+            {
+              "latitude": 47.5087913,
+              "longitude": 42.1311309
+            },
+            {
+              "latitude": 47.5047077,
+              "longitude": 42.1366508
+            },
+            {
+              "latitude": 47.5064217,
+              "longitude": 42.1445308
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Удаленные районы заводских улиц",
+          "coordinates": [
+            {
+              "latitude": 47.4970316,
+              "longitude": 42.2058864
+            },
+            {
+              "latitude": 47.4996894,
+              "longitude": 42.2015852
+            },
+            {
+              "latitude": 47.4984137,
+              "longitude": 42.1977229
+            },
+            {
+              "latitude": 47.4907877,
+              "longitude": 42.2010703
+            },
+            {
+              "latitude": 47.47823,
+              "longitude": 42.2247595
+            },
+            {
+              "latitude": 47.496848,
+              "longitude": 42.2602934
+            },
+            {
+              "latitude": 47.5097202,
+              "longitude": 42.2439856
+            },
+            {
+              "latitude": 47.5023774,
+              "longitude": 42.2306694
+            },
+            {
+              "latitude": 47.4987277,
+              "longitude": 42.2345325
+            },
+            {
+              "latitude": 47.4960965,
+              "longitude": 42.2305196
+            },
+            {
+              "latitude": 47.4992751,
+              "longitude": 42.226078
+            },
+            {
+              "latitude": 47.4957267,
+              "longitude": 42.2199413
+            },
+            {
+              "latitude": 47.5009457,
+              "longitude": 42.2134396
+            },
+            {
+              "latitude": 47.4970316,
+              "longitude": 42.2058864
+            }
+          ],
+          "addresses": []
+        },
+        {
+          "name": "Удаленный район СГ (Черникова",
+          "coordinates": [
+            {
+              "latitude": 47.5094358,
+              "longitude": 42.1315946
+            },
+            {
+              "latitude": 47.5159727,
+              "longitude": 42.1363554
+            },
+            {
+              "latitude": 47.520552,
+              "longitude": 42.1291457
+            },
+            {
+              "latitude": 47.5241456,
+              "longitude": 42.1333514
+            },
+            {
+              "latitude": 47.5267538,
+              "longitude": 42.1304331
+            },
+            {
+              "latitude": 47.5299993,
+              "longitude": 42.1315489
+            },
+            {
+              "latitude": 47.5319696,
+              "longitude": 42.1351538
+            },
+            {
+              "latitude": 47.5319117,
+              "longitude": 42.1394453
+            },
+            {
+              "latitude": 47.5273333,
+              "longitude": 42.149745
+            },
+            {
+              "latitude": 47.5299413,
+              "longitude": 42.154809
+            },
+            {
+              "latitude": 47.5246812,
+              "longitude": 42.1616354
+            },
+            {
+              "latitude": 47.5391401,
+              "longitude": 42.1595754
+            },
+            {
+              "latitude": 47.541226,
+              "longitude": 42.1566572
+            },
+            {
+              "latitude": 47.5384737,
+              "longitude": 42.1475162
+            },
+            {
+              "latitude": 47.5405307,
+              "longitude": 42.1406927
+            },
+            {
+              "latitude": 47.5369382,
+              "longitude": 42.131423
+            },
+            {
+              "latitude": 47.5255796,
+              "longitude": 42.1199217
+            },
+            {
+              "latitude": 47.5186822,
+              "longitude": 42.1088495
+            },
+            {
+              "latitude": 47.5094358,
+              "longitude": 42.1315946
+            }
+          ],
+          "addresses": []
+        }
+      ],
+      "rejectOnGeocodingError": true,
+      "addDeliveryServiceCost": true,
+      "useSameDeliveryServiceProduct": false,
+      "defaultDeliveryServiceProductId": null,
+      "useExternalAssignationService": false,
+      "frontTrustsCallCenterCheck": true,
+      "externalAssignationServiceUrl": null,
+      "requireExactAddressForGeocoding": false,
+      "zonesMode": 1,
+      "autoAssignExternalDeliveries": false,
+      "actionOnValidationRejection": 2
+    }
+  ]
+}

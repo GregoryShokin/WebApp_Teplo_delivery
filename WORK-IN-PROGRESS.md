@@ -16,12 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### agent-unit-economics — ветка `codex/teplo-unit-economics-skill`
-- worktree: `../Teplo-agent-unit-economics`
-- задача: конкретные рецептуры, цены и экономика вариантов ключевых роллов и сетов
-- трогает: `business-docs/marketing/product-scenarios/2026-10-08/**`, `skills/teplo-unit-economics/**`, `skills/teplo-rolls-analysis/**`; артефакты в каталоге текущего чата
-- статус: в работе; чтение источников и локальные расчёты, настройки продаж не меняются
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`

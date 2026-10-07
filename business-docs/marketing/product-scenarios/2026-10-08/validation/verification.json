@@ -1,0 +1,524 @@
+{
+  "shift_input_change": {
+    "shiftBefore": 0.1360821198150728,
+    "shiftAfter": 0.1935577977493892,
+    "shiftRestored": 0.1360821198150728,
+    "expectedShift": 0.1935577977493892,
+    "shiftedAllowable": 0.00533629907446187,
+    "zeroOrdersGuard": [
+      "н/д",
+      "н/д"
+    ]
+  },
+  "model_comparison": [
+    {
+      "row_id": "b1_baseline",
+      "row": 7,
+      "residuals": {
+        "price": 0,
+        "materials": -5.684341886080802e-14,
+        "water": 0,
+        "contribution": 1.1368683772161603e-13,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": 1.8189894035458565e-12,
+        "threshold_shift": -2.220446049250313e-16
+      }
+    },
+    {
+      "row_id": "b1_price_minus100",
+      "row": 8,
+      "residuals": {
+        "price": 0,
+        "materials": -5.684341886080802e-14,
+        "water": 0,
+        "contribution": 1.1368683772161603e-13,
+        "required_growth": 2.220446049250313e-16,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": 0,
+        "threshold_shift": 2.220446049250313e-16
+      }
+    },
+    {
+      "row_id": "b1_selected_fillings_plus20_same_price",
+      "row": 9,
+      "residuals": {
+        "price": 0,
+        "materials": -1.1368683772161603e-13,
+        "water": 0,
+        "contribution": 2.2737367544323206e-13,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 1.1368683772161603e-11,
+        "delta120": 2.000888343900442e-11,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b2_baseline",
+      "row": 11,
+      "residuals": {
+        "price": 0,
+        "materials": 5.684341886080802e-14,
+        "water": 5.551115123125783e-17,
+        "contribution": 0,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": -7.275957614183426e-12,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b2_price_minus100",
+      "row": 12,
+      "residuals": {
+        "price": 0,
+        "materials": 5.684341886080802e-14,
+        "water": 5.551115123125783e-17,
+        "contribution": 0,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": -3.183231456205249e-12,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b2_selected_fillings_plus20_same_price",
+      "row": 13,
+      "residuals": {
+        "price": 0,
+        "materials": 5.684341886080802e-14,
+        "water": 5.551115123125783e-17,
+        "contribution": 0,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": -1.8189894035458565e-12,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b3_baseline",
+      "row": 15,
+      "residuals": {
+        "price": 0,
+        "materials": -1.1368683772161603e-13,
+        "water": 0,
+        "contribution": 2.2737367544323206e-13,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": -1.8189894035458565e-11,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b3_replace_gift_with_discount99",
+      "row": 16,
+      "residuals": {
+        "price": 0,
+        "materials": -1.1368683772161603e-13,
+        "water": 0,
+        "contribution": 6.821210263296962e-13,
+        "required_growth": 0,
+        "allowable_decline": 3.3306690738754696e-16,
+        "delta100": 4.547473508864641e-11,
+        "delta120": 2.9103830456733704e-11,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b3_replace_gift_with_selected_fillings_plus20_same_price",
+      "row": 17,
+      "residuals": {
+        "price": 0,
+        "materials": 1.1368683772161603e-13,
+        "water": 0,
+        "contribution": 2.2737367544323206e-13,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": 0,
+        "delta120": -2.9103830456733704e-11,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b3_replace_gift_with_discount99_and_selected_fillings_plus20",
+      "row": 18,
+      "residuals": {
+        "price": 0,
+        "materials": 1.1368683772161603e-13,
+        "water": 0,
+        "contribution": 2.2737367544323206e-13,
+        "required_growth": 0,
+        "allowable_decline": 1.1102230246251565e-16,
+        "delta100": 0,
+        "delta120": -2.9103830456733704e-11,
+        "threshold_shift": 0
+      }
+    },
+    {
+      "row_id": "b3_retain_gift_and_selected_fillings_plus20_global_recipe_change",
+      "row": 19,
+      "residuals": {
+        "price": 0,
+        "materials": 0,
+        "water": 0,
+        "contribution": 0,
+        "required_growth": 0,
+        "allowable_decline": 0,
+        "delta100": -2.2737367544323206e-11,
+        "delta120": -3.637978807091713e-11,
+        "threshold_shift": 2.220446049250313e-16
+      }
+    }
+  ],
+  "water_input_change": {
+    "waterBefore": 672.0545709413893,
+    "waterAfter": 671.6924807333096,
+    "expected_delta": 0.36209020807980735
+  },
+  "filling_zero_boundary": {
+    "fillBefore": 652.4429742215038,
+    "fillZero": 672.0545709413893,
+    "baseline": 672.0545709413893
+  },
+  "starter_input_change": {
+    "baseline": 672.0545709413893,
+    "changed": 657.4645709413894,
+    "restored": 672.0545709413893,
+    "expected_delta": 14.59
+  },
+  "offers": [
+    {
+      "id": "basket1_base",
+      "row": 7,
+      "baseRow": 7,
+      "label": "Соломон + Камчатский — база",
+      "price": 1459,
+      "gs": [
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+        "c80e1f8e-1607-44e0-a712-b39361c1dc96"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        1459,
+        342.0783388505308,
+        0.36209020807980735,
+        284.505,
+        160,
+        672.0545709413893,
+        0,
+        0,
+        0,
+        13441.091418827784,
+        10041.091418827784,
+        0.050591129753606134
+      ]
+    },
+    {
+      "id": "basket1_minus100",
+      "row": 8,
+      "baseRow": 7,
+      "label": "Соломон + Камчатский — цена −100",
+      "price": 1359,
+      "gs": [
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+        "c80e1f8e-1607-44e0-a712-b39361c1dc96"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        1359,
+        342.0783388505308,
+        0.36209020807980735,
+        265.005,
+        160,
+        591.5545709413893,
+        0.1360821198150728,
+        0,
+        -8050,
+        3781.091418827782,
+        381.09141882778204,
+        0.1935577977493892
+      ]
+    },
+    {
+      "id": "basket1_filling",
+      "row": 9,
+      "baseRow": 7,
+      "label": "Соломон + Камчатский — больше начинки",
+      "price": 1459,
+      "gs": [
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+        "c80e1f8e-1607-44e0-a712-b39361c1dc96"
+      ],
+      "upgrade": true,
+      "extraPh": false,
+      "values": [
+        1459,
+        361.6899355704163,
+        0.36209020807980735,
+        284.505,
+        160,
+        652.4429742215038,
+        0.03005871393325399,
+        0,
+        -1961.1596719885483,
+        11087.699812441531,
+        7687.699812441531,
+        0.08217054798368406
+      ]
+    },
+    {
+      "id": "basket2_base",
+      "row": 11,
+      "baseRow": 11,
+      "label": "Токио + Хоккайдо — база",
+      "price": 1384,
+      "gs": [
+        "7a36e4a5-8640-4711-b172-79305b3d59da",
+        "6fee7d56-2bf3-41ad-8efd-36ca5f85b662"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        1384,
+        353.9178915648394,
+        0.2933080522432646,
+        269.88,
+        160,
+        599.9088003829173,
+        0,
+        0,
+        0,
+        11998.176007658345,
+        8598.176007658345,
+        0.05667528127325028
+      ]
+    },
+    {
+      "id": "basket2_minus100",
+      "row": 12,
+      "baseRow": 11,
+      "label": "Токио + Хоккайдо — цена −100",
+      "price": 1284,
+      "gs": [
+        "7a36e4a5-8640-4711-b172-79305b3d59da",
+        "6fee7d56-2bf3-41ad-8efd-36ca5f85b662"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        1284,
+        353.9178915648394,
+        0.2933080522432646,
+        250.38,
+        160,
+        519.4088003829173,
+        0.15498389696257364,
+        0,
+        -8050,
+        2338.176007658342,
+        -1061.8239923416581,
+        0.22044293418900218
+      ]
+    },
+    {
+      "id": "basket2_filling",
+      "row": 13,
+      "baseRow": 11,
+      "label": "Токио + Хоккайдо — больше начинки",
+      "price": 1384,
+      "gs": [
+        "7a36e4a5-8640-4711-b172-79305b3d59da",
+        "6fee7d56-2bf3-41ad-8efd-36ca5f85b662"
+      ],
+      "upgrade": true,
+      "extraPh": false,
+      "values": [
+        1384,
+        369.7439778693912,
+        0.2933080522432646,
+        269.88,
+        160,
+        584.0827140783656,
+        0.02709562519672226,
+        0,
+        -1582.6086304551723,
+        10099.045651112136,
+        6699.045651112136,
+        0.08530655864927139
+      ]
+    },
+    {
+      "id": "gift_base",
+      "row": 15,
+      "baseRow": 15,
+      "label": "Биг бэн + Соломон + подарок",
+      "price": 3298,
+      "gs": [
+        "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+        "9702a631-e0ef-48b7-936a-4b4a128d720a"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        3298,
+        988.331212597554,
+        1.0555085485028801,
+        643.11,
+        160,
+        1505.5032788539431,
+        0,
+        0,
+        0,
+        30110.065577078854,
+        26710.065577078854,
+        0.02258380999733345
+      ]
+    },
+    {
+      "id": "gift_discount99",
+      "row": 16,
+      "baseRow": 15,
+      "label": "Без подарка, скидка 99",
+      "price": 3199,
+      "gs": [
+        "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059"
+      ],
+      "upgrade": false,
+      "extraPh": false,
+      "values": [
+        3199,
+        866.5403436636354,
+        0.8920533365468691,
+        623.8050000000001,
+        160,
+        1547.7626029998178,
+        0,
+        0.02730349219187056,
+        4225.932414587464,
+        35181.1844745838,
+        31781.184474583803,
+        0
+      ]
+    },
+    {
+      "id": "gift_filling",
+      "row": 17,
+      "baseRow": 15,
+      "label": "Без подарка, больше начинки",
+      "price": 3298,
+      "gs": [
+        "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059"
+      ],
+      "upgrade": true,
+      "extraPh": false,
+      "values": [
+        3298,
+        900.6489885722668,
+        0.8920533365468691,
+        643.11,
+        160,
+        1593.3489580911864,
+        0,
+        0.05513273083787085,
+        8784.567923724331,
+        40651.54708554805,
+        37251.54708554805,
+        0
+      ]
+    },
+    {
+      "id": "gift_discount99_filling",
+      "row": 18,
+      "baseRow": 15,
+      "label": "Без подарка, −99 и начинка",
+      "price": 3199,
+      "gs": [
+        "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059"
+      ],
+      "upgrade": true,
+      "extraPh": false,
+      "values": [
+        3199,
+        900.6489885722668,
+        0.8920533365468691,
+        623.8050000000001,
+        160,
+        1513.6539580911863,
+        0,
+        0.005384770537330663,
+        815.0679237243139,
+        31088.14708554803,
+        27688.14708554803,
+        0.01707743082530855
+      ]
+    },
+    {
+      "id": "gift_keep_filling",
+      "row": 19,
+      "baseRow": 15,
+      "label": "С подарком, больше начинки",
+      "price": 3298,
+      "gs": [
+        "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+        "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+        "9702a631-e0ef-48b7-936a-4b4a128d720a"
+      ],
+      "upgrade": true,
+      "extraPh": false,
+      "values": [
+        3298,
+        1023.784135767055,
+        1.0555085485028801,
+        643.11,
+        160,
+        1470.050355684442,
+        0.024116808674213397,
+        0,
+        -3545.292316950122,
+        25855.71479673872,
+        22455.71479673872,
+        0.047245268096387294
+      ]
+    }
+  ],
+  "recipe_rows": {
+    "f1d1137b-23a7-4521-bee6-c7b811a7d860": 7,
+    "c80e1f8e-1607-44e0-a712-b39361c1dc96": 8,
+    "59b096dd-daa8-4157-b609-ab410d37850e": 9,
+    "9039dc4b-73fe-463e-ba12-9a1a73017c0f": 10,
+    "0c8078b0-d1e3-48dc-924b-3d649bbc7621": 11,
+    "10365a6d-ee10-451f-898e-c9a8dbd5c1af": 12,
+    "960ad600-15ac-458c-bdd0-e1a672217558": 13,
+    "a792d828-e14f-4c29-ab6b-5958a0c9e1ae": 14,
+    "2a3f7463-db4c-48bd-a384-a20e3238a72d": 15,
+    "57ec7653-49b0-4d70-a375-60f56184a150": 16,
+    "cae0e338-a4e0-437c-8990-49caa257bcb4": 17,
+    "6fee7d56-2bf3-41ad-8efd-36ca5f85b662": 18,
+    "bdcc40c7-6d51-4730-93eb-5014bb33edf6": 19,
+    "ddbde351-3b86-40c5-a7ab-d49bc30b6ba8": 20,
+    "1e4d827e-e228-41f1-af37-e27d4fe8709c": 21,
+    "bc2c94e3-0e03-432f-8c36-ce2667b81059": 22,
+    "c13d3f53-e621-4467-b78f-b0c7f54c4251": 23,
+    "7a36e4a5-8640-4711-b172-79305b3d59da": 24,
+    "9702a631-e0ef-48b7-936a-4b4a128d720a": 25
+  },
+  "variant_rows": {
+    "bc2c94e3-0e03-432f-8c36-ce2667b81059": 39,
+    "c13d3f53-e621-4467-b78f-b0c7f54c4251": 40,
+    "7a36e4a5-8640-4711-b172-79305b3d59da": 41,
+    "9702a631-e0ef-48b7-936a-4b4a128d720a": 42
+  }
+}
