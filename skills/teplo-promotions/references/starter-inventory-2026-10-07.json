@@ -1,0 +1,6068 @@
+{
+  "schema_version": 1,
+  "as_of_date": "2026-10-07",
+  "purpose": "Internal dated inventory for Teplo promotions skill, not a customer offer or live applicability promise",
+  "provenance": {
+    "sources": {
+      "starter-promocodes-page0.json": {
+        "file": "starter-promocodes-page0.json",
+        "sha256": "5cf5c98b1fe5159c7071a441d6fd650c277be64da70e6a928b8aae944c22ccce",
+        "bytes": 42793,
+        "saved_at_utc": "2026-10-07T19:41:37.842609+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes?limit=100&offset=0",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json": {
+        "file": "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json",
+        "sha256": "ebcb9d487a70fcd99d302eae01a5a2b3fd6988b8a621e1bc8fb95488dd6724eb",
+        "bytes": 1358,
+        "saved_at_utc": "2026-10-07T19:43:51.899716+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/c1a150ec-a665-4d5d-a7ca-11216c79620f",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-discounts-page0.json": {
+        "file": "starter-discounts-page0.json",
+        "sha256": "3ae03de48f78ec0134ccc4d84052bf0329347a32434503711e676bc91cd955d5",
+        "bytes": 7580,
+        "saved_at_utc": "2026-10-07T19:44:27.274730+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts?limit=100&offset=0",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "site-products.json": {
+        "file": "site-products.json",
+        "sha256": "6627edde1a9a496d8acf40e6fe3d4d75a25af712c1789d8f57c13a48ca9aa0cb",
+        "bytes": 41729,
+        "saved_at_utc": "2026-10-07T18:58:28.121640+00:00",
+        "fetched_at_utc": null,
+        "method": null,
+        "url": null,
+        "retrieval": "local saved public product projection"
+      },
+      "live-notes.md": {
+        "file": "live-notes.md",
+        "sha256": "20aa57e737fbfcd84b736588bf5721d56d9d443e11dc453cde55e5f41dd9e47d",
+        "bytes": 5440,
+        "saved_at_utc": "2026-10-07T19:33:02.076471+00:00",
+        "fetched_at_utc": null,
+        "method": null,
+        "url": null,
+        "retrieval": "collecting agent native UI notes, not API payload"
+      }
+    },
+    "source_totals": {
+      "promocodes": 82,
+      "discounts": 17
+    },
+    "list_coverage": "items count equals total for each default list without status filter; one page limit100 offset0",
+    "archive_coverage": "not_separately_checked",
+    "detail_files_loaded": [
+      "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json"
+    ],
+    "save_time_caution": "Filesystem saved_at is not verified server fetched_at or common atomic snapshot."
+  },
+  "methodology": {
+    "record_identity": "family plus id; never deduplicate by code/name",
+    "candidate_definition": "list status active and list absolute date restriction passes on as_of_date; no order/customer applicability claim",
+    "absolute_date_assumption": "Inclusive from/to; toChosen includes union of ranges; exceptChosen excludes it. Preserve raw and verify boundary behavior in UI before activation.",
+    "not_evaluated": [
+      "time of day",
+      "birthday or first-order qualification",
+      "customer/group restrictions",
+      "menu/store/delivery restrictions where detail absent",
+      "usage caps",
+      "stacking/priority",
+      "actual execution in order"
+    ],
+    "detail_precedence": "Preserve both list and detail. Conflicts require review, not silent overwrite.",
+    "status_not_eligibility": true,
+    "snapshot_no_mutation": true
+  },
+  "coverage": {
+    "lists": "exhaustive default lists without status filter at saved snapshot",
+    "archive": "not_separately_checked",
+    "api_details": "partial: 1 of 99",
+    "ui_details": "partial settings observations for 3 offers; 5 reward labels; not complete conditions",
+    "all_conditions_complete": false
+  },
+  "counts": {
+    "records": 99,
+    "by_family": {
+      "promocodes": 82,
+      "discounts": 17
+    },
+    "classification_by_family": {
+      "promocodes": {
+        "enabled_absolute_date_candidate": 40,
+        "expired_in_list": 35,
+        "not_active": 7
+      },
+      "discounts": {
+        "enabled_absolute_date_candidate": 6,
+        "not_active": 10,
+        "expired_in_list": 1
+      }
+    },
+    "detail_fetched": 1,
+    "detail_not_fetched": 98
+  },
+  "duplicate_codes": {
+    "test3256": [
+      "dc16d228-81ba-4cbb-966a-2a9e214af81f",
+      "0381b1b5-b68e-4afd-8277-dcfee2756741"
+    ]
+  },
+  "weekday_mapping_evidence": {
+    "mapping": {
+      "1": "Пн",
+      "2": "Вт",
+      "3": "Ср",
+      "4": "Чт",
+      "5": "Пт",
+      "6": "Сб",
+      "7": "Вс"
+    },
+    "source": "Native UI compared with API: 1515 Mon-Thu 00:00-15:00; 1216 Mon-Fri 12:00-16:00; doubleMeal excludes Fri/Sat/Sun. Reported by collecting agent 2026-10-07.",
+    "timezone_and_exact_boundaries": "not_established"
+  },
+  "double_meal_ui_evidence": {
+    "offer_id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+    "names": [
+      "Мидии запеченные под соусом том-ям",
+      "Сырная",
+      "Нежный том ям",
+      "Пепперони Лайт",
+      "Сет \"Нейросет\"",
+      "Жареная калифорния",
+      "Чикен чиз",
+      "Камчатский",
+      "Унагияма",
+      "Цезарь",
+      "Хаккода",
+      "Вайт чикен",
+      "Луковые кольца",
+      "Краб грув"
+    ],
+    "source": "Collecting agent native Starter UI observation, reported 2026-10-07",
+    "join_to_entity_ids": "not_performed: no verified Starter id/name crosswalk",
+    "public_product_projection": {
+      "source": "site-products.json",
+      "rows": 212,
+      "fields": [
+        "analyticId",
+        "categories",
+        "mainMeal",
+        "price",
+        "status",
+        "weight"
+      ],
+      "usable_for_starter_id_name_join": false
+    }
+  },
+  "records": [
+    {
+      "id": "bbd3d87e-1cdb-4176-96c5-e5547a2c750f",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "bbd3d87e-1cdb-4176-96c5-e5547a2c750f",
+        "name": {
+          "ru": "Скидка 10% на сет \"Пятница\"",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-10-02",
+              "to": "2026-10-08"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "пятница10",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "date_pass",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "52b90807-249c-4605-a6ea-7e31b8934e61",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "52b90807-249c-4605-a6ea-7e31b8934e61",
+        "name": {
+          "ru": "Ролл \"Сицилийский\" в подарок ",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1699,
+        "type": "meal",
+        "value": {
+          "mealId": "08167ae3-a08e-45a9-ae71-bf28234e4714"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 3,
+        "code": "3623",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "db7baf46-063a-40f2-bc36-f10a591c74ac",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "db7baf46-063a-40f2-bc36-f10a591c74ac",
+        "name": {
+          "ru": "Ролл \"Лава с лососем\" в подарок к заказу от 1699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1699,
+        "type": "meal",
+        "value": {
+          "mealId": "62cda5d9-424b-41e6-8dfc-bc3951708009"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1,
+        "code": "6614",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3b629efb-30d5-4ccf-8960-c1bff1a79f59",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3b629efb-30d5-4ccf-8960-c1bff1a79f59",
+        "name": {
+          "ru": "Ролл «Камчатский» в подарок к заказу от 1699₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1699,
+        "type": "meal",
+        "value": {
+          "mealId": "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 3,
+        "code": "3491",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "cad4cfb4-2b59-44ad-b570-9ade2250f158",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "cad4cfb4-2b59-44ad-b570-9ade2250f158",
+        "name": {
+          "ru": "Шаурма классическая в подарок к заказу от 1499₽ на самовывоз",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1499,
+        "type": "meal",
+        "value": {
+          "mealId": "9d45dc11-3fbb-471e-b4a8-39aea97bcf8f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-06-22",
+              "to": "2026-06-28"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 2,
+        "code": "2356",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "e1181609-2bf5-4874-b6bd-90e22a808710",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "e1181609-2bf5-4874-b6bd-90e22a808710",
+        "name": {
+          "ru": "Пицца «Пикник» 30 см в подарок к заказу от 1799₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 1799,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-24",
+              "to": "2026-05-31"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "5986",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "672df289-5aa9-4fa0-8530-cd3f30aab718",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "672df289-5aa9-4fa0-8530-cd3f30aab718",
+        "name": {
+          "ru": "Сет «Нейросет» за 1149₽ вместо 1399₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 250.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-06-15",
+              "to": "2026-06-21"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 4,
+        "code": "4059",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "251420cb-2578-41e2-ba33-0b6eacf1eb1d",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "251420cb-2578-41e2-ba33-0b6eacf1eb1d",
+        "name": {
+          "ru": "Ролл «Запеченная калифорния» в подарок к заказу от 1659₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1659,
+        "type": "meal",
+        "value": {
+          "mealId": "8d90165d-be8a-481e-8c68-3fbba05d77b1"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-18",
+              "to": "2026-05-24"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "1659",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "f639d294-0534-42a0-83ec-9fee840f9791",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "f639d294-0534-42a0-83ec-9fee840f9791",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "4875",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "4d30e80b-eec7-471b-b6c1-8975a1cf9674",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "4d30e80b-eec7-471b-b6c1-8975a1cf9674",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "3492",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "29dced51-0acb-4c13-8d40-26ead1bfa3e7",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "29dced51-0acb-4c13-8d40-26ead1bfa3e7",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "6487",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "f5def593-ac25-4cfe-bc19-b71b1175a56e",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "f5def593-ac25-4cfe-bc19-b71b1175a56e",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "2176",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ccebf308-8da1-4c60-b00e-481a3da3c424",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ccebf308-8da1-4c60-b00e-481a3da3c424",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "6547",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "0bcab7e6-c00a-4564-8fcd-4160a45fd27c",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "0bcab7e6-c00a-4564-8fcd-4160a45fd27c",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "6475",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "1613285e-59fe-483d-ba4d-ec076e9bc15e",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "1613285e-59fe-483d-ba4d-ec076e9bc15e",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "9517",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "c4586eec-b04d-48ac-a45d-a9dfd28f4373",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "c4586eec-b04d-48ac-a45d-a9dfd28f4373",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "5126",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3fa89350-06ed-4edf-97c7-1fa7afcca0d3",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3fa89350-06ed-4edf-97c7-1fa7afcca0d3",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "7418",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "50d5027e-3d16-4d3b-8aa2-8d5e0e6e0476",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "50d5027e-3d16-4d3b-8aa2-8d5e0e6e0476",
+        "name": {
+          "ru": "Сет «Саламандра» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "b44c5537-9efd-4c53-b423-102b43042e8e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-13",
+              "to": "2026-05-27"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "7841",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "07d358d9-0b1a-4d67-9f35-c63b48ff0f4a",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "07d358d9-0b1a-4d67-9f35-c63b48ff0f4a",
+        "name": {
+          "ru": "Ролл «Цезарь» в подарок к заказу от 1590₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1590,
+        "type": "meal",
+        "value": {
+          "mealId": "8206ed1e-63b1-49d1-a5ba-a7b3de8308ea"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "3016",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "0f214021-5442-4642-98e6-7b87c8bb9842",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "0f214021-5442-4642-98e6-7b87c8bb9842",
+        "name": {
+          "ru": "Ролл «Жареная калифорния» в подарок к заказу от 1690₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1690,
+        "type": "meal",
+        "value": {
+          "mealId": "7872bc00-1553-47ad-b585-ff1997488e3d"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "7041",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "64d9edcb-7a2f-4248-b585-c8861c560a63",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "64d9edcb-7a2f-4248-b585-c8861c560a63",
+        "name": {
+          "ru": "Сет «Эдо» за 0₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "daf1477d-a62d-4700-b128-2b8d33e755b9"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-20",
+              "to": "2026-07-14"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "7513",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3c5b1121-933d-4ea9-94ab-a285c152a268",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3c5b1121-933d-4ea9-94ab-a285c152a268",
+        "name": {
+          "ru": "Сет «Эдо» за 0₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "daf1477d-a62d-4700-b128-2b8d33e755b9"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-20",
+              "to": "2026-07-14"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "5456",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "82490034-8430-4fb4-a2d8-eb182a1ab512",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "82490034-8430-4fb4-a2d8-eb182a1ab512",
+        "name": {
+          "ru": "Сет «Токио» за 0₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "7e0fcc22-998e-4374-91d6-844ebc2c03e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-20",
+              "to": "2026-07-14"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "1553",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "5e0d85ad-9ba2-4eea-86ce-7106b2702fc8",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "5e0d85ad-9ba2-4eea-86ce-7106b2702fc8",
+        "name": {
+          "ru": "Сет «Токио» за 0₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "7e0fcc22-998e-4374-91d6-844ebc2c03e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-20",
+              "to": "2026-07-14"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 10,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "8153",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "8f20f34d-0706-4146-a128-18843586fd30",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "8f20f34d-0706-4146-a128-18843586fd30",
+        "name": {
+          "ru": "Пицца «Сырная» 30 см в подарок к заказу от 1759₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 1759,
+        "type": "meal",
+        "value": {
+          "mealId": "da7d7bc4-b48f-48e9-a76f-bc2f648d82c1"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-06-15",
+              "to": "2026-06-21"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 6,
+        "code": "4158",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "0c8f195c-e834-4e91-a8ae-488535a1f4a4",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "0c8f195c-e834-4e91-a8ae-488535a1f4a4",
+        "name": {
+          "ru": "Сет «Эдо» за 999₽ вместо 1199₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-06-29",
+              "to": "2026-07-05"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 13,
+        "code": "2343",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "093fc966-f1bd-4edc-9f78-15fe39465c8d",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "093fc966-f1bd-4edc-9f78-15fe39465c8d",
+        "name": {
+          "ru": "Ролл Динамит в подарок к заказу от 1499₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1499,
+        "type": "meal",
+        "value": {
+          "mealId": "425d14be-1e8c-4f0b-9c44-e38dd213b960"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-04",
+              "to": "2026-05-10"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "9765",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "a4e4db69-0782-4db8-ac4c-dd05032511fa",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "a4e4db69-0782-4db8-ac4c-dd05032511fa",
+        "name": {
+          "ru": "Сет Жареный за 1249₽ вместо 1599₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 350.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-04",
+              "to": "2026-05-10"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 8,
+        "code": "8525",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "9e2781eb-9132-4c78-9437-1d1c30fc96ef",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "9e2781eb-9132-4c78-9437-1d1c30fc96ef",
+        "name": {
+          "ru": "Пицца «Пикник» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-16"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "4563",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "dacbd655-3178-492e-b043-2ca599501532",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "dacbd655-3178-492e-b043-2ca599501532",
+        "name": {
+          "ru": "Пицца «Пикник» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "4631",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "7a947da7-cbbb-4250-90ff-3a7a5a64e83e",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "7a947da7-cbbb-4250-90ff-3a7a5a64e83e",
+        "name": {
+          "ru": "Пицца «Пикник» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "0985",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "63bb4c80-ba58-4553-b765-5fa2c1af3d12",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "63bb4c80-ba58-4553-b765-5fa2c1af3d12",
+        "name": {
+          "ru": "Пицца «Пикник» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "4653",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "75eec344-4693-4976-8a33-641dc5cd2909",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "75eec344-4693-4976-8a33-641dc5cd2909",
+        "name": {
+          "ru": "Пицца «Пикник» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "7534",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "bbae921e-6713-435f-b3f8-30fb55b3575d",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "bbae921e-6713-435f-b3f8-30fb55b3575d",
+        "name": {
+          "ru": "Сет «Соломон» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "85fddf2e-1882-4a56-8b66-da2abf1ff5e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "6323",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "dec84bca-9039-4154-98df-ca448bdd1647",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "dec84bca-9039-4154-98df-ca448bdd1647",
+        "name": {
+          "ru": "Сет «Соломон» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "85fddf2e-1882-4a56-8b66-da2abf1ff5e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "2656",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "e62e7927-7617-4a0e-8707-51153d9c8652",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "e62e7927-7617-4a0e-8707-51153d9c8652",
+        "name": {
+          "ru": "Сет «Соломон» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "85fddf2e-1882-4a56-8b66-da2abf1ff5e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "5345",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "a89f648c-81eb-4b7a-9337-2e219706834e",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "a89f648c-81eb-4b7a-9337-2e219706834e",
+        "name": {
+          "ru": "Сет «Соломон» за 0₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "85fddf2e-1882-4a56-8b66-da2abf1ff5e6"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-09",
+              "to": "2026-04-23"
+            }
+          ],
+          "time": [
+            {
+              "fromHour": 11,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "6342",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "26b34fbf-bd05-4d2e-ba04-dd7ae4759273",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "26b34fbf-bd05-4d2e-ba04-dd7ae4759273",
+        "name": {
+          "ru": "Легкое комбо за 899₽ вместо 1099₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-04-27",
+              "to": "2026-05-03"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 5,
+        "code": "7373",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "d033ceae-6a46-4cd7-b645-f114e6e6f806",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "d033ceae-6a46-4cd7-b645-f114e6e6f806",
+        "name": {
+          "ru": "Сет Манхэттен за 1399₽ вместо 1660₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 261.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-05-18",
+              "to": "2026-05-24"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 10,
+        "code": "6414",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3cb354a1-c187-42fd-b3ba-416f1c45e9bc",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3cb354a1-c187-42fd-b3ba-416f1c45e9bc",
+        "name": {
+          "ru": "Ролл Запеченная Калифорния в подарок к заказу от 1659₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1659,
+        "type": "meal",
+        "value": {
+          "mealId": "8d90165d-be8a-481e-8c68-3fbba05d77b1"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-03-30",
+              "to": "2026-04-05"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "3854",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "566962f2-e62a-476b-806a-220ca1028240",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "566962f2-e62a-476b-806a-220ca1028240",
+        "name": {
+          "ru": "Сет Пятница за 1399₽ вместо 1699₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 300.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2026-03-30",
+              "to": "2026-04-05"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 1,
+        "code": "9533",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
+        "name": {
+          "ru": "Секретный промокод ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "dcbeb5e0-1ce7-473f-b31d-55987aa855da"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 13,
+        "code": "8775",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": {
+        "name": "Честер",
+        "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
+        "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      }
+    },
+    {
+      "id": "aae2a78f-bbcf-4774-9ef3-d8b7ebe2d732",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "aae2a78f-bbcf-4774-9ef3-d8b7ebe2d732",
+        "name": {
+          "ru": "За подписку:  Ролл калифорния с крабом к заказу от 1690₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1690,
+        "type": "meal",
+        "value": {
+          "mealId": "78fae729-8b26-496b-906b-7458c2cd499f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1,
+        "code": "1690",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "f8d1284f-4d16-4c64-a24b-35a72d52227a",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "f8d1284f-4d16-4c64-a24b-35a72d52227a",
+        "name": {
+          "ru": "Счастливые часы: Скидка 15% на пиццу",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": [
+            {
+              "fromHour": 0,
+              "fromMinutes": 0,
+              "toHour": 15,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "1515",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "d287657b-c6eb-489f-ae75-ca82ca64a6a4",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "d287657b-c6eb-489f-ae75-ca82ca64a6a4",
+        "name": {
+          "ru": "Скидка в день рождения: сет Жареный от 2190₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 2190,
+        "type": "meal",
+        "value": {
+          "mealId": "6194a5e4-0f62-4623-874b-4f55d0e9d50c"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "др2",
+        "isBulk": false,
+        "birthdayOptions": {
+          "daysBefore": 3,
+          "daysAfter": 3,
+          "usageCount": 1
+        }
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "d14f5e67-544c-42e3-825f-a7419f3601e5",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "d14f5e67-544c-42e3-825f-a7419f3601e5",
+        "name": {
+          "ru": "Пепперони лайт к заказу от 1399₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "b83e19d3-46ad-47da-b7eb-7c312846a8ef"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 2,
+        "code": "6546",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "404e1452-b5fb-490a-95dc-fb00a7177084",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "404e1452-b5fb-490a-95dc-fb00a7177084",
+        "name": {
+          "ru": "Ролл жаренный с креветкой к заказу от 1290₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1290,
+        "type": "meal",
+        "value": {
+          "mealId": "a69b4ab4-264f-48a5-98e3-1e1508352aec"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 5,
+        "code": "2134",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "21d6ba87-7181-414b-86bd-74672ab3b418",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "21d6ba87-7181-414b-86bd-74672ab3b418",
+        "name": {
+          "ru": "Скидка 20% на первый заказ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 14,
+        "code": "6786",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "4a631dbb-0057-40e1-8cee-468075bc32ff",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "4a631dbb-0057-40e1-8cee-468075bc32ff",
+        "name": {
+          "ru": "Динамит",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "425d14be-1e8c-4f0b-9c44-e38dd213b960"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 17,
+        "code": "6351",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "23124994-1135-4f16-81d8-40a54eac1311",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "23124994-1135-4f16-81d8-40a54eac1311",
+        "name": {
+          "ru": "Секретный промокод ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 3,
+        "code": "7168",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "56732553-832f-45d1-b716-07fcafe83eaa",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "56732553-832f-45d1-b716-07fcafe83eaa",
+        "name": {
+          "ru": "Скидка в день рождения",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1000,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 248,
+        "code": "др",
+        "isBulk": false,
+        "birthdayOptions": {
+          "daysBefore": 3,
+          "daysAfter": 3,
+          "usageCount": null
+        }
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+        "name": {
+          "ru": "Удвоение ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1199,
+        "type": "doubleMeal",
+        "value": null,
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            6,
+            7
+          ],
+          "choice": "exceptChosen"
+        },
+        "usages": 508,
+        "code": "удвоение",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json",
+      "detail": {
+        "name": {
+          "ru": "Удвоение ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "doubleMeal",
+        "value": null,
+        "minOrderPriceCommon": 1199,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": null,
+            "time": null,
+            "daysOfWeek": [
+              5,
+              6,
+              7
+            ],
+            "choice": "exceptChosen"
+          },
+          "menuRestrictions": {
+            "meals": {
+              "choice": "toChosen",
+              "entityIds": [
+                "9bfb384a-caa7-400f-8366-755e27f3e81e",
+                "da7d7bc4-b48f-48e9-a76f-bc2f648d82c1",
+                "1302fc3c-269b-4dd8-9160-2bbc3991577b",
+                "f0b9a6cc-8015-4c76-b6c7-4c6ae626ad4a",
+                "20a428a5-8330-43f2-9b18-24177b0f9862",
+                "7872bc00-1553-47ad-b585-ff1997488e3d",
+                "fc089bd8-0a15-451f-8b2f-39aa89edb218",
+                "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4",
+                "a255637d-b9e4-49d0-8d6f-3aaa18244555",
+                "8206ed1e-63b1-49d1-a5ba-a7b3de8308ea",
+                "fc99309a-cdb3-4e5d-8b79-807758a08227",
+                "5ccb03f6-731b-47cb-b3a1-68a7c4bfd2bc",
+                "d92676f5-8a12-4bcf-bd82-be9d11a57bba",
+                "f3bcd1cc-91b8-479e-88a9-e4cb826ca498"
+              ]
+            },
+            "categories": null,
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "удвоение",
+        "isBulk": false,
+        "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+        "usages": 508
+      },
+      "detail_status": "detail_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": {
+        "source": "Collecting agent native UI observation reported 2026-10-07",
+        "coverage": "partial_ui_detail_plus_api_detail",
+        "ui_fields": {
+          "weekdays_label": "понедельник–четверг",
+          "per_guest_cap_enabled": false,
+          "global_cap_enabled": false
+        },
+        "caution": "Raw repeatable=false is retained without lifetime-use interpretation."
+      },
+      "ui_reward_observation": null
+    },
+    {
+      "id": "e95c0364-da80-4ccd-be91-6f681222974f",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "e95c0364-da80-4ccd-be91-6f681222974f",
+        "name": {
+          "ru": "Баунти в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "30543a89-d70f-423a-8e2b-b25d6498b7d4"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 26,
+        "code": "3636",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "153a04a1-e9d8-4dcf-be7f-4b7d1e61a46e",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "153a04a1-e9d8-4dcf-be7f-4b7d1e61a46e",
+        "name": {
+          "ru": "Сет пятница сидка",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1,
+        "code": "пятница",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3d70d3a5-dbbc-49b0-b948-2f7a31fb50ce",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3d70d3a5-dbbc-49b0-b948-2f7a31fb50ce",
+        "name": {
+          "ru": "Мидии под соусом в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1599,
+        "type": "meal",
+        "value": {
+          "mealId": "9bfb384a-caa7-400f-8366-755e27f3e81e"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 41,
+        "code": "2121",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "3bda218a-dd0d-40b8-b1f7-d419a947dce5",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "3bda218a-dd0d-40b8-b1f7-d419a947dce5",
+        "name": {
+          "ru": "Опросник",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 20,
+        "code": "спасибо",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "40b9bef0-9847-4308-ba51-793a3d616f35",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "40b9bef0-9847-4308-ba51-793a3d616f35",
+        "name": {
+          "ru": "Ролл Фила тар тар в подарок ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "c2fb5bfe-b645-4885-b8f3-4a222eb8cab2"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 35,
+        "code": "ролл1",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "602c4c20-1c3d-45e9-b652-237795c62f98",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "602c4c20-1c3d-45e9-b652-237795c62f98",
+        "name": {
+          "ru": "Пицца Пикник 30см  в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 54,
+        "code": "пицца2",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ac1e0285-2812-4bec-b391-640dcef5e8f1",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ac1e0285-2812-4bec-b391-640dcef5e8f1",
+        "name": {
+          "ru": "Пицца Цыпленок гриль 30см в подарок ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1399,
+        "type": "meal",
+        "value": {
+          "mealId": "4bee7c9c-8647-4b85-99a0-1fcafbca5c6b"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 51,
+        "code": "пицца1",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "b23f68d8-79b8-4a20-8fde-e573d8628603",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "b23f68d8-79b8-4a20-8fde-e573d8628603",
+        "name": {
+          "ru": "Опрос лояльные",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 101,
+        "code": "опрос1",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "c55c3b64-1bfd-4c50-a8e6-350af17e8013",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "c55c3b64-1bfd-4c50-a8e6-350af17e8013",
+        "name": {
+          "ru": "Опрос ушедшие",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2025-08-26",
+              "to": "2025-11-02"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 2,
+        "code": "опрос",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "975f2339-67cb-4ac9-89cf-699d484ef2f1",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "975f2339-67cb-4ac9-89cf-699d484ef2f1",
+        "name": {
+          "ru": "Скидка ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 1000,
+        "type": "percent",
+        "value": {
+          "size": 25.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 53,
+        "code": "2525",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "a4cbfc17-ba9c-4735-9dd0-a303653444a0",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "a4cbfc17-ba9c-4735-9dd0-a303653444a0",
+        "name": {
+          "ru": "Карбонара 30см в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "meal",
+        "value": {
+          "mealId": "c3a891e4-5222-4686-a85d-4e2070bc9e3c"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 68,
+        "code": "5858",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "4e74c6d0-8d5d-4100-ab86-258b518df74c",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "4e74c6d0-8d5d-4100-ab86-258b518df74c",
+        "name": {
+          "ru": "Скидка 15% от 1700р",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 50,
+        "code": "1717",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "13989c03-7065-4701-a313-284031c0ed95",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "13989c03-7065-4701-a313-284031c0ed95",
+        "name": {
+          "ru": "Пикантная креветка в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "meal",
+        "value": {
+          "mealId": "8e50db4d-7fd1-49e5-9488-2d623c2ced6d"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 19,
+        "code": "7963",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "5cce0bcc-e741-4ed4-af76-192de553f74b",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "5cce0bcc-e741-4ed4-af76-192de553f74b",
+        "name": {
+          "ru": "Скидка 15% от 1000р",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1000,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2025-04-04",
+              "to": "2025-04-04"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 7,
+        "code": "7979",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "45a5f926-baa6-4919-81d8-4a62af83cb90",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "45a5f926-baa6-4919-81d8-4a62af83cb90",
+        "name": {
+          "ru": "Семейный ужин",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": [
+            {
+              "fromHour": 17,
+              "fromMinutes": 0,
+              "toHour": 20,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "7я",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "788ae5ef-74f0-4c6f-ab71-874ff17608b8",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "788ae5ef-74f0-4c6f-ab71-874ff17608b8",
+        "name": {
+          "ru": "Скидка 15% от 1500р",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1500,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2025-01-28",
+              "to": "2025-02-13"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 2,
+        "code": "0202",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "bae384b9-b6fb-4ebf-88e5-bf98af754ccf",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "bae384b9-b6fb-4ebf-88e5-bf98af754ccf",
+        "name": {
+          "ru": "Скидка 200р",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 288,
+        "code": "5353",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "76ba9df9-80eb-42f0-a0a5-e8b60aa29608",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "76ba9df9-80eb-42f0-a0a5-e8b60aa29608",
+        "name": {
+          "ru": "Пепперони лайт в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "meal",
+        "value": {
+          "mealId": "b83e19d3-46ad-47da-b7eb-7c312846a8ef"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 331,
+        "code": "4242",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "81a05f90-17d0-4d9e-b633-64c72a0affa8",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "81a05f90-17d0-4d9e-b633-64c72a0affa8",
+        "name": {
+          "ru": "Филадельфия тар-тар в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1700,
+        "type": "meal",
+        "value": {
+          "mealId": "35d83940-61ed-4883-b181-c74fae33cf76"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 229,
+        "code": "3131",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "1f752c18-e7e7-4ed7-a7bf-dd82f849f64d",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "1f752c18-e7e7-4ed7-a7bf-dd82f849f64d",
+        "name": {
+          "ru": "Сет недели \"Пятница\"",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2024-10-07",
+              "to": "2024-10-13"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 28,
+        "code": "999",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ec0a7fb0-b956-49ab-a88f-39e91a451601",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ec0a7fb0-b956-49ab-a88f-39e91a451601",
+        "name": {
+          "ru": "Промокод пицца тест",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1500,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "1222",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "94ec4152-2805-41d8-b24c-79aa6227cadc",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "94ec4152-2805-41d8-b24c-79aa6227cadc",
+        "name": {
+          "ru": "Счастливые часы",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 800,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": [
+            {
+              "fromHour": 12,
+              "fromMinutes": 0,
+              "toHour": 16,
+              "toMinutes": 0,
+              "isDayOff": false
+            }
+          ],
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "code": "1216",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "94df1ace-ab9a-4bd9-8c24-f37696b65cfd",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "94df1ace-ab9a-4bd9-8c24-f37696b65cfd",
+        "name": {
+          "ru": "ролл в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 1000,
+        "type": "meal",
+        "value": {
+          "mealId": "221102fa-7c72-41b3-b4da-f92bc6346621"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 2,
+        "code": "roll",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ee1cd7d1-9c61-47ed-972e-6607bc5a561d",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ee1cd7d1-9c61-47ed-972e-6607bc5a561d",
+        "name": {
+          "ru": "Sorry -300",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 300.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "sorry",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "5475a870-9671-4071-ac07-01fe9d26deb6",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "5475a870-9671-4071-ac07-01fe9d26deb6",
+        "name": {
+          "ru": "Грибная 40см",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "1f0b6017-41c7-4c78-89ed-7f374be78b6d"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "code": "987564",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ac8cafe7-569e-493d-86b3-652ce5939a91",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ac8cafe7-569e-493d-86b3-652ce5939a91",
+        "name": {
+          "ru": "Пятница",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "meal",
+        "value": {
+          "mealId": "80a4adc1-a9ec-42d9-ab1b-cd0ac67bd9fe"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1,
+        "code": "promo999",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "b3acb047-bde7-4152-899e-f5167898a002",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "b3acb047-bde7-4152-899e-f5167898a002",
+        "name": {
+          "ru": "Всё включено за 1799р",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 401.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 21,
+        "code": "1212",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "dc16d228-81ba-4cbb-966a-2a9e214af81f",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "dc16d228-81ba-4cbb-966a-2a9e214af81f",
+        "name": {
+          "ru": "ТЕСТ — НЕ ГОТОВИТЬ!",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 99.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 16,
+        "code": "test3256",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
+        "name": {
+          "ru": "Скидка при первом заказе",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 3115,
+        "code": "первый",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": {
+        "source": "Collecting agent native UI observation reported 2026-10-07; separate from API detail",
+        "coverage": "partial_ui_detail",
+        "ui_fields": {
+          "percent": 20,
+          "apply_to": "К цене позиций",
+          "place": "Везде",
+          "stop_further": true,
+          "per_guest_cap_enabled": false,
+          "global_cap_enabled": false,
+          "first_order_only": true,
+          "birthday_enabled": false,
+          "minimum_label": "Без ограничений",
+          "restriction_summary": {
+            "time": "Настроить",
+            "menu": "Настроить",
+            "shops": "Настроить",
+            "delivery": "Настроить"
+          }
+        },
+        "caution": "Настроить is a UI summary, not confirmed null/empty unrestricted settings; API detail not fetched."
+      },
+      "ui_reward_observation": null
+    },
+    {
+      "id": "0381b1b5-b68e-4afd-8277-dcfee2756741",
+      "family": "promocodes",
+      "list_source": "starter-promocodes-page0.json",
+      "list_record": {
+        "id": "0381b1b5-b68e-4afd-8277-dcfee2756741",
+        "name": {
+          "ru": "ТЕСТ — НЕ ГОТОВИТЬ!",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "promocode",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 99.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1,
+        "code": "test3256",
+        "isBulk": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "8ae97238-7c82-4143-9cc7-4c993c7835a6",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "8ae97238-7c82-4143-9cc7-4c993c7835a6",
+        "name": {
+          "ru": "Шкала подарков от 1999",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 1999,
+        "type": "meal",
+        "value": {
+          "mealId": "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 170,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": {
+        "source": "live-notes.md, Gift1999 detail, native UI; collecting agent report",
+        "coverage": "partial_ui_detail",
+        "ui_fields": {
+          "gift_name": "Камчатский",
+          "priority": 4,
+          "place": "Везде",
+          "stop_further": true,
+          "stop_further_ui_exception": "бонусные баллы",
+          "per_guest_cap_enabled": false,
+          "global_cap_enabled": false,
+          "first_order_only": false,
+          "birthday_enabled": false,
+          "referral_enabled": false,
+          "goal_widget": false,
+          "minimum": 1999,
+          "minimum_basis": "любые блюда",
+          "minimum_mode": "общий для всех способов",
+          "restriction_observation": "Only selected controls shown; selection lists empty in native UI"
+        },
+        "caution": "Do not infer all/no eligible stores, methods or dishes from empty UI selected lists; API detail not fetched."
+      },
+      "ui_reward_observation": {
+        "name": "Камчатский",
+        "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
+        "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      }
+    },
+    {
+      "id": "b3670c5f-568d-432c-9892-90f4d5efc723",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "b3670c5f-568d-432c-9892-90f4d5efc723",
+        "name": {
+          "ru": "401",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 401.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+        "name": {
+          "ru": "Самовывоз выгоднее! Скидка 10%",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1187,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "2441ddc4-8148-4fdd-a0aa-0c5c44c42438",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "2441ddc4-8148-4fdd-a0aa-0c5c44c42438",
+        "name": {
+          "ru": "Шкала подарков от 1699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 1699,
+        "type": "meal",
+        "value": {
+          "mealId": "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            7
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 6,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
+        "name": {
+          "ru": "Шкала подарков от 2699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 2699,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 378,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": {
+        "name": "Пикник",
+        "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
+        "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      }
+    },
+    {
+      "id": "fca125f6-b5cf-4d95-8510-584c219963de",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "fca125f6-b5cf-4d95-8510-584c219963de",
+        "name": {
+          "ru": "Шкала подарков от 2299",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 2299,
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            7
+          ],
+          "choice": "exceptChosen"
+        },
+        "usages": 14,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "d18e4337-3923-4fe9-a4ef-5a61dad2d569",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "d18e4337-3923-4fe9-a4ef-5a61dad2d569",
+        "name": {
+          "ru": "Шкала подарков от 2699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 2699,
+        "type": "meal",
+        "value": {
+          "mealId": "ba78e8b7-cf52-4785-a7cb-8aeba7ea6227"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            7
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 0,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "8d0f03ea-98f6-4a7e-a086-14db6286697c",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "8d0f03ea-98f6-4a7e-a086-14db6286697c",
+        "name": {
+          "ru": "Шкала подарков от 4000",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 4000,
+        "type": "meal",
+        "value": {
+          "mealId": "8e50db4d-7fd1-49e5-9488-2d623c2ced6d"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "ab546b22-9e8c-4a08-9cbf-942fae8c701a",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "ab546b22-9e8c-4a08-9cbf-942fae8c701a",
+        "name": {
+          "ru": "Шкала подарков от 2999",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 2999,
+        "type": "meal",
+        "value": {
+          "mealId": "ba78e8b7-cf52-4785-a7cb-8aeba7ea6227"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 2833,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": {
+        "name": "Сет Денег нет",
+        "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
+        "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      }
+    },
+    {
+      "id": "6c0e2b8d-ac24-47eb-aa88-7cfb10feec42",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "6c0e2b8d-ac24-47eb-aa88-7cfb10feec42",
+        "name": {
+          "ru": "Шкала подарков от 2399",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 2399,
+        "type": "meal",
+        "value": {
+          "mealId": "c2fb5bfe-b645-4885-b8f3-4a222eb8cab2"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 1075,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": {
+        "name": "Филадельфия тар-тар",
+        "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
+        "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      }
+    },
+    {
+      "id": "0f84df2d-7e13-4f48-bddf-d12b37c563fb",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "0f84df2d-7e13-4f48-bddf-d12b37c563fb",
+        "name": {
+          "ru": "Шкала подарков от 1999",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 1999,
+        "type": "meal",
+        "value": {
+          "mealId": "6ff67aaf-de06-48a1-b249-75380c51a193"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            7
+          ],
+          "choice": "exceptChosen"
+        },
+        "usages": 1368,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "a189856a-fd45-461c-a642-6fe1068c801e",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "a189856a-fd45-461c-a642-6fe1068c801e",
+        "name": {
+          "ru": "Скидка 20% на пиццы",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 20.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2025-04-08",
+              "to": "2025-04-20"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "choice": "toChosen"
+        },
+        "usages": 64,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "expired_in_list",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "c5f6d6b5-6ca9-4332-9cbd-3a07ce125e7c",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "c5f6d6b5-6ca9-4332-9cbd-3a07ce125e7c",
+        "name": {
+          "ru": "Сет недели \"Фестиваль\"",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "absolute",
+        "value": {
+          "size": 200.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": {
+          "date": [
+            {
+              "from": "2025-04-07",
+              "to": "2025-04-13"
+            }
+          ],
+          "time": null,
+          "daysOfWeek": null,
+          "choice": "toChosen"
+        },
+        "usages": 21,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "expired_in_list",
+        "absolute_date_pass": false,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+        "name": {
+          "ru": "Скидка при первом заказе",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "active",
+        "minOrderPriceCommon": 1500,
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "usages": 237,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "enabled_absolute_date_candidate",
+        "candidate_by_status_and_absolute_date": true,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "42fc382c-f0c0-4258-8267-87c31f256780",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "42fc382c-f0c0-4258-8267-87c31f256780",
+        "name": {
+          "ru": "Скидка тест",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 0.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "f73f5218-5daf-4e13-b94f-2c79cfb091e3",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "f73f5218-5daf-4e13-b94f-2c79cfb091e3",
+        "name": {
+          "ru": "Блюдо в подарок",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 1500,
+        "type": "meal",
+        "value": {
+          "mealId": "817d53fc-2f20-4c26-8651-bf3a66cd196a"
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "goal": true,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    },
+    {
+      "id": "81cc31a3-a21f-4e0b-af2a-d4af62b75867",
+      "family": "discounts",
+      "list_source": "starter-discounts-page0.json",
+      "list_record": {
+        "id": "81cc31a3-a21f-4e0b-af2a-d4af62b75867",
+        "name": {
+          "ru": "Самовывоз",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "kind": "discount",
+        "status": "not_active",
+        "minOrderPriceCommon": 0,
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "usages": 0,
+        "goal": false,
+        "birthdayOptions": null
+      },
+      "detail_source": null,
+      "detail": null,
+      "detail_status": "detail_not_fetched",
+      "list_detail_conflicts": {},
+      "assessment": {
+        "absolute_date_status": "no_absolute_date_restriction_in_list",
+        "absolute_date_pass": true,
+        "as_of_date": "2026-10-07",
+        "category": "not_active",
+        "candidate_by_status_and_absolute_date": false,
+        "customer_order_eligibility": "not_established",
+        "time_of_day_evaluated": false,
+        "weekday_filter_evaluated": false,
+        "compatibility_tested": false
+      },
+      "ui_observations": null,
+      "ui_reward_observation": null
+    }
+  ]
+}

@@ -1,0 +1,2968 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-07",
+  "scope": "Full captured iiko configuration plus historical applied-type inventory; no underlying 1794 OLAP rows.",
+  "config_completeness": {
+    "programs": "captured full response",
+    "payment_types": "captured full response",
+    "discount_types": "captured full response",
+    "customer_category_labels": "captured full response; four relevant IDs mapped by exact unique ID",
+    "coupon_series": "unavailable: latest diagnostic timeout; endpoint itself only covers series with inactive coupons"
+  },
+  "configuration": {
+    "Programs": [
+      {
+        "id": "01330000-6bec-ac1f-2714-08da0d57a021",
+        "name": "[Foodmarket Тепло] Бонусная система1",
+        "description": null,
+        "serviceFrom": "2022-03-24T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 1,
+        "isActive": true,
+        "walletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-583c-08da0d57f147",
+            "programId": "01330000-6bec-ac1f-2714-08da0d57a021",
+            "name": "Назначение категорий",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-03-24T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-40b5-08da0d5a2ac6",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-4cd8-08db6c11c2ec",
+                    "settings": "{\"GuestCategoryId\":\"59306e9b-6863-42fa-8cd7-07e224b78c1b\",\"AffectedGuest\":0,\"HourOfSet\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SetGuestCategoryAction",
+                    "checkSum": "pVjnOpPa1RYe7t4ELLZvzNq0Mbx0dfwzwm3KaTcR7gI=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+                      "AffectedGuest": 0,
+                      "HourOfSet": null,
+                      "RetryPeriod": null
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-9ea7-08db6c1059e8",
+                    "settings": "{\"Period\":0,\"OrderSum\":0.0,\"Operation\":4,\"MultiplicityEnabled\":false,\"MaskItems\":[]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.OrderSumHistoryCondition",
+                    "checkSum": "nqpjhhKMhPbzW6vpbzAwAkcGxx8qRTegoBrh7QD1ZR8=",
+                    "settingsDecoded": {
+                      "Period": 0,
+                      "OrderSum": 0.0,
+                      "Operation": 4,
+                      "MultiplicityEnabled": false,
+                      "MaskItems": []
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650000-6bec-ac1f-c544-08db6c0ddd3f",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-31a6-08db6c11c2ed",
+                    "settings": "{\"GuestCategoryId\":\"83a5475e-ccdd-486f-9748-eda7da8b1391\",\"AffectedGuest\":0,\"HourOfSet\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SetGuestCategoryAction",
+                    "checkSum": "0U9ajqhczWev3qsnEPsqhKt29JSO0tMmxie1aWo/UNY=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "83a5475e-ccdd-486f-9748-eda7da8b1391",
+                      "AffectedGuest": 0,
+                      "HourOfSet": null,
+                      "RetryPeriod": null
+                    }
+                  },
+                  {
+                    "id": "03650000-6bec-ac1f-22e8-08db6c18251a",
+                    "settings": "{\"GuestCategoryId\":\"59306e9b-6863-42fa-8cd7-07e224b78c1b\",\"AffectedGuest\":0,\"HourOfRemove\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RemoveGuestCategoryAction",
+                    "checkSum": "ssknIlgiu+LR3+OqXmc9IGMEU2X20zf157WyVp4vBKA=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+                      "AffectedGuest": 0,
+                      "HourOfRemove": null,
+                      "RetryPeriod": null
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-689c-08db6cc873bd",
+                    "settings": "{\"Period\":0,\"OrderSum\":10000.0,\"Operation\":4,\"MultiplicityEnabled\":false,\"MaskItems\":[]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.OrderSumHistoryCondition",
+                    "checkSum": "BQ0I1xIfyUwqSvPHbYKUhab/zLyf7nOduiYT7W21rCo=",
+                    "settingsDecoded": {
+                      "Period": 0,
+                      "OrderSum": 10000.0,
+                      "Operation": 4,
+                      "MultiplicityEnabled": false,
+                      "MaskItems": []
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650000-6bec-ac1f-597b-08db6c0ddd40",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-c598-08db6c11c2ed",
+                    "settings": "{\"GuestCategoryId\":\"66fe10cb-2fc4-4150-baea-c31ea00d2761\",\"AffectedGuest\":0,\"HourOfSet\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SetGuestCategoryAction",
+                    "checkSum": "lEQjuUMzgzcxjKEVsOWSpg5ATO7VF8RCALbP7a73tMI=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "66fe10cb-2fc4-4150-baea-c31ea00d2761",
+                      "AffectedGuest": 0,
+                      "HourOfSet": null,
+                      "RetryPeriod": null
+                    }
+                  },
+                  {
+                    "id": "03650000-6bec-ac1f-b8cb-08db6c18251b",
+                    "settings": "{\"GuestCategoryId\":\"83a5475e-ccdd-486f-9748-eda7da8b1391\",\"AffectedGuest\":0,\"HourOfRemove\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RemoveGuestCategoryAction",
+                    "checkSum": "JaUw27vjiyjAYXcBKO2ZW+/6yLcoT/L/UXbV9V9mrTA=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "83a5475e-ccdd-486f-9748-eda7da8b1391",
+                      "AffectedGuest": 0,
+                      "HourOfRemove": null,
+                      "RetryPeriod": null
+                    }
+                  },
+                  {
+                    "id": "01330000-6bec-ac1f-ce8c-08db6d8ca200",
+                    "settings": "{\"GuestCategoryId\":\"59306e9b-6863-42fa-8cd7-07e224b78c1b\",\"AffectedGuest\":0,\"HourOfRemove\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RemoveGuestCategoryAction",
+                    "checkSum": "ssknIlgiu+LR3+OqXmc9IGMEU2X20zf157WyVp4vBKA=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+                      "AffectedGuest": 0,
+                      "HourOfRemove": null,
+                      "RetryPeriod": null
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-b2eb-08db6c1059e9",
+                    "settings": "{\"Period\":0,\"OrderSum\":30000.0,\"Operation\":4,\"MultiplicityEnabled\":false,\"MaskItems\":[]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.OrderSumHistoryCondition",
+                    "checkSum": "Y7dVoeFAx7ryEWbRyNnfVFsCYb04fPK21OzYaM+fc2U=",
+                    "settingsDecoded": {
+                      "Period": 0,
+                      "OrderSum": 30000.0,
+                      "Operation": 4,
+                      "MultiplicityEnabled": false,
+                      "MaskItems": []
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-cf57-08da0d5a2ac7",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-e9bc-08da0d5a2ac7",
+                    "settings": "{\"BonusExpirationPeriodInDays\":90,\"HourOfReset\":0,\"RetryPeriod\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.ResetBalanceAction",
+                    "checkSum": "IGXW0XGOeCHHjrwfnRMOY67eQLo3xMPQdVUEJ8zz0+A=",
+                    "settingsDecoded": {
+                      "BonusExpirationPeriodInDays": 90,
+                      "HourOfReset": 0,
+                      "RetryPeriod": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-189d-08da0d5a2ac8",
+                    "settings": "{\"Mode\":0,\"SelectedDayOfMonth\":0,\"DaysOfWeek\":0,\"AnnuallyDay\":0,\"AnnuallyMonth\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.TimetableCondition",
+                    "checkSum": "f5WDKFpdBBxVS1oVOMa9ZNhXN5XHe6QA5yDDjJUeuiM=",
+                    "settingsDecoded": {
+                      "Mode": 0,
+                      "SelectedDayOfMonth": 0,
+                      "DaysOfWeek": 0,
+                      "AnnuallyDay": 0,
+                      "AnnuallyMonth": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "overdraftActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-32fa-08da0d57f149",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-8969-08da0d57f149",
+                    "settings": "{\"Mode\":2,\"Sum\":0.0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.Payment.OverdraftAction",
+                    "checkSum": "0MO5iMTUMiNdyyjxk/SxUZi2YBqdgQoY8whPH3oZufs=",
+                    "settingsDecoded": {
+                      "Mode": 2,
+                      "Sum": 0.0
+                    }
+                  }
+                ],
+                "conditions": []
+              }
+            ],
+            "guestRegistrationActionConditionBindings": []
+          },
+          {
+            "id": "03650000-6bec-ac1f-0334-08da27750f3d",
+            "programId": "01330000-6bec-ac1f-2714-08da0d57a021",
+            "name": "Процент для категорий",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-03-24T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-981d-08db6c118d03",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-dc56-08db6c118d04",
+                    "settings": "{\"RefillPercent\":5.0,\"WalletId\":\"01330000-6bec-ac1f-d9fc-08da0d57a021\",\"ChequeText\":\"Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)\",\"MaxSupplementsPerDay\":10,\"ProductsFilter\":0,\"AffectedGuest\":0,\"MaskItems\":[],\"Sms\":{\"UseCustom\":false,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false},\"Push\":{\"UseCustom\":false,\"SubscriptionId\":null,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false}}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RefillWalletPercentAction",
+                    "checkSum": "3M+zD91doyK0FmaCpLPiZB28QORGYuhnOYAuI0YpHh4=",
+                    "settingsDecoded": {
+                      "RefillPercent": 5.0,
+                      "WalletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+                      "ChequeText": "Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)",
+                      "MaxSupplementsPerDay": 10,
+                      "ProductsFilter": 0,
+                      "AffectedGuest": 0,
+                      "MaskItems": [],
+                      "Sms": {
+                        "UseCustom": false,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      },
+                      "Push": {
+                        "UseCustom": false,
+                        "SubscriptionId": null,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      }
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-1ddd-08db6c118d06",
+                    "settings": "{\"GuestCategoryIds\":[\"59306e9b-6863-42fa-8cd7-07e224b78c1b\"],\"AffectedGuest\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.GuestCategoryCondition",
+                    "checkSum": "yNYUB+EEO7PHS0Hd1FvK9knS1T45N0/x8X9fvQ+uu9E=",
+                    "settingsDecoded": {
+                      "GuestCategoryIds": [
+                        "59306e9b-6863-42fa-8cd7-07e224b78c1b"
+                      ],
+                      "AffectedGuest": 0
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650000-6bec-ac1f-336e-08db6c118d07",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-4460-08db6c118d08",
+                    "settings": "{\"RefillPercent\":7.0,\"WalletId\":\"01330000-6bec-ac1f-d9fc-08da0d57a021\",\"ChequeText\":\"Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)\",\"MaxSupplementsPerDay\":10,\"ProductsFilter\":0,\"AffectedGuest\":0,\"MaskItems\":[],\"Sms\":{\"UseCustom\":false,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false},\"Push\":{\"UseCustom\":false,\"SubscriptionId\":null,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false}}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RefillWalletPercentAction",
+                    "checkSum": "KLbDkMKHXVWep9DquqZHF5xRRjFPyfcNu/1QerRud20=",
+                    "settingsDecoded": {
+                      "RefillPercent": 7.0,
+                      "WalletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+                      "ChequeText": "Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)",
+                      "MaxSupplementsPerDay": 10,
+                      "ProductsFilter": 0,
+                      "AffectedGuest": 0,
+                      "MaskItems": [],
+                      "Sms": {
+                        "UseCustom": false,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      },
+                      "Push": {
+                        "UseCustom": false,
+                        "SubscriptionId": null,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      }
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-342e-08db6c118d09",
+                    "settings": "{\"GuestCategoryIds\":[\"83a5475e-ccdd-486f-9748-eda7da8b1391\"],\"AffectedGuest\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.GuestCategoryCondition",
+                    "checkSum": "ND+RNbtZOZCr6Tm4AB+gCrdBOm6iJpvI0Xdk6Rb9C5Y=",
+                    "settingsDecoded": {
+                      "GuestCategoryIds": [
+                        "83a5475e-ccdd-486f-9748-eda7da8b1391"
+                      ],
+                      "AffectedGuest": 0
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650001-6bec-ac1f-43f7-08db6c118d0a",
+                "stopFurtherExecution": true,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-bccd-08db6c118d0b",
+                    "settings": "{\"RefillPercent\":10.0,\"WalletId\":\"01330000-6bec-ac1f-d9fc-08da0d57a021\",\"ChequeText\":\"Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)\",\"MaxSupplementsPerDay\":10,\"ProductsFilter\":0,\"AffectedGuest\":0,\"MaskItems\":[],\"Sms\":{\"UseCustom\":false,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false},\"Push\":{\"UseCustom\":false,\"SubscriptionId\":null,\"Text\":\"@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency\",\"CanSendCustom\":false}}",
+                    "typeName": "LoyaltyProgramEngine.Actions.RefillWalletPercentAction",
+                    "checkSum": "FZ7YrG81GP+3u2smx1GM4/rrOKEQD5cY0q4SwUOpf6M=",
+                    "settingsDecoded": {
+                      "RefillPercent": 10.0,
+                      "WalletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+                      "ChequeText": "Счет будет пополнен на @Model.SumWithCurrency (@Math.Round(Model.Percent,1)%)",
+                      "MaxSupplementsPerDay": 10,
+                      "ProductsFilter": 0,
+                      "AffectedGuest": 0,
+                      "MaskItems": [],
+                      "Sms": {
+                        "UseCustom": false,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      },
+                      "Push": {
+                        "UseCustom": false,
+                        "SubscriptionId": null,
+                        "Text": "@(Model.Organization.Name). Зачислено @Model.SumWithCurrency на счет @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterWithCurrency",
+                        "CanSendCustom": false
+                      }
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-953f-08db6c118d0c",
+                    "settings": "{\"GuestCategoryIds\":[\"66fe10cb-2fc4-4150-baea-c31ea00d2761\"],\"AffectedGuest\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.GuestCategoryCondition",
+                    "checkSum": "ZUuarsD22g5ax32PUep/pF1VJr3JZ8jR3PczgPt5Xco=",
+                    "settingsDecoded": {
+                      "GuestCategoryIds": [
+                        "66fe10cb-2fc4-4150-baea-c31ea00d2761"
+                      ],
+                      "AffectedGuest": 0
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650000-6bec-ac1f-9ff3-08dce7810305",
+                "stopFurtherExecution": true,
+                "actions": [],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-37b2-08dce7810308",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"03650000-6bec-ac1f-a467-08dce6ac3eb1\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "ND8qxFhP4YqpXjaIb36h7dmx2YZYhqOPl8sRup2EFuI=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "03650000-6bec-ac1f-a467-08dce6ac3eb1"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-81fc-08da27750f4f",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-9397-08da27750f50",
+                    "settings": "{\"Mode\":2,\"Sum\":0.0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.Payment.OverdraftAction",
+                    "checkSum": "0MO5iMTUMiNdyyjxk/SxUZi2YBqdgQoY8whPH3oZufs=",
+                    "settingsDecoded": {
+                      "Mode": 2,
+                      "Sum": 0.0
+                    }
+                  }
+                ],
+                "conditions": []
+              }
+            ],
+            "guestRegistrationActionConditionBindings": []
+          },
+          {
+            "id": "03650000-6bec-ac1f-3663-08db6c11f5e0",
+            "programId": "01330000-6bec-ac1f-2714-08da0d57a021",
+            "name": "Бонусная система",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-03-24T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-6bc6-08db6c123afd",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-db70-08db6c123afd",
+                    "settings": "{\"WalletId\":\"01330000-6bec-ac1f-d9fc-08da0d57a021\",\"DayLimit\":null,\"WeekLimit\":null,\"MonthLimit\":null,\"AllowMinusBalance\":false,\"NeedVerifyGuest\":false,\"MaskItems\":[],\"WhatToPay\":0,\"ChequeText\":\"Текущий баланс счета: @Model.BalanceAfterPaymentAndRefillWithCurrency\",\"Sms\":null,\"Notifications\":{\"UseCustomNotification\":false,\"WalletNotificationType\":0,\"Text\":\"@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency\"},\"Push\":{\"UseCustom\":false,\"SubscriptionId\":null,\"Text\":\"@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency\",\"CanSendCustom\":false},\"PaymentLimitPercent\":50.0,\"ChequeSumOnFullPayment\":0.0,\"ExchangeRate\":1}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PaymentAction",
+                    "checkSum": "A/J2i5TKpZfn8wUaw4uWjJY489DjqMGXnb6ofKaQAes=",
+                    "settingsDecoded": {
+                      "WalletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+                      "DayLimit": null,
+                      "WeekLimit": null,
+                      "MonthLimit": null,
+                      "AllowMinusBalance": false,
+                      "NeedVerifyGuest": false,
+                      "MaskItems": [],
+                      "WhatToPay": 0,
+                      "ChequeText": "Текущий баланс счета: @Model.BalanceAfterPaymentAndRefillWithCurrency",
+                      "Sms": null,
+                      "Notifications": {
+                        "UseCustomNotification": false,
+                        "WalletNotificationType": 0,
+                        "Text": "@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency"
+                      },
+                      "Push": {
+                        "UseCustom": false,
+                        "SubscriptionId": null,
+                        "Text": "@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency",
+                        "CanSendCustom": false
+                      },
+                      "PaymentLimitPercent": 50.0,
+                      "ChequeSumOnFullPayment": 0.0,
+                      "ExchangeRate": 1
+                    }
+                  }
+                ],
+                "conditions": []
+              },
+              {
+                "id": "44730000-0f48-3056-bc0f-08ded37c0a75",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "44730000-0f48-3056-eb65-08ded37c0a75",
+                    "settings": "{\"WalletId\":\"01330000-6bec-ac1f-d9fc-08da0d57a021\",\"DayLimit\":null,\"WeekLimit\":null,\"MonthLimit\":null,\"AllowMinusBalance\":false,\"NeedVerifyGuest\":false,\"MaskItems\":[],\"WhatToPay\":0,\"ChequeText\":\"Текущий баланс счета: @Model.BalanceAfterPaymentAndRefillWithCurrency\",\"Sms\":null,\"Notifications\":{\"UseCustomNotification\":false,\"WalletNotificationType\":0,\"Text\":\"@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency\"},\"Push\":{\"UseCustom\":false,\"SubscriptionId\":null,\"Text\":\"@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\\\"{0:dd.MM.yyyy}\\\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency\",\"CanSendCustom\":false},\"PaymentLimitPercent\":100.0,\"ChequeSumOnFullPayment\":0.0,\"ExchangeRate\":1}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PaymentAction",
+                    "checkSum": "rnkV5GAuOxx+FUU9dlgmzE8EZli9CbEOQQOfXFgC/Tc=",
+                    "settingsDecoded": {
+                      "WalletId": "01330000-6bec-ac1f-d9fc-08da0d57a021",
+                      "DayLimit": null,
+                      "WeekLimit": null,
+                      "MonthLimit": null,
+                      "AllowMinusBalance": false,
+                      "NeedVerifyGuest": false,
+                      "MaskItems": [],
+                      "WhatToPay": 0,
+                      "ChequeText": "Текущий баланс счета: @Model.BalanceAfterPaymentAndRefillWithCurrency",
+                      "Sms": null,
+                      "Notifications": {
+                        "UseCustomNotification": false,
+                        "WalletNotificationType": 0,
+                        "Text": "@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency"
+                      },
+                      "Push": {
+                        "UseCustom": false,
+                        "SubscriptionId": null,
+                        "Text": "@(Model.Organization.Name). Списано @Model.PaymentSumWithCurrency со счета @Model.Wallet.Name @(string.Format(\"{0:dd.MM.yyyy}\", DateTime.Today)). Баланс: @Model.BalanceAfterPaymentAndRefillWithCurrency",
+                        "CanSendCustom": false
+                      },
+                      "PaymentLimitPercent": 100.0,
+                      "ChequeSumOnFullPayment": 0.0,
+                      "ExchangeRate": 1
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "44730000-0f48-3056-48cc-08ded37c0a76",
+                    "settings": "{\"GuestCategoryIds\":[\"94b61db1-cca9-4b3e-a117-30394d0dd1b8\"],\"AffectedGuest\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.GuestCategoryCondition",
+                    "checkSum": "KZ7Sc8mtc+SY402aiVNN6fa7howdsMqnL4ZoxMh7PXs=",
+                    "settingsDecoded": {
+                      "GuestCategoryIds": [
+                        "94b61db1-cca9-4b3e-a117-30394d0dd1b8"
+                      ],
+                      "AffectedGuest": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-752b-08db6c11f5ee",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-5bf1-08db6c11f5ef",
+                    "settings": "{\"Mode\":2,\"Sum\":0.0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.Payment.OverdraftAction",
+                    "checkSum": "0MO5iMTUMiNdyyjxk/SxUZi2YBqdgQoY8whPH3oZufs=",
+                    "settingsDecoded": {
+                      "Mode": 2,
+                      "Sum": 0.0
+                    }
+                  }
+                ],
+                "conditions": []
+              }
+            ],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": true,
+        "refillType": 2
+      },
+      {
+        "id": "01330000-6bec-ac1f-8113-08da0d8f333f",
+        "name": "[Foodmarket Тепло] Калифорния в подарок1",
+        "description": null,
+        "serviceFrom": "2022-03-24T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-277c-08da0d8f38ac",
+            "programId": "01330000-6bec-ac1f-8113-08da0d8f333f",
+            "name": "Подарок",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-03-24T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-9e72-08da0d8f7531",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-c119-08da0d8f7531",
+                    "settings": "{\"IncludeModifiers\":true,\"Caption\":\"\",\"Items\":[{\"Code\":\"00044\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "Mlpsvjsb/xMAfGhxgePW1GAkUR28iyM4JyLx2jQkDic=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": true,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00044",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-e0d6-08da0d8f7531",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-d485-08da0d8e8ce9\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "p6rzazvxjRq90gbD63Qpn7XAsO5+j1BmGhPDiEoin7s=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-d485-08da0d8e8ce9"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-febe-08da0d8f7531",
+                "stopFurtherExecution": false,
+                "actions": [],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-2391-08da0d8f7532",
+                    "settings": "{\"Mode\":0,\"SelectedDayOfMonth\":0,\"DaysOfWeek\":0,\"AnnuallyDay\":0,\"AnnuallyMonth\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.TimetableCondition",
+                    "checkSum": "f5WDKFpdBBxVS1oVOMa9ZNhXN5XHe6QA5yDDjJUeuiM=",
+                    "settingsDecoded": {
+                      "Mode": 0,
+                      "SelectedDayOfMonth": 0,
+                      "DaysOfWeek": 0,
+                      "AnnuallyDay": 0,
+                      "AnnuallyMonth": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 0
+      },
+      {
+        "id": "03650000-6bec-ac1f-0cd9-08da65c45fa4",
+        "name": "[Foodmarket Тепло] Три большие пиццы",
+        "description": null,
+        "serviceFrom": "2022-07-14T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "03650000-6bec-ac1f-da08-08da65c47ab9",
+            "programId": "03650000-6bec-ac1f-0cd9-08da65c45fa4",
+            "name": "Три большие пиццы",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-07-14T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-f700-08da65c4bbc9",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-163b-08da65c4bbca",
+                    "settings": "{\"IncludeModifiers\":true,\"Caption\":\"\",\"Items\":[{\"Code\":\"00209\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "TjJYwTR499Qqcnz0MemsClmkaRNn5V9IThckJcAIzcg=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": true,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00209",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-599e-08da65c4bbca",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"03650000-6bec-ac1f-f50d-08da65c41fa3\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "wxtQiDKi0PNPXc+jYl7T99xcN1qkkklmn7ExFmsDQg8=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "03650000-6bec-ac1f-f50d-08da65c41fa3"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "03650000-6bec-ac1f-8510-08da65c4d18a",
+        "name": "[Foodmarket Тепло] Калифорния с лососем",
+        "description": null,
+        "serviceFrom": "2022-07-14T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "03650000-6bec-ac1f-1431-08da65c4da0d",
+            "programId": "03650000-6bec-ac1f-8510-08da65c4d18a",
+            "name": "Калифорния с лососем",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-07-14T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-adbb-08da65c4f071",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-c7c9-08da65c4f071",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00044\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "Hgt6Q/bQE0MAGN+NPgSs5I+yjrfM2PMlZq6nhzvs6IA=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00044",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-e175-08da65c4f071",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"03650000-6bec-ac1f-0f08-08da65c3ec80\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "giR3VrPpz+tod2uh0jEpRi5WIfGmH8ASBBIwwk0H1YE=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "03650000-6bec-ac1f-0f08-08da65c3ec80"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "01330000-6bec-ac1f-2136-08da79d4bc86",
+        "name": "[Foodmarket Тепло] Калифорния с крабом в подарок",
+        "description": null,
+        "serviceFrom": "2022-08-09T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-202e-08da79d4e93b",
+            "programId": "01330000-6bec-ac1f-2136-08da79d4bc86",
+            "name": "Калифорния с крабом в подарок",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-08-09T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-77af-08da79d51b1a",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-181a-08da79d51b1b",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00046\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "liKCvS5nVRc4P4+horYdjk2mEkMdqf0skG/+BiKhx6Y=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00046",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-c7d8-08da79d550d2",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-c041-08da79d5357a\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "p8rATcZkW+XLb25zoQsKx/etmq9+pS8l5U1iZneZLV0=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-c041-08da79d5357a"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "01330000-6bec-ac1f-b668-08da80556c12",
+        "name": "[Foodmarket Тепло] Камчатский в подарок",
+        "description": null,
+        "serviceFrom": "2022-08-17T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-c3d8-08da805575f3",
+            "programId": "01330000-6bec-ac1f-b668-08da80556c12",
+            "name": "Камчатский в подарок",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-08-17T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-05a4-08da8056099c",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-06e0-08da805609a4",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00010\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "dFNG4zYx6IJqyJY6nH2vV8lA48+2z65l1DMbdaK0KrI=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00010",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-d532-08da805609a4",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-d754-08da8055f1b8\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "KQ5CvoX/1pIQmLrBUYTROHbqPvLdaewhEdWgPTW2zns=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-d754-08da8055f1b8"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "01330000-6bec-ac1f-041e-08dae109f1a4",
+        "name": "[Foodmarket Тепло] Нагасаки в подарок",
+        "description": null,
+        "serviceFrom": "2022-12-18T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-96be-08dae109f535",
+            "programId": "01330000-6bec-ac1f-041e-08dae109f1a4",
+            "name": "Нагасаки в подарок",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2022-12-18T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-e637-08dae10a1172",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-125e-08dae10a1173",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00003\",\"Sizes\":[\"1\"],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "Zhh55YcDZJ96ttZhGYb36LcRRtcu5Oyw1kLvlZ00BUk=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00003",
+                          "Sizes": [
+                            "1"
+                          ],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-345d-08dae10a1173",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-31ff-08dae109e14d\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "UFOdzpB7jUjwS7SBMqMoGl61nmf+ByrHVH+yFz46U70=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-31ff-08dae109e14d"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "03650000-6bec-ac1f-39b9-08db5a1536bf",
+        "name": "Грибная ",
+        "description": null,
+        "serviceFrom": "2023-05-21T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "03650000-6bec-ac1f-6d51-08db5a153daa",
+            "programId": "03650000-6bec-ac1f-39b9-08db5a1536bf",
+            "name": "Грибная 40см",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2023-05-21T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-a8f5-08db5a158723",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-7b7c-08db5a158724",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00138\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "z0IDQWkCMHCJ8y/kmBRPX6h5G4DxlLCDIpbVOdu3Ntg=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00138",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-1415-08db5a158725",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"03650000-6bec-ac1f-ade2-08db5a155cfe\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "UpHePs5yjZX5JDwvlui3nQ0ml/vfm+Idfkpa2SQ3g+E=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "03650000-6bec-ac1f-ade2-08db5a155cfe"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "03650000-6bec-ac1f-da38-08dbd3afbaf9",
+        "name": "Скидка 100% на доставку с сайта",
+        "description": null,
+        "serviceFrom": "2023-10-23T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "03650000-6bec-ac1f-7735-08dbd3afbd4e",
+            "programId": "03650000-6bec-ac1f-da38-08dbd3afbaf9",
+            "name": "Скидка 100% на доставку с сайта",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2023-10-23T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "03650000-6bec-ac1f-c493-08dbd3b00843",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-8687-08dbd3b00844",
+                    "settings": "{\"IncludeModifiers\":false,\"Items\":[{\"MaskValue\":\"00732\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00733\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00734\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00735\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00736\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00737\",\"MaskType\":1,\"ApplyMaskFilter\":2,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"}]}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SpecialPriceAction",
+                    "checkSum": "6QvlHCaoWNlb3r7AdEk1bJcJg8zSTsXZdfxcf/iWV8o=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Items": [
+                        {
+                          "MaskValue": "00732",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00733",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00734",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00735",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00736",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00737",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 2,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-2f44-08dbd3b00845",
+                    "settings": "{\"DeliveryType\":0,\"SourceMask\":\"site\",\"MarketingSourceMask\":\"\",\"RegionMask\":\"\",\"StreetMask\":\"\",\"CityMask\":\"\"}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.DeliveryCondition",
+                    "checkSum": "C70XW8m1d0F+6nWF4yyy5jdHnPcgSrmytsUIifYojb8=",
+                    "settingsDecoded": {
+                      "DeliveryType": 0,
+                      "SourceMask": "site",
+                      "MarketingSourceMask": "",
+                      "RegionMask": "",
+                      "StreetMask": "",
+                      "CityMask": ""
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "03650000-6bec-ac1f-9520-08dbd3b00845",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "03650000-6bec-ac1f-ca3f-08dbd3b02f1a",
+                    "settings": "{\"IncludeModifiers\":false,\"Items\":[{\"MaskValue\":\"00732\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00733\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00734\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00735\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00736\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"},{\"MaskValue\":\"00737\",\"MaskType\":1,\"ApplyMaskFilter\":1,\"SpecialPriceType\":1,\"Quantity\":100.0,\"Size\":\"\"}]}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SpecialPriceAction",
+                    "checkSum": "oGZBeDVhHufJTgOJg58f3kBqBPElfqg7lgbTaMl2Nw8=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Items": [
+                        {
+                          "MaskValue": "00732",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00733",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00734",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00735",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00736",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        },
+                        {
+                          "MaskValue": "00737",
+                          "MaskType": 1,
+                          "ApplyMaskFilter": 1,
+                          "SpecialPriceType": 1,
+                          "Quantity": 100.0,
+                          "Size": ""
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "03650000-6bec-ac1f-acf2-08dbd3b00845",
+                    "settings": "{\"DeliveryType\":0,\"SourceMask\":\"site1\",\"MarketingSourceMask\":\"\",\"RegionMask\":\"\",\"StreetMask\":\"\",\"CityMask\":\"\"}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.DeliveryCondition",
+                    "checkSum": "sA+1J01ThvRBalQXs0eANLJ3pg6Dh0RTpIqxxiA8dBI=",
+                    "settingsDecoded": {
+                      "DeliveryType": 0,
+                      "SourceMask": "site1",
+                      "MarketingSourceMask": "",
+                      "RegionMask": "",
+                      "StreetMask": "",
+                      "CityMask": ""
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "01330000-6bec-ac1f-a60c-08dbe1216d0d",
+        "name": "Мясное трио 2.0",
+        "description": null,
+        "serviceFrom": "2023-11-09T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-c629-08dbe121730b",
+            "programId": "01330000-6bec-ac1f-a60c-08dbe1216d0d",
+            "name": "Мясное трио 2.0",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2023-11-09T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 1
+      },
+      {
+        "id": "01330000-6bec-ac1f-c8ea-08dd91293c85",
+        "name": "Скидка при первом заказе",
+        "description": null,
+        "serviceFrom": "2025-05-12T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": false,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-4ead-08dd91294cce",
+            "programId": "01330000-6bec-ac1f-c8ea-08dd91293c85",
+            "name": "Промокод Первый 15%",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2025-05-12T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-1f78-08dd9129836f",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-6d32-08dd9129836f",
+                    "settings": "{\"DiscountPercent\":15.0,\"AppliedToDiscountedItems\":false}",
+                    "typeName": "LoyaltyProgramEngine.Actions.OrderPercentDiscountAction",
+                    "checkSum": "xw9Iyr8mU7ND7Z5tNRnBkOSM0/MiysiEX5tmNBxhsMg=",
+                    "settingsDecoded": {
+                      "DiscountPercent": 15.0,
+                      "AppliedToDiscountedItems": false
+                    }
+                  },
+                  {
+                    "id": "01330000-6bec-ac1f-2cd0-08dd93a2666a",
+                    "settings": "{\"GuestCategoryId\":\"6289147b-2df6-4054-9446-6eeb3d3e0c30\",\"AffectedGuest\":0,\"HourOfSet\":null,\"RetryPeriod\":null}",
+                    "typeName": "LoyaltyProgramEngine.Actions.SetGuestCategoryAction",
+                    "checkSum": "Qenv3GuCfh1eDsujsTkpyuxXs+WdhztFvsA8oLbTThY=",
+                    "settingsDecoded": {
+                      "GuestCategoryId": "6289147b-2df6-4054-9446-6eeb3d3e0c30",
+                      "AffectedGuest": 0,
+                      "HourOfSet": null,
+                      "RetryPeriod": null
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-48a0-08dd914f8b1e",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-b5b9-08dd9474c3e2\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "1spvWh0BwkGGpmFX8LUg7HNo0Kri6mJYESlRnugbJaE=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-b5b9-08dd9474c3e2"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "01330000-6bec-ac1f-ec63-08dd9468a39d",
+                "stopFurtherExecution": true,
+                "actions": [],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-7b25-08dd9468a39e",
+                    "settings": "{\"GuestCategoryIds\":[\"6289147b-2df6-4054-9446-6eeb3d3e0c30\"],\"AffectedGuest\":0}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.GuestCategoryCondition",
+                    "checkSum": "avj+oVHBXWd1YCzfkkKOQ8VQLbAG56VCZjBxHfqE8UY=",
+                    "settingsDecoded": {
+                      "GuestCategoryIds": [
+                        "6289147b-2df6-4054-9446-6eeb3d3e0c30"
+                      ],
+                      "AffectedGuest": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-ef92-08dd914f8b1e",
+                "stopFurtherExecution": false,
+                "actions": [],
+                "conditions": []
+              }
+            ],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 0
+      },
+      {
+        "id": "01330000-6bec-ac1f-95eb-08de88ca9879",
+        "name": "Купоны квиз пицца",
+        "description": null,
+        "serviceFrom": "2026-03-23T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-fc64-08de88ca9ea3",
+            "programId": "01330000-6bec-ac1f-95eb-08de88ca9879",
+            "name": "Купоны квиз пицца",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2026-03-23T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-a394-08de88d11da5",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-d2ff-08de88d11da5",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00941\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00940\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00942\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00092\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00943\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00944\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01179\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01052\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00119\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00947\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00948\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00949\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01054\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00953\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00954\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00956\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01053\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00959\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00960\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00962\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00963\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00611\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00964\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01145\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00961\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00965\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01056\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"00966\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01180\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01055\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01141\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01139\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01523\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"},{\"Code\":\"01057\",\"Sizes\":[\"40см\"],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "v7uVHmxPcPs5/WpwrnHyOqvtYjBwTE4mw9pNnSZgV0w=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00941",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00940",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00942",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00092",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00943",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00944",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01179",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01052",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00119",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00947",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00948",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00949",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01054",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00953",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00954",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00956",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01053",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00959",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00960",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00962",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00963",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00611",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00964",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01145",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00961",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00965",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01056",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00966",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01180",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01055",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01141",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01139",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01523",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01057",
+                          "Sizes": [
+                            "40см"
+                          ],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-619b-08de88d11da6",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-87d8-08de835edf00\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "e1TI4ScSyiJLXzMON6Vgt45HJDS6xszTKrbjx1ojNec=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-87d8-08de835edf00"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [
+          "48ffe659-12fe-463a-b637-456f0f8b5af6",
+          "5c7e51f9-93c6-450c-9299-440ac1c889e8"
+        ],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 0
+      },
+      {
+        "id": "01330000-6bec-ac1f-ae72-08de88dfa5df",
+        "name": "Купоны квиз сет ",
+        "description": null,
+        "serviceFrom": "2026-03-23T00:00:00",
+        "serviceTo": null,
+        "notifyAboutBalanceChanges": true,
+        "programType": 3,
+        "isActive": true,
+        "walletId": null,
+        "marketingCampaigns": [
+          {
+            "id": "01330000-6bec-ac1f-c79f-08de88dff774",
+            "programId": "01330000-6bec-ac1f-ae72-08de88dfa5df",
+            "name": "Купоны квиз сет ",
+            "description": null,
+            "isActive": true,
+            "periodFrom": "2026-03-23T00:00:00",
+            "periodTo": null,
+            "orderActionConditionBindings": [
+              {
+                "id": "01330000-6bec-ac1f-2643-08de88e10aec",
+                "stopFurtherExecution": false,
+                "actions": [
+                  {
+                    "id": "01330000-6bec-ac1f-5729-08de88e10aec",
+                    "settings": "{\"IncludeModifiers\":false,\"Caption\":\"\",\"Items\":[{\"Code\":\"00884\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01508\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01504\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01507\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00074\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00899\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01490\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01501\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01506\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01494\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00885\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00075\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01498\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00895\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01495\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00072\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"00065\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01500\",\"Sizes\":[],\"DisplayName\":\"\"},{\"Code\":\"01491\",\"Sizes\":[],\"DisplayName\":\"\"}],\"WithdrawFromWalletOnUse\":false,\"WithdrawalMultiplier\":0}",
+                    "typeName": "LoyaltyProgramEngine.Actions.PresentBonusAction",
+                    "checkSum": "VCP2RgGNB4Puqd55H2rXzoqAb6JJxZSRc5fmttCCWGk=",
+                    "settingsDecoded": {
+                      "IncludeModifiers": false,
+                      "Caption": "",
+                      "Items": [
+                        {
+                          "Code": "00884",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01508",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01504",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01507",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00074",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00899",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01490",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01501",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01506",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01494",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00885",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00075",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01498",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00895",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01495",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00072",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "00065",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01500",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        },
+                        {
+                          "Code": "01491",
+                          "Sizes": [],
+                          "DisplayName": ""
+                        }
+                      ],
+                      "WithdrawFromWalletOnUse": false,
+                      "WithdrawalMultiplier": 0
+                    }
+                  }
+                ],
+                "conditions": [
+                  {
+                    "id": "01330000-6bec-ac1f-fdca-08de88e10aec",
+                    "settings": "{\"PresenceType\":1,\"CouponSeriesIds\":[\"01330000-6bec-ac1f-fdca-08de88d49692\"]}",
+                    "typeName": "LoyaltyProgramEngine.Conditions.CouponCondition",
+                    "checkSum": "1+91NLviFTq2W9zokihVmRwVwbn1Fh8PjCMpFttgdX4=",
+                    "settingsDecoded": {
+                      "PresenceType": 1,
+                      "CouponSeriesIds": [
+                        "01330000-6bec-ac1f-fdca-08de88d49692"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ],
+            "periodicActionConditionBindings": [],
+            "overdraftActionConditionBindings": [],
+            "guestRegistrationActionConditionBindings": []
+          }
+        ],
+        "appliedOrganizations": [
+          "48ffe659-12fe-463a-b637-456f0f8b5af6",
+          "5c7e51f9-93c6-450c-9299-440ac1c889e8"
+        ],
+        "templateType": 0,
+        "isExchangeRateEnabled": false,
+        "refillType": 0
+      }
+    ],
+    "paymentTypes": [
+      {
+        "id": "72c94985-4801-4e99-8a79-478a07094c74",
+        "code": "YCARD",
+        "name": "Яндекс еда",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 4917622,
+        "applicableMarketingCampaigns": [],
+        "isDeleted": false,
+        "printCheque": false,
+        "paymentProcessingType": "Internal",
+        "paymentTypeKind": "Card",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      },
+      {
+        "id": "09322f46-578a-d210-add7-eec222a08871",
+        "code": "CASH",
+        "name": "Наличные",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 14,
+        "applicableMarketingCampaigns": [],
+        "isDeleted": false,
+        "printCheque": true,
+        "paymentProcessingType": "Both",
+        "paymentTypeKind": "Cash",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      },
+      {
+        "id": "0055becf-0d10-4356-9e95-264d9b653217",
+        "code": "CPAY",
+        "name": "Оплата курьеру",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 1992245,
+        "applicableMarketingCampaigns": [],
+        "isDeleted": false,
+        "printCheque": true,
+        "paymentProcessingType": "Both",
+        "paymentTypeKind": "Card",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      },
+      {
+        "id": "7ae095a7-b91d-46ae-bdb6-35860fa586ec",
+        "code": "INET",
+        "name": "Оплата бонусами",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 1992252,
+        "applicableMarketingCampaigns": [
+          "03650000-6bec-ac1f-3663-08db6c11f5e0"
+        ],
+        "isDeleted": false,
+        "printCheque": false,
+        "paymentProcessingType": "Internal",
+        "paymentTypeKind": "IikoCard",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      },
+      {
+        "id": "e46b4e6c-10d5-a739-8fb1-b6674d1e65e7",
+        "code": "ECARD",
+        "name": "Банковские карты",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 1992245,
+        "applicableMarketingCampaigns": [],
+        "isDeleted": false,
+        "printCheque": true,
+        "paymentProcessingType": "Both",
+        "paymentTypeKind": "Card",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      },
+      {
+        "id": "09926694-dba4-4a57-b04a-8cba3bd48b5b",
+        "code": "ONL",
+        "name": "Оплата онлайн",
+        "comment": "",
+        "combinable": true,
+        "externalRevision": 1992245,
+        "applicableMarketingCampaigns": [],
+        "isDeleted": false,
+        "printCheque": true,
+        "paymentProcessingType": "Both",
+        "paymentTypeKind": "Card",
+        "terminalGroups": [
+          {
+            "id": "e7bf72b0-0f62-4158-accb-a57be915d4de",
+            "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+            "name": "Foodmarket Тепло Черникова",
+            "address": "",
+            "timeZone": "03:00:00"
+          }
+        ]
+      }
+    ],
+    "discounts": [
+      {
+        "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8",
+        "items": [
+          {
+            "id": "64d72b2e-4fb2-4f31-9a9a-6d30fedf8070",
+            "name": "Новогодние корпоративы скидка 15% от 2500",
+            "percent": 15.0,
+            "isCategorisedDiscount": true,
+            "productCategoryDiscounts": [
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9c",
+                "categoryName": "Напитки",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9a",
+                "categoryName": "Пицца",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9b",
+                "categoryName": "Закуски",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f67",
+                "categoryName": "Шаурма",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f98",
+                "categoryName": "Сеты",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f99",
+                "categoryName": "Роллы",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "8c13763a-35bf-9f27-017f-9278650da91d",
+                "categoryName": "Все блюда",
+                "percent": 15.0
+              }
+            ],
+            "comment": "",
+            "canBeAppliedSelectively": false,
+            "minOrderSum": 2500.0,
+            "mode": "Percent",
+            "sum": 0.0,
+            "canApplyByCardNumber": false,
+            "isManual": true,
+            "isCard": false,
+            "isAutomatic": false,
+            "isDeleted": false
+          },
+          {
+            "id": "16db9c0d-5494-4542-afdb-96957e7128d9",
+            "name": "Скидка 30% ДР сотрудников",
+            "percent": 30.0,
+            "isCategorisedDiscount": true,
+            "productCategoryDiscounts": [
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9a",
+                "categoryName": "Пицца",
+                "percent": 30.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9b",
+                "categoryName": "Закуски",
+                "percent": 30.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f67",
+                "categoryName": "Шаурма",
+                "percent": 30.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f98",
+                "categoryName": "Сеты",
+                "percent": 30.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f99",
+                "categoryName": "Роллы",
+                "percent": 30.0
+              }
+            ],
+            "comment": "",
+            "canBeAppliedSelectively": false,
+            "minOrderSum": null,
+            "mode": "Percent",
+            "sum": 0.0,
+            "canApplyByCardNumber": false,
+            "isManual": true,
+            "isCard": true,
+            "isAutomatic": false,
+            "isDeleted": false
+          },
+          {
+            "id": "66fb6bee-014f-4cc9-9d9d-5602e095f265",
+            "name": "День рождения 15%",
+            "percent": 15.0,
+            "isCategorisedDiscount": true,
+            "productCategoryDiscounts": [
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7fbf",
+                "categoryName": "Акционные товары",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9c",
+                "categoryName": "Напитки",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9a",
+                "categoryName": "Пицца",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9b",
+                "categoryName": "Закуски",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f67",
+                "categoryName": "Шаурма",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f98",
+                "categoryName": "Сеты",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f99",
+                "categoryName": "Роллы",
+                "percent": 15.0
+              },
+              {
+                "categoryId": "8c13763a-35bf-9f27-017f-9278650da91d",
+                "categoryName": "Все блюда",
+                "percent": 15.0
+              }
+            ],
+            "comment": "",
+            "canBeAppliedSelectively": false,
+            "minOrderSum": null,
+            "mode": "Percent",
+            "sum": 0.0,
+            "canApplyByCardNumber": false,
+            "isManual": true,
+            "isCard": true,
+            "isAutomatic": false,
+            "isDeleted": false
+          },
+          {
+            "id": "b29bd7bc-287a-4688-933e-95ad3b5f44a3",
+            "name": "Скидка для доставки",
+            "percent": 1.0,
+            "isCategorisedDiscount": false,
+            "productCategoryDiscounts": [
+              {
+                "categoryId": "6f4a9d19-25eb-85aa-0192-62e58ff0bd97",
+                "categoryName": "Сет Пятница",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2928e892-e3ac-54f7-018b-8baa7cac571d",
+                "categoryName": "Услуги доставки",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7fbf",
+                "categoryName": "Акционные товары",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9c",
+                "categoryName": "Напитки",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9a",
+                "categoryName": "Пицца",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f9b",
+                "categoryName": "Закуски",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f67",
+                "categoryName": "Шаурма",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f98",
+                "categoryName": "Сеты",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "2b4b5030-f2a0-75c4-0180-d86ef79b7f99",
+                "categoryName": "Роллы",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "8c13763a-35bf-9f27-017f-9278650da91d",
+                "categoryName": "Все блюда",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "8c13763a-35bf-9f27-017f-9278650daa5c",
+                "categoryName": "Комбо-набор",
+                "percent": 1.0
+              },
+              {
+                "categoryId": "83dd2040-01fc-678c-018b-1bb74e3593f3",
+                "categoryName": "Горячие блюда",
+                "percent": 1.0
+              }
+            ],
+            "comment": "",
+            "canBeAppliedSelectively": false,
+            "minOrderSum": null,
+            "mode": "FlexibleSum",
+            "sum": 0.0,
+            "canApplyByCardNumber": false,
+            "isManual": true,
+            "isCard": true,
+            "isAutomatic": false,
+            "isDeleted": false
+          },
+          {
+            "id": "07a271b9-d4cf-4439-8b62-65a262de9faf",
+            "name": "Сервисный сбор",
+            "percent": -1.0,
+            "isCategorisedDiscount": false,
+            "productCategoryDiscounts": [],
+            "comment": "",
+            "canBeAppliedSelectively": false,
+            "minOrderSum": null,
+            "mode": "FlexibleSum",
+            "sum": 0.0,
+            "canApplyByCardNumber": true,
+            "isManual": false,
+            "isCard": true,
+            "isAutomatic": false,
+            "isDeleted": false
+          }
+        ]
+      }
+    ],
+    "guestCategories": [
+      {
+        "id": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+        "name": "Бронза",
+        "isActive": true,
+        "isDefaultForNewGuests": true
+      },
+      {
+        "id": "03a3769b-98e0-40b0-892b-1ce1f6a020d6",
+        "name": "Потерянные 10+",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "f584aef3-9de8-4d0b-a653-225dbaa6fff2",
+        "name": "Для рассылки",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "4be1f829-0e45-4f4f-afe8-27e2484ac58e",
+        "name": "Блогеры",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "94b61db1-cca9-4b3e-a117-30394d0dd1b8",
+        "name": "Сотрудники",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "2e7c410d-402d-49af-b53d-31a45d6950f2",
+        "name": "Не использовал купон",
+        "isActive": true,
+        "isDefaultForNewGuests": true
+      },
+      {
+        "id": "7cd7bc17-19c5-4184-9e44-38578dd43c0b",
+        "name": "Клиенты",
+        "isActive": true,
+        "isDefaultForNewGuests": true
+      },
+      {
+        "id": "7d1249dc-b8ff-494c-aa0f-45c5c17a5b73",
+        "name": "Потерянные 1 заказ",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "6289147b-2df6-4054-9446-6eeb3d3e0c30",
+        "name": "first",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "85a9dd98-7f1e-4d7f-943e-8f7317dc7784",
+        "name": "Использовал купон",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "44e6613d-f02f-4951-9e8a-90e2a3b1995c",
+        "name": "Потерянные все",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "a80c8c3e-1267-4547-9121-c098368420c3",
+        "name": "Партнеры",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "66fe10cb-2fc4-4150-baea-c31ea00d2761",
+        "name": "Золото",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "3f137253-174f-4a59-a4f3-e95d3f44e36f",
+        "name": "ЧС",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      },
+      {
+        "id": "83a5475e-ccdd-486f-9748-eda7da8b1391",
+        "name": "Серебро",
+        "isActive": true,
+        "isDefaultForNewGuests": false
+      }
+    ]
+  },
+  "configuration_sources": {
+    "programs": {
+      "endpoint": "/api/1/loyalty/iiko/program",
+      "method": "POST",
+      "operation": "read",
+      "fetched_at_utc": "2026-10-07T19:32:22.617848+00:00",
+      "status": 200,
+      "sha256": "fd516cafc0fb76ae04e9c5c485437823ffb1cd072354e33238265fc269146170",
+      "source_file": "iiko-programs.json"
+    },
+    "payment_types": {
+      "endpoint": "/api/1/payment_types",
+      "method": "POST",
+      "operation": "read",
+      "fetched_at_utc": "2026-10-07T19:32:23.414300+00:00",
+      "status": 200,
+      "sha256": "c727e606c16fd52544de83fbcb97920f79196cb8f55c5e147b6a563f0ff867b2",
+      "source_file": "iiko-payment-types.json"
+    },
+    "discounts": {
+      "endpoint": "/api/1/discounts",
+      "method": "POST",
+      "operation": "read",
+      "fetched_at_utc": "2026-10-07T19:36:05.399858+00:00",
+      "status": 200,
+      "sha256": "aa2f131d8210e9a781ee406193d77ecceeff9191f8724dd678c1900045fa09a4",
+      "contract_source": "https://api-ru.iiko.services/api-docs/docs",
+      "source_file": "iiko-discounts.json"
+    },
+    "official_contract_url": "https://api-ru.iiko.services/api-docs/docs",
+    "official_contract_sha256": "f8510752d5da0e38355291bdd032acb31796d1f703e5725e0a2a23ce8298dfc9",
+    "customer_categories": {
+      "endpoint": "/api/1/loyalty/iiko/customer_category",
+      "method": "POST",
+      "operation": "read dictionary only",
+      "request": {
+        "organizationId": "5c7e51f9-93c6-450c-9299-440ac1c889e8"
+      },
+      "fetched_at_utc": "2026-10-07T19:48:14.434991+00:00",
+      "status": 200,
+      "attempts": 1,
+      "contract_source": "https://api-ru.iiko.services/api-docs/docs",
+      "sha256": "5e5ec65d11f1fb7f7ae14d597d6295f985a2c112ce4e98ce70763e5ef5dc286c",
+      "source_file": "iiko-customer-categories.json"
+    }
+  },
+  "applied_types_history": {
+    "scope": "iiko SALES, Department.Code=2, July–September 2026; applied report types, not current offer configuration",
+    "complete_months": [
+      "2026-07",
+      "2026-08",
+      "2026-09"
+    ],
+    "production_head_observed": "170833b86629946237148397492f13ae6ab56a5c",
+    "inventory": [
+      {
+        "iiko_name": "iikoCard",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "30ee9e91-36d4-a868-e087-15892defe17c"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-04",
+        "last_observed_day": "2026-09-30",
+        "observed_days": 20,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Доставка курьером",
+          "Самовывоз",
+          "Самовывоз Стартер"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 5,
+            "days_with_nonzero_DiscountSum": 5,
+            "raw_DiscountSum": "20357",
+            "reported_event_gross_minus_net": "20357"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 9,
+            "days_with_nonzero_DiscountSum": 9,
+            "raw_DiscountSum": "20339.17",
+            "reported_event_gross_minus_net": "20320.97"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 6,
+            "days_with_nonzero_DiscountSum": 6,
+            "raw_DiscountSum": "9568",
+            "reported_event_gross_minus_net": "9568"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "День рождения 15%",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "66fb6bee-014f-4cc9-9d9d-5602e095f265"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-02",
+        "last_observed_day": "2026-09-29",
+        "observed_days": 49,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Доставка курьером",
+          "Самовывоз",
+          "Самовывоз Стартер"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 19,
+            "days_with_nonzero_DiscountSum": 19,
+            "raw_DiscountSum": "15153.45",
+            "reported_event_gross_minus_net": "15153.45"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 16,
+            "days_with_nonzero_DiscountSum": 16,
+            "raw_DiscountSum": "12966.90",
+            "reported_event_gross_minus_net": "12911.06"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 14,
+            "days_with_nonzero_DiscountSum": 14,
+            "raw_DiscountSum": "10883.25",
+            "reported_event_gross_minus_net": "10745.50"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "Сервисный сбор",
+        "kind": "reported_item_surcharge_or_fee",
+        "order_discount_type_ids": [],
+        "id_mapping_basis": "No ID observed in OrderDiscount.Type.IDs for this item event",
+        "first_observed_day": "2026-08-08",
+        "last_observed_day": "2026-09-30",
+        "observed_days": 54,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Доставка курьером",
+          "Самовывоз",
+          "Самовывоз Стартер"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 0,
+            "days_with_nonzero_DiscountSum": 0,
+            "raw_DiscountSum": "0",
+            "reported_event_gross_minus_net": "0"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 24,
+            "days_with_nonzero_DiscountSum": 0,
+            "raw_DiscountSum": "0",
+            "reported_event_gross_minus_net": "1377.38"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 30,
+            "days_with_nonzero_DiscountSum": 0,
+            "raw_DiscountSum": "0",
+            "reported_event_gross_minus_net": "2188.75"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "Скидка 100% на доставку с сайта",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "2928e892-e3ac-54f7-018b-548d66cf9cf5"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-01",
+        "last_observed_day": "2026-09-13",
+        "observed_days": 21,
+        "channels": [
+          "Доставка Курьер Стартер"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 10,
+            "days_with_nonzero_DiscountSum": 10,
+            "raw_DiscountSum": "1419.32",
+            "reported_event_gross_minus_net": "1419.32"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 7,
+            "days_with_nonzero_DiscountSum": 7,
+            "raw_DiscountSum": "822.82",
+            "reported_event_gross_minus_net": "811.54"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 4,
+            "days_with_nonzero_DiscountSum": 4,
+            "raw_DiscountSum": "575.11",
+            "reported_event_gross_minus_net": "562.23"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "Скидка 30% ДР сотрудников",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "16db9c0d-5494-4542-afdb-96957e7128d9"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-06",
+        "last_observed_day": "2026-09-08",
+        "observed_days": 4,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Самовывоз"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 3,
+            "days_with_nonzero_DiscountSum": 3,
+            "raw_DiscountSum": "3228.3",
+            "reported_event_gross_minus_net": "3228.3"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 0,
+            "days_with_nonzero_DiscountSum": 0,
+            "raw_DiscountSum": "0",
+            "reported_event_gross_minus_net": "0"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 1,
+            "days_with_nonzero_DiscountSum": 1,
+            "raw_DiscountSum": "329.7",
+            "reported_event_gross_minus_net": "321.09"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "Скидка iikoCard",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "7330a095-9296-49b6-9b09-f3c90f9589aa"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-01",
+        "last_observed_day": "2026-09-30",
+        "observed_days": 92,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Доставка курьером",
+          "Самовывоз",
+          "Самовывоз Стартер"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 31,
+            "days_with_nonzero_DiscountSum": 31,
+            "raw_DiscountSum": "197849.02",
+            "reported_event_gross_minus_net": "197849.02"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 31,
+            "days_with_nonzero_DiscountSum": 31,
+            "raw_DiscountSum": "182034.47",
+            "reported_event_gross_minus_net": "173586.03"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 30,
+            "days_with_nonzero_DiscountSum": 30,
+            "raw_DiscountSum": "171536.35",
+            "reported_event_gross_minus_net": "157512.29"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      },
+      {
+        "iiko_name": "Скидка для доставки",
+        "kind": "reported_discount_type",
+        "order_discount_type_ids": [
+          "b29bd7bc-287a-4688-933e-95ad3b5f44a3"
+        ],
+        "id_mapping_basis": "observed one name and one ID in OrderDiscount fields; no comma-list positional assumption",
+        "first_observed_day": "2026-07-01",
+        "last_observed_day": "2026-09-30",
+        "observed_days": 92,
+        "channels": [
+          "Доставка Курьер Стартер",
+          "Доставка курьером",
+          "Самовывоз",
+          "Самовывоз Стартер",
+          "Яндекс Еда — курьеры ресторана"
+        ],
+        "by_month": [
+          {
+            "month": "2026-07",
+            "observed_days": 31,
+            "days_with_nonzero_DiscountSum": 31,
+            "raw_DiscountSum": "294398.63",
+            "reported_event_gross_minus_net": "294398.63"
+          },
+          {
+            "month": "2026-08",
+            "observed_days": 31,
+            "days_with_nonzero_DiscountSum": 31,
+            "raw_DiscountSum": "258452",
+            "reported_event_gross_minus_net": "258248.38"
+          },
+          {
+            "month": "2026-09",
+            "observed_days": 30,
+            "days_with_nonzero_DiscountSum": 30,
+            "raw_DiscountSum": "231580",
+            "reported_event_gross_minus_net": "231472.55"
+          }
+        ],
+        "starter_promotion_id": null,
+        "mapping_status": "unresolved: OLAP has no Starter promotion/campaign ID or rule"
+      }
+    ],
+    "checks": [
+      {
+        "month": "2026-07",
+        "raw_rows": 550,
+        "gross": "4129189.00",
+        "net": "3596783.28",
+        "raw_DiscountSum": "532405.72",
+        "gross_minus_net": "532405.72",
+        "DiscountSum_minus_gross_net": "0.00",
+        "control_differences": {
+          "DishSumInt": "0.00",
+          "DishDiscountSumInt": "0.00"
+        },
+        "control_file": "control-2026-07.json",
+        "control_sha256": "b0c7b8e726d3a784f51559176030afa0476ac124991fcb2d66de3b8f2974ebc1",
+        "control_source_file": "control-2026-07.source.json",
+        "control_source_sha256": "19942854279da4abaa06ef10fa2694cf2b492e90b5774b35f227d901e9c235c6"
+      },
+      {
+        "month": "2026-08",
+        "raw_rows": 596,
+        "gross": "3749686.00",
+        "net": "3282430.64",
+        "raw_DiscountSum": "474615.36",
+        "gross_minus_net": "467255.36",
+        "DiscountSum_minus_gross_net": "7360.00",
+        "control_differences": {
+          "DishSumInt": "0.00",
+          "DishDiscountSumInt": "0.00"
+        },
+        "control_file": "control-2026-08.json",
+        "control_sha256": "a670eac9f174cc932aaca6a3a5f09d9afe29b842880fd7c868317cc63c402b50",
+        "control_source_file": "control-2026-08.source.json",
+        "control_source_sha256": "5b4aa2e48a78c18f4f098ce9e2fd7d9b719ad8b029096399dea8b3cad49b9f03"
+      },
+      {
+        "month": "2026-09",
+        "raw_rows": 648,
+        "gross": "3478864.00",
+        "net": "3066493.59",
+        "raw_DiscountSum": "424472.41",
+        "gross_minus_net": "412370.41",
+        "DiscountSum_minus_gross_net": "12102.00",
+        "control_differences": {
+          "DishSumInt": "0.00",
+          "DishDiscountSumInt": "0.00"
+        },
+        "control_file": "control-2026-09.json",
+        "control_sha256": "e244e975065fbbee1faafb52d4999418118116ffab523f5d5cff396dee94d9e3",
+        "control_source_file": "control-2026-09.source.json",
+        "control_source_sha256": "431d2c4a3375e2650c220502e696b021b858e89c066661a157ec0311f6d03845"
+      }
+    ],
+    "sources": [
+      {
+        "name": "iiko-discounts-2026-07",
+        "endpoint": "/v2/reports/olap",
+        "request": {
+          "reportType": "SALES",
+          "buildSummary": false,
+          "groupByRowFields": [
+            "OpenDate.Typed",
+            "Department.Code",
+            "OrderDiscount.Type",
+            "OrderDiscount.Type.IDs",
+            "ItemSaleEventDiscountType",
+            "OrderType"
+          ],
+          "groupByColFields": [],
+          "aggregateFields": [
+            "DishSumInt",
+            "DishDiscountSumInt",
+            "DiscountSum",
+            "UniqOrderId",
+            "UniqOrderId.OrdersCount"
+          ],
+          "filters": {
+            "DeletedWithWriteoff": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OrderDeleted": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OpenDate.Typed": {
+              "filterType": "DateRange",
+              "from": "2026-07-01T00:00:00",
+              "to": "2026-08-01T00:00:00",
+              "includeLow": true,
+              "includeHigh": false,
+              "periodType": "CUSTOM"
+            },
+            "Department.Code": {
+              "filterType": "IncludeValues",
+              "values": [
+                "2"
+              ]
+            }
+          }
+        },
+        "retrieved_at": "2026-10-07T19:34:11.541204+00:00",
+        "status": 200,
+        "sha256": "69d37dbeb4b3a71268f3d97c5cea145bc2b392f59b66c3889feac69fa989d1c7"
+      },
+      {
+        "name": "iiko-discounts-2026-08",
+        "endpoint": "/v2/reports/olap",
+        "request": {
+          "reportType": "SALES",
+          "buildSummary": false,
+          "groupByRowFields": [
+            "OpenDate.Typed",
+            "Department.Code",
+            "OrderDiscount.Type",
+            "OrderDiscount.Type.IDs",
+            "ItemSaleEventDiscountType",
+            "OrderType"
+          ],
+          "groupByColFields": [],
+          "aggregateFields": [
+            "DishSumInt",
+            "DishDiscountSumInt",
+            "DiscountSum",
+            "UniqOrderId",
+            "UniqOrderId.OrdersCount"
+          ],
+          "filters": {
+            "DeletedWithWriteoff": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OrderDeleted": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OpenDate.Typed": {
+              "filterType": "DateRange",
+              "from": "2026-08-01T00:00:00",
+              "to": "2026-09-01T00:00:00",
+              "includeLow": true,
+              "includeHigh": false,
+              "periodType": "CUSTOM"
+            },
+            "Department.Code": {
+              "filterType": "IncludeValues",
+              "values": [
+                "2"
+              ]
+            }
+          }
+        },
+        "retrieved_at": "2026-10-07T19:34:13.382072+00:00",
+        "status": 200,
+        "sha256": "fb0a00d8a03c9880e4a11458db5464bb87f75f6c1c70784e6117c4b86ceae947"
+      },
+      {
+        "name": "iiko-discounts-2026-09",
+        "endpoint": "/v2/reports/olap",
+        "request": {
+          "reportType": "SALES",
+          "buildSummary": false,
+          "groupByRowFields": [
+            "OpenDate.Typed",
+            "Department.Code",
+            "OrderDiscount.Type",
+            "OrderDiscount.Type.IDs",
+            "ItemSaleEventDiscountType",
+            "OrderType"
+          ],
+          "groupByColFields": [],
+          "aggregateFields": [
+            "DishSumInt",
+            "DishDiscountSumInt",
+            "DiscountSum",
+            "UniqOrderId",
+            "UniqOrderId.OrdersCount"
+          ],
+          "filters": {
+            "DeletedWithWriteoff": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OrderDeleted": {
+              "filterType": "IncludeValues",
+              "values": [
+                "NOT_DELETED"
+              ]
+            },
+            "OpenDate.Typed": {
+              "filterType": "DateRange",
+              "from": "2026-09-01T00:00:00",
+              "to": "2026-10-01T00:00:00",
+              "includeLow": true,
+              "includeHigh": false,
+              "periodType": "CUSTOM"
+            },
+            "Department.Code": {
+              "filterType": "IncludeValues",
+              "values": [
+                "2"
+              ]
+            }
+          }
+        },
+        "retrieved_at": "2026-10-07T19:34:15.077361+00:00",
+        "status": 200,
+        "sha256": "fee1f95a3cc25a610878815cdf1fcf16a3727151bece436724ac4619c9bb9fd9"
+      }
+    ],
+    "cautions": [
+      "Group fields include order discount combination and item event name. Order/check aggregates across rows cannot be added as unique orders or uses. Frequency here means distinct accounting days with a reported event name.",
+      "Gross/net sum exactly matches separately collected canonical monthly control. Raw DiscountSum differs from gross-net in August and September and must not be renamed net discount burden or assigned to customer campaigns without surcharge reconciliation.",
+      "No customer IDs, order IDs, guest cards or employee identifiers collected.",
+      "NOT_DELETED filters match the canonical preset; returns are not independently excluded.",
+      "Event iikoCard and event Скидка iikoCard are distinct names and IDs.",
+      "An OLAP discount type is not a complete client promotion; bundles/fixed promotional prices/free components can exist without a named discount type.",
+      "No observed event in a month does not prove configuration inactive; no October extraction was requested for this limited inventory."
+    ]
+  },
+  "boundaries": [
+    "Configuration is not proof of client eligibility, Starter publication or actual execution. Historical observed types are not the set of currently active offers.",
+    "Original action/condition order and settings strings preserved; settingsDecoded is an added parse, not rewritten original data.",
+    "No Starter promotion IDs are inferred from iiko names. Payment compatibility is not universal promotion compatibility.",
+    "Unknown numeric enums and empty scope lists remain unresolved. All coupon-series names are not available; category labels are captured separately.",
+    "Source filenames are provenance identifiers, not required runtime dependencies. Record embeds all available configuration and historical inventory; raw OLAP rows intentionally omitted."
+  ],
+  "category_mapping": [
+    {
+      "id": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+      "configured_action": "RefillPercent=5",
+      "matches": [
+        {
+          "id": "59306e9b-6863-42fa-8cd7-07e224b78c1b",
+          "name": "Бронза",
+          "isActive": true,
+          "isDefaultForNewGuests": true
+        }
+      ],
+      "mapping_status": "exact unique ID"
+    },
+    {
+      "id": "83a5475e-ccdd-486f-9748-eda7da8b1391",
+      "configured_action": "RefillPercent=7",
+      "matches": [
+        {
+          "id": "83a5475e-ccdd-486f-9748-eda7da8b1391",
+          "name": "Серебро",
+          "isActive": true,
+          "isDefaultForNewGuests": false
+        }
+      ],
+      "mapping_status": "exact unique ID"
+    },
+    {
+      "id": "66fe10cb-2fc4-4150-baea-c31ea00d2761",
+      "configured_action": "RefillPercent=10",
+      "matches": [
+        {
+          "id": "66fe10cb-2fc4-4150-baea-c31ea00d2761",
+          "name": "Золото",
+          "isActive": true,
+          "isDefaultForNewGuests": false
+        }
+      ],
+      "mapping_status": "exact unique ID"
+    },
+    {
+      "id": "94b61db1-cca9-4b3e-a117-30394d0dd1b8",
+      "configured_action": "PaymentLimitPercent=100",
+      "matches": [
+        {
+          "id": "94b61db1-cca9-4b3e-a117-30394d0dd1b8",
+          "name": "Сотрудники",
+          "isActive": true,
+          "isDefaultForNewGuests": false
+        }
+      ],
+      "mapping_status": "exact unique ID"
+    }
+  ]
+}
