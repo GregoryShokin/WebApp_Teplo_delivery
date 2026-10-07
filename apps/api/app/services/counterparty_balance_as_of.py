@@ -58,6 +58,7 @@ from app.models import (
     SupplierInvoice,
     SupplierPrepayment,
 )
+from app.services import owner_analytics
 from app.services.banking.cashflow_classify import EXCLUDED_QUALITY
 from app.services.supplier_prepayments import (
     BILL_PREPAYMENT_KIND,
@@ -587,10 +588,23 @@ async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceS
         )
     ).all()
 
+    # Старые выдачи могли храниться как subscription; статья займа сохраняет их природу.
+    owner_loan = func.coalesce(
+        or_(
+            SupplierPrepayment.kind == owner_analytics.OWNER_LOAN_KIND,
+            SupplierPrepayment.article_id.in_(
+                select(DdsArticle.id).where(
+                    DdsArticle.code == owner_analytics.OWNER_LOAN_ISSUE_ARTICLE_CODE
+                )
+            ),
+        ),
+        False,
+    )
     receivable_rows = (
         await session.execute(
             select(
                 SupplierPrepayment.counterparty_id,
+                owner_loan.label("owner_loan"),
                 func.sum(
                     func.greatest(funded - func.coalesce(settled_by_prepayment.c.settled, 0), 0)
                 ),
@@ -639,7 +653,7 @@ async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceS
                     > as_of,
                 )
             )
-            .group_by(SupplierPrepayment.counterparty_id)
+            .group_by(SupplierPrepayment.counterparty_id, owner_loan)
         )
     ).all()
 
@@ -653,6 +667,7 @@ async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceS
         await session.execute(
             select(
                 CashflowTransaction.counterparty_id,
+                DdsArticle.code,
                 func.sum(CashflowTransaction.amount),
             )
             .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
@@ -661,23 +676,33 @@ async def build_balance_as_of(session: AsyncSession, *, as_of: date) -> BalanceS
                 CashflowTransaction.counterparty_id.is_not(None),
                 CashflowTransaction.operation_date <= as_of,
                 CashflowTransaction.quality_status != EXCLUDED_QUALITY,
-                DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+                DdsArticle.code.in_(
+                    (SUPPLIER_REFUND_ARTICLE_CODE, owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE)
+                ),
                 not_barter_money_return(),
             )
-            .group_by(CashflowTransaction.counterparty_id)
+            .group_by(CashflowTransaction.counterparty_id, DdsArticle.code)
         )
     ).all()
-    refunds_by_cp = {row[0]: money(row[1]) for row in refund_rows}
+    refunds_by_stream = {
+        (cp_id, code == owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE): money(amount)
+        for cp_id, code, amount in refund_rows
+    }
 
     payable_by_cp = {row[0]: money(row[1]) for row in payable_rows}
     for cp_id, shortfall in shortfall_rows:
         if shortfall:
             payable_by_cp[cp_id] = payable_by_cp.get(cp_id, Decimal("0.00")) + money(shortfall)
     approximate = money(sum((row[2] or Decimal("0") for row in payable_rows), Decimal("0")))
-    receivable_by_cp = {
-        row[0]: max(money(row[1]) - refunds_by_cp.get(row[0], Decimal("0.00")), Decimal("0.00"))
-        for row in receivable_rows
-    }
+    # Излишек возврата поставщика не гасит заём того же человека; возврат займа
+    # зеркально не распоряжается его авансами за услуги или товары.
+    receivable_by_cp: dict[uuid.UUID, Decimal] = {}
+    for cp_id, is_owner_loan, amount in receivable_rows:
+        outstanding = max(
+            money(amount) - refunds_by_stream.get((cp_id, bool(is_owner_loan)), Decimal("0.00")),
+            Decimal("0.00"),
+        )
+        receivable_by_cp[cp_id] = receivable_by_cp.get(cp_id, Decimal("0.00")) + outstanding
     ids = set(payable_by_cp) | set(receivable_by_cp)
     if not ids:
         return BalanceSheetAsOf(

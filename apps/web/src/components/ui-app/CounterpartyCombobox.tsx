@@ -26,6 +26,7 @@ export function CounterpartyCombobox({
   clearLabel = "Кому платим: не указан",
   counterparties,
   disabled,
+  emptyMessage = "Контрагенты не найдены",
   onChange,
   pinnedIds,
   placeholder = "Кому платим",
@@ -35,6 +36,7 @@ export function CounterpartyCombobox({
   clearLabel?: string;
   counterparties: ReadonlyArray<CounterpartyOption>;
   disabled?: boolean;
+  emptyMessage?: string;
   onChange: (counterpartyId: string) => void;
   pinnedIds?: ReadonlySet<string>;
   placeholder?: string;
@@ -162,7 +164,7 @@ export function CounterpartyCombobox({
             ) : null}
             {rest.map(renderOption)}
             {pinned.length === 0 && rest.length === 0 ? (
-              <div className="px-2 py-2 text-sm text-muted-foreground">Контрагенты не найдены</div>
+              <div className="px-2 py-2 text-sm text-muted-foreground">{emptyMessage}</div>
             ) : null}
           </div>
         </div>

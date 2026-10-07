@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.permissions import permission_is_granted
 from app.models import (
     Account,
+    BusinessOwner,
     Counterparty,
     CounterpartyPayableProfile,
     DdsArticle,
@@ -305,6 +306,7 @@ async def list_new_payment_articles(
             "activity": article.activity_type,
             "location_required": article.location_required,
             "lease_bound": article.lease_bound,
+            "owner_required": article.owner_required,
             # Без этого признака окно не знает, что статья требует объект, и покупка уходит
             # в расход мимо баланса. Ровно так поле уже терялось в /dds/articles.
             "asset_link_kind": article.asset_link_kind,
@@ -434,6 +436,38 @@ async def list_payout_attribution_employees(session: AsyncSession) -> list[dict[
     ]
 
 
+async def list_new_payment_owners(session: AsyncSession) -> list[dict[str, Any]]:
+    """Получатели статей собственника — только действующий реестр, независимо от роли."""
+    rows = await session.execute(
+        select(Counterparty, CounterpartyPayableProfile)
+        .join(BusinessOwner, BusinessOwner.counterparty_id == Counterparty.id)
+        .outerjoin(
+            CounterpartyPayableProfile,
+            CounterpartyPayableProfile.counterparty_id == Counterparty.id,
+        )
+        .where(
+            BusinessOwner.ended_on.is_(None),
+            Counterparty.status.notin_(ARCHIVED_STATUSES),
+        )
+        .order_by(Counterparty.name)
+    )
+    return [
+        {
+            "counterparty_id": counterparty.id,
+            "name": counterparty.name,
+            "inn": counterparty.inn,
+            "relationship": profile.relationship if profile is not None else "informal",
+            "has_requisites": bool(profile.requisites) if profile is not None else False,
+            "requisites_verified": bool(profile.requisites_verified)
+            if profile is not None
+            else False,
+            "service_period_required": False,
+            "default_service_period_offset_months": None,
+        }
+        for counterparty, profile in rows
+    ]
+
+
 async def build_new_payment_context(
     session: AsyncSession, *, permissions: frozenset[str]
 ) -> dict[str, Any]:
@@ -453,6 +487,7 @@ async def build_new_payment_context(
     return {
         "articles": articles,
         "counterparties": counterparties,
+        "owners": await list_new_payment_owners(session),
         "wallets": wallets,
         "employees": employees,
     }

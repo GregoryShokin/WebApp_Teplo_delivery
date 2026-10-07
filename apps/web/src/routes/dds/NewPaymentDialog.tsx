@@ -56,6 +56,7 @@ import {
   getOnDemandEmployees,
   getPayrollAdvanceAvailability,
   type NewPaymentArticle,
+  type NewPaymentArticleCounterparty,
   type NewPaymentCounterparty,
   type NewPaymentEmployee,
   type LocationOption,
@@ -359,6 +360,7 @@ export function NewPaymentDialog({
     () => contextQuery.data?.counterparties ?? [],
     [contextQuery.data],
   );
+  const owners = useMemo(() => contextQuery.data?.owners ?? [], [contextQuery.data]);
   const wallets = useMemo(() => contextQuery.data?.wallets ?? [], [contextQuery.data]);
   const employees = useMemo(() => contextQuery.data?.employees ?? [], [contextQuery.data]);
 
@@ -414,8 +416,9 @@ export function NewPaymentDialog({
   }
   function presetCounterparty(article: NewPaymentArticle | null): string {
     // На арендной статье получатель — только арендодатель из договора, свободного/закреплённого
-    // контрагента тут нет: подставлять нечего.
-    if (article?.lease_bound) return "";
+    // контрагента тут нет: подставлять нечего. Собственника выбирают явно,
+    // даже если он единственный в реестре или закреплён за статьёй.
+    if (article?.lease_bound || article?.owner_required) return "";
     return article && (article.counterparties?.length ?? 0) === 1
       ? article.counterparties![0].counterparty_id
       : "";
@@ -875,6 +878,7 @@ export function NewPaymentDialog({
                     key={`expense-${sessionKey}-${formEpoch.expense ?? 0}`}
                     articles={expenseArticles}
                     counterparties={counterparties}
+                    owners={owners}
                     wallets={wallets}
                     kassaWallet={kassaWallet}
                     canConfirmPaid={canConfirmPaid}
@@ -897,6 +901,7 @@ export function NewPaymentDialog({
                       active={mode === "income"}
                       key={`income-${sessionKey}-${formEpoch.income ?? 0}`}
                       articles={incomeArticles}
+                      owners={owners}
                       wallets={wallets}
                       articleId={incomeArticleId}
                       onArticleChange={setIncomeArticleId}
@@ -1268,6 +1273,7 @@ function SummaryPanel({
 function ExpenseForm({
   articles,
   counterparties,
+  owners,
   wallets,
   kassaWallet,
   canConfirmPaid,
@@ -1281,6 +1287,7 @@ function ExpenseForm({
 }: {
   articles: NewPaymentArticle[];
   counterparties: NewPaymentCounterparty[];
+  owners: NewPaymentArticleCounterparty[];
   wallets: NewPaymentWallet[];
   kassaWallet: NewPaymentWallet | null;
   canConfirmPaid: boolean;
@@ -1350,6 +1357,24 @@ function ExpenseForm({
     counterparties.forEach((item) => map.set(item.counterparty_id, item));
     return map;
   }, [counterparties]);
+  // Один человек может быть и собственником, и поставщиком услуг. Для займа берём
+  // контекст собственника, для обычной оплаты сохраняем требования его платёжного профиля.
+  const ownerById = useMemo(() => {
+    const map = new Map<string, NewPaymentCounterparty>();
+    owners.forEach((item) =>
+      map.set(item.counterparty_id, {
+        ...item,
+        default_dds_article_id: null,
+        confirm_no_dds_article: false,
+      }),
+    );
+    return map;
+  }, [owners]);
+  const recipientForRow = (row: ExpenseRow) =>
+    articleById.get(row.articleId)?.owner_required
+      ? ownerById.get(row.counterpartyId)
+      : counterpartyById.get(row.counterpartyId);
+  const ownerIds = useMemo(() => new Set(owners.map((item) => item.counterparty_id)), [owners]);
 
   // Реестр помещений закрыт правом source.locations.read: без него поле «Помещение» не заполнить
   // в принципе, и сводка «Укажите помещение» вводит в заблуждение — причина блокировки другая.
@@ -1372,7 +1397,7 @@ function ExpenseForm({
   const assetRow = assetRowKey ? (rows.find((item) => item.key === assetRowKey) ?? null) : null;
   const assetRowArticle = assetRow ? articleById.get(assetRow.articleId) : undefined;
   const periodRow = periodRowKey ? (rows.find((item) => item.key === periodRowKey) ?? null) : null;
-  const periodCounterparty = periodRow ? counterpartyById.get(periodRow.counterpartyId) : undefined;
+  const periodCounterparty = periodRow ? recipientForRow(periodRow) : undefined;
 
   /** Подпись строки-ссылки периода: что уже задано либо чего не хватает. */
   const periodSummary = (row: ExpenseRow, counterparty: NewPaymentCounterparty): string => {
@@ -1444,7 +1469,7 @@ function ExpenseForm({
           ]
         : [];
     }
-    const counterparty = counterpartyById.get(row.counterpartyId);
+    const counterparty = recipientForRow(row);
     return counterparty ? [counterparty] : [];
   });
   const officialRecipient = selectedCounterparties.find((item) => item.relationship !== "informal");
@@ -1456,7 +1481,7 @@ function ExpenseForm({
   );
   const missingServicePeriodRecipient = rows
     .map((row) => {
-      const counterparty = counterpartyById.get(row.counterpartyId);
+      const counterparty = recipientForRow(row);
       return counterparty?.service_period_required &&
         (!row.servicePeriodStart || !row.servicePeriodEnd)
         ? counterparty
@@ -1466,6 +1491,14 @@ function ExpenseForm({
   // Вход «от контрагента»: получателя выбрали, статью из карточки подставить не удалось.
   // Молча отправить нельзя — расход попал бы в ДДС без статьи и выпал из всей аналитики.
   const missingArticleRow = rows.find((row) => row.counterpartyId && !row.articleId);
+  const missingOwnerRow = rows.find(
+    (row) => articleById.get(row.articleId)?.owner_required && !ownerIds.has(row.counterpartyId),
+  );
+  const selectedOwnerNames = rows.flatMap((row) => {
+    if (!articleById.get(row.articleId)?.owner_required) return [];
+    const owner = owners.find((item) => item.counterparty_id === row.counterpartyId);
+    return owner ? [owner.name] : [];
+  });
   const missingAssetRow = rows.find((row) => {
     const article = articleById.get(row.articleId);
     return Boolean(article?.asset_link_kind) && !row.assetId;
@@ -1500,7 +1533,7 @@ function ExpenseForm({
     rows.length > 0 &&
     rows.every((row) => {
       const article = articleById.get(row.articleId);
-      const counterparty = counterpartyById.get(row.counterpartyId);
+      const counterparty = recipientForRow(row);
       const periodReady =
         !counterparty?.service_period_required ||
         Boolean(row.servicePeriodStart && row.servicePeriodEnd);
@@ -1508,8 +1541,14 @@ function ExpenseForm({
         !article?.location_required ||
         (Boolean(row.locationId) && (!article.lease_bound || Boolean(row.leaseId)));
       const assetReady = !article?.asset_link_kind || Boolean(row.assetId);
+      const ownerReady = !article?.owner_required || ownerIds.has(row.counterpartyId);
       return (
-        row.articleId && amountOf(row.amount) > 0 && periodReady && locationReady && assetReady
+        row.articleId &&
+        amountOf(row.amount) > 0 &&
+        periodReady &&
+        locationReady &&
+        assetReady &&
+        ownerReady
       );
     }) &&
     !directRouteBlocked &&
@@ -1590,6 +1629,11 @@ function ExpenseForm({
     summary = `Выберите статью ДДС для платежа ${shortName(
       counterpartyById.get(missingArticleRow.counterpartyId)?.name ?? "контрагенту",
     )} — без статьи расход выпадет из аналитики.`;
+  } else if (missingOwnerRow) {
+    tone = "warning";
+    summary = owners.length
+      ? "Выберите собственника — движение будет учтено в его расчётах с бизнесом."
+      : "Собственники не заведены — добавьте их в Настройках, в реестре «Собственники».";
   } else if (missingAssetRow) {
     tone = "warning";
     // Причина у покупки и у ремонта разная, и общая формулировка врала бы в одну из сторон:
@@ -1656,6 +1700,11 @@ function ExpenseForm({
         : `Резерв на ${isSafeSource ? "Сейфе" : "Кассе"} — деньги остаются на счёте до выдачи.`;
   }
 
+  if (tone !== "warning" && selectedOwnerNames.length) {
+    const names = Array.from(new Set(selectedOwnerNames)).map((name) => `«${shortName(name)}»`);
+    summary += ` Собственник: ${names.join(", ")}.`;
+  }
+
   const submitLabel = !isCashSource
     ? "Отправить в банк"
     : act === "now"
@@ -1706,7 +1755,7 @@ function ExpenseForm({
             const pinnedIds = new Set(
               (article?.counterparties ?? []).map((item) => item.counterparty_id),
             );
-            const selectedCounterparty = counterpartyById.get(row.counterpartyId);
+            const selectedCounterparty = recipientForRow(row);
             // Свободный «кому платим» — у всех неарендных статей, даже если за статьёй никто не
             // закреплён: получателя выбирают из общего справочника. У аренды получатель приходит
             // из договора (блок «Помещение» ниже), выбирать его руками нельзя.
@@ -1767,7 +1816,16 @@ function ExpenseForm({
                   </Label>
                   {showRecipient ? (
                     <CounterpartyCombobox
-                      counterparties={counterparties}
+                      counterparties={article?.owner_required ? owners : counterparties}
+                      placeholder={article?.owner_required ? "Собственник" : "Кому платим"}
+                      clearLabel={
+                        article?.owner_required ? "Собственник не выбран" : "Кому платим: не указан"
+                      }
+                      emptyMessage={
+                        article?.owner_required
+                          ? "Собственники не найдены"
+                          : "Контрагенты не найдены"
+                      }
                       onChange={(counterpartyId) => {
                         const counterparty = counterpartyById.get(counterpartyId);
                         // Статью подставляем из карточки — но только в пустую строку: если
@@ -1822,7 +1880,7 @@ function ExpenseForm({
                     onChange={(patch) => onUpdateRow(row.key, patch)}
                   />
                 ) : null}
-                {selectedCounterparty ? (
+                {selectedCounterparty && !article?.owner_required ? (
                   // Строкой-ссылкой в отдельную модалку — тем же приёмом, что и объект ОС
                   // (правило владельца: окно платежа и без того длинное, развёрнутые блоки
                   // внутри строки в него не помещаются).
@@ -2368,6 +2426,7 @@ function PrepaymentForm({
 function IncomeForm({
   active,
   articles,
+  owners,
   wallets,
   articleId,
   onArticleChange,
@@ -2377,6 +2436,7 @@ function IncomeForm({
 }: {
   active: boolean;
   articles: NewPaymentArticle[];
+  owners: NewPaymentArticleCounterparty[];
   wallets: NewPaymentWallet[];
   articleId: string;
   onArticleChange: (id: string) => void;
@@ -2397,7 +2457,20 @@ function IncomeForm({
 
   const selectedArticle = articles.find((item) => item.id === articleId) ?? null;
   // Возврат от поставщика гасит его открытые предоплаты — без контрагента не провести.
-  const counterpartyRequired = selectedArticle?.code === SUPPLIER_REFUND_ARTICLE_CODE;
+  const ownerRequired = Boolean(selectedArticle?.owner_required);
+  const supplierRefund = selectedArticle?.code === SUPPLIER_REFUND_ARTICLE_CODE;
+  const counterpartyRequired = ownerRequired || supplierRefund;
+  const selectedOwner = ownerRequired
+    ? (owners.find((item) => item.counterparty_id === counterpartyId) ?? null)
+    : null;
+  // Получателя выбирают для конкретной статьи: прежний поставщик не должен
+  // перейти в возврат займа, а собственник — в обычный приход незаметно для пользователя.
+  useEffect(() => {
+    setCounterpartyId("");
+  }, [articleId]);
+  useEffect(() => {
+    if (ownerRequired && counterpartyId && !selectedOwner) setCounterpartyId("");
+  }, [ownerRequired, counterpartyId, selectedOwner]);
 
   const cashWallets = wallets.filter((wallet) => wallet.kind === "cash");
   const safeWallet = cashWallets.find((wallet) => wallet.location === "safe") ?? null;
@@ -2412,7 +2485,7 @@ function IncomeForm({
   const registryQuery = useQuery({
     queryKey: ["cp", "registry"],
     queryFn: () => getRegistry(),
-    enabled: active,
+    enabled: active && !ownerRequired,
   });
   const registryById = useMemo(() => {
     const map = new Map<string, string>();
@@ -2438,7 +2511,8 @@ function IncomeForm({
     Boolean(articleId) &&
     Boolean(walletId) &&
     amountOf(amount) > 0 &&
-    (!counterpartyRequired || Boolean(counterpartyId));
+    (!counterpartyRequired || Boolean(counterpartyId)) &&
+    (!ownerRequired || Boolean(selectedOwner));
 
   // Тот же возврат, уже пришедший выпиской: провести его ещё и наличными — значит погасить
   // аванс вдвое (пересборка берёт каждый возвратный приход). Предупреждаем, не запрещаем.
@@ -2449,7 +2523,7 @@ function IncomeForm({
     return () => clearTimeout(timer);
   }, [amount]);
   const refundTwinParams =
-    active && counterpartyRequired && counterpartyId && walletId && amountOf(debouncedAmount) > 0
+    active && supplierRefund && counterpartyId && walletId && amountOf(debouncedAmount) > 0
       ? {
           counterparty_id: counterpartyId,
           amount: amountOf(debouncedAmount).toFixed(2),
@@ -2480,12 +2554,19 @@ function IncomeForm({
   });
 
   // Панель «Что произойдёт».
-  const cpName = counterpartyId ? shortName(registryById.get(counterpartyId) ?? "") : null;
+  const cpName = counterpartyId
+    ? shortName(selectedOwner?.name ?? registryById.get(counterpartyId) ?? "")
+    : null;
   let tone: SummaryTone = "instant";
   let summary: string;
   if (!selectedWallet) {
     tone = "warning";
     summary = "Выберите счёт зачисления.";
+  } else if (ownerRequired && !selectedOwner) {
+    tone = "warning";
+    summary = owners.length
+      ? "Выберите собственника — поступление будет учтено в его расчётах с бизнесом."
+      : "Собственники не заведены — добавьте их в Настройках, в реестре «Собственники».";
   } else if (counterpartyRequired && !counterpartyId) {
     tone = "warning";
     summary =
@@ -2493,6 +2574,8 @@ function IncomeForm({
   } else if (refundTwinText) {
     tone = "warning";
     summary = refundTwinText;
+  } else if (ownerRequired && cpName) {
+    summary = `Поступление от собственника «${cpName}» придёт ${destName} сразу.`;
   } else if (counterpartyRequired && cpName) {
     summary = `Придёт ${destName} и зачтётся в предоплаты «${cpName}»; излишек — обычный приход.`;
   } else {
@@ -2544,16 +2627,31 @@ function IncomeForm({
 
         <div className="space-y-1">
           <Label className="text-sm">
-            {counterpartyRequired ? "Контрагент" : "Контрагент (необязательно)"}
+            {ownerRequired
+              ? "Собственник"
+              : counterpartyRequired
+                ? "Контрагент"
+                : "Контрагент (необязательно)"}
           </Label>
-          <InlineOptionList
-            emptyMessage="Контрагенты не найдены"
-            listClassName="max-h-40"
-            onChange={setCounterpartyId}
-            options={counterpartyOptions}
-            searchPlaceholder="Название или ИНН…"
-            value={counterpartyId}
-          />
+          {ownerRequired ? (
+            <CounterpartyCombobox
+              counterparties={owners}
+              clearLabel="Собственник не выбран"
+              emptyMessage="Собственники не найдены"
+              onChange={setCounterpartyId}
+              placeholder="Собственник"
+              value={selectedOwner ? counterpartyId : ""}
+            />
+          ) : (
+            <InlineOptionList
+              emptyMessage="Контрагенты не найдены"
+              listClassName="max-h-40"
+              onChange={setCounterpartyId}
+              options={counterpartyOptions}
+              searchPlaceholder="Название или ИНН…"
+              value={counterpartyId}
+            />
+          )}
         </div>
 
         <SummaryPanel tone={tone} total={amountOf(amount) > 0 ? amountOf(amount) : 0}>

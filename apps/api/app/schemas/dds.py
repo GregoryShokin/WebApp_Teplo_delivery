@@ -121,6 +121,8 @@ class DdsArticleRead(BaseModel):
     # Статья-аренда помещения: фронт скрывает свободный выбор контрагента и требует арендодателя
     # из договора аренды.
     lease_bound: bool = False
+    # Собственные статьи требуют получателя из реестра собственников.
+    owner_required: bool = False
     # Что расход по статье делает с основным средством: purchase / repair / maintenance / пусто.
     # Фронт по этому полю показывает выбор объекта в строке разбора — и требует его заполнить.
     asset_link_kind: str | None = None
@@ -644,6 +646,8 @@ class NewPaymentArticleRead(BaseModel):
     location_required: bool = False
     # Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
     lease_bound: bool = False
+    # Собственные статьи требуют получателя из реестра собственников.
+    owner_required: bool = False
     # Что расход по статье делает с основным средством. Забудешь объявить поле ЗДЕСЬ — и
     # response_model молча вырежет его из ответа, даже если сервис его положил: форма решит,
     # что статья к ОС отношения не имеет, и покупка уйдёт мимо баланса. Ровно так поле уже
@@ -706,6 +710,7 @@ class NewPaymentContextRead(BaseModel):
     articles: list[NewPaymentArticleRead]
     # Все контрагенты, а не только закреплённые за статьями: окно умеет начинать с получателя.
     counterparties: list[NewPaymentCounterpartyRead] = Field(default_factory=list)
+    owners: list[NewPaymentArticleCounterpartyRead] = Field(default_factory=list)
     wallets: list[NewPaymentWalletRead]
     employees: list[NewPaymentEmployeeRead]
 

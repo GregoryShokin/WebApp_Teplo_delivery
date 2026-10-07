@@ -31,6 +31,7 @@ from app.models import (
     CashflowTransaction,
     DdsArticle,
     EmployeePayout,
+    SupplierPrepayment,
     TransferGroup,
     Wallet,
 )
@@ -339,6 +340,15 @@ async def apply_cashflow_split(
         except LocationAnalyticsError as exc:
             raise ValueError(str(exc)) from exc
 
+    from app.services.owner_analytics import ensure_owner_context
+
+    for line in splits:
+        await ensure_owner_context(
+            session,
+            article=await session.get(DdsArticle, line.article_id),
+            counterparty_id=line.counterparty_id or counterparty_id,
+        )
+
     # Основные средства — то же правило и та же причина считать ДО любых записей.
     #
     # Гейт здесь ОТСУТСТВОВАЛ, и это была дыра: разбор банк-операции объект требовал, а разбор
@@ -456,6 +466,34 @@ async def apply_cashflow_split(
     from app.services.supplier_prepayments import manual_payment_money_is_free
 
     origin_source_kind = txn.source_kind
+    from app.services.owner_analytics import OWNER_LOAN_ISSUE_ARTICLE_CODE, OWNER_LOAN_KIND
+    from app.services.supplier_prepayments import (
+        RULE1_PREPAYMENT_KIND,
+        _foreign_allocations_exist,
+        _unwind_transaction_kz_settlements,
+    )
+
+    loan_article_id = await session.scalar(
+        select(DdsArticle.id).where(
+            DdsArticle.code == OWNER_LOAN_ISSUE_ARTICLE_CODE,
+            DdsArticle.owner_required.is_(True),
+        )
+    )
+    if loan_article_id is not None and any(line.article_id == loan_article_id for line in splits):
+        # Вторая доля займа не должна дублировать первую долю, уже оплатившую акт услуг.
+        # Освобождаем только автоматические зачёты; явное решение человека не меняем.
+        protected_prepayment = await session.scalar(
+            select(SupplierPrepayment.id)
+            .where(
+                SupplierPrepayment.cashflow_transaction_id == txn.id,
+                SupplierPrepayment.kind.notin_((RULE1_PREPAYMENT_KIND, OWNER_LOAN_KIND)),
+            )
+            .limit(1)
+        )
+        if protected_prepayment is not None or await _foreign_allocations_exist(session, txn.id):
+            raise ValueError("Платёж уже закреплён за документом — сначала отмените зачёт")
+        if not await _unwind_transaction_kz_settlements(session, txn.id, include_bills=False):
+            raise ValueError("Платёж уже погасил кредиторку в банковском черновике")
     origin_money_is_free = await manual_payment_money_is_free(session, txn)
 
     created: list[UUID] = []

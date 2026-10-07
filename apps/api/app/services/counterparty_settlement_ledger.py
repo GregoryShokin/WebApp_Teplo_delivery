@@ -594,20 +594,25 @@ def _closed_on(prepayment: SupplierPrepayment, *, has_allocations: bool) -> date
 
 async def _refund_rows(
     session: AsyncSession, counterparty_id: uuid.UUID
-) -> list[tuple[CashflowTransaction, str | None]]:
-    """Возвраты денег от поставщика — ровно те приходы, что баланс вычитает из дебиторки."""
+) -> list[tuple[CashflowTransaction, str | None, str]]:
+    """Возвраты авансов и займов — те приходы, что баланс вычитает из дебиторки."""
     return [
-        (row[0], row[1])
+        (row[0], row[1], row[2])
         for row in (
             await session.execute(
-                select(CashflowTransaction, Wallet.name)
+                select(CashflowTransaction, Wallet.name, DdsArticle.code)
                 .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
                 .outerjoin(Wallet, Wallet.id == CashflowTransaction.wallet_id)
                 .where(
                     CashflowTransaction.direction == "in",
                     CashflowTransaction.counterparty_id == counterparty_id,
                     CashflowTransaction.quality_status != EXCLUDED_QUALITY,
-                    DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+                    DdsArticle.code.in_(
+                        (
+                            SUPPLIER_REFUND_ARTICLE_CODE,
+                            owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE,
+                        )
+                    ),
                     not_barter_money_return(),
                 )
                 .order_by(CashflowTransaction.operation_date, CashflowTransaction.created_at)
@@ -977,30 +982,43 @@ async def build_ledger(
     # Возврат гасит только то, что ещё открыто: излишек — обычный приход (так его оставляет
     # ``refund_counterparty_prepayments``, так его обрезает баланс). Открытое считаем так же,
     # как баланс: сумма предоплаты минус её строки гашения, без закрытых решением человека.
-    refundable = sum(
+    loan_article_ids = set(
         (
-            _clamp(money(sp.amount) - allocated_by_prepayment.get(sp.id, Decimal("0")))
-            for sp in prepayments
-            if not (sp.id in closed_on and closed_on[sp.id] <= today)
-        ),
-        Decimal("0"),
+            await session.scalars(
+                select(DdsArticle.id).where(
+                    DdsArticle.code == owner_analytics.OWNER_LOAN_ISSUE_ARTICLE_CODE
+                )
+            )
+        ).all()
     )
-    for refund, wallet_name in await _refund_rows(session, counterparty_id):
+    refundable = {False: Decimal("0"), True: Decimal("0")}
+    for sp in prepayments:
+        if sp.id in closed_on and closed_on[sp.id] <= today:
+            continue
+        is_owner_loan = (
+            sp.kind == owner_analytics.OWNER_LOAN_KIND or sp.article_id in loan_article_ids
+        )
+        refundable[is_owner_loan] += _clamp(
+            money(sp.amount) - allocated_by_prepayment.get(sp.id, Decimal("0"))
+        )
+    for refund, wallet_name, article_code in await _refund_rows(session, counterparty_id):
         amount = money(refund.amount)
-        applied = min(amount, refundable)
-        refundable -= applied
+        is_owner_loan = article_code == owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE
+        applied = min(amount, refundable[is_owner_loan])
+        refundable[is_owner_loan] -= applied
         rows.append(
             LedgerRow(
                 kind=ROW_REFUND,
                 id=refund.id,
                 row_date=refund.operation_date,
                 amount=amount,
-                title="Возврат денег",
+                title="Возврат займа собственником" if is_owner_loan else "Возврат денег",
                 subtitle=refund.payment_purpose or refund.comment or wallet_name,
                 period_start=None,
                 period_end=None,
                 uncovered=amount - applied,
                 status="ok",
+                owner_settlement=is_owner_loan,
             )
         )
 

@@ -262,7 +262,7 @@ def test_named_owner_on_dividends_is_not_a_debt(
     )
     assert _receivable(client, seeded["grigoriy"]) == Decimal("0")
     # Заём — долг, как и прежде: гейт по статье, а не по собственнику.
-    assert _prepayments(async_session_factory, seeded["pavel"]) == [("subscription", LOAN)]
+    assert _prepayments(async_session_factory, seeded["pavel"]) == [("owner_loan", LOAN)]
     assert _receivable(client, seeded["pavel"]) == LOAN
 
 
@@ -379,7 +379,7 @@ def test_manual_split_keeps_dividends_share_off_receivables(
             await session.commit()
 
     _run(split())
-    assert _prepayments(async_session_factory, pavel) == [("subscription", LOAN)]
+    assert _prepayments(async_session_factory, pavel) == [("owner_loan", LOAN)]
 
 
 def test_bank_operation_split_keeps_dividends_share_off_receivables(
@@ -423,7 +423,7 @@ def test_bank_operation_split_keeps_dividends_share_off_receivables(
         headers=HEADERS,
     )
     assert response.status_code == 200, response.text
-    assert _prepayments(async_session_factory, pavel) == [("subscription", LOAN)]
+    assert _prepayments(async_session_factory, pavel) == [("owner_loan", LOAN)]
     assert _receivable(client, pavel) == LOAN
 
 

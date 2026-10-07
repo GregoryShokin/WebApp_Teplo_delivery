@@ -187,7 +187,11 @@ from app.services.new_payment import (
     ensure_reservable_article_allowed,
     list_payout_attribution_employees,
 )
-from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
+from app.services.owner_analytics import (
+    OWNER_LOAN_RETURN_ARTICLE_CODE,
+    OwnerAnalyticsError,
+    ensure_owner_context,
+)
 from app.services.payroll_advance_service import (
     book_operation_advance,
     list_kassa_pending_advances,
@@ -882,12 +886,14 @@ async def post_new_payment_expense_cash(
                     CounterpartyPayableProfile.counterparty_id == cp.id
                 )
             )
-            if profile is None:
+            if profile is None and not article.owner_required:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Платёжный профиль контрагента не найден",
                 )
-            if profile.relationship != "informal":
+            # Собственника уже проверили по реестру: ему не нужен профиль поставщика,
+            # чтобы получить наличные по своей статье.
+            if profile is not None and profile.relationship != "informal":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -1057,6 +1063,7 @@ async def post_new_payment_income_cash(
 
     total = Decimal("0")
     created = 0
+    loan_return_counterparties: set[UUID] = set()
     for line in payload.lines:
         article = await session.get(DdsArticle, line.article_id)
         if article is None:
@@ -1067,6 +1074,12 @@ async def post_new_payment_income_cash(
             ensure_income_article_allowed(article)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        try:
+            await ensure_owner_context(
+                session, article=article, counterparty_id=line.counterparty_id
+            )
+        except OwnerAnalyticsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         if line.counterparty_id is not None:
             cp = await session.get(Counterparty, line.counterparty_id)
             # in ARCHIVED_...: легаси-статус 'inactive' — тоже архив, иначе гард дыряв.
@@ -1103,8 +1116,16 @@ async def post_new_payment_income_cash(
                 created_by_user_id=actor.user_id,
             )
         )
+        if article.code == OWNER_LOAN_RETURN_ARTICLE_CODE and line.counterparty_id is not None:
+            loan_return_counterparties.add(line.counterparty_id)
         total += amount
         created += 1
+    # Возврат займа гасит только займы этого собственника. Пересборка читает денежные
+    # факты, поэтому новые приходные проводки должны быть записаны до её вызова.
+    if loan_return_counterparties:
+        await session.flush()
+        for counterparty_id in loan_return_counterparties:
+            await resync_counterparty_refunds(session, counterparty_id)
     await session.commit()
     return {"created": created, "total": float(total), "location": location}
 
@@ -2492,10 +2513,10 @@ async def classify_transaction(
     # Трогаем только когда возвратная статья участвует — иначе пересчёт ходил бы по предоплатам
     # контрагентов, к возвратам отношения не имеющих.
     new_article_code = article.code if article is not None else None
-    if txn.direction == "in" and SUPPLIER_REFUND_ARTICLE_CODE in {
-        previous_article_code,
-        new_article_code,
-    }:
+    if txn.direction == "in" and {
+        SUPPLIER_REFUND_ARTICLE_CODE,
+        OWNER_LOAN_RETURN_ARTICLE_CODE,
+    }.intersection({previous_article_code, new_article_code}):
         for cp_id in {previous_counterparty_id, txn.counterparty_id}:
             await resync_counterparty_refunds(session, cp_id)
     await session.commit()

@@ -20,6 +20,7 @@ from app.models import (
     CounterpartyPayableProfile,
     DdsArticle,
     EmployeePayout,
+    InvoicePaymentAllocation,
     OwnAccountsRegistry,
     ReconciliationCase,
     SupplierPrepayment,
@@ -56,7 +57,12 @@ from app.services.location_analytics import (
     LocationContext,
     resolve_location_context,
 )
-from app.services.owner_analytics import OwnerAnalyticsError, ensure_owner_context
+from app.services.owner_analytics import (
+    OWNER_LOAN_ISSUE_ARTICLE_CODE,
+    OWNER_LOAN_KIND,
+    OwnerAnalyticsError,
+    ensure_owner_context,
+)
 
 # Статья ДДС «Авансы поставщикам»: строка сплита с ней рождает дебиторку
 # (supplier_prepayment) на выбранного контрагента, а не просто расход.
@@ -1004,13 +1010,47 @@ async def _drop_untouched_bank_prepayments(
             SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids)
         )
     )
+    loan_article_ids = set(
+        (
+            await session.scalars(
+                select(DdsArticle.id).where(DdsArticle.code == OWNER_LOAN_ISSUE_ARTICLE_CODE)
+            )
+        ).all()
+    )
+    loan_counterparties: set[UUID] = set()
     dropped = False
     for prepayment in rows.all():
-        if prepayment.status == "open" and Decimal(prepayment.amount_settled) == 0:
+        is_owner_loan = (
+            prepayment.kind == OWNER_LOAN_KIND or prepayment.article_id in loan_article_ids
+        )
+        if is_owner_loan:
+            # amount_settled у займа может быть только следом возврата денег. При удалении
+            # старой выдачи этот зачёт пересобирается; сохранять запись значило бы сделать
+            # её сиротой и завести второй долг при повторном разборе операции.
+            has_allocations = await session.scalar(
+                select(InvoicePaymentAllocation.id)
+                .where(InvoicePaymentAllocation.prepayment_id == prepayment.id)
+                .limit(1)
+            )
+            if (
+                prepayment.settled_on is not None
+                or prepayment.status == "settled"
+                or has_allocations is not None
+            ):
+                raise ValueError("Заём уже зачтён в другой расчёт — сначала отмените зачёт")
+            loan_counterparties.add(prepayment.counterparty_id)
+            await session.delete(prepayment)
+            dropped = True
+        elif prepayment.status == "open" and Decimal(prepayment.amount_settled) == 0:
             await session.delete(prepayment)
             dropped = True
     if dropped:
         await session.flush()
+    if loan_counterparties:
+        from app.services.supplier_prepayments import resync_counterparty_refunds
+
+        for counterparty_id in loan_counterparties:
+            await resync_counterparty_refunds(session, counterparty_id)
     # Cash-зачёты кредиторки этих проводок (создаёт ensure_prepayment_from_bank_transaction по
     # правилу 1 канона ДЗ/КЗ) снимаем ДО удаления самих проводок — иначе FK SET NULL осиротит
     # аллокацию и закрывающая накладная навсегда останется «оплаченной» списанием, которого

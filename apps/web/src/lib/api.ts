@@ -2866,6 +2866,8 @@ export type NewPaymentArticle = {
   activity?: string | null;
   // Закреплённые за статьёй контрагенты — «кому платим» для свободного вывода.
   counterparties?: NewPaymentArticleCounterparty[];
+  // Движение собственника: получатель обязателен и выбирается из реестра собственников.
+  owner_required?: boolean;
   // Статье нужна аналитика по помещению (аренда): форма требует помещение и арендодателя.
   location_required?: boolean;
   // Статья-аренда помещения: свободный «кому платим» скрыт, получатель — арендодатель договора.
@@ -2896,6 +2898,7 @@ export type NewPaymentEmployee = {
 export type NewPaymentContext = {
   articles: NewPaymentArticle[];
   counterparties: NewPaymentCounterparty[];
+  owners?: NewPaymentArticleCounterparty[];
   wallets: NewPaymentWallet[];
   employees: NewPaymentEmployee[];
 };

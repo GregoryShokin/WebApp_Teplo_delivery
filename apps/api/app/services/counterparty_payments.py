@@ -729,18 +729,20 @@ async def create_expense_payment_draft(
                     CounterpartyPayableProfile.counterparty_id == counterparty.id
                 )
             )
-            if profile is None:
+            if profile is None and not article.owner_required:
                 raise CounterpartyPaymentError("Платёжный профиль контрагента не найден")
             try:
-                if profile.service_period_required or (
-                    line.service_period_start is not None or line.service_period_end is not None
-                ):
+                if (
+                    profile is not None
+                    and profile.service_period_required
+                    and not article.owner_required
+                ) or (line.service_period_start is not None or line.service_period_end is not None):
                     service_periods.validate_period(
                         line.service_period_start, line.service_period_end
                     )
             except service_periods.ServicePeriodError as exc:
                 raise CounterpartyPaymentError(str(exc)) from exc
-            if profile.relationship != "informal":
+            if profile is not None and profile.relationship != "informal":
                 if profile.requisites:
                     if not profile.requisites_verified:
                         raise RequisitesNotVerifiedError(

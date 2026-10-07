@@ -67,6 +67,7 @@ def not_barter_money_return():
         .exists()
     )
 
+
 OPEN_PREPAYMENT_STATUSES = ("open", "partially_settled")
 # Открытая кредиторка контрагента = неоплаченный остаток АКТИВНЫХ закрывающих документов.
 UNPAID_INVOICE_STATUSES = ("unpaid", "partially_paid")
@@ -121,7 +122,7 @@ SERVICE_CASH_EXCLUDED_ARTICLE_CODES = frozenset({"advance_to_supplier"})
 # deposit (залог за помещение) тоже целевой: залог лежит у арендодателя до конца аренды, и
 # ежемесячная арендная накладная не должна его съедать — иначе залог исчез бы из дебиторки, а
 # КЗ выглядела бы оплаченной без движения денег. Возврат/зачёт залога — явным действием.
-EARMARKED_PREPAYMENT_KINDS = frozenset({"goods", "deposit"})
+EARMARKED_PREPAYMENT_KINDS = frozenset({"goods", "deposit", owner_analytics.OWNER_LOAN_KIND})
 
 # ДЗ из оплаты счёта (doc_kind='bill'). Канон владельца 17.07: «Сам по себе счёт ничего не делает…
 # Оплата счёта уходит в дебиторскую задолженность». Счёт — не обязательство (в КЗ не входит), но
@@ -2072,6 +2073,99 @@ async def ensure_prepayment_from_bank_transaction(
     return result
 
 
+async def _owner_loan_article(session: AsyncSession, article_id: uuid.UUID | None) -> bool:
+    if article_id is None:
+        return False
+    article = await session.get(DdsArticle, article_id)
+    return bool(
+        article is not None
+        and article.owner_required
+        and article.code == owner_analytics.OWNER_LOAN_ISSUE_ARTICLE_CODE
+    )
+
+
+async def _sync_owner_loan_receivable(
+    session: AsyncSession,
+    transaction: CashflowTransaction,
+    existing: SupplierPrepayment | None,
+) -> SupplierPrepayment | None:
+    """Заём — отдельный долг: им нельзя оплатить услуги того же собственника."""
+    previous_counterparty_id = existing.counterparty_id if existing is not None else None
+    qualifies = (
+        transaction.direction == "out"
+        and transaction.counterparty_id is not None
+        and transaction.quality_status != EXCLUDED_QUALITY
+        and await _owner_loan_article(session, transaction.article_id)
+        and await owner_analytics.is_owner(session, transaction.counterparty_id)
+    )
+    if existing is not None and existing.kind not in {
+        RULE1_PREPAYMENT_KIND,
+        owner_analytics.OWNER_LOAN_KIND,
+    }:
+        raise CounterpartyPaymentError("Деньги этого платежа уже закреплены за другим расчётом")
+    if existing is not None and (
+        existing.settled_on is not None
+        or existing.status == "settled"
+        or await session.scalar(
+            select(InvoicePaymentAllocation.id)
+            .where(InvoicePaymentAllocation.prepayment_id == existing.id)
+            .limit(1)
+        )
+        is not None
+        or (existing.kind == RULE1_PREPAYMENT_KIND and not _prepayment_untouched(existing))
+    ):
+        if (
+            qualifies
+            and existing.counterparty_id == transaction.counterparty_id
+            and existing.article_id == transaction.article_id
+            and existing.wallet_id == transaction.wallet_id
+            and _money(existing.amount) == _money(transaction.amount)
+        ):
+            return existing
+        raise CounterpartyPaymentError("Заём уже зачтён в другой расчёт — сначала отмените зачёт")
+    if not await _unwind_transaction_kz_settlements(session, transaction.id, include_bills=False):
+        raise CounterpartyPaymentError("Платёж уже погасил кредиторку в банковском черновике")
+    if await payment_allocated_amount(session, transaction_id=transaction.id) > 0:
+        raise CounterpartyPaymentError(
+            "Заём собственнику нельзя использовать для оплаты документов"
+        )
+    if not qualifies:
+        if existing is not None:
+            await session.delete(existing)
+            await session.flush()
+        if previous_counterparty_id is not None:
+            await resync_counterparty_refunds(session, previous_counterparty_id)
+        return None
+    if existing is None:
+        existing = SupplierPrepayment(
+            counterparty_id=transaction.counterparty_id,
+            kind=owner_analytics.OWNER_LOAN_KIND,
+            wallet_id=transaction.wallet_id,
+            amount=_money(transaction.amount),
+            amount_settled=Decimal("0.00"),
+            status="open",
+            cashflow_transaction_id=transaction.id,
+            article_id=transaction.article_id,
+            note=transaction.payment_purpose,
+        )
+        session.add(existing)
+    else:
+        # Возвраты не имеют аллокаций: пересобираем их ниже из денежных фактов.
+        existing.kind = owner_analytics.OWNER_LOAN_KIND
+        existing.counterparty_id = transaction.counterparty_id
+        existing.amount_settled = Decimal("0.00")
+        existing.status = "open"
+        existing.amount = _money(transaction.amount)
+        existing.wallet_id = transaction.wallet_id
+        existing.article_id = transaction.article_id
+        existing.note = transaction.payment_purpose
+    await session.flush()
+    for counterparty_id in {previous_counterparty_id, transaction.counterparty_id}:
+        if counterparty_id is not None:
+            await resync_counterparty_refunds(session, counterparty_id)
+    return existing
+
+
 async def _sync_rule1_distribution(
     session: AsyncSession, transaction: CashflowTransaction
 ) -> SupplierPrepayment | None:
@@ -2118,6 +2212,14 @@ async def _sync_rule1_distribution(
             SupplierPrepayment.cashflow_transaction_id == transaction.id
         )
     )
+    owner_loan_article = await _owner_loan_article(session, transaction.article_id)
+    if owner_loan_article or (
+        existing is not None and existing.kind == owner_analytics.OWNER_LOAN_KIND
+    ):
+        result = await _sync_owner_loan_receivable(session, transaction, existing)
+        if owner_loan_article:
+            return result
+        existing = None
     if existing is not None and existing.kind in FOREIGN_PREPAYMENT_KINDS:
         # Предоплату завёл ДРУГОЙ контур и распорядился деньгами по-своему: целевой аванс ждёт
         # свою поставку, ДЗ оплаченного счёта принадлежит чокпоинту. Поиск по
@@ -2455,20 +2557,23 @@ async def manual_payment_money_is_free(
         return False
     if origin in SELF_SETTLING_SOURCE_KINDS:
         return False
-    if origin in DEDICATED_MONEY_SOURCE_KINDS and not await _service_cash_needs_receivable(
-        session, transaction
-    ):
-        return False
-
+    owner_loan_article = await _owner_loan_article(session, transaction.article_id)
     own_kind = await session.scalar(
         select(SupplierPrepayment.kind).where(
             SupplierPrepayment.cashflow_transaction_id == transaction.id
         )
     )
+    if (
+        origin in DEDICATED_MONEY_SOURCE_KINDS
+        and not owner_loan_article
+        and own_kind != owner_analytics.OWNER_LOAN_KIND
+        and not await _service_cash_needs_receivable(session, transaction)
+    ):
+        return False
     if own_kind is not None:
         # Своя дебиторка правила 1 — его зачёты тоже его, пересобрать вправе. Чужой вид записи
         # (целевой аванс, ДЗ оплаченного счёта) закрывает дверь.
-        return own_kind == RULE1_PREPAYMENT_KIND
+        return own_kind in {RULE1_PREPAYMENT_KIND, owner_analytics.OWNER_LOAN_KIND}
     allocated = await session.scalar(
         select(func.count(InvoicePaymentAllocation.id)).where(
             InvoicePaymentAllocation.cashflow_transaction_id == transaction.id
@@ -2557,10 +2662,22 @@ async def sync_manual_payment_receivable(
         is_free = await manual_payment_money_is_free(
             session, transaction, origin_source_kind=origin_source_kind
         )
-    if not is_free and not await _dividends_money_to_release(
-        session, transaction, origin_source_kind=origin_source_kind
-    ):
-        return None
+    if not is_free:
+        # При переразметке в заём возвращаем только автоматические зачёты этого платежа.
+        # Родитель сплита мог исчерпать свой бюджет услугами: новая доля займа всё равно
+        # обязана стать отдельным долгом, а явные оплаты документов остаются защищёнными.
+        owner_loan_release = await _owner_loan_article(session, transaction.article_id)
+        if owner_loan_release and (
+            await _foreign_allocations_exist(session, transaction.id)
+            or (origin_source_kind or transaction.source_kind) in SELF_SETTLING_SOURCE_KINDS
+        ):
+            raise CounterpartyPaymentError(
+                "Платёж уже закреплён за документом — сначала отмените зачёт"
+            )
+        if not owner_loan_release and not await _dividends_money_to_release(
+            session, transaction, origin_source_kind=origin_source_kind
+        ):
+            return None
     return await ensure_prepayment_from_bank_transaction(session, transaction)
 
 
@@ -2592,7 +2709,13 @@ async def refund_counterparty_prepayments(
             # иначе возврат раздул бы settled без аллокации → _unwind не снял бы, а усадка amount
             # к оплате нарушила бы CHECK amount>=amount_settled. Возврат средств поставщика гасит
             # обычные предоплаты, а излишек остаётся приходом (см. докстринг).
-            SupplierPrepayment.kind != BILL_PREPAYMENT_KIND,
+            SupplierPrepayment.kind.notin_((BILL_PREPAYMENT_KIND, owner_analytics.OWNER_LOAN_KIND)),
+            ~select(DdsArticle.id)
+            .where(
+                DdsArticle.id == SupplierPrepayment.article_id,
+                DdsArticle.code == owner_analytics.OWNER_LOAN_ISSUE_ARTICLE_CODE,
+            )
+            .exists(),
         )
         .order_by(SupplierPrepayment.created_at)
     )
@@ -2650,20 +2773,41 @@ async def resync_counterparty_refunds(
         return
     # Мягко исключённая проводка выпадает из баланса кошелька — значит и дебиторку гасить не
     # должна, иначе возврат «действует» деньгами, которых в учёте нет.
-    remaining = _money(
-        await session.scalar(
-            select(func.coalesce(func.sum(CashflowTransaction.amount), 0))
-            .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
-            .where(
-                CashflowTransaction.counterparty_id == counterparty_id,
-                CashflowTransaction.direction == "in",
-                CashflowTransaction.quality_status != EXCLUDED_QUALITY,
-                DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
-                not_barter_money_return(),
+    remaining_by_stream: dict[str, Decimal] = {}
+    for stream, code in (
+        ("supplier", SUPPLIER_REFUND_ARTICLE_CODE),
+        ("loan", owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE),
+    ):
+        remaining_by_stream[stream] = _money(
+            await session.scalar(
+                select(func.coalesce(func.sum(CashflowTransaction.amount), 0))
+                .join(DdsArticle, DdsArticle.id == CashflowTransaction.article_id)
+                .where(
+                    CashflowTransaction.counterparty_id == counterparty_id,
+                    CashflowTransaction.direction == "in",
+                    CashflowTransaction.quality_status != EXCLUDED_QUALITY,
+                    DdsArticle.code == code,
+                    not_barter_money_return(),
+                )
             )
         )
+    loan_article_ids = set(
+        (
+            await session.scalars(
+                select(DdsArticle.id).where(
+                    DdsArticle.code == owner_analytics.OWNER_LOAN_ISSUE_ARTICLE_CODE
+                )
+            )
+        ).all()
     )
     for prepayment in prepayments:
+        stream = (
+            "loan"
+            if prepayment.kind == owner_analytics.OWNER_LOAN_KIND
+            or prepayment.article_id in loan_article_ids
+            else "supplier"
+        )
+        remaining = remaining_by_stream[stream]
         if prepayment.settled_on is not None:
             # Закрыта решением человека без строки гашения (дозачётный остаток,
             # ``scripts/writeoff_pre_accounting``): её amount_settled — не след возвратов. Сброс к
@@ -2677,6 +2821,10 @@ async def resync_counterparty_refunds(
                 )
             )
         )
+        if stream == "loan" and prepayment.status == "settled" and allocated == 0:
+            # Старые списания займа не всегда имеют settled_on. Без строк гашения
+            # status=settled означает решение владельца, а не возврат денег.
+            continue
         amount = _money(prepayment.amount)
         # Сброс к аллокационной части: всё, что сверх неё, — след прежнего распределения возвратов.
         prepayment.amount_settled = allocated
@@ -2690,7 +2838,7 @@ async def resync_counterparty_refunds(
         if rest > 0 and remaining > 0:
             take = min(rest, remaining)
             _consume_prepayment(prepayment, take, full_status="refunded")
-            remaining -= take
+            remaining_by_stream[stream] -= take
     await session.flush()
 
 
@@ -2712,7 +2860,9 @@ async def refund_counterparties(
         .where(
             CashflowTransaction.id.in_(transaction_ids),
             CashflowTransaction.counterparty_id.is_not(None),
-            DdsArticle.code == SUPPLIER_REFUND_ARTICLE_CODE,
+            DdsArticle.code.in_(
+                (SUPPLIER_REFUND_ARTICLE_CODE, owner_analytics.OWNER_LOAN_RETURN_ARTICLE_CODE)
+            ),
         )
         .distinct()
     )
@@ -3672,9 +3822,7 @@ async def auto_settle_invoice_from_open_prepayments(
     total = Decimal("0.00")
     candidates = await _settlement_candidates(session, invoice)
     if allowed_prepayment_ids is not None:
-        candidates = [
-            item for item in candidates if item[0].id in allowed_prepayment_ids
-        ]
+        candidates = [item for item in candidates if item[0].id in allowed_prepayment_ids]
     used: list[tuple[SupplierPrepayment, str]] = []
     for prepayment, match_basis in candidates:
         inv_remaining = await _invoice_remaining(session, invoice)
