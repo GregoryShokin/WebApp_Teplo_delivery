@@ -16,13 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### codex-rolls-site-mapping — ветка `codex/teplo-unit-economics-skill`
-- worktree: `../Teplo-agent-unit-economics`
-- трогает: `skills/teplo-rolls-analysis/references/menu-availability.md`
-- задача: уточнить уникальность analyticId и provenance публичной витрины
-- production: изменений нет; обновляется только справка и её установленная копия
-- статус: в работе; push не повторяется после HTTP 403
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
