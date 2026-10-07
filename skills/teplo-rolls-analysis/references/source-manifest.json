@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-10-07",
+  "audited_commit": "492929c97a1e6d8e2bec3411efcff43fa17090c7",
+  "scope": "Targeted recipe/catalog contracts, sales export and historical menu analysis audit. Files read by relevant functions or sections; hashes cover entire files. Not verification of live recipes, availability or sales completeness.",
+  "files": [
+    {
+      "path": "app-spec/integrations/iiko/first-export-audit.md",
+      "sha256": "661d61288113e9d03b723bd9047b5cd2e3a876f60a9451a6f6bc45166c553f79"
+    },
+    {
+      "path": "app-spec/integrations/iiko/server-api-endpoints.md",
+      "sha256": "2aa2940759f46492e3ab63e37db96d06840c59ca81a9000261172b5e5a9a6afc"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/warehouse.py",
+      "sha256": "eba7733be4ca885798f862ffec9002ef499a5bce79195b00dfc843bc051d1dec"
+    },
+    {
+      "path": "apps/api/app/db/session.py",
+      "sha256": "684b765cea3b9f9bcbaef9a99c3df9eb0ba1adb0af765301f190edc891b2f783"
+    },
+    {
+      "path": "apps/api/app/models/iiko_product.py",
+      "sha256": "fdd9e4cf33f7229dd8260a7a46d40019ffeabb7454ee0c87bcdbee60af296241"
+    },
+    {
+      "path": "apps/api/app/services/iiko_inventory.py",
+      "sha256": "5a98e257966ffade6b60489dfd26cb084a3e327533eda19bc26b37e84b1df579"
+    },
+    {
+      "path": "apps/api/app/services/iiko_product_sync.py",
+      "sha256": "06ad0f28af1d79bbdfaf3ea7bf51b3d88f9533f33678576bbd76e6340e0f8d07"
+    },
+    {
+      "path": "apps/api/app/services/iiko_revenue.py",
+      "sha256": "d680d06b76c6d1e2afc3d7af967cc1ca6cf5b9f9931189fea5f4325f20426057"
+    },
+    {
+      "path": "apps/api/app/services/iiko_sync.py",
+      "sha256": "6794af0b45faded2591b736836167aed4a5f9c2fe21ad7df759b05008c018e21"
+    },
+    {
+      "path": "apps/api/app/services/pnl/goods_classifier.py",
+      "sha256": "9cd592e15dd1e810b476e2dc704c1e89b713bc2863b02621026c0c4ea15496a5"
+    },
+    {
+      "path": "apps/api/app/services/pnl/iiko_sync.py",
+      "sha256": "d06ab35e2528c8f52af05d126ac72448f8f2b4f38792e067bf3554941fc6b3c0"
+    },
+    {
+      "path": "business-docs/marketing/data-channels.md",
+      "sha256": "3021a81a7d6d66285c1a21105933fbc92b66dc87314e052d5e74d7f7988a0318"
+    },
+    {
+      "path": "business-docs/marketing/diagnostic.md",
+      "sha256": "25e3054baf9809cde3c0d824eeadfece41fa744a181f31cfc54498db00828f81"
+    },
+    {
+      "path": "integrations/iiko/scripts/build_economic_block.py",
+      "sha256": "e6c7b2e3c95ead5a4ee2f433d1fc88ce4c475d1625557c403494e8bcf824e22e"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_ops.py",
+      "sha256": "1b043362614865acb6bd9a56d7b0b01da05d884efbe96cd502a7d88877afc5d4"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_revenue_by_direction.py",
+      "sha256": "b544871e517486f2a487af40ecdc680e719cefb44fc0d801e7c88f985f019c78"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_sales_day_hour.py",
+      "sha256": "7ca332237db579fcf710f4b9741334af19d69c681a6d84efa4565a7b74084630"
+    },
+    {
+      "path": "research/processed/iiko/menu/deletion_candidates.csv",
+      "sha256": "28570f078c097cb75753384cf8bb730281f55e646276845890c3d482db2888b7"
+    },
+    {
+      "path": "research/processed/iiko/menu/menu_full_ranked.csv",
+      "sha256": "1af7c9380c75f87b300bf09e01a9398caa86bf3b0e29b068953cc4fed40d63ce"
+    },
+    {
+      "path": "research/processed/iiko/menu/menu_full_ranked.json",
+      "sha256": "3572b3532f4cd4d29629d6e8a77e319dac66e5ddcd2d93b69f02a6f10ef8b119"
+    },
+    {
+      "path": "research/processed/iiko/menu/protected_by_sets.csv",
+      "sha256": "6c61d13d8d3f3483d7446f91c6c83896faa23ed95def106581dd71f1071d9088"
+    },
+    {
+      "path": "research/processed/iiko/menu/report.md",
+      "sha256": "81d1956ce5870af920b9741b74d99aa4053b98267976cd6912cefc876e76c412"
+    },
+    {
+      "path": "research/processed/iiko/menu/report_v2.md",
+      "sha256": "2e47b281dd0d37060afdabe7ffff5aaf371692d095ffa69504c94c4501bec5be"
+    },
+    {
+      "path": "research/processed/iiko/menu/summary.json",
+      "sha256": "8b2d29274e1a370bd880c34f2c649e966c173496a89d31b90ee9e5efcb8849c0"
+    }
+  ],
+  "external_sources": [
+    {
+      "path": "/Users/grigorii/.codex/skills/iiko-inventory-from-scans/references/api-methods.md",
+      "sha256": "1a61fe5af3269d85e923989bc5f80484329b443b6709d77efda3d0cef60c02e2"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/iiko-inventory-from-scans/scripts/iiko_data.py",
+      "sha256": "8658330ac661a7da52e734efe84acacd6b7c88b2f5a107339c5f728a1332ba65"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/iiko-inventory-from-scans/scripts/iiko_server_inventory.py",
+      "sha256": "9f886634848df38d581925ebcbbbeed0b09be340e77475ac7e543c387c218989"
+    },
+    {
+      "path": "/Users/grigorii/.codex/skills/iiko-inventory-from-scans/scripts/prepare_inventory.py",
+      "sha256": "5c901be399cfd4fc9f82fdc7c4d73fa18d80a5c556f482123aea3cb32d81e9cc"
+    }
+  ],
+  "external_sources_note": "Evidence only; check_sources.py checks repository files, not external sources. Historical raw examples are described in references and are not a required data dependency."
+}

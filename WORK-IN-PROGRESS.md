@@ -16,13 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### codex-rolls-skill — ветка `codex/teplo-unit-economics-skill`
-- worktree: `../Teplo-agent-unit-economics`
-- трогает: `skills/teplo-rolls-analysis/**`, одна ссылка из `skills/teplo-unit-economics/SKILL.md`
-- задача: skill поиска техкарт роллов, граммовок, продаж и ABC
-- production: изменений нет; приложение и учёт не изменяются
-- статус: в работе; push ранее недоступен (GitHub HTTP 403)
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`

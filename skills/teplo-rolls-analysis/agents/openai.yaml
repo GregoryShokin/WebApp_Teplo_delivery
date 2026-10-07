@@ -1,0 +1,4 @@
+interface:
+  display_name: "Роллы «Тепла»"
+  short_description: "Техкарты, граммовки, продажи и ABC роллов"
+  default_prompt: "Используй $teplo-rolls-analysis: найди техкарты роллов, собери продажи и построй ABC с учётом сетов."
