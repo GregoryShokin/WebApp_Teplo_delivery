@@ -16,6 +16,13 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
+### codex-unit-economics — ветка `codex/teplo-unit-economics-skill`
+- worktree: `../Teplo-agent-unit-economics`
+- трогает: только `skills/teplo-unit-economics/**`
+- задача: карта источников полной экономики, read-only методы и сверка месячной базы
+- production: только чтение; приложение и учёт не изменяются
+- статус: в работе; push недоступен (ранее подтверждён GitHub HTTP 403)
+
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
