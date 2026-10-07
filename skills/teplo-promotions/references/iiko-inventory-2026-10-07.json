@@ -2964,5 +2964,51 @@
       ],
       "mapping_status": "exact unique ID"
     }
-  ]
+  ],
+  "ui_semantics_addendum": {
+    "observed_on": "2026-10-07",
+    "source": "https://iiko.biz/en-GB/MarketingCampaigns/Edit/01330000-6bec-ac1f-583c-08da0d57f147?corporateNutritionOrganizationId=01330000-6bec-ac1f-2714-08da0d57a021",
+    "ui_version": "9.8.7.5194",
+    "server_version": "9.8.7.6195",
+    "mode": "read-only; no saved changes; configured behavior, not execution ledger",
+    "campaign_id": "01330000-6bec-ac1f-583c-08da0d57f147",
+    "OrderSumHistoryCondition": {
+      "Period_0": "All time",
+      "Operation_4": "Greater than or equal",
+      "includes_current_order": true,
+      "scope": "Only this observed condition type"
+    },
+    "ui_block_order": [
+      {
+        "position": 1,
+        "category": "Золото",
+        "minimum": 30000
+      },
+      {
+        "position": 2,
+        "category": "Серебро",
+        "minimum": 10000
+      },
+      {
+        "position": 3,
+        "category": "Бронза",
+        "minimum": 0
+      }
+    ],
+    "api_serialized_threshold_order": [
+      0,
+      10000,
+      30000
+    ],
+    "order_warning": "UI numbered order differs from API array. Preserve both; no general reversal or live-rule rewrite inferred.",
+    "periodic": {
+      "Timetable_Mode_0": "Daily in this binding",
+      "expiration_days": 90,
+      "anchor": "date of accrual",
+      "unspent_only": true,
+      "hour": "00:00",
+      "timezone": null,
+      "execution_verified": false
+    }
+  }
 }

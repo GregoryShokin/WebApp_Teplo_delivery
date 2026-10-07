@@ -1,0 +1,4 @@
+interface:
+  display_name: "Тепло: возможности акций iiko"
+  short_description: "Техническая реализуемость акций iiko и экономика"
+  default_prompt: "Используй $teplo-iiko-promotion-capabilities, чтобы оценить техническую готовность и полную экономику новой акции Тепла."
