@@ -5,9 +5,9 @@
   "timezone": "Europe/Istanbul",
   "scope": "Initial partial registry. Detail bundles preserve source-specific fields; this manifest provides stable competitor IDs and explicit selectors.",
   "not_a_complete_market_audit": true,
-  "competitor_count": 10,
-  "menu_observation_count": 52,
-  "count_semantics": "Channel-specific observations, not unique SKUs. Includes 4 Yobi search-index records that are not live verified. Extras are separate.",
+  "competitor_count": 11,
+  "menu_observation_count": 60,
+  "count_semantics": "Channel-specific observations, not unique SKUs. Includes 4 Yobi search-index records that are not live verified. Extras are separate. Wasabist has 8 detailed menu anchors; category statistics, overlapping named-set list and 11 sauces are separate and not added to this count.",
   "competitors": [
     {
       "id": "fabrika-rollov-volgodonsk",
@@ -546,6 +546,67 @@
         "yandex_eda": {
           "url": null,
           "status": "not_identified; not evidence of absence"
+        }
+      }
+    },
+    {
+      "id": "wasabist-volgodonsk",
+      "name": "WASABIST / Васабист",
+      "aliases": [
+        "Васаби",
+        "Вассабист"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "wasabi-current.json",
+          "selector": "competitor"
+        }
+      ],
+      "menu_observations": 8,
+      "coverage": {
+        "menu": "8 detailed anchors; category price statistics from current public HTML; partial catalog",
+        "offers": "5 named sets listed; no arbitrary-cart promotion or eligibility test",
+        "reviews": "not_collected",
+        "design": "not visually inspected"
+      },
+      "channels": {
+        "website": {
+          "url": "https://volgodonsk.wasabist.ru/",
+          "status": "current_public_local_page_confirmed"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=com.wasabi.wasabi",
+          "status": "network_app_listing_confirmed; local offer names Wasabist app; branch/order flow not tested",
+          "source_ids": [
+            "wasabi_android",
+            "wasabi_offer"
+          ]
+        },
+        "ios": {
+          "url": null,
+          "status": "not_found_in_limited_official_store_search; not evidence of absence"
+        },
+        "vk": {
+          "url": "https://vk.com/wasabist_official",
+          "status": "network_link_in_current_site; not opened, local community not established"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.ru/maps/org/wasabist/86368420087",
+          "status": "official_outbound_local_link; card unread"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "third_party_route_lead_only; official local URL and current prices not verified",
+          "source_ids": [
+            "wasabi_eda_route_lead"
+          ],
+          "candidate_slug": "roly-na-pobede-bg38m"
         }
       }
     }

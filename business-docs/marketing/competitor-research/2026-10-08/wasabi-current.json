@@ -1,0 +1,977 @@
+{
+  "schema_version": 1,
+  "data_as_of": "2026-10-08",
+  "created_at": "2026-10-08T01:42:28+03:00",
+  "city": "Волгодонск",
+  "timezone": "Europe/Istanbul",
+  "scope": "Current direct-channel public menu anchor sample and price-tier evidence for one additional competitor; not complete audit.",
+  "sources": {
+    "wasabi_home": {
+      "url": "https://volgodonsk.wasabist.ru/",
+      "source_kind": "official_public_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:39:23+03:00",
+      "timezone": "Europe/Istanbul",
+      "http_status": 200,
+      "sha256": "7c4380fcaf4121a8cf3c6525070d95ea7848ff21f59387ba019aa9484e0b14b1",
+      "captured_bytes": 1411869,
+      "branch_context": "Волгодонск, б-р Великой Победы, 40",
+      "evidence_note": "Raw HTML retained temporarily; omitted from portable registry. Published cards parsed read-only, no account or cart actions."
+    },
+    "wasabi_android": {
+      "url": "https://play.google.com/store/apps/details?id=com.wasabi.wasabi",
+      "source_kind": "official_app_store_web",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day",
+      "cache_note": "Web tool reports crawl last month; listing says updated 2026-06-01. Local ordering functionality not tested."
+    },
+    "wasabi_offer_index": {
+      "url": "https://volgodonsk.wasabist.ru/doc/publichnaya-oferta.html",
+      "source_kind": "official_search_index",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "published_at": "2025-11-09",
+      "cache_note": "Search result reports crawled three weeks ago; direct web tool open cache miss, public HTML fetch attempted separately."
+    },
+    "wasabi_map_link": {
+      "url": "https://yandex.ru/maps/org/wasabist/86368420087",
+      "source_kind": "official_site_outbound_link",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:39:23+03:00",
+      "note": "Link found in current official local website. Web tool open cache miss; map contents and rating not collected."
+    },
+    "wasabi_eda_route_lead": {
+      "url": "https://eda7.ru/volgodonsk/rest/roly-na-pobede-bg38m/menu/3028825943_-apechennaya-ila-assorti/",
+      "source_kind": "third_party_search_result_discovery_only",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "note": "Historical/third-party 395 RUB is NOT a current Yandex Eda price; only a possible restaurant slug lead."
+    },
+    "owner_20261008": {
+      "url": null,
+      "source_kind": "owner_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "note": "User observations passed by main agent. Independently unverified except specifically matched published menu claims."
+    },
+    "wasabi_offer": {
+      "url": "https://volgodonsk.wasabist.ru/doc/publichnaya-oferta.html",
+      "source_kind": "official_public_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:41:14+03:00",
+      "timezone": "Europe/Istanbul",
+      "http_status": 200,
+      "sha256": "17612a1d7cef2b5544ff688839eae485d84ec6279fbd7f50592d0b6cc199cfcb",
+      "captured_bytes": 65471,
+      "evidence_note": "Temporary raw capture omitted from portable registry.",
+      "published_at": "2025-11-09"
+    },
+    "wasabi_sauces": {
+      "url": "https://volgodonsk.wasabist.ru/shop/sous.html",
+      "source_kind": "official_public_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:41:14+03:00",
+      "timezone": "Europe/Istanbul",
+      "http_status": 200,
+      "sha256": "b7d2db3295f017538de63893a822475cab1bc17ebf7d0ffe5bdde68eceeab3be",
+      "captured_bytes": 92863,
+      "evidence_note": "Temporary raw capture omitted from portable registry."
+    }
+  },
+  "competitor": {
+    "id": "wasabist-volgodonsk",
+    "name": "WASABIST / Васабист",
+    "aliases": [
+      "Васаби",
+      "Вассабист"
+    ],
+    "city": "Волгодонск",
+    "identity_confidence": "high; local official subdomain, address and phones agree",
+    "outlets": [
+      {
+        "address": "Волгодонск, б-р Великой Победы, 40",
+        "phones": [
+          "+7 988 571-99-11",
+          "+7 908 517-99-11"
+        ],
+        "hours": "Ежедневно 11:00–23:00",
+        "source_ids": [
+          "wasabi_home"
+        ]
+      }
+    ],
+    "channels": {
+      "website": {
+        "url": "https://volgodonsk.wasabist.ru/",
+        "status": "current_public_local_page_confirmed"
+      },
+      "android": {
+        "url": "https://play.google.com/store/apps/details?id=com.wasabi.wasabi",
+        "status": "network_app_listing_confirmed; local offer names Wasabist app; branch/order flow not tested",
+        "source_ids": [
+          "wasabi_android",
+          "wasabi_offer"
+        ]
+      },
+      "ios": {
+        "url": null,
+        "status": "not_found_in_limited_official_store_search; not evidence of absence"
+      },
+      "vk": {
+        "url": "https://vk.com/wasabist_official",
+        "status": "network_link_in_current_site; not opened, local community not established"
+      },
+      "yandex_maps": {
+        "url": "https://yandex.ru/maps/org/wasabist/86368420087",
+        "status": "official_outbound_local_link; card unread"
+      },
+      "google_maps": {
+        "url": null,
+        "status": "not_identified"
+      },
+      "yandex_eda": {
+        "url": null,
+        "status": "third_party_route_lead_only; official local URL and current prices not verified",
+        "source_ids": [
+          "wasabi_eda_route_lead"
+        ],
+        "candidate_slug": "roly-na-pobede-bg38m"
+      }
+    },
+    "menu_categories": [
+      "Роллы Холодные",
+      "Роллы Теплые",
+      "Темпурные роллы",
+      "Наборы",
+      "Супер роллы",
+      "Фрайбоксы",
+      "Гигантская пицца 50 см",
+      "Пицца 33 см",
+      "Напитки",
+      "Соус"
+    ],
+    "menu_sample": [
+      {
+        "name": "ФИЛАДЕЛЬФИЯ АССОРТИ",
+        "composition_text": "Лосось, угорь, сыр Cremette, огурец, соус унаги, кунжут",
+        "weight_g": 220.0,
+        "price_rub": 399,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-1",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ФИЛАДЕЛЬФИЯ АССОРТИ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 181.36,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Роллы Холодные",
+        "ingredients_normalized": [
+          "Лосось",
+          "угорь",
+          "сыр Cremette",
+          "огурец",
+          "соус унаги",
+          "кунжут"
+        ]
+      },
+      {
+        "name": "ИЗУМРУДНЫЙ",
+        "composition_text": "Лосось гриль, угорь, огурец, лук зеленый, масаго зелёная, соус унаги",
+        "weight_g": 220.0,
+        "price_rub": 399,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-2",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ИЗУМРУДНЫЙ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 181.36,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Роллы Холодные",
+        "ingredients_normalized": [
+          "Лосось гриль",
+          "угорь",
+          "огурец",
+          "лук зеленый",
+          "масаго зелёная",
+          "соус унаги"
+        ]
+      },
+      {
+        "name": "ФИЛАДЕЛЬФИЯ КЛАССИК",
+        "composition_text": "Лосось, сыр Cremette",
+        "weight_g": 220.0,
+        "price_rub": 399,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-3",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ФИЛАДЕЛЬФИЯ КЛАССИК",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 181.36,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Роллы Холодные",
+        "ingredients_normalized": [
+          "Лосось",
+          "сыр Cremette"
+        ]
+      },
+      {
+        "name": "ВКУСНЫЙ УГОРЬ",
+        "composition_text": "Угорь, сыр Cremette, огурец, соус унаги, кунжут",
+        "weight_g": 220.0,
+        "price_rub": 399,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-4",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ВКУСНЫЙ УГОРЬ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 181.36,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Роллы Холодные",
+        "ingredients_normalized": [
+          "Угорь",
+          "сыр Cremette",
+          "огурец",
+          "соус унаги",
+          "кунжут"
+        ]
+      },
+      {
+        "name": "СЛИВОЧНЫЙ ЛОСОСЬ ГРИЛЬ",
+        "composition_text": "Лосось-гриль, сыр Cremette, огурец, сырный соус, унаги соус, кунжут",
+        "weight_g": 240.0,
+        "price_rub": 399,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-5",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: СЛИВОЧНЫЙ ЛОСОСЬ ГРИЛЬ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 166.25,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Роллы Теплые",
+        "ingredients_normalized": [
+          "Лосось-гриль",
+          "сыр Cremette",
+          "огурец",
+          "сырный соус",
+          "унаги соус",
+          "кунжут"
+        ]
+      },
+      {
+        "name": "Филадельфия унаги",
+        "composition_text": "Лосось, угорь, сыр Cremette, дайкон.",
+        "weight_g": 230.0,
+        "price_rub": 629,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-6",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: Филадельфия унаги",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 273.48,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Супер роллы",
+        "ingredients_normalized": [
+          "Лосось",
+          "угорь",
+          "сыр Cremette",
+          "дайкон"
+        ]
+      },
+      {
+        "name": "КОРОЛЕВСКАЯ ФИЛАДЕЛЬФИЯ",
+        "composition_text": "Лосось, креветка в темпуре, огурец, масаго красная, сыр Cremette",
+        "weight_g": 240.0,
+        "price_rub": 859,
+        "pieces_count": 8,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-7",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: КОРОЛЕВСКАЯ ФИЛАДЕЛЬФИЯ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 357.92,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Супер роллы",
+        "ingredients_normalized": [
+          "Лосось",
+          "креветка в темпуре",
+          "огурец",
+          "масаго красная",
+          "сыр Cremette"
+        ]
+      },
+      {
+        "name": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+        "composition_text": "Токио, Сузуки,Калифорния классика, Теплая классика с крабом",
+        "weight_g": 850.0,
+        "price_rub": 1189,
+        "pieces_count": 32,
+        "competitor_id": "wasabist-volgodonsk",
+        "sample_id": "wasabi-8",
+        "city": "Волгодонск",
+        "branch_context": "Б-р Великой Победы, 40",
+        "source_product_id": null,
+        "source_url": "https://volgodonsk.wasabist.ru/",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+        "observed_on": "2026-10-08",
+        "observed_at": "2026-10-08T01:39:23+03:00",
+        "channel": "official_website_direct",
+        "price_type": "displayed_menu_price; no strikethrough/eligibility captured",
+        "price_before_discount_rub": null,
+        "composition_kind": "published",
+        "composition_completeness": "Ingredient list omits rice/nori where expected; treat as published major ingredients, not a complete recipe.",
+        "ingredient_masses_g": null,
+        "observed_available": "listed_with_add_to_cart_control; stop-list and checkout not verified",
+        "rub_per_100g": 139.88,
+        "weight_basis": "whole_dish",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; use owner fixed-rice Teplo analog scenario when Teplo recipe and current purchase data are available",
+        "category": "Наборы",
+        "ingredients_normalized": [
+          "Токио",
+          "Сузуки",
+          "Калифорния классика",
+          "Теплая классика с крабом"
+        ]
+      }
+    ],
+    "price_policy": {
+      "claim": "A common 399 RUB price applies to 110 ordinary-roll cards in three captured categories; five Super Rolls are priced separately at 629–859 RUB.",
+      "ordinary_roll_counts": {
+        "Роллы Холодные": 49,
+        "Роллы Теплые": 49,
+        "Темпурные роллы": 12
+      },
+      "ordinary_roll_price_rub": 399,
+      "ordinary_roll_weight_range_g": [
+        200,
+        250
+      ],
+      "super_roll_count": 5,
+      "super_roll_price_range_rub": [
+        629,
+        859
+      ],
+      "source_ids": [
+        "wasabi_home"
+      ],
+      "channel": "official_website_direct",
+      "availability_limit": "Card presence does not verify live stock/checkout availability."
+    },
+    "category_statistics": [
+      {
+        "category": "Роллы Холодные",
+        "html_cards": 49,
+        "price_counts": {
+          "399": 49
+        },
+        "weight_range_g": [
+          200.0,
+          240.0
+        ],
+        "cards_with_weights": 49,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Роллы Теплые",
+        "html_cards": 49,
+        "price_counts": {
+          "399": 49
+        },
+        "weight_range_g": [
+          220.0,
+          240.0
+        ],
+        "cards_with_weights": 49,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Темпурные роллы",
+        "html_cards": 12,
+        "price_counts": {
+          "399": 12
+        },
+        "weight_range_g": [
+          230.0,
+          250.0
+        ],
+        "cards_with_weights": 12,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Наборы",
+        "html_cards": 45,
+        "price_counts": {
+          "1599": 3,
+          "1589": 5,
+          "1199": 2,
+          "1499": 5,
+          "4349": 1,
+          "1359": 1,
+          "1449": 3,
+          "1439": 3,
+          "1479": 2,
+          "1699": 1,
+          "1399": 3,
+          "1459": 2,
+          "999": 1,
+          "1099": 3,
+          "1799": 2,
+          "1119": 1,
+          "1429": 1,
+          "2629": 1,
+          "1189": 1,
+          "2389": 1,
+          "1989": 2,
+          "1969": 1
+        },
+        "weight_range_g": [
+          850.0,
+          1684.0
+        ],
+        "cards_with_weights": 11,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Супер роллы",
+        "html_cards": 5,
+        "price_counts": {
+          "859": 2,
+          "629": 2,
+          "699": 1
+        },
+        "weight_range_g": [
+          230.0,
+          250.0
+        ],
+        "cards_with_weights": 5,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Фрайбоксы",
+        "html_cards": 7,
+        "price_counts": {
+          "1299": 2,
+          "999": 4,
+          "1099": 1
+        },
+        "weight_range_g": [
+          850.0,
+          1000.0
+        ],
+        "cards_with_weights": 7,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Гигантская пицца 50 см",
+        "html_cards": 33,
+        "price_counts": {
+          "1099": 33
+        },
+        "weight_range_g": [
+          1200.0,
+          1200.0
+        ],
+        "cards_with_weights": 33,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Пицца 33 см",
+        "html_cards": 42,
+        "price_counts": {
+          "699": 42
+        },
+        "weight_range_g": [
+          650.0,
+          650.0
+        ],
+        "cards_with_weights": 42,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      },
+      {
+        "category": "Напитки",
+        "html_cards": 3,
+        "price_counts": {
+          "99": 3
+        },
+        "weight_range_g": null,
+        "cards_with_weights": 0,
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "scope": "cards embedded in captured homepage HTML; not audited sellable SKU count"
+      }
+    ],
+    "offer_observations": [
+      {
+        "name": "ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+        "type": "named_bundle_product",
+        "price_rub": 1189,
+        "weight_g": 850.0,
+        "pieces_count": 32,
+        "status": "listed_product; not proof of arbitrary-roll basket discount",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ЧЕТЫРЕ ПО ЦЕНЕ ТРЕХ",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "eligibility": null,
+        "note": "Bundle title advertises a value mechanism, but savings versus separately priced constituents not calculated."
+      },
+      {
+        "name": "ПЯТЬ ПО ЦЕНЕ ЧЕТЫРЕХ",
+        "type": "named_bundle_product",
+        "price_rub": 1589,
+        "weight_g": 1200.0,
+        "pieces_count": 40,
+        "status": "listed_product; not proof of arbitrary-roll basket discount",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ПЯТЬ ПО ЦЕНЕ ЧЕТЫРЕХ",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "eligibility": null,
+        "note": "Bundle title advertises a value mechanism, but savings versus separately priced constituents not calculated."
+      },
+      {
+        "name": "СЕМЬ ПО ЦЕНЕ ШЕСТИ",
+        "type": "named_bundle_product",
+        "price_rub": 2389,
+        "weight_g": 1400.0,
+        "pieces_count": 56,
+        "status": "listed_product; not proof of arbitrary-roll basket discount",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: СЕМЬ ПО ЦЕНЕ ШЕСТИ",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "eligibility": null,
+        "note": "Bundle title advertises a value mechanism, but savings versus separately priced constituents not calculated."
+      },
+      {
+        "name": "БЕРИ ШЕСТЬ ПЛАТИ ЗА ПЯТЬ",
+        "type": "named_bundle_product",
+        "price_rub": 1989,
+        "weight_g": 1450.0,
+        "pieces_count": 48,
+        "status": "listed_product; not proof of arbitrary-roll basket discount",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: БЕРИ ШЕСТЬ ПЛАТИ ЗА ПЯТЬ",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "eligibility": null,
+        "note": "Bundle title advertises a value mechanism, but savings versus separately priced constituents not calculated."
+      },
+      {
+        "name": "ДВА В ПОДАРОК",
+        "type": "named_bundle_product",
+        "price_rub": 1599,
+        "weight_g": null,
+        "pieces_count": 48,
+        "status": "listed_product; not proof of arbitrary-roll basket discount",
+        "source_ids": [
+          "wasabi_home"
+        ],
+        "source_locator": "h4 exact text: ДВА В ПОДАРОК",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "eligibility": null,
+        "note": "Bundle title advertises a value mechanism, but savings versus separately priced constituents not calculated."
+      }
+    ],
+    "offer_coverage": "Named bundles and menu pricing inspected. Separate current promotion/loyalty rules not found in captured homepage; no claim that none exist.",
+    "delivery": {
+      "fee_rub": null,
+      "free_threshold_rub": null,
+      "minimum_order_rub": null,
+      "geographic_zones": null,
+      "public_instruction": "Стоимость доставки уточняйте у оператора.",
+      "accept_orders_until": "22:45",
+      "source_ids": [
+        "wasabi_home",
+        "wasabi_offer"
+      ],
+      "note": "Operator was not contacted; fees remain unknown. Offer describes delivery or pickup, time/cost confirmed by phone after order.",
+      "offer_summary": "Current published offer states delivery/pickup and phone confirmation of assortment, price and delivery interval; delivery tariff depends on courier tariffs and weight, stated during ordering. No amount or free threshold verified."
+    },
+    "extras": {
+      "condiments_included": null,
+      "extra_sauce_prices": [
+        {
+          "name": "Барбекю соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Бургерный соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Васаби",
+          "price_rub": 40,
+          "weight_g": 5,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Имбирь",
+          "price_rub": 40,
+          "weight_g": 15,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Кетчуп",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Ореховый соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Свит-чили соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Соевый соус",
+          "price_rub": 20,
+          "weight_g": 30,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Спайси соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Сырный Соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        },
+        {
+          "name": "Терияки соус",
+          "price_rub": 60,
+          "weight_g": 50,
+          "channel": "official_website_direct",
+          "source_ids": [
+            "wasabi_sauces"
+          ],
+          "observed_on": "2026-10-08"
+        }
+      ],
+      "status": "11 extra condiment cards captured; inclusion in base order remains unknown"
+    },
+    "usp_claims": [
+      {
+        "claim": "Единая цена 399 ₽ для обычных роллов; отдельная премиальная категория.",
+        "status": "inference_from_current_published_price_tiers",
+        "source_ids": [
+          "wasabi_home"
+        ]
+      },
+      {
+        "claim": "Пицца 33 см за 699 ₽ и 50 см за 1099 ₽ в опубликованных категориях.",
+        "status": "current_menu_observation",
+        "source_ids": [
+          "wasabi_home"
+        ]
+      }
+    ],
+    "owner_observations": [
+      {
+        "statement": "Формат фиксированной цены похож на Фабрику роллов.",
+        "status": "owner_comparison; current 399-ruble tier independently supported, equivalence to Factory not independently measured",
+        "source_ids": [
+          "owner_20261008",
+          "wasabi_home"
+        ]
+      },
+      {
+        "statement": "Роллы поменьше, при этом много рыбы и начинки.",
+        "status": "owner_observation; published total weights verified but actual ingredient shares and compared baseline not measured",
+        "source_ids": [
+          "owner_20261008"
+        ]
+      },
+      {
+        "statement": "Ролл с угрём и лососем стоит около 399 ₽.",
+        "status": "specific_published_menu_match_found: Филадельфия ассорти and Изумрудный, both 399 RUB / 220 g; exact dish meant by owner not assumed",
+        "source_ids": [
+          "owner_20261008",
+          "wasabi_home"
+        ]
+      },
+      {
+        "statement": "Стабильный поток заказов в будни и выходные.",
+        "status": "owner_observation; no competitor sales/order count access, not independently verified",
+        "source_ids": [
+          "owner_20261008"
+        ]
+      },
+      {
+        "statement": "Предположение, что клиенты готовы терпеть недостатки сервиса ради предложения.",
+        "status": "hypothesis_to_test; no causal or quantified evidence collected",
+        "source_ids": [
+          "owner_20261008"
+        ]
+      }
+    ],
+    "design": {
+      "status": "HTML-only inspection; visual style not evaluated in a rendered page"
+    },
+    "reviews": {
+      "sample_n": 0,
+      "samples": [],
+      "status": "not_collected_in_this_subtask; owner observations are not a review corpus"
+    },
+    "economics": {
+      "actual_competitor_cost_rub": null,
+      "ingredient_masses_g": null,
+      "model_status": "not_calculated_in_this_source_pass",
+      "next_method": "Use Teplo recipe quantities × competitor/Teplo total-weight ratio except rice unchanged, per owner-approved fixed-rice scenario; preserve mass mismatch and low/base/high assumptions.",
+      "limitations": "Published composition often omits rice/nori; no competitor fish quantity measured. Dish weight cannot prove fish share."
+    },
+    "channel_commission_context": {
+      "owner_report_on": "2026-10-08",
+      "market_range": {
+        "min": 0.25,
+        "max": 0.35
+      },
+      "teplo_reported_rate": 0.25,
+      "wasabist_actual_rate": null,
+      "source_ids": [
+        "owner_20261008"
+      ],
+      "note": "Owner information, not verified tariffs. No Yandex Eda price collected here; do not compare website price to an aggregator price without channel separation."
+    },
+    "coverage": {
+      "identity": "confirmed",
+      "menu_navigation": "captured",
+      "homepage_cards_parsed": 245,
+      "detailed_anchor_cards_saved": 8,
+      "complete_sellable_catalog": "not_claimed",
+      "offers": "partial_named_bundles_only",
+      "delivery": "partial_hours_only_fee_unknown",
+      "apps": "android_listing; iOS_unresolved",
+      "reviews": "not_collected",
+      "actual_recipe_quantities": "unknown",
+      "visual_design": "not_evaluated",
+      "extra_condiment_cards_saved": 11,
+      "sauces": "all 11 product blocks in captured sauce-category HTML; checkout not tested"
+    },
+    "gaps": [
+      "Exact ingredient grams and recipe yields",
+      "Current promotion/loyalty details beyond listed bundle products",
+      "Delivery fee/minimum/zones and condiment inclusion",
+      "iOS app identity and local app functionality",
+      "Current Eda prices and authentic review-level sample",
+      "Measured sales traffic or customer reasons for repeat purchase",
+      "Rendered visual-style inspection"
+    ],
+    "source_snapshot_note": "Homepage embeds 245 menu product blocks; sauce page adds 11 condiment blocks. Statistics describe captured HTML, not guaranteed available SKUs or complete variant audit."
+  },
+  "finalized_at": "2026-10-08T01:43:53+03:00"
+}
