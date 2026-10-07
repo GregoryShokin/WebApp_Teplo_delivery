@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "audit_date": "2026-10-07",
-  "audited_commit": "170833b86629946237148397492f13ae6ab56a5c",
-  "scope": "Code audit of payroll methods and economic sources; not confirmation of live rates or accounting completeness.",
+  "audited_commit": "70cfd8a244edf89d8eb9ba747e4d825bca4b0db4",
+  "scope": "Targeted payroll, P&L, month selection, sales populations and read-only route audit; not confirmation of live rates, complete-module correctness or accounting completeness.",
   "files": [
     {
       "path": "apps/api/app/services/payroll_calculator.py",
@@ -267,6 +267,174 @@
     {
       "path": "apps/api/app/services/kassa/iiko_cashshift_sync.py",
       "sha256": "627084f93390c9b1d5a17be138ceb46751d69988a076f707b87ab22c56334820"
+    },
+    {
+      "path": "apps/api/app/services/pnl/formulas.py",
+      "sha256": "cf55dfc2a424296d5736c5fc95b4e92e1acaa04a01eae41ec36bf923cec43666"
+    },
+    {
+      "path": "apps/api/app/services/pnl/types.py",
+      "sha256": "c4c0a1c4b11e414c3fc68a4086aa77f948acdadd2dd7206afa559169b53c2174"
+    },
+    {
+      "path": "apps/api/app/services/pnl/drill.py",
+      "sha256": "69093ce6a51ad987ed9e3bb99e60025fff17c02e49bfcbc00670a1724941b267"
+    },
+    {
+      "path": "apps/api/app/services/pnl/ledgers.py",
+      "sha256": "4967bb9ea5020b3dddc04cb038198861e6fa7a3a05190c07b920cb1041b9a909"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/iiko.py",
+      "sha256": "93a5fca8ab67f7e4147c9606cd9cf56a1a0e07a3bfd9c60fa04ab3c497be2d33"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/acquiring.py",
+      "sha256": "b1f1d672d968c68cae171a1cb5fb42fa973734757c4e52c262c1baef8938341b"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/inventory.py",
+      "sha256": "4d23fbd03e5abbb05369957a18465a5784d990bb7e401144a1f2eddd88fe491c"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/fixed_assets.py",
+      "sha256": "9e907f496eb53611be75996d7fc7a9b8f46820dfb7271d056878dfa8bf5201ac"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/cashflow.py",
+      "sha256": "732a9bd553454dfc8dd8500f4c00c160f9210fc5827882c0303153c779c0eeff"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/recognition.py",
+      "sha256": "aab11e2d1fa927d8222a68b2efc7c643a5a896035ddcd676c788bf7685bcd043"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/manual.py",
+      "sha256": "eda0ee3964480bf9341ed37bbf9bd3919cf76cb0eb90abe79dca93c4e08cd9fe"
+    },
+    {
+      "path": "apps/api/app/services/accounting_periods.py",
+      "sha256": "0a99f99d0a3c600478dd3d22f6a4b1798902d653af23bd968ee32a90bbfb53dd"
+    },
+    {
+      "path": "apps/api/app/services/accounting_readiness.py",
+      "sha256": "f7f27804d3cefa10a98c6b82aa69bb9c484e8d3dd96835411b947c0242fc6bba"
+    },
+    {
+      "path": "apps/api/app/services/expense_recognition_report.py",
+      "sha256": "de5820b9de0ac82ac8f566b38111101da4b2addcd49a332b3e05bb2cfe61143c"
+    },
+    {
+      "path": "apps/api/app/services/lease_accruals.py",
+      "sha256": "f06210caa850a1ec261cb7ac1b145d1813d4745a50fe58c029e4632cf96bd3b6"
+    },
+    {
+      "path": "apps/api/app/services/subscription_accruals.py",
+      "sha256": "dc49c268c2b262e63cdae1ecc6bd00ad7ebd28a22c95756b0d43881c2804f3f8"
+    },
+    {
+      "path": "apps/api/app/services/fixed_assets.py",
+      "sha256": "8dab9dcb649d66591193a8cd9f46632e7de3725cbee7147f56546f619f95d52a"
+    },
+    {
+      "path": "apps/api/app/services/asset_balance.py",
+      "sha256": "aa75ce752aa996302733c4c94f8e120efaf69a81c7f157c4c29b6ed6ddd16e01"
+    },
+    {
+      "path": "apps/api/app/services/asset_disposal.py",
+      "sha256": "7b6dae883263acdd3fbaddf6979d44e94f7d197387b6f8e6a888264008d84573"
+    },
+    {
+      "path": "apps/api/app/services/taxes/repository.py",
+      "sha256": "e2c8fb279df4d7c65e43f13c7abedce014edc07db4cbb45d3ddc6f66627d4122"
+    },
+    {
+      "path": "apps/api/app/jobs/pnl_iiko_sync_job.py",
+      "sha256": "1cb401d5977bd727d9e386a2fe1480ba651227189b297c33261323c23f295aa9"
+    },
+    {
+      "path": "apps/api/app/jobs/depreciation_job.py",
+      "sha256": "8e75bb9b9c7c9d7fa2979e6786fc9da5fdce286725007284917144e8a32d8399"
+    },
+    {
+      "path": "apps/api/app/models/pnl.py",
+      "sha256": "b35f0ac8827793549f7edd202232d7bea8746f164effcf87c14061fd938ae2c3"
+    },
+    {
+      "path": "apps/api/app/models/dds.py",
+      "sha256": "dbc6510ddd51830d7719a89000fc8a909e10e19891ce0ae5bf69a5a0521491cc"
+    },
+    {
+      "path": "apps/api/app/models/counterparty_payable.py",
+      "sha256": "d9113479f06dbb61a32d64b856bc9761efa5458807be36c28f6160be49e31c05"
+    },
+    {
+      "path": "apps/api/app/models/fixed_asset.py",
+      "sha256": "b303c79b8050aa9ff2d0733c2189b9c053bbb0943ce693e05d469ec52ebf606e"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/accounting_suppliers.py",
+      "sha256": "01a15992a4b3af40766ab874de33025185405e64806a4873d6a8a60fd0e04122"
+    },
+    {
+      "path": "apps/api/alembic/versions/0251_pnl_lines.py",
+      "sha256": "c65a1196e404260a802bfcca235a0d7b11f9eb06a09f2e7483153f0da72413e4"
+    },
+    {
+      "path": "apps/api/alembic/versions/0252_pnl_source_rules.py",
+      "sha256": "da47f21c559bb0cb76df4e4d718c6d02f699f7e7a9bb3939f0dcbc265823dfeb"
+    },
+    {
+      "path": "apps/api/alembic/versions/0262_pnl_partner_commission.py",
+      "sha256": "945381cc4a20f2f7d26cf07629ff513d6508d74e80bdd8836ccc709fa2ef7be3"
+    },
+    {
+      "path": "apps/api/alembic/versions/0266_pnl_workup_memo.py",
+      "sha256": "6e5016b31d0fdf1b13f740b89e07ad5be9d4dd285c902cd711327c7d16cb99b7"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_sales_day_hour.py",
+      "sha256": "7ca332237db579fcf710f4b9741334af19d69c681a6d84efa4565a7b74084630"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_orders_delivery.py",
+      "sha256": "b5477f7a0ab3332e0edf93d1ddd9012740ab7bd144304ce05953e5912f2390df"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_ops.py",
+      "sha256": "1b043362614865acb6bd9a56d7b0b01da05d884efbe96cd502a7d88877afc5d4"
+    },
+    {
+      "path": "integrations/iiko/scripts/export_revenue_by_direction.py",
+      "sha256": "b544871e517486f2a487af40ecdc680e719cefb44fc0d801e7c88f985f019c78"
+    },
+    {
+      "path": "apps/api/app/services/courier_sync.py",
+      "sha256": "93cae6fa2973f906c6ddf92eedea749ed6b07f9deae9c170667baf44ea6e1d32"
+    },
+    {
+      "path": "apps/api/app/services/couriers/iiko_olap_sync.py",
+      "sha256": "0165a8b449bcdff4c10fc3acadc9c36cb47e788f2e88c7c6735f716d5fe2a0b5"
+    },
+    {
+      "path": "apps/api/app/services/shift_ledger.py",
+      "sha256": "ae353fb79fcc82dbe247e48160739461feef8032f636802d55680efc4cc9ee7e"
+    },
+    {
+      "path": "apps/api/app/services/shift_schedule_service.py",
+      "sha256": "18c03651aaf7f1462523248dbd8b8c706e8db70de966261818e85a423e22dd58"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/couriers.py",
+      "sha256": "878e02fc19e93e1c8e55f60fb1d7007175946632b86dd6f327a9e9a14765c81b"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/shift_schedule.py",
+      "sha256": "9f787ecd31e59410d4e3550692ea666ed2c246da062102745aec17cc6030d03a"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/shifts.py",
+      "sha256": "fcb23f57478a57f42d02539a2daac7305bbb67883297b28afac82dd12cf0c10d"
     }
   ]
 }
