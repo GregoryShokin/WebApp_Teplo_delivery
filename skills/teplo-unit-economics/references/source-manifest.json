@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-10-07",
+  "audited_commit": "170833b86629946237148397492f13ae6ab56a5c",
+  "scope": "Code audit of payroll methods and economic sources; not confirmation of live rates or accounting completeness.",
+  "files": [
+    {
+      "path": "apps/api/app/services/payroll_calculator.py",
+      "sha256": "a730e2347cfddfe1bf2b942c6de984b778c306ee5b70f00a6cf1120266c88a07"
+    },
+    {
+      "path": "apps/api/app/services/payroll_percent.py",
+      "sha256": "e4e6f46e51a153849bccbfc2e86ba20bb44609879c205e8b8b8f06328149a295"
+    },
+    {
+      "path": "apps/api/app/services/payroll_config.py",
+      "sha256": "a44df5d5b4bbf71973bb2ed2d5efe15af95dcef5811bd41b569a10de48fd88e1"
+    },
+    {
+      "path": "apps/api/app/services/payroll_runner.py",
+      "sha256": "6c13504413691d59577385947b6d3b1030a4853333d6756921338681108099b6"
+    },
+    {
+      "path": "apps/api/app/services/payroll_admin.py",
+      "sha256": "fd7fc1bd492113eb3957b5dc2d441ba3158bdb935412bc9619317d3967d32258"
+    },
+    {
+      "path": "apps/api/app/services/payroll_rounding.py",
+      "sha256": "5e92fbd84000b7dc98357617e54134330ee34b25f14954150f5a3b2bd75b5326"
+    },
+    {
+      "path": "apps/api/app/services/payroll_aggregate_service.py",
+      "sha256": "fe55dc6134421891ed6de8973f1f026ca203457652d6d06bc243d878423be9b8"
+    },
+    {
+      "path": "apps/api/app/services/shift_ledger_bonus.py",
+      "sha256": "de212639b469044547cecb0a04e2beec7d748c270fa8a5167ffc6b0fc0eb3740"
+    },
+    {
+      "path": "apps/api/app/services/shift_cost_estimate_service.py",
+      "sha256": "bf4a09e95497bb3b9ad21849b15e3127da8b16c019a8e146ca29c95a5daa3bcf"
+    },
+    {
+      "path": "apps/api/app/services/payroll_forecast_run_service.py",
+      "sha256": "f5da1052639909de32b1b88201cf0577c4b40351c970fedcd62c2d90ed9aa3c6"
+    },
+    {
+      "path": "apps/api/app/services/revenue_forecast_service.py",
+      "sha256": "4c444a378e774de887124792162cad621c587352e67b6b8973e15cdcc026d86f"
+    },
+    {
+      "path": "apps/api/app/services/iiko_revenue.py",
+      "sha256": "d680d06b76c6d1e2afc3d7af967cc1ca6cf5b9f9931189fea5f4325f20426057"
+    },
+    {
+      "path": "apps/api/app/services/iiko_location.py",
+      "sha256": "817f583b668db7fa3ebadbf711fc3560ca1c10e87fd581f444b528591eefe43e"
+    },
+    {
+      "path": "apps/api/app/services/employee_assignments.py",
+      "sha256": "8150f8c193794d46723a902b514bb008c4ab74d7d6c41ff70c4c72e6b3ccff9e"
+    },
+    {
+      "path": "apps/api/app/services/employee_effective_events.py",
+      "sha256": "bd94c2969839a1c7d0843427ab3622490c6feb169df99c327426919af89fa397"
+    },
+    {
+      "path": "apps/api/app/services/position_registry.py",
+      "sha256": "69a1f5989adc2347108409c0e4a92a6cc9f477c76e45789b2aee4622385cd565"
+    },
+    {
+      "path": "apps/api/app/services/seniority_allowance_service.py",
+      "sha256": "5e2aafa3c1bee98e5219eb22a7afca9a3ea15768cfa00d06601be8a6a66f4ba9"
+    },
+    {
+      "path": "apps/api/app/services/seniority_allowance_resolver.py",
+      "sha256": "560902974e7a6a7ea972b636bc37884deee306a376c0fdaebd098dfb09f4c18a"
+    },
+    {
+      "path": "apps/api/app/services/vacation_service.py",
+      "sha256": "ebb3353ced9d81b1185e9647ae4ba9a057e81810e320f6e53376398725afae06"
+    },
+    {
+      "path": "apps/api/app/services/payroll_obligations.py",
+      "sha256": "2115d7a9bd289b5532d7a6319d5c876fa337e4312c8e44df5757b516e0256095"
+    },
+    {
+      "path": "apps/api/app/services/payroll_reserves.py",
+      "sha256": "9edf3d8df548049b3ba3d93e6d782d8bf99318400130ad312d959de0b4a35016"
+    },
+    {
+      "path": "apps/api/app/services/payroll_advance_recovery.py",
+      "sha256": "674594e3a77f0d0b132ecc13b55c475a4f191aca3e2f6be590a4cebaba6e20a8"
+    },
+    {
+      "path": "apps/api/app/services/payroll_employee_payout_offset.py",
+      "sha256": "e267f4dc1b3015e872c39cdc64141bc856ed97e57a4120019c0107a6b8e313ee"
+    },
+    {
+      "path": "apps/api/app/services/payroll_payout_allocation.py",
+      "sha256": "9ba42849647f7913d8a8b97ead409ec31095a0dcb3fee3bcce27bbee20fac4e1"
+    },
+    {
+      "path": "apps/api/app/services/payroll_personal_report.py",
+      "sha256": "e534ee947541a0b9b04fae950431df576f19908893acf8a03d3c13af7345f308"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/payroll.py",
+      "sha256": "c25fc48ebd3df5985de77089d9161b8c16d1983da3795bbb38562ae3290d3487"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/taxes.py",
+      "sha256": "3e36da5128f92b9436c04102350fef919ac21e891b6a049bd006add8b45205ce"
+    },
+    {
+      "path": "apps/api/app/services/pnl/sources/deposits.py",
+      "sha256": "5fa72881e8e946d34717d47aef3ed78560527e890c643de1cebd7176466fd96c"
+    },
+    {
+      "path": "apps/api/app/services/pnl/iiko_sync.py",
+      "sha256": "d06ab35e2528c8f52af05d126ac72448f8f2b4f38792e067bf3554941fc6b3c0"
+    },
+    {
+      "path": "apps/api/app/services/pnl/projector.py",
+      "sha256": "1d9e826e9d9212b2aa95bd2a55652115ffb14e891bea6b3162e26f46f594ebd7"
+    },
+    {
+      "path": "apps/api/app/services/taxes/official_payroll.py",
+      "sha256": "cb0a3d6223ce1731ebda4260eb08e0b4aa3e2c2917ef88b11657a49864427d04"
+    },
+    {
+      "path": "apps/api/app/services/taxes/engine.py",
+      "sha256": "8066d94376132ccdd8f9c25dbc29e1ec5183e81071872c7a6b05dab5d351885c"
+    },
+    {
+      "path": "apps/api/app/services/couriers/deposit_service.py",
+      "sha256": "d850c6b64425f4a09996ad1627d61bbaa62e10d592b6b19c30c0bdfa8d69a72a"
+    },
+    {
+      "path": "apps/api/app/services/couriers/kpi_service.py",
+      "sha256": "09967902b16d9b3f65e87976623fde15573df160e82b71959168a021a7fcecd6"
+    },
+    {
+      "path": "apps/api/app/services/couriers/evaluation_service.py",
+      "sha256": "1d38704e8611a2868204e70c320d4867726c41519737d3c98b3f612d6ed07cb5"
+    },
+    {
+      "path": "apps/api/app/services/couriers/shift_day_service.py",
+      "sha256": "f6980e94769a151140295e594321e1c9b36568a30dd649dc76f284d9388693d7"
+    },
+    {
+      "path": "apps/api/app/models/payroll.py",
+      "sha256": "5c569904f8815b3c15cd8ecb717aee338344cbffdcf2ace75e96c214e5c0c9d0"
+    },
+    {
+      "path": "apps/api/app/models/employee.py",
+      "sha256": "c0bcd8e5f59ddf02db4eb2247e9110bd10ecadfe669a44e2e118d169c64a71f9"
+    },
+    {
+      "path": "apps/api/app/models/settings.py",
+      "sha256": "e44c7ae5af3249e6318837b11c7178e17dddf281e8c1acab03793de469abfb99"
+    },
+    {
+      "path": "apps/api/app/models/tax.py",
+      "sha256": "fecfac808c69c3a65d93ce517a12f87c4f8f0f9d1985c6da0dfe33470ca0e68f"
+    },
+    {
+      "path": "apps/api/app/models/courier_schedule.py",
+      "sha256": "ac653b06aaf5bb99a1f2c208e434b91860148baa6ca8a2c7f3f26743598fcc7d"
+    },
+    {
+      "path": "apps/api/app/models/courier_substitution.py",
+      "sha256": "1cacebd14804210fc2e619753a1b2a0264fe27932e0b49ddf3a2a485322601a0"
+    },
+    {
+      "path": "apps/api/app/models/courier_deposit.py",
+      "sha256": "f83f661544ef9ec7357b245e7ee25d5cd35c701b03a5704cb40054f2147ca047"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/payroll.py",
+      "sha256": "04e9c032906cc783cfecc300027836edf46c786e5b5214e1fc8500ad9b6d9294"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/payroll_admin.py",
+      "sha256": "f74bc8ac0bfa5bca06841cf51d7327765a0e6190d1d575003a4e17cba6097c63"
+    },
+    {
+      "path": "apps/api/app/api/v1/payroll_config.py",
+      "sha256": "5e51eb7de70501886366ad032cd48a50467eecbf5c33ea2ba048aa08f1114139"
+    },
+    {
+      "path": "apps/api/app/api/v1/routes/reports_pnl.py",
+      "sha256": "dc51b5dd1c595f148cdabc1dc6c2af6d5009b42dfffe5da50296befff521d953"
+    },
+    {
+      "path": "apps/api/tests/test_payroll.py",
+      "sha256": "275a584bbc552c3e39b50e8b454777afe2a71365930476eb5f586620922fd6d5"
+    },
+    {
+      "path": "apps/api/tests/test_payroll_admin.py",
+      "sha256": "874ab4ee7c1924e7b3c66b7cb27e9d35c07fe7a46e647a84ca967c613d8017c5"
+    },
+    {
+      "path": "apps/api/tests/test_shift_cost_estimate.py",
+      "sha256": "29e946d8e00d80b83fffbff1592191eb0b7e4887b9a79d4e00d831ac7c002fc6"
+    },
+    {
+      "path": "apps/api/tests/test_seniority_allowance.py",
+      "sha256": "f5e6b98911bd9a4fda3959d4426687fd43b0a439b85c823e8c493b194aa718bf"
+    },
+    {
+      "path": "apps/api/tests/test_payroll_rounding.py",
+      "sha256": "6becd5e11fb17f93261d327390fa6753755d003ca1003b3cdad1900478311dfe"
+    },
+    {
+      "path": "apps/api/tests/test_payroll_earned_as_of.py",
+      "sha256": "767ffc0d078dd24cc3d4aa531a946c561327dd53cde0f0aa4444b06754eb5d08"
+    },
+    {
+      "path": "apps/api/tests/test_taxes_official_payroll.py",
+      "sha256": "aeababf6963051a12fff6337ec446de1343ece2e4dd056cec2d7a2c05a4672ee"
+    },
+    {
+      "path": "apps/api/tests/test_pnl_ledgers.py",
+      "sha256": "56c4bdeb71c5f674a0738cd3edf96f84b979af39f76c85af005fb23291f332b0"
+    },
+    {
+      "path": "app-spec/modules/staff/payroll/couriers/spec.md",
+      "sha256": "f805d3531044f5aba90a0e1b170d40289396df9fe2d7b8e4766e3804ad7450e3"
+    },
+    {
+      "path": "apps/api/app/services/attendance_loader.py",
+      "sha256": "7beb2663ae59d805921968fcc4e56ff22bce67253f3a4bf85fe15876814d24be"
+    },
+    {
+      "path": "apps/api/app/services/accumulation_fund_service.py",
+      "sha256": "f9d68aa1cf9694b43727f9cc3a45a458b57b89660f06ce98c22e85b73b9569d5"
+    },
+    {
+      "path": "apps/api/tests/test_freelancer_temp_cards.py",
+      "sha256": "0fea3874ff2675a55caaeee72af41d97d2672b8babbcf85ba96e5c8b0d590c96"
+    },
+    {
+      "path": "apps/api/tests/test_freelancer_shift_settlement.py",
+      "sha256": "06fe76b6532292e9f98b18b421e6e604d69c2e86c2c387bdf4cbe763f2c241ca"
+    },
+    {
+      "path": "apps/api/app/services/payroll_adjustment_service.py",
+      "sha256": "ce6f2285f12c5070e9c74c66ea797b0eea10678736f648f5fff1e8c6c1a1ce02"
+    },
+    {
+      "path": "apps/api/app/services/payroll_freelancer_settlement.py",
+      "sha256": "10b4c7ba4ddd4ee8efaacc6c36602c918300f4c6a0d568599e4773ce63f9e2b5"
+    },
+    {
+      "path": "apps/api/app/services/couriers/shift_matching.py",
+      "sha256": "099d6a07757824f9d3810540182efa7fb764c19acda99eb772e18db2d718432b"
+    },
+    {
+      "path": "apps/api/app/services/payroll_payouts.py",
+      "sha256": "0b917bf31b5334791c2191129813706dd2fe177f0a8da3e1dd9946fb7b2da6c8"
+    },
+    {
+      "path": "apps/api/app/services/staff_taxonomy.py",
+      "sha256": "02e54ede55c94a322b0f20aec50ba5889472d65c99ca554a23c183ab56ceaa38"
+    },
+    {
+      "path": "apps/api/app/services/kassa/iiko_cashshift_sync.py",
+      "sha256": "627084f93390c9b1d5a17be138ceb46751d69988a076f707b87ab22c56334820"
+    }
+  ]
+}
