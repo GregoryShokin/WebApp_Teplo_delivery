@@ -1,0 +1,571 @@
+{
+  "schema_version": "1.0",
+  "city": "Волгодонск",
+  "observed_on": "2026-10-08",
+  "timezone": "Europe/Istanbul",
+  "scope": "Initial partial registry. Detail bundles preserve source-specific fields; this manifest provides stable competitor IDs and explicit selectors.",
+  "not_a_complete_market_audit": true,
+  "competitor_count": 10,
+  "menu_observation_count": 52,
+  "count_semantics": "Channel-specific observations, not unique SKUs. Includes 4 Yobi search-index records that are not live verified. Extras are separate.",
+  "competitors": [
+    {
+      "id": "fabrika-rollov-volgodonsk",
+      "name": "Фабрика роллов",
+      "aliases": [],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "ui-observations.json",
+          "selector": {
+            "competitors.competitor_id": "fabrika_rollov_volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 8,
+      "coverage": {
+        "menu": "partial",
+        "ingredient_compositions": "partial",
+        "offers": "not_checked",
+        "reviews": "product ratings only; text reviews not collected",
+        "design": "observed_native_app"
+      },
+      "channels": {
+        "website": {
+          "status": "not_found_in_this_pass",
+          "url": null
+        },
+        "app": {
+          "status": "observed_running_native",
+          "bundle_id": "ru.goulash.fabrikarollov",
+          "displayed_version": "1.66.20",
+          "store_url": null
+        }
+      }
+    },
+    {
+      "id": "nippon-volgodonsk",
+      "name": "Ниппон",
+      "aliases": [
+        "Суши Ниппон",
+        "Nippon"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "nippon-current.json",
+          "selector": {
+            "competitor_id": "nippon_volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 8,
+      "coverage": {
+        "menu": "partial",
+        "offers": "partial",
+        "reviews": "brand-controlled showcase with duplicate cards, not an independent corpus",
+        "design": "not_checked"
+      },
+      "channels": {
+        "website": {
+          "url": "https://nippon161.ru/",
+          "presence": "observed_live",
+          "identity_status": "strongly_corroborated_contacts; domain ownership not independently verified",
+          "identity_evidence": [
+            {
+              "url": "https://nippon161.ru/addresses/",
+              "type": "website_self_report",
+              "facts": "Курчатова48А/+79185149929; БВП45/+79081776999"
+            },
+            {
+              "url": "https://restaurantguru.ru/Nippon-Volgodonsk-3",
+              "type": "independent_directory",
+              "facts": "Совпадают бренд, Курчатова48А и телефон+79185149929",
+              "access": "web_search_index",
+              "source_update_date": "2026-06-06"
+            },
+            {
+              "url": "https://restaurantguru.ru/Nippon-Volgodonsk",
+              "type": "independent_directory",
+              "facts": "Совпадают бренд, БВП45 и телефон+79081776999",
+              "access": "web_search_index",
+              "source_update_date": "2026-06-16"
+            },
+            {
+              "url": "https://2gis.ru/volgodonsk/firm/70000001063260149",
+              "type": "independent_map_listing",
+              "facts": "Nippon, БВП45, два филиала",
+              "access": "web_search_index; direct_open_cache_miss",
+              "source_crawl_age": "9 months; stale for current operating status"
+            },
+            {
+              "url": "https://yandex.com/maps/11036/volgodonsk/house/prospekt_kurchatova_48a/YEsYdAdhQE0GQFptfXlzeHhjZg%3D%3D/",
+              "type": "independent_map_building_card",
+              "facts": "Суши Ниппон перечислен по Курчатова48А; это карточка здания, не прямая карточка организации",
+              "access": "web_search_index; direct_open_cache_miss",
+              "source_crawl_age": "last month"
+            }
+          ],
+          "official_domain_backlink_found": false
+        },
+        "app": {
+          "presence": "unknown",
+          "store_links_found_in_examined_pages": false,
+          "coverage": "Главная, доставка, адреса, отзывы, оферта; отсутствие ссылок не доказывает отсутствие приложения."
+        }
+      }
+    },
+    {
+      "id": "sushi-shef-volgodonsk",
+      "name": "Суши Шеф",
+      "aliases": [
+        "Sushi Shef"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "sushi-shef-volgodonsk"
+          }
+        },
+        {
+          "file": "ui-observations.json",
+          "selector": {
+            "competitors.competitor_id": "sushi_shef"
+          }
+        }
+      ],
+      "menu_observations": 8,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://sushi-shef.ru/",
+          "status": "verified"
+        },
+        "vk": {
+          "url": "https://vk.com/sushi_shef_vd",
+          "status": "linked_in_official_site_not_opened"
+        },
+        "ios": {
+          "url": "https://redirect.appmetrica.yandex.com/serve/534376605011696407",
+          "status": "official_download_link_not_followed"
+        },
+        "android": {
+          "url": "https://redirect.appmetrica.yandex.com/serve/678491789312695624",
+          "status": "official_download_link_not_followed"
+        },
+        "yandex_eda": {
+          "url": "https://eda.yandex.ru/restaurant/sushi_shef_j2gns",
+          "status": "route_lead; web open unavailable; verify branch in app"
+        },
+        "maps_2gis": {
+          "url": "https://2gis.ru/volgodonsk/firm/70000001049148270",
+          "status": "indexed"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "review_ui_note": "5 unique text paraphrases; 4 Eda and 1 Maps; header/dialog counts conflict"
+    },
+    {
+      "id": "yobidoyobi-volgodonsk",
+      "name": "Ёбидоёби",
+      "aliases": [
+        "Ёби Даёби",
+        "Ёби-да-Ёби"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "yobidoyobi-volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 4,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://volgodonsk.yobidoyobi.ru/",
+          "status": "CAPTCHA on direct open; no bypass"
+        },
+        "yandex_eda": {
+          "url": "https://eda.yandex.ru/restaurant/yobidoyobi_osfkt",
+          "status": "route_lead; web open unavailable"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "app": {
+          "url": null,
+          "status": "not_verified_in_this_pass"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda_discovery": {
+          "url": "https://eda.yandex.ru/r/yobidoyobi_okgbw?placeSlug=yobidoyobi_osfkt",
+          "status": "listing link observed in rendered search 2026-10-08; detail not opened"
+        }
+      }
+    },
+    {
+      "id": "chicken-roll-volgodonsk",
+      "name": "Суши Ролл",
+      "aliases": [
+        "Chicken & Roll",
+        "Чикен ролл"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "chicken-roll-volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 4,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/",
+          "status": "verified"
+        },
+        "legacy_website": {
+          "url": "https://chickenandroll.ru/",
+          "status": "redirect_verified"
+        },
+        "vk": {
+          "url": "https://vk.com/club225972359",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "ios": {
+          "url": "https://apps.apple.com/us/app/6504604627",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=ru.smartomato.marketplace.a45312",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda_discovery": {
+          "url": "https://eda.yandex.ru/r/chicken_roll?placeSlug=pazl_picca",
+          "status": "listing link observed in rendered search 2026-10-08; detail not opened"
+        }
+      }
+    },
+    {
+      "id": "sushi-mix-volgodonsk",
+      "name": "Суши Микс",
+      "aliases": [
+        "Sushi Mix"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "sushi-mix-volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 4,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://taplink.cc/_sushi_mix_",
+          "status": "verified_link_hub_with_menu"
+        },
+        "menu": {
+          "url": "https://taplink.cc/_sushi_mix_/p/34c255/",
+          "status": "verified"
+        },
+        "ios": {
+          "url": "https://apps.apple.com/us/app/%D1%81%D1%83%D1%88%D0%B8-mix-%D0%B2%D0%BE%D0%BB%D0%B3%D0%BE%D0%B4%D0%BE%D0%BD%D1%81%D0%BA/id1532623568",
+          "status": "linked_from_official_hub; app not tested"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=com.yumasoft.ypos.sushimix.customer",
+          "status": "linked_from_official_hub; app not tested"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.com/maps/org/sushi_mix/1687413327/",
+          "status": "indexed_lenina_branch"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda_discovery": {
+          "url": "https://eda.yandex.ru/r/sushi_miks?placeSlug=sushi_miks_jm2f7",
+          "status": "listing link observed in rendered search 2026-10-08; detail not opened"
+        }
+      }
+    },
+    {
+      "id": "pizza-da-mamma-volgodonsk",
+      "name": "Пицца да мамма",
+      "aliases": [
+        "Пицца Ды Мама",
+        "Pizza da mama"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "pizza-da-mamma-volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 4,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://www.pizzadamamma.ru/",
+          "status": "verified"
+        },
+        "telegram": {
+          "url": "https://t.me/Pizza_da_mamma_volgodonsk",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.ru/profile/35076691839",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "app": {
+          "url": null,
+          "status": "not_found_in_reviewed_site; absence_not_proven"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      }
+    },
+    {
+      "id": "sushivesla-volgodonsk",
+      "name": "СушиВёсла",
+      "aliases": [
+        "Суши Весло",
+        "СушиВесла"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "public-competitors.json",
+          "selector": {
+            "competitors.id": "sushivesla-volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 0,
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "channels": {
+        "website": {
+          "url": "https://xn--80adjkr6adm9b.xn--p1ai/",
+          "display_url": "https://сушивесла.рф/",
+          "status": "JS_shell_only; city not selected"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=com.ub.sushivesla.app",
+          "status": "app_store_listing_verified; Volgodonsk app not tested"
+        },
+        "telegram": {
+          "url": "https://t.me/s/sushivesla",
+          "status": "official_network_posts_indexed"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.com/maps/org/sushivesla/88818937392/",
+          "status": "indexed_local_card"
+        },
+        "ios": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      }
+    },
+    {
+      "id": "roll-kultura-volgodonsk",
+      "name": "Ролл Культура",
+      "aliases": [],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "ui-observations.json",
+          "selector": {
+            "competitors.competitor_id": "roll_kultura_volgodonsk"
+          }
+        }
+      ],
+      "menu_observations": 7,
+      "coverage": {
+        "menu": "partial",
+        "ingredient_compositions": "partial",
+        "offers": "partial",
+        "reviews": "product ratings only; text reviews not collected",
+        "design": "observed_native_app"
+      },
+      "channels": {
+        "website": {
+          "status": "not_found_in_this_pass",
+          "url": null
+        },
+        "app": {
+          "status": "observed_running_native",
+          "bundle_id": "ru.goulash.rollkultura",
+          "store_url": null
+        }
+      }
+    },
+    {
+      "id": "smirnov-volgodonsk",
+      "name": "Смирнов / SmirnoFFooD",
+      "aliases": [
+        "Смирнов",
+        "SmirnoFFooD"
+      ],
+      "city": "Волгодонск",
+      "observed_on": "2026-10-08",
+      "details": [
+        {
+          "file": "smirnov-current.json",
+          "selector": "whole document"
+        }
+      ],
+      "menu_observations": 5,
+      "coverage": {
+        "menu": "partial",
+        "offers": "8 detail dialogs inspected; application not tested",
+        "reviews": "not_collected",
+        "design": "owner-provided screenshot"
+      },
+      "channels": {
+        "website": {
+          "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4",
+          "status": "confirmed_by_owner_and_browser",
+          "source_refs": [
+            "smirnov_ui_home",
+            "smirnov_home_html"
+          ]
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=uk.com.yumapos.smirnovpf.customer",
+          "status": "official_store_listing_opened; website link confirmed by main agent",
+          "source_refs": [
+            "smirnov_android",
+            "smirnov_ui_home"
+          ]
+        },
+        "ios": {
+          "url": "https://apps.apple.com/us/app/smirnoff-food-%D0%BF%D0%B8%D1%86%D1%86%D0%B0-%D0%B8-%D1%80%D0%BE%D0%BB%D0%BB%D1%8B/id6758147710",
+          "status": "official_store_listing_opened; website link confirmed by main agent",
+          "source_refs": [
+            "smirnov_ios",
+            "smirnov_ui_home"
+          ]
+        },
+        "vk": {
+          "url": "https://vk.com/smirnofffood",
+          "status": "link_discovered_in_public_html; not opened",
+          "source_refs": [
+            "smirnov_home_html"
+          ]
+        },
+        "telegram": {
+          "url": "https://t.me/smirnofffood",
+          "status": "link_discovered_in_dated_advertisement; not opened",
+          "source_refs": [
+            "smirnov_identity_2025"
+          ]
+        },
+        "yandex_maps": {
+          "url": null,
+          "status": "not_identified; not evidence of absence"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified; not evidence of absence"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified; not evidence of absence"
+        }
+      }
+    }
+  ],
+  "review_policy": {
+    "maps_allowed": true,
+    "owner_assessment_date": "2026-10-08",
+    "owner_assessment": "Owner reports Maps manipulation by Sushi Shef and Yobidoyobi and no such issue at Nippon; not independently verified. Yandex Food preferred for Shef; no blanket authenticity guarantee."
+  },
+  "costing": {
+    "status": "not_calculated",
+    "missing": [
+      "current dated Teplo ingredient purchase-price snapshot",
+      "defensible ingredient quantities for competitor analog recipes"
+    ],
+    "method": "skills/teplo-competitor-research/references/costing-method.md (repository-relative)"
+  },
+  "history": {
+    "source_map": "skills/teplo-competitor-research/references/source-map.md (repository-relative)",
+    "raw_corpora": "June 966/162 review source files not found in checked repository; historical summaries are not fresh rows."
+  },
+  "access_limits": [
+    "VK blocked by browser policy; no workaround",
+    "Yobi direct site CAPTCHA; no bypass",
+    "Sushivesla local menu not obtained",
+    "No orders/messages/reviews posted; no precise delivery destination retained"
+  ]
+}

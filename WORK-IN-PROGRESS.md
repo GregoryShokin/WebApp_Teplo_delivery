@@ -16,14 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### agent-unit-economics — ветка `codex/teplo-unit-economics-skill`
-- worktree: `../Teplo-agent-unit-economics`
-- задача: скилл исследования конкурентов и свежий реестр Волгодонска
-- трогает: `skills/teplo-competitor-research/**`, связи навыков Тепла, `business-docs/marketing/competitor-research/**`
-- shared-ресурсы: только чтение публичных сайтов и открытых приложений; без заказов и сообщений
-- статус: в работе, локальная ветка; публикация ветки ранее вернула 403
-
-<!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`
 - compose: default | agent-b (порт API, имя БД)

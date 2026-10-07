@@ -1,0 +1,470 @@
+{
+  "schema_version": "1.0",
+  "competitor_id": "nippon_volgodonsk",
+  "brand": "Ниппон",
+  "aliases": [
+    "Суши Ниппон",
+    "Nippon"
+  ],
+  "city": "Волгодонск",
+  "observed_on": "2026-10-08",
+  "timezone": "Europe/Istanbul",
+  "scope": "Первичный частичный срез 8 карточек; не полный каталог и не проверка выполнения заказов.",
+  "website": {
+    "url": "https://nippon161.ru/",
+    "presence": "observed_live",
+    "identity_status": "strongly_corroborated_contacts; domain ownership not independently verified",
+    "identity_evidence": [
+      {
+        "url": "https://nippon161.ru/addresses/",
+        "type": "website_self_report",
+        "facts": "Курчатова48А/+79185149929; БВП45/+79081776999"
+      },
+      {
+        "url": "https://restaurantguru.ru/Nippon-Volgodonsk-3",
+        "type": "independent_directory",
+        "facts": "Совпадают бренд, Курчатова48А и телефон+79185149929",
+        "access": "web_search_index",
+        "source_update_date": "2026-06-06"
+      },
+      {
+        "url": "https://restaurantguru.ru/Nippon-Volgodonsk",
+        "type": "independent_directory",
+        "facts": "Совпадают бренд, БВП45 и телефон+79081776999",
+        "access": "web_search_index",
+        "source_update_date": "2026-06-16"
+      },
+      {
+        "url": "https://2gis.ru/volgodonsk/firm/70000001063260149",
+        "type": "independent_map_listing",
+        "facts": "Nippon, БВП45, два филиала",
+        "access": "web_search_index; direct_open_cache_miss",
+        "source_crawl_age": "9 months; stale for current operating status"
+      },
+      {
+        "url": "https://yandex.com/maps/11036/volgodonsk/house/prospekt_kurchatova_48a/YEsYdAdhQE0GQFptfXlzeHhjZg%3D%3D/",
+        "type": "independent_map_building_card",
+        "facts": "Суши Ниппон перечислен по Курчатова48А; это карточка здания, не прямая карточка организации",
+        "access": "web_search_index; direct_open_cache_miss",
+        "source_crawl_age": "last month"
+      }
+    ],
+    "official_domain_backlink_found": false
+  },
+  "addresses": [
+    {
+      "address": "Волгодонск, проспект Курчатова,48А",
+      "phone_public": "+79185149929"
+    },
+    {
+      "address": "Волгодонск, бульвар Великой Победы,45",
+      "phone_public": "+79081776999"
+    }
+  ],
+  "categories": [
+    {
+      "category": "Сеты",
+      "displayed_count": 14,
+      "homepage_cards_observed": 8,
+      "catalog_anchor": "https://nippon161.ru/#catalog-sety",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Холодные роллы",
+      "displayed_count": 32,
+      "homepage_cards_observed": 4,
+      "catalog_anchor": "https://nippon161.ru/#catalog-rolly",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Запечённые роллы",
+      "displayed_count": 28,
+      "homepage_cards_observed": 8,
+      "catalog_anchor": "https://nippon161.ru/#catalog-zapechyonnye",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Жаренные роллы",
+      "displayed_count": 20,
+      "homepage_cards_observed": 6,
+      "catalog_anchor": "https://nippon161.ru/#catalog-tempura-rolly",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Суши",
+      "displayed_count": 18,
+      "homepage_cards_observed": 8,
+      "catalog_anchor": "https://nippon161.ru/#catalog-sushi",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Пицца",
+      "displayed_count": 20,
+      "homepage_cards_observed": 0,
+      "catalog_anchor": "https://nippon161.ru/#catalog-piczcza",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Закуски",
+      "displayed_count": 5,
+      "homepage_cards_observed": 5,
+      "catalog_anchor": "https://nippon161.ru/#catalog-zakuski",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    },
+    {
+      "category": "Дополнительно",
+      "displayed_count": 12,
+      "homepage_cards_observed": 5,
+      "catalog_anchor": "https://nippon161.ru/#catalog-dopolnitelno",
+      "count_semantics": "Число карточек, показанное сайтом; варианты могут быть внутри карточки."
+    }
+  ],
+  "other_category_links": [
+    {
+      "name": "Wok",
+      "url": "https://nippon161.ru/wok/",
+      "count": null,
+      "status": "navigation_link_only; not opened"
+    }
+  ],
+  "menu_sample": [
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-sety",
+      "source_product_id": "475",
+      "name": "Сет 10",
+      "category": "Сеты",
+      "price_rub": 765,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 680,
+      "pieces_count": null,
+      "composition_text": "Калифорния со снежным крабом, Филадельфия лайт, Бекон спайси",
+      "composition_kind": "component_rolls",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 112.5
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-sety",
+      "source_product_id": "472",
+      "name": "Сет 8",
+      "category": "Сеты",
+      "price_rub": 945,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 990,
+      "pieces_count": null,
+      "composition_text": "Со сливочным сыром с лососем, Со сливочным сыром с окунем, Хаконе, Нисеко",
+      "composition_kind": "component_rolls",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 95.45
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-rolly",
+      "source_product_id": "220",
+      "name": "Роллы Хокку",
+      "category": "Холодные роллы",
+      "price_rub": 370,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 250,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Лосось, Огурец, Сыр сливочный, Салат чука, Майонез, Масаго",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 148.0
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-zapechyonnye",
+      "source_product_id": "315",
+      "name": "Роллы Кайеси",
+      "category": "Запечённые роллы",
+      "price_rub": 315,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 200,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Сыр сливочный, Огурец, Мидии, Соус розовый",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 157.5
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-zapechyonnye",
+      "source_product_id": "313",
+      "name": "Роллы Запеченная калифорния",
+      "category": "Запечённые роллы",
+      "price_rub": 315,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 270,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Сыр сливочный, Огурец, Масаго, Сурими (снежный краб), Моцарелла",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 116.67
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-zapechyonnye",
+      "source_product_id": "307",
+      "name": "Роллы Сяке терияке",
+      "category": "Запечённые роллы",
+      "price_rub": 370,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 265,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Сыр сливочный, Огурец, Кунжут, Лосось, Соус розовый",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 139.62
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-tempura-rolly",
+      "source_product_id": "266",
+      "name": "Роллы Окинава",
+      "category": "Жаренные роллы",
+      "price_rub": 250,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 240,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Панировка п/ф, Сурими (снежный краб), Огурец, Масаго",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 104.17
+    },
+    {
+      "competitor_id": "nippon_volgodonsk",
+      "observed_on": "2026-10-08",
+      "channel": "website",
+      "city": "Волгодонск",
+      "branch_context": "Общая витрина двух адресов; конкретный адрес доставки не выбран.",
+      "source_url": "https://nippon161.ru/#catalog-tempura-rolly",
+      "source_product_id": "256",
+      "name": "Роллы Хоккайдо",
+      "category": "Жаренные роллы",
+      "price_rub": 370,
+      "price_type": "exact_displayed",
+      "price_before_discount_rub": null,
+      "weight_g": 250,
+      "pieces_count": null,
+      "composition_text": "Нори, Рис готовый, Панировка п/ф, Сыр сливочный, Лосось, Креветка отварная, Огурец",
+      "composition_kind": "ingredients",
+      "ingredient_masses_g": null,
+      "ingredient_masses_status": "not_published",
+      "availability": "listed_with_buy_button; stop-list/cart not tested",
+      "unit_cost_at_teplo_prices_rub": null,
+      "cost_status": "pending_ingredient_mapping_and_current_purchase_prices; grams_unknown",
+      "source_evidence": "public HTML product-card, data-has-variants=0",
+      "rub_per_100g": 148.0
+    }
+  ],
+  "variant_cautions": [
+    {
+      "name": "Канадский",
+      "displayed_price_from_rub": 305
+    },
+    {
+      "name": "Калифорния",
+      "displayed_price_from_rub": 335
+    },
+    {
+      "name": "Острый ролл",
+      "displayed_price_from_rub": 230
+    },
+    {
+      "name": "Тонкий ролл",
+      "displayed_price_from_rub": 135
+    }
+  ],
+  "variant_caution_rule": "Эти цены «от» относятся к карточкам с вариантами; нельзя приписывать их конкретной рыбе, весу или составу показанного варианта. В sample с точными ценами не включены.",
+  "delivery": {
+    "source_url": "https://nippon161.ru/delivery/",
+    "delivery_fee_rub": 150,
+    "free_delivery_from_rub": 1500,
+    "delivery_area": "Волгодонск; зона по конкретному адресу не проверена",
+    "hours_claim": "Ежедневно10:00–21:45",
+    "time_claims": [
+      {
+        "minutes": [
+          45,
+          80
+        ],
+        "location": "шапка сайта"
+      },
+      {
+        "minutes": [
+          75,
+          90
+        ],
+        "location": "карточки двух кухонь /delivery/"
+      },
+      {
+        "minutes": [
+          40,
+          120
+        ],
+        "location": "оферта§5.2, от подтверждения; https://nippon161.ru/dogovor-oferty/"
+      }
+    ],
+    "conflict": "Разные обещания времени; фактическая скорость не измерена.",
+    "free_threshold_calculation_base": "unknown_before_or_after_discount"
+  },
+  "offers": [
+    {
+      "mechanic": "pickup_discount",
+      "value_percent": 10,
+      "source_url": "https://nippon161.ru/delivery/",
+      "exclusions": null,
+      "stacking": null,
+      "period": null,
+      "status": "published_terms_only; checkout not tested"
+    },
+    {
+      "mechanic": "birthday_discount",
+      "value_percent": 10,
+      "exclusions": "Сеты роллов",
+      "source_url": "https://nippon161.ru/delivery/",
+      "stacking": null,
+      "valid_days_around_birthday": null,
+      "eligibility_proof": null,
+      "status": "published_terms_only; checkout not tested"
+    }
+  ],
+  "app": {
+    "presence": "unknown",
+    "store_links_found_in_examined_pages": false,
+    "coverage": "Главная, доставка, адреса, отзывы, оферта; отсутствие ссылок не доказывает отсутствие приложения."
+  },
+  "usp_claims": {
+    "source_url": "https://nippon161.ru/",
+    "status": "brand_claims_not_verified",
+    "themes": [
+      "ежедневные поставки охлаждённой рыбы",
+      "свои курьеры",
+      "сохранность блюд при перевозке"
+    ]
+  },
+  "design": {
+    "status": "not_visually_reviewed",
+    "html_structure_only": [
+      "категорийная навигация",
+      "карточки с фотографией, массой, составом и ценой",
+      "акционный баннер",
+      "два адреса и переключатель способа получения"
+    ],
+    "visual_style": null,
+    "screenshots": []
+  },
+  "reviews": {
+    "source_url": "https://nippon161.ru/reviews/",
+    "channel": "brand_website",
+    "claimed_rating": 4.9,
+    "rating_scale": 5,
+    "claimed_rating_count": 1284,
+    "claimed_period": "за год; границы неизвестны",
+    "html_review_cards_count": 24,
+    "unique_visible_texts_count": 6,
+    "review_dates_displayed": "21июня–8июля, год не указан",
+    "duplicate_note": "Каждый из6видимых текстов повторяется4раза; возможные клоны карусели/витринная подборка, не доказательство подделки.",
+    "trust": "Unverified brand-controlled selection; не включать1284в число собранных текстов; не использовать для репрезентативной оценки всех гостей.",
+    "raw_reviews_saved_in_registry": false
+  },
+  "owner_assessment": {
+    "observed_on": "2026-10-08",
+    "source": "user instruction relayed by parent",
+    "claim": "По мнению владельца Тепла, Ниппон не накручивает отзывы на Картах.",
+    "independently_verified": false,
+    "application": "Карты использовать с сохранением платформы, дат, текстов и ограничений выборки."
+  },
+  "cost_estimation": {
+    "estimate_available": false,
+    "reason": "Есть публичные составы и общий выход, но нет масс каждого ингредиента и свежего сопоставления цен Тепла. Для сетов сначала раскрыть состав каждого ролла.",
+    "rule": "Считать сценарную себестоимость на закупочных ценах Тепла, не фактическую себестоимость/прибыль конкурента. Припуски и выходы применять отдельно."
+  },
+  "limitations": [
+    "Независимые карточки подтверждают контактные реквизиты, но обратная ссылка на домен не найдена.",
+    "Цены зафиксированы на общем сайте без выбора адреса доставки, не проверены в корзине.",
+    "Полные списки скрыты за «Показать ещё»; количественные заголовки не означают полный сбор.",
+    "Не получены индивидуальные отзывы Карт/Еды; рейтинг6витринных текстов не переносить на внешние платформы.",
+    "Наличие пиццы на сайте опровергает перенос старого июньского предположения об отсутствии категории как текущего факта."
+  ],
+  "local_snapshot_sha256": {
+    "nippon-addresses.html": "d1e3d48f3c49abe171da79c7524ce2dd79f1ba4bf8ada82bd099b30195514c91",
+    "nippon-home.html": "87e238a9ee1bad74cd824f3ce2972b846459e28826a9dbccb51c299b2762663c",
+    "nippon-reviews.html": "c9565e95b991fb4014def72fa70afc5a89d11db896583f9e9454af5e548a53ef",
+    "nippon-dogovor-oferty.html": "91b240bb5a939ce8e9f73b0ffd5e63149a2e58669744bc94609794c0a5662935",
+    "nippon-delivery.html": "ca6cdb0d44fc5d08ebc098d7a519fffca7581f92c5980d6feed2e5da9185f3a5"
+  },
+  "method": "Public web search + read-only unauthenticated HTTPS HTML fetch. No VK, account access, orders, messages or cart writes."
+}

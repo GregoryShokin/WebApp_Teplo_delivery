@@ -1,0 +1,810 @@
+{
+  "schema_version": 1,
+  "city": "Волгодонск",
+  "data_as_of": "2026-10-08",
+  "created_at": "2026-10-08T01:06:58+03:00",
+  "scope": "One additional competitor; partial current capture plus separately dated historical identity/positioning.",
+  "sources": {
+    "smirnov_home_html": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:02:02+03:00",
+      "timestamp_precision": "second; successful local capture timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "HTTP 200; SPA shell, no rendered menu or conditions. Not evidence that menu is empty.",
+      "sha256": "f13a80d17e0aeee0f8aeaec8a084f078dd66d22a9534ba5047ca8f05ebb08824",
+      "bytes": 61300,
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "smirnov_promo_html": {
+      "url": "https://smirnofffood.ru/promo",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:02:02+03:00",
+      "timestamp_precision": "second; successful local capture timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "HTTP 200; SPA shell, no rendered menu or conditions. Not evidence that menu is empty.",
+      "sha256": "f13a80d17e0aeee0f8aeaec8a084f078dd66d22a9534ba5047ca8f05ebb08824",
+      "bytes": 61300,
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "smirnov_delivery_html": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/delivery-zones",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:02:02+03:00",
+      "timestamp_precision": "second; successful local capture timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "HTTP 200; SPA shell, no rendered menu or conditions. Not evidence that menu is empty.",
+      "sha256": "f13a80d17e0aeee0f8aeaec8a084f078dd66d22a9534ba5047ca8f05ebb08824",
+      "bytes": 61300,
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "smirnov_terms_html": {
+      "url": "https://smirnofffood.ru/terms",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "checked_at": "2026-10-08T01:02:02+03:00",
+      "timestamp_precision": "second; successful local capture timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "HTTP 200; SPA shell, no rendered menu or conditions. Not evidence that menu is empty.",
+      "sha256": "f13a80d17e0aeee0f8aeaec8a084f078dd66d22a9534ba5047ca8f05ebb08824",
+      "bytes": 61300,
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "smirnov_ui_home": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent read user-opened official storefront and category navigation, then 28 visible list cards in firmennye rolls. Five product detail cards are retained as an initial sample. No delivery address selected."
+    },
+    "smirnov_android": {
+      "url": "https://play.google.com/store/apps/details?id=uk.com.yumapos.smirnovpf.customer",
+      "source_kind": "official_app_store_web",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Store content was reported as crawled 6 months ago; published app description, not live functional testing."
+    },
+    "smirnov_ios": {
+      "url": "https://apps.apple.com/us/app/smirnoff-food-%D0%BF%D0%B8%D1%86%D1%86%D0%B0-%D0%B8-%D1%80%D0%BE%D0%BB%D0%BB%D1%8B/id6758147710",
+      "source_kind": "official_app_store_web",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Store content was reported as crawled 3 months ago; published app description, not live functional testing."
+    },
+    "smirnov_identity_2025": {
+      "url": "https://bloknot-volgodonsk.ru/news/yaponskiy-perekus-kotoryy-pokorit-vashe-serdtse-on-1895173",
+      "source_kind": "seller_advertisement_in_local_media",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": "2025-09-03",
+      "note": "Historical advertisement corroborates identity and address. Its promotion is NOT imported as current."
+    },
+    "smirnov_positioning_2025": {
+      "url": "https://bloknot-volgodonsk.ru/news/-smirnov-sushi-i-pitstsa-vash-shikarnyy-uzhin-bez--1875712",
+      "source_kind": "seller_advertisement_in_local_media",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": "2025-07-08",
+      "note": "Historical self-description; product quality claims not independently verified; old prices and promotions excluded."
+    },
+    "smirnov_ui_promo_gift_2000": {
+      "url": "https://smirnofffood.ru/promo/0e16e0da-30f4-4c75-e3b1-8ad5e0670089",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_gift_3000": {
+      "url": "https://smirnofffood.ru/promo/698b8893-e664-41c8-bbf4-d0a3e44142da",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_gift_4000": {
+      "url": "https://smirnofffood.ru/promo/86675a9a-bd66-4a63-ef56-3809a06e74d8",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_first_app": {
+      "url": "https://smirnofffood.ru/promo/9c857b00-721e-4a60-b7f2-d1dd76d11b43",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_delivery_old_city": {
+      "url": "https://smirnofffood.ru/promo/8a92d53b-b23f-477b-a278-bd7dd1f159fa",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_delivery_new_city": {
+      "url": "https://smirnofffood.ru/promo/62664313-b8c9-4d6b-9737-2fbc7c3b0371",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_pickup": {
+      "url": "https://smirnofffood.ru/promo/1b7b2645-f1f4-4476-e1f2-a38d80adeace",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_promo_birthday": {
+      "url": "https://smirnofffood.ru/promo/156bac41-9497-4ea3-a5c9-999a50d52375",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; observation did not retain a precise timestamp",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened and read the visible detail on 2026-10-08. No cart/application test; source publication date not shown."
+    },
+    "smirnov_ui_product_1": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/79ea3145-7ad0-408d-806e-ee15e01bea5b",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; precise browser observation time not captured",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened this product card and read name, price, total weight and composition. Delivery address not selected; checkout not tested."
+    },
+    "smirnov_ui_product_2": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/f7870de5-5b12-4b00-95c8-4a3d5e92eee9",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; precise browser observation time not captured",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened this product card and read name, price, total weight and composition. Delivery address not selected; checkout not tested."
+    },
+    "smirnov_ui_product_3": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/6788050a-5aee-4dcf-923f-19b39c188ae1",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; precise browser observation time not captured",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened this product card and read name, price, total weight and composition. Delivery address not selected; checkout not tested."
+    },
+    "smirnov_ui_product_4": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/b623f85d-071f-4bb1-bfd1-d9bb39e3c50b",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; precise browser observation time not captured",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened this product card and read name, price, total weight and composition. Delivery address not selected; checkout not tested."
+    },
+    "smirnov_ui_product_5": {
+      "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/b5d8d3d4-4d58-4fa6-974c-f2ae57d54b75",
+      "source_kind": "official_site_browser_observation",
+      "checked_on": "2026-10-08",
+      "checked_at": null,
+      "timestamp_precision": "day; precise browser observation time not captured",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Main agent opened this product card and read name, price, total weight and composition. Delivery address not selected; checkout not tested."
+    }
+  },
+  "competitor": {
+    "competitor_id": "smirnoff-food-volgodonsk",
+    "name": "SmirnoFFooD / Смирнов",
+    "aliases": [
+      "Smirnoff Food",
+      "Смирнов Суши и Пицца",
+      "Смирнов Фуд"
+    ],
+    "city": "Волгодонск",
+    "identity_confidence": "high: owner identification plus matching website/phone in historical advertisement",
+    "phone": "+7 951 515-11-71",
+    "outlets": [
+      {
+        "address": "Волгодонск, ул. Морская, 17, «Купеческий двор»",
+        "source_refs": [
+          "smirnov_identity_2025"
+        ],
+        "current_status": "historically corroborated; current address confirmation pending"
+      }
+    ],
+    "channels": {
+      "website": {
+        "url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4",
+        "status": "confirmed_by_owner_and_browser",
+        "source_refs": [
+          "smirnov_ui_home",
+          "smirnov_home_html"
+        ]
+      },
+      "android": {
+        "url": "https://play.google.com/store/apps/details?id=uk.com.yumapos.smirnovpf.customer",
+        "status": "official_store_listing_opened; website link confirmed by main agent",
+        "source_refs": [
+          "smirnov_android",
+          "smirnov_ui_home"
+        ]
+      },
+      "ios": {
+        "url": "https://apps.apple.com/us/app/smirnoff-food-%D0%BF%D0%B8%D1%86%D1%86%D0%B0-%D0%B8-%D1%80%D0%BE%D0%BB%D0%BB%D1%8B/id6758147710",
+        "status": "official_store_listing_opened; website link confirmed by main agent",
+        "source_refs": [
+          "smirnov_ios",
+          "smirnov_ui_home"
+        ]
+      },
+      "vk": {
+        "url": "https://vk.com/smirnofffood",
+        "status": "link_discovered_in_public_html; not opened",
+        "source_refs": [
+          "smirnov_home_html"
+        ]
+      },
+      "telegram": {
+        "url": "https://t.me/smirnofffood",
+        "status": "link_discovered_in_dated_advertisement; not opened",
+        "source_refs": [
+          "smirnov_identity_2025"
+        ]
+      },
+      "yandex_maps": {
+        "url": null,
+        "status": "not_identified; not evidence of absence"
+      },
+      "google_maps": {
+        "url": null,
+        "status": "not_identified; not evidence of absence"
+      },
+      "yandex_eda": {
+        "url": null,
+        "status": "not_identified; not evidence of absence"
+      }
+    },
+    "app_claims": {
+      "features": [
+        "Menu with photos and prices",
+        "Repeat ordering from history",
+        "Bonus program",
+        "Order status tracking",
+        "Some dish composition customization (iOS description)"
+      ],
+      "functional_testing": false,
+      "loyalty_accrual_percent": null,
+      "loyalty_redemption_limit": null,
+      "source_refs": [
+        "smirnov_android",
+        "smirnov_ios"
+      ],
+      "note": "Developer-published capabilities; does not establish current bonus program rules or an active promotion."
+    },
+    "menu_categories": [
+      "Пицца",
+      "Сеты",
+      "Wok",
+      "Блины",
+      "Супы",
+      "Роллы: Фирменные",
+      "Роллы: Классика",
+      "Роллы: Острые",
+      "Роллы: Онигири",
+      "Роллы: Запечённые",
+      "Роллы: Горячие",
+      "Роллы: Калифорния",
+      "Роллы: Сладкие",
+      "Напитки",
+      "Закуски",
+      "Дополнительно",
+      "Салаты"
+    ],
+    "menu_sample": [
+      {
+        "competitor_id": "smirnoff-food-volgodonsk",
+        "product_id": "79ea3145-7ad0-408d-806e-ee15e01bea5b",
+        "name": "Ролл Филадельфия с лососем",
+        "price_rub": 595,
+        "price_type": "displayed_menu_price",
+        "weight_g": 245,
+        "weight_type": "published_total_dish_weight",
+        "pieces_count": null,
+        "composition_text": "Рис, нори, сыр сливочный, хрустящий огурец, лосось с/с",
+        "composition_status": "published; completeness not independently verified",
+        "ingredient_masses_g": null,
+        "channel": "official_website",
+        "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/79ea3145-7ad0-408d-806e-ee15e01bea5b",
+        "source_refs": [
+          "smirnov_ui_product_1"
+        ],
+        "observed_on": "2026-10-08",
+        "availability": "listed_and_card_opens; stop-list and checkout not tested",
+        "delivery_address_selected": false,
+        "price_per_100g_rub": 242.86,
+        "price_per_100g_method": "published menu price / published total dish weight * 100; does not adjust for ingredients or promotions",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; ingredient masses and current Teplo purchase-price snapshot unavailable"
+      },
+      {
+        "competitor_id": "smirnoff-food-volgodonsk",
+        "product_id": "f7870de5-5b12-4b00-95c8-4a3d5e92eee9",
+        "name": "Ролл Филадельфия с тунцом",
+        "price_rub": 395,
+        "price_type": "displayed_menu_price",
+        "weight_g": 245,
+        "weight_type": "published_total_dish_weight",
+        "pieces_count": null,
+        "composition_text": "Рис, нори, сыр сливочный, хрустящий огурец, авокадо, икра масага, тунец",
+        "composition_status": "published; completeness not independently verified",
+        "ingredient_masses_g": null,
+        "channel": "official_website",
+        "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/f7870de5-5b12-4b00-95c8-4a3d5e92eee9",
+        "source_refs": [
+          "smirnov_ui_product_2"
+        ],
+        "observed_on": "2026-10-08",
+        "availability": "listed_and_card_opens; stop-list and checkout not tested",
+        "delivery_address_selected": false,
+        "price_per_100g_rub": 161.22,
+        "price_per_100g_method": "published menu price / published total dish weight * 100; does not adjust for ingredients or promotions",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; ingredient masses and current Teplo purchase-price snapshot unavailable"
+      },
+      {
+        "competitor_id": "smirnoff-food-volgodonsk",
+        "product_id": "6788050a-5aee-4dcf-923f-19b39c188ae1",
+        "name": "Ролл Эби чизу маки",
+        "price_rub": 642,
+        "price_type": "displayed_menu_price",
+        "weight_g": 250,
+        "weight_type": "published_total_dish_weight",
+        "pieces_count": null,
+        "composition_text": "Рис, нори, лосось с/с, сыр сливочный, авокадо, тигровая креветка, соус манго-чили",
+        "composition_status": "published; completeness not independently verified",
+        "ingredient_masses_g": null,
+        "channel": "official_website",
+        "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/6788050a-5aee-4dcf-923f-19b39c188ae1",
+        "source_refs": [
+          "smirnov_ui_product_3"
+        ],
+        "observed_on": "2026-10-08",
+        "availability": "listed_and_card_opens; stop-list and checkout not tested",
+        "delivery_address_selected": false,
+        "price_per_100g_rub": 256.8,
+        "price_per_100g_method": "published menu price / published total dish weight * 100; does not adjust for ingredients or promotions",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; ingredient masses and current Teplo purchase-price snapshot unavailable"
+      },
+      {
+        "competitor_id": "smirnoff-food-volgodonsk",
+        "product_id": "b623f85d-071f-4bb1-bfd1-d9bb39e3c50b",
+        "name": "Ролл Филадельфия с лососем Люкс",
+        "price_rub": 770,
+        "price_type": "displayed_menu_price",
+        "weight_g": 280,
+        "weight_type": "published_total_dish_weight",
+        "pieces_count": null,
+        "composition_text": "Рис, нори, сливочный сыр, хрустящий огурец, атлантический лосось",
+        "composition_status": "published; completeness not independently verified",
+        "ingredient_masses_g": null,
+        "channel": "official_website",
+        "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/b623f85d-071f-4bb1-bfd1-d9bb39e3c50b",
+        "source_refs": [
+          "smirnov_ui_product_4"
+        ],
+        "observed_on": "2026-10-08",
+        "availability": "listed_and_card_opens; stop-list and checkout not tested",
+        "delivery_address_selected": false,
+        "price_per_100g_rub": 275.0,
+        "price_per_100g_method": "published menu price / published total dish weight * 100; does not adjust for ingredients or promotions",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; ingredient masses and current Teplo purchase-price snapshot unavailable"
+      },
+      {
+        "competitor_id": "smirnoff-food-volgodonsk",
+        "product_id": "b5d8d3d4-4d58-4fa6-974c-f2ae57d54b75",
+        "name": "Рок-н-Ролл",
+        "price_rub": 312,
+        "price_type": "displayed_menu_price",
+        "weight_g": 200,
+        "weight_type": "published_total_dish_weight",
+        "pieces_count": null,
+        "composition_text": "Рис, нори, бекон, сыр сливочный, лук перо, стружка тунца",
+        "composition_status": "published; completeness not independently verified",
+        "ingredient_masses_g": null,
+        "channel": "official_website",
+        "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/shop/category/1ad3a916-ad09-499c-9c0d-3c244df26f67/product/b5d8d3d4-4d58-4fa6-974c-f2ae57d54b75",
+        "source_refs": [
+          "smirnov_ui_product_5"
+        ],
+        "observed_on": "2026-10-08",
+        "availability": "listed_and_card_opens; stop-list and checkout not tested",
+        "delivery_address_selected": false,
+        "price_per_100g_rub": 156.0,
+        "price_per_100g_method": "published menu price / published total dish weight * 100; does not adjust for ingredients or promotions",
+        "cost_at_teplo_prices_rub": null,
+        "cost_status": "not_calculated; ingredient masses and current Teplo purchase-price snapshot unavailable"
+      }
+    ],
+    "menu_coverage": "Five product detail cards captured from the firmennye rolls category; main agent saw 28 list cards in this category. Other categories were identified by navigation only. This is not a complete menu audit.",
+    "promotions": [
+      {
+        "id": "gift_2000",
+        "name": "Подарок при заказе от 2000 ₽",
+        "type": "free_product",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_gift_2000"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/0e16e0da-30f4-4c75-e3b1-8ad5e0670089",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 1999.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": "Эби Чизу Маки",
+        "gift_size_cm": null,
+        "gift_quantity": 1,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown."
+        ]
+      },
+      {
+        "id": "gift_3000",
+        "name": "Подарок при заказе от 3000 ₽",
+        "type": "free_product",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_gift_3000"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/698b8893-e664-41c8-bbf4-d0a3e44142da",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 2999.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": "Пицца София",
+        "gift_size_cm": 33,
+        "gift_quantity": 1,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown."
+        ]
+      },
+      {
+        "id": "gift_4000",
+        "name": "Подарки при заказе от 4000 ₽",
+        "type": "free_products",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_gift_4000"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/86675a9a-bd66-4a63-ef56-3809a06e74d8",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 3999.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": "Эби Чизу Маки и пицца с тунцом на выбор",
+        "gift_size_cm": null,
+        "gift_quantity": null,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Two named gifts shown; explicit quantity for each and pizza diameter not captured.",
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown."
+        ]
+      },
+      {
+        "id": "first_app",
+        "name": "Подарок за первый заказ в приложении",
+        "type": "free_product",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_first_app"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/9c857b00-721e-4a60-b7f2-d1dd76d11b43",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 499.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": "Пепперони (на странице «Переперони»)",
+        "gift_size_cm": 33,
+        "gift_quantity": 1,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Title refers to the first app order; eligibility enforcement and application scope not tested.",
+          "Detail specifies 33 cm; user screenshot banner appears to specify 35 cm. Preserve conflict.",
+          "Small banner text may contain a September end date, but it is unreadable in the supplied observation; do not invent date or claim current validity.",
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown."
+        ]
+      },
+      {
+        "id": "delivery_old_city",
+        "name": "Бесплатная доставка от 1500 руб.",
+        "type": "free_delivery",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_delivery_old_city"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/8a92d53b-b23f-477b-a278-bd7dd1f159fa",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 1499.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": null,
+        "gift_size_cm": null,
+        "gift_quantity": null,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown.",
+          "Visible detail explicitly states free delivery in the named area; exact geographic boundary not captured."
+        ],
+        "delivery_fee_rub": 0,
+        "delivery_area": "Старый город"
+      },
+      {
+        "id": "delivery_new_city",
+        "name": "Бесплатная доставка от 2000 руб.",
+        "type": "free_delivery",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_delivery_new_city"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/62664313-b8c9-4d6b-9737-2fbc7c3b0371",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": 1999.99,
+        "threshold_inclusion_rule": null,
+        "applies_to": "all_goods",
+        "gift_name": null,
+        "gift_size_cm": null,
+        "gift_quantity": null,
+        "discount_percent": null,
+        "days": "all_7_days",
+        "time_start": "00:00",
+        "time_end": "23:59",
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Machine-facing UI amount is retained exactly; promotional headline rounds to the next ruble. Threshold comparison operator not shown.",
+          "Visible detail explicitly states free delivery in the named area; exact geographic boundary not captured."
+        ],
+        "delivery_fee_rub": 0,
+        "delivery_area": "Новый город"
+      },
+      {
+        "id": "pickup",
+        "name": "Скидка на самовывоз",
+        "type": "percent_discount",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_pickup"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/1b7b2645-f1f4-4476-e1f2-a38d80adeace",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": null,
+        "threshold_inclusion_rule": null,
+        "applies_to": null,
+        "gift_name": null,
+        "gift_size_cm": null,
+        "gift_quantity": null,
+        "discount_percent": 10,
+        "days": null,
+        "time_start": null,
+        "time_end": null,
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Detail shows 10% discount; no threshold or exclusions displayed, which does not prove there are none."
+        ]
+      },
+      {
+        "id": "birthday",
+        "name": "День рождения",
+        "type": "benefit_not_stated",
+        "status": "displayed; applicability_unverified",
+        "source_refs": [
+          "smirnov_ui_promo_birthday"
+        ],
+        "source_url": "https://smirnofffood.ru/promo/156bac41-9497-4ea3-a5c9-999a50d52375",
+        "observed_on": "2026-10-08",
+        "basket_threshold_rub_as_displayed": null,
+        "threshold_inclusion_rule": null,
+        "applies_to": null,
+        "gift_name": null,
+        "gift_size_cm": null,
+        "gift_quantity": null,
+        "discount_percent": null,
+        "days": null,
+        "time_start": null,
+        "time_end": null,
+        "valid_from": null,
+        "valid_until": null,
+        "stacking": null,
+        "exclusions": null,
+        "basket_application_tested": false,
+        "notes": [
+          "Document presentation required.",
+          "Visible detail does not specify the benefit or size of discount. Historical advertising 10% must not fill this gap.",
+          "Date window around birthday not visible in current detail."
+        ]
+      }
+    ],
+    "promotion_banner_codes": {
+      "codes": [
+        "ROLL",
+        "PIZZA",
+        "PIZZA+ROLL"
+      ],
+      "evidence": "Main agent reports text in user screenshot banners; not repeated in the opened detail pages. Mapping and operability unverified.",
+      "applied": false
+    },
+    "delivery": {
+      "source_url": "https://smirnofffood.ru/12a9264c-e37c-4d2a-c313-44acdbe5e1e4/delivery-zones",
+      "status": "Two free-delivery areas confirmed by current promotion detail; geographic boundaries and fees below threshold not verified",
+      "source_refs": [
+        "smirnov_delivery_html"
+      ],
+      "base_fee_rub": null,
+      "minimum_order_rub": null,
+      "free_delivery_conditions": [
+        {
+          "area": "Старый город",
+          "threshold_rub_as_displayed": 1499.99,
+          "advertised_threshold_rub": 1500,
+          "source_refs": [
+            "smirnov_ui_promo_delivery_old_city"
+          ]
+        },
+        {
+          "area": "Новый город",
+          "threshold_rub_as_displayed": 1999.99,
+          "advertised_threshold_rub": 2000,
+          "source_refs": [
+            "smirnov_ui_promo_delivery_new_city"
+          ]
+        }
+      ]
+    },
+    "positioning": {
+      "current_verified_claims": [],
+      "historical_claims": [
+        {
+          "text": "Собственное тесто для пиццы длительной холодной ферментации; акцент на итальянской технологии и свежих ингредиентах.",
+          "source_refs": [
+            "smirnov_positioning_2025"
+          ],
+          "status": "seller_claim_2025; not independently verified or confirmed current"
+        }
+      ]
+    },
+    "design": {
+      "status": "observed_in_user_screenshot_by_main_agent",
+      "observation": "Светло-серый фон; крупные яркие баннеры с оранжевым и жёлтым; округлые элементы управления; логотип с персонажем сушиста.",
+      "interpretation": "Типовая структура интернет-магазина доставки; это визуальное наблюдение, не оценка качества продукта или уникальности бренда.",
+      "source": "user-provided screenshot, interpreted by main agent",
+      "observed_on": "2026-10-08"
+    },
+    "reviews": {
+      "sample_size": 0,
+      "themes": [],
+      "status": "not_collected; no authenticity conclusion"
+    },
+    "costing": {
+      "estimated_food_cost_at_teplo_prices": null,
+      "status": "not_calculated",
+      "missing": [
+        "Ingredient masses and preparation/yield assumptions",
+        "Dated current Teplo purchase-price snapshot"
+      ],
+      "note": "Do not infer ingredient weights from total dish weight; food-cost approximation is not full unit economics."
+    },
+    "gaps": [
+      "Current physical address and opening hours need confirmation",
+      "Map and Yandex Eda profiles not identified",
+      "Promotion stacking and applicability not tested",
+      "Small date text in banner is unreadable; validity unresolved",
+      "Birthday benefit not stated in current detail",
+      "App bonus program rates/limits unknown",
+      "Ingredient masses unavailable",
+      "Review sample has not been collected",
+      "Delivery geographic boundaries, fees below thresholds and exact minimum order unknown",
+      "Five dishes are an initial sample; full assortment/category coverage incomplete"
+    ],
+    "menu_categories_source_refs": [
+      "smirnov_ui_home"
+    ],
+    "nutrition_quality_note": "Nutrition values seen in one card had unclear per-100g/per-serving basis and inconsistent energy/macronutrient relationships. Excluded from costing and comparison; do not reverse-engineer recipe from them."
+  },
+  "finalized_at": "2026-10-08T01:08:42+03:00"
+}

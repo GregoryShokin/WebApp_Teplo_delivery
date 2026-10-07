@@ -1,0 +1,1579 @@
+{
+  "schema_version": 1,
+  "city": "Волгодонск",
+  "created_at": "2026-10-08T00:57:22+03:00",
+  "data_as_of": "2026-10-08",
+  "scope": "6 requested competitors, public-source initial register. Partial coverage explicitly marked.",
+  "review_policy": {
+    "maps_allowed": true,
+    "maps_may_be_unreliable": true,
+    "owner_assessments_are_not_independently_verified": true,
+    "sushi_shef_and_yobidoyobi_maps": "Owner specifically reports manipulation; retain evidence as low-trust qualitative leads, never infer quality from rating.",
+    "yandex_eda": "User-selected source for Sushi Shef; still record sample provenance and avoid a blanket guarantee of authenticity."
+  },
+  "sources": {
+    "shef_home": {
+      "url": "https://sushi-shef.ru/",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Current city Volgodonsk; other-city records also exist in page data, so do not merge all addresses. Product data from public schema.org markup.",
+      "checked_at": "2026-10-08T00:49:30+03:00",
+      "sha256": "4f9524e68884e44bebadae7d2f396b2af5a15acb993da3a7e180ed18327d7779",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "shef_promos": {
+      "url": "https://sushi-shef.ru/volgodonsk/landing/akcii",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:50:53+03:00",
+      "sha256": "fb15359dbe6d37523b48b1baa173befd9769c33df19de061c1ba9e5893a472c4",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "shef_delivery": {
+      "url": "https://sushi-shef.ru/volgodonsk/landing/dostavka",
+      "source_kind": "official_page_web",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Web tool cache age: 2 months; delivery tiers need cart recheck before comparison.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "shef_pay": {
+      "url": "https://sushi-shef.ru/volgodonsk/landing/pay",
+      "source_kind": "official_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Lists Kurchatova 48A; current home page store data says 48Д. Preserve conflict.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "shef_2gis": {
+      "url": "https://2gis.ru/volgodonsk/firm/70000001049148270",
+      "source_kind": "maps_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Kurchatova 48A; not a live menu/availability check.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "shef_eda_lead": {
+      "url": "https://xn--80aafbg2bzayj.xn--p1ai/volgodonsk/restaurant/sushi_shef_j2gns/3014806878_-rosto-set/",
+      "source_kind": "third_party_source_discovery",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Only a route lead for Yandex Eda; its prices are NOT current Eda prices.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "chicken_home": {
+      "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "chickenandroll.ru redirected here; visible brand is Суши Ролл.",
+      "checked_at": "2026-10-08T00:49:27+03:00",
+      "sha256": "799665530d6219f495c24b51ef30eb7c89e30257665f640115a3bfebdd5dfac6",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "chicken_delivery": {
+      "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/delivery-payment",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:50:44+03:00",
+      "sha256": "cfe58e8c47fda9d1f3efb18344ba6d94e49f608b48d3156b8c05974d2ccbc672",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "chicken_promotions": {
+      "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/promotions",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:50:47+03:00",
+      "sha256": "24ce0a3f437ed9aa1c7d9290e1048041df879b222df2d285c48cd7eb4d89d6e3",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "chicken_loyalty": {
+      "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/loyalty-program",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:50:51+03:00",
+      "sha256": "45da5eb688fb90107f781a16929e7fa37f8e21bd832cadfd9ee86f778bcc4583",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mix_home": {
+      "url": "https://taplink.cc/_sushi_mix_",
+      "source_kind": "official_link_hub_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Public window.data describes customer-visible links and text; no authentication used.",
+      "checked_at": "2026-10-08T00:49:19+03:00",
+      "sha256": "9d9d8aa7b58edf663a5e8d315804d16b5328085fc268af9b5b7c5d97d0bb9ff2",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mix_menu": {
+      "url": "https://taplink.cc/_sushi_mix_/p/34c255/",
+      "source_kind": "official_link_hub_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:50:54+03:00",
+      "sha256": "50043a2acd2da8637e2f7de3b916c39a74f57fb0d092cc4365c969ebda0c5ea5",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mix_cold": {
+      "url": "https://taplink.cc/_sushi_mix_/m/98949/",
+      "source_kind": "official_catalog_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "List cards contain prices, no ingredient quantities or weights. Do not infer ingredients from dish name.",
+      "checked_at": "2026-10-08T00:51:23+03:00",
+      "sha256": "5cdb745d3a184e35078b71a7fdb7c47514727c94b33c28ecee7b459f901f624a",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mix_sets": {
+      "url": "https://taplink.cc/_sushi_mix_/m/986c1/",
+      "source_kind": "official_catalog_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:51:24+03:00",
+      "sha256": "f34258e9bd1d539996436ea19929f9e6e9c1d7b80c842e6739ada4c51ec858ea",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mix_maps": {
+      "url": "https://yandex.com/maps/org/sushi_mix/1687413327/",
+      "source_kind": "maps_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Lenina108/31; cached card. Reviews not independently sampled.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "mamma_home": {
+      "url": "https://www.pizzadamamma.ru/",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": null,
+      "checked_at": "2026-10-08T00:49:18+03:00",
+      "sha256": "51a863d3efe8ef07011327addbc4cd26b9f6f4d6076fe79c0431b3194842d3c4",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "mamma_catalog": {
+      "url": "https://store.tildaapi.com/api/getproductslist/?storepartuid=202588773792&recid=837391015&getparts=true&getoptions=true&flag_root=withroot",
+      "source_kind": "public_official_store_catalog",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Endpoint and parameters derived from published site and its tilda-catalog JS; public read-only catalog, no session/customer data.",
+      "checked_at": "2026-10-08T00:53:26+03:00",
+      "sha256": "8abbcde59fdf3af8f7fdf590ea2ab902f00c4c6a591ad3e5c35427929538632d",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "yobi_home_index": {
+      "url": "https://volgodonsk.yobidoyobi.ru/",
+      "source_kind": "official_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Search index about 3 weeks old; direct open returned CAPTCHA; no bypass attempted. Different indexed pages disagree about weights.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "yobi_detail_index": {
+      "url": "https://volgodonsk.yobidoyobi.ru/novinki/krevetkadorblyu",
+      "source_kind": "official_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Index about 1 week old; site live unavailable behind CAPTCHA.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "yobi_promos_index": {
+      "url": "https://volgodonsk.yobidoyobi.ru/actions",
+      "source_kind": "official_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Index about 2 months old; promotion validity not checked live.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "yobi_eda_lead": {
+      "url": "https://vkus-eda-dostavka.ru/volgodonsk/yobidoyobi_osfkt/yabo",
+      "source_kind": "third_party_source_discovery",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Only lead to official Eda route, not a current menu source.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "vesla_home": {
+      "url": "https://xn--80adjkr6adm9b.xn--p1ai/",
+      "source_kind": "official_html",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Only JS shell with title БлинБери; no Volgodonsk menu extracted.",
+      "checked_at": "2026-10-08T00:49:31+03:00",
+      "sha256": "75aaae1c620f0bc0ef186285aaceec81729bc4b7395ede458ea27a31d56800da",
+      "capture_retention": "Temporary raw capture omitted from portable report; source URL/date retained."
+    },
+    "vesla_telegram": {
+      "url": "https://t.me/s/sushivesla?after=4576",
+      "source_kind": "official_social_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Opening announcement names Volgodonsk, Vesennyaya56Г. Promotional posts shown here are historical, not current offers.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "vesla_maps": {
+      "url": "https://yandex.com/maps/org/sushivesla/88818937392/reviews/",
+      "source_kind": "maps_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Index about 3 months old. Convenience sample of 8 complete visible texts, not representative; not a verified-purchase sample.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    },
+    "vesla_app": {
+      "url": "https://play.google.com/store/apps/details?hl=ru&id=com.ub.sushivesla.app",
+      "source_kind": "app_store_search_index",
+      "checked_on": "2026-10-08",
+      "timezone": "Europe/Istanbul",
+      "published_at": null,
+      "note": "Network-wide application; listed offer conditions not independently verified for Volgodonsk.",
+      "checked_at": null,
+      "timestamp_precision": "day; web tool did not return exact retrieval timestamp"
+    }
+  },
+  "competitors": [
+    {
+      "id": "sushi-shef-volgodonsk",
+      "name": "Суши Шеф",
+      "city": "Волгодонск",
+      "identity_confidence": "high",
+      "aliases": [
+        "Sushi Shef"
+      ],
+      "outlets": [
+        {
+          "address": "Курчатова, 48Д",
+          "source_ids": [
+            "shef_home"
+          ],
+          "conflict": "На официальной странице оплаты и в 2ГИС указан 48А; не исправлять молча."
+        },
+        {
+          "address": "Гагарина, 66А",
+          "source_ids": [
+            "shef_home",
+            "shef_pay"
+          ]
+        },
+        {
+          "address": "Степная, 163",
+          "source_ids": [
+            "shef_home",
+            "shef_pay"
+          ]
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://sushi-shef.ru/",
+          "status": "verified"
+        },
+        "vk": {
+          "url": "https://vk.com/sushi_shef_vd",
+          "status": "linked_in_official_site_not_opened"
+        },
+        "ios": {
+          "url": "https://redirect.appmetrica.yandex.com/serve/534376605011696407",
+          "status": "official_download_link_not_followed"
+        },
+        "android": {
+          "url": "https://redirect.appmetrica.yandex.com/serve/678491789312695624",
+          "status": "official_download_link_not_followed"
+        },
+        "yandex_eda": {
+          "url": "https://eda.yandex.ru/restaurant/sushi_shef_j2gns",
+          "status": "route_lead; web open unavailable; verify branch in app"
+        },
+        "maps_2gis": {
+          "url": "https://2gis.ru/volgodonsk/firm/70000001049148270",
+          "status": "indexed"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "роллы",
+        "сеты",
+        "онигири",
+        "стрит-роллы",
+        "пицца",
+        "горячие блюда",
+        "обеды",
+        "закуски",
+        "комбо",
+        "напитки",
+        "дополнительно"
+      ],
+      "menu_sample": [
+        {
+          "id": "8800",
+          "name": "Ролл Филадельфия / 8 шт.",
+          "price_rub": 429,
+          "old_price_rub": null,
+          "weight_g": 226,
+          "pieces": 8,
+          "ingredients_published": [
+            "лосось",
+            "сливочный сыр",
+            "огурец",
+            "нори",
+            "рис"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "shef_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "8799",
+          "name": "Ролл Филадельфия ЛЮКС / 8 шт.",
+          "price_rub": 699,
+          "old_price_rub": null,
+          "weight_g": 260,
+          "pieces": 8,
+          "ingredients_published": [
+            "лосось",
+            "сливочно-творожный сыр",
+            "огурец",
+            "нори",
+            "рис"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "shef_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "8927",
+          "name": "Ролл Запечённый краб / 8 шт.",
+          "price_rub": 329,
+          "old_price_rub": null,
+          "weight_g": 235,
+          "pieces": 8,
+          "ingredients_published": [
+            "крем-краб",
+            "огурец",
+            "яки-соус",
+            "икра масаго",
+            "рис",
+            "нори"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "shef_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "8824",
+          "name": "Сет Мафия / 40 шт.",
+          "price_rub": 1669,
+          "old_price_rub": null,
+          "weight_g": 1039,
+          "pieces": 40,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "shef_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "set_components": [
+            "Классический с лососем",
+            "Каролина",
+            "Аяши",
+            "Темпура маки",
+            "Филадельфия"
+          ],
+          "composition_status": "set names known; component portions and recipe splits not known"
+        }
+      ],
+      "offer_observations": [
+        {
+          "type": "birthday_discount",
+          "value_percent": 15,
+          "code": "ДЕНЬ",
+          "window": "3 дня до, день рождения, 3 дня после",
+          "conditions": "Дата рождения в профиле; документ; исключены комбо и акционные позиции; без других акций и начисления/списания бонусов.",
+          "source_ids": [
+            "shef_promos"
+          ]
+        },
+        {
+          "type": "birthday_gift",
+          "min_order_rub": 1290,
+          "code": "UDAY",
+          "gift_choices": [
+            "Пепперони 33 см",
+            "Филадельфия ЛЮКС"
+          ],
+          "window": "День рождения и 3 дня после",
+          "uses": 1,
+          "conditions": "Один подарок; профиль с ДР; сайт/приложение; не совмещается с другими акциями и начислением/списанием бонусов.",
+          "source_ids": [
+            "shef_promos"
+          ]
+        }
+      ],
+      "delivery": {
+        "source_ids": [
+          "shef_delivery"
+        ],
+        "free_from_rub": 1800,
+        "tiers": [
+          {
+            "range_rub": [
+              0,
+              1199
+            ],
+            "fee_rub": 100
+          },
+          {
+            "range_rub": [
+              1200,
+              1799
+            ],
+            "fee_rub": 49
+          },
+          {
+            "range_rub": [
+              1800,
+              null
+            ],
+            "fee_rub": 0
+          }
+        ],
+        "published_hours": "10:00–21:30",
+        "confidence": "medium; cached page, cart not checked"
+      },
+      "extras": {
+        "condiments": "Соевый соус, имбирь, васаби приобретаются отдельно",
+        "source_ids": [
+          "shef_home"
+        ]
+      },
+      "usp_claims": [
+        {
+          "claim": "Меню включает обеды, стрит-роллы, онигири; в описаниях обещание доставки 45 мин.",
+          "status": "seller_claim; not measured",
+          "source_ids": [
+            "shef_home"
+          ]
+        }
+      ],
+      "design": {
+        "status": "visual_review_not_performed; text/HTML only"
+      },
+      "reviews": {
+        "sample_n": 0,
+        "themes": [],
+        "status": "not_collected_in_this_subtask",
+        "caution": "Картами можно пользоваться с пометкой возможной недостоверности; рейтинг не равен качеству. Проверять филиал, период, выборку и связь с заказом.",
+        "owner_assessment": {
+          "claim": "Пользователь считает отзывы на Картах накрученными",
+          "source": "user_instruction 2026-10-08",
+          "independent_verification": false
+        },
+        "preferred_source": "Яндекс Еда по указанию пользователя; не считать автоматически все тексты честными"
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    },
+    {
+      "id": "yobidoyobi-volgodonsk",
+      "name": "Ёбидоёби",
+      "city": "Волгодонск",
+      "identity_confidence": "high_for_city_and_address; current_menu_not_live_verified",
+      "aliases": [
+        "Ёби Даёби",
+        "Ёби-да-Ёби"
+      ],
+      "outlets": [
+        {
+          "address": "Черникова, 4Г",
+          "source_ids": [
+            "yobi_promos_index"
+          ]
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://volgodonsk.yobidoyobi.ru/",
+          "status": "CAPTCHA on direct open; no bypass"
+        },
+        "yandex_eda": {
+          "url": "https://eda.yandex.ru/restaurant/yobidoyobi_osfkt",
+          "status": "route_lead; web open unavailable"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "app": {
+          "url": null,
+          "status": "not_verified_in_this_pass"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "роллы и суши",
+        "темпура",
+        "запечённые",
+        "наборы",
+        "горячее и салаты",
+        "ёнигири",
+        "десерты",
+        "напитки",
+        "специи",
+        "соусы"
+      ],
+      "menu_sample": [
+        {
+          "id": "kapppa-index",
+          "name": "Каппа маки",
+          "price_rub": 159,
+          "old_price_rub": null,
+          "weight_g": 130,
+          "pieces": null,
+          "ingredients_published": [
+            "рис",
+            "мицукан",
+            "сахар",
+            "комбу",
+            "соль",
+            "нори",
+            "огурец",
+            "кунжут белый"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "yobi_home_index"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "indexed only; live unavailable; do not treat as current purchasable offer",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "confidence": "low_for_current_price",
+          "weight_conflict": {
+            "other_indexed_weight_g": 140,
+            "source_id": "yobi_detail_index"
+          }
+        },
+        {
+          "id": "caesar-index",
+          "name": "Цезарь",
+          "price_rub": 190,
+          "old_price_rub": null,
+          "weight_g": 210,
+          "pieces": null,
+          "ingredients_published": [
+            "рис",
+            "мицукан",
+            "сахар",
+            "комбу",
+            "соль",
+            "нори",
+            "салат",
+            "майонез",
+            "чеснок",
+            "соевый соус",
+            "огурец консервированный",
+            "филе куриное",
+            "приправа для курицы",
+            "помидор"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "yobi_home_index"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "indexed only; live unavailable; do not treat as current purchasable offer",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "confidence": "low_for_current_price"
+        },
+        {
+          "id": "phil-smoked-light-index",
+          "name": "Филадельфия с лососем холодного копчения лайт",
+          "price_rub": 480,
+          "old_price_rub": null,
+          "weight_g": 230,
+          "pieces": null,
+          "ingredients_published": [
+            "рис",
+            "мицукан",
+            "сахар",
+            "комбу",
+            "соль",
+            "нори",
+            "огурец",
+            "лосось холодного копчения",
+            "сыр сливочный"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "yobi_home_index"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "indexed only; live unavailable; do not treat as current purchasable offer",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "confidence": "low_for_current_price",
+          "weight_conflict": {
+            "other_indexed_weight_g": 225,
+            "source_id": "yobi_detail_index"
+          }
+        },
+        {
+          "id": "big-bich-index",
+          "name": "Большой БиЧ",
+          "price_rub": 1669,
+          "old_price_rub": null,
+          "weight_g": 1415,
+          "pieces": null,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "yobi_detail_index"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "indexed only; live unavailable; do not treat as current purchasable offer",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "set_components": [
+            "Краб терияки NEW",
+            "Филадельфия лосось лайт",
+            "Цезарь ролл",
+            "Калифорния с огурцом",
+            "Лава темпура",
+            "Цезарь темпура"
+          ],
+          "confidence": "low_for_current_price"
+        }
+      ],
+      "offer_observations": [
+        {
+          "type": "first_order_gift",
+          "gift": "Филадельфия лосось лайт",
+          "min_order_rub": 1599,
+          "status": "indexed historical/undated; live conditions unknown",
+          "source_ids": [
+            "yobi_promos_index"
+          ]
+        },
+        {
+          "type": "birthday_and_loyalty",
+          "status": "headings present, detailed conditions not read",
+          "source_ids": [
+            "yobi_promos_index"
+          ]
+        }
+      ],
+      "delivery": {
+        "status": "not_verified"
+      },
+      "extras": {
+        "condiments": "Сеть публично предупреждает о платных специях; локальную комплектацию проверить",
+        "source_ids": [
+          "yobi_home_index"
+        ]
+      },
+      "usp_claims": [
+        {
+          "claim": "Отдельная группа лучших цен без скидок и много наборов",
+          "status": "indexed menu structure; no quality inference",
+          "source_ids": [
+            "yobi_home_index"
+          ]
+        }
+      ],
+      "design": {
+        "status": "not_visually_reviewed"
+      },
+      "reviews": {
+        "sample_n": 0,
+        "themes": [],
+        "status": "not_collected_in_this_subtask",
+        "caution": "Картами можно пользоваться с пометкой возможной недостоверности; рейтинг не равен качеству. Проверять филиал, период, выборку и связь с заказом.",
+        "owner_assessment": {
+          "claim": "Пользователь считает отзывы на Картах накрученными",
+          "source": "user_instruction 2026-10-08",
+          "independent_verification": false
+        }
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    },
+    {
+      "id": "chicken-roll-volgodonsk",
+      "name": "Суши Ролл",
+      "city": "Волгодонск",
+      "identity_confidence": "high",
+      "aliases": [
+        "Chicken & Roll",
+        "Чикен ролл"
+      ],
+      "identity_note": "Старый домен перенаправляет на новый сайт; сохранить один competitor_id и оба бренда до уточнения юридической преемственности.",
+      "outlets": [
+        {
+          "address": "Ленина, 110",
+          "source_ids": [
+            "chicken_home"
+          ]
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://xn--61-vlcmaqngs4c.xn--p1ai/",
+          "status": "verified"
+        },
+        "legacy_website": {
+          "url": "https://chickenandroll.ru/",
+          "status": "redirect_verified"
+        },
+        "vk": {
+          "url": "https://vk.com/club225972359",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "ios": {
+          "url": "https://apps.apple.com/us/app/6504604627",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=ru.smartomato.marketplace.a45312",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "курица",
+        "комбо",
+        "пицца",
+        "сеты",
+        "роллы",
+        "темпура",
+        "запечённые роллы",
+        "онигири",
+        "суши и гунканы",
+        "салаты и горячее",
+        "закуски",
+        "сэндвичи",
+        "напитки"
+      ],
+      "menu_sample": [
+        {
+          "id": "filadelfiya",
+          "name": "Филадельфия",
+          "price_rub": 630,
+          "old_price_rub": null,
+          "weight_g": 250,
+          "pieces": null,
+          "ingredients_published": [
+            "рис",
+            "лосось малосольный",
+            "огурец",
+            "икра летучей рыбы",
+            "нори",
+            "сыр сливочный"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "chicken_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "filadelfiya-layt",
+          "name": "Филадельфия лайт",
+          "price_rub": 450,
+          "old_price_rub": null,
+          "weight_g": 220,
+          "pieces": null,
+          "ingredients_published": [
+            "нори",
+            "рис",
+            "огурец",
+            "сыр сливочный",
+            "лосось"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "chicken_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "zloy-okun",
+          "name": "Злой окунь",
+          "price_rub": 180,
+          "old_price_rub": null,
+          "weight_g": 200,
+          "pieces": null,
+          "ingredients_published": [
+            "рис",
+            "нори",
+            "окунь темпура",
+            "кунжут",
+            "соус спайси",
+            "огурец",
+            "сливочный сыр"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "chicken_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required"
+        },
+        {
+          "id": "gurman",
+          "name": "Гурман",
+          "price_rub": 1450,
+          "old_price_rub": null,
+          "weight_g": 830,
+          "pieces": 32,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "chicken_home"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "set_components": [
+            "Калифорния с лососем",
+            "Калифорния с крабом",
+            "Филадельфия лайт",
+            "Филадельфия с копчённым лососем"
+          ],
+          "composition_status": "set component names only"
+        }
+      ],
+      "offer_observations": [
+        {
+          "type": "pizza_gift",
+          "code": "МАНГО",
+          "trigger": "Пиццы «4 Сезона» 33 см и «2 в 1» 33 см",
+          "gift": "Чикен-Манго 33 см",
+          "conditions": "Не совмещается с комбо, другими акциями и начислением/списанием бонусов",
+          "source_ids": [
+            "chicken_promotions"
+          ]
+        },
+        {
+          "type": "birthday_discount",
+          "value_percent": 15,
+          "window": "3 дня до и 3 дня после ДР",
+          "conditions": "Доставка; исключены комбо / акционные позиции; без других акций и начисления/списания бонусов",
+          "source_ids": [
+            "chicken_promotions"
+          ]
+        },
+        {
+          "type": "scheduled_discount",
+          "name": "Ланч",
+          "value_percent": 15,
+          "schedule": "Пн–Чт 11:00–15:00",
+          "conditions": "Не действует на комбо, без других скидок и списания бонусов",
+          "conflict": "В тексте есть противоречивая фраза «не действует на неакционные позиции»; не исправлять как установленное правило",
+          "source_ids": [
+            "chicken_promotions"
+          ]
+        },
+        {
+          "type": "scheduled_discount",
+          "name": "Бодун",
+          "value_percent": 20,
+          "schedule": "Воскресенье 10:00–12:00",
+          "conditions": "Есть исключения блюд; без комбо, других акций и списания бонусов",
+          "source_ids": [
+            "chicken_promotions"
+          ]
+        }
+      ],
+      "loyalty": {
+        "redemption_limit_percent": 20,
+        "accrual_percent": null,
+        "source_ids": [
+          "chicken_loyalty"
+        ],
+        "note": "Публичная страница не дала ставку начисления."
+      },
+      "delivery": {
+        "free_from_rub": 1300,
+        "city_fee_rub": 150,
+        "remote_fee_from_rub": 200,
+        "source_ids": [
+          "chicken_delivery"
+        ],
+        "confidence": "high_for_published_terms; address-specific quote not checked"
+      },
+      "extras": {
+        "condiments": "Соевый соус, васаби, имбирь отдельно",
+        "source_ids": [
+          "chicken_home"
+        ]
+      },
+      "usp_claims": [
+        {
+          "claim": "Широкое меню: роллы, пицца, курица",
+          "status": "observed_structure",
+          "source_ids": [
+            "chicken_home"
+          ]
+        }
+      ],
+      "design": {
+        "status": "not_visually_reviewed"
+      },
+      "reviews": {
+        "sample_n": 0,
+        "themes": [],
+        "status": "not_collected_in_this_subtask",
+        "caution": "Картами можно пользоваться с пометкой возможной недостоверности; рейтинг не равен качеству. Проверять филиал, период, выборку и связь с заказом."
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    },
+    {
+      "id": "sushi-mix-volgodonsk",
+      "name": "Суши Микс",
+      "city": "Волгодонск",
+      "identity_confidence": "high",
+      "aliases": [
+        "Sushi Mix"
+      ],
+      "outlets": [
+        {
+          "address": "Ленина, 108/31",
+          "source_ids": [
+            "mix_home"
+          ]
+        },
+        {
+          "address": "Энтузиастов, 21В, ТК «Олимп»",
+          "source_ids": [
+            "mix_home"
+          ]
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://taplink.cc/_sushi_mix_",
+          "status": "verified_link_hub_with_menu"
+        },
+        "menu": {
+          "url": "https://taplink.cc/_sushi_mix_/p/34c255/",
+          "status": "verified"
+        },
+        "ios": {
+          "url": "https://apps.apple.com/us/app/%D1%81%D1%83%D1%88%D0%B8-mix-%D0%B2%D0%BE%D0%BB%D0%B3%D0%BE%D0%B4%D0%BE%D0%BD%D1%81%D0%BA/id1532623568",
+          "status": "linked_from_official_hub; app not tested"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=com.yumasoft.ypos.sushimix.customer",
+          "status": "linked_from_official_hub; app not tested"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.com/maps/org/sushi_mix/1687413327/",
+          "status": "indexed_lenina_branch"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "премиум роллы",
+        "холодные роллы",
+        "запечённые роллы",
+        "жареные роллы",
+        "сеты",
+        "бургеры",
+        "лапша WOK",
+        "десерты",
+        "пицца",
+        "закуски",
+        "соусы"
+      ],
+      "menu_sample": [
+        {
+          "id": "2847301",
+          "name": "Ролл Филадельфия лайт",
+          "price_rub": 399,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mix_cold"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "composition_status": "product detail not yet read; no ingredients inferred",
+          "confidence": "high_for_published_list_price"
+        },
+        {
+          "id": "2784845",
+          "name": "Ролл Калифорния",
+          "price_rub": 369,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mix_cold"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "composition_status": "product detail not yet read; no ingredients inferred",
+          "confidence": "high_for_published_list_price"
+        },
+        {
+          "id": "12797522",
+          "name": "Сет 3",
+          "price_rub": 899,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mix_sets"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "composition_status": "product detail not yet read; no ingredients inferred",
+          "confidence": "high_for_published_list_price"
+        },
+        {
+          "id": "11999522",
+          "name": "Сет Шанхай",
+          "price_rub": 1999,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": null,
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mix_sets"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "composition_status": "product detail not yet read; no ingredients inferred",
+          "confidence": "high_for_published_list_price"
+        }
+      ],
+      "offer_observations": [
+        {
+          "type": "birthday_discount",
+          "value_percent": 10,
+          "conditions": null,
+          "status": "headline_only; exact period and exclusions not published in read source",
+          "source_ids": [
+            "mix_home"
+          ]
+        }
+      ],
+      "delivery": {
+        "city_fee_rub": 100,
+        "free_from_rub": null,
+        "source_ids": [
+          "mix_home"
+        ],
+        "confidence": "high_for_published_headline; no address quote"
+      },
+      "usp_claims": [
+        {
+          "claim": "Два пункта в старом и новом городе, широкий выбор блюд",
+          "status": "observed_structure",
+          "source_ids": [
+            "mix_home",
+            "mix_menu"
+          ]
+        }
+      ],
+      "design": {
+        "status": "visual_review_not_performed",
+        "code_only_note": "В публичной Taplink-разметке кнопки красные/фиолетовые; это не полноценная визуальная оценка."
+      },
+      "reviews": {
+        "sample_n": 0,
+        "themes": [],
+        "status": "not_collected_in_this_subtask",
+        "caution": "Картами можно пользоваться с пометкой возможной недостоверности; рейтинг не равен качеству. Проверять филиал, период, выборку и связь с заказом."
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    },
+    {
+      "id": "pizza-da-mamma-volgodonsk",
+      "name": "Пицца да мамма",
+      "city": "Волгодонск",
+      "identity_confidence": "high",
+      "aliases": [
+        "Пицца Ды Мама",
+        "Pizza da mama"
+      ],
+      "outlets": [
+        {
+          "address": "Карла Маркса, 21",
+          "source_ids": [
+            "mamma_home"
+          ]
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://www.pizzadamamma.ru/",
+          "status": "verified"
+        },
+        "telegram": {
+          "url": "https://t.me/Pizza_da_mamma_volgodonsk",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.ru/profile/35076691839",
+          "status": "linked_on_official_site_not_opened"
+        },
+        "app": {
+          "url": null,
+          "status": "not_found_in_reviewed_site; absence_not_proven"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "пицца",
+        "блины",
+        "снеки",
+        "напитки",
+        "соусы"
+      ],
+      "menu_sample": [
+        {
+          "id": "358625123532",
+          "name": "Пепперони",
+          "price_rub": 700.0,
+          "old_price_rub": null,
+          "weight_g": 650,
+          "pieces": null,
+          "ingredients_published": [
+            "Фирменный томатный соус",
+            "сыр моцарелла",
+            "пепперони"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mamma_catalog"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "product_url": "https://www.pizzadamamma.ru/tproduct/358625123532-pepperoni",
+          "diameter_cm": 35,
+          "weight_published": "650±50 г",
+          "weight_low_g": 600,
+          "weight_high_g": 700,
+          "composition_status": "published toppings/sauce list omits dough; dough must be separately assumed for modeled recipe, not silently omitted"
+        },
+        {
+          "id": "596063688822",
+          "name": "Ассорти",
+          "price_rub": 800.0,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": [
+            "Фирменный томатный соус",
+            "сыр моцарелла",
+            "ветчина",
+            "бекон в/к",
+            "куриная грудка",
+            "томаты",
+            "лук репчатый"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mamma_catalog"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "product_url": "https://www.pizzadamamma.ru/tproduct/596063688822-assorti",
+          "diameter_cm": 35,
+          "weight_published": "720-750 г",
+          "weight_low_g": 720,
+          "weight_high_g": 750,
+          "composition_status": "published toppings/sauce list omits dough; dough must be separately assumed for modeled recipe, not silently omitted"
+        },
+        {
+          "id": "845100115772",
+          "name": "Мясная",
+          "price_rub": 800.0,
+          "old_price_rub": null,
+          "weight_g": 650,
+          "pieces": null,
+          "ingredients_published": [
+            "Фирменный томатный соус",
+            "сыр моцарелла",
+            "ветчина",
+            "салями",
+            "куриная грудка",
+            "шампиньоны",
+            "лук репчатый"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mamma_catalog"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "product_url": "https://www.pizzadamamma.ru/tproduct/845100115772-myasnaya",
+          "diameter_cm": 35,
+          "weight_published": "650±50 г",
+          "weight_low_g": 600,
+          "weight_high_g": 700,
+          "composition_status": "published toppings/sauce list omits dough; dough must be separately assumed for modeled recipe, not silently omitted"
+        },
+        {
+          "id": "171350409462",
+          "name": "4 сыра",
+          "price_rub": 800.0,
+          "old_price_rub": null,
+          "weight_g": null,
+          "pieces": null,
+          "ingredients_published": [
+            "Фирменный томатный соус",
+            "сыр моцарелла",
+            "сыр дор блю",
+            "сыр чеддер",
+            "сыр пармезан"
+          ],
+          "ingredient_quantities_g": null,
+          "price_channel": "own_website",
+          "source_ids": [
+            "mamma_catalog"
+          ],
+          "checked_on": "2026-10-08",
+          "availability": "published; checkout not tested",
+          "estimated_food_cost_rub": null,
+          "cost_status": "not_calculated; ingredient quantities and dated Teplo purchase mapping required",
+          "product_url": "https://www.pizzadamamma.ru/tproduct/171350409462-4-sira",
+          "diameter_cm": 35,
+          "weight_published": "720-750 г",
+          "weight_low_g": 720,
+          "weight_high_g": 750,
+          "composition_status": "published toppings/sauce list omits dough; dough must be separately assumed for modeled recipe, not silently omitted"
+        }
+      ],
+      "offer_observations": [],
+      "offer_coverage": "promotional artwork not visually read; no claim of no promotions",
+      "delivery": {
+        "free_from_rub": 2000,
+        "area": "Волгодонск; сайт сообщает, что за пределы города доставка не осуществляется",
+        "paid_fee_rub": null,
+        "hours": "10:00–22:00",
+        "source_ids": [
+          "mamma_home"
+        ]
+      },
+      "extras": {
+        "additional_ingredient_portion_g": 30,
+        "typical_topping_surcharge_rub": 70,
+        "cheese_or_canned_tuna_surcharge_rub": 90,
+        "additional_sauce_rub": 60,
+        "source_ids": [
+          "mamma_catalog"
+        ]
+      },
+      "usp_claims": [
+        {
+          "claim": "Итальянская пицца; в выборке пиццы 35 см; есть блины",
+          "status": "seller_positioning/menu facts; authenticity not evaluated",
+          "source_ids": [
+            "mamma_home",
+            "mamma_catalog"
+          ]
+        }
+      ],
+      "design": {
+        "status": "visual_review_not_performed",
+        "code_only_note": "В CSS Roboto Slab для заголовков и Montserrat для описаний; не делать вывод об ощущении премиальности без скриншота."
+      },
+      "reviews": {
+        "sample_n": 0,
+        "themes": [],
+        "status": "not_collected_in_this_subtask",
+        "caution": "Картами можно пользоваться с пометкой возможной недостоверности; рейтинг не равен качеству. Проверять филиал, период, выборку и связь с заказом."
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    },
+    {
+      "id": "sushivesla-volgodonsk",
+      "name": "СушиВёсла",
+      "city": "Волгодонск",
+      "identity_confidence": "high_for_location; menu_not_collected",
+      "aliases": [
+        "Суши Весло",
+        "СушиВесла"
+      ],
+      "outlets": [
+        {
+          "address": "Весенняя, 56Г",
+          "source_ids": [
+            "vesla_telegram"
+          ],
+          "note": "В картах и общих постах сокращено до 56; строение 1 встречается в местной рекламе, проверить на карточке."
+        }
+      ],
+      "channels": {
+        "website": {
+          "url": "https://xn--80adjkr6adm9b.xn--p1ai/",
+          "display_url": "https://сушивесла.рф/",
+          "status": "JS_shell_only; city not selected"
+        },
+        "android": {
+          "url": "https://play.google.com/store/apps/details?id=com.ub.sushivesla.app",
+          "status": "app_store_listing_verified; Volgodonsk app not tested"
+        },
+        "telegram": {
+          "url": "https://t.me/s/sushivesla",
+          "status": "official_network_posts_indexed"
+        },
+        "yandex_maps": {
+          "url": "https://yandex.com/maps/org/sushivesla/88818937392/",
+          "status": "indexed_local_card"
+        },
+        "ios": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "vk": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "yandex_eda": {
+          "url": null,
+          "status": "not_identified"
+        },
+        "google_maps": {
+          "url": null,
+          "status": "not_identified"
+        }
+      },
+      "menu_categories": [
+        "роллы",
+        "суши",
+        "онигири",
+        "воки",
+        "поке",
+        "супы",
+        "салаты"
+      ],
+      "menu_categories_status": "network_public_material; complete local menu unknown",
+      "menu_sample": [],
+      "offer_observations": [],
+      "offer_coverage": "Found dated spring 2026 promotions; intentionally not presented as October offers",
+      "delivery": {
+        "status": "not_verified"
+      },
+      "usp_claims": [
+        {
+          "claim": "Паназиатское меню и фирменное приложение",
+          "status": "network_seller_positioning; local complete assortment unverified",
+          "source_ids": [
+            "vesla_app",
+            "vesla_telegram"
+          ]
+        }
+      ],
+      "design": {
+        "status": "not_visually_reviewed"
+      },
+      "reviews": {
+        "source_ids": [
+          "vesla_maps"
+        ],
+        "selection": "Ранее прочитаны 8 полных текстов в верхней части поискового результата; удобная выборка; кеш примерно 3 месяца; год дат не указан. Тексты и отдельные строки в реестре не сохранены.",
+        "themes": [
+          {
+            "theme": "Похвала вкусу/сервису/атмосфере",
+            "kind": "positive",
+            "mentions": 5
+          },
+          {
+            "theme": "Мало дорогих ингредиентов или есть замены / несоответствие ожиданию",
+            "kind": "negative",
+            "mentions": 2
+          },
+          {
+            "theme": "Опоздание и проблемы с комплектацией / поддержкой",
+            "kind": "negative",
+            "mentions": 1
+          },
+          {
+            "theme": "Соевый соус показался несолёным",
+            "kind": "negative",
+            "mentions": 1
+          }
+        ],
+        "multi_label": true,
+        "status": "exploratory_leads_only",
+        "caution": "Отзывы возможно недостоверны. Частоты не выражают доли покупателей; совпадения проверять в свежих отзывах Еды и заказах.",
+        "reported_read_count": 8,
+        "captured_rows": 0,
+        "samples": [],
+        "corpus_status": "No review-level rows were retained; aggregate recollection only, not a reproducible eight-row corpus.",
+        "themes_status": "exploratory; requires fresh review-level capture before quantitative analysis"
+      },
+      "coverage": "source_map_and_small_menu_sample; not_full_audit",
+      "observed_on": "2026-10-08",
+      "economics": "No competitor actual cost claimed. Reconstruct Teplo-cost low/base/high recipes only after ingredient quantity assumptions, yields, dated purchase units, sauces, packaging and condiments are explicit."
+    }
+  ],
+  "followups": [
+    "Read product details/weights/compositions in Sushi Mix app or public product pages.",
+    "Read Sushivesla Volgodonsk menu through UI with city and address context.",
+    "After legitimate CAPTCHA resolution, verify Yobidoyobi prices and conflicting weights.",
+    "Visually inspect websites/apps and promotion artwork before design conclusions.",
+    "Collect dated review samples separately by brand, branch and platform; do not merge mirrored reviews.",
+    "Verify final delivered comparison baskets; website list prices alone exclude sauces, delivery, gifts and loyalty."
+  ]
+}

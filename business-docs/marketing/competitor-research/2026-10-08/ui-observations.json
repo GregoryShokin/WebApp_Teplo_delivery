@@ -1,0 +1,675 @@
+{
+  "schema_version": "1.0",
+  "observed_on": "2026-10-08",
+  "timezone": "Europe/Istanbul",
+  "method": "Read-only CUA native app UI and Chrome rendered DOM. Notes transcribed from tool observations; no raw personal address/device identifiers retained.",
+  "coverage": "Partial representative menu sample, not full audit",
+  "competitors": [
+    {
+      "competitor_id": "fabrika_rollov_volgodonsk",
+      "brand": "Фабрика роллов",
+      "city": "Волгодонск",
+      "identity": "Owner-selected native app; branch identity not independently confirmed",
+      "website": {
+        "status": "not_found_in_this_pass",
+        "url": null
+      },
+      "app": {
+        "status": "observed_running_native",
+        "bundle_id": "ru.goulash.fabrikarollov",
+        "displayed_version": "1.66.20",
+        "store_url": null
+      },
+      "addresses": [],
+      "address_note": "Address in app header may be delivery context, not confirmed restaurant address; omitted.",
+      "categories": [
+        "Специи/соуса/приборы",
+        "Сложные роллы",
+        "Запеченные роллы",
+        "Темпурные роллы",
+        "Маки",
+        "Суши",
+        "Сеты"
+      ],
+      "menu_sample": [
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Филадельфия",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "335",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": "сыр сливочный, огурец, лосось",
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams.",
+          "composition_note": "Rice/nori not in published list; any inclusion in an analog recipe must be an assumption.",
+          "product_rating": {
+            "value": 9.9,
+            "count": 147,
+            "scale_note": "app dish rating; appears on a 10-point interface, not a 5-point restaurant rating"
+          }
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Хрустящий кранч",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "275",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Атлант",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "340",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Авокадо лосось",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "315",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Острый лосось",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "312",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Запеченный Ронин",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "305",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Запеченный Мао",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "300",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        },
+        {
+          "competitor_id": "fabrika_rollov_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Запеченный Ред",
+          "price_rub": 397,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": null,
+          "weight_raw": "325",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Фабрика роллов, category Сложные роллы",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams."
+        }
+      ],
+      "extras": [
+        {
+          "name": "Имбирь",
+          "price_rub": 25,
+          "quantity_raw": "30гр"
+        },
+        {
+          "name": "Соевый соус",
+          "price_rub": 25,
+          "quantity_raw": "40мл"
+        },
+        {
+          "name": "Васаби",
+          "price_rub": 15,
+          "quantity_raw": "10гр"
+        },
+        {
+          "name": "Палочки",
+          "price_rub": 5,
+          "quantity_raw": "1"
+        },
+        {
+          "name": "Сырный соус",
+          "price_rub": 50,
+          "quantity_raw": "40мл"
+        },
+        {
+          "name": "Спайси соус",
+          "price_rub": 50,
+          "quantity_raw": "40мл"
+        },
+        {
+          "name": "Сладкий чили",
+          "price_rub": 50,
+          "quantity_raw": "40мл"
+        },
+        {
+          "name": "Терияки",
+          "price_rub": 50,
+          "quantity_raw": "40мл"
+        },
+        {
+          "name": "Шрирача",
+          "price_rub": 50,
+          "quantity_raw": "40мл"
+        }
+      ],
+      "offers": [],
+      "offers_status": "not_checked",
+      "delivery": {
+        "status": "not_verified; displayed arrival time is contextual, not measured"
+      },
+      "design": {
+        "evidence": "native app screenshot",
+        "observations": [
+          "White background, large dish photos, bold black labels, light grey rounded controls and red CTA",
+          "Shared Goulash interface with Roll Culture; template style alone is not a unique brand distinction"
+        ]
+      },
+      "usp": {
+        "observation": "Eight observed complex rolls all priced 397 RUB",
+        "limitation": "Not the whole menu; quality, fish grams and permanent price policy unverified"
+      },
+      "owner_assessment": {
+        "date": "2026-10-08",
+        "claim": "Recently opened competitor",
+        "independently_verified": false
+      },
+      "reviews": {
+        "text_reviews_collected": 0,
+        "product_ratings_only": true
+      }
+    },
+    {
+      "competitor_id": "roll_kultura_volgodonsk",
+      "brand": "Ролл Культура",
+      "city": "Волгодонск",
+      "identity": "Owner-selected app plus Yandex Eda public restaurant address",
+      "website": {
+        "status": "not_found_in_this_pass",
+        "url": null
+      },
+      "app": {
+        "status": "observed_running_native",
+        "bundle_id": "ru.goulash.rollkultura",
+        "store_url": null
+      },
+      "addresses": [
+        {
+          "address": "Волгодонск, улица Ленина, 47",
+          "source_url": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura"
+        }
+      ],
+      "sources": [
+        "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+        "https://yandex.ru/maps/org/roll_kultura/155962639329/"
+      ],
+      "categories": [
+        "Сеты",
+        "Пицца",
+        "Роллы",
+        "Премиум",
+        "Сэндвичи",
+        "Супы",
+        "Салаты",
+        "Мидии",
+        "Фрайбоксы",
+        "Закуски",
+        "Соусы",
+        "Напитки",
+        "Дополнительно"
+      ],
+      "menu_sample": [
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Фила сет",
+          "price_rub": 1199,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 960,
+          "weight_raw": "960 г",
+          "pieces_count": null,
+          "channel": "native_app",
+          "source": "native app Ролл Культура, Фила сет card",
+          "composition_text": "Фила с угрем, фила с лососем, фила с креветкой, фила с тунцом.",
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "composition_kind": "component_rolls",
+          "product_rating": {
+            "value": 9.8,
+            "count": 70,
+            "scale_note": "app dish rating, 10-point-style interface"
+          },
+          "extras_note": "Soy sauce, ginger and wasabi added separately in Дополнительно.",
+          "nutrition_anomaly": "App displays 1 for all four nutrition fields per 100g and 9.60 for 960g; implausible placeholder, unusable for recipe inference."
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Фила сет",
+          "price_rub": 1498,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 960,
+          "weight_raw": "960 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "detail_checked": true,
+          "extras_note": "Soy sauce, ginger and wasabi added separately. Ingredient composition not present in inspected dialog."
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Калифорния с лососем",
+          "price_rub": 398,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 205,
+          "weight_raw": "205 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified",
+          "detail_checked": true,
+          "extras_note": "Soy sauce, ginger and wasabi added separately. Ingredient composition not present in inspected dialog.",
+          "nutrition_note": "Yandex labels nutrition as open data for similar dishes; not this restaurant recipe."
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Запеченный лосось",
+          "price_rub": 461,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 255,
+          "weight_raw": "255 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Фила лайт лосось",
+          "price_rub": 398,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 230,
+          "weight_raw": "230 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Классика с копченным лососем",
+          "price_rub": 248,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 130,
+          "weight_raw": "130 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "roll_kultura_volgodonsk",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Сочная креветка",
+          "price_rub": 398,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 215,
+          "weight_raw": "215 г",
+          "pieces_count": null,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        }
+      ],
+      "offers": [
+        {
+          "name": "EAT400",
+          "advertised_benefit_rub": 400,
+          "minimum_order_rub": 800,
+          "eligibility": "first order, full terms not opened",
+          "channel": "yandex_eda",
+          "issuer": "platform-wide offer, not a verified restaurant-funded USP",
+          "source_url": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura"
+        }
+      ],
+      "design": {
+        "evidence": "native app screenshot",
+        "observations": [
+          "White/red Goulash dish-card interface with large photos; shared template"
+        ]
+      },
+      "usp": {
+        "status": "not_established; menu facts only"
+      },
+      "reviews": {
+        "platform_rating": 4.7,
+        "rating_count": 63,
+        "origin_platform": "yandex_eda",
+        "text_reviews_collected": 0,
+        "source_url": "https://eda.yandex.ru/r/roll_kul_tura_restaurant?placeSlug=roll_kultura"
+      },
+      "delivery": {
+        "status": "fees/minimum/time not verified for comparable basket"
+      },
+      "price_comparison": {
+        "name": "Фила сет",
+        "app_rub": 1199,
+        "eda_rub": 1498,
+        "same_weight_g": 960,
+        "delta_rub": 299,
+        "delta_percent": 24.94,
+        "match_status": "same name and weight; Eda dialog has no composition, exact recipe equivalence unverified",
+        "basket_extras_and_delivery": "not included"
+      }
+    },
+    {
+      "competitor_id": "sushi_shef",
+      "brand": "Суши Шеф",
+      "channel": "yandex_eda",
+      "city": "Волгодонск",
+      "branch_address": "Волгодонск, Гагарина, 66А",
+      "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+      "menu_sample": [
+        {
+          "competitor_id": "sushi_shef",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Филадельфия 8шт",
+          "price_rub": 493,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 226,
+          "weight_raw": "226 г",
+          "pieces_count": 8,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "sushi_shef",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Классика с огурцом 8шт",
+          "price_rub": 159,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 125,
+          "weight_raw": "125 г",
+          "pieces_count": 8,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "sushi_shef",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Двойная креветка 8шт",
+          "price_rub": 619,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 285,
+          "weight_raw": "285 г",
+          "pieces_count": 8,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        },
+        {
+          "competitor_id": "sushi_shef",
+          "observed_on": "2026-10-08",
+          "city": "Волгодонск",
+          "name": "Сочная креветка 8шт",
+          "price_rub": 562,
+          "price_type": "displayed_current_price; eligibility not tested",
+          "weight_g": 230,
+          "weight_raw": "230 г",
+          "pieces_count": 8,
+          "channel": "yandex_eda",
+          "source": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+          "composition_text": null,
+          "ingredient_masses_g": null,
+          "cost_at_teplo_prices_rub": null,
+          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "availability": "listed; checkout and stop-list not verified"
+        }
+      ],
+      "reviews": {
+        "header_rating": 4.7,
+        "header_rating_count": 80,
+        "dialog_rating": 4.7,
+        "dialog_rating_count": 63,
+        "dialog_text_review_count": 11,
+        "captured_text_reviews": 5,
+        "captured_by_origin": {
+          "yandex_eda": 4,
+          "yandex_maps": 1
+        },
+        "sort": "Сначала новые",
+        "rating_switch": "Рейтинг Яндекс Еды selected",
+        "count_conflict": "80 header vs 63 dialog unexplained; retain both",
+        "coverage": "Five unique displayed texts, not complete eleven-review corpus",
+        "samples": [
+          {
+            "sample_id": "shef-ui-1",
+            "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+            "source_surface": "Yandex Eda restaurant review dialog",
+            "origin_platform": "yandex_eda",
+            "date_raw": "27 сентября",
+            "date_iso": null,
+            "year_inferred": false,
+            "summary": "Гость сообщил о холодной еде и подозрении на несвежесть; ресторан отрицает предварительное приготовление. Это жалоба, не установленный факт качества.",
+            "polarity": "negative",
+            "stars": null,
+            "author_name_stored": false,
+            "review_permalink": null,
+            "observed_on": "2026-10-08"
+          },
+          {
+            "sample_id": "shef-ui-2",
+            "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+            "source_surface": "Yandex Eda restaurant review dialog",
+            "origin_platform": "yandex_maps",
+            "date_raw": "21 сентября",
+            "date_iso": null,
+            "year_inferred": false,
+            "summary": "Похвала вкусу роллов.",
+            "polarity": "positive",
+            "stars": null,
+            "author_name_stored": false,
+            "review_permalink": null,
+            "observed_on": "2026-10-08"
+          },
+          {
+            "sample_id": "shef-ui-3",
+            "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+            "source_surface": "Yandex Eda restaurant review dialog",
+            "origin_platform": "yandex_eda",
+            "date_raw": "24 апреля",
+            "date_iso": null,
+            "year_inferred": false,
+            "summary": "Предпочтение ресторана, повторные заказы роллов.",
+            "polarity": "positive",
+            "stars": null,
+            "author_name_stored": false,
+            "review_permalink": null,
+            "observed_on": "2026-10-08"
+          },
+          {
+            "sample_id": "shef-ui-4",
+            "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+            "source_surface": "Yandex Eda restaurant review dialog",
+            "origin_platform": "yandex_eda",
+            "date_raw": "17 января",
+            "date_iso": null,
+            "year_inferred": false,
+            "summary": "Похвала скорости доставки, тёплой еде и вкусу.",
+            "polarity": "positive",
+            "stars": null,
+            "author_name_stored": false,
+            "review_permalink": null,
+            "observed_on": "2026-10-08"
+          },
+          {
+            "sample_id": "shef-ui-5",
+            "source_url": "https://eda.yandex.ru/r/sushi_shef?placeSlug=sushi_shef_3hsv7",
+            "source_surface": "Yandex Eda restaurant review dialog",
+            "origin_platform": "yandex_eda",
+            "date_raw": "18 сентября 2025",
+            "date_iso": "2025-09-18",
+            "year_inferred": false,
+            "summary": "Пожелания выполнены; похвала вкусу и вежливому курьеру.",
+            "polarity": "positive",
+            "stars": null,
+            "author_name_stored": false,
+            "review_permalink": null,
+            "observed_on": "2026-10-08"
+          }
+        ],
+        "owner_assessment": {
+          "date": "2026-10-08",
+          "maps_trust": "Owner reports manipulation; independently unverified",
+          "eda": "Owner asks to use for analysis; authenticity not guaranteed"
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Native app card dismissal/navigation was limited; no full menu export.",
+    "VK read blocked by browser security policy; no bypass attempted.",
+    "No current Teplo purchase-price snapshot collected in this pass.",
+    "No checkout, order, login, review post or social message performed."
+  ]
+}
