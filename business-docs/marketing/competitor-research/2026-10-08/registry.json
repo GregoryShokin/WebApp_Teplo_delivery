@@ -21,6 +21,10 @@
           "selector": {
             "competitors.competitor_id": "fabrika_rollov_volgodonsk"
           }
+        },
+        {
+          "file": "factory-philadelphia-model.json",
+          "selector": "whole document"
         }
       ],
       "menu_observations": 8,
@@ -42,7 +46,8 @@
           "displayed_version": "1.66.20",
           "store_url": null
         }
-      }
+      },
+      "weight_clarification": "Philadelphia335 is grams, owner-confirmed2026-10-08; other raw labels unchanged."
     },
     {
       "id": "nippon-volgodonsk",
@@ -554,9 +559,10 @@
     "status": "not_calculated",
     "missing": [
       "current dated Teplo ingredient purchase-price snapshot",
-      "defensible ingredient quantities for competitor analog recipes"
+      "dated matched Teplo baseline recipes and weights for further dishes; Factory Philadelphia quantity example prepared"
     ],
-    "method": "skills/teplo-competitor-research/references/costing-method.md (repository-relative)"
+    "method": "skills/teplo-competitor-research/references/costing-method.md (repository-relative)",
+    "quantity_model_status": "First Factory Philadelphia quantity model calculated; monetary costs still pending."
   },
   "history": {
     "source_map": "skills/teplo-competitor-research/references/source-map.md (repository-relative)",
@@ -612,5 +618,16 @@
       ],
       "limitation": "Retained amount is not net profit or the competitor actual direct price; delivery model, promotion funding, other fees and taxes need separate treatment."
     }
+  },
+  "quantity_estimation_policy": {
+    "model": "teplo_weight_ratio_fixed_rice_v1",
+    "source": "owner_instruction",
+    "reported_on": "2026-10-08",
+    "baseline": "Our matched recipe quantities and portion weight =100% reference",
+    "scale_factor": "competitor_declared_weight / teplo_declared_weight",
+    "non_rice_quantity": "teplo_quantity * scale_factor",
+    "rice_quantity": "teplo_quantity unchanged, including fixed rice-preparation subtree",
+    "mass_gap_policy": "Report gap when ready-weight basis is confirmed; never auto-fill or renormalize",
+    "first_calculated_example": "factory-philadelphia-model.json"
   }
 }

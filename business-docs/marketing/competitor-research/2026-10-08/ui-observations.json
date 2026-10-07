@@ -39,7 +39,7 @@
           "name": "Филадельфия",
           "price_rub": 397,
           "price_type": "displayed_current_price; eligibility not tested",
-          "weight_g": null,
+          "weight_g": 335,
           "weight_raw": "335",
           "pieces_count": null,
           "channel": "native_app",
@@ -47,15 +47,19 @@
           "composition_text": "сыр сливочный, огурец, лосось",
           "ingredient_masses_g": null,
           "cost_at_teplo_prices_rub": null,
-          "cost_status": "not_calculated; current purchase prices and ingredient masses not yet obtained",
+          "cost_status": "quantity scenario calculated from dated Teplo reference; current pricebook and cost not yet calculated",
           "availability": "listed; checkout and stop-list not verified",
-          "weight_note": "Numeric weight label; unit was not displayed, so not normalized to grams.",
+          "weight_note": "Raw UI label 335 did not print a unit; owner confirmed on 2026-10-08 that this value is grams.",
           "composition_note": "Rice/nori not in published list; any inclusion in an analog recipe must be an assumption.",
           "product_rating": {
             "value": 9.9,
             "count": 147,
             "scale_note": "app dish rating; appears on a 10-point interface, not a 5-point restaurant rating"
-          }
+          },
+          "weight_unit": "g",
+          "weight_unit_source": "owner_confirmation_2026-10-08",
+          "rub_per_100g": 118.51,
+          "quantity_model_ref": "factory-philadelphia-model.json"
         },
         {
           "competitor_id": "fabrika_rollov_volgodonsk",

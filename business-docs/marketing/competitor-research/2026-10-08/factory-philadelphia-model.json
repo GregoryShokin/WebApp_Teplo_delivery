@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "model_id": "factory-philadelphia-fixed-rice-2026-10-08",
+  "calculated_on": "2026-10-08",
+  "quantity_model": "teplo_weight_ratio_fixed_rice_v1",
+  "method_source": "Direct owner instruction 2026-10-08",
+  "competitor": {
+    "id": "fabrika-rollov-volgodonsk",
+    "dish": "Филадельфия",
+    "weight_g": 335,
+    "weight_source": "Owner confirmed UI value 335 as grams, 2026-10-08",
+    "price_rub": 397,
+    "channel": "native_app",
+    "observation_ref": "ui-observations.json",
+    "published_composition": "сыр сливочный, огурец, лосось"
+  },
+  "baseline": {
+    "name": "Филадельфия классик",
+    "product_guid": "57ec7653-49b0-4d70-a375-60f56184a150",
+    "chart_id": "fb6d08ff-7f87-4866-aa33-26fd69a9aa6a",
+    "chart_date_from": "2025-08-25",
+    "chart_date_to_exclusive": null,
+    "snapshot_date": "2026-10-07",
+    "recipe_status": "single_date_active_unscoped_chart",
+    "assembled_amount": 1,
+    "assembled_unit": "порц",
+    "published_weight_g": 275,
+    "weight_join": "Exact unique storefront analyticId = recipe product GUID",
+    "weight_basis": "Published food menu weight; not recipe-derived finished yield",
+    "analogue_reason": "Same named roll family and cheese/cucumber/salmon composition; Teplo rice and nori included as model assumptions",
+    "input_quantity_max_abs_residual": 4.318e-10,
+    "department_scope": "Unscoped active chart from saved snapshot; individual department verification not performed"
+  },
+  "weight_ratio": {
+    "formula": "335 / 275",
+    "value": 1.2181818181818183
+  },
+  "ingredients": [
+    {
+      "guid": "189d8c97-a386-4977-ab8f-d3a5282e356a",
+      "name": "Огурец п/ф роллы",
+      "type": "PREPARED",
+      "quantity_basis": "derived_crosschecked_against_prepared",
+      "baseline_quantity": 0.015,
+      "modeled_quantity": 0.018272727272727274,
+      "unit": "кг",
+      "factor": 1.2181818181818183,
+      "fixed_rice": false,
+      "baseline_grams": 15.0,
+      "modeled_grams": 18.272727272727273,
+      "composition_basis": "Teplo analog for a published competitor ingredient; brand and specification not verified"
+    },
+    {
+      "guid": "961b99af-f9d6-4eb3-a90f-35a61f9b7508",
+      "name": "Сыр творожный",
+      "type": "GOODS",
+      "quantity_basis": "derived_crosschecked_against_prepared",
+      "baseline_quantity": 0.06,
+      "modeled_quantity": 0.0730909090909091,
+      "unit": "кг",
+      "factor": 1.2181818181818183,
+      "fixed_rice": false,
+      "baseline_grams": 60.0,
+      "modeled_grams": 73.0909090909091,
+      "composition_basis": "Teplo analog for a published competitor ingredient; brand and specification not verified"
+    },
+    {
+      "guid": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+      "name": "Рис для роллов пф",
+      "type": "PREPARED",
+      "quantity_basis": "derived_crosschecked_against_prepared",
+      "baseline_quantity": 0.13,
+      "modeled_quantity": 0.13,
+      "unit": "кг",
+      "factor": 1.0,
+      "fixed_rice": true,
+      "baseline_grams": 130.0,
+      "modeled_grams": 130.0,
+      "composition_basis": "Assumed from Teplo analog, not listed by competitor"
+    },
+    {
+      "guid": "2b9465ac-eab7-4b7c-aa14-548253b02024",
+      "name": "Семга с/м вакуум п/ф",
+      "type": "PREPARED",
+      "quantity_basis": "derived_crosschecked_against_prepared",
+      "baseline_quantity": 0.0799,
+      "modeled_quantity": 0.09733272727272728,
+      "unit": "кг",
+      "factor": 1.2181818181818183,
+      "fixed_rice": false,
+      "baseline_grams": 79.9,
+      "modeled_grams": 97.33272727272727,
+      "composition_basis": "Teplo analog for a published competitor ingredient; brand and specification not verified"
+    },
+    {
+      "guid": "402101dc-2501-4341-9c13-d020a38702ab",
+      "name": "Нори",
+      "type": "GOODS",
+      "quantity_basis": "derived_crosschecked_against_prepared",
+      "baseline_quantity": 0.5,
+      "modeled_quantity": 0.6090909090909091,
+      "unit": "шт",
+      "factor": 1.2181818181818183,
+      "fixed_rice": false,
+      "baseline_grams": null,
+      "modeled_grams": null,
+      "composition_basis": "Assumed from Teplo analog, not listed by competitor"
+    }
+  ],
+  "mass_reconciliation": {
+    "modeled_finished_weight_g": null,
+    "mass_gap_g": null,
+    "known_input_grams_subtotal_excluding_nori": 318.6963636363636,
+    "status": "Input gram subtotal is not finished weight; nori mass conversion and ingredient finished outputs unconfirmed. Fixed-rice model is not renormalized to335g."
+  },
+  "cost": {
+    "status": "pending_current_Teplo_pricebook_and_prepared_recipe_expansion",
+    "raw_material_cost_rub": null,
+    "label": "Оценка сырьевых затрат аналога по ценам Тепла, не себестоимость конкурента"
+  },
+  "source_files": [
+    {
+      "path": "/Users/grigorii/.codex/visualizations/2026/10/04/01a1073c-12db-7f72-bf24-92cbe872c7da/outputs/teplo-rolls-20261007/sources/recipe_analysis.json",
+      "sha256": "69f1ccfeae2b9d975d89919303af11655b9e377f34bcca7ca4e96a365ecef6f2"
+    },
+    {
+      "path": "/Users/grigorii/.codex/visualizations/2026/10/04/01a1073c-12db-7f72-bf24-92cbe872c7da/outputs/teplo-rolls-20261007/sources/raw/site-products.json",
+      "sha256": "6627edde1a9a496d8acf40e6fe3d4d75a25af712c1789d8f57c13a48ca9aa0cb"
+    },
+    {
+      "path": "/Users/grigorii/.codex/visualizations/2026/10/04/01a1073c-12db-7f72-bf24-92cbe872c7da/outputs/teplo-rolls-20261007/sources/site_analysis.json",
+      "sha256": "40fc0295ca5155d02d3412af08f1b49d326c172149631e7b0776a2822b062243"
+    }
+  ],
+  "limits": [
+    "No live recipe re-export in this update; baseline snapshot 2026-10-07.",
+    "Ingredient quantities are inferred by owner-approved model; not measured competitor quantities.",
+    "No whole-leaf rounding or automatic missing-mass redistribution."
+  ]
+}
