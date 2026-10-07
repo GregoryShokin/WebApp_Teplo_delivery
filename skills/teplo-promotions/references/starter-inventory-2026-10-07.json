@@ -14,6 +14,86 @@
         "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes?limit=100&offset=0",
         "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
       },
+      "starter-detail-bbd3d87e-1cdb-4176-96c5-e5547a2c750f.json": {
+        "file": "starter-detail-bbd3d87e-1cdb-4176-96c5-e5547a2c750f.json",
+        "sha256": "f3418dc53ea8d35e7107b231a31affca34b396a68ef8c520026baa5a823f1d44",
+        "bytes": 921,
+        "saved_at_utc": "2026-10-07T20:15:22.755258+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/bbd3d87e-1cdb-4176-96c5-e5547a2c750f",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-52b90807-249c-4605-a6ea-7e31b8934e61.json": {
+        "file": "starter-detail-52b90807-249c-4605-a6ea-7e31b8934e61.json",
+        "sha256": "d9a7ef9829c337abb1fad8b6542fd4678a352adde203628bd6be7f7683066b3e",
+        "bytes": 742,
+        "saved_at_utc": "2026-10-07T20:15:26.993586+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/52b90807-249c-4605-a6ea-7e31b8934e61",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-db7baf46-063a-40f2-bc36-f10a591c74ac.json": {
+        "file": "starter-detail-db7baf46-063a-40f2-bc36-f10a591c74ac.json",
+        "sha256": "cb1dca2eb1e04967f1c17041b9d1b3600d9045407118b1a83c6becf49105c0c2",
+        "bytes": 762,
+        "saved_at_utc": "2026-10-07T20:15:30.961802+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/db7baf46-063a-40f2-bc36-f10a591c74ac",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-3b629efb-30d5-4ccf-8960-c1bff1a79f59.json": {
+        "file": "starter-detail-3b629efb-30d5-4ccf-8960-c1bff1a79f59.json",
+        "sha256": "69098fa7adf7fef55de9948ad18e4e9eb88ef04565afc9860c79aa71d7afa3c6",
+        "bytes": 759,
+        "saved_at_utc": "2026-10-07T20:15:34.451042+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/3b629efb-30d5-4ccf-8960-c1bff1a79f59",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-07d358d9-0b1a-4d67-9f35-c63b48ff0f4a.json": {
+        "file": "starter-detail-07d358d9-0b1a-4d67-9f35-c63b48ff0f4a.json",
+        "sha256": "92f2b974f10c3df60349f290e1d3f22d04e6aca6e24fa0765568c991dcfa9135",
+        "bytes": 751,
+        "saved_at_utc": "2026-10-07T20:15:37.868259+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/07d358d9-0b1a-4d67-9f35-c63b48ff0f4a",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-0f214021-5442-4642-98e6-7b87c8bb9842.json": {
+        "file": "starter-detail-0f214021-5442-4642-98e6-7b87c8bb9842.json",
+        "sha256": "ee99ee77b8d68bc904a4b0475ef344226d080544a045c48a5bd1bbf7b1a36b7d",
+        "bytes": 775,
+        "saved_at_utc": "2026-10-07T20:15:57.971387+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/0f214021-5442-4642-98e6-7b87c8bb9842",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-a1dd6db0-2e9c-4456-bbf5-77ebcb089502.json": {
+        "file": "starter-detail-a1dd6db0-2e9c-4456-bbf5-77ebcb089502.json",
+        "sha256": "1ae2e74ef1c6a1060331d21e58c31b487b372afcb6bfc8352ad1b01b2896efb0",
+        "bytes": 716,
+        "saved_at_utc": "2026-10-07T20:16:02.017667+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-f8d1284f-4d16-4c64-a24b-35a72d52227a.json": {
+        "file": "starter-detail-f8d1284f-4d16-4c64-a24b-35a72d52227a.json",
+        "sha256": "e5608ec9ee6703f8eaf804ebd2164ae63f0cd7c59db3b85820cf4f1513a94b15",
+        "bytes": 1415,
+        "saved_at_utc": "2026-10-07T20:21:01.972863+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/promocodes/f8d1284f-4d16-4c64-a24b-35a72d52227a",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
       "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json": {
         "file": "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json",
         "sha256": "ebcb9d487a70fcd99d302eae01a5a2b3fd6988b8a621e1bc8fb95488dd6724eb",
@@ -34,6 +114,66 @@
         "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts?limit=100&offset=0",
         "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
       },
+      "starter-detail-8ae97238-7c82-4143-9cc7-4c993c7835a6.json": {
+        "file": "starter-detail-8ae97238-7c82-4143-9cc7-4c993c7835a6.json",
+        "sha256": "c0253580f8366cff04b72099a21e589ea167ca4ded97e919cdc06b42d9b153e9",
+        "bytes": 756,
+        "saved_at_utc": "2026-10-07T20:06:35.333153+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/8ae97238-7c82-4143-9cc7-4c993c7835a6",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-9631fb04-b855-4116-ab5a-700b9a4a6853.json": {
+        "file": "starter-detail-9631fb04-b855-4116-ab5a-700b9a4a6853.json",
+        "sha256": "e54fa9e0b7d8b6d3ff35137189145969d15b1bb94b9450befe832d4a549064cd",
+        "bytes": 786,
+        "saved_at_utc": "2026-10-07T20:07:11.193969+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/9631fb04-b855-4116-ab5a-700b9a4a6853",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-b946f7ba-97f2-48eb-a5fb-7febf14b3aee.json": {
+        "file": "starter-detail-b946f7ba-97f2-48eb-a5fb-7febf14b3aee.json",
+        "sha256": "f266284b01748fd15529bee19d3fc446a4cc63645ced5ffc3262b4a02d911272",
+        "bytes": 780,
+        "saved_at_utc": "2026-10-07T20:07:15.230974+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-ab546b22-9e8c-4a08-9cbf-942fae8c701a.json": {
+        "file": "starter-detail-ab546b22-9e8c-4a08-9cbf-942fae8c701a.json",
+        "sha256": "ecdf9312b4134335cfa5def35a03ebe63ca9bf02cbf115b6039eb1ed4e8e3691",
+        "bytes": 782,
+        "saved_at_utc": "2026-10-07T20:08:43.141591+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/ab546b22-9e8c-4a08-9cbf-942fae8c701a",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-6c0e2b8d-ac24-47eb-aa88-7cfb10feec42.json": {
+        "file": "starter-detail-6c0e2b8d-ac24-47eb-aa88-7cfb10feec42.json",
+        "sha256": "9a88c5b69610710ca0041959a9d03336b7fb2e0c6ad026785f5a0b64ac77fbcd",
+        "bytes": 790,
+        "saved_at_utc": "2026-10-07T20:10:48.409512+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/6c0e2b8d-ac24-47eb-aa88-7cfb10feec42",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
+      "starter-detail-f8f244ac-69b2-44c9-bbea-5f9cd6036979.json": {
+        "file": "starter-detail-f8f244ac-69b2-44c9-bbea-5f9cd6036979.json",
+        "sha256": "996faef6883eef7a42ce4e45e8a75e3c070b2e3db30027e6e6b58afe259fc5e4",
+        "bytes": 729,
+        "saved_at_utc": "2026-10-07T20:14:49.020041+00:00",
+        "fetched_at_utc": null,
+        "method": "GET",
+        "url": "https://crm.starterapp.ru/fmteplo/api/v1/frontend/promotions/discounts/f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+        "retrieval": "native Chrome authenticated read GET; SaveAs; route supplied by collecting agent"
+      },
       "site-products.json": {
         "file": "site-products.json",
         "sha256": "6627edde1a9a496d8acf40e6fe3d4d75a25af712c1789d8f57c13a48ca9aa0cb",
@@ -43,6 +183,26 @@
         "method": null,
         "url": null,
         "retrieval": "local saved public product projection"
+      },
+      "starter-ui-details-projection.json": {
+        "file": "starter-ui-details-projection.json",
+        "sha256": "fd61002d4f210bbe2f3c0dd2db7a53afac0ad158c7df2c0a7413f7c465d8142e",
+        "bytes": 32490,
+        "saved_at_utc": "2026-10-07T20:31:06.549090+00:00",
+        "fetched_at_utc": null,
+        "method": "native UI read",
+        "url": "https://crm.starterapp.ru/fmteplo/admin/marketing/promotions",
+        "retrieval": "manual semantic projection of Settings controls and Restrictions summary; not raw API"
+      },
+      "starter-additional-ui.json": {
+        "file": "starter-additional-ui.json",
+        "sha256": "f99ce5820fecc75a2e950fd7f7c0add2b83a9f7f992bee829afa1ed12bb1621f",
+        "bytes": 1825,
+        "saved_at_utc": "2026-10-07T20:31:06.549515+00:00",
+        "fetched_at_utc": null,
+        "method": "native UI read",
+        "url": null,
+        "retrieval": "manual semantic UI projection: increases and filtered bulk promocodes; not API totals"
       },
       "live-notes.md": {
         "file": "live-notes.md",
@@ -62,7 +222,21 @@
     "list_coverage": "items count equals total for each default list without status filter; one page limit100 offset0",
     "archive_coverage": "not_separately_checked",
     "detail_files_loaded": [
-      "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json"
+      "starter-detail-bbd3d87e-1cdb-4176-96c5-e5547a2c750f.json",
+      "starter-detail-52b90807-249c-4605-a6ea-7e31b8934e61.json",
+      "starter-detail-db7baf46-063a-40f2-bc36-f10a591c74ac.json",
+      "starter-detail-3b629efb-30d5-4ccf-8960-c1bff1a79f59.json",
+      "starter-detail-07d358d9-0b1a-4d67-9f35-c63b48ff0f4a.json",
+      "starter-detail-0f214021-5442-4642-98e6-7b87c8bb9842.json",
+      "starter-detail-a1dd6db0-2e9c-4456-bbf5-77ebcb089502.json",
+      "starter-detail-f8d1284f-4d16-4c64-a24b-35a72d52227a.json",
+      "starter-detail-c1a150ec-a665-4d5d-a7ca-11216c79620f.json",
+      "starter-detail-8ae97238-7c82-4143-9cc7-4c993c7835a6.json",
+      "starter-detail-9631fb04-b855-4116-ab5a-700b9a4a6853.json",
+      "starter-detail-b946f7ba-97f2-48eb-a5fb-7febf14b3aee.json",
+      "starter-detail-ab546b22-9e8c-4a08-9cbf-942fae8c701a.json",
+      "starter-detail-6c0e2b8d-ac24-47eb-aa88-7cfb10feec42.json",
+      "starter-detail-f8f244ac-69b2-44c9-bbea-5f9cd6036979.json"
     ],
     "save_time_caution": "Filesystem saved_at is not verified server fetched_at or common atomic snapshot."
   },
@@ -71,12 +245,10 @@
     "candidate_definition": "list status active and list absolute date restriction passes on as_of_date; no order/customer applicability claim",
     "absolute_date_assumption": "Inclusive from/to; toChosen includes union of ranges; exceptChosen excludes it. Preserve raw and verify boundary behavior in UI before activation.",
     "not_evaluated": [
-      "time of day",
-      "birthday or first-order qualification",
-      "customer/group restrictions",
-      "menu/store/delivery restrictions where detail absent",
-      "usage caps",
-      "stacking/priority",
+      "current time/engine timezone",
+      "qualification of a particular customer or basket",
+      "unread detail fields only where listed per record",
+      "runtime tie-breaker and discount-threshold sequencing",
       "actual execution in order"
     ],
     "detail_precedence": "Preserve both list and detail. Conflicts require review, not silent overwrite.",
@@ -86,8 +258,16 @@
   "coverage": {
     "lists": "exhaustive default lists without status filter at saved snapshot",
     "archive": "not_separately_checked",
-    "api_details": "partial: 1 of 99",
-    "ui_details": "partial settings observations for 3 offers; 5 reward labels; not complete conditions",
+    "api_details": "15 of 99; current-candidate coverage below",
+    "remaining_reason": "All 46 current-candidate cards reviewed; raw API missing for 31 whose visible UI settings are preserved",
+    "ui_details": "31 remaining candidate dialogs: Settings and Restrictions summary; semantic projection, not API; plus prior supplementary UI observations",
+    "current_candidate_cards_reviewed": "46 of 46",
+    "ui_projection_limitations": [
+      "UI summary Настроить is preserved verbatim; it is not a decoded API null, and deep editor defaults are not proof of a configured restriction.",
+      "Internal sortIndex, repeatable and hidden fields were not available in these Settings views.",
+      "Per-guest/global limit switches are not displayed for birthday promotions; birthdayOptions is separate.",
+      "This is a manually transcribed semantic projection of rendered controls, not raw API JSON."
+    ],
     "all_conditions_complete": false
   },
   "counts": {
@@ -108,9 +288,80 @@
         "expired_in_list": 1
       }
     },
-    "detail_fetched": 1,
-    "detail_not_fetched": 98
+    "detail_fetched": 15,
+    "detail_not_fetched": 84,
+    "current_candidates": 46,
+    "current_candidate_detail_fetched": 15,
+    "current_candidate_without_api_detail": 31
   },
+  "current_candidate_review_counts": {
+    "api_detail": 15,
+    "ui_detail": 31,
+    "total_reviewed": 46
+  },
+  "ui_projection_provenance": {
+    "as_of": "2026-10-07",
+    "source_url": "https://crm.starterapp.ru/fmteplo/admin/marketing/promotions",
+    "coverage": "31 remaining current-candidate promo dialogs read: Settings and Restrictions summary; no settings saved",
+    "limitations": [
+      "UI summary Настроить is preserved verbatim; it is not a decoded API null, and deep editor defaults are not proof of a configured restriction.",
+      "Internal sortIndex, repeatable and hidden fields were not available in these Settings views.",
+      "Per-guest/global limit switches are not displayed for birthday promotions; birthdayOptions is separate.",
+      "This is a manually transcribed semantic projection of rendered controls, not raw API JSON."
+    ]
+  },
+  "additional_ui": {
+    "as_of": "2026-10-07",
+    "source": "Starter CRM v2.22.0 UI, promotions / Надбавки; status Active+Inactive; no search",
+    "items": [
+      {
+        "id": "0b79f15c-dcf7-4070-a49f-a2be93f0c739",
+        "name": "Сервисный сбор",
+        "status": "active",
+        "type_ui": "В рублях",
+        "value": 15,
+        "field_ui": "К общей сумме заказа",
+        "priority_ui": 1,
+        "place_ui": "Везде",
+        "separate_receipt_line_ui": false,
+        "minimum_ui": "Без ограничений",
+        "period_list_ui": "Бессрочно",
+        "usages_list": 2820,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      {
+        "id": "2620f572-bf51-4778-873a-bb7c38146659",
+        "name": "fghcf",
+        "status": "not_active",
+        "type_ui": "В рублях",
+        "value": 300,
+        "field_ui": "К цене позиций",
+        "priority_ui": 1,
+        "place_ui": "Везде",
+        "separate_receipt_line_ui": false,
+        "minimum_ui": "Без ограничений",
+        "period_list_ui": "Бессрочно",
+        "usages_list": 1,
+        "restriction_summary_ui": "not_read"
+      }
+    ],
+    "bulk_promocodes_ui": {
+      "filter": "Массовый; Активная, Неактивная; no search",
+      "result": "Ничего не нашлось. Попробуйте расширить поиск",
+      "archived": "not_checked"
+    },
+    "limitations": [
+      "Two increases visible; API total not fetched; no pagination controls shown.",
+      "UI summary Настроить is not an API null.",
+      "Stamp-card API exists but no corresponding tab was available in this CRM section; not read."
+    ]
+  },
+  "additional_ui_source": "starter-additional-ui.json",
   "duplicate_codes": {
     "test3256": [
       "dc16d228-81ba-4cbb-966a-2a9e214af81f",
@@ -207,9 +458,68 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-bbd3d87e-1cdb-4176-96c5-e5547a2c750f.json",
+      "detail": {
+        "name": {
+          "ru": "Скидка 10% на сет \"Пятница\"",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "status": "active",
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceCommon": 0,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": null,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": [
+              {
+                "from": "2026-10-02",
+                "to": "2026-10-08"
+              }
+            ],
+            "time": null,
+            "daysOfWeek": null,
+            "choice": "toChosen"
+          },
+          "menuRestrictions": {
+            "meals": {
+              "choice": "toChosen",
+              "entityIds": [
+                "c3a93c97-3771-4541-b9b8-1b3ac3b7dd84"
+              ]
+            },
+            "categories": null,
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "пятница10",
+        "isBulk": false,
+        "id": "bbd3d87e-1cdb-4176-96c5-e5547a2c750f",
+        "usages": 0
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "date_pass",
@@ -223,7 +533,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": null,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": [
+              {
+                "from": "2026-10-02",
+                "to": "2026-10-08"
+              }
+            ],
+            "time": null,
+            "daysOfWeek": null,
+            "choice": "toChosen"
+          },
+          "menuRestrictions": {
+            "meals": {
+              "choice": "toChosen",
+              "entityIds": [
+                "c3a93c97-3771-4541-b9b8-1b3ac3b7dd84"
+              ]
+            },
+            "categories": null,
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "52b90807-249c-4605-a6ea-7e31b8934e61",
@@ -257,9 +616,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-52b90807-249c-4605-a6ea-7e31b8934e61.json",
+      "detail": {
+        "name": {
+          "ru": "Ролл \"Сицилийский\" в подарок ",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "08167ae3-a08e-45a9-ae71-bf28234e4714"
+        },
+        "minOrderPriceCommon": 1699,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": null,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "3623",
+        "isBulk": false,
+        "id": "52b90807-249c-4605-a6ea-7e31b8934e61",
+        "usages": 3
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -273,7 +672,37 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": null,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "db7baf46-063a-40f2-bc36-f10a591c74ac",
@@ -307,9 +736,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-db7baf46-063a-40f2-bc36-f10a591c74ac.json",
+      "detail": {
+        "name": {
+          "ru": "Ролл \"Лава с лососем\" в подарок к заказу от 1699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "62cda5d9-424b-41e6-8dfc-bc3951708009"
+        },
+        "minOrderPriceCommon": 1699,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "6614",
+        "isBulk": false,
+        "id": "db7baf46-063a-40f2-bc36-f10a591c74ac",
+        "usages": 1
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -323,7 +792,37 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3b629efb-30d5-4ccf-8960-c1bff1a79f59",
@@ -357,9 +856,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-3b629efb-30d5-4ccf-8960-c1bff1a79f59.json",
+      "detail": {
+        "name": {
+          "ru": "Ролл «Камчатский» в подарок к заказу от 1699₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4"
+        },
+        "minOrderPriceCommon": 1699,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "3491",
+        "isBulk": false,
+        "id": "3b629efb-30d5-4ccf-8960-c1bff1a79f59",
+        "usages": 3
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -373,7 +912,37 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "cad4cfb4-2b59-44ad-b570-9ade2250f158",
@@ -433,7 +1002,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "e1181609-2bf5-4874-b6bd-90e22a808710",
@@ -493,7 +1089,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "672df289-5aa9-4fa0-8530-cd3f30aab718",
@@ -553,7 +1176,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "251420cb-2578-41e2-ba33-0b6eacf1eb1d",
@@ -613,7 +1263,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "f639d294-0534-42a0-83ec-9fee840f9791",
@@ -686,7 +1363,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "4d30e80b-eec7-471b-b6c1-8975a1cf9674",
@@ -759,7 +1463,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "29dced51-0acb-4c13-8d40-26ead1bfa3e7",
@@ -832,7 +1563,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "f5def593-ac25-4cfe-bc19-b71b1175a56e",
@@ -905,7 +1663,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ccebf308-8da1-4c60-b00e-481a3da3c424",
@@ -978,7 +1763,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "0bcab7e6-c00a-4564-8fcd-4160a45fd27c",
@@ -1051,7 +1863,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "1613285e-59fe-483d-ba4d-ec076e9bc15e",
@@ -1124,7 +1963,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "c4586eec-b04d-48ac-a45d-a9dfd28f4373",
@@ -1197,7 +2063,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3fa89350-06ed-4edf-97c7-1fa7afcca0d3",
@@ -1270,7 +2163,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "50d5027e-3d16-4d3b-8aa2-8d5e0e6e0476",
@@ -1343,7 +2263,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "07d358d9-0b1a-4d67-9f35-c63b48ff0f4a",
@@ -1377,9 +2324,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-07d358d9-0b1a-4d67-9f35-c63b48ff0f4a.json",
+      "detail": {
+        "name": {
+          "ru": "Ролл «Цезарь» в подарок к заказу от 1590₽",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "8206ed1e-63b1-49d1-a5ba-a7b3de8308ea"
+        },
+        "minOrderPriceCommon": 1590,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "3016",
+        "isBulk": false,
+        "id": "07d358d9-0b1a-4d67-9f35-c63b48ff0f4a",
+        "usages": 0
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -1393,7 +2380,37 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "0f214021-5442-4642-98e6-7b87c8bb9842",
@@ -1427,9 +2444,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-0f214021-5442-4642-98e6-7b87c8bb9842.json",
+      "detail": {
+        "name": {
+          "ru": "Ролл «Жареная калифорния» в подарок к заказу от 1690₽ ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "7872bc00-1553-47ad-b585-ff1997488e3d"
+        },
+        "minOrderPriceCommon": 1690,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "7041",
+        "isBulk": false,
+        "id": "0f214021-5442-4642-98e6-7b87c8bb9842",
+        "usages": 0
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -1443,7 +2500,37 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "64d9edcb-7a2f-4248-b585-c8861c560a63",
@@ -1516,7 +2603,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3c5b1121-933d-4ea9-94ab-a285c152a268",
@@ -1589,7 +2703,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "82490034-8430-4fb4-a2d8-eb182a1ab512",
@@ -1662,7 +2803,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "5e0d85ad-9ba2-4eea-86ce-7106b2702fc8",
@@ -1735,7 +2903,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "8f20f34d-0706-4146-a128-18843586fd30",
@@ -1795,7 +2990,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "0c8f195c-e834-4e91-a8ae-488535a1f4a4",
@@ -1855,7 +3077,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "093fc966-f1bd-4edc-9f78-15fe39465c8d",
@@ -1915,7 +3164,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "a4e4db69-0782-4db8-ac4c-dd05032511fa",
@@ -1975,7 +3251,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "9e2781eb-9132-4c78-9437-1d1c30fc96ef",
@@ -2048,7 +3351,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "dacbd655-3178-492e-b043-2ca599501532",
@@ -2121,7 +3451,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "7a947da7-cbbb-4250-90ff-3a7a5a64e83e",
@@ -2194,7 +3551,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "63bb4c80-ba58-4553-b765-5fa2c1af3d12",
@@ -2267,7 +3651,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "75eec344-4693-4976-8a33-641dc5cd2909",
@@ -2340,7 +3751,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "bbae921e-6713-435f-b3f8-30fb55b3575d",
@@ -2413,7 +3851,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "dec84bca-9039-4154-98df-ca448bdd1647",
@@ -2486,7 +3951,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "e62e7927-7617-4a0e-8707-51153d9c8652",
@@ -2559,7 +4051,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "a89f648c-81eb-4b7a-9337-2e219706834e",
@@ -2632,7 +4151,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "26b34fbf-bd05-4d2e-ba04-dd7ae4759273",
@@ -2692,7 +4238,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "d033ceae-6a46-4cd7-b645-f114e6e6f806",
@@ -2752,7 +4325,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3cb354a1-c187-42fd-b3ba-416f1c45e9bc",
@@ -2812,7 +4412,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "566962f2-e62a-476b-806a-220ca1028240",
@@ -2872,7 +4499,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
@@ -2906,9 +4560,49 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-a1dd6db0-2e9c-4456-bbf5-77ebcb089502.json",
+      "detail": {
+        "name": {
+          "ru": "Секретный промокод ",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "dcbeb5e0-1ce7-473f-b31d-55987aa855da"
+        },
+        "minOrderPriceCommon": 1399,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "8775",
+        "isBulk": false,
+        "id": "a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
+        "usages": 13
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -2926,6 +4620,36 @@
         "name": "Честер",
         "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
         "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      },
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
       }
     },
     {
@@ -2976,7 +4700,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Калифорния с крабом",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "aae2a78f-bbcf-4774-9ef3-d8b7ebe2d732",
+        "code": "1690",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1690,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Калифорния с крабом",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "f8d1284f-4d16-4c64-a24b-35a72d52227a",
@@ -3028,9 +4804,76 @@
         "isBulk": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-f8d1284f-4d16-4c64-a24b-35a72d52227a.json",
+      "detail": {
+        "name": {
+          "ru": "Счастливые часы: Скидка 15% на пиццу",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceCommon": 0,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": null,
+            "time": [
+              {
+                "fromHour": 0,
+                "fromMinutes": 0,
+                "toHour": 15,
+                "toMinutes": 0,
+                "isDayOff": false
+              }
+            ],
+            "daysOfWeek": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "choice": "toChosen"
+          },
+          "menuRestrictions": {
+            "meals": null,
+            "categories": {
+              "choice": "toChosen",
+              "entityIds": [
+                "f2d8890a-f22d-44e5-9d46-ff58702ad821"
+              ]
+            },
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "code": "1515",
+        "isBulk": false,
+        "id": "f8d1284f-4d16-4c64-a24b-35a72d52227a",
+        "usages": 0
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -3044,7 +4887,64 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": null,
+            "time": [
+              {
+                "fromHour": 0,
+                "fromMinutes": 0,
+                "toHour": 15,
+                "toMinutes": 0,
+                "isDayOff": false
+              }
+            ],
+            "daysOfWeek": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "choice": "toChosen"
+          },
+          "menuRestrictions": {
+            "meals": null,
+            "categories": {
+              "choice": "toChosen",
+              "entityIds": [
+                "f2d8890a-f22d-44e5-9d46-ff58702ad821"
+              ]
+            },
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "d287657b-c6eb-489f-ae75-ca82ca64a6a4",
@@ -3098,7 +4998,64 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Сет \"Жареный\"",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "d287657b-c6eb-489f-ae75-ca82ca64a6a4",
+        "code": "др2",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": true,
+        "birthday_enabled_ui": true,
+        "perGuestLimit_enabled_ui": null,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": null,
+        "globalLimit_ui": null,
+        "minOrder_ui": 2190,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Сет \"Жареный\"",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        },
+        "birthdayOptions_ui": {
+          "daysBefore": 3,
+          "daysAfter": 3,
+          "usageCount": 1
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "not_displayed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "d14f5e67-544c-42e3-825f-a7419f3601e5",
@@ -3148,7 +5105,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Пепперони лайт в подарок",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "d14f5e67-544c-42e3-825f-a7419f3601e5",
+        "code": "6546",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": true,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1399,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Пепперони лайт в подарок",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "404e1452-b5fb-490a-95dc-fb00a7177084",
@@ -3198,7 +5207,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Жареный с креветкой",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "404e1452-b5fb-490a-95dc-fb00a7177084",
+        "code": "2134",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": true,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1290,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Жареный с креветкой",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "21d6ba87-7181-414b-86bd-74672ab3b418",
@@ -3248,7 +5309,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "21d6ba87-7181-414b-86bd-74672ab3b418",
+        "code": "6786",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": true,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "totalPrice",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "4a631dbb-0057-40e1-8cee-468075bc32ff",
@@ -3298,7 +5407,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Динамит",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "4a631dbb-0057-40e1-8cee-468075bc32ff",
+        "code": "6351",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1399,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Динамит",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "23124994-1135-4f16-81d8-40a54eac1311",
@@ -3348,7 +5509,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "23124994-1135-4f16-81d8-40a54eac1311",
+        "code": "7168",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Применяется к выбранным: Сет \"Пятница\"",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {
+          "assortment": "Применяется к выбранным: Сет \"Пятница\""
+        },
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "56732553-832f-45d1-b716-07fcafe83eaa",
@@ -3402,7 +5612,60 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "56732553-832f-45d1-b716-07fcafe83eaa",
+        "code": "др",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": true,
+        "birthday_enabled_ui": true,
+        "perGuestLimit_enabled_ui": null,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": null,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1000,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        },
+        "birthdayOptions_ui": {
+          "daysBefore": 3,
+          "daysAfter": 3,
+          "usageCount": null
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "not_displayed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
@@ -3537,7 +5800,68 @@
         },
         "caution": "Raw repeatable=false is retained without lifetime-use interpretation."
       },
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 0,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": {
+            "date": null,
+            "time": null,
+            "daysOfWeek": [
+              5,
+              6,
+              7
+            ],
+            "choice": "exceptChosen"
+          },
+          "menuRestrictions": {
+            "meals": {
+              "choice": "toChosen",
+              "entityIds": [
+                "9bfb384a-caa7-400f-8366-755e27f3e81e",
+                "da7d7bc4-b48f-48e9-a76f-bc2f648d82c1",
+                "1302fc3c-269b-4dd8-9160-2bbc3991577b",
+                "f0b9a6cc-8015-4c76-b6c7-4c6ae626ad4a",
+                "20a428a5-8330-43f2-9b18-24177b0f9862",
+                "7872bc00-1553-47ad-b585-ff1997488e3d",
+                "fc089bd8-0a15-451f-8b2f-39aa89edb218",
+                "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4",
+                "a255637d-b9e4-49d0-8d6f-3aaa18244555",
+                "8206ed1e-63b1-49d1-a5ba-a7b3de8308ea",
+                "fc99309a-cdb3-4e5d-8b79-807758a08227",
+                "5ccb03f6-731b-47cb-b3a1-68a7c4bfd2bc",
+                "d92676f5-8a12-4bcf-bd82-be9d11a57bba",
+                "f3bcd1cc-91b8-479e-88a9-e4cb826ca498"
+              ]
+            },
+            "categories": null,
+            "shops": null
+          },
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "bulkDiscountMaxUsages": null,
+          "onlyOnePromocodePerDiscount": false,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "e95c0364-da80-4ccd-be91-6f681222974f",
@@ -3587,7 +5911,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Баунти",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "e95c0364-da80-4ccd-be91-6f681222974f",
+        "code": "3636",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": "Баунти",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "153a04a1-e9d8-4dcf-be7f-4b7d1e61a46e",
@@ -3637,7 +6013,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "153a04a1-e9d8-4dcf-be7f-4b7d1e61a46e",
+        "code": "пятница",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Применяется к выбранным: Сет \"Пятница\"",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {
+          "assortment": "Применяется к выбранным: Сет \"Пятница\""
+        },
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3d70d3a5-dbbc-49b0-b948-2f7a31fb50ce",
@@ -3687,7 +6112,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Мидии запеченные под соусом том-ям",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "3d70d3a5-dbbc-49b0-b948-2f7a31fb50ce",
+        "code": "2121",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1599,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Мидии запеченные под соусом том-ям",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "3bda218a-dd0d-40b8-b1f7-d419a947dce5",
@@ -3737,7 +6214,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "3bda218a-dd0d-40b8-b1f7-d419a947dce5",
+        "code": "спасибо",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "40b9bef0-9847-4308-ba51-793a3d616f35",
@@ -3787,7 +6312,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Филадельфия тар-тар",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "40b9bef0-9847-4308-ba51-793a3d616f35",
+        "code": "ролл1",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1399,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Филадельфия тар-тар",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "602c4c20-1c3d-45e9-b652-237795c62f98",
@@ -3837,7 +6414,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Пикник",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "602c4c20-1c3d-45e9-b652-237795c62f98",
+        "code": "пицца2",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1399,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Пикник",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ac1e0285-2812-4bec-b391-640dcef5e8f1",
@@ -3887,7 +6516,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Цыпленок гриль",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "ac1e0285-2812-4bec-b391-640dcef5e8f1",
+        "code": "пицца1",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1399,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Цыпленок гриль",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "b23f68d8-79b8-4a20-8fde-e573d8628603",
@@ -3937,7 +6618,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "b23f68d8-79b8-4a20-8fde-e573d8628603",
+        "code": "опрос1",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "c55c3b64-1bfd-4c50-a8e6-350af17e8013",
@@ -3997,7 +6726,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "975f2339-67cb-4ac9-89cf-699d484ef2f1",
@@ -4047,7 +6803,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "a4cbfc17-ba9c-4735-9dd0-a303653444a0",
@@ -4097,7 +6880,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Карбонара",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "a4cbfc17-ba9c-4735-9dd0-a303653444a0",
+        "code": "5858",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Карбонара",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "4e74c6d0-8d5d-4100-ab86-258b518df74c",
@@ -4147,7 +6982,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "4e74c6d0-8d5d-4100-ab86-258b518df74c",
+        "code": "1717",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "totalPrice",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "13989c03-7065-4701-a313-284031c0ed95",
@@ -4197,7 +7080,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Пикантная креветка",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "13989c03-7065-4701-a313-284031c0ed95",
+        "code": "7963",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Пикантная креветка",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "5cce0bcc-e741-4ed4-af76-192de553f74b",
@@ -4257,7 +7192,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "45a5f926-baa6-4919-81d8-4a62af83cb90",
@@ -4325,7 +7287,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "45a5f926-baa6-4919-81d8-4a62af83cb90",
+        "code": "7я",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Применяется к выбранным: Понедельник, Вторник, Среда, Четверг; 17:00–20:00",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {
+          "time": "Применяется к выбранным: Понедельник, Вторник, Среда, Четверг; 17:00–20:00"
+        },
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "788ae5ef-74f0-4c6f-ab71-874ff17608b8",
@@ -4385,7 +7396,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "bae384b9-b6fb-4ebf-88e5-bf98af754ccf",
@@ -4435,7 +7473,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "bae384b9-b6fb-4ebf-88e5-bf98af754ccf",
+        "code": "5353",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "totalPrice",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "76ba9df9-80eb-42f0-a0a5-e8b60aa29608",
@@ -4485,7 +7571,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Пепперони лайт в подарок",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "76ba9df9-80eb-42f0-a0a5-e8b60aa29608",
+        "code": "4242",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Пепперони лайт в подарок",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "81a05f90-17d0-4d9e-b633-64c72a0affa8",
@@ -4535,7 +7673,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Филадельфия тар-тар в подарок",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "81a05f90-17d0-4d9e-b633-64c72a0affa8",
+        "code": "3131",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1700,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Филадельфия тар-тар в подарок",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "1f752c18-e7e7-4ed7-a7bf-dd82f849f64d",
@@ -4595,7 +7785,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ec0a7fb0-b956-49ab-a88f-39e91a451601",
@@ -4645,7 +7862,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "ec0a7fb0-b956-49ab-a88f-39e91a451601",
+        "code": "1222",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1500,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Применяется к выбранным: Пицца",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {
+          "assortment": "Применяется к выбранным: Пицца"
+        },
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "94ec4152-2805-41d8-b24c-79aa6227cadc",
@@ -4714,7 +7980,56 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "94ec4152-2805-41d8-b24c-79aa6227cadc",
+        "code": "1216",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 800,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Применяется к выбранным: Понедельник, Вторник, Среда, Четверг, Пятница; 12:00–16:00",
+          "assortment": "Применяется к выбранным: Пицца, Фирменные роллы, Запеченные, Жареные, Калифорния, Классические, Шаурма, Закуски, Морсы, Холодные напитки, Соусы, Дополнительно",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {
+          "time": "Применяется к выбранным: Понедельник, Вторник, Среда, Четверг, Пятница; 12:00–16:00",
+          "assortment": "Применяется к выбранным: Пицца, Фирменные роллы, Запеченные, Жареные, Калифорния, Классические, Шаурма, Закуски, Морсы, Холодные напитки, Соусы, Дополнительно"
+        },
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "94df1ace-ab9a-4bd9-8c24-f37696b65cfd",
@@ -4764,7 +8079,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Острый с крабом",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "94df1ace-ab9a-4bd9-8c24-f37696b65cfd",
+        "code": "roll",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 1000,
+        "minOrder_mode_ui": "Общая для всех способов получения",
+        "reward_meal_ui": "Острый с крабом",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ee1cd7d1-9c61-47ed-972e-6607bc5a561d",
@@ -4814,7 +8181,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "5475a870-9671-4071-ac07-01fe9d26deb6",
@@ -4864,7 +8258,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Грибная",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "5475a870-9671-4071-ac07-01fe9d26deb6",
+        "code": "987564",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": true,
+        "globalLimit_ui": 3,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": "Грибная",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ac8cafe7-569e-493d-86b3-652ce5939a91",
@@ -4914,7 +8360,59 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": {
+        "name": "Сет \"Пятница\"",
+        "source": "starter-ui-details-projection.json",
+        "join_scope": "rendered reward on exact offer ID; not a cross-system mealId dictionary"
+      },
+      "observed_ui_detail": {
+        "id": "ac8cafe7-569e-493d-86b3-652ce5939a91",
+        "code": "promo999",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": true,
+        "perGuestLimit_ui": 1,
+        "globalLimit_enabled_ui": true,
+        "globalLimit_ui": 2,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": "Сет \"Пятница\"",
+        "fieldToApply_ui": null,
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "b3acb047-bde7-4152-899e-f5167898a002",
@@ -4964,7 +8462,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "dc16d228-81ba-4cbb-966a-2a9e214af81f",
@@ -5014,7 +8539,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "dc16d228-81ba-4cbb-966a-2a9e214af81f",
+        "code": "test3256",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "totalPrice",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
@@ -5085,7 +8658,55 @@
         },
         "caution": "Настроить is a UI summary, not confirmed null/empty unrestricted settings; API detail not fetched."
       },
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
+        "code": "первый",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": true,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": true,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "price",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "0381b1b5-b68e-4afd-8277-dcfee2756741",
@@ -5135,7 +8756,55 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": {
+        "id": "0381b1b5-b68e-4afd-8277-dcfee2756741",
+        "code": "test3256",
+        "source": "Starter CRM v2.22.0: rendered dialog Settings and Restrictions summary",
+        "placeActivation_ui": "Везде",
+        "stopFurtherDiscounts_ui": false,
+        "stopFurtherDiscounts_exception_ui": "кроме бонусных баллов",
+        "firstOrderOnly_ui": false,
+        "firstOrderOnly_control_disabled": false,
+        "birthday_enabled_ui": false,
+        "perGuestLimit_enabled_ui": false,
+        "perGuestLimit_ui": null,
+        "globalLimit_enabled_ui": false,
+        "globalLimit_ui": null,
+        "minOrder_ui": 0,
+        "minOrder_mode_ui": "Без ограничений",
+        "reward_meal_ui": null,
+        "fieldToApply_ui": "totalPrice",
+        "restriction_summary_ui": {
+          "time": "Настроить",
+          "assortment": "Настроить",
+          "shops": "Настроить",
+          "deliveryType": "Настроить"
+        }
+      },
+      "observed_ui_detail_source": "starter-ui-details-projection.json",
+      "condition_evidence": {
+        "source": "list_plus_observed_ui_detail",
+        "ui_controls_reviewed": true,
+        "api_detail_fetched": false,
+        "unread_settings_fields": [
+          "sortIndex",
+          "repeatable",
+          "bulkDiscountMaxUsages",
+          "onlyOnePromocodePerDiscount"
+        ],
+        "unresolved_summary_sections": [
+          "time",
+          "assortment",
+          "shops",
+          "deliveryType"
+        ],
+        "configured_ui_restrictions": {},
+        "ui_raw_semantics": "Preserve Настроить; do not replace it with API null, empty lists or unrestricted scope.",
+        "birthday_limit_controls": "observed",
+        "backend_restriction_ids": "not_read_in_ui_projection",
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "8ae97238-7c82-4143-9cc7-4c993c7835a6",
@@ -5168,9 +8837,51 @@
         "goal": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-8ae97238-7c82-4143-9cc7-4c993c7835a6.json",
+      "detail": {
+        "name": {
+          "ru": "Шкала подарков от 1999",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4"
+        },
+        "minOrderPriceCommon": 1999,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 4,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": false,
+        "id": "8ae97238-7c82-4143-9cc7-4c993c7835a6",
+        "usages": 170
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5203,12 +8914,45 @@
           "minimum_mode": "общий для всех способов",
           "restriction_observation": "Only selected controls shown; selection lists empty in native UI"
         },
-        "caution": "Do not infer all/no eligible stores, methods or dishes from empty UI selected lists; API detail not fetched."
+        "caution": "Original empty UI selections were ambiguous; subsequent API detail confirms dateTimeRestriction/menuRestrictions/deliveryType=null. Read the explicit API fields."
       },
       "ui_reward_observation": {
         "name": "Камчатский",
         "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
         "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      },
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 4,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
       }
     },
     {
@@ -5258,7 +9002,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
@@ -5291,9 +9062,56 @@
         "goal": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-9631fb04-b855-4116-ab5a-700b9a4a6853.json",
+      "detail": {
+        "name": {
+          "ru": "Самовывоз выгоднее! Скидка 10%",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "percent",
+        "value": {
+          "size": 10.0
+        },
+        "minOrderPriceCommon": 0,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "totalPrice",
+          "sortIndex": 1,
+          "lastApplicable": false,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": {
+            "choice": "toChosen",
+            "entityIds": [
+              "pickup"
+            ]
+          },
+          "firstOrderOnly": false,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": false,
+        "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+        "usages": 1187
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5307,7 +9125,45 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "totalPrice",
+          "sortIndex": 1,
+          "lastApplicable": false,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": {
+            "choice": "toChosen",
+            "entityIds": [
+              "pickup"
+            ]
+          },
+          "firstOrderOnly": false,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "2441ddc4-8148-4fdd-a0aa-0c5c44c42438",
@@ -5364,7 +9220,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
@@ -5397,9 +9280,51 @@
         "goal": true,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-b946f7ba-97f2-48eb-a5fb-7febf14b3aee.json",
+      "detail": {
+        "name": {
+          "ru": "Шкала подарков от 2699",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "05a4dc4f-2a85-40cb-9302-415b28d68a2f"
+        },
+        "minOrderPriceCommon": 2699,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 2,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Пицца \"Пикник\"",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": false,
+        "id": "b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
+        "usages": 378
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5417,6 +9342,39 @@
         "name": "Пикник",
         "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
         "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      },
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 2,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Пицца \"Пикник\"",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
       }
     },
     {
@@ -5474,7 +9432,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "d18e4337-3923-4fe9-a4ef-5a61dad2d569",
@@ -5531,7 +9516,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "8d0f03ea-98f6-4a7e-a086-14db6286697c",
@@ -5580,7 +9592,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "ab546b22-9e8c-4a08-9cbf-942fae8c701a",
@@ -5613,9 +9652,51 @@
         "goal": true,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-ab546b22-9e8c-4a08-9cbf-942fae8c701a.json",
+      "detail": {
+        "name": {
+          "ru": "Шкала подарков от 2999",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "ba78e8b7-cf52-4785-a7cb-8aeba7ea6227"
+        },
+        "minOrderPriceCommon": 2999,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 1,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Сет \"Денег нет\"",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": false,
+        "id": "ab546b22-9e8c-4a08-9cbf-942fae8c701a",
+        "usages": 2833
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5633,6 +9714,39 @@
         "name": "Сет Денег нет",
         "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
         "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      },
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 1,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Сет \"Денег нет\"",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
       }
     },
     {
@@ -5666,9 +9780,51 @@
         "goal": true,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-6c0e2b8d-ac24-47eb-aa88-7cfb10feec42.json",
+      "detail": {
+        "name": {
+          "ru": "Шкала подарков от 2399",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "meal",
+        "value": {
+          "mealId": "c2fb5bfe-b645-4885-b8f3-4a222eb8cab2"
+        },
+        "minOrderPriceCommon": 2399,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 3,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Филадельфия тар-тар",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": false,
+        "id": "6c0e2b8d-ac24-47eb-aa88-7cfb10feec42",
+        "usages": 1075
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5686,6 +9842,39 @@
         "name": "Филадельфия тар-тар",
         "source": "Collecting agent native UI observation, 2026-10-07; four gift tiers in live-notes.md",
         "join_scope": "reward label on this offer; not a verified Starter mealId-to-name product crosswalk"
+      },
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": null,
+          "sortIndex": 3,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": null,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": false,
+          "goal": true,
+          "goalDescription": "Филадельфия тар-тар",
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
       }
     },
     {
@@ -5743,7 +9932,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "a189856a-fd45-461c-a642-6fe1068c801e",
@@ -5807,7 +10023,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "c5f6d6b5-6ca9-4332-9cbd-3a07ce125e7c",
@@ -5866,7 +10109,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
@@ -5899,9 +10169,51 @@
         "goal": false,
         "birthdayOptions": null
       },
-      "detail_source": null,
-      "detail": null,
-      "detail_status": "detail_not_fetched",
+      "detail_source": "starter-detail-f8f244ac-69b2-44c9-bbea-5f9cd6036979.json",
+      "detail": {
+        "name": {
+          "ru": "Скидка при первом заказе",
+          "en": "",
+          "ka": "",
+          "kz": ""
+        },
+        "status": "active",
+        "type": "percent",
+        "value": {
+          "size": 15.0
+        },
+        "minOrderPriceCommon": 1500,
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": 1,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": true,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "isReferral": true,
+        "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+        "usages": 237
+      },
+      "detail_status": "detail_fetched",
       "list_detail_conflicts": {},
       "assessment": {
         "absolute_date_status": "no_absolute_date_restriction_in_list",
@@ -5915,7 +10227,40 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "api_detail",
+        "settings": {
+          "placeActivation": "all",
+          "fieldToApply": "price",
+          "sortIndex": 1,
+          "lastApplicable": true,
+          "repeatable": false,
+          "usagesCap": null,
+          "availableCountForUser": 1,
+          "minOrderPriceSettings": {
+            "delivery": 0,
+            "pickup": 0,
+            "indoor": 0,
+            "type": "common",
+            "dependOnMeals": "all"
+          },
+          "dateTimeRestriction": null,
+          "menuRestrictions": null,
+          "deliveryType": null,
+          "firstOrderOnly": true,
+          "goal": false,
+          "goalDescription": null,
+          "goalPopupTitle": null,
+          "goalPopupDescription": null,
+          "linkedDiscountId": null,
+          "birthdayOptions": null
+        },
+        "unread_settings_fields": [],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "42fc382c-f0c0-4258-8267-87c31f256780",
@@ -5964,7 +10309,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "f73f5218-5daf-4e13-b94f-2c79cfb091e3",
@@ -6013,7 +10385,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     },
     {
       "id": "81cc31a3-a21f-4e0b-af2a-d4af62b75867",
@@ -6062,7 +10461,34 @@
         "compatibility_tested": false
       },
       "ui_observations": null,
-      "ui_reward_observation": null
+      "ui_reward_observation": null,
+      "observed_ui_detail": null,
+      "observed_ui_detail_source": null,
+      "condition_evidence": {
+        "source": "list_only",
+        "list_known": [
+          "status",
+          "type",
+          "value",
+          "minOrderPriceCommon",
+          "minOrderPriceSettings",
+          "dateTimeRestriction",
+          "birthdayOptions"
+        ],
+        "unread_settings_fields": [
+          "placeActivation",
+          "fieldToApply",
+          "sortIndex",
+          "lastApplicable",
+          "repeatable",
+          "usagesCap",
+          "availableCountForUser",
+          "menuRestrictions",
+          "deliveryType",
+          "firstOrderOnly"
+        ],
+        "runtime_application": "not_tested"
+      }
     }
   ]
 }
