@@ -1845,8 +1845,8 @@
     "semantic_hash": "6d125f00385ce84a8054d084cfa6ab96"
   },
   "apps/api/app/api/v1/routes/dds.py": {
-    "mtime": 1790688650.630564,
-    "ast_hash": "3110a97166536c2e9498581f098d595c",
+    "mtime": 1791372342.972919,
+    "ast_hash": "846eb5fd2324a3d02231180a14eee8f4",
     "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/deposits.py": {
@@ -2355,8 +2355,8 @@
     "semantic_hash": "5202968aff7d4bf9e589afb1b9f7effb"
   },
   "apps/api/app/schemas/dds.py": {
-    "mtime": 1790684815.872781,
-    "ast_hash": "b4754d5b2db20a509b5a8f743b738af2",
+    "mtime": 1791372342.9735854,
+    "ast_hash": "11f5891a8749e2c42abc139fd6b37c11",
     "semantic_hash": ""
   },
   "apps/api/app/schemas/employees.py": {
@@ -2635,13 +2635,13 @@
     "semantic_hash": "242579479b0de464c9408e407b77fd4e"
   },
   "apps/api/app/services/banking/cashflow_classify.py": {
-    "mtime": 1790685354.311806,
-    "ast_hash": "abbb7b9bb87bfdf6ab6ddcb2ed1cf89a",
+    "mtime": 1791372342.97447,
+    "ast_hash": "26647b817c699ae17031ec55f7eadc25",
     "semantic_hash": ""
   },
   "apps/api/app/services/banking/classifier.py": {
-    "mtime": 1790689349.9234738,
-    "ast_hash": "9823d4be1ba39165770cc91daf1ec1d4",
+    "mtime": 1791372342.9758046,
+    "ast_hash": "0f46d7757f2dbbb91df2c5ab5b58ce6a",
     "semantic_hash": ""
   },
   "apps/api/app/services/banking/exceptions.py": {
@@ -2730,9 +2730,9 @@
     "semantic_hash": "9951775dc453510a5c6c67b896deada5"
   },
   "apps/api/app/services/counterparty_balance_as_of.py": {
-    "mtime": 1790347841.5593336,
-    "ast_hash": "6e6f9680130699360545c6e5bd09df2d",
-    "semantic_hash": "6e6f9680130699360545c6e5bd09df2d"
+    "mtime": 1791372342.977226,
+    "ast_hash": "03884ffd08e0be391048abd96de5213b",
+    "semantic_hash": ""
   },
   "apps/api/app/services/counterparty_bank_match.py": {
     "mtime": 1790362087.0931137,
@@ -2760,8 +2760,8 @@
     "semantic_hash": "7ea4153135daa78361a1bb4c70e745bb"
   },
   "apps/api/app/services/counterparty_payments.py": {
-    "mtime": 1790688198.6966658,
-    "ast_hash": "4ec022209267598f1a54d19bb8d87ad0",
+    "mtime": 1791372342.9792607,
+    "ast_hash": "f591bbeddc260781d97b75e7162aa0d3",
     "semantic_hash": ""
   },
   "apps/api/app/services/counterparty_registry.py": {
@@ -2775,9 +2775,9 @@
     "semantic_hash": "79c7e92a32349c00c5b7ac7622c2400c"
   },
   "apps/api/app/services/counterparty_settlement_ledger.py": {
-    "mtime": 1790362087.0943208,
-    "ast_hash": "a558a7d193b244948e723ced2eaa42a3",
-    "semantic_hash": "a558a7d193b244948e723ced2eaa42a3"
+    "mtime": 1791372342.9809685,
+    "ast_hash": "01bf9d92997dc29a86e523c1501934f3",
+    "semantic_hash": ""
   },
   "apps/api/app/services/courier_sync.py": {
     "mtime": 1784910386.2726488,
@@ -3115,8 +3115,8 @@
     "semantic_hash": "72145416aa5ba0fcc97ed8022e4df8a4"
   },
   "apps/api/app/services/new_payment.py": {
-    "mtime": 1790685169.0198295,
-    "ast_hash": "71b191dd668348b1d09f01309dec9356",
+    "mtime": 1791372342.9821112,
+    "ast_hash": "909033caed31c69afe20121eda4c7cab",
     "semantic_hash": ""
   },
   "apps/api/app/services/notice_service.py": {
@@ -3125,9 +3125,9 @@
     "semantic_hash": "393a0c3bf7234b5ba38d9dd09c0da66f"
   },
   "apps/api/app/services/owner_analytics.py": {
-    "mtime": 1790362087.094996,
-    "ast_hash": "2516365d57a82beb8768ac1df685ed7c",
-    "semantic_hash": "2516365d57a82beb8768ac1df685ed7c"
+    "mtime": 1791372342.982973,
+    "ast_hash": "d0ec1d06b873cbaacb06d81bf8aed874",
+    "semantic_hash": ""
   },
   "apps/api/app/services/payments_aggregator.py": {
     "mtime": 1791288938.7172754,
@@ -3455,9 +3455,9 @@
     "semantic_hash": "f28028c18f64a90e3c8f1164845a104a"
   },
   "apps/api/app/services/supplier_prepayments.py": {
-    "mtime": 1790362087.0965886,
-    "ast_hash": "d2dc66f7407c419c3f0c0677447224f1",
-    "semantic_hash": "d2dc66f7407c419c3f0c0677447224f1"
+    "mtime": 1791372342.9845014,
+    "ast_hash": "c24a862f97c9467923954cdbe14f6f88",
+    "semantic_hash": ""
   },
   "apps/api/app/services/supplier_service_periods.py": {
     "mtime": 1790325458.900715,
@@ -4120,9 +4120,9 @@
     "semantic_hash": "f480f457521fa5767ad14e14afa397a4"
   },
   "apps/api/tests/counterparties/test_owner_dividends_payout.py": {
-    "mtime": 1790362087.1002865,
-    "ast_hash": "5ce796b4db68adf0b30efebac3ab985c",
-    "semantic_hash": "5ce796b4db68adf0b30efebac3ab985c"
+    "mtime": 1791372342.9849532,
+    "ast_hash": "34ce9248186a184e4f0d56f0c395db08",
+    "semantic_hash": ""
   },
   "apps/api/tests/counterparties/test_owner_settlements.py": {
     "mtime": 1790362087.1007714,
@@ -5495,9 +5495,9 @@
     "semantic_hash": "b4a1d35c11e3f00ecf46ffc7fa146688"
   },
   "apps/web/src/components/ui-app/CounterpartyCombobox.tsx": {
-    "mtime": 1785668249.2644482,
-    "ast_hash": "33e50f2a4f55ba408f6bf33d18e63759",
-    "semantic_hash": "33e50f2a4f55ba408f6bf33d18e63759"
+    "mtime": 1791372342.9864013,
+    "ast_hash": "4466ec07f8517f89868f3857441c16a1",
+    "semantic_hash": ""
   },
   "apps/web/src/components/ui-app/DataTable.tsx": {
     "mtime": 1782214501.7364047,
@@ -5660,8 +5660,8 @@
     "semantic_hash": "344cefd7d89ec1b78a606c1a323b2cbf"
   },
   "apps/web/src/lib/api.ts": {
-    "mtime": 1791313530.2618117,
-    "ast_hash": "0219cf25bda92c9fdf0b96899ccc6f8e",
+    "mtime": 1791372342.987464,
+    "ast_hash": "dfa6024aed23a9c33406086b9618dd98",
     "semantic_hash": ""
   },
   "apps/web/src/lib/auth.ts": {
@@ -5870,8 +5870,8 @@
     "semantic_hash": "9f801ee01b3f345ef9da265077633349"
   },
   "apps/web/src/routes/dds/NewPaymentDialog.tsx": {
-    "mtime": 1790687973.1369898,
-    "ast_hash": "b3fe20f8acf75474beaa862c960143da",
+    "mtime": 1791372342.9882438,
+    "ast_hash": "15daf4d00478499983d467581fc88900",
     "semantic_hash": ""
   },
   "apps/web/src/routes/dds/OperationClassifyDialog.tsx": {
@@ -8202,6 +8202,21 @@
   "apps/api/tests/test_payroll_pool_deposit.py": {
     "mtime": 1791313530.2608805,
     "ast_hash": "2f46bcbd7973b7a6de03dbdcf60afae2",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/counterparties/test_owner_loan_payments.py": {
+    "mtime": 1791372342.9852896,
+    "ast_hash": "5ef20501041812d5a6db6271e2d3b17f",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/counterparties/test_owner_loan_read_side.py": {
+    "mtime": 1791372342.9855587,
+    "ast_hash": "c1efaabeebb92b0a0f8c800b6cb01114",
+    "semantic_hash": ""
+  },
+  "apps/web/tests/new-payment-owner.spec.ts": {
+    "mtime": 1791372342.9900622,
+    "ast_hash": "5bce16e7ad68a73002be51074eac50f5",
     "semantic_hash": ""
   }
 }
