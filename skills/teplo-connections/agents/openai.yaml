@@ -1,0 +1,4 @@
+interface:
+  display_name: "Подключения Тепла"
+  short_description: "Вход в Starter и доступ к системам Тепла"
+  default_prompt: "Используй $teplo-connections, чтобы подключиться к нужному сервису Тепла и проверить доступ минимальным запросом на чтение."
