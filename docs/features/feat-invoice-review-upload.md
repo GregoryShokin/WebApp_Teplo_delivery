@@ -58,9 +58,10 @@ env-файл вне Git (после запуска файл удалён). В з
 релей `https://anthropic-relay.g-shokin94.workers.dev` отвечает 200 и предоставляет модель
 `claude-sonnet-4-6`. Для его использования добавлен отдельный opt-in
 `INVOICE_REVIEW_LLM_USE_RELAY=true`: он использует существующие `ANTHROPIC_BASE_URL`
-и `ANTHROPIC_RELAY_SECRET`; прямой режим секрет релея не отправляет. Включение передачи
-через Cloudflare требует согласования этого посредника. До согласования в production
-новый внешний разбор остаётся выключенным; локальные поля и ручной ввод доступны.
+и `ANTHROPIC_RELAY_SECRET`; прямой режим секрет релея не отправляет. 11.10.2026 пользователь
+явно согласовал передачу PDF и фотографий целиком, включая текст, суммы и реквизиты,
+через этот релей Cloudflare в Anthropic. В production включены оба opt-in-флага:
+`INVOICE_REVIEW_EXTERNAL_LLM_ENABLED=true`, `INVOICE_REVIEW_LLM_USE_RELAY=true`.
 
 ## Превью
 
@@ -103,3 +104,8 @@ VITE_API_BASE_URL='' VITE_API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev -- 
 (70 082 447 байт), единственная Alembic head подтверждена новым образом:
 `0277_tax_intake_mail_uid_sha`. PDF worker с внешнего домена отдаётся с
 `Content-Type: application/javascript`; `.mjs` явно обслуживается production nginx.
+
+После включения согласованного релея живой production-разбор тестового PDF и цепочка
+OCR + разбор PNG прошли без записей в финансовую БД. В обоих результатах
+`engine=deterministic+llm`, сумма 59 941 ₽, длительность 6 месяцев, две строки,
+даты периода отсутствуют. После пересоздания API внешний health остаётся 200.
