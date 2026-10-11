@@ -3,7 +3,8 @@ name: teplo-customer-research
 description: >-
   Turn Teplo owner hypotheses and customer evidence into decisions about food,
   price, service and loyalty. Use for Тепло requests about потребности клиентов,
-  причины выбора и повторных заказов, отток, клиентский бриф, опросы и интервью.
+  причины выбора и повторных заказов, отток, клиентский бриф, опросы и интервью,
+  отзывы и переписку Revvy, программную выгрузку обратной связи.
   Prepare neutral research and analyze answers alongside actual purchases;
   route competitor collection and financial calculations to the dedicated skills.
 ---
@@ -28,6 +29,10 @@ description: >-
 
 - Для брифа, сегментов, источников и разбора ответов используй
   [метод исследования](references/research-method.md).
+- Для кабинета Revvy, внутренних оценок, переписки, отзывов с карт и программных
+  выгрузок — [Revvy: доступ и чтение данных](references/revvy-access.md).
+  Там проверенные API/SignalR, пагинация, Excel и помощники чтения; не смешивай
+  чаты, сообщения, оценки и публичные отзывы.
 - Для готовых вопросов — [опрос и телефонный гайд](references/question-guides.md).
   Не запрашивай заново цель и формат, если они уже заданы владельцем.
 - Первые материалы этой работы: репозиторий `Teplo-all-for-business`,
