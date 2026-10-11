@@ -1900,9 +1900,9 @@
     "semantic_hash": "434224c4526381a77b1c68ba70d1986e"
   },
   "apps/api/app/api/v1/routes/payment_page.py": {
-    "mtime": 1786114857.8831959,
-    "ast_hash": "2c10d96ddb970cc924ce3aa5e7dad3ba",
-    "semantic_hash": "2c10d96ddb970cc924ce3aa5e7dad3ba"
+    "mtime": 1791751578.036661,
+    "ast_hash": "73ec0d91736654c4f0a54933eaac28ad",
+    "semantic_hash": ""
   },
   "apps/api/app/api/v1/routes/payroll.py": {
     "mtime": 1791313530.256457,
@@ -2015,9 +2015,9 @@
     "semantic_hash": "0e291915482cdb0b6fe71bdd3e4d0998"
   },
   "apps/api/app/core/config.py": {
-    "mtime": 1786099613.570245,
-    "ast_hash": "a75fc5831f73e621c2a4b1d6da1a3e25",
-    "semantic_hash": "a75fc5831f73e621c2a4b1d6da1a3e25"
+    "mtime": 1791751578.0374534,
+    "ast_hash": "ccd6d05c20c4b2bd577b1cb140aa71f0",
+    "semantic_hash": ""
   },
   "apps/api/app/core/security.py": {
     "mtime": 1779900108.5229187,
@@ -2585,9 +2585,9 @@
     "semantic_hash": "a5c8d9d1eae64b67a8d0570ece3985f4"
   },
   "apps/api/app/services/anthropic_client.py": {
-    "mtime": 1785440858.485604,
-    "ast_hash": "d7f7ab6575f5e3abe0f0776d84a8cc75",
-    "semantic_hash": "d7f7ab6575f5e3abe0f0776d84a8cc75"
+    "mtime": 1791751578.0381656,
+    "ast_hash": "33d51e8a7d979693b951894933504508",
+    "semantic_hash": ""
   },
   "apps/api/app/services/asset_analytics.py": {
     "mtime": 1785524198.1309867,
@@ -2760,14 +2760,14 @@
     "semantic_hash": "7ea4153135daa78361a1bb4c70e745bb"
   },
   "apps/api/app/services/counterparty_payments.py": {
-    "mtime": 1791372342.9792607,
-    "ast_hash": "f591bbeddc260781d97b75e7162aa0d3",
+    "mtime": 1791751578.0387967,
+    "ast_hash": "eb762675914c5d276c44ba002c8a5271",
     "semantic_hash": ""
   },
   "apps/api/app/services/counterparty_registry.py": {
-    "mtime": 1786188800.4945838,
-    "ast_hash": "ddfd274abb3578b1fea537d240e65023",
-    "semantic_hash": "ddfd274abb3578b1fea537d240e65023"
+    "mtime": 1791751578.0393934,
+    "ast_hash": "45e5d34c3d0540094155052617036bf2",
+    "semantic_hash": ""
   },
   "apps/api/app/services/counterparty_requisites_history.py": {
     "mtime": 1785521290.081224,
@@ -2910,9 +2910,9 @@
     "semantic_hash": "cf3a9f89c33ec0964712166d861b7cb7"
   },
   "apps/api/app/services/email_invoice_ingest.py": {
-    "mtime": 1790347841.5606253,
-    "ast_hash": "bd436c6ce7f12cf636f3d0b2ddfd7277",
-    "semantic_hash": "bd436c6ce7f12cf636f3d0b2ddfd7277"
+    "mtime": 1791751578.0401437,
+    "ast_hash": "fdeec92a5648860d34c2381c7344faa6",
+    "semantic_hash": ""
   },
   "apps/api/app/services/employee_assignments.py": {
     "mtime": 1780926254.528712,
@@ -3050,9 +3050,9 @@
     "semantic_hash": "449fb48b1d0fc68ab0c2bd2c3c7ccbce"
   },
   "apps/api/app/services/invoice_recognition.py": {
-    "mtime": 1786114857.8858929,
-    "ast_hash": "1d0afbc57a8d6f297522e42dad229979",
-    "semantic_hash": "1d0afbc57a8d6f297522e42dad229979"
+    "mtime": 1791751578.0405712,
+    "ast_hash": "ead28afdcef0736ea84b831c42496ccc",
+    "semantic_hash": ""
   },
   "apps/api/app/services/kassa/__init__.py": {
     "mtime": 1781699366.624222,
@@ -3580,14 +3580,14 @@
     "semantic_hash": "f3702ca44d66b266f0c3005989f0b4d1"
   },
   "apps/api/app/services/utility_intake.py": {
-    "mtime": 1790362087.0977545,
-    "ast_hash": "70aa07ef623cf809019fd6db093159f6",
-    "semantic_hash": "70aa07ef623cf809019fd6db093159f6"
+    "mtime": 1791751578.0411105,
+    "ast_hash": "4813239b20402db4fca4b29b5325648f",
+    "semantic_hash": ""
   },
   "apps/api/app/services/utility_ocr.py": {
-    "mtime": 1785706625.5452695,
-    "ast_hash": "a183ae36a44725f8bb21ba511d8ab8c7",
-    "semantic_hash": "a183ae36a44725f8bb21ba511d8ab8c7"
+    "mtime": 1791751578.0438094,
+    "ast_hash": "d4285fcf09df39cf5fcf31540caf7030",
+    "semantic_hash": ""
   },
   "apps/api/app/services/utility_recognition.py": {
     "mtime": 1787475800.8256633,
@@ -4335,9 +4335,9 @@
     "semantic_hash": "5fea47855afebfd819059e5b2fc7c82d"
   },
   "apps/api/tests/counterparties/test_utility_ocr.py": {
-    "mtime": 1785706625.5526378,
-    "ast_hash": "d909c365dc7af0c6406f715f2432749f",
-    "semantic_hash": "d909c365dc7af0c6406f715f2432749f"
+    "mtime": 1791751578.0447981,
+    "ast_hash": "9f37742ab778966ed3c5251290cd6e1f",
+    "semantic_hash": ""
   },
   "apps/api/tests/counterparties/test_utility_recognition.py": {
     "mtime": 1787475800.8263488,
@@ -5350,9 +5350,9 @@
     "semantic_hash": "8de1069bfac83023dcb58aeac0ca179f"
   },
   "apps/web/package.json": {
-    "mtime": 1780689961.6220932,
-    "ast_hash": "501b217e8006e5fed46f730384fd7c54",
-    "semantic_hash": "501b217e8006e5fed46f730384fd7c54"
+    "mtime": 1791751578.0468614,
+    "ast_hash": "2fe9b01a98cdc8d2b82bf750412c979b",
+    "semantic_hash": ""
   },
   "apps/web/playwright.config.ts": {
     "mtime": 1785521290.0826066,
@@ -6040,9 +6040,9 @@
     "semantic_hash": "44d3aa0cad19371d2fa93d2c3760df67"
   },
   "apps/web/src/routes/payment-page/DocumentPreview.tsx": {
-    "mtime": 1785706625.5668113,
-    "ast_hash": "a8d6ec7afe8a7c85986976b94213e03c",
-    "semantic_hash": "a8d6ec7afe8a7c85986976b94213e03c"
+    "mtime": 1791751578.050236,
+    "ast_hash": "d6f64ae5099fb9450ada0b440f04b2fb",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payment-page/RequisitesFields.tsx": {
     "mtime": 1785521290.0829165,
@@ -6050,9 +6050,9 @@
     "semantic_hash": "67dc99e92ac8c7afea07a75d6c215508"
   },
   "apps/web/src/routes/payment-page/ReviewDialog.tsx": {
-    "mtime": 1786114857.8883011,
-    "ast_hash": "719c2c3a9043b9119c51142d2061e377",
-    "semantic_hash": "719c2c3a9043b9119c51142d2061e377"
+    "mtime": 1791751578.0506911,
+    "ast_hash": "ae05b3d70d47875451c7cb9ac65a5d4e",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payment-page/SendDialog.tsx": {
     "mtime": 1790687973.1378922,
@@ -6070,14 +6070,14 @@
     "semantic_hash": ""
   },
   "apps/web/src/routes/payment-page/api.ts": {
-    "mtime": 1786114857.8894227,
-    "ast_hash": "ebcc22335d9176703b5f6d573a6e6984",
-    "semantic_hash": "ebcc22335d9176703b5f6d573a6e6984"
+    "mtime": 1791751578.0510478,
+    "ast_hash": "311aba32350897357fd06d12f9c6ff7d",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payment-page/index.tsx": {
-    "mtime": 1785766912.1816769,
-    "ast_hash": "9e59b40a16690ba90b2e6dd362baaecd",
-    "semantic_hash": "9e59b40a16690ba90b2e6dd362baaecd"
+    "mtime": 1791751578.051722,
+    "ast_hash": "34e697783f0cd270c2e241445204d02e",
+    "semantic_hash": ""
   },
   "apps/web/src/routes/payment-page/requisites.ts": {
     "mtime": 1785833364.2593338,
@@ -6495,9 +6495,9 @@
     "semantic_hash": "496575f49a27f132855715f448a4c97e"
   },
   "apps/web/vite.config.ts": {
-    "mtime": 1781607714.1272974,
-    "ast_hash": "ac4be935738bc50cba79399780742471",
-    "semantic_hash": "ac4be935738bc50cba79399780742471"
+    "mtime": 1791751578.0525987,
+    "ast_hash": "da335083ec4d92cd1d022a0ef49c9116",
+    "semantic_hash": ""
   },
   "business-docs/00-index.md": {
     "mtime": 1785349916.68588,
@@ -8218,5 +8218,45 @@
     "mtime": 1791372342.9900622,
     "ast_hash": "5bce16e7ad68a73002be51074eac50f5",
     "semantic_hash": ""
+  },
+  "apps/api/app/services/invoice_review.py": {
+    "mtime": 1791751578.04076,
+    "ast_hash": "896fac2f46afc6d4976b2fa3c41a58c8",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/counterparties/test_invoice_review.py": {
+    "mtime": 1791751578.0445259,
+    "ast_hash": "1776f450000191facc41dab2064b73ba",
+    "semantic_hash": ""
+  },
+  "apps/web/src/routes/payment-page/PdfPreview.tsx": {
+    "mtime": 1791751578.050415,
+    "ast_hash": "21ad52506530b76390e2a5903ca3f767",
+    "semantic_hash": ""
+  },
+  "apps/web/src/routes/payment-page/service-period.ts": {
+    "mtime": 1791751578.0518765,
+    "ast_hash": "1402d7bbfa79e3ae15b67a936925a840",
+    "semantic_hash": ""
+  },
+  "apps/web/tests/invoice-review-period.spec.ts": {
+    "mtime": 1791751578.052,
+    "ast_hash": "bcf888aeae83e3de7d539209a04f8b71",
+    "semantic_hash": ""
+  },
+  "apps/api/tests/fixtures/invoice-review-subscription.txt": {
+    "mtime": 1791751578.045031,
+    "ast_hash": "165cebe59603b6ff0a523557f9a79dd6",
+    "semantic_hash": "165cebe59603b6ff0a523557f9a79dd6"
+  },
+  "apps/docker-compose.preview-invoice.yml": {
+    "mtime": 1791751578.045185,
+    "ast_hash": "e8a203bff51313c1feb527320ac08cd1",
+    "semantic_hash": "e8a203bff51313c1feb527320ac08cd1"
+  },
+  "docs/features/feat-invoice-review-upload.md": {
+    "mtime": 1791752427.950815,
+    "ast_hash": "43f8d6beb971c869ebe6b62270057fc3",
+    "semantic_hash": "43f8d6beb971c869ebe6b62270057fc3"
   }
 }
