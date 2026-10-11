@@ -537,7 +537,12 @@ async def ingest_document(
     if existing is not None:
         raise UtilityIntakeError("Этот файл уже загружали — строка по нему есть в списке")
 
-    text, ocr_method = await utility_ocr.extract_text(content, mime=mime, settings=settings)
+    text, ocr_method = await utility_ocr.extract_text(
+        content,
+        mime=mime,
+        settings=settings,
+        **({"review_mode": True} if settings.invoice_review_external_llm_enabled else {}),
+    )
     documents = recognize_utility_documents(text) if text else []
 
     if not documents:

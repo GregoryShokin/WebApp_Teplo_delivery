@@ -27,6 +27,10 @@ services:
       SBIS_SYNC_ENABLED: "false"
       MAIL_POLL_ENABLED: "false"
       TEPLO_BANK_CLIENT_MODE: mock
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: https://api.anthropic.com
+      INVOICE_REVIEW_EXTERNAL_LLM_ENABLED: ${INVOICE_REVIEW_EXTERNAL_LLM_ENABLED:-false}
+      INVOICE_REVIEW_LLM_BASE_URL: https://api.anthropic.com
       IIKO_SERVER_BASE_URL: http://iiko-disabled.invalid
       JWT_SECRET_KEY: invoice-preview-local-secret-change-me
       BACKEND_CORS_ORIGINS: '["http://localhost:5253","http://127.0.0.1:5253"]'

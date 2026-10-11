@@ -315,7 +315,7 @@ export function ReviewDialog({
               </div>
               {recognized.service_duration_months ? (
                 <p className="mt-2 text-sm">
-                  Оплачено <strong>{recognized.service_duration_months} мес.</strong>
+                  В счёте <strong>{recognized.service_duration_months} мес.</strong>
                   {!recognized.service_period_start
                     ? " Выберите месяц начала — окончание рассчитаем."
                     : ""}
@@ -478,7 +478,7 @@ export function ReviewDialog({
               {duration || recognized.service_duration_months ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Field
-                    label="Оплачено месяцев"
+                    label="Длительность, мес."
                     type="number"
                     value={duration}
                     onChange={(v) => {

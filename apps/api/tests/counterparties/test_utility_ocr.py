@@ -20,6 +20,28 @@ from app.services import utility_ocr
 from app.services.anthropic_client import LlmCallError
 
 
+async def test_review_photo_uses_consented_origin_and_bounded_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_call(settings: Any, **kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"text": "Счёт на оплату", "readable": True}
+
+    monkeypatch.setattr(utility_ocr, "call_tool", fake_call)
+    settings = _settings().model_copy(
+        update={"invoice_review_llm_base_url": "https://api.anthropic.com"}
+    )
+    await utility_ocr.extract_text(
+        b"\xff\xd8\xff photo", mime="image/jpeg", settings=settings, review_mode=True
+    )
+
+    assert captured["base_url"] == "https://api.anthropic.com"
+    assert captured["timeout_seconds"] == 45.0
+    assert captured["max_retries"] == 0
+
+
 def _settings():
     return get_settings()
 
