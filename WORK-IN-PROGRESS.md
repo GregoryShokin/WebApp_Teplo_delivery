@@ -16,13 +16,6 @@ shared-ресурсы (БД, Docker, миграции, тесты), которы
 
 ## Активные зоны
 
-### invoice-review — ветка `codex/invoice-review`
-- worktree: `../Teplo-agent-invoice-review`
-- compose: `preview-invoice`; web 5253, API 8080, Postgres 5512; тестовая БД `teplo_test_invoice`
-- трогает: `payment-page/ReviewDialog`, общий разбор счетов и ручную загрузку, подтверждение карточки, защиту bank draft от повтора
-- статус: выпуск одобрен владельцем; подготовка к деплою
-- внешнее LLM-распознавание: прямой Anthropic согласован и проверен в превью; посредник Cloudflare на проде требует отдельного согласования
-
 <!-- ШАБЛОН — копируй блок ниже
 ### agent-<имя> — ветка `agent/<задача>`
 - worktree: `../Teplo-agent-<имя>`

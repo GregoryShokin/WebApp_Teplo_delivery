@@ -2,7 +2,8 @@
 
 Работа сделана в ветке `codex/invoice-review` в sibling-worktree
 `/Users/grigorii/Developer/Projects/Teplo-agent-invoice-review`. Владелец одобрил выпуск
-11.10.2026. Новых миграций в этом изменении нет.
+11.10.2026. Код выкачен на production (`62f9178a`), API и web здоровы,
+внешний `/api/v1/health` отвечает 200. Новых миграций в этом изменении нет.
 
 ## Поведение
 
@@ -98,3 +99,7 @@ VITE_API_BASE_URL='' VITE_API_PROXY_TARGET=http://127.0.0.1:8080 npm run dev -- 
 
 Перед выпуском: 117 регрессионных тестов, 21 тест прямого/релейного маршрута,
 3 теста календарного периода, ESLint формы и production-сборка frontend прошли.
+Перед обновлением создан бэкап `/opt/teplo/backups/teplo_20261011_204437.dump`
+(70 082 447 байт), единственная Alembic head подтверждена новым образом:
+`0277_tax_intake_mail_uid_sha`. PDF worker с внешнего домена отдаётся с
+`Content-Type: application/javascript`; `.mjs` явно обслуживается production nginx.
