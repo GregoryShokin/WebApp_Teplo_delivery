@@ -993,6 +993,7 @@ async def set_requisites(
     requisites: dict[str, Any],
     verified: bool,
     actor_user_id: uuid.UUID | None,
+    commit: bool = True,
 ) -> CounterpartyPayableProfile:
     counterparty = await session.get(Counterparty, counterparty_id)
     if counterparty is None:
@@ -1018,8 +1019,11 @@ async def set_requisites(
     else:
         profile.requisites_verified_at = None
         profile.requisites_verified_by_user_id = None
-    await session.commit()
-    await session.refresh(profile)
+    if commit:
+        await session.commit()
+        await session.refresh(profile)
+    else:
+        await session.flush()
     return profile
 
 

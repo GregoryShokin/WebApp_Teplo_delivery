@@ -31,6 +31,7 @@ from app.models import (
     CounterpartyCollectionSource,
     CounterpartyPayableProfile,
     CounterpartyRole,
+    DdsArticle,
     EmailInvoiceIntake,
     SupplierInvoice,
 )
@@ -41,6 +42,7 @@ from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.counterparty_matching import _recompute_status
 from app.services.invoice_recognition import RecognizedInvoice, recognize
+from app.services.invoice_review import validate_review_fields
 from app.services.mail.imap_client import (
     FetchedAttachment,
     configured_accounts,
@@ -656,16 +658,49 @@ async def confirm_intake_with_review(
     vat_rate: str | None = None,
     requisites: dict[str, str] | None = None,
     apply_requisites: bool = False,
+    setup_counterparty: bool = False,
+    dds_article_id: uuid.UUID | None = None,
+    service_billing_mode: str | None = None,
+    document_kind: str | None = None,
+    service_duration_months: int | None = None,
 ) -> str:
     """Подтверждение счёта оператором с правками (окно разбора): выбор/создание контрагента,
     скорректированные поля, опц. перенос реквизитов в карточку с верификацией, затем создание
     накладной из распознанного. Возвращает итоговый статус intake."""
     inn = (new_counterparty_inn or "").strip() or None
+    if service_duration_months is not None and not 1 <= service_duration_months <= 120:
+        raise ValueError("Длительность услуги — от 1 до 120 месяцев")
+    validate_review_fields(
+        {
+            "amount": amount,
+            "invoice_date": invoice_date,
+            "service_period_start": service_period_start,
+            "service_period_end": service_period_end,
+        }
+    )
+    if setup_counterparty:
+        if dds_article_id is None:
+            raise ValueError("Выберите статью ДДС для нового контрагента")
+        article = await session.get(DdsArticle, dds_article_id)
+        if article is None or not article.is_active or article.movement_type != "outflow":
+            raise ValueError("Выберите действующую расходную статью ДДС")
+        if service_billing_mode not in ("fixed_tariff", "per_invoice", "one_off", "goods"):
+            raise ValueError("Выберите способ учёта контрагента")
+        if service_billing_mode == "fixed_tariff" and not (
+            service_period_start and service_period_end
+        ):
+            raise ValueError("Для подписки укажите начало и окончание периода")
+        if not apply_requisites:
+            raise ValueError("Подтвердите реквизиты нового контрагента")
+    if inn and (requisites or {}).get("inn") and (requisites or {})["inn"].strip() != inn:
+        raise ValueError("ИНН контрагента и получателя платежа должны совпадать")
 
     if counterparty_id is not None:
         cp = await session.get(Counterparty, counterparty_id)
         if cp is None:
             raise ValueError("Контрагент не найден")
+        if cp.inn and (requisites or {}).get("inn") and cp.inn != requisites["inn"].strip():
+            raise ValueError("ИНН выбранного контрагента не совпадает с получателем платежа")
         cp_id = cp.id
     elif new_counterparty_name and new_counterparty_name.strip():
         # Если такой ИНН уже есть — переиспользуем, иначе создаём заглушку.
@@ -676,7 +711,7 @@ async def confirm_intake_with_review(
                 inn=inn,
                 type=_guess_type(inn),
                 status="requires_setup",
-                origin="email",
+                origin="manual" if intake.mailbox == "photo" else "email",
             )
             session.add(cp)
             await session.flush()
@@ -692,10 +727,13 @@ async def confirm_intake_with_review(
     else:
         raise ValueError("Выберите контрагента")
 
-    await _ensure_email_source(session, cp_id, _sender_email(intake.from_addr))
+    if intake.mailbox != "photo":
+        await _ensure_email_source(session, cp_id, _sender_email(intake.from_addr))
 
     # Сохраняем правки оператора в распознанное (из него потом собирается накладная).
     rec = dict(intake.recognition or {})
+    if service_duration_months is not None:
+        rec["service_duration_months"] = service_duration_months
     if amount is not None:
         rec["amount"] = amount
     if invoice_number is not None:
@@ -707,6 +745,10 @@ async def confirm_intake_with_review(
         rec["service_period_end"] = (service_period_end or "").strip() or None
         rec["service_period_source"] = "manual"
         rec["service_period_ambiguous"] = False
+    if document_kind is not None:
+        if document_kind not in ("invoice", "act", "upd"):
+            raise ValueError("Выберите вид документа")
+        rec["document_kind"] = document_kind
     if vat_amount is not None or vat_rate is not None:
         # НДС правит человек, глядя в бумагу, — его слово последнее. Пустая сумма означает
         # «налога в счёте нет»: режим уходит в 'none', и в назначение платежа встаёт «Без НДС.»
@@ -719,6 +761,8 @@ async def confirm_intake_with_review(
                 parsed = Decimal(clean_vat)
             except (InvalidOperation, ValueError):
                 raise ValueError("Сумма НДС — не число") from None
+            if not parsed.is_finite() or parsed < 0:
+                raise ValueError("Сумма НДС должна быть неотрицательным числом")
         # Сумму берём из ПРАВЛЕНОГО ``rec``, а не из intake: оператор мог поправить её в этом
         # же окне, и сверять налог со старой суммой значит пропустить ровно тот случай, ради
         # которого сверка нужна.
@@ -744,13 +788,46 @@ async def confirm_intake_with_review(
         # смену расчётного счёта поставщиком. Затирали бы его — карточка молча стала бы
         # «реквизитами из счёта», а сравнивать было бы уже не с чем.
         rec["requisites_reviewed"] = clean_req
+    reviewed = dict(rec.get("reviewed_fields") or {})
+    for key, value in {
+        "amount": amount,
+        "invoice_number": invoice_number,
+        "invoice_date": invoice_date,
+        "service_period_start": service_period_start,
+        "service_period_end": service_period_end,
+        "document_kind": document_kind,
+        "service_duration_months": service_duration_months,
+    }.items():
+        if value is not None:
+            reviewed[key] = rec.get(key)
+    if service_period_start is not None or service_period_end is not None:
+        reviewed.update(service_period_source="manual", service_period_ambiguous=False)
+    if vat_amount is not None or vat_rate is not None:
+        reviewed.update({key: rec.get(key) for key in ("vat_mode", "vat_amount", "vat_rate")})
+    rec["reviewed_fields"] = reviewed
     intake.recognition = rec
     intake.counterparty_id = cp_id
 
     if apply_requisites and clean_req:
         await registry.set_requisites(
-            session, cp_id, requisites=clean_req, verified=True, actor_user_id=actor_user_id
+            session,
+            cp_id,
+            requisites=clean_req,
+            verified=True,
+            actor_user_id=actor_user_id,
+            commit=False,
         )
+    if setup_counterparty:
+        cp = await session.get(Counterparty, cp_id)
+        profile = await registry._get_or_create_profile(session, cp_id)
+        if cp.status == "requires_setup":
+            profile.default_dds_article_id = dds_article_id
+            profile.settlement_contour = "goods" if service_billing_mode == "goods" else "service"
+            profile.service_billing_mode = (
+                None if service_billing_mode == "goods" else service_billing_mode
+            )
+            profile.service_period_required = service_billing_mode == "fixed_tariff"
+            await registry.activate_configured_placeholder(session, cp, profile)
 
     # Повторный разбор уже материализованного intake (счёт=linked или закрывающий=closing):
     # накладную НЕ пересоздаём — иначе она стала бы «дублем» сама себе. Реквизиты применены выше;
@@ -758,6 +835,33 @@ async def confirm_intake_with_review(
     if intake.invoice_id is not None and intake.status in ("linked", "closing"):
         inv = await session.get(SupplierInvoice, intake.invoice_id)
         if inv is not None:
+            if document_kind and _doc_kind_from_recognition(document_kind) != inv.doc_kind:
+                raise ValueError("Тип уже созданного документа нельзя менять при повторном разборе")
+            if inv.draft_id is not None or inv.payment_status != "unpaid":
+                changed = (
+                    (amount is not None and Decimal(amount) != inv.amount)
+                    or (
+                        invoice_number is not None
+                        and (invoice_number.strip() or None) != inv.number
+                    )
+                    or (
+                        invoice_date is not None and _date_or_none(invoice_date) != inv.invoice_date
+                    )
+                    or (
+                        service_period_start is not None
+                        and _date_or_none(service_period_start) != inv.service_period_start
+                    )
+                    or (
+                        service_period_end is not None
+                        and _date_or_none(service_period_end) != inv.service_period_end
+                    )
+                    or (
+                        vat_amount is not None
+                        and _recognized_vat(rec, inv.amount)[0] != inv.vat_total
+                    )
+                )
+                if changed:
+                    raise ValueError("Счёт уже в банке или оплачен — его данные нельзя менять")
             if inv.counterparty_id != cp_id:
                 # Переназначение уже созданного счёта допустимо только пока он не ушёл
                 # в банк и не был оплачен. Иначе смена поставщика сломает историю

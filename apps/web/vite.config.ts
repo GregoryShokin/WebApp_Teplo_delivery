@@ -13,6 +13,9 @@ export default defineConfig({
     },
   },
   server: {
+    proxy: process.env.VITE_API_PROXY_TARGET
+      ? { "/api": { target: process.env.VITE_API_PROXY_TARGET, changeOrigin: true } }
+      : undefined,
     port: Number(process.env.PORT) || 5173,
     // macOS + Docker bind-mount теряет file-watch события — поллинг чинит HMR.
     watch: { usePolling: true, interval: 300 },

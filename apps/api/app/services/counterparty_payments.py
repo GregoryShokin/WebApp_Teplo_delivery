@@ -264,7 +264,15 @@ async def create_payment_draft_for_invoices(
         raise CounterpartyPaymentError("Не выбраны накладные для оплаты")
 
     invoices = list(
-        (await session.execute(select(SupplierInvoice).where(SupplierInvoice.id.in_(unique_ids))))
+        (
+            await session.execute(
+                select(SupplierInvoice)
+                .where(SupplierInvoice.id.in_(unique_ids))
+                .order_by(SupplierInvoice.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
         .scalars()
         .all()
     )
@@ -405,8 +413,13 @@ async def create_payment_draft_for_invoices(
     # Период на черновике заполняем, только когда он у счетов один. Выбрать один из двух —
     # соврать о платеже; пусто честно отсылает к периодам самих счетов, где они и живут.
     period_start, period_end = next(iter(period_keys)) if len(period_keys) == 1 else (None, None)
-    draft = CounterpartyPaymentDraft(
-        id=uuid.uuid4(),
+    # Один набор счетов — один bank document_id, в том числе после сетевого таймаута.
+    # Банк мог принять запрос до разрыва соединения: новая UUID создала бы второй платёж.
+    identity = provider + ":" + ",".join(sorted(str(inv.id) for inv in invoices))
+    stable_id = uuid.uuid5(uuid.NAMESPACE_URL, "teplo:invoice-payment:" + identity)
+    previous_draft = await session.get(CounterpartyPaymentDraft, stable_id)
+    draft = previous_draft or CounterpartyPaymentDraft(
+        id=stable_id,
         counterparty_id=counterparty_id,
         document_id="",
         amount=total,
@@ -437,6 +450,12 @@ async def create_payment_draft_for_invoices(
     except ValueError as exc:
         raise CounterpartyPaymentError(f"Реквизиты неполны: {exc}") from exc
 
+    if previous_draft is not None and previous_draft.payload != payload:
+        raise CounterpartyPaymentError(
+            "Предыдущая отправка не завершена, а данные платежа изменились. "
+            "Сначала проверьте прежний черновик в банке — новый платёж не создан."
+        )
+
     client = bank_client or payout_client_for(provider, session)
     try:
         result = await client.create_payment_draft(
@@ -455,6 +474,7 @@ async def create_payment_draft_for_invoices(
         raise
 
     draft.status = _safe_status(result.status)
+    draft.last_error = None
     draft.provider_ref = result.provider_ref
     draft.payload = payload
     draft.synced_at = datetime.now(tz=UTC)

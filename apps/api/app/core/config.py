@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     # детерминированный слой, неуверенные счета уходят в «требует проверки».
     anthropic_api_key: str | None = None
     invoice_recognition_model: str = "claude-sonnet-4-6"
+    # Дополнительный LLM-разбор обычных счетов при ручной загрузке выключен по умолчанию.
+    invoice_review_external_llm_enabled: bool = False
+    invoice_review_llm_base_url: str = "https://api.anthropic.com"
     # Новая номенклатура ОПиУ: источник сначала определяется по активным блюдам/техкартам
     # iiko, а модель выбирает только из совместимых экономических статей. При отсутствии
     # ключа или низкой уверенности источник сохраняется, статья остаётся владельцу.

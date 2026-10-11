@@ -157,8 +157,7 @@ export function PaymentIntakesTab() {
     // работает система, тем сильнее (оплаченные копятся, неоплаченные — нет).
     if (filter === "active") {
       return all.filter(
-        (item) =>
-          (item.status === "needs_review" || item.status === "linked") && !isPaid(item),
+        (item) => (item.status === "needs_review" || item.status === "linked") && !isPaid(item),
       );
     }
     // Три состояния одного статуса linked разведены по своим фильтрам: платить нечего,
@@ -193,8 +192,7 @@ export function PaymentIntakesTab() {
     };
   }, [all]);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["payment-page", "intakes"] });
 
   const ignoreMutation = useMutation({
     mutationFn: (id: string) => ignoreIntake(id),
@@ -235,9 +233,7 @@ export function PaymentIntakesTab() {
     setSelected((current) => {
       if (current.includes(item.id)) return current.filter((id) => id !== item.id);
       const others = all.filter((row) => current.includes(row.id));
-      const sameCounterparty = others.every(
-        (row) => row.counterparty_id === item.counterparty_id,
-      );
+      const sameCounterparty = others.every((row) => row.counterparty_id === item.counterparty_id);
       return sameCounterparty ? [...current, item.id] : [item.id];
     });
   }
@@ -264,6 +260,15 @@ export function PaymentIntakesTab() {
     mutationFn: (file: File) => uploadIntake(file),
     onSuccess: (items) => {
       void invalidate();
+      if (items.length === 1 && items[0].status === "needs_review" && !items[0].utility_kind) {
+        setReviewItem(items[0]);
+        toast.info(
+          items[0].amount
+            ? "Проверьте предложения по счёту"
+            : "Заполните недостающие данные документа",
+        );
+        return;
+      }
       // Один файл может дать несколько строк: энергетик за визит выдаёт два акта. Говорим,
       // сколько именно вышло, — иначе человек ищет вторую строку и не понимает, откуда она.
       const needsHands = items.filter((item) => item.status === "needs_review").length;
@@ -449,7 +454,8 @@ export function PaymentIntakesTab() {
             ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                  Пусто. Счета приходят почтой и по ЭДО, а квитанцию можно принести кнопкой «Загрузить документ».
+                  Пусто. Счета приходят почтой и по ЭДО, а квитанцию можно принести кнопкой
+                  «Загрузить документ».
                 </TableCell>
               </TableRow>
             ) : (
@@ -493,9 +499,7 @@ export function PaymentIntakesTab() {
                     <TableCell>
                       {(() => {
                         const b = statusBadge(item);
-                        return (
-                          <Badge className={`${b.cls} whitespace-nowrap`}>{b.label}</Badge>
-                        );
+                        return <Badge className={`${b.cls} whitespace-nowrap`}>{b.label}</Badge>;
                       })()}
                       {/* Плановая отправка — состояние счёта, а не действие: в колонке
                           действий она сдвигала кнопки и ломала их вертикаль. */}
@@ -540,7 +544,9 @@ export function PaymentIntakesTab() {
                         </div>
                       ) : null}
                       {item.utility_hints?.length ? (
-                        <div className="text-xs text-amber-700">{item.utility_hints.join(". ")}</div>
+                        <div className="text-xs text-amber-700">
+                          {item.utility_hints.join(". ")}
+                        </div>
                       ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">

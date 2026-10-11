@@ -4,6 +4,18 @@ import { getRegistry } from "../counterparties/api";
 
 // Одна запись журнала разбора счёта из почты (email_invoice_intake).
 export type PaymentIntake = {
+  service_period_candidates?: Array<{ start: string; end: string }>;
+  document_kind?: string | null;
+  service_duration_months?: number | null;
+  line_items?: Array<{
+    description?: string;
+    quantity?: string;
+    unit?: string;
+    unit_price?: string;
+    amount?: string;
+  }>;
+  field_evidence?: Record<string, string>;
+  recognition_notes?: string[];
   id: string;
   mailbox: string;
   from_addr: string | null;
@@ -75,6 +87,11 @@ export type PaymentIntake = {
 };
 
 export type ConfirmPayload = {
+  service_duration_months?: number | null;
+  setup_counterparty?: boolean;
+  dds_article_id?: string | null;
+  service_billing_mode?: "fixed_tariff" | "per_invoice" | "one_off" | "goods" | null;
+  document_kind?: "invoice" | "act" | "upd";
   counterparty_id?: string | null;
   new_counterparty_name?: string | null;
   new_counterparty_inn?: string | null;
@@ -102,11 +119,19 @@ export type ConfirmUtilityPayload = {
   payable_amount: string;
 };
 
-export type CounterpartyOption = { value: string; label: string };
+export type CounterpartyOption = {
+  value: string;
+  label: string;
+  inn?: string | null;
+  status?: string;
+};
 
 // Реквизиты карточки контрагента — то, чем платёж реально уйдёт в банк. Окно разбора берёт
 // их, когда в счёте реквизиты не распознались, и перечитывает при смене контрагента.
 export type CounterpartyRequisites = {
+  status?: string | null;
+  default_dds_article_id?: string | null;
+  service_billing_mode?: string | null;
   counterparty_id: string;
   name: string;
   inn: string | null;
@@ -121,6 +146,8 @@ export async function listCounterpartyOptions(): Promise<CounterpartyOption[]> {
   return rows
     .map((r) => ({
       value: r.counterparty_id,
+      inn: r.inn,
+      status: r.status,
       label: r.inn ? `${r.name} · ИНН ${r.inn}` : r.name,
     }))
     .sort((a, b) => a.label.localeCompare(b.label, "ru"));
@@ -155,6 +182,15 @@ export async function confirmIntake(
   return response.data;
 }
 
+export async function recognizeAgain(id: string): Promise<PaymentIntake> {
+  const response = await api.post<PaymentIntake>(
+    `${BASE}/intakes/${id}/recognize`,
+    {},
+    { timeout: 60_000 },
+  );
+  return response.data;
+}
+
 // Принести документ руками — третий источник страницы рядом с почтой и ЭДО. Ответ СПИСКОМ:
 // один файл несёт столько документов, сколько в нём есть (у энергетика за визит их два).
 export async function uploadIntake(
@@ -166,7 +202,9 @@ export async function uploadIntake(
   if (utilityAccountId) form.append("utility_account_id", utilityAccountId);
   // Content-Type не ставим руками: браузер сам допишет boundary, без которого сервер не
   // разберёт тело.
-  const response = await api.post<PaymentIntake[]>(`${BASE}/intakes/upload`, form);
+  const response = await api.post<PaymentIntake[]>(`${BASE}/intakes/upload`, form, {
+    timeout: 120_000,
+  });
   return response.data;
 }
 
@@ -175,10 +213,7 @@ export async function confirmUtilityIntake(
   id: string,
   payload: ConfirmUtilityPayload,
 ): Promise<PaymentIntake> {
-  const response = await api.post<PaymentIntake>(
-    `${BASE}/intakes/${id}/confirm-utility`,
-    payload,
-  );
+  const response = await api.post<PaymentIntake>(`${BASE}/intakes/${id}/confirm-utility`, payload);
   return response.data;
 }
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 from fastapi import (
@@ -26,7 +26,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,7 +47,7 @@ from app.models import (
 )
 from app.models.email_invoice_intake import EMAIL_INTAKE_STATUSES
 from app.services import counterparty_payments as payments
-from app.services import document_uploads, utility_images, utility_intake
+from app.services import document_uploads, invoice_review, utility_images, utility_intake
 from app.services import email_invoice_ingest as ingest
 from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
@@ -64,6 +64,12 @@ OPERATE = (Depends(require_permission("counterparties.operate")),)
 
 
 class IntakeRead(BaseModel):
+    service_period_candidates: list[dict[str, str]] = Field(default_factory=list)
+    document_kind: str | None = None
+    service_duration_months: int | None = None
+    line_items: list[dict[str, Any]] = []
+    field_evidence: dict[str, str] = {}
+    recognition_notes: list[str] = []
     id: uuid.UUID
     mailbox: str
     from_addr: str | None
@@ -151,6 +157,9 @@ class CounterpartyRequisitesRead(BaseModel):
     inn: str | None
     requisites: dict[str, Any]
     requisites_verified: bool
+    status: str | None = None
+    default_dds_article_id: uuid.UUID | None = None
+    service_billing_mode: str | None = None
 
 
 class ReviewRequisites(BaseModel):
@@ -163,6 +172,11 @@ class ReviewRequisites(BaseModel):
 
 
 class ConfirmIn(BaseModel):
+    service_duration_months: int | None = Field(default=None, ge=1, le=120)
+    setup_counterparty: bool = False
+    dds_article_id: uuid.UUID | None = None
+    service_billing_mode: Literal["fixed_tariff", "per_invoice", "one_off", "goods"] | None = None
+    document_kind: Literal["invoice", "act", "upd"] | None = None
     # Существующий контрагент (пикер) ИЛИ создание нового по имени+ИНН. Если оба пустые —
     # берётся уже сматченный intake.counterparty_id.
     counterparty_id: uuid.UUID | None = None
@@ -284,6 +298,12 @@ def _to_read(
         else:
             period_status_value = "missing" if service_period_required else "not_required"
     return IntakeRead(
+        service_period_candidates=rec.get("service_period_candidates") or [],
+        document_kind=rec.get("document_kind"),
+        service_duration_months=rec.get("service_duration_months"),
+        line_items=rec.get("line_items") or [],
+        field_evidence=rec.get("field_evidence") or {},
+        recognition_notes=rec.get("notes") or [],
         id=intake.id,
         mailbox=intake.mailbox,
         from_addr=intake.from_addr,
@@ -575,6 +595,9 @@ async def get_counterparty_requisites(
         )
     )
     return CounterpartyRequisitesRead(
+        status=counterparty.status,
+        default_dds_article_id=profile.default_dds_article_id if profile else None,
+        service_billing_mode=profile.service_billing_mode if profile else None,
         counterparty_id=counterparty.id,
         name=counterparty.name,
         inn=counterparty.inn,
@@ -711,7 +734,11 @@ async def confirm_intake(
     session: Annotated[AsyncSession, Depends(get_session)],
     actor: Annotated[CurrentActor, Depends(get_current_actor)],
 ) -> IntakeRead:
-    intake = await _get_intake(session, intake_id)
+    intake = await session.scalar(
+        select(EmailInvoiceIntake).where(EmailInvoiceIntake.id == intake_id).with_for_update()
+    )
+    if intake is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
     if intake.status == "ignored":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Запись помечена как не счёт"
@@ -743,9 +770,44 @@ async def confirm_intake(
             vat_rate=body.vat_rate,
             requisites=body.requisites.model_dump(exclude_none=True) if body.requisites else None,
             apply_requisites=body.apply_requisites,
+            setup_counterparty=body.setup_counterparty,
+            dds_article_id=body.dds_article_id,
+            service_billing_mode=body.service_billing_mode,
+            document_kind=body.document_kind,
+            service_duration_months=body.service_duration_months,
+        )
+        await _apply_article_choice(
+            session,
+            intake,
+            dds_article_id=body.dds_article_id,
+            remember_for_counterparty=False,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return await _load_read(session, intake_id)
+
+
+@router.post("/intakes/{intake_id}/recognize", response_model=IntakeRead, dependencies=OPERATE)
+async def recognize_again(
+    intake_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IntakeRead:
+    intake = await session.scalar(
+        select(EmailInvoiceIntake).where(EmailInvoiceIntake.id == intake_id).with_for_update()
+    )
+    if intake is None:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if (
+        intake.status in ("excluded", "ignored", "duplicate", "closing")
+        or intake.utility_account_id
+    ):
+        raise HTTPException(status_code=409, detail="Для этой строки повторный разбор недоступен")
+    invoice = await session.get(SupplierInvoice, intake.invoice_id) if intake.invoice_id else None
+    if invoice and (invoice.draft_id or invoice.payment_status != "unpaid"):
+        raise HTTPException(status_code=409, detail="Счёт уже в банке или оплачен")
+    await invoice_review.recognize_intake(session, intake, settings=settings)
     await session.commit()
     return await _load_read(session, intake_id)
 

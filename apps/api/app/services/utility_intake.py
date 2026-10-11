@@ -49,7 +49,7 @@ from app.models import (
     EmailInvoiceIntake,
     UtilityAccount,
 )
-from app.services import utility_charges, utility_ocr
+from app.services import invoice_review, utility_charges, utility_ocr
 from app.services.document_uploads import MAX_UPLOAD_BYTES, sniff_mime
 from app.services.utility_recognition import (
     LOW_CONFIDENCE_THRESHOLD,
@@ -566,6 +566,12 @@ async def ingest_document(
         }
         session.add(intake)
         await session.flush()
+        await invoice_review.recognize_intake(
+            session,
+            intake,
+            settings=settings,
+            extracted_text=text,
+        )
         return [intake]
 
     created: list[EmailInvoiceIntake] = []
@@ -634,9 +640,7 @@ async def ingest_document(
             intake.status = "needs_review"
         else:
             utility_recognition = intake.recognition.get("utility") or {}
-            paid_advance_amount = _decimal_or_none(
-                utility_recognition.get("paid_advance_amount")
-            )
+            paid_advance_amount = _decimal_or_none(utility_recognition.get("paid_advance_amount"))
             paid_advance_date = _date_or_none(utility_recognition.get("paid_advance_date"))
             await _materialize(
                 session,

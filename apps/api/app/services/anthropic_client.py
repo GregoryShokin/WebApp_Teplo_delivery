@@ -40,6 +40,9 @@ async def call_tool(
     content: list[dict[str, Any]] | None = None,
     system: str | None = None,
     max_tokens: int = 2048,
+    timeout_seconds: float | None = None,
+    max_retries: int | None = None,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     """Спросить модель и вернуть заполненные ею поля инструмента.
 
@@ -54,12 +57,15 @@ async def call_tool(
         raise LlmCallError("Пакет anthropic недоступен в этом окружении.") from exc
 
     client = AsyncAnthropic(
+        **({"base_url": base_url} if base_url is not None else {}),
         api_key=settings.anthropic_api_key,
-        timeout=settings.anthropic_timeout_seconds,
-        max_retries=settings.anthropic_max_retries,
+        timeout=timeout_seconds
+        if timeout_seconds is not None
+        else settings.anthropic_timeout_seconds,
+        max_retries=max_retries if max_retries is not None else settings.anthropic_max_retries,
         default_headers=(
             {"x-relay-secret": settings.anthropic_relay_secret}
-            if settings.anthropic_relay_secret
+            if settings.anthropic_relay_secret and base_url is None
             else None
         ),
     )

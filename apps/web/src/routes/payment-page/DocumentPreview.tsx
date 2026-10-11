@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+const PdfPreview = lazy(() =>
+  import("./PdfPreview").then((module) => ({ default: module.PdfPreview })),
+);
 
 /**
  * Показ исходного документа в окне разбора: PDF — во фрейме, фотография — картинкой.
@@ -39,9 +42,15 @@ export function DocumentPreview({
 
   if (!isImage) {
     return (
-      <div className="min-h-[60vh] rounded-md border bg-muted/30">
-        <iframe title="Документ" src={url} className="h-[60vh] w-full rounded-md" />
-      </div>
+      <Suspense
+        fallback={
+          <div className="flex h-[60vh] items-center justify-center rounded-md border text-sm text-muted-foreground">
+            Загрузка документа…
+          </div>
+        }
+      >
+        <PdfPreview url={url} />
+      </Suspense>
     );
   }
 
