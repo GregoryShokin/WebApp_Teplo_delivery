@@ -83,9 +83,7 @@ async function mockCommon(page: import("@playwright/test").Page, card = CARD_REQ
   );
   await page.route("**/api/v1/settings**", (route) => fulfillJson(route, []));
   await page.route("**/api/v1/counterparties/registry**", (route) =>
-    fulfillJson(route, [
-      { counterparty_id: CP_ID, name: 'ООО "АЛЬЯНС ЮГ"', inn: "6143059250" },
-    ]),
+    fulfillJson(route, [{ counterparty_id: CP_ID, name: 'ООО "АЛЬЯНС ЮГ"', inn: "6143059250" }]),
   );
   await page.route(`**/api/v1/payment-page/counterparties/${CP_ID}/requisites`, (route) =>
     fulfillJson(route, {
@@ -126,16 +124,18 @@ test("реквизиты, которых нет в счёте, подставл�
   ).toBeVisible();
 });
 
-test("получатель из карточки не заменяется ошибочно распознанным названием банка", async ({ page }) => {
+test("получатель из карточки не заменяется ошибочно распознанным названием банка", async ({
+  page,
+}) => {
   const ecoCenter = {
     ...CARD_REQUISITES,
-    recipientName: 'Общество с ограниченной ответственностью «Экоцентр»',
+    recipientName: "Общество с ограниченной ответственностью «Экоцентр»",
   };
   await mockCommon(page, ecoCenter);
   await page.route("**/api/v1/payment-page/intakes**", (route) =>
     fulfillJson(route, [
       intake({
-        counterparty_name: 'Общество с ограниченной ответственностью «Экоцентр»',
+        counterparty_name: "Общество с ограниченной ответственностью «Экоцентр»",
         requisites: {
           recipientName: "ВОЛГО-ДОНСКОЙ БАНК ПАО СБЕРБАНК",
           inn: "3444177534",
@@ -152,7 +152,7 @@ test("получатель из карточки не заменяется ош�
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Получатель")).toHaveValue(
-    'Общество с ограниченной ответственностью «Экоцентр»',
+    "Общество с ограниченной ответственностью «Экоцентр»",
   );
   await expect(dialog.getByLabel("Расчётный счёт")).toHaveValue("40702810900000055555");
   await expect(dialog.getByLabel("БИК")).toHaveValue("046015602");
@@ -208,4 +208,66 @@ test("правки прошлого разбора важнее и счёта, �
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("КПП")).toHaveValue("614301002");
   await expect(dialog.getByText("сохранено при разборе").first()).toBeVisible();
+});
+
+test("подтверждённый счёт на 6 месяцев требует начало и вычисляет окончание перед отправкой", async ({
+  page,
+}) => {
+  await mockCommon(page);
+  await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, []));
+  const row = intake({
+    status: "linked",
+    invoice_id: "44444444-4444-4444-4444-444444444444",
+    service_duration_months: 6,
+    service_billing_mode: "per_invoice",
+    vat_mode: "none",
+    service_period_required: false,
+    service_period_status: "not_required",
+  });
+  await page.route("**/api/v1/payment-page/intakes**", (route) => fulfillJson(route, [row]));
+  await page.goto("/finance/payments");
+  await page.getByRole("button", { name: "В банк", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/В счёте 6 мес/)).toContainText("6 мес.");
+  const send = dialog.getByRole("button", { name: "Отправить в банк", exact: true });
+  await expect(send).toBeDisabled();
+  await dialog.getByLabel("Месяц начала услуги").fill("2026-10");
+  await expect(dialog.locator('input[type="date"]').nth(0)).toHaveValue("2026-10-01");
+  await expect(dialog.locator('input[type="date"]').nth(1)).toHaveValue("2027-03-31");
+  await expect(send).toBeEnabled();
+  await dialog.locator('input[type="date"]').nth(1).fill("2026-09-30");
+  await expect(send).toBeDisabled();
+  await dialog.locator('input[type="date"]').nth(1).fill("");
+  await expect(send).toBeDisabled();
+});
+
+test("разбор счёта с длительностью нельзя сохранить без полного периода", async ({ page }) => {
+  await mockCommon(page);
+  await page.route("**/api/v1/dds/articles**", (route) => fulfillJson(route, []));
+  await page.route("**/api/v1/payment-page/intakes**", (route) =>
+    fulfillJson(route, [
+      intake({
+        service_duration_months: 6,
+        vat_mode: "none",
+        service_period_required: true,
+        service_period_status: "missing",
+        invoice_id: "44444444-4444-4444-4444-444444444444",
+      }),
+    ]),
+  );
+  await page.goto("/finance/payments");
+  await page.getByRole("button", { name: "Разобрать", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  const save = dialog.getByRole("button", { name: "Сохранить — готов к оплате", exact: true });
+  const send = dialog.getByRole("button", { name: "Подтвердить и отправить в банк", exact: true });
+  await expect(save).toBeDisabled();
+  await expect(send).toBeDisabled();
+  await expect(dialog.getByLabel("Длительность, мес.")).toHaveValue("6");
+  await dialog.getByLabel("Месяц начала", { exact: true }).fill("2026-10");
+  await expect(dialog.getByLabel("С", { exact: true })).toHaveValue("2026-10-01");
+  await expect(dialog.getByLabel("По", { exact: true })).toHaveValue("2027-03-31");
+  await expect(save).toBeEnabled();
+  await dialog.getByLabel("По", { exact: true }).fill("");
+  await expect(save).toBeDisabled();
+  await expect(send).toBeDisabled();
 });

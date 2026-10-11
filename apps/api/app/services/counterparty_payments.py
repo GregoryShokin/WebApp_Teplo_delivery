@@ -51,6 +51,7 @@ from app.services.banking.payout import (
 )
 from app.services.banking.tbank import build_payment_draft_api_payload
 from app.services.counterparty_matching import _invoice_remaining, _recompute_status
+from app.services.invoice_review import service_period_is_required
 from app.services.location_analytics import (
     LocationAnalyticsError,
     resolve_location_context,
@@ -356,12 +357,23 @@ async def create_payment_draft_for_invoices(
     # деньги мимо поставщика, у которого счёт в системе уже есть.
     if not pays_via_safe and allow_official_via_safe and not (profile and profile.requisites):
         pays_via_safe = True
-    if profile is not None and profile.service_period_required:
-        missing_period = [inv for inv in invoices if inv.service_period_status != "ready"]
-        if missing_period:
-            raise CounterpartyPaymentError(
-                "Для контрагента обязателен период оказания услуг — заполните его у каждого счёта"
-            )
+    missing_period = [
+        inv
+        for inv in invoices
+        if service_period_is_required(
+            (inv.raw_payload or {}).get("recognition") or {},
+            bool(profile and profile.service_period_required),
+        )
+        and not (
+            inv.service_period_status == "ready"
+            and inv.service_period_start
+            and inv.service_period_end
+        )
+    ]
+    if missing_period:
+        raise CounterpartyPaymentError(
+            "Для счёта за период укажите начало и окончание услуги у каждого счёта"
+        )
     # Разные периоды в одном платеже по счетам РАЗРЕШЕНЫ (владелец 02.08.2026): за один визит
     # энергетик привозит два акта — доплату за прошлый месяц и аванс за текущий, — а платятся
     # они одной суммой одному получателю, потому что перевод один. Дробить платёж ради учёта

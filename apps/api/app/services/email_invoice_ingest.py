@@ -42,7 +42,7 @@ from app.services import supplier_service_periods as service_periods
 from app.services.banking.exceptions import BankCredentialsError, BankFetchError
 from app.services.counterparty_matching import _recompute_status
 from app.services.invoice_recognition import RecognizedInvoice, recognize
-from app.services.invoice_review import validate_review_fields
+from app.services.invoice_review import service_period_is_required, validate_review_fields
 from app.services.mail.imap_client import (
     FetchedAttachment,
     configured_accounts,
@@ -542,7 +542,9 @@ async def materialize_from_intake(
             CounterpartyPayableProfile.counterparty_id == cp_id
         )
     )
-    period_required = bool(profile and profile.service_period_required)
+    period_required = service_period_is_required(
+        intake.recognition or {}, bool(profile and profile.service_period_required)
+    )
     period_ambiguous = bool(rec_json.get("service_period_ambiguous"))
     if period_ambiguous and not (period_start is not None and period_end is not None):
         raise ValueError(
@@ -570,6 +572,8 @@ async def materialize_from_intake(
         period_status = "ready"
     else:
         period_status = "missing" if period_required else "not_required"
+    if doc_kind == "bill" and period_required and period_status != "ready":
+        raise ValueError("Для счёта за период укажите начало и окончание услуги")
     probe = RecognizedInvoice(amount=amount, invoice_number=number, invoice_date=inv_date)
     dup = await _find_duplicate_email_invoice(session, cp_id, probe, doc_kind=doc_kind)
     if dup is not None:
@@ -749,6 +753,21 @@ async def confirm_intake_with_review(
         if document_kind not in ("invoice", "act", "upd"):
             raise ValueError("Выберите вид документа")
         rec["document_kind"] = document_kind
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == cp_id
+        )
+    )
+    period_required = service_period_is_required(
+        rec, bool(profile and profile.service_period_required)
+    ) or (setup_counterparty and service_billing_mode == "fixed_tariff")
+    if (
+        (_doc_kind_from_recognition(rec.get("document_kind")) or "bill") == "bill"
+        and period_required
+        and not (rec.get("service_period_start") and rec.get("service_period_end"))
+    ):
+        raise ValueError("Для счёта за период укажите начало и окончание услуги")
+    validate_review_fields(rec)
     if vat_amount is not None or vat_rate is not None:
         # НДС правит человек, глядя в бумагу, — его слово последнее. Пустая сумма означает
         # «налога в счёте нет»: режим уходит в 'none', и в назначение платежа встаёт «Без НДС.»
@@ -901,7 +920,7 @@ async def confirm_intake_with_review(
                 inv.service_period_source = "manual"
                 inv.service_period_status = "ready"
                 await service_periods.sync_invoice_accrual(session, inv)
-            elif profile and profile.service_period_required:
+            elif period_required:
                 inv.service_period_status = "missing"
             await _resync_closing_after_edit(session, inv)
         # Пакет «счёт + УПД»: правки оператора касаются и спутника. Контрагент у пакета один —
@@ -1020,7 +1039,13 @@ async def _prepare_intake_for_bank(
             CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
         )
     )
-    if profile and profile.service_period_required and invoice.service_period_status != "ready":
+    if service_period_is_required(
+        intake.recognition or {}, bool(profile and profile.service_period_required)
+    ) and not (
+        invoice.service_period_status == "ready"
+        and invoice.service_period_start
+        and invoice.service_period_end
+    ):
         raise payments.CounterpartyPaymentError(
             "Для этого контрагента обязателен период оказания услуги — укажите даты"
         )
@@ -1220,7 +1245,9 @@ async def process_attachment(
                 CounterpartyPayableProfile.counterparty_id == cp_id
             )
         )
-    period_required = bool(profile and profile.service_period_required)
+    period_required = service_period_is_required(
+        intake.recognition or {}, bool(profile and profile.service_period_required)
+    )
 
     # Авто-материализуем только уверенно опознанный документ с известным контрагентом. Формат
     # «unknown» (doc_kind is None) — всегда оператору, чтобы не провести неведомый макет. Период

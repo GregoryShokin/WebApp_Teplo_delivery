@@ -159,6 +159,8 @@ async def test_existing_inn_reuses_card(async_session_factory, monkeypatch):
             new_counterparty_name="Не создавать второй",
             new_counterparty_inn=REQ["inn"],
             amount="59941.00",
+            service_period_start="2026-10-01",
+            service_period_end="2027-03-31",
         )
         assert intake.counterparty_id == cp.id
         assert await session.scalar(select(func.count()).select_from(Counterparty)) == 1
@@ -238,7 +240,13 @@ async def test_sent_invoice_cannot_be_changed(async_session_factory, monkeypatch
         )
         intake = await upload(session, monkeypatch)
         await confirm_intake_with_review(
-            session, intake, actor_user_id=None, counterparty_id=cp.id, amount="59941.00"
+            session,
+            intake,
+            actor_user_id=None,
+            counterparty_id=cp.id,
+            amount="59941.00",
+            service_period_start="2026-10-01",
+            service_period_end="2027-03-31",
         )
         await session.commit()
         invoice_id = intake.invoice_id
@@ -324,3 +332,77 @@ async def test_scan_gets_structured_proposals_without_invented_dates(monkeypatch
     rec = await invoice_recognition.recognize(b"%PDF-scan-test", settings=settings, force_llm=True)
     assert rec.engine == "llm" and rec.service_duration_months == 6
     assert len(rec.line_items) == 2 and rec.service_period_start is None
+
+
+@pytest.mark.parametrize("linked", [False, True])
+async def test_duration_blocks_confirmation_without_period_even_for_existing_card(
+    async_session_factory, monkeypatch, linked
+):
+    async with async_session_factory() as session:
+        cp = await make_counterparty(session, name=REQ["recipientName"], inn=REQ["inn"])
+        intake = await upload(session, monkeypatch)
+        if linked:
+            invoice = await make_invoice(session, counterparty_id=cp.id, amount="59941.00")
+            intake.invoice_id = invoice.id
+            intake.status = "linked"
+        await session.commit()
+        with pytest.raises(ValueError, match="начало и окончание"):
+            await confirm_intake_with_review(session, intake, actor_user_id=None)
+        assert intake.status == ("linked" if linked else "needs_review")
+        assert not intake.recognition.get("service_period_start")
+
+
+async def test_existing_linked_duration_blocks_all_bank_paths_until_dates_are_saved(
+    async_session_factory, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from app.api.v1.routes.payment_page import ScheduleSendIn, _load_read, schedule_send
+    from app.services.email_invoice_ingest import _prepare_intake_for_bank
+
+    async with async_session_factory() as session:
+        cp = await make_counterparty(
+            session,
+            name=REQ["recipientName"],
+            inn=REQ["inn"],
+            requisites=REQ,
+            requisites_verified=True,
+        )
+        intake = await upload(session, monkeypatch)
+        invoice = await make_invoice(
+            session, counterparty_id=cp.id, amount="59941.00", doc_kind="bill"
+        )
+        invoice.raw_payload = {"recognition": dict(intake.recognition)}
+        intake.status, intake.invoice_id = "linked", invoice.id
+        await session.commit()
+        item = await _load_read(session, intake.id)
+        assert item.status == "needs_review"
+        assert item.service_duration_months == 6
+        assert item.service_period_required and item.service_period_status == "missing"
+        with pytest.raises(CounterpartyPaymentError, match="период"):
+            await _prepare_intake_for_bank(session, intake)
+        with pytest.raises(HTTPException) as exc:
+            await schedule_send(intake.id, ScheduleSendIn(send_date=date(2030, 1, 1)), session)
+        assert exc.value.status_code == 409
+        with pytest.raises(CounterpartyPaymentError, match="период"):
+            await create_payment_draft_for_invoices(
+                session, invoice_ids=[invoice.id], actor_user_id=None
+            )
+        assert await session.scalar(select(func.count()).select_from(CounterpartyPaymentDraft)) == 0
+        await confirm_intake_with_review(
+            session,
+            intake,
+            actor_user_id=None,
+            service_period_start="2026-10-01",
+            service_period_end="2027-03-31",
+        )
+        await session.commit()
+        assert (await _prepare_intake_for_bank(session, intake)).service_period_end == date(
+            2027, 3, 31
+        )
+        item = await _load_read(session, intake.id)
+        assert item.service_period_status == "ready"
+        draft = await create_payment_draft_for_invoices(
+            session, invoice_ids=[invoice.id], actor_user_id=None
+        )
+        assert draft is not None

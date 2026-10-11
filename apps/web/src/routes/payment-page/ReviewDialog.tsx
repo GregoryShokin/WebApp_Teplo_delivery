@@ -137,9 +137,9 @@ export function ReviewDialog({
       ? !matching || matching.status === "requires_setup"
       : card.data?.status === "requires_setup";
   const periodRequired =
-    (needsSetup ? billingMode === "fixed_tariff" : intake.service_period_required) ||
-    Boolean(duration) ||
-    intake.service_period_status === "ambiguous";
+    (needsSetup ? billingMode === "fixed_tariff" : recognized.service_period_required) ||
+    Boolean(duration || recognized.service_duration_months) ||
+    recognized.service_period_status === "ambiguous";
   useEffect(() => {
     if (card.data?.default_dds_article_id && !touched.current.has("article"))
       setDdsArticleId(card.data.default_dds_article_id);
@@ -547,12 +547,11 @@ export function ReviewDialog({
                   ? `${formatDate(periodStart)} — ${formatDate(periodEnd)}`
                   : "Укажите начало услуги. Дата счёта не определяет начало периода."}
               </p>
-              {(intake.service_period_required || intake.service_period_status === "ambiguous") &&
-              (!periodStart || !periodEnd) ? (
+              {periodRequired && (!periodStart || !periodEnd) ? (
                 <p className="text-xs text-amber-600">
                   {intake.service_period_status === "ambiguous"
                     ? "Выберите один правильный период вручную."
-                    : "Для этого контрагента период обязателен."}
+                    : "Для счёта за период укажите начало и окончание услуги."}
                 </p>
               ) : null}
             </div>

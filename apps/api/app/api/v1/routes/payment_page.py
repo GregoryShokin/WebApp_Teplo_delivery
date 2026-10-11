@@ -289,7 +289,10 @@ def _to_read(
         if invoice_service_period_end
         else rec.get("service_period_end")
     )
+    service_period_required = ingest.service_period_is_required(rec, bool(service_period_required))
     period_status_value = invoice_service_period_status
+    if service_period_required and not (period_start_value and period_end_value):
+        period_status_value = "ambiguous" if rec.get("service_period_ambiguous") else "missing"
     if period_status_value is None:
         if rec.get("service_period_ambiguous"):
             period_status_value = "ambiguous"
@@ -310,7 +313,17 @@ def _to_read(
         subject=intake.subject,
         received_at=intake.received_at,
         attachment_filename=intake.attachment_filename,
-        status=intake.status,
+        # Ранее подтверждённый счёт без обязательного периода снова требует проверки.
+        # Отправленные и оплаченные документы сохраняют своё состояние.
+        status=(
+            "needs_review"
+            if intake.status == "linked"
+            and service_period_required
+            and period_status_value != "ready"
+            and invoice_draft_id is None
+            and invoice_payment_status != "paid"
+            else intake.status
+        ),
         engine=intake.engine,
         confidence=float(intake.confidence) if intake.confidence is not None else None,
         counterparty_id=intake.counterparty_id,
@@ -923,7 +936,13 @@ async def schedule_send(
             CounterpartyPayableProfile.counterparty_id == invoice.counterparty_id
         )
     )
-    if profile and profile.service_period_required and invoice.service_period_status != "ready":
+    if ingest.service_period_is_required(
+        intake.recognition or {}, bool(profile and profile.service_period_required)
+    ) and not (
+        invoice.service_period_status == "ready"
+        and invoice.service_period_start
+        and invoice.service_period_end
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Для этого контрагента обязателен период оказания услуги",

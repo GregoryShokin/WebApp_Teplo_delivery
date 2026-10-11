@@ -30,6 +30,7 @@ import { DocumentPreview } from "./DocumentPreview";
 import { RequisitesFields } from "./RequisitesFields";
 import { useRequisitesForm } from "./requisites";
 import { VatFields, type VatValue } from "./VatFields";
+import { calendarServicePeriod } from "./service-period";
 
 // Окно отправки счёта в банк: сверка реквизитов получателя + выбор даты (дефолт — сегодня).
 // Сегодня → уходит сразу; будущая дата → запланированная авто-отправка. Реквизиты подтверждаются
@@ -51,6 +52,12 @@ export function SendDialog({
   const [date, setDate] = useState(intake.scheduled_send_date ?? today);
   const [periodStart, setPeriodStart] = useState(intake.service_period_start ?? "");
   const [periodEnd, setPeriodEnd] = useState(intake.service_period_end ?? "");
+  const [startMonth, setStartMonth] = useState("");
+  const duration = intake.service_duration_months;
+  const periodRequired =
+    intake.service_period_required ||
+    Boolean(duration) ||
+    intake.service_period_status === "ambiguous";
   // НДС правится и здесь: это последняя точка перед деньгами, и текст назначения платежа
   // собирается ровно из этой цифры. Уходит тем же confirm, что и реквизиты с периодом.
   const [vat, setVat] = useState<VatValue>({
@@ -91,8 +98,7 @@ export function SendDialog({
   // там, где счёт получателя известен, платим по нему — ровно это правило и на бэке.
   const [payViaIpCard, setPayViaIpCard] = useState(intake.scheduled_pays_via_safe);
   const cardEmpty =
-    !cardRequisites ||
-    Object.values(cardRequisites).every((value) => !String(value ?? "").trim());
+    !cardRequisites || Object.values(cardRequisites).every((value) => !String(value ?? "").trim());
   const canPayViaIpCard = !cardLoading && cardEmpty;
   const viaIpCard = canPayViaIpCard && payViaIpCard;
 
@@ -111,11 +117,21 @@ export function SendDialog({
   // терялся молча, и этот же счёт возвращался в очередь «период не указан».
   const periodHalfFilled = Boolean(periodStart) !== Boolean(periodEnd);
   const periodReady =
-    !periodHalfFilled && (!intake.service_period_required || Boolean(periodStart && periodEnd));
+    !periodHalfFilled &&
+    (!periodRequired || Boolean(periodStart && periodEnd)) &&
+    (!periodStart || !periodEnd || periodEnd >= periodStart);
   // Спрашиваем у всех, кроме режима «счёт + УПД»: там расход и его период приносит документ,
   // а плательщик их не знает. Уже заполненный период показываем в любом случае.
   const askPeriod =
-    intake.service_billing_mode !== "per_invoice" || Boolean(periodStart || periodEnd);
+    periodRequired ||
+    intake.service_billing_mode !== "per_invoice" ||
+    Boolean(periodStart || periodEnd);
+  const chooseStartMonth = (month: string) => {
+    setStartMonth(month);
+    const period = calendarServicePeriod(month, duration ?? 0);
+    setPeriodStart(period?.start ?? "");
+    setPeriodEnd(period?.end ?? "");
+  };
   const isNow = date <= today;
 
   const send = useMutation({
@@ -210,11 +226,7 @@ export function SendDialog({
         </DialogHeader>
 
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
-          <DocumentPreview
-            url={pdfUrl}
-            mime={intake.attachment_mime}
-            hasFile={intake.has_pdf}
-          />
+          <DocumentPreview url={pdfUrl} mime={intake.attachment_mime} hasFile={intake.has_pdf} />
 
           <div className="grid content-start gap-3">
           <div className="rounded-md border bg-muted/30 px-3 py-2">
@@ -232,7 +244,7 @@ export function SendDialog({
               </div>
             </div>
             {/* Сумму, номер и контрагента это окно не правит — если сверка с документом
-                показала, что распознано не то, отсюда есть ход в разбор. */}
+              показала, что распознано не то, отсюда есть ход в разбор. */}
             {onEditRecognition ? (
               <button
                 type="button"
@@ -245,7 +257,7 @@ export function SendDialog({
           </div>
 
           {/* Коммунальная платёжка идёт своим контуром: там назначение платежа собирает
-              utility_recognition, и это окно его не правит. */}
+            utility_recognition, и это окно его не правит. */}
           {!intake.utility_kind ? (
             <VatFields
               mode={intake.vat_mode}
@@ -302,16 +314,16 @@ export function SendDialog({
           </div>
 
           {/* Период спрашиваем ВСЕГДА, а не только у контрагентов с обязательным периодом:
-              оплата — единственный момент, когда человек держит счёт перед глазами и знает,
-              за что платит. Без этого вопроса период не появлялся вовсе — на проде 01.08.2026
-              он не был указан у ВСЕХ 19 открытых предоплат. Исключение одно: режим «счёт +
-              УПД», где сумму расхода и его период приносит документ. */}
+            оплата — единственный момент, когда человек держит счёт перед глазами и знает,
+            за что платит. Без этого вопроса период не появлялся вовсе — на проде 01.08.2026
+            он не был указан у ВСЕХ 19 открытых предоплат. Исключение одно: режим «счёт +
+            УПД», где сумму расхода и его период приносит документ. */}
           {askPeriod ? (
             <div className="grid gap-2 rounded-md border p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-medium uppercase text-muted-foreground">
                   Период оказания услуги
-                  {!intake.service_period_required ? (
+                  {!periodRequired ? (
                     <span className="ml-1 normal-case text-muted-foreground/70">
                       — если платите за период
                     </span>
@@ -324,6 +336,23 @@ export function SendDialog({
                   </span>
                 ) : null}
               </div>
+              {duration ? (
+                <div className="grid gap-2">
+                  <p className="text-sm">
+                    В счёте <strong>{duration} мес.</strong> Выберите месяц начала — окончание
+                    рассчитаем.
+                  </p>
+                  <label className="grid gap-1 text-xs text-muted-foreground">
+                    Месяц начала услуги
+                    <Input
+                      type="month"
+                      value={startMonth}
+                      onChange={(event) => chooseStartMonth(event.target.value)}
+                      onInput={(event) => chooseStartMonth(event.currentTarget.value)}
+                    />
+                  </label>
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-2">
                 <div className="grid gap-1">
                   <Label className="text-xs text-muted-foreground">С</Label>
@@ -331,7 +360,7 @@ export function SendDialog({
                     type="date"
                     value={periodStart}
                     onChange={(event) => setPeriodStart(event.target.value)}
-                    className={!periodStart && intake.service_period_required ? "border-amber-400" : undefined}
+                    className={!periodStart && periodRequired ? "border-amber-400" : undefined}
                   />
                 </div>
                 <div className="grid gap-1">
@@ -341,13 +370,13 @@ export function SendDialog({
                     min={periodStart || undefined}
                     value={periodEnd}
                     onChange={(event) => setPeriodEnd(event.target.value)}
-                    className={!periodEnd && intake.service_period_required ? "border-amber-400" : undefined}
+                    className={!periodEnd && periodRequired ? "border-amber-400" : undefined}
                   />
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">
-                Период говорит, за что заплачено: по нему считается срок закрывающего документа,
-                а если документа не будет — расход признаётся по окончании периода.
+                Период говорит, за что заплачено: по нему считается срок закрывающего документа, а
+                если документа не будет — расход признаётся по окончании периода.
               </p>
               {periodHalfFilled ? (
                 <p className="text-xs text-amber-600">
@@ -355,7 +384,8 @@ export function SendDialog({
                 </p>
               ) : !periodReady ? (
                 <p className="text-xs text-amber-600">
-                  Для этого контрагента период обязателен — без него отправка недоступна.
+                  Для счёта за период укажите начало и окончание услуги — без них отправка
+                  недоступна.
                 </p>
               ) : null}
             </div>

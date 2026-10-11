@@ -115,6 +115,17 @@ async def recognize_intake(
     await session.flush()
 
 
+def service_period_is_required(
+    recognition: dict[str, object], profile_required: bool = False
+) -> bool:
+    """Длительность в самом счёте требует дат независимо от настройки карточки."""
+    return bool(
+        profile_required
+        or recognition.get("service_duration_months")
+        or recognition.get("service_period_ambiguous")
+    )
+
+
 def validate_review_fields(fields: dict[str, object]) -> None:
     if fields.get("amount") is not None:
         try:
