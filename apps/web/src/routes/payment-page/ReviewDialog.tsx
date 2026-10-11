@@ -359,6 +359,7 @@ export function ReviewDialog({
                   type="button"
                   size="sm"
                   variant={mode === "existing" ? "default" : "outline"}
+                  aria-pressed={mode === "existing"}
                   onClick={() => {
                     touched.current.add("counterparty");
                     setMode("existing");
@@ -370,12 +371,13 @@ export function ReviewDialog({
                   type="button"
                   size="sm"
                   variant={mode === "new" ? "default" : "outline"}
+                  aria-pressed={mode === "new"}
                   onClick={() => {
                     touched.current.add("counterparty");
                     setMode("new");
                   }}
                 >
-                  Создать нового
+                  Новый контрагент
                 </Button>
               </div>
               {mode === "existing" ? (

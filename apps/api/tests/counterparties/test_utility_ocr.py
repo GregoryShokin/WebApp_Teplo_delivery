@@ -20,8 +20,9 @@ from app.services import utility_ocr
 from app.services.anthropic_client import LlmCallError
 
 
+@pytest.mark.parametrize("use_relay", [False, True])
 async def test_review_photo_uses_consented_origin_and_bounded_timeout(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, use_relay: bool,
 ) -> None:
     captured: dict[str, Any] = {}
 
@@ -31,13 +32,16 @@ async def test_review_photo_uses_consented_origin_and_bounded_timeout(
 
     monkeypatch.setattr(utility_ocr, "call_tool", fake_call)
     settings = _settings().model_copy(
-        update={"invoice_review_llm_base_url": "https://api.anthropic.com"}
+        update={
+            "invoice_review_llm_base_url": "https://api.anthropic.com",
+            "invoice_review_llm_use_relay": use_relay,
+        }
     )
     await utility_ocr.extract_text(
         b"\xff\xd8\xff photo", mime="image/jpeg", settings=settings, review_mode=True
     )
 
-    assert captured["base_url"] == "https://api.anthropic.com"
+    assert captured["base_url"] == (None if use_relay else "https://api.anthropic.com")
     assert captured["timeout_seconds"] == 45.0
     assert captured["max_retries"] == 0
 

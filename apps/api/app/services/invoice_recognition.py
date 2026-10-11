@@ -1189,7 +1189,9 @@ async def llm_recognize(
                 {
                     "timeout_seconds": 45.0,
                     "max_retries": 0,
-                    "base_url": settings.invoice_review_llm_base_url,
+                    "base_url": None
+                    if settings.invoice_review_llm_use_relay
+                    else settings.invoice_review_llm_base_url,
                 }
                 if review_mode
                 else {}

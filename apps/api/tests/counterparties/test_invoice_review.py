@@ -296,8 +296,11 @@ async def test_model_failure_keeps_local_fields(monkeypatch):
     assert any("не завершила" in note for note in rec.notes)
 
 
-async def test_scan_gets_structured_proposals_without_invented_dates(monkeypatch):
+@pytest.mark.parametrize("use_relay", [False, True])
+async def test_scan_gets_structured_proposals_without_invented_dates(monkeypatch, use_relay):
     async def model(*args, **kwargs):
+        assert kwargs["base_url"] == (None if use_relay else "https://api.anthropic.com")
+        assert kwargs["timeout_seconds"] == 45.0 and kwargs["max_retries"] == 0
         return {
             "is_invoice": True,
             "document_kind": "invoice",
@@ -315,7 +318,9 @@ async def test_scan_gets_structured_proposals_without_invented_dates(monkeypatch
 
     monkeypatch.setattr(invoice_recognition, "call_tool", model)
     monkeypatch.setattr(invoice_recognition, "extract_pdf_pages", lambda _: [""])
-    settings = get_settings().model_copy(update={"anthropic_api_key": "test-only-key"})
+    settings = get_settings().model_copy(
+        update={"anthropic_api_key": "test-only-key", "invoice_review_llm_use_relay": use_relay}
+    )
     rec = await invoice_recognition.recognize(b"%PDF-scan-test", settings=settings, force_llm=True)
     assert rec.engine == "llm" and rec.service_duration_months == 6
     assert len(rec.line_items) == 2 and rec.service_period_start is None
