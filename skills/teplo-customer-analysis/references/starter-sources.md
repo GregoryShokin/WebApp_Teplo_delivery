@@ -1,8 +1,47 @@
 # Starter: источники клиентского анализа
 
-Проверено 11.10.2026. **Fresh schema-only**: публичный [OpenAPI tenant Тепла](https://crm.starterapp.ru/fmteplo/api/v1/openapi.json) прочитан без авторизации: HTTP 200, application/json, 911152 байта, 373 пути, `info.version=0.1.0`, SHA-256 `f89fd0b0163c6b997ee76ce1b57bdf1cd7cd21f138b4791ac9ec7441287d8721`. Успешный ответ спецификации не подтверждает успешное чтение клиентов/право кабинета или заполненность поля. Актуальные личные данные в этом исследовании не выгружались. Снимок схемы использован для проверки; при новом запуске читай свежую спецификацию по ссылке.
+Проверено 11.10.2026. **Свежая схема и точечное live-чтение**: публичный [OpenAPI tenant Тепла](https://crm.starterapp.ru/fmteplo/api/v1/openapi.json) прочитан без авторизации: HTTP 200, application/json, 911152 байта, 373 пути, `info.version=0.1.0`, SHA-256 `f89fd0b0163c6b997ee76ce1b57bdf1cd7cd21f138b4791ac9ec7441287d8721`. Успешный ответ спецификации не подтверждает успешное чтение клиентов/право кабинета или заполненность поля. Затем проверены программный вход, счётчики и по одной записи клиента/выполненного заказа; сырые персональные ответы не сохранены. Это проверка доступа, а не полная выгрузка. Снимок схемы использован для проверки; при новом запуске читай свежую спецификацию по ссылке.
 
 Все пути ниже относительно `https://crm.starterapp.ru/fmteplo` (`servers[0].url=/fmteplo`). Раздел `/api/v1/frontend/` далее обозначен `v1`, `/api/v2/frontend/` — `v2`. Проверять актуальную схему при повторении. Источник точного поля — `components.schemas.<имя>`, метода — `paths.<путь>.<метод>`. Не считать старое число 282 путей из `business-docs/marketing/data-channels.md:41` актуальным.
+
+## Программный вход — проверен live 11.10.2026
+
+Доступы разрешены владельцем и сохранены в локальном ignored файле
+`/Users/grigorii/Developer/Projects/Teplo-all-for-business/.env`:
+`STARTER_BASE_URL`, `STARTER_USERNAME`, `STARTER_PASSWORD`.
+В sibling-worktree файла может не быть — читай этот явно указанный источник,
+не копируй весь `.env` в новый checkout и не печатай значения.
+
+1. База `STARTER_BASE_URL` — `https://crm.starterapp.ru/fmteplo`.
+2. `POST /api/v1/frontend/login`, Content-Type `application/json`, JSON
+   `{username: STARTER_USERNAME, password: STARTER_PASSWORD}`. Это не HTTP Basic.
+3. Проверять исходный ответ до автоматического перехода: live **303**, Location
+   `https://crm.starterapp.ru/fmteplo/admin`. Ответ установил `access_token` и
+   `refresh_token`, оба HttpOnly/Secure, domain `.crm.starterapp.ru`, path `/fmteplo`.
+   Используй обычный cookie jar HTTP-клиента в памяти; не сохраняй значения токенов в skill/.env/логи.
+4. Тем же HTTP-клиентом читай защищённые методы ниже. Live они работают с этими
+   cookies, без дополнительно придуманного Bearer/Basic и без подмены `user-role`.
+   HTTP200 с HTML страницы входа не подтверждает вход — проверяй JSON и форму.
+5. В Python проверена связка `urllib.request.HTTPCookieProcessor(CookieJar())`
+   + `HTTPRedirectHandler`, у которого `redirect_request` возвращает None.
+   `HTTPError` с303 при таком обработчике — ожидаемый результат входа; cookie jar
+   уже получает Set-Cookie. Последующие 401/403 не интерпретируй как пустую базу.
+
+Проверенные читающие запросы (без shop_id/дат, весь доступный scope tenant):
+
+| Метод и фильтр | Свежий результат |
+|---|---|
+| `POST v2/customer/total`, body `{"offset":0,"limit":1,"order_by":"-created_at"}` | HTTP200 JSON, total **17 567**; также есть totalActive/percentOfActive |
+| `POST v2/customers`, тот же body | HTTP200 JSON array, **1** строка; поля id, ordersCount, ordersTotalSum, recency/frequency/monetary/rfm/score, balance/balanceSpent присутствуют |
+| `GET v1/order/total?statuses=done&offset=0&limit=1` | HTTP200 JSON, total **87 203**; также totalSum |
+| `GET v1/orders?statuses=done&offset=0&limit=1&order_by=-delivery_time` | HTTP200 JSON array, **1** строка; customer, posId, starterId, source, status, sums/bonuses/payments присутствуют |
+
+Это датированные счётчики API, не подтверждённые дедупликацией объёмы полной
+выгрузки. `totalActive=0` и `percentOfActive=0` вернулись в этом запросе, но
+определение активности/нужный фильтр не проверены: **не делать вывод «все ушли»**.
+Проверка не подтверждает денежную семантику полей, исторический RFM, полный охват
+каналов, пагинацию или доступ к остальным методам. Браузерная сессия и программная
+сессия независимы: открытая страница входа не означает, что API-доступ отсутствует.
 
 ## Что брать и зачем
 
@@ -69,11 +108,11 @@
 
 ## Что не делать при сборе
 
-`POST v1/customer/segment` — **создать сегмент**, а не прочитать его. `/customer/segment/import`, `/segment/from_distribution`, `/customer/bonuses`, `/customer/update-balance`, POST бонусных транзакций, `/distribution*` POST, отправки/изменения заказа — изменения. Это нельзя использовать как «проверку» в read-only исследовании. Списки/total v2 POST — отдельные явно документированные исключения, не основание считать безопасным любой POST. Авторизованный браузер/штатный экспорт; не извлекать cookie/токены или обходить вход.
+`POST v1/customer/segment` — **создать сегмент**, а не прочитать его. `/customer/segment/import`, `/segment/from_distribution`, `/customer/bonuses`, `/customer/update-balance`, POST бонусных транзакций, `/distribution*` POST, отправки/изменения заказа — изменения. Это нельзя использовать как «проверку» в read-only исследовании. Списки/total v2 POST — отдельные явно документированные исключения, не основание считать безопасным любой POST. Используй проверенный программный вход с локальными credentials, авторизованный браузер или штатный экспорт; не извлекай чужие браузерные cookie/токены и не обходи вход.
 
 ## Пять главных неизвестных перед расчётом
 
-1. Текущее право/доступ к клиентским спискам и истории, реальные total/полнота заказов/каналов; схема сама это не подтверждает.
+1. Списки клиентов/заказов и их счётчики доступны live; полнота страниц, клиентской истории, каналов и остальных detail-методов ещё не проверена.
 2. Окно, даты, правила и обновление Starter RFM; что означают frequency/monetary/score, существуют ли исторические снимки (не найдены).
 3. Денежная алгебра price/totalPrice/discountPrice/sumToPay/bonuses и рубли vs копейки; полнота оплат/частичных возвратов и courier/delivery составляющих.
 4. Подтверждённые межсистемные ключи customer/coreId/posId и разрешение дубликатов/смены телефонов; доля несвязанных заказов.
