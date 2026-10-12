@@ -2226,6 +2226,32 @@ async def _sync_rule1_distribution(
         # cashflow_transaction_id находит их наравне со своими, но пересобирать чужую запись
         # (а тем более удалить её и скормить деньги FIFO постороннему УПД) правило 1 не вправе.
         return existing
+    if (
+        existing is not None
+        and existing.kind == RULE1_PREPAYMENT_KIND
+        and not await _dividends_payout(session, transaction)
+    ):
+        from app.services import subscription_accruals as _subs
+
+        once = await _subs.one_off_invoice(session, existing, include_void=True)
+        if once is not None:
+            # На месте меняются и банковские, и ручные проводки. Гашёный разовый
+            # самоакт хранит старого контрагента/статью: вернуть его ранним выходом
+            # ниже значило бы оставить расход старой разметки рядом с новыми деньгами.
+            consumed = await payment_allocated_amount(session, transaction_id=transaction.id)
+            carried = await _transaction_carried_bill_allocations(session, transaction)
+            unchanged = (
+                transaction.direction == "out"
+                and transaction.quality_status != EXCLUDED_QUALITY
+                and existing.counterparty_id == transaction.counterparty_id
+                and existing.article_id == transaction.article_id
+                and existing.wallet_id == transaction.wallet_id
+                and once.invoice_date == transaction.operation_date
+                and _money(existing.amount) == _money(transaction.amount) - consumed + carried
+                and await _one_off_counterparty(session, transaction.counterparty_id)
+            )
+            if not unchanged:
+                await _subs.release_one_off_payment(session, existing)
     should_have = (
         transaction.direction == "out"
         and transaction.counterparty_id is not None
@@ -2398,6 +2424,12 @@ async def _sync_rule1_distribution(
     existing.article_id = transaction.article_id
     existing.wallet_id = transaction.wallet_id
     await session.flush()
+    # Настройку «по оплате» могли выбрать после первого разбора платежа; существующая
+    # открытая ДЗ имеет то же право на признание, что и только что созданная.
+    if await _one_off_counterparty(session, transaction.counterparty_id):
+        from app.services import subscription_accruals as _subs
+
+        await _subs.recognize_one_off_payment(session, existing, as_of=transaction.operation_date)
     await _resync_transaction_bills(session, transaction)
     return existing
 

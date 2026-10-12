@@ -41,6 +41,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import (
     CounterpartyPayableProfile,
     InvoicePaymentAllocation,
+    SupplierExpenseAccrual,
     SupplierInvoice,
     SupplierPrepayment,
 )
@@ -763,6 +764,85 @@ BILLING_MODE_ONE_OFF = "one_off"
 def one_off_external_id(prepayment_id: uuid.UUID) -> str:
     """Ключ идемпотентности разового признания под тем же уникумом ``source + external_id``."""
     return f"once:{prepayment_id}"
+
+
+async def one_off_invoice(
+    session: AsyncSession, prepayment: SupplierPrepayment, *, include_void: bool = False
+) -> SupplierInvoice | None:
+    """Самоакт именно этого платежа: реальные документы и помесячные самоакты не трогаем."""
+    conditions = [
+        SupplierInvoice.source == SELF_BILLED_SOURCE,
+        SupplierInvoice.external_id == one_off_external_id(prepayment.id),
+    ]
+    if not include_void:
+        conditions.append(SupplierInvoice.payment_status != "void")
+    return await session.scalar(select(SupplierInvoice).where(*conditions))
+
+
+async def release_one_off_payment(
+    session: AsyncSession,
+    prepayment: SupplierPrepayment,
+    *,
+    actor_user_id: uuid.UUID | None = None,
+) -> bool:
+    """Отменить производное разовое признание перед переразбором денег. Без коммита.
+
+    Самоакт хранит прежнюю разметку платежа. Оставить его при удалении проводки или смене
+    контрагента значит признать одни деньги дважды. Возвращаем гашение штатным откатом,
+    сохраняя документ и журнал; затем правило 1 разложит эти деньги по новой разметке.
+    Ключ освобождаем только здесь: ручной откат по-прежнему запрещает автоматическое
+    повторное признание, а переразбор явно заменяет старое основание новым.
+    """
+    invoice = await one_off_invoice(session, prepayment, include_void=True)
+    if invoice is None:
+        return False
+    accrual = await session.scalar(
+        select(SupplierExpenseAccrual).where(SupplierExpenseAccrual.invoice_id == invoice.id)
+    )
+    from app.services import accounting_periods
+    from app.services.counterparty_payments import CounterpartyPaymentError
+
+    manually_reversed = (
+        accrual is not None
+        and invoice.payment_status == "void"
+        and accrual.status == "cancelled"
+        and periods.money(accrual.amount) == 0
+        and periods.money(invoice.amount) == 0
+        and periods.money(prepayment.amount_settled) == 0
+    )
+    if accrual is None or (accrual.status == "cancelled" and not manually_reversed):
+        raise CounterpartyPaymentError(
+            "У разового платежа расход и документ признания расходятся — "
+            "сначала проверьте признание"
+        )
+    # Сохраняем штатный PeriodClosed для всех дверей ДДС, включая PATCH проводки,
+    # который не обрабатывает исключения интерфейса ручного отката расходов.
+    await accounting_periods.assert_period_open(
+        session,
+        accrual.service_period_start,
+        accrual.service_period_end,
+        action="переразобрать разовый расход",
+    )
+    # Локальный импорт: expense_reversal использует SELF_BILLED_SOURCE этого модуля.
+    from app.services.expense_reversal import ReversalRefused, reverse_expense
+
+    if not manually_reversed:
+        try:
+            await reverse_expense(
+                session,
+                accrual,
+                amount=accrual.amount,
+                reason="Переразбор платежа: отмена признания по прежней разметке",
+                actor_user_id=actor_user_id,
+                commit=False,
+            )
+        except ReversalRefused as exc:
+            raise CounterpartyPaymentError(str(exc)) from exc
+    # Полный ручной откат занял ключ прежней разметки. Явная смена её основания
+    # разрешает новое признание; неизменный повторный прогон сюда не приходит.
+    invoice.external_id = f"{one_off_external_id(prepayment.id)}:reclassified:{invoice.id}"
+    await session.flush()
+    return True
 
 
 async def recognize_one_off_payment(

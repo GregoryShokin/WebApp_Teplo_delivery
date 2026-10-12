@@ -478,9 +478,7 @@ class TestWaitingOnTheLine:
         for item in layer.items:
             item.counterparty_id = telecom
 
-        [warning] = projector._overdue_document_warnings(
-            layer, {self.ARTICLE: "telecom"}, lines
-        )
+        [warning] = projector._overdue_document_warnings(layer, {self.ARTICLE: "telecom"}, lines)
 
         assert warning.message.count("ПАО «Связь»") == 2
         assert "700,00 ₽ (ждали до 10.08, просрочка 34 дн.)" in warning.message
@@ -564,6 +562,14 @@ async def _advance(
     """Аванс без периода с денежной проводкой — так живут аренда, Манго, ЛИКАРД."""
     from cp_helpers import make_wallet
 
+    # Настоящий сервисный аванс: касса исключена, расход ожидается по документу.
+    # Без режима та же проводка уже была бы расходом и не могла бы быть ожиданием.
+    profile = await session.scalar(
+        select(CounterpartyPayableProfile).where(
+            CounterpartyPayableProfile.counterparty_id == counterparty_id
+        )
+    )
+    profile.service_billing_mode = "per_invoice"
     wallet = await make_wallet(session, code=f"wait-{uuid.uuid4().hex[:6]}")
     transaction = CashflowTransaction(
         wallet_id=wallet.id,
@@ -929,8 +935,8 @@ def test_document_not_applied_by_its_day_raises_alarm(async_session_factory, mon
             # Документ у нас — просрочкой документа это не называется ни в одной строке.
             assert not [w for w in report.warnings if w.code == "overdue_document"]
 
-            # Пометка на строке — красная. Сама строка здесь с суммой (касса аренды стоит в ней
-            # деньгами), поэтому её статус решает сумма, а не ожидание.
+            # Касса сервисного аванса не расход: красная пометка называет зависшее
+            # начисление по договору, которого месяц так и не дождался.
             rent_line = next(line for line in report.lines if line.code == "rent_chernikova")
             [note] = [c for c in rent_line.components if c.unrecognized_paid > 0]
             assert (note.waiting_state, note.status) == (

@@ -404,6 +404,30 @@ async def build_context(session: AsyncSession, month_start: date, month_end: dat
     )
 
 
+def classify_transaction(
+    transaction: CashflowTransaction,
+    context: CashContext,
+    *,
+    month_start: date,
+    month_end: date,
+) -> tuple[Verdict, str | None]:
+    """Единый денежный вердикт для суммы ОПиУ, расшифровки и ожидания документа.
+
+    Техническая ДЗ правила 1 сама по себе не означает, что расход признаёт документ:
+    если эти деньги уже входят в расход по кассе, ждать его повторно нельзя.
+    """
+    return _classify(
+        transaction,
+        context.rules,
+        context.origins,
+        context.circuit,
+        context.settled,
+        month_start=month_start,
+        month_end=month_end,
+        split_parent_kind=context.split_parent_kind,
+    )
+
+
 async def build_cash_layer(
     session: AsyncSession,
     month_start: date,
@@ -420,9 +444,6 @@ async def build_cash_layer(
     sign_roles = sign_roles or {}
     context = await build_context(session, month_start, month_end)
     rules = context.rules
-    origins = context.origins
-    circuit = context.circuit
-    settled = context.settled
 
     layer = CashLayer()
     # Контроль считаем ДО разбора и другим способом — агрегатом на стороне базы. Смысл именно
@@ -460,15 +481,8 @@ async def build_cash_layer(
         else:
             layer.in_total += amount
 
-        verdict, line_code = _classify(
-            tx,
-            rules,
-            origins,
-            circuit,
-            settled,
-            month_start=month_start,
-            month_end=month_end,
-            split_parent_kind=context.split_parent_kind,
+        verdict, line_code = classify_transaction(
+            tx, context, month_start=month_start, month_end=month_end
         )
         layer.by_verdict[verdict.value] += amount
         layer.by_verdict_count[verdict.value] += 1
@@ -596,15 +610,8 @@ async def _apply_moved_in(
     for tx in moved:
         # Классифицируем в координатах МЕСЯЦА РАСХОДА: expense_month внутри окна, поэтому
         # ветка INCLUDED_OTHER_MONTH не сработает и проводка получит честный INCLUDED.
-        verdict, line_code = _classify(
-            tx,
-            context.rules,
-            context.origins,
-            context.circuit,
-            context.settled,
-            month_start=month_start,
-            month_end=month_end,
-            split_parent_kind=context.split_parent_kind,
+        verdict, line_code = classify_transaction(
+            tx, context, month_start=month_start, month_end=month_end
         )
         if verdict is not Verdict.INCLUDED or line_code is None or tx.counterparty_id is not None:
             continue
@@ -699,15 +706,8 @@ async def explain_line(
 
     details: list[CashDetail] = []
     for tx in transactions:
-        verdict, code = _classify(
-            tx,
-            context.rules,
-            context.origins,
-            context.circuit,
-            context.settled,
-            month_start=month_start,
-            month_end=month_end,
-            split_parent_kind=context.split_parent_kind,
+        verdict, code = classify_transaction(
+            tx, context, month_start=month_start, month_end=month_end
         )
         if code != line_code:
             continue

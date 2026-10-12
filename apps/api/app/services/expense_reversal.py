@@ -67,8 +67,12 @@ async def reverse_expense(
     amount: Decimal,
     reason: str,
     actor_user_id: uuid.UUID | None,
+    commit: bool = True,
 ) -> SupplierExpenseReversal:
-    """Снять часть признанного расхода и вернуть её в дебиторку. Коммитит.
+    """Снять часть признанного расхода и вернуть её в дебиторку.
+
+    ``commit=False`` оставляет откат частью транзакции переразбора платежа: отказ на
+    последующей записи должен вернуть и прежнее признание, и гашение его предоплаты.
 
     Порядок важен: сначала уменьшаем гашение (дебиторка возвращается контрагенту в минус
     расчётов), затем сам документ и начисление. Если делать наоборот, промежуточное состояние
@@ -97,9 +101,7 @@ async def reverse_expense(
         raise ReversalRefused(str(exc)) from exc
     current = periods.money(accrual.amount)
     if amount > current:
-        raise ReversalRefused(
-            f"Нельзя откатить больше, чем признано: в расходе {current} ₽"
-        )
+        raise ReversalRefused(f"Нельзя откатить больше, чем признано: в расходе {current} ₽")
 
     invoice = await _self_billed_invoice(session, accrual)
     reversal = SupplierExpenseReversal(
@@ -126,8 +128,11 @@ async def reverse_expense(
         # журнале. Признать месяц заново теперь можно только осознанно, через частичный
         # откат или изменение периода.
         invoice.payment_status = "void"
-    await session.commit()
-    await session.refresh(reversal)
+    if commit:
+        await session.commit()
+        await session.refresh(reversal)
+    else:
+        await session.flush()
     return reversal
 
 
@@ -162,9 +167,7 @@ async def _release_settlement(
                     periods.money(prepayment.amount_settled) - taken, Decimal("0.00")
                 )
                 prepayment.status = (
-                    "open"
-                    if periods.money(prepayment.amount_settled) <= 0
-                    else "partially_settled"
+                    "open" if periods.money(prepayment.amount_settled) <= 0 else "partially_settled"
                 )
         else:
             # Живые деньги: возвращаем их дебиторкой, иначе платёж повиснет без основания.

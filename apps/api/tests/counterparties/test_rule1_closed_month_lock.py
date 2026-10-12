@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models import (
     AccountingPeriodClose,
     CashflowTransaction,
+    CounterpartyPayableProfile,
     DdsArticle,
     InvoicePaymentAllocation,
     Location,
@@ -461,6 +462,13 @@ async def test_new_document_consumes_a_closed_month_advance_without_touching_clo
     рядом с открытой дебиторкой тех же денег — двойной долг."""
     async with async_session_factory() as session:
         cp = await make_counterparty(session, name="Правило1-IHC", inn="6155090108")
+        # Аренда серверов — документный сервис: касса не признаёт этот аванс расходом.
+        profile = await session.scalar(
+            select(CounterpartyPayableProfile).where(
+                CounterpartyPayableProfile.counterparty_id == cp.id
+            )
+        )
+        profile.service_billing_mode = "per_invoice"
         wallet = await make_wallet(session, name="Р/с IHC", wallet_type="bank")
         article = DdsArticle(
             code="rule1_ihc_servers",

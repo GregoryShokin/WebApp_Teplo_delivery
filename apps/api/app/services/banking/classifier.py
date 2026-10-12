@@ -982,7 +982,7 @@ def _operation_review_payload(operation: BankOperation) -> dict[str, Any]:
 
 
 async def _drop_untouched_bank_prepayments(
-    session: AsyncSession, transaction_ids: set[UUID]
+    session: AsyncSession, transaction_ids: set[UUID], *, actor_user_id: UUID | None = None
 ) -> None:
     """Снять нетронутые автопредоплаты, привязанные к удаляемым/пересматриваемым проводкам.
 
@@ -998,6 +998,19 @@ async def _drop_untouched_bank_prepayments(
     аванс, тронутый только ими, пережил бы свою проводку, а новый разбор завёл бы второй."""
     if not transaction_ids:
         return
+    # Разовый самоакт — производная прежней разметки денег. Его prepayment-аллокация
+    # не имеет bank/CF-ключа и не попадёт в очистки ниже: сначала штатно снимаем
+    # признание, иначе гашёная ДЗ и расход переживут удалённую проводку.
+    from app.services.subscription_accruals import release_one_off_payment
+
+    for prepayment in (
+        await session.scalars(
+            select(SupplierPrepayment).where(
+                SupplierPrepayment.cashflow_transaction_id.in_(transaction_ids)
+            )
+        )
+    ).all():
+        await release_one_off_payment(session, prepayment, actor_user_id=actor_user_id)
     from app.services.supplier_prepayments import release_payment_match_settlements
 
     if not await release_payment_match_settlements(session, transaction_ids):
@@ -1404,7 +1417,9 @@ async def _revive_excluded_operation_cashflow(
     return rows[0]
 
 
-async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperation) -> None:
+async def _clear_operation_cashflow(
+    session: AsyncSession, operation: BankOperation, *, actor_user_id: UUID | None = None
+) -> None:
     """Drop cashflow rows previously booked from this bank operation (re-split).
 
     Only rows whose ``source`` is this very operation are removed — a pre-booked
@@ -1419,7 +1434,9 @@ async def _clear_operation_cashflow(session: AsyncSession, operation: BankOperat
             )
         )
     ).all()
-    await _drop_untouched_bank_prepayments(session, {t.id for t in existing})
+    await _drop_untouched_bank_prepayments(
+        session, {t.id for t in existing}, actor_user_id=actor_user_id
+    )
     for transaction in existing:
         await session.delete(transaction)
     operation.cashflow_transaction_id = None
@@ -1802,7 +1819,7 @@ async def _apply_operation_split(
     if prior_payouts:
         await session.flush()
 
-    await _clear_operation_cashflow(session, operation)
+    await _clear_operation_cashflow(session, operation, actor_user_id=actor_user_id)
     created: list[UUID] = []
     free_line_txns: list[CashflowTransaction] = []
     for index, line in enumerate(lines):

@@ -67,10 +67,12 @@ from app.services import clock
 from app.services import counterparty_settlement_ledger as settlement
 from app.services import supplier_prepayments as prepayments
 from app.services.expense_recognition_report import spread_over_months
+from app.services.pnl.sources import cashflow as cash_source
+from app.services.pnl.types import Verdict
 
-#: Виды предоплат, которые вообще могут стать расходом ОПиУ. Заём собственнику и аванс
-#: поставщику ТОВАРА — не услуги: первый не расход вовсе, второй закрывается накладной и
-#: уходит в фудкост. Держать их здесь значило бы обещать документ, которого никто не ждёт.
+#: Виды предоплат, которые могут стать расходом ОПиУ. Заём собственнику и товарный
+#: аванс сюда не входят. ``subscription`` также используется правилом 1 для обычной
+#: автодебиторки: если её платёж уже признан кассовым расходом, ожидания документа нет.
 EXPENSE_KINDS = frozenset({"subscription", "prepaid_bill", "ad"})
 
 #: Период заполнен и ему можно верить. Остальные значения (``missing``, ``not_required``)
@@ -549,6 +551,13 @@ async def build_waiting_layer(
     договору сама, а коммуналку приносят бумагой, и признанная аренда не отвечает за то,
     приехал ли документ по коммуналке.
 
+    Техническая ``subscription`` от правила 1 — ещё не обещание документного расхода.
+    Обычная покупка без периодного намерения и будущего документа, уже включённая в кассовый
+    расход этого месяца либо размеченная вне ОПиУ, ожиданием не считается: так 629 + 262 ₽
+    местного закупа одновременно входили в сентябрьскую сумму и требовали закрывающий.
+    Явный период, помесячное признание, ДЗ оплаченного счёта (``prepaid_bill``) и
+    самостоятельные авансы сохраняются.
+
     ``today`` — день, на который считается состояние ожидания (по умолчанию сегодня по
     Москве). Какие суммы попали в месяц, от него не зависит — только их состояние.
     """
@@ -568,7 +577,7 @@ async def build_waiting_layer(
 
     rows = (
         await session.execute(
-            select(SupplierPrepayment, CashflowTransaction.operation_date)
+            select(SupplierPrepayment, CashflowTransaction)
             .outerjoin(
                 CashflowTransaction,
                 CashflowTransaction.id == SupplierPrepayment.cashflow_transaction_id,
@@ -587,7 +596,7 @@ async def build_waiting_layer(
             await session.execute(
                 select(Counterparty.id, Counterparty.name).where(
                     Counterparty.id.in_(
-                        {prepayment.counterparty_id for prepayment, _paid_on in rows}
+                        {prepayment.counterparty_id for prepayment, _transaction in rows}
                     )
                 )
             )
@@ -595,7 +604,9 @@ async def build_waiting_layer(
     )
 
     layer = WaitingLayer()
-    for prepayment, paid_on in rows:
+    cash_context: cash_source.CashContext | None = None
+    for prepayment, transaction in rows:
+        paid_on = transaction.operation_date if transaction is not None else None
         outstanding = (prepayment.amount or Decimal("0.00")) - (
             prepayment.amount_settled or Decimal("0.00")
         )
@@ -639,6 +650,32 @@ async def build_waiting_layer(
             period_end=period_end,
             today=today,
         )
+        # Вид ``subscription`` также несёт универсальную ДЗ правила 1. У обычной покупки
+        # нет намерения признавать расход за период: его уже признал денежный слой. Но даты,
+        # число месяцев, автоначисление или ожидающий своей даты документ — явное основание
+        # сохранить ожидание, даже пока у контрагента не размечен сервисный режим.
+        period_intended = (
+            prepayment.service_period_status == PERIOD_READY
+            or prepayment.service_period_start is not None
+            or prepayment.service_period_end is not None
+            or prepayment.service_period_months is not None
+            or prepayment.auto_recognize_monthly
+        )
+        if (
+            prepayment.kind == prepayments.RULE1_PREPAYMENT_KIND
+            and not period_intended
+            and found is None
+            and transaction is not None
+            and month_start <= transaction.operation_date <= month_end
+        ):
+            if cash_context is None:
+                cash_context = await cash_source.build_context(session, month_start, month_end)
+            verdict, _line_code = cash_source.classify_transaction(
+                transaction, cash_context, month_start=month_start, month_end=month_end
+            )
+            if verdict in (Verdict.INCLUDED, Verdict.EXCLUDED_OUT_OF_PNL):
+                continue
+
         expected_day = days_by_stream.get((counterparty_id, article_id))
         if expected_day is None:
             expected_day = days_by_counterparty.get(counterparty_id)
