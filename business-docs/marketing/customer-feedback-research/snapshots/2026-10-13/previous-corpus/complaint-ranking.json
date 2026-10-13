@@ -1,0 +1,383 @@
+{
+  "as_of": "2026-10-13",
+  "unit": "One public review or one related internal complaint episode, once per topic; not unique people or orders.",
+  "cross_channel_event_identity": "Not established between internal and public sources; totals describe observations, not unique incidents.",
+  "coverage": {
+    "revvy_public_export_rows": 259,
+    "public_nonempty_texts_read": 230,
+    "yandex_live_texts_loaded": 143,
+    "yandex_maps_live": 140,
+    "yandex_eda_live": 3,
+    "public_specific_issue_reviews": 67,
+    "revvy_internal_selected_histories": 16,
+    "revvy_internal_successful_histories": 16,
+    "internal_specific_episodes_all_history": 12,
+    "internal_specific_episodes_window": 10,
+    "internal_selection": "Previously selected 30-day NegativeReviews category snapshot, not every Revvy chat.",
+    "internal_images_unopened": 4,
+    "excluded": "Blank ratings, vague no-detail dissatisfaction, operator templates, positive qualified caveats, prompted survey answers."
+  },
+  "maps_ui_dedup_note": "104 supported exact matches, 23 probable variants, 13 unresolved candidates; manual inspection found no additional issue in unresolved candidates. Total public-corpus size uncertain; no complaint percentages calculated.",
+  "ranking": [
+    {
+      "code": "food",
+      "label": "Вкус, качество и состав блюда",
+      "atomic_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "food_taste_quality_composition"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 20,
+        "Google Карты": 6,
+        "Яндекс Еда": 1,
+        "Revvy: внутренние обращения": 9
+      },
+      "N_observations": 36,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R058",
+          "R062",
+          "R092",
+          "R100",
+          "R101",
+          "R103",
+          "R110",
+          "R111",
+          "R112",
+          "R115",
+          "R121",
+          "R122",
+          "R127",
+          "R128",
+          "R154",
+          "R161",
+          "R165",
+          "R167",
+          "R195",
+          "R209"
+        ],
+        "Google Карты": [
+          "R039",
+          "R063",
+          "R137",
+          "R193",
+          "R212",
+          "R214"
+        ],
+        "Яндекс Еда": [
+          "YE-003"
+        ],
+        "Revvy: внутренние обращения": [
+          "E01",
+          "E02",
+          "E03",
+          "E04",
+          "E06",
+          "E07",
+          "E08",
+          "E15",
+          "H05"
+        ]
+      }
+    },
+    {
+      "code": "waiting",
+      "label": "Ожидание, нарушение сроков, заказ ещё не получен",
+      "atomic_codes": [
+        "delivery_delay_or_time_mismatch",
+        "order_not_received_by_review_time",
+        "delivery_wait"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 18,
+        "Google Карты": 13,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 3
+      },
+      "N_observations": 34,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R001",
+          "R005",
+          "R009",
+          "R024",
+          "R042",
+          "R058",
+          "R121",
+          "R122",
+          "R129",
+          "R150",
+          "R151",
+          "R153",
+          "R157",
+          "R158",
+          "R161",
+          "R162",
+          "R199",
+          "R200"
+        ],
+        "Google Карты": [
+          "R039",
+          "R179",
+          "R182",
+          "R183",
+          "R185",
+          "R186",
+          "R187",
+          "R190",
+          "R192",
+          "R210",
+          "R211",
+          "R240",
+          "R246"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E02",
+          "E03",
+          "H08"
+        ]
+      }
+    },
+    {
+      "code": "communication",
+      "label": "Общение, информирование и решение проблемы",
+      "atomic_codes": [
+        "service_communication_or_recovery",
+        "communication_order_taking",
+        "communication_problem_resolution"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 10,
+        "Google Карты": 10,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 2
+      },
+      "N_observations": 22,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R005",
+          "R041",
+          "R122",
+          "R129",
+          "R150",
+          "R151",
+          "R153",
+          "R157",
+          "R158",
+          "R168"
+        ],
+        "Google Карты": [
+          "R182",
+          "R185",
+          "R186",
+          "R187",
+          "R192",
+          "R210",
+          "R211",
+          "R213",
+          "R232",
+          "R246"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E06",
+          "E14"
+        ]
+      }
+    },
+    {
+      "code": "temperature",
+      "label": "Остывшая еда / температура",
+      "atomic_codes": [
+        "cold_or_temperature_problem",
+        "temperature"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 5,
+        "Google Карты": 6,
+        "Яндекс Еда": 1,
+        "Revvy: внутренние обращения": 1
+      },
+      "N_observations": 13,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R005",
+          "R058",
+          "R121",
+          "R150",
+          "R151"
+        ],
+        "Google Карты": [
+          "R039",
+          "R185",
+          "R190",
+          "R212",
+          "R213",
+          "R214"
+        ],
+        "Яндекс Еда": [
+          "YE-003"
+        ],
+        "Revvy: внутренние обращения": [
+          "E02"
+        ]
+      }
+    },
+    {
+      "code": "completeness",
+      "label": "Ошибки в заказе и дополнениях",
+      "atomic_codes": [
+        "order_accuracy_or_paid_item_missing",
+        "order_completeness_paid_extras"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 7,
+        "Google Карты": 3,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 2
+      },
+      "N_observations": 12,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R017",
+          "R035",
+          "R100",
+          "R110",
+          "R127",
+          "R168",
+          "R199"
+        ],
+        "Google Карты": [
+          "R183",
+          "R213",
+          "R251"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E06",
+          "E13"
+        ]
+      }
+    },
+    {
+      "code": "value",
+      "label": "Размер порции, начинка и соотношение с ценой",
+      "atomic_codes": [
+        "portion_or_value",
+        "portion_filling",
+        "price_value"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 5,
+        "Google Карты": 3,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 3
+      },
+      "N_observations": 11,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R065",
+          "R110",
+          "R128",
+          "R154",
+          "R165"
+        ],
+        "Google Карты": [
+          "R046",
+          "R137",
+          "R253"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E02",
+          "E07",
+          "E08"
+        ]
+      }
+    },
+    {
+      "code": "ordering",
+      "label": "Оформление заказа, доступность и оплата",
+      "atomic_codes": [
+        "ordering_access_or_payment",
+        "ordering_payment_loyalty"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 3,
+        "Google Карты": 3,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 1
+      },
+      "N_observations": 7,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R061",
+          "R067",
+          "R151"
+        ],
+        "Google Карты": [
+          "R071",
+          "R179",
+          "R232"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E14"
+        ]
+      }
+    },
+    {
+      "code": "presentation",
+      "label": "Внешний вид, повреждение и упаковка",
+      "atomic_codes": [
+        "packaging_or_presentation"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 4,
+        "Google Карты": 2,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 1
+      },
+      "N_observations": 7,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R041",
+          "R121",
+          "R153",
+          "R173"
+        ],
+        "Google Карты": [
+          "R183",
+          "R251"
+        ],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": [
+          "E06"
+        ]
+      }
+    },
+    {
+      "code": "menu_options",
+      "label": "Нет нужного варианта дополнения",
+      "atomic_codes": [
+        "menu_option_unavailable"
+      ],
+      "counts_by_source": {
+        "Яндекс Карты": 1,
+        "Google Карты": 0,
+        "Яндекс Еда": 0,
+        "Revvy: внутренние обращения": 0
+      },
+      "N_observations": 1,
+      "source_ids": {
+        "Яндекс Карты": [
+          "R103"
+        ],
+        "Google Карты": [],
+        "Яндекс Еда": [],
+        "Revvy: внутренние обращения": []
+      }
+    }
+  ]
+}

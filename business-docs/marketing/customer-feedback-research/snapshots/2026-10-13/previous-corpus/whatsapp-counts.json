@@ -1,0 +1,159 @@
+{
+  "as_of": "2026-10-13",
+  "source": "https://docs.google.com/spreadsheets/d/1nZPZXrOZ8JflM8E3KwGy67a-B_GBL7A6sFNPQmqnICk/edit",
+  "source_tab": "Лист1",
+  "filled_records": 57,
+  "explicit_test_rows": [
+    2,
+    3,
+    4,
+    6,
+    14
+  ],
+  "non_test_records": 52,
+  "non_test_respondent_ids": 47,
+  "quality_sensitivity_excluded_rows": [
+    42,
+    43
+  ],
+  "quality_sensitivity_reason": "One respondent selected all eight listed reasons in two submissions four minutes apart; second free text is nonsensical. Flagged, not proven fake. Retained in base counts.",
+  "quality_filtered_records": 50,
+  "quality_filtered_respondent_ids": 46,
+  "respondent_identity_limit": "Respondent ID is survey identifier, not verified unique CRM customer",
+  "date_min": "2025-08-28",
+  "date_max": "2026-07-12",
+  "count_method": "Any mention per respondent ID across retained records; not current status and not an estimate for all customers. Labels are prompted multi-select. Counts overlap.",
+  "counts": [
+    {
+      "theme": "competitor_value",
+      "label": "Нашел(ла) более выгодное предложение у конкурентов",
+      "non_test_records": 15,
+      "non_test_ids": 13,
+      "quality_filtered_records": 13,
+      "quality_filtered_ids": 12,
+      "source_rows": [
+        9,
+        10,
+        15,
+        16,
+        18,
+        19,
+        20,
+        21,
+        23,
+        24,
+        30,
+        39,
+        44
+      ]
+    },
+    {
+      "theme": "waiting",
+      "label": "Долгое время ожидания",
+      "non_test_records": 13,
+      "non_test_ids": 12,
+      "quality_filtered_records": 11,
+      "quality_filtered_ids": 11,
+      "source_rows": [
+        5,
+        13,
+        21,
+        24,
+        27,
+        37,
+        38,
+        39,
+        41,
+        47,
+        55
+      ]
+    },
+    {
+      "theme": "food_quality",
+      "label": "Не всегда устраивает качество доставляемой еды",
+      "non_test_records": 6,
+      "non_test_ids": 5,
+      "quality_filtered_records": 4,
+      "quality_filtered_ids": 4,
+      "source_rows": [
+        24,
+        32,
+        36,
+        46
+      ]
+    },
+    {
+      "theme": "delivery_cost",
+      "label": "Высокая стоимость доставки",
+      "non_test_records": 5,
+      "non_test_ids": 4,
+      "quality_filtered_records": 3,
+      "quality_filtered_ids": 3,
+      "source_rows": [
+        15,
+        16,
+        21
+      ]
+    },
+    {
+      "theme": "ordering_ux",
+      "label": "Не удобно пользоваться приложением/сайтом",
+      "non_test_records": 5,
+      "non_test_ids": 4,
+      "quality_filtered_records": 3,
+      "quality_filtered_ids": 3,
+      "source_rows": [
+        11,
+        19,
+        51
+      ]
+    },
+    {
+      "theme": "aggregator_preference",
+      "label": "Предпочитаю заказывать в Яндекс.Еда",
+      "non_test_records": 4,
+      "non_test_ids": 3,
+      "quality_filtered_records": 2,
+      "quality_filtered_ids": 2,
+      "source_rows": [
+        46,
+        54
+      ]
+    },
+    {
+      "theme": "courier_service",
+      "label": "Плохое обслуживание со стороны курьера",
+      "non_test_records": 3,
+      "non_test_ids": 2,
+      "quality_filtered_records": 1,
+      "quality_filtered_ids": 1,
+      "source_rows": [
+        28
+      ]
+    },
+    {
+      "theme": "already_frequent",
+      "label": "Я и так у вас часто заказываю",
+      "non_test_records": 16,
+      "non_test_ids": 12,
+      "quality_filtered_records": 14,
+      "quality_filtered_ids": 11,
+      "source_rows": [
+        8,
+        21,
+        22,
+        25,
+        26,
+        29,
+        33,
+        34,
+        36,
+        40,
+        48,
+        52,
+        53,
+        58
+      ]
+    }
+  ]
+}

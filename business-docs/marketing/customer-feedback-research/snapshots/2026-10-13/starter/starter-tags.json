@@ -1,0 +1,68 @@
+[
+  {
+    "id": 9,
+    "name": "Быстрая доставка",
+    "textColor": "rgba(62, 85, 121, 1)",
+    "backgroundColor": "rgba(237, 244, 254, 1)"
+  },
+  {
+    "id": 2,
+    "name": "Долгая доставка",
+    "textColor": "rgba(99, 90, 87, 1)",
+    "backgroundColor": "rgba(243, 238, 235, 1)"
+  },
+  {
+    "id": 6,
+    "name": "Инородное тело",
+    "textColor": "rgba(118, 76, 73, 1)",
+    "backgroundColor": "rgba(250, 236, 236, 1)"
+  },
+  {
+    "id": 4,
+    "name": "Неполный заказ",
+    "textColor": "rgba(101, 91, 67, 1)",
+    "backgroundColor": "rgba(250, 245, 229, 1)"
+  },
+  {
+    "id": 3,
+    "name": "Опоздание",
+    "textColor": "rgba(88, 91, 96, 1)",
+    "backgroundColor": "rgba(241, 241, 240, 1)"
+  },
+  {
+    "id": 7,
+    "name": "Плохая упаковка",
+    "textColor": "rgba(101, 91, 67, 1)",
+    "backgroundColor": "rgba(250, 245, 229, 1)"
+  },
+  {
+    "id": 1,
+    "name": "Плохое качество",
+    "textColor": "rgba(118, 76, 73, 1)",
+    "backgroundColor": "rgba(250, 236, 236, 1)"
+  },
+  {
+    "id": 5,
+    "name": "Плохой сервис",
+    "textColor": "rgba(88, 91, 96, 1)",
+    "backgroundColor": "rgba(241, 241, 240, 1)"
+  },
+  {
+    "id": 11,
+    "name": "Проблема с сайтом/приложением",
+    "textColor": "rgba(111, 90, 74, 1)",
+    "backgroundColor": "rgba(252, 241, 226, 1)"
+  },
+  {
+    "id": 8,
+    "name": "Хорошее качество",
+    "textColor": "rgba(69, 98, 81, 1)",
+    "backgroundColor": "rgba(238, 246, 239, 1)"
+  },
+  {
+    "id": 10,
+    "name": "Хороший сервис",
+    "textColor": "rgba(85, 85, 126, 1)",
+    "backgroundColor": "rgba(241, 237, 254, 1)"
+  }
+]

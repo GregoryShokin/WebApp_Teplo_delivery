@@ -1,0 +1,546 @@
+{
+  "filters": [
+    {
+      "code": "date",
+      "label": "По дате",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "date_year",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": null,
+      "selected": null
+    },
+    {
+      "code": "shops",
+      "label": "Ресторан",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "multiple_choices",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "Тест, д. 1",
+          "selectedLabel": "Тест, д. 1",
+          "value": "105",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Черникова, д. 4В",
+          "selectedLabel": "Черникова, д. 4В",
+          "value": "3",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": [
+        105,
+        3
+      ]
+    },
+    {
+      "code": "cities",
+      "label": "Город",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "multiple_choices",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "Волгодонск",
+          "selectedLabel": "Волгодонск",
+          "value": "Волгодонск",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Тест",
+          "selectedLabel": "Тест",
+          "value": "Тест",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": null
+    },
+    {
+      "code": "ratings",
+      "label": "Оценка",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "multiple_choices",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "1",
+          "selectedLabel": "1",
+          "value": "1",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": [
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            }
+          ],
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "2",
+          "selectedLabel": "2",
+          "value": "2",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": [
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            }
+          ],
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "3",
+          "selectedLabel": "3",
+          "value": "3",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": [
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            }
+          ],
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "4",
+          "selectedLabel": "4",
+          "value": "4",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": [
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(28, 28, 28, 0.1)"
+            }
+          ],
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "5",
+          "selectedLabel": "5",
+          "value": "5",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": [
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            },
+            {
+              "icon": "star",
+              "color": "rgba(253, 193, 28, 1)"
+            }
+          ],
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": null
+    },
+    {
+      "code": "tag_ids",
+      "label": "Теги",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "search_filter",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "Быстрая доставка",
+          "selectedLabel": "Быстрая доставка",
+          "value": "9",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(62, 85, 121, 1)",
+          "backgroundColor": "rgba(237, 244, 254, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Долгая доставка",
+          "selectedLabel": "Долгая доставка",
+          "value": "2",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(99, 90, 87, 1)",
+          "backgroundColor": "rgba(243, 238, 235, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Инородное тело",
+          "selectedLabel": "Инородное тело",
+          "value": "6",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(118, 76, 73, 1)",
+          "backgroundColor": "rgba(250, 236, 236, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Неполный заказ",
+          "selectedLabel": "Неполный заказ",
+          "value": "4",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(101, 91, 67, 1)",
+          "backgroundColor": "rgba(250, 245, 229, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Опоздание",
+          "selectedLabel": "Опоздание",
+          "value": "3",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(88, 91, 96, 1)",
+          "backgroundColor": "rgba(241, 241, 240, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Плохая упаковка",
+          "selectedLabel": "Плохая упаковка",
+          "value": "7",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(101, 91, 67, 1)",
+          "backgroundColor": "rgba(250, 245, 229, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Плохое качество",
+          "selectedLabel": "Плохое качество",
+          "value": "1",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(118, 76, 73, 1)",
+          "backgroundColor": "rgba(250, 236, 236, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Плохой сервис",
+          "selectedLabel": "Плохой сервис",
+          "value": "5",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(88, 91, 96, 1)",
+          "backgroundColor": "rgba(241, 241, 240, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Проблема с сайтом/приложением",
+          "selectedLabel": "Проблема с сайтом/приложением",
+          "value": "11",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(111, 90, 74, 1)",
+          "backgroundColor": "rgba(252, 241, 226, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Хорошее качество",
+          "selectedLabel": "Хорошее качество",
+          "value": "8",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(69, 98, 81, 1)",
+          "backgroundColor": "rgba(238, 246, 239, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Хороший сервис",
+          "selectedLabel": "Хороший сервис",
+          "value": "10",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": "rgba(85, 85, 126, 1)",
+          "backgroundColor": "rgba(241, 237, 254, 1)",
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": []
+    },
+    {
+      "code": "statuses",
+      "label": "Статус",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "multiple_choices",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "Принят",
+          "selectedLabel": "Принят",
+          "value": "accepted",
+          "description": null,
+          "bottomDescription": null,
+          "color": "#6C7A91",
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Обработан",
+          "selectedLabel": "Обработан",
+          "value": "processed",
+          "description": null,
+          "bottomDescription": null,
+          "color": "#2FB344",
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": null
+    },
+    {
+      "code": "has_reply",
+      "label": "Ответ на отзыв",
+      "shortLabel": null,
+      "allLabel": null,
+      "count": null,
+      "type": "choices",
+      "minValue": null,
+      "maxValue": null,
+      "measure": null,
+      "choices": [
+        {
+          "label": "Есть",
+          "selectedLabel": "Есть",
+          "value": "True",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        },
+        {
+          "label": "Нет",
+          "selectedLabel": "Нет",
+          "value": "False",
+          "description": null,
+          "bottomDescription": null,
+          "color": null,
+          "textColor": null,
+          "backgroundColor": null,
+          "icon": null,
+          "icons": null,
+          "disabled": null,
+          "group": null
+        }
+      ],
+      "selected": null
+    }
+  ],
+  "searchEnable": true
+}

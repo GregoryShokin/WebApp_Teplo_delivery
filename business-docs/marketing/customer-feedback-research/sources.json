@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "as_of": "2026-10-13",
+  "canonical_readme": "README.md",
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Customer Feedback Research/2026-10-13",
+  "sources": [
+    {
+      "id": "starter",
+      "status": "complete_capture_not_fully_theme_coded",
+      "manifest": "snapshots/2026-10-13/starter/starter-manifest.json",
+      "metadata": "snapshots/2026-10-13/starter/starter-feedback-metadata.jsonl",
+      "summary": "snapshots/2026-10-13/starter/summary.md",
+      "raw_relative_to_private_archive": "starter/starter-feedback-private.jsonl",
+      "method": "methods/starter-feedback.md",
+      "rows": 10535,
+      "with_text": 3814
+    },
+    {
+      "id": "public_maps_via_revvy",
+      "status": "all_exported_texts_coded",
+      "coding": "snapshots/2026-10-13/previous-corpus/public-unified-coded.json",
+      "raw_relative_to_private_archive": "revvy/public-export-20261011.xlsx",
+      "rows": 259,
+      "with_text": 230
+    },
+    {
+      "id": "yandex_ui",
+      "status": "all_143_visible_texts_read",
+      "audit": "snapshots/2026-10-13/previous-corpus/yandex-ui-source-audit.json",
+      "raw_relative_to_private_archive": "yandex/reviews-private.json",
+      "maps_rows": 140,
+      "eda_rows": 3,
+      "overlap": "Maps reviews mostly overlap Revvy; see audit."
+    },
+    {
+      "id": "revvy_internal",
+      "status": "16_selected_negative_histories_read_not_all_tenant_chats",
+      "coding": "snapshots/2026-10-13/previous-corpus/internal-revvy-coded.json",
+      "raw_relative_to_private_archive": "revvy/internal-histories/",
+      "histories": 16,
+      "messages": 120,
+      "specific_episodes": 12
+    },
+    {
+      "id": "whatsapp_survey",
+      "status": "anonymized_and_test_rows_flagged",
+      "data": "snapshots/2026-10-13/previous-corpus/whatsapp-anonymized.json",
+      "counts": "snapshots/2026-10-13/previous-corpus/whatsapp-counts.json",
+      "original_url": "https://docs.google.com/spreadsheets/d/1nZPZXrOZ8JflM8E3KwGy67a-B_GBL7A6sFNPQmqnICk/edit",
+      "filled_submissions": 57,
+      "non_test_submissions": 52
+    },
+    {
+      "id": "legacy_starter_summary",
+      "status": "secondary_summary_missing_primary_data",
+      "inventory": "historical-context/legacy-starter-inventory.md",
+      "legacy_referenced_rows": 10136
+    }
+  ],
+  "current_theme_ranking": "snapshots/2026-10-13/previous-corpus/complaint-ranking.md",
+  "current_theme_ranking_excludes": [
+    "starter",
+    "prompted_whatsapp_answers"
+  ],
+  "next_required_for_all_source_theme_ranking": "Code Starter comment texts and reconcile potential cross-source duplicate incidents; preserve source and period strata."
+}

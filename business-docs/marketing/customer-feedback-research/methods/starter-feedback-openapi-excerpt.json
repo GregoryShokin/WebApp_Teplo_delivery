@@ -1,0 +1,3626 @@
+{
+  "paths": {
+    "/api/v1/frontend/feedback/filters": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Feedback Filters - feedbacks:view",
+        "operationId": "get_feedback_filters_api_v1_frontend_feedback_filters_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFeedbackFilters"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/filters/tag_ids": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Tags Filter - feedbacks:view",
+        "operationId": "get_tags_filter_api_v1_frontend_feedback_filters_tag_ids_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "name",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputFrontend"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/tags": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "List Tags - feedbacks:view",
+        "operationId": "list_tags_api_v1_frontend_feedback_tags_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "name",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Create Tag - edit-feedback-tags:edit",
+        "operationId": "create_tag_api_v1_frontend_feedback_tags_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "edit-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/tags/{tag_id}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Tag - feedbacks:view",
+        "operationId": "get_tag_api_v1_frontend_feedback_tags__tag_id__get",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      },
+      "put": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Update Tag - edit-feedback-tags:edit",
+        "operationId": "update_tag_api_v1_frontend_feedback_tags__tag_id__put",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "edit-feedback-tags:edit"
+      },
+      "delete": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Delete Tag - edit-feedback-tags:edit",
+        "operationId": "delete_tag_api_v1_frontend_feedback_tags__tag_id__delete",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "edit-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/tags/{tag_id}/usage": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Tag Usage - feedbacks:view",
+        "operationId": "tag_usage_api_v1_frontend_feedback_tags__tag_id__usage_get",
+        "parameters": [
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagUsage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/{feedback_id}/tags": {
+      "put": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Set Feedback Tags - set-feedback-tags:edit",
+        "operationId": "set_feedback_tags_api_v1_frontend_feedback__feedback_id__tags_put",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackTagsAssign"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/{feedback_id}/tags/{tag_id}": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Add Tag To Feedback - set-feedback-tags:edit",
+        "operationId": "add_tag_to_feedback_api_v1_frontend_feedback__feedback_id__tags__tag_id__post",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      },
+      "delete": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Remove Tag From Feedback - set-feedback-tags:edit",
+        "operationId": "remove_tag_from_feedback_api_v1_frontend_feedback__feedback_id__tags__tag_id__delete",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "tag_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tag Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/tags/bulk-add": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Bulk Add Tag To Feedbacks - set-feedback-tags:edit",
+        "operationId": "bulk_add_tag_to_feedbacks_api_v1_frontend_feedback_tags_bulk_add_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackTagsBulkAssign"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/tags/bulk-remove": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Bulk Remove Tag From Feedbacks - set-feedback-tags:edit",
+        "operationId": "bulk_remove_tag_from_feedbacks_api_v1_frontend_feedback_tags_bulk_remove_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackTagsBulkRemove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/tags/bulk-replace": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Bulk Replace Tag On Feedbacks - set-feedback-tags:edit",
+        "operationId": "bulk_replace_tag_on_feedbacks_api_v1_frontend_feedback_tags_bulk_replace_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackTagsBulkReplace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "set-feedback-tags:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/export": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Export Feedback - export-feedbacks:view",
+        "operationId": "export_feedback_api_v1_frontend_feedback_export_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "shops",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Shops"
+            }
+          },
+          {
+            "name": "cities",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Cities"
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Statuses"
+            }
+          },
+          {
+            "name": "ratings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Ratings"
+            }
+          },
+          {
+            "name": "tag_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Tag Ids"
+            }
+          },
+          {
+            "name": "date_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Min"
+            }
+          },
+          {
+            "name": "date_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Max"
+            }
+          },
+          {
+            "name": "has_reply",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Reply"
+            }
+          },
+          {
+            "name": "orderBy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "-created_at",
+              "title": "Orderby"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "export-feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedbacks": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Feedbacks - feedbacks:view",
+        "operationId": "get_feedbacks_api_v1_frontend_feedbacks_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "shops",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Shops"
+            }
+          },
+          {
+            "name": "cities",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Cities"
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Statuses"
+            }
+          },
+          {
+            "name": "ratings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Ratings"
+            }
+          },
+          {
+            "name": "tag_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Tag Ids"
+            }
+          },
+          {
+            "name": "date_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Min"
+            }
+          },
+          {
+            "name": "date_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Max"
+            }
+          },
+          {
+            "name": "has_reply",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Reply"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "-created_at",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFeedbacksFrontend"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/total": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Feedback Total - feedbacks:view",
+        "operationId": "get_feedback_total_api_v1_frontend_feedback_total_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "shops",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Shops"
+            }
+          },
+          {
+            "name": "cities",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Cities"
+            }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Statuses"
+            }
+          },
+          {
+            "name": "ratings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Ratings"
+            }
+          },
+          {
+            "name": "tag_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Tag Ids"
+            }
+          },
+          {
+            "name": "date_min",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Min"
+            }
+          },
+          {
+            "name": "date_max",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date Max"
+            }
+          },
+          {
+            "name": "has_reply",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Reply"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "-created_at",
+              "title": "Order By"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackTotal"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/additional-link": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Additional Feedback - feedbacks:view",
+        "operationId": "get_additional_feedback_api_v1_frontend_feedback_additional_link_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackLink"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Set Additional Feedback - feedbacks:edit",
+        "operationId": "set_additional_feedback_api_v1_frontend_feedback_additional_link_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/{feedback_id}": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Feedback - feedbacks:view",
+        "operationId": "get_feedback_api_v1_frontend_feedback__feedback_id__get",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackFrontend"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:view"
+      }
+    },
+    "/api/v1/frontend/feedback/{feedback_id}/generate": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Generate Feedback Answer - reply-feedback:edit",
+        "operationId": "generate_feedback_answer_api_v1_frontend_feedback__feedback_id__generate_post",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackGeneratedAnswer"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "reply-feedback:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/{feedback_id}/answer": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Create Feedback Answer - reply-feedback:edit",
+        "operationId": "create_feedback_answer_api_v1_frontend_feedback__feedback_id__answer_post",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackAnswerSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "reply-feedback:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/status/{id}/{feedback_status}": {
+      "patch": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Change Status - feedbacks:edit",
+        "operationId": "change_status_api_v1_frontend_feedback_status__id___feedback_status__patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "feedback_status",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FeedbackStatus"
+            }
+          },
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "feedbacks:edit"
+      }
+    },
+    "/api/v1/frontend/feedback/answer/settings": {
+      "get": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Get Feedback Answer Settings - settings:view",
+        "operationId": "get_feedback_answer_settings_api_v1_frontend_feedback_answer_settings_get",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackAnswerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "settings:view"
+      },
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Set Feedback Answer Settings - settings:edit",
+        "operationId": "set_feedback_answer_settings_api_v1_frontend_feedback_answer_settings_post",
+        "parameters": [
+          {
+            "name": "shop_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shop Id"
+            }
+          },
+          {
+            "name": "user-role",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User-Role"
+            }
+          },
+          {
+            "name": "access_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackAnswerSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackAnswerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-permission": "settings:edit"
+      }
+    }
+  },
+  "schemas": {
+    "ComboTag": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "Id"
+        },
+        "name": {
+          "type": "string",
+          "title": "Name"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "ComboTag"
+    },
+    "ComboTagsResponse": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/components/schemas/ComboTag"
+          },
+          "type": "array",
+          "title": "Items",
+          "default": []
+        }
+      },
+      "type": "object",
+      "title": "ComboTagsResponse"
+    },
+    "CustomerInFeedbackFrontend": {
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Id"
+        },
+        "username": {
+          "type": "string",
+          "title": "Username"
+        },
+        "phone": {
+          "type": "string",
+          "title": "Phone"
+        },
+        "language": {
+          "type": "string",
+          "title": "Language"
+        },
+        "ordersCount": {
+          "type": "integer",
+          "title": "Orderscount"
+        },
+        "allowTransactions": {
+          "type": "boolean",
+          "title": "Allowtransactions"
+        },
+        "balance": {
+          "type": "number",
+          "title": "Balance"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "username",
+        "phone",
+        "language",
+        "ordersCount",
+        "allowTransactions",
+        "balance"
+      ],
+      "title": "CustomerInFeedbackFrontend"
+    },
+    "FeedbackAnswerFrontend": {
+      "properties": {
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Title"
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Body"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Subject"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Image"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "At"
+        }
+      },
+      "type": "object",
+      "required": [
+        "at"
+      ],
+      "title": "FeedbackAnswerFrontend"
+    },
+    "FeedbackAnswerSchema": {
+      "properties": {
+        "customerId": {
+          "type": "integer",
+          "title": "Customerid"
+        },
+        "body": {
+          "type": "string",
+          "title": "Body"
+        }
+      },
+      "type": "object",
+      "required": [
+        "customerId",
+        "body"
+      ],
+      "title": "FeedbackAnswerSchema"
+    },
+    "FeedbackAnswerSettings": {
+      "properties": {
+        "customPrompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Customprompt"
+        },
+        "positivePrompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Positiveprompt"
+        },
+        "negativePrompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Negativeprompt"
+        },
+        "feedbackAnswerLink": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Feedbackanswerlink"
+        }
+      },
+      "type": "object",
+      "title": "FeedbackAnswerSettings"
+    },
+    "FeedbackFrontend": {
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Id"
+        },
+        "status": {
+          "$ref": "#/components/schemas/FeedbackStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Createdat"
+        },
+        "customer": {
+          "$ref": "#/components/schemas/CustomerInFeedbackFrontend"
+        },
+        "order": {
+          "$ref": "#/components/schemas/OrderInFeedbackFrontend"
+        },
+        "bonusProgramAccountId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bonusprogramaccountid"
+        },
+        "pointsAwarded": {
+          "items": {
+            "$ref": "#/components/schemas/FeedbackPointsAwardedFrontend"
+          },
+          "type": "array",
+          "title": "Pointsawarded",
+          "default": []
+        },
+        "rating": {
+          "type": "integer",
+          "title": "Rating"
+        },
+        "comment": {
+          "type": "string",
+          "title": "Comment"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/FeedbackAnswerFrontend"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "media": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Media",
+          "default": []
+        },
+        "tags": {
+          "items": {
+            "$ref": "#/components/schemas/TagResponse"
+          },
+          "type": "array",
+          "title": "Tags",
+          "default": []
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "createdAt",
+        "customer",
+        "order",
+        "rating",
+        "comment"
+      ],
+      "title": "FeedbackFrontend"
+    },
+    "FeedbackFrontendResponse": {
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Id"
+        },
+        "status": {
+          "$ref": "#/components/schemas/FeedbackStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Createdat"
+        },
+        "rating": {
+          "type": "integer",
+          "title": "Rating"
+        },
+        "comment": {
+          "type": "string",
+          "title": "Comment"
+        },
+        "media": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Media",
+          "default": []
+        },
+        "tags": {
+          "items": {
+            "$ref": "#/components/schemas/TagResponse"
+          },
+          "type": "array",
+          "title": "Tags",
+          "default": []
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "createdAt",
+        "rating",
+        "comment"
+      ],
+      "title": "FeedbackFrontendResponse"
+    },
+    "FeedbackGeneratedAnswer": {
+      "properties": {
+        "response": {
+          "type": "string",
+          "title": "Response"
+        },
+        "selectedTags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Selectedtags",
+          "default": []
+        }
+      },
+      "type": "object",
+      "required": [
+        "response"
+      ],
+      "title": "FeedbackGeneratedAnswer"
+    },
+    "FeedbackLink": {
+      "properties": {
+        "title": {
+          "$ref": "#/components/schemas/MultiLang"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/MultiLang"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "btnText": {
+          "$ref": "#/components/schemas/MultiLang"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Link"
+        },
+        "platforms": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Platforms",
+          "default": []
+        }
+      },
+      "type": "object",
+      "required": [
+        "title",
+        "btnText"
+      ],
+      "title": "FeedbackLink"
+    },
+    "FeedbackPointsAwardedAccount": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "title": "Id"
+        },
+        "title": {
+          "type": "string",
+          "title": "Title"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "FeedbackPointsAwardedAccount"
+    },
+    "FeedbackPointsAwardedFrontend": {
+      "properties": {
+        "amount": {
+          "type": "integer",
+          "title": "Amount"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Createdat"
+        },
+        "bonusProgramAccount": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/FeedbackPointsAwardedAccount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "amount",
+        "createdAt"
+      ],
+      "title": "FeedbackPointsAwardedFrontend"
+    },
+    "FeedbackStatus": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "processed"
+      ],
+      "title": "FeedbackStatus"
+    },
+    "FeedbackTagsAssign": {
+      "properties": {
+        "tagIds": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "title": "Tagids"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tagIds"
+      ],
+      "title": "FeedbackTagsAssign"
+    },
+    "FeedbackTagsBulkAssign": {
+      "properties": {
+        "feedbackIds": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "title": "Feedbackids"
+        },
+        "tagId": {
+          "type": "integer",
+          "title": "Tagid"
+        }
+      },
+      "type": "object",
+      "required": [
+        "feedbackIds",
+        "tagId"
+      ],
+      "title": "FeedbackTagsBulkAssign"
+    },
+    "FeedbackTagsBulkRemove": {
+      "properties": {
+        "feedbackIds": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "title": "Feedbackids"
+        },
+        "tagId": {
+          "type": "integer",
+          "title": "Tagid"
+        }
+      },
+      "type": "object",
+      "required": [
+        "feedbackIds",
+        "tagId"
+      ],
+      "title": "FeedbackTagsBulkRemove"
+    },
+    "FeedbackTagsBulkReplace": {
+      "properties": {
+        "feedbackIds": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "title": "Feedbackids"
+        },
+        "fromTagId": {
+          "type": "integer",
+          "title": "Fromtagid"
+        },
+        "toTagId": {
+          "type": "integer",
+          "title": "Totagid"
+        }
+      },
+      "type": "object",
+      "required": [
+        "feedbackIds",
+        "fromTagId",
+        "toTagId"
+      ],
+      "title": "FeedbackTagsBulkReplace"
+    },
+    "FeedbackTotal": {
+      "properties": {
+        "total": {
+          "type": "integer",
+          "title": "Total"
+        },
+        "averageRating": {
+          "type": "number",
+          "title": "Averagerating"
+        }
+      },
+      "type": "object",
+      "required": [
+        "total",
+        "averageRating"
+      ],
+      "title": "FeedbackTotal"
+    },
+    "GetFeedbackFilters": {
+      "properties": {
+        "filters": {
+          "items": {
+            "$ref": "#/components/schemas/InputFrontend"
+          },
+          "type": "array",
+          "title": "Filters"
+        },
+        "searchEnable": {
+          "type": "boolean",
+          "title": "Searchenable",
+          "default": true
+        }
+      },
+      "type": "object",
+      "required": [
+        "filters"
+      ],
+      "title": "GetFeedbackFilters"
+    },
+    "GetFeedbacksFrontend": {
+      "items": {
+        "$ref": "#/components/schemas/FeedbackFrontend"
+      },
+      "type": "array",
+      "title": "GetFeedbacksFrontend"
+    },
+    "OrderInFeedbackFrontend": {
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Id"
+        },
+        "starterId": {
+          "type": "integer",
+          "title": "Starterid"
+        },
+        "posId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Posid"
+        },
+        "number": {
+          "type": "string",
+          "title": "Number"
+        },
+        "deliveryTime": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Deliverytime"
+        },
+        "shop": {
+          "$ref": "#/components/schemas/app__api__api_v1__schemas__feedback__ShopInOrderFrontend"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "starterId",
+        "number",
+        "deliveryTime",
+        "shop"
+      ],
+      "title": "OrderInFeedbackFrontend"
+    },
+    "PackageItemTag": {
+      "type": "string",
+      "enum": [
+        "all",
+        "allExcept",
+        "onlySelected"
+      ],
+      "title": "PackageItemTag"
+    },
+    "TagCreate": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name"
+        },
+        "textColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Textcolor",
+          "examples": [
+            "#000000"
+          ]
+        },
+        "backgroundColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Backgroundcolor",
+          "examples": [
+            "#FF9900"
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "title": "TagCreate"
+    },
+    "TagList": {
+      "items": {
+        "$ref": "#/components/schemas/TagResponse"
+      },
+      "type": "array",
+      "title": "TagList"
+    },
+    "TagResponse": {
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "Id"
+        },
+        "name": {
+          "type": "string",
+          "title": "Name"
+        },
+        "textColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Textcolor"
+        },
+        "backgroundColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Backgroundcolor"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "TagResponse"
+    },
+    "TagUpdate": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 100,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "textColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Textcolor",
+          "examples": [
+            "#000000"
+          ]
+        },
+        "backgroundColor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Backgroundcolor",
+          "examples": [
+            "#FF9900"
+          ]
+        }
+      },
+      "type": "object",
+      "title": "TagUpdate"
+    },
+    "TagUsage": {
+      "properties": {
+        "tagId": {
+          "type": "integer",
+          "title": "Tagid"
+        },
+        "feedbacksCount": {
+          "type": "integer",
+          "title": "Feedbackscount"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tagId",
+        "feedbacksCount"
+      ],
+      "title": "TagUsage"
+    }
+  }
+}

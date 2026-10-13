@@ -1,0 +1,208 @@
+{
+  "source": "Starter feedback API",
+  "base_url": "https://crm.starterapp.ru/fmteplo",
+  "started_at_utc": "2026-10-13T15:35:06.992789+00:00",
+  "finished_at_utc": "2026-10-13T15:36:54.013987+00:00",
+  "scope": "all accessible tenant feedback; no date/rating/status/shop filters",
+  "method": "GET /api/v1/frontend/feedbacks?offset=N&limit=500&order_by=id",
+  "total_before": {
+    "total": 10535,
+    "averageRating": 4.56
+  },
+  "total_after": {
+    "total": 10535,
+    "averageRating": 4.56
+  },
+  "rows": 10535,
+  "unique_feedback_ids": 10535,
+  "pages": [
+    {
+      "offset": 0,
+      "returned": 500,
+      "first_id": 1,
+      "last_id": 500
+    },
+    {
+      "offset": 500,
+      "returned": 500,
+      "first_id": 501,
+      "last_id": 1000
+    },
+    {
+      "offset": 1000,
+      "returned": 500,
+      "first_id": 1001,
+      "last_id": 1500
+    },
+    {
+      "offset": 1500,
+      "returned": 500,
+      "first_id": 1501,
+      "last_id": 2000
+    },
+    {
+      "offset": 2000,
+      "returned": 500,
+      "first_id": 2001,
+      "last_id": 2500
+    },
+    {
+      "offset": 2500,
+      "returned": 500,
+      "first_id": 2501,
+      "last_id": 3000
+    },
+    {
+      "offset": 3000,
+      "returned": 500,
+      "first_id": 3001,
+      "last_id": 3500
+    },
+    {
+      "offset": 3500,
+      "returned": 500,
+      "first_id": 3501,
+      "last_id": 4000
+    },
+    {
+      "offset": 4000,
+      "returned": 500,
+      "first_id": 4001,
+      "last_id": 4500
+    },
+    {
+      "offset": 4500,
+      "returned": 500,
+      "first_id": 4501,
+      "last_id": 5000
+    },
+    {
+      "offset": 5000,
+      "returned": 500,
+      "first_id": 5001,
+      "last_id": 5532
+    },
+    {
+      "offset": 5500,
+      "returned": 500,
+      "first_id": 5533,
+      "last_id": 6032
+    },
+    {
+      "offset": 6000,
+      "returned": 500,
+      "first_id": 6033,
+      "last_id": 6532
+    },
+    {
+      "offset": 6500,
+      "returned": 500,
+      "first_id": 6533,
+      "last_id": 7032
+    },
+    {
+      "offset": 7000,
+      "returned": 500,
+      "first_id": 7033,
+      "last_id": 7532
+    },
+    {
+      "offset": 7500,
+      "returned": 500,
+      "first_id": 7533,
+      "last_id": 8032
+    },
+    {
+      "offset": 8000,
+      "returned": 500,
+      "first_id": 8033,
+      "last_id": 8532
+    },
+    {
+      "offset": 8500,
+      "returned": 500,
+      "first_id": 8533,
+      "last_id": 9032
+    },
+    {
+      "offset": 9000,
+      "returned": 500,
+      "first_id": 9033,
+      "last_id": 9564
+    },
+    {
+      "offset": 9500,
+      "returned": 500,
+      "first_id": 9565,
+      "last_id": 10064
+    },
+    {
+      "offset": 10000,
+      "returned": 500,
+      "first_id": 10065,
+      "last_id": 10564
+    },
+    {
+      "offset": 10500,
+      "returned": 35,
+      "first_id": 10565,
+      "last_id": 10599
+    }
+  ],
+  "tail_rows": 0,
+  "complete": true,
+  "date_min": "2023-03-02T11:20:08.893001+00:00",
+  "date_max": "2026-10-13T14:54:34.231354+00:00",
+  "rating_counts": {
+    "1": 572,
+    "2": 264,
+    "3": 491,
+    "4": 559,
+    "5": 8649
+  },
+  "with_text": 3814,
+  "without_text": 6721,
+  "tagged_rows": 0,
+  "tag_counts": {},
+  "shop_totals": {
+    "3": {
+      "total": 9265,
+      "averageRating": 4.56
+    },
+    "105": {
+      "total": 0,
+      "averageRating": 0.0
+    }
+  },
+  "status_counts": {
+    "accepted": 10535
+  },
+  "raw_sha256": "b0e6c9caf4bfa0e6d2e52743bbc08ae74e24e14bc49f2d3d73024494ca1a741a",
+  "pii_rule": "Customer profile/contact fields omitted; original text/answers may contain personal data; keep private JSONL outside Git. Metadata has no text/customer/order identifiers.",
+  "interpretation": "A rating or native tag is not a manually verified complaint; tag assignment provenance not verified; accepted/processed are workflow statuses, not sentiment.",
+  "shop_id_counts_from_payload": {
+    "None": 10535
+  },
+  "shop_address_counts": [
+    {
+      "city": "Волгодонск",
+      "street": "улица Гагарина, д. 10",
+      "count": 1270
+    },
+    {
+      "city": "Волгодонск",
+      "street": "Черникова, д. 4В",
+      "count": 9265
+    }
+  ],
+  "shop_id_caveat": "Observed order.shop has city/street only, no id; use address and verify API shop filters separately.",
+  "text_counts_by_rating": {
+    "1": 507,
+    "2": 236,
+    "3": 423,
+    "4": 369,
+    "5": 2279
+  },
+  "media_rows": 67,
+  "answered_rows": 0
+}

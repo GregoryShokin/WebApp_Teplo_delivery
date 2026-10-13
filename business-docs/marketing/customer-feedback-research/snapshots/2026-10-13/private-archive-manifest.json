@@ -1,0 +1,142 @@
+{
+  "as_of": "2026-10-13",
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Customer Feedback Research/2026-10-13",
+  "files": [
+    {
+      "file": "revvy/internal-histories/internal-history-01.json",
+      "bytes": 4838,
+      "sha256": "4fa0612a6a29cdf675953d0437cd463a0c63e0c6b6c62bfff28d918b5e4a17ae"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-02.json",
+      "bytes": 4687,
+      "sha256": "9986992d4c9629e78727e585986a314bc083e5706ad86c65dd6a894df8153875"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-03.json",
+      "bytes": 3204,
+      "sha256": "39fc5e31d2d018a57f21466cf67be5582863cb4903fe27b98d9bfa457acfde36"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-04.json",
+      "bytes": 8469,
+      "sha256": "14788cc36a5ebf675a39de3c0aaac1650de9c8a5e2561952cf45a6792724dae7"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-05.json",
+      "bytes": 4328,
+      "sha256": "f76560d297d059d4caaf23a5c71c46346039a18a4a5d5cc8b779810e7f3f8b4c"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-06.json",
+      "bytes": 4376,
+      "sha256": "933591f08387ca655068554e73973cb694cb8547ea77a6d2af75b64a97cce4bf"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-07.json",
+      "bytes": 4480,
+      "sha256": "4f0bffb111c0ff27d368eac9495968fef350ecf738c0ee1c7c83f03d39847937"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-08.json",
+      "bytes": 5737,
+      "sha256": "6901153049fc0aa9023be71f867fe68b65051d6561421a417b33ca036476de8e"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-09.json",
+      "bytes": 1719,
+      "sha256": "152cfa05d8b78d88104a04712f30b7cf8a8a6b6737791aa007d215f2644e283f"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-10.json",
+      "bytes": 6570,
+      "sha256": "7989017f09d88430b4a8071620ca96b6664763bf0a1a66e5cf754dd781d3e9ee"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-11.json",
+      "bytes": 1718,
+      "sha256": "bcfeeebafe29fd52620662c7315eb9b092e2e6d176f9a3fc8807b3eb78d3d76d"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-12.json",
+      "bytes": 2339,
+      "sha256": "b404c513be1899d88b5e8e441f10a519ad5a5f8d0c5be1e79688b546c50bd37c"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-13.json",
+      "bytes": 5424,
+      "sha256": "a6e7821a5dc03d71797f4d3bf726eed608b92ca8453cf42ae9f6fe23026c80da"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-14.json",
+      "bytes": 3332,
+      "sha256": "5486158555ab5b1e72e0e52ade548de257f23289d647576238f23844ee16b74e"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-15.json",
+      "bytes": 10907,
+      "sha256": "dc31a936dbf1ce1a2ec2dc432ee48b56ad9fe9c189cd4f74216b55e77d61029d"
+    },
+    {
+      "file": "revvy/internal-histories/internal-history-16.json",
+      "bytes": 3322,
+      "sha256": "5c292cdae9d02f45ba3c9f86fac44070f0615b57249bd62b008230bdcbd87ae5"
+    },
+    {
+      "file": "revvy/negative-chat-list-20261011.json",
+      "bytes": 7482,
+      "sha256": "e2936466a05093b92bae057e8abd6a0fd4627a3ae720808cc6b95d7c0b795583"
+    },
+    {
+      "file": "revvy/prior-full-rating-codebook.json",
+      "bytes": 121744,
+      "sha256": "33cb725dc12815cbc52ab5fbc1eedc939faac9b2fe3361f3db4473c81f656c97"
+    },
+    {
+      "file": "revvy/prior-single-history-validation.json",
+      "bytes": 10907,
+      "sha256": "dc31a936dbf1ce1a2ec2dc432ee48b56ad9fe9c189cd4f74216b55e77d61029d"
+    },
+    {
+      "file": "revvy/public-export-20261011.xlsx",
+      "bytes": 47237,
+      "sha256": "c8ed52c03943dae951efb35369e412715965e4e4341380177189a91ed90eed91"
+    },
+    {
+      "file": "starter/starter-feedback-metadata.json",
+      "bytes": 3729446,
+      "sha256": "224ef905029c2e578297bd768cb79084ef097f1ed65f15226194ef38c7f39d9d"
+    },
+    {
+      "file": "starter/starter-feedback-metadata.jsonl",
+      "bytes": 4076723,
+      "sha256": "e514f7e37be1116801ea4ea92b55528f0de026a3b874e6c20757dd0c6035b90f"
+    },
+    {
+      "file": "starter/starter-feedback-private.jsonl",
+      "bytes": 4813289,
+      "sha256": "b0e6c9caf4bfa0e6d2e52743bbc08ae74e24e14bc49f2d3d73024494ca1a741a"
+    },
+    {
+      "file": "starter/starter-filters.json",
+      "bytes": 14752,
+      "sha256": "7452bbf94b3f9af70ba8a674b2508295aaf5757eb727a6812e65d182c08803f8"
+    },
+    {
+      "file": "starter/starter-manifest.json",
+      "bytes": 4431,
+      "sha256": "9eb2f4b179102952e1ec220a6abae91a840476c88c447c3dd306c858a381cabe"
+    },
+    {
+      "file": "starter/starter-tags.json",
+      "bytes": 1726,
+      "sha256": "ae2659019e8f03473cd04651c4e12ac6e303ac38c4246847c7c016f776838753"
+    },
+    {
+      "file": "yandex/reviews-private.json",
+      "bytes": 91655,
+      "sha256": "d723f6a0e824b917840d9a1bad6390426e4af1195b10015e73fdb6609a132661"
+    }
+  ],
+  "note": "Primary texts are local private records, not Git artifacts. Starter customer profile/contact fields omitted; free text and Revvy history may contain personal information."
+}

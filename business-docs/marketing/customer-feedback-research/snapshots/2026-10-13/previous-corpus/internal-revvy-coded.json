@@ -1,0 +1,841 @@
+{
+  "title": "Обезличенная разметка историй внутренних негативных обращений Revvy",
+  "source_window": {
+    "start_utc": "2026-09-11T00:00:00Z",
+    "end_utc": "2026-10-11T23:59:59Z",
+    "timestamp_field": "dateReceivedUtc",
+    "basis": "30-дневный список от 2026-10-11"
+  },
+  "completeness": {
+    "expected_histories": 16,
+    "files_found_and_parsed": 16,
+    "plan_items": 16,
+    "histories_complete": "16/16",
+    "messages_total": 120,
+    "messages_with_isClient_true": 42,
+    "client_text_messages_total": 38,
+    "client_image_messages_total": 4,
+    "messages_inside_window_total": 82,
+    "client_messages_inside_window": 33,
+    "client_text_messages_inside_window": 30,
+    "client_image_messages_inside_window": 3,
+    "client_messages_before_window": 9,
+    "client_text_messages_before_window": 8,
+    "client_image_messages_before_window": 1,
+    "nonclient_messages_total": 78,
+    "nonclient_messages_inside_window": 49,
+    "all_message_timestamps_present": true
+  },
+  "outgoing_context": {
+    "messages_inside_window": 49,
+    "observed_templates": [
+      "18 survey invitations asking for a 1–5 score",
+      "16 follow-ups asking what went wrong after a low score",
+      "15 other outbound messages, mostly acknowledgements/apologies and templated responses; some state that bonuses will be credited, which is not independent proof of credit."
+    ],
+    "coding_rule": "Исходящие сообщения использованы только для контекста. Шаблоны не кодировались как клиентские жалобы; обещание начислить бонус не доказывает факт начисления."
+  },
+  "event_rule": "Один event_id на один различимый инцидент. Повторы пояснений в течение секунд/минут объединены. Старые сообщения не приписаны оценке после даты окна. Причина числовой оценки без объяснения неизвестна.",
+  "window_incident_case_count": 11,
+  "window_specific_actionable_case_count": 10,
+  "window_vague_low_specificity_case_count": 1,
+  "window_numeric_ratings_without_explanation": 7,
+  "window_numeric_ratings_without_explanation_in_range": 6,
+  "window_score_4_without_explanation": 2,
+  "window_score_0_out_of_range_without_explanation": 1,
+  "window_theme_event_counts": {
+    "delivery_wait": 2,
+    "food_taste_quality_composition": 8,
+    "temperature": 1,
+    "portion_filling": 2,
+    "order_completeness_paid_extras": 2,
+    "communication_order_taking": 1,
+    "ordering_payment_loyalty": 1,
+    "communication_problem_resolution": 1,
+    "price_value": 1,
+    "overall_quality_vague": 1,
+    "packaging_or_presentation": 1
+  },
+  "cases": [
+    {
+      "event_id": "E01",
+      "history": "01",
+      "date_utc": "2026-10-06T16:53:30Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Волос в пицце; фото нет."
+    },
+    {
+      "event_id": "E02",
+      "history": "02",
+      "date_utc": "2026-10-04T14:55:54Z",
+      "themes": [
+        "delivery_wait",
+        "temperature",
+        "food_taste_quality_composition",
+        "portion_filling"
+      ],
+      "summary_redacted": "Опоздание; холодная еда; подача, консистенция риса и вкус блюд не устроили; в ролле мало начинки."
+    },
+    {
+      "event_id": "E03",
+      "history": "03",
+      "date_utc": "2026-10-04T14:46:55Z",
+      "themes": [
+        "delivery_wait",
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Опоздание относительно обещанного срока; недоваренный рассыпающийся рис."
+    },
+    {
+      "event_id": "E04",
+      "history": "04",
+      "date_utc": "2026-10-03T13:23:04Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Несвежая, жёсткая/заветренная лепёшка."
+    },
+    {
+      "event_id": "E06",
+      "history": "06",
+      "date_utc": "2026-10-04T06:41:09Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "order_completeness_paid_extras",
+        "communication_order_taking",
+        "packaging_or_presentation"
+      ],
+      "summary_redacted": "Пересоленная пицца; не было сумок для самовывоза; имбирь/васаби по просьбе не добавили в заказ; соус не предложили; жалоба на невнимательный приём заказа по телефону."
+    },
+    {
+      "event_id": "E07",
+      "history": "07",
+      "date_utc": "2026-09-25T19:46:12Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "price_value"
+      ],
+      "summary_redacted": "Стало менее вкусно и дороже по сравнению с прежним опытом."
+    },
+    {
+      "event_id": "E08",
+      "history": "08",
+      "date_utc": "2026-09-25T17:08:28Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "portion_filling"
+      ],
+      "summary_redacted": "Ухудшение вкуса и нехватка начинки/преобладание риса."
+    },
+    {
+      "event_id": "E10",
+      "history": "10",
+      "date_utc": "2026-09-21T18:26:47Z",
+      "themes": [
+        "overall_quality_vague"
+      ],
+      "summary_redacted": "Неспецифичное «не очень стало»; точная проблема неизвестна."
+    },
+    {
+      "event_id": "E13",
+      "history": "13",
+      "date_utc": "2026-09-20T16:13:14Z",
+      "themes": [
+        "order_completeness_paid_extras"
+      ],
+      "summary_redacted": "Не выдали оплаченный соус; повторное пояснение через 37 секунд — один эпизод."
+    },
+    {
+      "event_id": "E14",
+      "history": "14",
+      "date_utc": "2026-09-20T11:13:36Z",
+      "themes": [
+        "ordering_payment_loyalty",
+        "communication_problem_resolution"
+      ],
+      "summary_redacted": "Сбой применения/отображения баллов и последующая просьба доплатить; клиент не согласился с требованием."
+    },
+    {
+      "event_id": "E15",
+      "history": "15",
+      "date_utc": "2026-09-17T16:03:56Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Рис рассыпался и мешал есть палочками; вкус роллов отдельно отмечен как хороший."
+    }
+  ],
+  "unexplained_numeric_submissions": [
+    {
+      "history": "04",
+      "date_received_utc": "2026-09-14T11:56:00Z",
+      "score": 5,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-09-23T17:58:01Z",
+      "score": 5,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "05",
+      "date_received_utc": "2026-10-01T18:11:32Z",
+      "score": 1,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "09",
+      "date_received_utc": "2026-09-22T19:37:08Z",
+      "score": 4,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "11",
+      "date_received_utc": "2026-09-21T17:13:13Z",
+      "score": 4,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "12",
+      "date_received_utc": "2026-09-21T15:14:42Z",
+      "score": 3,
+      "in_standard_1_to_5_range": true
+    },
+    {
+      "history": "16",
+      "date_received_utc": "2026-09-16T13:26:21Z",
+      "score": 0,
+      "in_standard_1_to_5_range": false
+    }
+  ],
+  "client_messages": [
+    {
+      "history": "01",
+      "date_received_utc": "2026-10-06T16:52:58Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E01",
+      "code": "rating_1",
+      "summary_redacted": "Числовая оценка 1; в следующем сообщении клиент пояснил причину.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "01",
+      "date_received_utc": "2026-10-06T16:53:30Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E01",
+      "code": "food_quality_contamination",
+      "summary_redacted": "Сообщение о светлом волосе в пицце; фото нет.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "02",
+      "date_received_utc": "2026-10-04T14:54:28Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E02",
+      "code": "rating_1",
+      "summary_redacted": "Оценка 1; клиент вскоре пояснил причину.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "02",
+      "date_received_utc": "2026-10-04T14:55:54Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E02",
+      "code": "E02",
+      "summary_redacted": "Одна жалоба с несколькими темами: задержка, холодная еда, неаккуратная подача, сухой/хрустящий рис, плохой вкус нескольких блюд и нехватка начинки в ролле.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "02",
+      "date_received_utc": "2026-10-04T14:56:11Z",
+      "within_window": true,
+      "message_type": "image",
+      "annotation_kind": "attachment",
+      "event_id": "E02",
+      "code": "image_attachment",
+      "summary_redacted": "Изображение во вложении; содержимое не анализировалось.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "02",
+      "date_received_utc": "2026-10-04T14:56:11Z",
+      "within_window": true,
+      "message_type": "image",
+      "annotation_kind": "attachment",
+      "event_id": "E02",
+      "code": "image_attachment",
+      "summary_redacted": "Изображение во вложении; содержимое не анализировалось.",
+      "message_ordinal_in_history": 4
+    },
+    {
+      "history": "02",
+      "date_received_utc": "2026-10-04T14:56:11Z",
+      "within_window": true,
+      "message_type": "image",
+      "annotation_kind": "attachment",
+      "event_id": "E02",
+      "code": "image_attachment",
+      "summary_redacted": "Изображение во вложении; содержимое не анализировалось.",
+      "message_ordinal_in_history": 5
+    },
+    {
+      "history": "03",
+      "date_received_utc": "2026-10-04T14:44:48Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E03",
+      "code": "rating_3",
+      "summary_redacted": "Оценка 3; далее пояснена причина.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "03",
+      "date_received_utc": "2026-10-04T14:46:55Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E03",
+      "code": "E03",
+      "summary_redacted": "Существенное опоздание относительно обещанного срока и недоваренный, рассыпающийся рис.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-07-11T09:29:44Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "До окна: оценка 5 без объяснения.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-09-14T11:56:00Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "Оценка 5; причина не сообщена.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-09-23T17:58:01Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "Оценка 5; причина не сообщена.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-10-03T13:19:51Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E04",
+      "code": "rating_4",
+      "summary_redacted": "Оценка 4; далее описано состояние лепёшки.",
+      "message_ordinal_in_history": 4
+    },
+    {
+      "history": "04",
+      "date_received_utc": "2026-10-03T13:23:04Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E04",
+      "code": "E04",
+      "summary_redacted": "Несвежая, жёсткая/заветренная лепёшка; клиент отметил, что обычно она мягкая.",
+      "message_ordinal_in_history": 5
+    },
+    {
+      "history": "05",
+      "date_received_utc": "2026-08-31T16:11:58Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_event",
+      "event_id": "H05",
+      "code": "food_quality_spoilage",
+      "summary_redacted": "До окна: жалоба, что мидии пахли/были на вкус испорченными.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "05",
+      "date_received_utc": "2026-08-31T16:12:12Z",
+      "within_window": false,
+      "message_type": "image",
+      "annotation_kind": "historical_attachment",
+      "event_id": "H05",
+      "code": "image_attachment",
+      "summary_redacted": "Вложение; содержимое не анализировалось.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "05",
+      "date_received_utc": "2026-10-01T18:11:32Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_1_unknown_reason",
+      "summary_redacted": "Оценка 1; причины в окне нет. Не связывать автоматически с жалобой на мидии от 31 августа.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "06",
+      "date_received_utc": "2026-10-01T14:20:01Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_delayed_comment",
+      "event_id": "E06",
+      "code": "rating_3",
+      "summary_redacted": "Оценка 3; пояснение появилось 4 октября после запроса уточнить проблему.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "06",
+      "date_received_utc": "2026-10-04T06:41:09Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E06",
+      "code": "E06",
+      "summary_redacted": "Пересоленная пицца; не было сумок для самовывоза; имбирь/васаби по просьбе не добавили в заказ; отмечен невнимательный приём заказа по телефону.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "06",
+      "date_received_utc": "2026-10-04T06:43:12Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event_repeat",
+      "event_id": "E06",
+      "code": "E06",
+      "summary_redacted": "Дополнение того же случая: не предложили соус к пицце.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "06",
+      "date_received_utc": "2026-10-04T06:43:56Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event_repeat",
+      "event_id": "E06",
+      "code": "E06",
+      "summary_redacted": "Общее разочарование первым заказом; отдельного нового факта нет.",
+      "message_ordinal_in_history": 4
+    },
+    {
+      "history": "07",
+      "date_received_utc": "2026-09-25T19:45:14Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E07",
+      "code": "rating_2",
+      "summary_redacted": "Оценка 2; далее пояснена причина.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "07",
+      "date_received_utc": "2026-09-25T19:46:12Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E07",
+      "code": "E07",
+      "summary_redacted": "Клиенту стало менее вкусно и дороже, чем прежде.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "08",
+      "date_received_utc": "2026-08-08T15:06:31Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_with_comment",
+      "event_id": "H08",
+      "code": "rating_4",
+      "summary_redacted": "До окна: оценка 4; далее пояснена задержка.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "08",
+      "date_received_utc": "2026-08-08T15:08:49Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_event",
+      "event_id": "H08",
+      "code": "delivery_expectation",
+      "summary_redacted": "До окна: срок готовности на сайте не совпал с ожиданием.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "08",
+      "date_received_utc": "2026-09-25T17:07:23Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E08",
+      "code": "rating_1",
+      "summary_redacted": "Оценка 1; далее пояснена причина.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "08",
+      "date_received_utc": "2026-09-25T17:08:28Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E08",
+      "code": "E08",
+      "summary_redacted": "Клиент отметил ухудшение вкуса; по впечатлению клиента, ролл был почти из одного риса.",
+      "message_ordinal_in_history": 4
+    },
+    {
+      "history": "09",
+      "date_received_utc": "2026-09-22T19:37:08Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_4_unknown_reason",
+      "summary_redacted": "Оценка 4; причина неизвестна.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "10",
+      "date_received_utc": "2026-05-23T18:07:49Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "До окна: оценка 5 без объяснения.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "10",
+      "date_received_utc": "2026-09-21T18:26:47Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "vague_event",
+      "event_id": "E10",
+      "code": "overall_quality_vague",
+      "summary_redacted": "Краткое «не очень стало» с оценкой 3; конкретная проблема не названа.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "11",
+      "date_received_utc": "2026-09-21T17:13:13Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_4_unknown_reason",
+      "summary_redacted": "Оценка 4; причина неизвестна.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "12",
+      "date_received_utc": "2026-09-21T15:14:42Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_only",
+      "event_id": null,
+      "code": "rating_3_unknown_reason",
+      "summary_redacted": "Оценка 3; причина неизвестна.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "13",
+      "date_received_utc": "2026-09-20T16:13:14Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E13",
+      "code": "rating_2_and_paid_item_missing",
+      "summary_redacted": "Оценка 2 и жалоба: не выдали оплаченный соевый соус.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "13",
+      "date_received_utc": "2026-09-20T16:13:51Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event_repeat",
+      "event_id": "E13",
+      "code": "E13",
+      "summary_redacted": "Повтор того же пояснения; один инцидент.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "14",
+      "date_received_utc": "2026-09-20T11:08:09Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_with_comment",
+      "event_id": "E14",
+      "code": "rating_4",
+      "summary_redacted": "Оценка 4; далее пояснена проблема с баллами.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "14",
+      "date_received_utc": "2026-09-20T11:13:36Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E14",
+      "code": "E14",
+      "summary_redacted": "Сайт списал баллы, которые позже сочли истёкшими; затем попросили доплатить. Клиент оспорил ответственность за некорректную работу сайта.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "15",
+      "date_received_utc": "2026-02-09T15:30:48Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "До окна: оценка 5 без объяснения.",
+      "message_ordinal_in_history": 1
+    },
+    {
+      "history": "15",
+      "date_received_utc": "2026-04-19T18:33:13Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "До окна: оценка 5 без объяснения.",
+      "message_ordinal_in_history": 2
+    },
+    {
+      "history": "15",
+      "date_received_utc": "2026-07-31T17:52:19Z",
+      "within_window": false,
+      "message_type": "text",
+      "annotation_kind": "historical_rating_only",
+      "event_id": null,
+      "code": "rating_5_unknown_reason",
+      "summary_redacted": "До окна: оценка 5 без объяснения.",
+      "message_ordinal_in_history": 3
+    },
+    {
+      "history": "15",
+      "date_received_utc": "2026-09-17T16:03:56Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event",
+      "event_id": "E15",
+      "code": "rating_3_rice_texture",
+      "summary_redacted": "Оценка 3; рис рассыпался, есть палочками было сложно.",
+      "message_ordinal_in_history": 4
+    },
+    {
+      "history": "15",
+      "date_received_utc": "2026-09-17T16:05:10Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "event_repeat",
+      "event_id": "E15",
+      "code": "E15",
+      "summary_redacted": "Повтор того же описания; клиент отдельно отметил хороший вкус.",
+      "message_ordinal_in_history": 5
+    },
+    {
+      "history": "16",
+      "date_received_utc": "2026-09-16T13:26:21Z",
+      "within_window": true,
+      "message_type": "text",
+      "annotation_kind": "rating_out_of_range",
+      "event_id": null,
+      "code": "rating_0_unknown_reason",
+      "summary_redacted": "Ответ 0 на приглашение оценить по шкале 1–5; вне шкалы, причина неизвестна.",
+      "message_ordinal_in_history": 1
+    }
+  ],
+  "privacy": "Нет исходных имён, телефонов, chatId, sender-полей, полных сообщений или исходящих диалогов. Только обезличенные пересказы и точные UTC даты; вложения не открывались.",
+  "historical_cases": [
+    {
+      "event_id": "H05",
+      "history": "05",
+      "date_utc": "2026-08-31T16:11:58Z",
+      "window_status": "before_2026_09_11",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Клиент сообщил об очень неприятном запахе и вкусе мидий, назвав их испорченными. Вложение в 16:12:12Z не открывалось. Это пересказ жалобы; он не подтверждает отравление или фактическую угрозу безопасности."
+    },
+    {
+      "event_id": "H08",
+      "history": "08",
+      "date_utc": "2026-08-08T15:08:49Z",
+      "window_status": "before_2026_09_11",
+      "themes": [
+        "delivery_wait"
+      ],
+      "summary_redacted": "Клиент сообщил, что указанное на сайте время готовности заказа не совпало с фактическим ожиданием. Минуты не включены в пересказ, чтобы не восстанавливать их из локально скрытых числовых частей."
+    }
+  ],
+  "all_history_specific_cases": [
+    {
+      "event_id": "E01",
+      "history": "01",
+      "date_utc": "2026-10-06T16:53:30Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Волос в пицце; фото нет."
+    },
+    {
+      "event_id": "E02",
+      "history": "02",
+      "date_utc": "2026-10-04T14:55:54Z",
+      "themes": [
+        "delivery_wait",
+        "temperature",
+        "food_taste_quality_composition",
+        "portion_filling"
+      ],
+      "summary_redacted": "Опоздание; холодная еда; подача, консистенция риса и вкус блюд не устроили; в ролле мало начинки."
+    },
+    {
+      "event_id": "E03",
+      "history": "03",
+      "date_utc": "2026-10-04T14:46:55Z",
+      "themes": [
+        "delivery_wait",
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Опоздание относительно обещанного срока; недоваренный рассыпающийся рис."
+    },
+    {
+      "event_id": "E04",
+      "history": "04",
+      "date_utc": "2026-10-03T13:23:04Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Несвежая, жёсткая/заветренная лепёшка."
+    },
+    {
+      "event_id": "E06",
+      "history": "06",
+      "date_utc": "2026-10-04T06:41:09Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "order_completeness_paid_extras",
+        "communication_order_taking",
+        "packaging_or_presentation"
+      ],
+      "summary_redacted": "Пересоленная пицца; не было сумок для самовывоза; имбирь/васаби по просьбе не добавили в заказ; соус не предложили; жалоба на невнимательный приём заказа по телефону."
+    },
+    {
+      "event_id": "E07",
+      "history": "07",
+      "date_utc": "2026-09-25T19:46:12Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "price_value"
+      ],
+      "summary_redacted": "Стало менее вкусно и дороже по сравнению с прежним опытом."
+    },
+    {
+      "event_id": "E08",
+      "history": "08",
+      "date_utc": "2026-09-25T17:08:28Z",
+      "themes": [
+        "food_taste_quality_composition",
+        "portion_filling"
+      ],
+      "summary_redacted": "Ухудшение вкуса и нехватка начинки/преобладание риса."
+    },
+    {
+      "event_id": "E13",
+      "history": "13",
+      "date_utc": "2026-09-20T16:13:14Z",
+      "themes": [
+        "order_completeness_paid_extras"
+      ],
+      "summary_redacted": "Не выдали оплаченный соус; повторное пояснение через 37 секунд — один эпизод."
+    },
+    {
+      "event_id": "E14",
+      "history": "14",
+      "date_utc": "2026-09-20T11:13:36Z",
+      "themes": [
+        "ordering_payment_loyalty",
+        "communication_problem_resolution"
+      ],
+      "summary_redacted": "Сбой применения/отображения баллов и последующая просьба доплатить; клиент не согласился с требованием."
+    },
+    {
+      "event_id": "E15",
+      "history": "15",
+      "date_utc": "2026-09-17T16:03:56Z",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Рис рассыпался и мешал есть палочками; вкус роллов отдельно отмечен как хороший."
+    },
+    {
+      "event_id": "H05",
+      "history": "05",
+      "date_utc": "2026-08-31T16:11:58Z",
+      "window_status": "before_2026_09_11",
+      "themes": [
+        "food_taste_quality_composition"
+      ],
+      "summary_redacted": "Клиент сообщил об очень неприятном запахе и вкусе мидий, назвав их испорченными. Вложение в 16:12:12Z не открывалось. Это пересказ жалобы; он не подтверждает отравление или фактическую угрозу безопасности."
+    },
+    {
+      "event_id": "H08",
+      "history": "08",
+      "date_utc": "2026-08-08T15:08:49Z",
+      "window_status": "before_2026_09_11",
+      "themes": [
+        "delivery_wait"
+      ],
+      "summary_redacted": "Клиент сообщил, что указанное на сайте время готовности заказа не совпало с фактическим ожиданием. Минуты не включены в пересказ, чтобы не восстанавливать их из локально скрытых числовых частей."
+    }
+  ],
+  "all_history_theme_counts": {
+    "delivery_wait": 3,
+    "food_taste_quality_composition": 9,
+    "temperature": 1,
+    "portion_filling": 2,
+    "order_completeness_paid_extras": 2,
+    "communication_order_taking": 1,
+    "ordering_payment_loyalty": 1,
+    "communication_problem_resolution": 1,
+    "price_value": 1,
+    "packaging_or_presentation": 1
+  },
+  "all_history_rule": "Union of 10 concrete cases in the 2026-09-11..2026-10-11 UTC window and 2 concrete cases before the window; excludes vague case E10 and ratings without a stated cause. Historical cases H05/H08 are not linked to numerical ratings from the reporting window.",
+  "coding_clarifications": {
+    "order_completeness_paid_extras": "Legacy code includes requested items not added at order taking, as well as paid items not handed over. E06 does not establish prepayment; E13 does.",
+    "food_taste_quality_composition": "Customer-reported food defects and sensory experience; not independently verified findings of spoilage or illness.",
+    "packaging_or_presentation": "E06 explicitly reports no bags for carrying multiple takeaway pizzas and inconvenience; counted once as packaging, separately from item omission."
+  }
+}

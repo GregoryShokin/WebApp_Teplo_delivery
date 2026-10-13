@@ -1,0 +1,3523 @@
+{
+  "captured_at": "2026-10-13",
+  "source_url": "https://eda.yandex.ru/r/teplo_servis_dostavki_edy_restaurant?placeSlug=teplo_servis_dostavki_edy_",
+  "full_card_capture": {
+    "maps_declared_text_reviews": 140,
+    "maps_loaded_rows": 140,
+    "maps_placeholders_loaded": true,
+    "maps_card_rating": 5,
+    "maps_card_rating_count": 276,
+    "eda_declared_text_reviews": 3,
+    "eda_loaded_rows": 3,
+    "eda_card_rating": 4.8,
+    "eda_card_rating_count": 17
+  },
+  "privacy": "No author names, raw review texts, response texts, phone numbers, or customer identifiers copied. Matching used them transiently; audit stores row IDs, displayed date labels, and SHA-256 fingerprints only.",
+  "normalization_method": "Unicode NFKC; lowercase; ё→е; punctuation/symbols to spaces; whitespace collapsed. Full normalized text equality is the exact-match test. Author/date checks are auxiliary and never expose author values.",
+  "yandex_maps_match_summary": {
+    "match_status_counts": {
+      "probable_same_platform_text_variant": 23,
+      "confirmed_same_platform_exact_text_date_author": 102,
+      "unresolved_possible_same_platform": 12,
+      "possible_same_platform_exact_text_metadata_mismatch": 1,
+      "short_exact_text_metadata_supported": 2
+    },
+    "n_maps_ui_rows": 140,
+    "confirmed_exact_full_text_date_author_matches": 102,
+    "short_exact_text_pairs_resolved_by_date_author": 2,
+    "probable_text_variant_pairs": 23,
+    "unresolved_or_metadata_conflict_rows": 13,
+    "probable_variant_pairs_ui_id_to_revvy_row_id": {
+      "YM-003": 4,
+      "YM-005": 49,
+      "YM-010": 51,
+      "YM-012": 135,
+      "YM-017": 21,
+      "YM-018": 69,
+      "YM-028": 107,
+      "YM-029": 82,
+      "YM-032": 13,
+      "YM-033": 123,
+      "YM-037": 104,
+      "YM-041": 105,
+      "YM-053": 114,
+      "YM-058": 30,
+      "YM-059": 50,
+      "YM-066": 202,
+      "YM-068": 97,
+      "YM-069": 170,
+      "YM-071": 93,
+      "YM-073": 197,
+      "YM-084": 47,
+      "YM-119": 24,
+      "YM-123": 161
+    },
+    "counting_scenarios": {
+      "confirmed_and_probable_dedup_preferred_working_union": {
+        "total_public_opinions": 275,
+        "basis": "Deduplicate 104 metadata-supported exact overlaps and 23 manually checked likely text variants; retain 13 low-confidence/metadata-conflict UI rows as possible additional opinions."
+      },
+      "strict_metadata_supported_exact_only": {
+        "total_public_opinions": 298,
+        "basis": "Only 104 exact-text matches with date and author support are merged; all text variants and conflicts remain separate."
+      },
+      "all_ui_items_overlap_sensitivity": {
+        "total_public_opinions": 262,
+        "basis": "All 140 UI entries map to an existing Yandex Maps opinion, including unresolved candidates; lower bound only, not asserted as proven."
+      }
+    }
+  },
+  "ui_review_audit_rows": [
+    {
+      "ui_id": "YM-003",
+      "ui_index_in_capture": 3,
+      "date_label": "16 сентября",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "610bc421aa692abe6ffea20ecb4e0c65138c6f1152a171f756f332875ff18417",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        4
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 4,
+          "normalized_full_text_similarity": 0.966,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-004",
+      "ui_index_in_capture": 4,
+      "date_label": "23 сентября",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "1209312980dd2d41f45e87fabbd972e5bf75fbca767fcda7723063b5075a71f2",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        2
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 2,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-005",
+      "ui_index_in_capture": 5,
+      "date_label": "19 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "90945a622a6616fe3bb0355f20211f86be0b764eae7553aeda6fc8ac5c224c9d",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        49
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 49,
+          "normalized_full_text_similarity": 0.987,
+          "displayed_day_matches": false,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-006",
+      "ui_index_in_capture": 6,
+      "date_label": "28 июня, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "9550b14f5d6885dede0512e9d9b66f0d4fa5b9810c076d4e50508b11d8545a44",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        159
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 159,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-007",
+      "ui_index_in_capture": 7,
+      "date_label": "29 июля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ca9570f6405b470886d9b8975216d9250485fbc334f71ef438082757803aa19c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        17
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 17,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-008",
+      "ui_index_in_capture": 8,
+      "date_label": "7 апреля, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "7d42aa37598a570a19c358408873df7c39603fff3bf155ca3cdc3b534d8d04cf",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        171
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 171,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-009",
+      "ui_index_in_capture": 9,
+      "date_label": "18 августа, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "f96f408ef4b927da2b0c726a1805361ff7ed038ef763c4e13dfe1e52aba51fe4",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        204
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 204,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-010",
+      "ui_index_in_capture": 10,
+      "date_label": "14 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "758c3558374c1e1bb42c2a3b45a627e02e2fe763c0ea11b74a40860e59994711",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        51
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 51,
+          "normalized_full_text_similarity": 0.912,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-011",
+      "ui_index_in_capture": 11,
+      "date_label": "18 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "30f572591bf21d039677f5e76ded090d9e0d15eddf178ef553372bd35c2d64c1",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        67
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "ordering_access_or_payment"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 67,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-012",
+      "ui_index_in_capture": 12,
+      "date_label": "8 января, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "866bedb597ea9c266be2192936f981a056fa16f32913921985fadd3ad4d3c019",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        135
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 135,
+          "normalized_full_text_similarity": 0.953,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-013",
+      "ui_index_in_capture": 13,
+      "date_label": "18 января, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "430a520c45abbcec84e7e1020c7bee0823b571df881c2f55a2b10f0156f9f378",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        177
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 177,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-014",
+      "ui_index_in_capture": 14,
+      "date_label": "23 апреля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "baf7552aa72ecbf1f30d33a60e081916b65d21f70b885ea4aa0f25307c66d30b",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        34
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 34,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-015",
+      "ui_index_in_capture": 15,
+      "date_label": "6 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "3de870d9ab0bd53cbd0e49625017abf50d7d153c0de47d8ad648be14053701fa",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        126
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 126,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-016",
+      "ui_index_in_capture": 16,
+      "date_label": "21 марта",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "05afa3fc23647edd8ff5488b68bc1e7498db236e189e81017d5d85cfc15648f5",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        42
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 42,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-017",
+      "ui_index_in_capture": 17,
+      "date_label": "27 июня",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "332e82987b8d1eb8d6d4bd60cbb20e54f584a1be9792850db6d647dea5e8fa82",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        21
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 21,
+          "normalized_full_text_similarity": 0.968,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-018",
+      "ui_index_in_capture": 18,
+      "date_label": "4 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ffdc010f3758f11a18dfc1071c60d45b34afc284330a73ae0c34bced6846d89e",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        69
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 69,
+          "normalized_full_text_similarity": 0.969,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-019",
+      "ui_index_in_capture": 19,
+      "date_label": "29 марта",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "6eef3bccbd2cd6f88a16185338cfcde8d5df26510eb90a704fccb78fa5b283b4",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        40
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 40,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-020",
+      "ui_index_in_capture": 20,
+      "date_label": "29 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "8e531d15c7dd1f12d7129248d46014920dc7eb880c70c5ccc4ade4295e25f09e",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        72
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 72,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-021",
+      "ui_index_in_capture": 21,
+      "date_label": "17 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5d1953488b1f101e6c8bb8a26d109d6fb30db92da42ea44dc6defab85c6eb87b",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        84
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 84,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-022",
+      "ui_index_in_capture": 22,
+      "date_label": "19 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "434ff0083fde6efd73f0f5020e0fdc6922fa47d747e1907a95384d226d5462ab",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        83
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 83,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-023",
+      "ui_index_in_capture": 23,
+      "date_label": "12 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "87bb6ea59ed072c35f810aa9ff606ff07bd819825d7ab018464561aa78e2aa92",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        75
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 75,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-024",
+      "ui_index_in_capture": 24,
+      "date_label": "29 февраля, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "8fbde6072538cdc9af71b286fa1c1b40ae2cd2a563bdd962421ac2ae90500081",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        174
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 174,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-025",
+      "ui_index_in_capture": 25,
+      "date_label": "27 июня",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "31a3470b2726f62cb8bd39b4bb78c5003a137869a77c605c54acd5b342faf7e2",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        20
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 20,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-026",
+      "ui_index_in_capture": 26,
+      "date_label": "7 мая, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "a5d39854ced4e3ee4cdb3e615b34d5adfdd7273200a641c2f453624b2fc8a187",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        119
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 119,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-027",
+      "ui_index_in_capture": 27,
+      "date_label": "25 мая, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "4b34ba0811e7f5431c1ddde2ebcae4cffadba2cc9726081dfaae4caea4b5e994",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        117
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 117,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-028",
+      "ui_index_in_capture": 28,
+      "date_label": "6 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ec7f8d25e2a3b9642e809ac8845e9d37401ad8675bd0809600b3e38a46ed690f",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        107
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 107,
+          "normalized_full_text_similarity": 0.873,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-029",
+      "ui_index_in_capture": 29,
+      "date_label": "20 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b3e7ff5b4e6f46cc8c346957a1fe6fffb22142969b9f957b4de4108e8a40b2bd",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        82
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 82,
+          "normalized_full_text_similarity": 0.87,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-030",
+      "ui_index_in_capture": 30,
+      "date_label": "30 марта, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5074716064676d301c23039f4ffedfa6751233dd67e0131210beb9ab495346f6",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        172
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 172,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-031",
+      "ui_index_in_capture": 31,
+      "date_label": "28 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0ccc2d29730ef295056821271769a41ea549b0b6013cfe7a40f5bfec66055c9c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        27
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 27,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-032",
+      "ui_index_in_capture": 32,
+      "date_label": "30 августа",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5ff11e9fce9ad03cd315723e4fd110c0232e476116d4c0c6ec1dd6a3821a697a",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        13
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 13,
+          "normalized_full_text_similarity": 0.941,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-033",
+      "ui_index_in_capture": 33,
+      "date_label": "16 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "8e64286f547aed3fb2a30a221ee5626fda6765f3bc2373e072afb9ba2192540a",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        123
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 123,
+          "normalized_full_text_similarity": 0.791,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-034",
+      "ui_index_in_capture": 34,
+      "date_label": "3 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2c385ad89d9dd748bb925b3155ee7b6dd6e682cb68dab8488aa4401e357e6459",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        90
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 90,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-035",
+      "ui_index_in_capture": 35,
+      "date_label": "15 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b376114c9d35beddf1eb998df8d6e275731a4d0e5ff8d909de6295732c84f2f1",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        112
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 112,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-036",
+      "ui_index_in_capture": 36,
+      "date_label": "11 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "a62f1bf0855e1115967cba05b1bd6b2d2f7c5c4d50e1c8d80b761af09bbb9da0",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        52
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 52,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-037",
+      "ui_index_in_capture": 37,
+      "date_label": "10 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b0bbbbdb670b5638fb519500800f1933668e58bef86f779cebda0252eeb55457",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        104
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 104,
+          "normalized_full_text_similarity": 0.941,
+          "displayed_day_matches": true,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-038",
+      "ui_index_in_capture": 38,
+      "date_label": "21 ноября, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "cddf83614816a6bbdd442b48c22afa3846f4895202cfb4cef4b19cafe6d5537f",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        195
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 195,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-039",
+      "ui_index_in_capture": 39,
+      "date_label": "10 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0276e2038b7e56566b977417bb5270711958b35db7f358cc0c87df0f44e7232c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        125
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 125,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-040",
+      "ui_index_in_capture": 40,
+      "date_label": "12 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2a0b932ac211d820411f9235f72059e7692c00cb331fcd686f4cdb773b0cd0cc",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        102
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 102,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-041",
+      "ui_index_in_capture": 41,
+      "date_label": "7 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "209f3b3285f97978d00bdc2ecf8fc30e536c90f7ad70c48343f01a145f64dfd5",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        105
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 105,
+          "normalized_full_text_similarity": 0.929,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-042",
+      "ui_index_in_capture": 42,
+      "date_label": "10 февраля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "becb9c40a12637c51ae9645ae0bea6c7a569d1914f14907f7caed88a9d469a43",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        131
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 131,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-043",
+      "ui_index_in_capture": 43,
+      "date_label": "23 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "de7dc9e6c1b9b1a4996b6b3d0603fca82f74dc736653e8ada9df187440c6a204",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        48
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 48,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-044",
+      "ui_index_in_capture": 44,
+      "date_label": "26 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "145cba1a06d7de4cf63bcbc8666749bfe9040f4d3fd17d397a5b5551995a5c1f",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        28
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 28,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-045",
+      "ui_index_in_capture": 45,
+      "date_label": "8 октября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ffbb1530639f2132c3340ca97011a0a1620cd0b2f7070fc7e5884211fc71fb9a",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        156
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 156,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-046",
+      "ui_index_in_capture": 46,
+      "date_label": "6 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0443caea9510c589284ad9e3f708d8585b5395d451ea5fc0cdd59179ba5a99a8",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        88
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 88,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-047",
+      "ui_index_in_capture": 47,
+      "date_label": "5 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5d6ce67e806c343b10a489d620cf1ffd37f1c9b1b79533561f43b9f9523414fe",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        89
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 89,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-048",
+      "ui_index_in_capture": 48,
+      "date_label": "1 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "bdde4fe18f0639be4af561e491f057cd33d07959ee8e36c29e629dd4fd51d3be",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        109
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 109,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-049",
+      "ui_index_in_capture": 49,
+      "date_label": "23 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d0b1c10307b286193e87b8400629ed78f9ba6b773bdb3f88a373ba3819e888c2",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        96
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 96,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-050",
+      "ui_index_in_capture": 50,
+      "date_label": "7 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "9ddda828c59aa4f7ac60889e242185dc5b95193e50319d5194b97ffca59b1d9a",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        68
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 68,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-051",
+      "ui_index_in_capture": 51,
+      "date_label": "5 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0be77a188158dd060440bc296399087f6121b8828483f412055ebd39e6514d06",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        32
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 32,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-052",
+      "ui_index_in_capture": 52,
+      "date_label": "3 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "86a59e7126cc0d778c2f12113c835c7b3038455197ce7bf130f61534f42a82de",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        53
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 53,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-053",
+      "ui_index_in_capture": 53,
+      "date_label": "10 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "a334230db0010955326fb9ff055ce209b2f6cfbfc21208cfd040a88e03a524b1",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        114
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 114,
+          "normalized_full_text_similarity": 0.851,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-054",
+      "ui_index_in_capture": 54,
+      "date_label": "14 августа, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "07ed36590ae4d26e1d520ed58045a4a7d48e31a86081e615b1b3838fd73cd8be",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        206
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 206,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-055",
+      "ui_index_in_capture": 55,
+      "date_label": "31 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "3d3449863ff1054e42dfe2d630db9ef988477b9902855a774b13f2ffa03d1fa5",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        55
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 55,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-056",
+      "ui_index_in_capture": 56,
+      "date_label": "1 февраля, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b2fa4a7f52c4974b42c2371b568c8ee6f34f5a31a0514e8d6b710ab2b16b83bd",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        176
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 176,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-057",
+      "ui_index_in_capture": 57,
+      "date_label": "15 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "25996e2cbb297aafd6ae24bb2fbcdd7437eb0a0814f9ee24d90283332117bd46",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        98,
+        56
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 98,
+          "normalized_full_text_similarity": 0.767,
+          "displayed_day_matches": false,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 56,
+          "normalized_full_text_similarity": 0.569,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-058",
+      "ui_index_in_capture": 58,
+      "date_label": "18 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2802136fb89163676749b536b2736d93c7ea19f45b9ae723913f87ac4b03c251",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        30
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 30,
+          "normalized_full_text_similarity": 0.909,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-059",
+      "ui_index_in_capture": 59,
+      "date_label": "14 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "7d359f5e7e98c6e583bff2542fe0e9d6041dbfcbf00b74ccc709ce5ba5f6c81c",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        50
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 50,
+          "normalized_full_text_similarity": 0.898,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-060",
+      "ui_index_in_capture": 60,
+      "date_label": "28 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "8dd2e79b49e0698efbe569ae9958db0bb32781aa7a5f0778f5039ae026fb31ee",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        56
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 56,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-061",
+      "ui_index_in_capture": 61,
+      "date_label": "15 января, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "024ed9e4d2c172331616b2a81b57584489092fbf176c060f6380b842967579df",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        178
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 178,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-062",
+      "ui_index_in_capture": 62,
+      "date_label": "11 июня, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2f97c2ea5d1861061cff363726bd301fa8114a080d83819ea5a83a9ab899994e",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        163
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 163,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-063",
+      "ui_index_in_capture": 63,
+      "date_label": "10 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d463989d7e48d5d45a46fb213a260d5e5640f38a724f2509f1a2a47bf5e1e00e",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        60,
+        87
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 60,
+          "normalized_full_text_similarity": 0.555,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 87,
+          "normalized_full_text_similarity": 0.552,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-064",
+      "ui_index_in_capture": 64,
+      "date_label": "8 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "02d3e47d0d5ab309b5439c459b8b2fea65bc9a34714e09ccbae58d21476ba9b6",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        87
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 87,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-065",
+      "ui_index_in_capture": 65,
+      "date_label": "19 апреля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d07c7c223acc2d7edb4ac472bcdf477b2728b9d2acdcef43982d986075d1237c",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        36,
+        79
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 36,
+          "normalized_full_text_similarity": 0.738,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 79,
+          "normalized_full_text_similarity": 0.494,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-066",
+      "ui_index_in_capture": 66,
+      "date_label": "18 августа, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "560549991e0b3ceab46926291f1809897969558f8b63dbc50d1911207c74a2a7",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        202
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 202,
+          "normalized_full_text_similarity": 0.896,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-067",
+      "ui_index_in_capture": 67,
+      "date_label": "18 августа, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0d3dbeb1f39fc2724067c0158567475a4d74d98e2fe3302f46d5e4f750004673",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        203
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 203,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-068",
+      "ui_index_in_capture": 68,
+      "date_label": "19 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "6ab00df46ce83bde1ca520421ac27743138ad080eefc83f82ba630d7ca5aba94",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        97
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 97,
+          "normalized_full_text_similarity": 0.894,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-069",
+      "ui_index_in_capture": 69,
+      "date_label": "19 апреля, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "647f04a773fa1cbe05e9c06d32e5fae1d63ee61d65b814d6a92eb0c0dd3d1cb7",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        170
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 170,
+          "normalized_full_text_similarity": 0.892,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-070",
+      "ui_index_in_capture": 70,
+      "date_label": "24 июня",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "79e4ccf11f98f668ed110fd48a2c0e537af797c2c8934bb9c968ea09fcd89cf9",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        23
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 23,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-071",
+      "ui_index_in_capture": 71,
+      "date_label": "30 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "1f3baeea8e178ddcc09a8649acd10f56e8be46176d81e08f13d835b6272757c5",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        93
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 93,
+          "normalized_full_text_similarity": 0.891,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-072",
+      "ui_index_in_capture": 72,
+      "date_label": "24 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "fbea1c8b08be5797083ea1ee1f0e8255717c5296315a32a3d112eb9e9bb72b1f",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        95
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 95,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-073",
+      "ui_index_in_capture": 73,
+      "date_label": "28 октября, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "f9b3e421029ddff328424e687e9633117289c72d27259e5dafa026352fa1223d",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        197
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 197,
+          "normalized_full_text_similarity": 0.876,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-074",
+      "ui_index_in_capture": 74,
+      "date_label": "8 декабря, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d1fd41132a973986322ad8fdef3eea909062176e88d64e0a8e739a1995ee0db1",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        194
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 194,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-075",
+      "ui_index_in_capture": 75,
+      "date_label": "15 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b84cd1ba38d22455b161457149e6342b7de40f7a31f7cdc87dd993dbc0fff5b3",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        99
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 99,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-076",
+      "ui_index_in_capture": 76,
+      "date_label": "22 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "3b4677e6447acaa2b3f4a0694b7d8272bc2b18c1b85fe53a471deab74192df15",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        57
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 57,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-077",
+      "ui_index_in_capture": 77,
+      "date_label": "13 мая, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "961f7692c349fdf6a6389c54388bc8d725fc85aa41390d567aea91c3de55121b",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        118,
+        86
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 118,
+          "normalized_full_text_similarity": 0.865,
+          "displayed_day_matches": false,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 86,
+          "normalized_full_text_similarity": 0.481,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-078",
+      "ui_index_in_capture": 78,
+      "date_label": "20 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0633aa739d0f01d0a861c01b1df9550b18f1742ce2fbb9d4c5b6954c95350b45",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        29
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 29,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-079",
+      "ui_index_in_capture": 79,
+      "date_label": "24 ноября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5c59f429eadbd4ba09868c04a144cfc0ab23c014df9aebd183b6e3ca64cad595",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        152
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 152,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-080",
+      "ui_index_in_capture": 80,
+      "date_label": "6 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "1812b355b03110b5306586db663e2d4065f183e1cd4f0b57ceadcd39aa9b9084",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        78
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 78,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-081",
+      "ui_index_in_capture": 81,
+      "date_label": "1 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "49929c700858371c05b69508d9f2b10c7b6115624ecca8cf7e2c169d6f4495d6",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        91
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 91,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-082",
+      "ui_index_in_capture": 82,
+      "date_label": "31 октября, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "a4a662446e8477d566372bf53de489a6482d47d9436d9a21907248a27182c61b",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        196
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 196,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-083",
+      "ui_index_in_capture": 83,
+      "date_label": "12 мая",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0db415afc08802c9baa9a3ac98bf5b6ef2bcd337b7e98973be095ba9984ff439",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        31
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 31,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-084",
+      "ui_index_in_capture": 84,
+      "date_label": "25 февраля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "14d4ac99791b2db5e17b04fa35e0fdabc7a35e81bbe0ba7fe57b1da55ecc50a2",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        47
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 47,
+          "normalized_full_text_similarity": 0.839,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-085",
+      "ui_index_in_capture": 85,
+      "date_label": "27 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b697bd8cbc4d8937380214a7183bc5e327db57c11a78fadd19f45c20d27dfb42",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        120
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 120,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-086",
+      "ui_index_in_capture": 86,
+      "date_label": "15 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "54b4259a261c8a2feab255aab9b233c382fadd90af5db714769dc1d41099f9e9",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        74
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 74,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-087",
+      "ui_index_in_capture": 87,
+      "date_label": "12 августа",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "825e508ab03b38941bf63e5e50894f524e41ea5b1bc6f9ce46be516b10aa7130",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        14,
+        163
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 14,
+          "normalized_full_text_similarity": 0.717,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 163,
+          "normalized_full_text_similarity": 0.594,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-088",
+      "ui_index_in_capture": 88,
+      "date_label": "5 февраля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d20cb61c6ec0cd25a660ca49cf14fe32e63e5b6de7358a3191165fee242cc57c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        132
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 132,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-089",
+      "ui_index_in_capture": 89,
+      "date_label": "21 октября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "f34d80671e2ca36b55cd3a63b3aff9210f8156382ecdf136a4bdc303030d988c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        155
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 155,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-090",
+      "ui_index_in_capture": 90,
+      "date_label": "14 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "8c092e87c18b33f28d0fc974b8f83855b03367ffb14ac696af2375d2fc2ec1c0",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        56,
+        7
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 56,
+          "normalized_full_text_similarity": 0.583,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        },
+        {
+          "revvy_row_id": 7,
+          "normalized_full_text_similarity": 0.548,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-091",
+      "ui_index_in_capture": 91,
+      "date_label": "13 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "004e4ebd24fc504d899184a3befecab89c89c75d3e24eb82f73268c12f19b03c",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        124,
+        79
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 124,
+          "normalized_full_text_similarity": 0.714,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 79,
+          "normalized_full_text_similarity": 0.596,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-092",
+      "ui_index_in_capture": 92,
+      "date_label": "16 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "654c80fdba828bc01c2ecb0909a242b4ff3210b7164cbd4080e21274faa78f2d",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        85
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 85,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-093",
+      "ui_index_in_capture": 93,
+      "date_label": "12 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "652c1b65f96a871ebe1cbd383983f5791d179812e199e15ea6930418100ebb2a",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        86
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 86,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-094",
+      "ui_index_in_capture": 94,
+      "date_label": "12 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "424c6a15c6dfc7f3a18929423a0d5989beee1c2cb2e5e12b05e228a420a7c84b",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        59
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 59,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-095",
+      "ui_index_in_capture": 95,
+      "date_label": "23 июля, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "9af19e68120cfd6aba49be23ea895f4413b068f10feefdf1203fc81ff3efa1da",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        208,
+        78
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 208,
+          "normalized_full_text_similarity": 0.783,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 78,
+          "normalized_full_text_similarity": 0.563,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-096",
+      "ui_index_in_capture": 96,
+      "date_label": "30 мая, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "c75c99b199ff0877e87e94bc6c6b86c33082bcafaaf23fa61bae6e6ed9bafab9",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        164
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 164,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-097",
+      "ui_index_in_capture": 97,
+      "date_label": "25 мая, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b460882229057274fee9279f15f85ef2c85260db78806a0d05aca1d2976fceb0",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        116
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 116,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-098",
+      "ui_index_in_capture": 98,
+      "date_label": "1 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0af7779bdd8c11fe5e3a4eda2ba2ab19f74dc1aa9080b3c47f6ff22a084debc4",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        59,
+        70
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 59,
+          "normalized_full_text_similarity": 0.642,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        },
+        {
+          "revvy_row_id": 70,
+          "normalized_full_text_similarity": 0.593,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-099",
+      "ui_index_in_capture": 99,
+      "date_label": "6 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "6d5a2816f4626851b9635953c8d8974494178155f794b9e9c9ad2514f28ef7f2",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        106
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 106,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-100",
+      "ui_index_in_capture": 100,
+      "date_label": "2 февраля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "51eec5edcbcee2e351085111f2eda24a316dc4663057cb8047d13562a551da58",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        133,
+        12
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 133,
+          "normalized_full_text_similarity": 0.762,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 12,
+          "normalized_full_text_similarity": 0.532,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-101",
+      "ui_index_in_capture": 101,
+      "date_label": "6 марта",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "4b8520c47c7958ab8342ee758536125cd4503da3dca194b29ce3a61a14378fdb",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        44
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 44,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-102",
+      "ui_index_in_capture": 102,
+      "date_label": "27 октября, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "267d737ba4b20a2448736dc9bcc9195c9b54f5bf426a7dc9e5142a8c6b9534db",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        198,
+        66
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 198,
+          "normalized_full_text_similarity": 0.746,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        },
+        {
+          "revvy_row_id": 66,
+          "normalized_full_text_similarity": 0.541,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-103",
+      "ui_index_in_capture": 103,
+      "date_label": "22 июня, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "22a627ae535290e8f3a85dae0d7d7b88f92f994dad3069b3ec5b29601eff8a0a",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        160
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 160,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-104",
+      "ui_index_in_capture": 104,
+      "date_label": "4 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "73e0ba151bbad4ccf30878e59db49eec9652a2fcd3bc0337a59e4d1f4442ceaa",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        79
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 79,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-105",
+      "ui_index_in_capture": 105,
+      "date_label": "2 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "470fb576f5002695170f2a4550781169f871d2817dc2c4b1c67254de0ae69ba0",
+      "match_status": "unresolved_possible_same_platform",
+      "candidate_revvy_row_ids": [
+        108,
+        70
+      ],
+      "confidence": "low",
+      "match_basis": "No exact full normalized text match; similar/date-author candidates retained for sensitivity.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 108,
+          "normalized_full_text_similarity": 0.706,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        },
+        {
+          "revvy_row_id": 70,
+          "normalized_full_text_similarity": 0.681,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-106",
+      "ui_index_in_capture": 106,
+      "date_label": "24 сентября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "bfb094a2bef00b557f25a1edbb7c900023693def8276802b7b39bb753fb1d41c",
+      "match_status": "possible_same_platform_exact_text_metadata_mismatch",
+      "candidate_revvy_row_ids": [
+        66
+      ],
+      "confidence": "medium",
+      "match_basis": "Full normalized text matches, but at least one author/date field disagrees; not auto-merged.",
+      "review_status_from_manual_read": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 66,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": false,
+          "normalized_author_matches": false
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-107",
+      "ui_index_in_capture": 107,
+      "date_label": "30 апреля, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "e159c0b8014a1dfb07975feebb3d6418dc534dab53ae1cbaf1916e467c4e9bb6",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        169
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 169,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-108",
+      "ui_index_in_capture": 108,
+      "date_label": "10 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0371b5bc1686ab71662b3198d22b74c55873829995094ddb57cfcef5be3a02f7",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        103
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "menu_option_unavailable"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 103,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-109",
+      "ui_index_in_capture": 109,
+      "date_label": "15 февраля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "531f1969c0134906bfd55d79f16a7b83d43a8794dfdae0c38990f5bf5cbff0ee",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        130
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 130,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-110",
+      "ui_index_in_capture": 110,
+      "date_label": "20 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "bfb094a2bef00b557f25a1edbb7c900023693def8276802b7b39bb753fb1d41c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        66
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 66,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-111",
+      "ui_index_in_capture": 111,
+      "date_label": "11 января, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "5382118c93ee8ef549e3170f2e9af739f098cd8c40e0b0384f75b5be9b4a6311",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        134
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 134,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-112",
+      "ui_index_in_capture": 112,
+      "date_label": "14 декабря, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "c18e7e0f6cea11456ce5d61180f47a4343b8ae802085a04cdd288ae79e5889dd",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        62
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 62,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-113",
+      "ui_index_in_capture": 113,
+      "date_label": "23 апреля",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d8bd1fb6b986f1402d52ffdec8fe18b3558f39dc7b230e2a6f455d4d490c24ce",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        35
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 35,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-114",
+      "ui_index_in_capture": 114,
+      "date_label": "22 марта, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b26c8295ab90433d1ab3eb3990aa510d7e527156703e436f74bc6dcf9cf573f2",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        128
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 128,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-115",
+      "ui_index_in_capture": 115,
+      "date_label": "7 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "7c3ad078b60be6d710b2fab3c755f99b1c362b79a7751704f99c25c017408d26",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        61
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "ordering_access_or_payment"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 61,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-116",
+      "ui_index_in_capture": 116,
+      "date_label": "14 августа, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "597883d457e46d23fb9d2b0aed7fc9b33c71286c0efa7be6694ca3ce47488988",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        205
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 205,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-117",
+      "ui_index_in_capture": 117,
+      "date_label": "18 мая, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2885a014c5d42c6c1e84c0d295054617250f3c85256b3014c2d84f61c3c37dad",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        166
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 166,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-118",
+      "ui_index_in_capture": 118,
+      "date_label": "29 октября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "b245463a19a78300b8a0a9073d77f0227f81dfa968d0ac3d72b7fc1dd0f03eb5",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        73
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 73,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-119",
+      "ui_index_in_capture": 119,
+      "date_label": "4 июня",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "2d53d8b659d3c9b492f16354ec15ed253e66f9acca1f63df34bb0caabea15653",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        24
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 24,
+          "normalized_full_text_similarity": 0.846,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-120",
+      "ui_index_in_capture": 120,
+      "date_label": "14 мая, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "eae655ece35a85cb238b5520faef66d23073a9c0d1f3342dc7686d005ed31198",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        167
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 167,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-121",
+      "ui_index_in_capture": 121,
+      "date_label": "12 июля, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "f3e574b478291ff2c75528ab7cd5f471cc4aa3243493daa83eeb84f6f40c238a",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        209
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 209,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-122",
+      "ui_index_in_capture": 122,
+      "date_label": "27 марта",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d5594f7f16c6ee201de6838273aa74668b3c4cb6ab0ae74230703db1b42f1f83",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        41
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "service_communication_or_recovery",
+        "packaging_or_presentation"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 41,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-123",
+      "ui_index_in_capture": 123,
+      "date_label": "18 июня, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ad92875edb6f32eb571a1f285b39f849bdd959f7ac7977012580ac3a8df74b0e",
+      "match_status": "probable_same_platform_text_variant",
+      "candidate_revvy_row_ids": [
+        161
+      ],
+      "confidence": "medium-high",
+      "match_basis": "Manually checked high text similarity plus matching date and/or author; retained as a probable version match, not exact text.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 161,
+          "normalized_full_text_similarity": 0.982,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-124",
+      "ui_index_in_capture": 124,
+      "date_label": "12 января",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "6f6d4b05d79b4a1602247d9bb62ca407269780be3ed9826c7cdbfbfd0dd6206d",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        58
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 58,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-125",
+      "ui_index_in_capture": 125,
+      "date_label": "16 декабря, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "437c8f7c1aa7f42c09c844ba0e7f6d3ad1994d0baf6aa0874ed7f5334c474acd",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        150
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "service_communication_or_recovery"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 150,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-126",
+      "ui_index_in_capture": 126,
+      "date_label": "13 октября, 2023",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "3c4316f2ec94dc66386c12942cc1828c70ca0c4b585a8b33a09678caaa6d5d9d",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        199
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 199,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-127",
+      "ui_index_in_capture": 127,
+      "date_label": "13 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "0931aaa9727d313ba03c555c0dd8add4a649dfc718325106f76e475a54ae3294",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        101
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 101,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-128",
+      "ui_index_in_capture": 128,
+      "date_label": "20 марта, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "752bd6ae5b9c70c832cc4477b13e4e93c5212f0f33f9278d15b48a99848193bd",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        173
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "packaging_or_presentation"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 173,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-129",
+      "ui_index_in_capture": 129,
+      "date_label": "20 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "95a29cda5bfc112ef35c1150316e4f9900477a5f9d04ba93814463d5b7b585a5",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        111
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 111,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-130",
+      "ui_index_in_capture": 130,
+      "date_label": "28 мая, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ca927cb3e05dbafab4742add3f7b4824a441b7f2746bfbad0b6ad82b0b99abb0",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        165
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 165,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-132",
+      "ui_index_in_capture": 132,
+      "date_label": "11 сентября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "f0f3437d4a59c946d7ebec0d3434ea6522eb9dfde4acb5f38c9cbb8bcc48fe79",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        157
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 157,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-133",
+      "ui_index_in_capture": 133,
+      "date_label": "17 ноября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d29c6f126629063fb34f1d1999786b35ff19a80989708d59b9968c9bdf1b7014",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        153
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery",
+        "packaging_or_presentation"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 153,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-134",
+      "ui_index_in_capture": 134,
+      "date_label": "13 ноября, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ffa129206678b5cf3ad6ccd38c3100a6068fc2610a37ca4871e1ad64572988cc",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        154
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 154,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-135",
+      "ui_index_in_capture": 135,
+      "date_label": "17 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "c90ca11a1c6f8dc647ebf43bd76bdd156f5bd0c9e8aa7c3dfc175b8991e7759c",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        122
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "food_quality_taste_texture_or_recipe",
+        "service_communication_or_recovery"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 122,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-136",
+      "ui_index_in_capture": 136,
+      "date_label": "1 мая, 2024",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "d584b58f3634853f14bc5af9d3a746418bc4130167b7478ac71daa137c296488",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        168
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing",
+        "service_communication_or_recovery"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 168,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-137",
+      "ui_index_in_capture": 137,
+      "date_label": "27 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "1eba7ffe0dff5c9d174b184f6adfe88f2ab0b5c3f789527a7662be222e7cce84",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        121
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe",
+        "packaging_or_presentation"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 121,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-138",
+      "ui_index_in_capture": 138,
+      "date_label": "29 ноября, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ec5c3a8b284e99746a8fdbfeea2f1ba4630588152324301535b354ad5ef45482",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        65
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "portion_or_value"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 65,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-139",
+      "ui_index_in_capture": 139,
+      "date_label": "15 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "553d5e00e6d88c1f9f254cb92786c959164238c7fbf38aa6d6ad31930d2d3832",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        100
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 100,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-140",
+      "ui_index_in_capture": 140,
+      "date_label": "2 апреля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "fa78ae63aaf519a023902dcd7ce574c6864698cea29b1ec5e9117373e5d65c27",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        127
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 127,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-141",
+      "ui_index_in_capture": 141,
+      "date_label": "21 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "ea25777ba38fc21f116fe7507c3181b5ecc741e64c8cfe1caa99bcbecca2e85f",
+      "match_status": "confirmed_same_platform_exact_text_date_author",
+      "candidate_revvy_row_ids": [
+        110
+      ],
+      "confidence": "high",
+      "match_basis": "Full normalized text, displayed day, and normalized author all agree.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing",
+        "portion_or_value"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 110,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-142",
+      "ui_index_in_capture": 142,
+      "date_label": "31 августа, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "16f710fa5979e2e8f91000a5df43965eea3626004611106785c327ec5d9134bd",
+      "match_status": "short_exact_text_metadata_supported",
+      "candidate_revvy_row_ids": [
+        92
+      ],
+      "confidence": "medium",
+      "match_basis": "Short exact text also occurs on multiple rows; date and normalized author identify one candidate. Short text alone is not treated as proof.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 92,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    },
+    {
+      "ui_id": "YM-143",
+      "ui_index_in_capture": 143,
+      "date_label": "5 июля, 2025",
+      "platform": "Яндекс Карты",
+      "normalized_text_sha256": "16f710fa5979e2e8f91000a5df43965eea3626004611106785c327ec5d9134bd",
+      "match_status": "short_exact_text_metadata_supported",
+      "candidate_revvy_row_ids": [
+        115
+      ],
+      "confidence": "medium",
+      "match_basis": "Short exact text also occurs on multiple rows; date and normalized author identify one candidate. Short text alone is not treated as proof.",
+      "review_status_from_manual_read": "same_experience_already_coded_in_revvy",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "candidate_match_evidence": [
+        {
+          "revvy_row_id": 115,
+          "normalized_full_text_similarity": 1.0,
+          "displayed_day_matches": true,
+          "normalized_author_matches": true
+        }
+      ]
+    }
+  ],
+  "eda_rows": [
+    {
+      "public_id": "YE-001",
+      "ui_id": "YE-UI-001",
+      "platform": "Яндекс Еда",
+      "date_label": "5 сентября",
+      "date_normalized": "2026-09-05",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "d9282a9c053a34ea34986ef50b57e6fba0f5bb50e497f37f8f8d9236920df058",
+      "review_status": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "short_verification_excerpt": "сет, обслуживание и доставка понравились",
+      "count_as_new_platform_opinion": true
+    },
+    {
+      "public_id": "YE-002",
+      "ui_id": "YE-UI-002",
+      "platform": "Яндекс Еда",
+      "date_label": "5 августа",
+      "date_normalized": "2026-08-05",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "390ccb7eff9297c1423096349f57c51527ab6d6027dce272d0a0e04197b97cf1",
+      "review_status": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "short_verification_excerpt": "вкусные роллы, быстрая вежливая доставка",
+      "count_as_new_platform_opinion": true
+    },
+    {
+      "public_id": "YE-003",
+      "ui_id": "YE-UI-131",
+      "platform": "Яндекс Еда",
+      "date_label": "25 сентября",
+      "date_normalized": "2026-09-25",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "7ac4f84dadf6afaa058d1d7cf858ce1a834983c10508f9cf0f174872987bd351",
+      "review_status": "specific_issue_or_dissatisfaction",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "cold_or_temperature_problem"
+      ],
+      "short_verification_excerpt": "«привкусом гари»; «еле тёплые приехали»",
+      "count_as_new_platform_opinion": true
+    }
+  ],
+  "confidence_caveats": [
+    "Short exact texts are not treated as proven duplicates by text alone; rows 92 and 115 are matched to separate UI records only where normalized author and displayed day uniquely agree.",
+    "Text-variant matches are marked probable, not exact. 12 low-similarity same-platform candidates plus 1 exact-text metadata conflict are left unresolved; they are not forced into the deduped baseline.",
+    "UI date labels with no year are preserved as displayed; for the three Eda records, 2026 is inferred from current card context and flagged as inferred."
+  ]
+}
