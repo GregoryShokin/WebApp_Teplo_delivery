@@ -1,6 +1,6 @@
 # Маркетинг — обзор раздела
 
-**Отзывы и исследование клиентов:** [Customer Feedback Research](customer-feedback-research/README.md) — постоянный реестр Starter, Revvy, Карт, Яндекс Еды и WhatsApp; свежая выгрузка и методы 13.10.2026.
+**Отзывы и исследование клиентов:** [Customer Feedback Research](customer-feedback-research/README.md) — постоянный реестр Starter, Revvy, Карт, Яндекс Еды и WhatsApp; свежая выгрузка и методы 13.10.2026; [обновлённый рейтинг жалоб за2025–2026 со Starter](customer-feedback-research/snapshots/2026-10-13/ranking-2025-2026/complaint-ranking.md).
 
 Полная маркетинговая работа по «Тепло»: от диагностики до плана запуска. Документы идут по фазам — читать сверху вниз.
 

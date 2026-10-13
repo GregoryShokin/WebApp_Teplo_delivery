@@ -1,19 +1,22 @@
 {
-  "version": 1,
+  "version": 2,
   "as_of": "2026-10-13",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Customer Feedback Research/2026-10-13",
   "sources": [
     {
       "id": "starter",
-      "status": "complete_capture_not_fully_theme_coded",
+      "status": "complete_capture_semantically_coded_all_2025_2026_texts",
       "manifest": "snapshots/2026-10-13/starter/starter-manifest.json",
       "metadata": "snapshots/2026-10-13/starter/starter-feedback-metadata.jsonl",
       "summary": "snapshots/2026-10-13/starter/summary.md",
       "raw_relative_to_private_archive": "starter/starter-feedback-private.jsonl",
       "method": "methods/starter-feedback.md",
       "rows": 10535,
-      "with_text": 3814
+      "with_text": 3814,
+      "current_period_rows": 3580,
+      "current_period_texts": 1310,
+      "current_period_coding": "snapshots/2026-10-13/ranking-2025-2026/starter-coded.jsonl"
     },
     {
       "id": "public_maps_via_revvy",
@@ -21,7 +24,10 @@
       "coding": "snapshots/2026-10-13/previous-corpus/public-unified-coded.json",
       "raw_relative_to_private_archive": "revvy/public-export-20261011.xlsx",
       "rows": 259,
-      "with_text": 230
+      "with_text": 230,
+      "current_period_rows": 149,
+      "current_period_texts": 141,
+      "current_period_coding": "snapshots/2026-10-13/ranking-2025-2026/public-coded.jsonl"
     },
     {
       "id": "yandex_ui",
@@ -57,10 +63,17 @@
       "legacy_referenced_rows": 10136
     }
   ],
-  "current_theme_ranking": "snapshots/2026-10-13/previous-corpus/complaint-ranking.md",
+  "current_theme_ranking": "snapshots/2026-10-13/ranking-2025-2026/complaint-ranking.md",
   "current_theme_ranking_excludes": [
-    "starter",
-    "prompted_whatsapp_answers"
+    "reviews_before_2025",
+    "ratings_without_text",
+    "prompted_whatsapp_answers",
+    "eda_3_reviews_year_inferred_not_explicit"
   ],
-  "next_required_for_all_source_theme_ranking": "Code Starter comment texts and reconcile potential cross-source duplicate incidents; preserve source and period strata."
+  "next_required_for_all_source_theme_ranking": "Confirm displayed/inferred Yandex Eda years; reconcile customer/order identity before interpreting observations as unique incidents.",
+  "current_theme_ranking_period": {
+    "from": "2025-01-01",
+    "through": "2026-10-13",
+    "basis": "review/message date"
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "normalization": "lowercase, remove non-word characters; at least40 normalizedcharacters; candidates not identity match",
+  "groups": [
+    [
+      [
+        "starter",
+        "8009",
+        "2025-04-27"
+      ],
+      [
+        "public",
+        "R121",
+        "27.04.2025 17:39"
+      ]
+    ],
+    [
+      [
+        "public",
+        "R003",
+        "20.09.2026 00:00"
+      ],
+      [
+        "public",
+        "R004",
+        "16.09.2026 12:31"
+      ]
+    ]
+  ]
+}

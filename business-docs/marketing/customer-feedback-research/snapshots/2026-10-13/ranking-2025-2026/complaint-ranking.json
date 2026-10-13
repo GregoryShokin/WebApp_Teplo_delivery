@@ -1,0 +1,144 @@
+{
+  "as_of": "2026-10-13",
+  "period": "2025-01-01 through2026-10-13",
+  "unit": "Source observations after2 exact crossposts removed; NOT unique people/orders. One topic at most once per observation.",
+  "coverage": {
+    "starter_ratings": 3580,
+    "starter_texts": 1310,
+    "starter_empty": 2270,
+    "starter_text_statuses": {
+      "positive_or_neutral": 757,
+      "specific_issue": 529,
+      "suggestion": 9,
+      "vague_negative": 9,
+      "unclear": 6
+    },
+    "starter_five_star_specific_issues": 56,
+    "public_records": 149,
+    "public_texts": 141,
+    "public_source_counts": {
+      "Яндекс Карты": 120,
+      "Google Карты": 29
+    },
+    "public_records_after_exact_crossposts": 147,
+    "internal_specific_episodes": 12,
+    "eda_year_unconfirmed_excluded": 3,
+    "combined_observations_with_specific_issues": 573
+  },
+  "ranking": [
+    {
+      "code": "food",
+      "topic": "Вкус, приготовление и качество еды",
+      "starter": 226,
+      "maps_net": 17,
+      "revvy_internal": 9,
+      "total": 252
+    },
+    {
+      "code": "temperature",
+      "topic": "Холодная или остывшая еда",
+      "starter": 143,
+      "maps_net": 3,
+      "revvy_internal": 1,
+      "total": 147
+    },
+    {
+      "code": "waiting",
+      "topic": "Долгое ожидание и нарушение времени",
+      "starter": 120,
+      "maps_net": 8,
+      "revvy_internal": 3,
+      "total": 131
+    },
+    {
+      "code": "completeness",
+      "topic": "Недокомплект и ошибки в заказе",
+      "starter": 91,
+      "maps_net": 5,
+      "revvy_internal": 2,
+      "total": 98
+    },
+    {
+      "code": "value",
+      "topic": "Цена, размер порции и количество начинки",
+      "starter": 50,
+      "maps_net": 6,
+      "revvy_internal": 3,
+      "total": 59
+    },
+    {
+      "code": "presentation",
+      "topic": "Внешний вид и упаковка",
+      "starter": 53,
+      "maps_net": 3,
+      "revvy_internal": 2,
+      "total": 58
+    },
+    {
+      "code": "communication",
+      "topic": "Общение и решение проблем",
+      "starter": 36,
+      "maps_net": 4,
+      "revvy_internal": 2,
+      "total": 42
+    },
+    {
+      "code": "ordering",
+      "topic": "Оформление, оплата и доступность заказа",
+      "starter": 20,
+      "maps_net": 3,
+      "revvy_internal": 1,
+      "total": 24
+    },
+    {
+      "code": "menu_options",
+      "topic": "Не хватает нужных позиций или дополнений",
+      "starter": 1,
+      "maps_net": 1,
+      "revvy_internal": 0,
+      "total": 2
+    }
+  ],
+  "starter_by_year": {
+    "2025": {
+      "ratings": 2481,
+      "texts": 886,
+      "specific_issue_texts": 361,
+      "topics": {
+        "completeness": 55,
+        "waiting": 76,
+        "food": 155,
+        "value": 33,
+        "temperature": 101,
+        "presentation": 43,
+        "communication": 27,
+        "ordering": 14,
+        "menu_options": 1
+      }
+    },
+    "2026": {
+      "ratings": 1099,
+      "texts": 424,
+      "specific_issue_texts": 168,
+      "topics": {
+        "food": 71,
+        "temperature": 42,
+        "completeness": 36,
+        "value": 17,
+        "waiting": 44,
+        "communication": 9,
+        "ordering": 6,
+        "presentation": 10
+      }
+    }
+  },
+  "conditional_eda_addition": {
+    "food": 1,
+    "temperature": 1
+  },
+  "limits": [
+    "Sources can still describe same event; exact-text check is not complete customer/order deduplication.",
+    "Food includes8 unverified reports of illness; no causal/medical conclusion.",
+    "Prompted WhatsApp survey excluded; media not analyzed; current snapshot only."
+  ]
+}

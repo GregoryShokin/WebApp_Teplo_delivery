@@ -39,7 +39,7 @@
 
 ## 3. Starter CRM — `https://crm.starterapp.ru/fmteplo/api/v1/frontend/` (+ `api/v2`)
 
-> Актуализация 13.10.2026: [полная выгрузка Starter и метод](customer-feedback-research/methods/starter-feedback.md) — 10 535 записей, 3 814 текста. Старые 10 136 и `research/processed/starter/` ниже — историческая ссылка, первичный файл по ней не найден.
+> Актуализация 13.10.2026: [полная выгрузка Starter и метод](customer-feedback-research/methods/starter-feedback.md) — 10 535 записей, 3 814 текста. [Рейтинг за2025–2026 со Starter](customer-feedback-research/snapshots/2026-10-13/ranking-2025-2026/complaint-ranking.md): 3 580 записей, все 1 310 текстов прочитаны. Старые 10 136 и `research/processed/starter/` ниже — историческая ссылка, первичный файл по ней не найден.
 *Доступ: сессия владельца (браузер). OpenAPI: `/fmteplo/api/v1/openapi.json` (282 пути) — полный реестр. Артефакты: `research/processed/starter/`.*
 
 | Endpoint | Метод | Что даёт | Доступ | Статус |

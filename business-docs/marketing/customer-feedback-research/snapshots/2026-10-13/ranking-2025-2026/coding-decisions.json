@@ -1,0 +1,911 @@
+{
+  "version": "2026-10-13-v2-2025-2026",
+  "decisions": [
+    {
+      "source": "Starter",
+      "record_id": 7244,
+      "before": {
+        "feedback_id": 7244,
+        "codes": [
+          "communication"
+        ],
+        "status": "specific_issue",
+        "note": "Не передали пожелание для подписи на коробке.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 7244,
+        "codes": [
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Не выполнили просьбу написать пожелание на коробке.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Невыполненная просьба на упаковке ближе к неполному выполнению инструкции заказа, чем к обмену информацией/обслуживанию."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9054,
+      "before": {
+        "feedback_id": 9054,
+        "codes": [
+          "presentation"
+        ],
+        "status": "specific_issue",
+        "note": "Роллы привезли в плохом состоянии; конкретный дефект в тексте не уточнён.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 9054,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Состояние роллов оценено резко отрицательно, но конкретный дефект нельзя определить без недоступного фото.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "В тексте нет описания повреждения, вида или иного конкретного дефекта; фото в источнике анализа отсутствовало. По codebook общий «ужас/безобразие» без конкретики не получает тематический код."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10381,
+      "before": {
+        "feedback_id": 10381,
+        "codes": [
+          "presentation"
+        ],
+        "status": "specific_issue",
+        "note": "Вероятно, роллы были рассыпаны/развалены; формулировка неоднозначна.",
+        "confidence": "low",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 10381,
+        "codes": [],
+        "status": "unclear",
+        "note": "Формулировка не позволяет определить, что именно было не так.",
+        "confidence": "low",
+        "subcodes": []
+      },
+      "reason": "Фрагмент «Были в рассыпной» слишком неоднозначен, чтобы выводить, что роллы развалились; исправить на unclear вместо приписанной presentation-проблемы."
+    },
+    {
+      "source": "Starter",
+      "record_id": 7199,
+      "before": {
+        "feedback_id": 7199,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Конкретная претензия к вкусу, качеству ингредиента или приготовлению.",
+        "confidence": "high",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 7199,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "В роллах обнаружены нитки; автор резко критикует качество.",
+        "confidence": "high",
+        "subcodes": []
+      },
+      "reason": "Код food верен, но исходное примечание перечисляет общие возможные дефекты вместо конкретного текста."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9099,
+      "before": {
+        "feedback_id": 9099,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Конкретная претензия к вкусу, качеству ингредиента или приготовлению.",
+        "confidence": "high",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 9099,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "В пицце обнаружен короткий тёмный волос.",
+        "confidence": "high",
+        "subcodes": []
+      },
+      "reason": "Код food верен, но примечание слишком общее и теряет явно названный посторонний предмет."
+    },
+    {
+      "source": "Starter",
+      "record_id": 7648,
+      "before": {
+        "feedback_id": 7648,
+        "codes": [
+          "food",
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Рис недоварен; автор указывает на неполный/неверный состав роллов.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 7648,
+        "codes": [
+          "food",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Рис недоварен; начинки в роллах, по отзыву, почти не было.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Мало/отсутствует начинка без утверждения о пропущенной заказанной позиции относится к value; полнота заказанных блюд здесь не описана."
+    },
+    {
+      "source": "Starter",
+      "record_id": 8090,
+      "before": {
+        "feedback_id": 8090,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Неясная краткая критика теста пиццы.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 8090,
+        "codes": [
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца описана как почти полностью состоящая из теста; вероятно, начинки было мало.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Фраза неоднозначна, но вероятнее указывает на малое количество начинки, а не на вкус теста; по codebook это value. Оставить medium."
+    },
+    {
+      "source": "Starter",
+      "record_id": 8505,
+      "before": {
+        "feedback_id": 8505,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Общее замечание, что раньше было вкуснее, без указания конкретного продукта или дефекта.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 8505,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Автор отмечает ухудшение вкуса по сравнению с прежним опытом; блюдо не уточнено.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Текст прямо указывает на ухудшение вкуса; codebook относит явную претензию ко вкусу к food, даже если блюдо не названо."
+    },
+    {
+      "source": "Starter",
+      "record_id": 7155,
+      "before": {
+        "feedback_id": 7155,
+        "codes": [
+          "temperature",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца и роллы холодные; платность перечисленных дополнений, вероятно, отмечена как отдельная претензия.",
+        "subcodes": [
+          "unknown_expectation"
+        ],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 7155,
+        "codes": [
+          "temperature",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца и роллы холодные; начинки почти не чувствуется, отдельно отмечена платность дополнений.",
+        "subcodes": [
+          "hot_food",
+          "unknown_expectation"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "В температурной жалобе отдельно названа пицца и роллы: применить hot_food к пицце и unknown_expectation к роллам."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10592,
+      "before": {
+        "feedback_id": 10592,
+        "codes": [
+          "waiting",
+          "temperature"
+        ],
+        "status": "specific_issue",
+        "note": "Заказ доставили дольше двух часов; пицца и роллы остыли.",
+        "subcodes": [
+          "unknown_expectation"
+        ],
+        "confidence": "high"
+      },
+      "after": {
+        "feedback_id": 10592,
+        "codes": [
+          "waiting",
+          "temperature"
+        ],
+        "status": "specific_issue",
+        "note": "Заказ доставили дольше двух часов; пицца и роллы остыли.",
+        "subcodes": [
+          "hot_food",
+          "unknown_expectation"
+        ],
+        "confidence": "high"
+      },
+      "reason": "Пицца названа холодной, поэтому нужен hot_food; ожидание роллов по температуре не определено, поэтому сохранить unknown_expectation."
+    },
+    {
+      "source": "Starter",
+      "record_id": 7743,
+      "before": {
+        "feedback_id": 7743,
+        "codes": [
+          "food",
+          "ordering"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца сухая; клиент также указывает на невозможность приложить фото.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 7743,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца сухая.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Невозможность прикрепить фото в форме отзыва не относится к коду ordering по codebook (сайт/приложение для заказа и оплаты); оставляем явную претензию к продукту."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10186,
+      "before": {
+        "feedback_id": 10186,
+        "codes": [
+          "completeness",
+          "communication"
+        ],
+        "status": "specific_issue",
+        "note": "Не выполнили озвученную по телефону замену пиццы; длительность указана без отдельной явной оценки срока.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "after": {
+        "feedback_id": 10186,
+        "codes": [
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Не выполнили озвученную по телефону замену одной пиццы на другую.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "По тексту подтверждён неверный состав после просьбы о замене. Сам факт звонка и невыполненная замена не подтверждают отдельный сбой коммуникации; код completeness достаточно."
+    },
+    {
+      "source": "Starter",
+      "record_id": 7730,
+      "before": {
+        "feedback_id": 7730,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Пожелание уменьшить сладость риса.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 7730,
+        "codes": [],
+        "status": "suggestion",
+        "note": "Пожелание немного уменьшить сахар при общей похвале; избыточная сладость прямо не заявлена.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Единое правило пожеланий: как просьбы увеличить соус или начинку без явного недовольства."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9013,
+      "before": {
+        "feedback_id": 9013,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Упомянуты неприятные симптомы, но причинность не установлена.",
+        "confidence": "low",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 9013,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "confidence": "medium",
+        "subcodes": [
+          "reported_symptoms_unverified"
+        ]
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10079,
+      "before": {
+        "feedback_id": 10079,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Упомянуты симптомы, но причинность не установлена.",
+        "confidence": "low",
+        "subcodes": []
+      },
+      "after": {
+        "feedback_id": 10079,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "confidence": "medium",
+        "subcodes": [
+          "reported_symptoms_unverified"
+        ]
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 8218,
+      "before": {
+        "feedback_id": 8218,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Общее обвинение в отравлении без описания блюда или проверяемой связи.",
+        "subcodes": [],
+        "confidence": "low"
+      },
+      "after": {
+        "feedback_id": 8218,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9058,
+      "before": {
+        "feedback_id": 9058,
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Автор сообщает о ночных желудочно-кишечных симптомах и просит проверить продукты; причинная связь с едой не установлена.",
+        "subcodes": [],
+        "confidence": "low"
+      },
+      "after": {
+        "feedback_id": 9058,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 8849,
+      "before": {
+        "feedback_id": 8849,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о предполагаемом отравлении после роллов; причинная связь не проверена.",
+        "subcodes": [
+          "health_complaint_alleged"
+        ],
+        "confidence": "high"
+      },
+      "after": {
+        "feedback_id": 8849,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "health_complaint_alleged",
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9884,
+      "before": {
+        "feedback_id": 9884,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о плохом самочувствии после роллов и подозревает отравление; причинная связь не проверена.",
+        "subcodes": [
+          "health_complaint_alleged"
+        ],
+        "confidence": "high"
+      },
+      "after": {
+        "feedback_id": 9884,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "health_complaint_alleged",
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 9894,
+      "before": {
+        "feedback_id": 9894,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает об отравлении после роллов и обращении за медицинской помощью; подтверждающие документы и причинная связь не проверены.",
+        "subcodes": [
+          "health_complaint_alleged"
+        ],
+        "confidence": "high"
+      },
+      "after": {
+        "feedback_id": 9894,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "health_complaint_alleged",
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10365,
+      "before": {
+        "feedback_id": 10365,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о предполагаемом отравлении роллами; причинная связь не проверена.",
+        "subcodes": [
+          "health_complaint_alleged"
+        ],
+        "confidence": "high"
+      },
+      "after": {
+        "feedback_id": 10365,
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о недомогании после еды или связывает его с заказом. Причина и диагноз независимо не подтверждены.",
+        "subcodes": [
+          "health_complaint_alleged",
+          "reported_symptoms_unverified"
+        ],
+        "confidence": "medium"
+      },
+      "reason": "Регистрируем конкретное сообщение о качестве/безопасности как жалобу, не подтверждаем отравление; один критерий для всех восьми сообщений."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10130,
+      "before": {
+        "feedback_id": 10130,
+        "codes": [],
+        "status": "unclear",
+        "note": "Автор спрашивает о подарке, но условие его получения не указано.",
+        "subcodes": [],
+        "confidence": "low"
+      },
+      "after": {
+        "feedback_id": 10130,
+        "codes": [
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает об отсутствии ожидаемого подарка. Право на подарок и условия акции не проверены.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Как ID10369: фиксируем расхождение с ожиданием комплектации, не устанавливая нарушение правил акции."
+    },
+    {
+      "source": "Starter",
+      "record_id": 10259,
+      "before": {
+        "feedback_id": 10259,
+        "codes": [],
+        "status": "unclear",
+        "note": "Автор спрашивает о подарочной пицце, но условие её получения не указано.",
+        "subcodes": [],
+        "confidence": "low"
+      },
+      "after": {
+        "feedback_id": 10259,
+        "codes": [
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает об отсутствии ожидаемого подарка. Право на подарок и условия акции не проверены.",
+        "subcodes": [],
+        "confidence": "medium"
+      },
+      "reason": "Как ID10369: фиксируем расхождение с ожиданием комплектации, не устанавливая нарушение правил акции."
+    },
+    {
+      "source": "Яндекс Карты",
+      "record_id": "R042",
+      "before": {
+        "record_id": "R042",
+        "source": "Яндекс Карты",
+        "date": "2026-03-21",
+        "date_precision": "explicit_year",
+        "rating": 5,
+        "text_present": true,
+        "text_sha256": "016512ee348b821d29654b67d697e046f125b23cf25e54e1369d5ace95d3732f",
+        "codes": [
+          "waiting"
+        ],
+        "status": "specific_issue",
+        "note": "Несмотря на высокую оценку, клиент выбирает самовывоз из-за доставки.",
+        "confidence": "high"
+      },
+      "after": {
+        "record_id": "R042",
+        "source": "Яндекс Карты",
+        "date": "2026-03-21",
+        "date_precision": "explicit_year",
+        "rating": 5,
+        "text_present": true,
+        "text_sha256": "016512ee348b821d29654b67d697e046f125b23cf25e54e1369d5ace95d3732f",
+        "codes": [
+          "waiting"
+        ],
+        "status": "specific_issue",
+        "note": "Несмотря на высокую оценку, клиент выбирает самовывоз из-за доставки.",
+        "confidence": "medium"
+      },
+      "reason": "Повторное чтение и независимая проверка пограничных формулировок."
+    },
+    {
+      "source": "Яндекс Карты",
+      "record_id": "R053",
+      "before": {
+        "record_id": "R053",
+        "source": "Яндекс Карты",
+        "date": "2026-02-03",
+        "date_precision": "explicit_year",
+        "rating": 5,
+        "text_present": true,
+        "text_sha256": "b74552ab0c7044a93c827e13990e362951f522bc95e2f94dddd3c16381eefe0f",
+        "codes": [],
+        "status": "suggestion",
+        "note": "",
+        "confidence": "high"
+      },
+      "after": {
+        "record_id": "R053",
+        "source": "Яндекс Карты",
+        "date": "2026-02-03",
+        "date_precision": "explicit_year",
+        "rating": 5,
+        "text_present": true,
+        "text_sha256": "b74552ab0c7044a93c827e13990e362951f522bc95e2f94dddd3c16381eefe0f",
+        "codes": [
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "В шаурме не ощущается ананас; клиент просит увеличить его количество.",
+        "confidence": "medium"
+      },
+      "reason": "Повторное чтение и независимая проверка пограничных формулировок."
+    },
+    {
+      "source": "Яндекс Карты",
+      "record_id": "R127",
+      "before": {
+        "record_id": "R127",
+        "source": "Яндекс Карты",
+        "date": "2025-04-02",
+        "date_precision": "explicit_year",
+        "rating": 1,
+        "text_present": true,
+        "text_sha256": "4effc42f75c96a8190aab7a65c0e60125e3747fdddb361caedf3d2871cacb693",
+        "codes": [
+          "food",
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Недоваренный рис, ошибка в картофеле или соусе.",
+        "confidence": "high"
+      },
+      "after": {
+        "record_id": "R127",
+        "source": "Яндекс Карты",
+        "date": "2025-04-02",
+        "date_precision": "explicit_year",
+        "rating": 1,
+        "text_present": true,
+        "text_sha256": "4effc42f75c96a8190aab7a65c0e60125e3747fdddb361caedf3d2871cacb693",
+        "codes": [
+          "food",
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Недоваренный рис; перепутаны картофель и соус.",
+        "confidence": "high"
+      },
+      "reason": "Повторное чтение и независимая проверка пограничных формулировок."
+    },
+    {
+      "source": "Яндекс Карты",
+      "record_id": "R128",
+      "before": {
+        "record_id": "R128",
+        "source": "Яндекс Карты",
+        "date": "2025-03-22",
+        "date_precision": "explicit_year",
+        "rating": 4,
+        "text_present": true,
+        "text_sha256": "987d0f3a5d595432caa5a448d114e9e93ba59b9b44d2a103548de08e8cf65db7",
+        "codes": [
+          "food",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Сухая курица, не хватает начинки и соуса.",
+        "confidence": "high"
+      },
+      "after": {
+        "record_id": "R128",
+        "source": "Яндекс Карты",
+        "date": "2025-03-22",
+        "date_precision": "explicit_year",
+        "rating": 4,
+        "text_present": true,
+        "text_sha256": "987d0f3a5d595432caa5a448d114e9e93ba59b9b44d2a103548de08e8cf65db7",
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Суховатая курица; пожелание увеличить начинку и соус учтено отдельно от жалобы.",
+        "confidence": "high"
+      },
+      "reason": "Повторное чтение и независимая проверка пограничных формулировок."
+    },
+    {
+      "source": "Revvy internal",
+      "record_id": "E02",
+      "before": {
+        "record_id": "E02",
+        "history": "02",
+        "source": "Revvy internal",
+        "date": "2026-10-04",
+        "date_precision": "explicit_year",
+        "codes": [
+          "waiting",
+          "temperature",
+          "food",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Опоздание; холодная еда; подача, консистенция риса и вкус блюд не устроили; в ролле мало начинки.",
+        "confidence": "high"
+      },
+      "after": {
+        "record_id": "E02",
+        "history": "02",
+        "source": "Revvy internal",
+        "date": "2026-10-04",
+        "date_precision": "explicit_year",
+        "codes": [
+          "waiting",
+          "temperature",
+          "food",
+          "value",
+          "presentation"
+        ],
+        "status": "specific_issue",
+        "note": "Опоздание; холодная еда; подача, консистенция риса и вкус блюд не устроили; в ролле мало начинки.",
+        "confidence": "high"
+      },
+      "reason": "Прочитан оригинал: отдельная явная претензия к неаккуратной подаче/соусу. Старая разметка это не учитывала."
+    }
+  ],
+  "rejected_qa_recommendations": [
+    {
+      "record_id": "Starter:10017",
+      "reason": "Разный размер кусочков — неравномерная нарезка/внешний вид; нехватка общего количества не заявлена. Оставлена presentation."
+    },
+    {
+      "record_id": "Starter:7889",
+      "reason": "Недопитая посторонняя бутылка в пакете не доказывает, что это заказанная позиция. Не добавляем completeness, оставляем presentation."
+    },
+    {
+      "record_id": "public:R071",
+      "reason": "Явное сообщение о закрытии точки относится к доступности заказа. Не утверждаем, что клиент пытался оформить заказ."
+    }
+  ],
+  "date_normalization_corrections": [
+    {
+      "feedback_id": 7233,
+      "old_date_utc_day": "2025-01-30",
+      "review_local_date": "2025-01-31"
+    },
+    {
+      "feedback_id": 7461,
+      "old_date_utc_day": "2025-02-20",
+      "review_local_date": "2025-02-21"
+    },
+    {
+      "feedback_id": 8514,
+      "old_date_utc_day": "2025-07-15",
+      "review_local_date": "2025-07-16"
+    },
+    {
+      "feedback_id": 8833,
+      "old_date_utc_day": "2025-09-12",
+      "review_local_date": "2025-09-13"
+    },
+    {
+      "feedback_id": 8998,
+      "old_date_utc_day": "2025-10-12",
+      "review_local_date": "2025-10-13"
+    },
+    {
+      "feedback_id": 9033,
+      "old_date_utc_day": "2025-10-18",
+      "review_local_date": "2025-10-19"
+    },
+    {
+      "feedback_id": 9608,
+      "old_date_utc_day": "2026-01-24",
+      "review_local_date": "2026-01-25"
+    },
+    {
+      "feedback_id": 10001,
+      "old_date_utc_day": "2026-04-30",
+      "review_local_date": "2026-05-01"
+    },
+    {
+      "feedback_id": 10044,
+      "old_date_utc_day": "2026-05-06",
+      "review_local_date": "2026-05-07"
+    },
+    {
+      "feedback_id": 10082,
+      "old_date_utc_day": "2026-05-16",
+      "review_local_date": "2026-05-17"
+    },
+    {
+      "feedback_id": 10505,
+      "old_date_utc_day": "2026-09-12",
+      "review_local_date": "2026-09-13"
+    },
+    {
+      "feedback_id": 7675,
+      "old_date_utc_day": "2025-03-08",
+      "review_local_date": "2025-03-09"
+    },
+    {
+      "feedback_id": 8070,
+      "old_date_utc_day": "2025-05-06",
+      "review_local_date": "2025-05-07"
+    },
+    {
+      "feedback_id": 9346,
+      "old_date_utc_day": "2025-12-09",
+      "review_local_date": "2025-12-10"
+    },
+    {
+      "feedback_id": 9843,
+      "old_date_utc_day": "2026-03-14",
+      "review_local_date": "2026-03-15"
+    },
+    {
+      "feedback_id": 10292,
+      "old_date_utc_day": "2026-07-15",
+      "review_local_date": "2026-07-16"
+    },
+    {
+      "feedback_id": 7018,
+      "old_date_utc_day": "2025-01-04",
+      "review_local_date": "2025-01-05"
+    },
+    {
+      "feedback_id": 7676,
+      "old_date_utc_day": "2025-03-08",
+      "review_local_date": "2025-03-09"
+    },
+    {
+      "feedback_id": 8132,
+      "old_date_utc_day": "2025-05-13",
+      "review_local_date": "2025-05-14"
+    },
+    {
+      "feedback_id": 8548,
+      "old_date_utc_day": "2025-07-21",
+      "review_local_date": "2025-07-22"
+    },
+    {
+      "feedback_id": 8802,
+      "old_date_utc_day": "2025-09-05",
+      "review_local_date": "2025-09-06"
+    },
+    {
+      "feedback_id": 9537,
+      "old_date_utc_day": "2026-01-09",
+      "review_local_date": "2026-01-10"
+    }
+  ]
+}

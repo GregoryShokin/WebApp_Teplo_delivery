@@ -1,0 +1,241 @@
+{
+  "source": "starter-part-2.jsonl + coded-part-2.jsonl, checked against codebook.md",
+  "scope": {
+    "total_records": 437,
+    "date_min": "2025-01-03",
+    "date_max": "2026-10-13",
+    "confidence_not_high": 25,
+    "sampled_high_specific_issue": 15,
+    "sampled_high_positive_or_neutral": 15,
+    "unique_checked": 55
+  },
+  "sampling_method": "All non-high confidence records; additionally sort high-confidence records by feedback_id and select 15 evenly spaced positions (round(i*(n-1)/14), i=0..14) separately from specific_issue and positive_or_neutral.",
+  "checked_ids": [
+    7026,
+    7091,
+    7106,
+    7155,
+    7398,
+    7482,
+    7598,
+    7648,
+    8009,
+    8090,
+    8218,
+    8366,
+    8505,
+    8949,
+    9038,
+    9058,
+    9167,
+    9182,
+    9199,
+    9483,
+    9529,
+    9638,
+    10017,
+    10130,
+    10259,
+    7010,
+    7292,
+    7474,
+    7620,
+    7794,
+    8015,
+    8335,
+    8698,
+    8924,
+    9247,
+    9604,
+    9851,
+    10086,
+    10360,
+    10592,
+    7000,
+    7284,
+    7540,
+    7872,
+    8168,
+    8442,
+    8623,
+    8945,
+    9220,
+    9478,
+    9682,
+    9883,
+    10115,
+    10319,
+    10599
+  ],
+  "recommended_changes": [
+    {
+      "feedback_id": 7648,
+      "before": {
+        "codes": [
+          "food",
+          "completeness"
+        ],
+        "status": "specific_issue",
+        "note": "Рис недоварен; автор указывает на неполный/неверный состав роллов.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "codes": [
+          "food",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Рис недоварен; начинки в роллах, по отзыву, почти не было.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Мало/отсутствует начинка без утверждения о пропущенной заказанной позиции относится к value; полнота заказанных блюд здесь не описана."
+    },
+    {
+      "feedback_id": 8090,
+      "before": {
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Неясная краткая критика теста пиццы.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "codes": [
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца описана как почти полностью состоящая из теста; вероятно, начинки было мало.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Фраза неоднозначна, но вероятнее указывает на малое количество начинки, а не на вкус теста; по codebook это value. Оставить medium."
+    },
+    {
+      "feedback_id": 8505,
+      "before": {
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Общее замечание, что раньше было вкуснее, без указания конкретного продукта или дефекта.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Автор отмечает ухудшение вкуса по сравнению с прежним опытом; блюдо не уточнено.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Текст прямо указывает на ухудшение вкуса; codebook относит явную претензию ко вкусу к food, даже если блюдо не названо."
+    },
+    {
+      "feedback_id": 9058,
+      "before": {
+        "codes": [],
+        "status": "vague_negative",
+        "note": "Автор сообщает о ночных желудочно-кишечных симптомах и просит проверить продукты; причинная связь с едой не установлена.",
+        "confidence": "low",
+        "subcodes": []
+      },
+      "after": {
+        "codes": [
+          "food"
+        ],
+        "status": "specific_issue",
+        "note": "Клиент сообщает о симптоме и просит проверить продукты; связь с едой не подтверждена.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Есть конкретная просьба проверить продукты, поэтому food фиксирует обращение о качестве еды. Формулировка должна явно сохранять, что причинная связь и отравление не установлены."
+    },
+    {
+      "feedback_id": 10017,
+      "before": {
+        "codes": [
+          "communication",
+          "presentation"
+        ],
+        "status": "specific_issue",
+        "note": "Дикция оператора неразборчива; роллы заметно разного размера.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "after": {
+        "codes": [
+          "communication",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Речь оператора трудно разобрать; роллы были разного размера.",
+        "confidence": "medium",
+        "subcodes": []
+      },
+      "reason": "Неравный размер порций лучше отражает value (количество/размер), а не внешний вид подачи."
+    },
+    {
+      "feedback_id": 7155,
+      "before": {
+        "codes": [
+          "temperature",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца и роллы холодные; платность перечисленных дополнений, вероятно, отмечена как отдельная претензия.",
+        "confidence": "medium",
+        "subcodes": [
+          "unknown_expectation"
+        ]
+      },
+      "after": {
+        "codes": [
+          "temperature",
+          "value"
+        ],
+        "status": "specific_issue",
+        "note": "Пицца и роллы холодные; начинки почти не чувствуется, отдельно отмечена платность дополнений.",
+        "confidence": "medium",
+        "subcodes": [
+          "hot_food",
+          "unknown_expectation"
+        ]
+      },
+      "reason": "В температурной жалобе отдельно названа пицца и роллы: применить hot_food к пицце и unknown_expectation к роллам."
+    },
+    {
+      "feedback_id": 10592,
+      "before": {
+        "codes": [
+          "waiting",
+          "temperature"
+        ],
+        "status": "specific_issue",
+        "note": "Заказ доставили дольше двух часов; пицца и роллы остыли.",
+        "confidence": "high",
+        "subcodes": [
+          "unknown_expectation"
+        ]
+      },
+      "after": {
+        "codes": [
+          "waiting",
+          "temperature"
+        ],
+        "status": "specific_issue",
+        "note": "Заказ доставили дольше двух часов; пицца и роллы остыли.",
+        "confidence": "high",
+        "subcodes": [
+          "hot_food",
+          "unknown_expectation"
+        ]
+      },
+      "reason": "Пицца названа холодной, поэтому нужен hot_food; ожидание роллов по температуре не определено, поэтому сохранить unknown_expectation."
+    }
+  ],
+  "вывод": "Проверены все medium/low и по детерминированной равномерной выборке 15 high specific_issue и 15 high positive_or_neutral. Основные правила применены последовательно: конкретная жалоба сохраняется при 5 звёздах; голое указание длительности без выраженного недовольства не превращается в waiting; неясные условия подарка не кодируются как completeness; холодные роллы получают unknown_expectation при неясном ожидании, а явно холодная пицца — hot_food. Рекомендуются семь локальных правок выше. При жалобах на недомогание не следует утверждать отравление или причинную связь; однако явную просьбу проверить продукты можно учитывать как клиентское сообщение о качестве еды с прямой оговоркой об отсутствии подтверждённой связи."
+}
