@@ -1,0 +1,4309 @@
+{
+  "created_at": "2026-10-13",
+  "purpose": "Anonymized coding of saved Revvy public review export and recent internal negative chat sample; no API access.",
+  "source_files": [
+    {
+      "path": "/private/tmp/revvy-aggregate-export-20261011.xlsx",
+      "type": "public Google and Yandex reviews export",
+      "exported": "2026-10-11"
+    },
+    {
+      "path": "/private/tmp/revvy-negative-sample-20261011.json",
+      "type": "internal negative-category chat snapshot",
+      "exported": "2026-10-11"
+    },
+    {
+      "path": "/private/tmp/revvy-helper-history-validation.json",
+      "type": "internal chat history referenced by helper plan; one chat, 17 messages"
+    }
+  ],
+  "public_corpus": {
+    "rows": 259,
+    "period_start": "2022-01-01 00:00:00",
+    "period_end": "2026-09-26 20:50:00",
+    "by_platform": {
+      "Яндекс Карты": 165,
+      "Google Карты": 94
+    },
+    "by_rating_by_platform": {
+      "Google Карты": {
+        "5": 66,
+        "2": 4,
+        "1": 20,
+        "3": 2,
+        "4": 2
+      },
+      "Яндекс Карты": {
+        "1": 20,
+        "5": 126,
+        "3": 4,
+        "4": 6,
+        "2": 9
+      }
+    },
+    "blank_text_rows": 29,
+    "blank_text_by_platform": {
+      "Google Карты": 29
+    },
+    "negative_threshold_rows_1_to_4": 67,
+    "negative_threshold_blank_text": 4,
+    "negative_threshold_nonempty_text_rows": 63,
+    "negative_threshold_unique_exact_texts_after_same_platform_repeat_collapse": 62,
+    "same_platform_possible_duplicate_caution": "Two identical short Yandex texts “Не вкусно” on 2025-07-05 and 2025-08-31 were counted as one text opinion for theme frequencies; distinct people cannot be confirmed.",
+    "exact_duplicate_groups_all_public_texts": [
+      {
+        "rows": [
+          3,
+          4
+        ],
+        "platforms": [
+          "Google Карты",
+          "Яндекс Карты"
+        ],
+        "type": "crosspost"
+      },
+      {
+        "rows": [
+          33,
+          37
+        ],
+        "platforms": [
+          "Google Карты",
+          "Яндекс Карты"
+        ],
+        "type": "crosspost"
+      },
+      {
+        "rows": [
+          92,
+          115
+        ],
+        "platforms": [
+          "Яндекс Карты"
+        ],
+        "type": "same_platform_exact_text"
+      }
+    ],
+    "date_quality": {
+      "Google_rows_with_date_01_01_placeholder": 79,
+      "Google_total": 94,
+      "note": "79 Google records carry Jan 1 timestamps (44 in 2022, 6 in 2023, 15 in 2024, 14 in 2025); these dates do not support precise timing/trend comparisons."
+    },
+    "complaint_theme_counts": {
+      "wait_or_delivery_reliability": {
+        "public_unique_texts": 33,
+        "by_platform": {
+          "Яндекс Карты": 19,
+          "Google Карты": 14
+        }
+      },
+      "temperature": {
+        "public_unique_texts": 13,
+        "by_platform": {
+          "Яндекс Карты": 7,
+          "Google Карты": 6
+        }
+      },
+      "food_quality_or_recipe": {
+        "public_unique_texts": 28,
+        "by_platform": {
+          "Google Карты": 8,
+          "Яндекс Карты": 20
+        }
+      },
+      "wrong_or_missing_items": {
+        "public_unique_texts": 8,
+        "by_platform": {
+          "Яндекс Карты": 6,
+          "Google Карты": 2
+        }
+      },
+      "service_response_or_information": {
+        "public_unique_texts": 22,
+        "by_platform": {
+          "Яндекс Карты": 10,
+          "Google Карты": 12
+        }
+      },
+      "price_or_portion_value": {
+        "public_unique_texts": 8,
+        "by_platform": {
+          "Google Карты": 4,
+          "Яндекс Карты": 4
+        }
+      },
+      "appearance_or_packaging": {
+        "public_unique_texts": 9,
+        "by_platform": {
+          "Google Карты": 3,
+          "Яндекс Карты": 6
+        }
+      },
+      "portion_or_paid_extras": {
+        "public_unique_texts": 13,
+        "by_platform": {
+          "Яндекс Карты": 9,
+          "Google Карты": 4
+        }
+      },
+      "access_or_payment": {
+        "public_unique_texts": 8,
+        "by_platform": {
+          "Яндекс Карты": 4,
+          "Google Карты": 4
+        }
+      },
+      "order_nonreceipt_report": {
+        "public_unique_texts": 4,
+        "by_platform": {
+          "Яндекс Карты": 2,
+          "Google Карты": 2
+        }
+      }
+    },
+    "last_90_days_from_2026_10_11": {
+      "window_start_inclusive": "2026-07-14",
+      "rows": 18,
+      "by_platform": {
+        "Яндекс Карты": 14,
+        "Google Карты": 4
+      },
+      "ratings": {
+        "1": 3,
+        "5": 15
+      },
+      "unique_texts_after_crosspost_dedup": 17,
+      "manually_confirmed_substantive_issue_texts_after_dedup": 4,
+      "case_codes": {
+        "wrong_roll_or_ingredient_sent_but_resolved_quickly": 1,
+        "delay_or_order_not_received_at_review_time": 3
+      },
+      "qualified_slow_delivery_mention_crossposted": 1,
+      "notes": "Hard-issue cases are public rows 1, 5, 9, 17; rows 3/4 are one cross-post describing slow delivery as understood/planned around, not a complaint. Row 17 is rated 5 but contains an explicit order-accuracy error and recovery. Independent source check: public row 1 says the order had not arrived after 3 hours at review time; it does not establish final non-delivery/cancellation."
+    },
+    "manual_coded_rows": [
+      {
+        "public_row": 1,
+        "date_as_exported": "26.09.2026 20:50",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "order_nonreceipt_report"
+        ],
+        "mixed_or_qualified_notes": [
+          "Final delivery/cancellation status unknown; absence stated after 3 hours."
+        ],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 2,
+        "date_as_exported": "23.09.2026 12:48",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 3,
+        "date_as_exported": "20.09.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [
+          "slow_delivery_acknowledged_as_expected"
+        ],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 4,
+        "date_as_exported": "16.09.2026 12:31",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [
+          "slow_delivery_acknowledged_as_expected"
+        ],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 5,
+        "date_as_exported": "15.09.2026 23:01",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 6,
+        "date_as_exported": "15.09.2026 15:34",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 7,
+        "date_as_exported": "06.09.2026 19:31",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 8,
+        "date_as_exported": "04.09.2026 10:33",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 9,
+        "date_as_exported": "01.09.2026 21:24",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 10,
+        "date_as_exported": "01.09.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 11,
+        "date_as_exported": "31.08.2026 15:35",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 12,
+        "date_as_exported": "31.08.2026 08:25",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 13,
+        "date_as_exported": "30.08.2026 12:52",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 14,
+        "date_as_exported": "12.08.2026 22:30",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 15,
+        "date_as_exported": "01.08.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 16,
+        "date_as_exported": "01.08.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 17,
+        "date_as_exported": "29.07.2026 22:33",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [
+          "food_or_order_issue_in_five_star_review"
+        ],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 18,
+        "date_as_exported": "16.07.2026 20:47",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 19,
+        "date_as_exported": "01.07.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 20,
+        "date_as_exported": "27.06.2026 15:38",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 21,
+        "date_as_exported": "27.06.2026 10:21",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 22,
+        "date_as_exported": "25.06.2026 11:08",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 23,
+        "date_as_exported": "24.06.2026 22:48",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 24,
+        "date_as_exported": "04.06.2026 18:28",
+        "platform": "Яндекс Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 25,
+        "date_as_exported": "01.06.2026 15:49",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 26,
+        "date_as_exported": "01.06.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 27,
+        "date_as_exported": "28.05.2026 21:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 28,
+        "date_as_exported": "26.05.2026 20:05",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 29,
+        "date_as_exported": "20.05.2026 16:22",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 30,
+        "date_as_exported": "18.05.2026 21:27",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 31,
+        "date_as_exported": "12.05.2026 18:50",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 32,
+        "date_as_exported": "05.05.2026 20:41",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 33,
+        "date_as_exported": "01.05.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 34,
+        "date_as_exported": "23.04.2026 22:01",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 35,
+        "date_as_exported": "23.04.2026 21:36",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wrong_or_missing_items",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 36,
+        "date_as_exported": "19.04.2026 14:50",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 37,
+        "date_as_exported": "16.04.2026 13:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 38,
+        "date_as_exported": "01.04.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 39,
+        "date_as_exported": "01.04.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "food_quality_or_recipe",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 40,
+        "date_as_exported": "29.03.2026 14:48",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 41,
+        "date_as_exported": "27.03.2026 21:46",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "service_response_or_information",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 42,
+        "date_as_exported": "21.03.2026 20:41",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 43,
+        "date_as_exported": "08.03.2026 21:24",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "unspecified_delivery_dissatisfaction"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 44,
+        "date_as_exported": "06.03.2026 12:27",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 45,
+        "date_as_exported": "01.03.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": false,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 46,
+        "date_as_exported": "01.03.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "price_or_portion_value"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 47,
+        "date_as_exported": "25.02.2026 20:46",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 48,
+        "date_as_exported": "23.02.2026 13:49",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 49,
+        "date_as_exported": "20.02.2026 00:06",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 50,
+        "date_as_exported": "14.02.2026 22:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 51,
+        "date_as_exported": "14.02.2026 18:08",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 52,
+        "date_as_exported": "11.02.2026 18:53",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 53,
+        "date_as_exported": "03.02.2026 08:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 54,
+        "date_as_exported": "01.02.2026 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 55,
+        "date_as_exported": "31.01.2026 18:07",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 56,
+        "date_as_exported": "28.01.2026 14:04",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 57,
+        "date_as_exported": "22.01.2026 13:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 58,
+        "date_as_exported": "12.01.2026 20:18",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 59,
+        "date_as_exported": "12.01.2026 18:05",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 60,
+        "date_as_exported": "10.01.2026 13:36",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 61,
+        "date_as_exported": "07.01.2026 13:54",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 62,
+        "date_as_exported": "14.12.2025 18:21",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 63,
+        "date_as_exported": "01.12.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 64,
+        "date_as_exported": "01.12.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 65,
+        "date_as_exported": "29.11.2025 16:00",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "price_or_portion_value",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 66,
+        "date_as_exported": "20.11.2025 18:57",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 67,
+        "date_as_exported": "18.11.2025 18:08",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 68,
+        "date_as_exported": "07.11.2025 21:03",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 69,
+        "date_as_exported": "04.11.2025 18:24",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 70,
+        "date_as_exported": "02.11.2025 19:06",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 71,
+        "date_as_exported": "01.11.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 72,
+        "date_as_exported": "29.10.2025 21:01",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 73,
+        "date_as_exported": "29.10.2025 11:19",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 74,
+        "date_as_exported": "15.10.2025 19:29",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 75,
+        "date_as_exported": "12.10.2025 14:22",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 76,
+        "date_as_exported": "09.10.2025 09:18",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 77,
+        "date_as_exported": "08.10.2025 20:27",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 78,
+        "date_as_exported": "06.10.2025 22:55",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 79,
+        "date_as_exported": "04.10.2025 22:03",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 80,
+        "date_as_exported": "01.10.2025 21:59",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 81,
+        "date_as_exported": "24.09.2025 07:43",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 82,
+        "date_as_exported": "20.09.2025 22:39",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 83,
+        "date_as_exported": "19.09.2025 13:54",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 84,
+        "date_as_exported": "17.09.2025 10:12",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 85,
+        "date_as_exported": "16.09.2025 18:15",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 86,
+        "date_as_exported": "12.09.2025 22:09",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 87,
+        "date_as_exported": "08.09.2025 20:15",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 88,
+        "date_as_exported": "06.09.2025 22:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 89,
+        "date_as_exported": "05.09.2025 18:35",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 90,
+        "date_as_exported": "03.09.2025 16:03",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 91,
+        "date_as_exported": "01.09.2025 13:35",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 92,
+        "date_as_exported": "31.08.2025 19:48",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": true,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 93,
+        "date_as_exported": "30.08.2025 21:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 94,
+        "date_as_exported": "28.08.2025 22:09",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 95,
+        "date_as_exported": "24.08.2025 22:59",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 96,
+        "date_as_exported": "23.08.2025 22:08",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 97,
+        "date_as_exported": "19.08.2025 21:24",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 98,
+        "date_as_exported": "16.08.2025 00:06",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 99,
+        "date_as_exported": "15.08.2025 23:18",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 100,
+        "date_as_exported": "15.08.2025 19:33",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "wrong_or_missing_items",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 101,
+        "date_as_exported": "13.08.2025 07:48",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 102,
+        "date_as_exported": "12.08.2025 21:42",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 103,
+        "date_as_exported": "10.08.2025 17:58",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "portion_or_paid_extras",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 104,
+        "date_as_exported": "10.08.2025 17:30",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 105,
+        "date_as_exported": "07.08.2025 18:12",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 106,
+        "date_as_exported": "06.08.2025 17:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 107,
+        "date_as_exported": "06.08.2025 07:18",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 108,
+        "date_as_exported": "01.08.2025 19:07",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 109,
+        "date_as_exported": "01.08.2025 17:21",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 110,
+        "date_as_exported": "21.07.2025 22:33",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "wrong_or_missing_items",
+          "price_or_portion_value",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 111,
+        "date_as_exported": "20.07.2025 21:15",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 112,
+        "date_as_exported": "15.07.2025 17:35",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 113,
+        "date_as_exported": "14.07.2025 14:56",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 114,
+        "date_as_exported": "10.07.2025 14:56",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 115,
+        "date_as_exported": "05.07.2025 22:47",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": true,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 116,
+        "date_as_exported": "25.05.2025 10:06",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 117,
+        "date_as_exported": "25.05.2025 07:24",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 118,
+        "date_as_exported": "14.05.2025 00:12",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 119,
+        "date_as_exported": "07.05.2025 18:21",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 120,
+        "date_as_exported": "27.04.2025 20:18",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 121,
+        "date_as_exported": "27.04.2025 17:39",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "food_quality_or_recipe",
+          "service_response_or_information",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 122,
+        "date_as_exported": "17.04.2025 20:19",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "food_quality_or_recipe",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 123,
+        "date_as_exported": "16.04.2025 20:28",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 124,
+        "date_as_exported": "13.04.2025 15:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 125,
+        "date_as_exported": "10.04.2025 18:04",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 126,
+        "date_as_exported": "06.04.2025 22:17",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 127,
+        "date_as_exported": "02.04.2025 12:07",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "wrong_or_missing_items"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 128,
+        "date_as_exported": "22.03.2025 07:42",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 129,
+        "date_as_exported": "09.03.2025 14:10",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 130,
+        "date_as_exported": "15.02.2025 11:42",
+        "platform": "Яндекс Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 131,
+        "date_as_exported": "10.02.2025 15:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 132,
+        "date_as_exported": "05.02.2025 19:31",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 133,
+        "date_as_exported": "02.02.2025 17:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 134,
+        "date_as_exported": "11.01.2025 19:17",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 135,
+        "date_as_exported": "08.01.2025 12:55",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 136,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 137,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "price_or_portion_value",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 138,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 139,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 140,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 141,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 142,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 143,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 144,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 145,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 146,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 147,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 148,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 149,
+        "date_as_exported": "01.01.2025 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [
+          "unspecified_minor_errors_and_recovery"
+        ],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 150,
+        "date_as_exported": "16.12.2024 13:20",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 151,
+        "date_as_exported": "13.12.2024 23:22",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "service_response_or_information",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 152,
+        "date_as_exported": "24.11.2024 18:24",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 153,
+        "date_as_exported": "17.11.2024 12:17",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "service_response_or_information",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 154,
+        "date_as_exported": "13.11.2024 21:30",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "price_or_portion_value",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 155,
+        "date_as_exported": "21.10.2024 21:00",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 156,
+        "date_as_exported": "08.10.2024 20:22",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 157,
+        "date_as_exported": "11.09.2024 21:42",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 158,
+        "date_as_exported": "07.08.2024 20:13",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "order_nonreceipt_report"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 159,
+        "date_as_exported": "28.06.2024 22:30",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 160,
+        "date_as_exported": "22.06.2024 22:16",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 161,
+        "date_as_exported": "18.06.2024 07:30",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "food_quality_or_recipe",
+          "price_or_portion_value"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 162,
+        "date_as_exported": "14.06.2024 21:18",
+        "platform": "Яндекс Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 163,
+        "date_as_exported": "11.06.2024 23:40",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 164,
+        "date_as_exported": "30.05.2024 15:01",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 165,
+        "date_as_exported": "28.05.2024 21:31",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 166,
+        "date_as_exported": "18.05.2024 08:34",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 167,
+        "date_as_exported": "14.05.2024 17:26",
+        "platform": "Яндекс Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 168,
+        "date_as_exported": "01.05.2024 19:53",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "wrong_or_missing_items",
+          "service_response_or_information",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 169,
+        "date_as_exported": "30.04.2024 21:48",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 170,
+        "date_as_exported": "19.04.2024 16:30",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 171,
+        "date_as_exported": "07.04.2024 20:45",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 172,
+        "date_as_exported": "30.03.2024 19:05",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 173,
+        "date_as_exported": "20.03.2024 14:27",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 174,
+        "date_as_exported": "29.02.2024 20:34",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 175,
+        "date_as_exported": "04.02.2024 21:43",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 176,
+        "date_as_exported": "01.02.2024 22:22",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 177,
+        "date_as_exported": "18.01.2024 13:26",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 178,
+        "date_as_exported": "15.01.2024 21:53",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 179,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 180,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 2,
+        "text_present": false,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 181,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": false,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 182,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "order_nonreceipt_report",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 183,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "wrong_or_missing_items",
+          "service_response_or_information",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 184,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 185,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 186,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 187,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 188,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 189,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": false,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 190,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "temperature"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 191,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 192,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 193,
+        "date_as_exported": "01.01.2024 00:00",
+        "platform": "Google Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "price_or_portion_value",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 194,
+        "date_as_exported": "08.12.2023 15:17",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 195,
+        "date_as_exported": "21.11.2023 14:51",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [
+          "food_or_order_issue_in_five_star_review"
+        ],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 196,
+        "date_as_exported": "31.10.2023 22:22",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 197,
+        "date_as_exported": "28.10.2023 21:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 198,
+        "date_as_exported": "27.10.2023 20:11",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 199,
+        "date_as_exported": "13.10.2023 21:19",
+        "platform": "Яндекс Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "wrong_or_missing_items",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 200,
+        "date_as_exported": "13.10.2023 18:52",
+        "platform": "Яндекс Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 201,
+        "date_as_exported": "20.09.2023 19:14",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 202,
+        "date_as_exported": "18.08.2023 14:45",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 203,
+        "date_as_exported": "18.08.2023 14:28",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 204,
+        "date_as_exported": "18.08.2023 12:17",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 205,
+        "date_as_exported": "14.08.2023 14:28",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 206,
+        "date_as_exported": "14.08.2023 13:28",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 207,
+        "date_as_exported": "14.08.2023 13:25",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 208,
+        "date_as_exported": "23.07.2023 19:29",
+        "platform": "Яндекс Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 209,
+        "date_as_exported": "12.07.2023 17:55",
+        "platform": "Яндекс Карты",
+        "rating": 3,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "appearance_or_packaging"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 210,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 211,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "order_nonreceipt_report",
+          "service_response_or_information",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 212,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "temperature",
+          "food_quality_or_recipe"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 213,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "temperature",
+          "wrong_or_missing_items",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 214,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "temperature",
+          "food_quality_or_recipe",
+          "price_or_portion_value"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 215,
+        "date_as_exported": "01.01.2023 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 216,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 217,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 218,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 219,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 220,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "menu_choice_or_variety"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 221,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 222,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 223,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 224,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 225,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 226,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 227,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 228,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 229,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 230,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 231,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 232,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 2,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information",
+          "access_or_payment"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 233,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 234,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 235,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 236,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 237,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 238,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "price_promotions_loyalty",
+          "menu_choice_or_variety",
+          "digital_convenience"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 239,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 240,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 241,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 242,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 243,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 244,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 245,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 246,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 1,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "wait_or_delivery_reliability",
+          "service_response_or_information"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 247,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 248,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 249,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 250,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 251,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "appearance_or_packaging",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 252,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 253,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 4,
+        "text_present": true,
+        "negative_by_configured_threshold": true,
+        "manual_complaint_themes": [
+          "food_quality_or_recipe",
+          "portion_or_paid_extras"
+        ],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 254,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 255,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": false,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 256,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 257,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "speed_or_on_time",
+          "staff_or_service_praise",
+          "price_promotions_loyalty"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 258,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "food_or_product_praise",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      },
+      {
+        "public_row": 259,
+        "date_as_exported": "01.01.2022 00:00",
+        "platform": "Google Карты",
+        "rating": 5,
+        "text_present": true,
+        "negative_by_configured_threshold": false,
+        "manual_complaint_themes": [],
+        "mixed_or_qualified_notes": [],
+        "directional_positive_mentions": [
+          "speed_or_on_time",
+          "staff_or_service_praise"
+        ],
+        "possible_exact_duplicate": false,
+        "text_or_author_omitted": true
+      }
+    ],
+    "historical_manual_coding_scope": "All public reviews rated 1-4 were manually coded for complaint themes; this is not a full semantic coding of all 259 texts. Selected mixed 5-star cases are included as notes, and the 90-day period was reviewed across all ratings."
+  },
+  "internal_corpus": {
+    "negative_sample_chats": 16,
+    "negative_sample_reported_total": 16,
+    "dateMessage_utc_start": "2026-09-16T13:26:21Z",
+    "dateMessage_utc_end": "2026-10-06T16:52:58Z",
+    "raw_last_message_score_distribution": {
+      "1": 4,
+      "3": 5,
+      "4": 4,
+      "2": 2,
+      "0": 1
+    },
+    "snapshot_non_numeric_lastMessage_count": 3,
+    "history_file_empty_initially": true,
+    "resolved_history_file": "/private/tmp/revvy-helper-history-validation.json",
+    "history_messages": 17,
+    "history_unique_chat_count": 1,
+    "history_utc_start": "2026-02-09T13:12:45Z",
+    "history_utc_end": "2026-09-18T07:03:22Z",
+    "history_client_message_count": 5,
+    "history_client_non_numeric_message_count": 2,
+    "coded_unique_complaint_chats": {
+      "rice_texture_or_handling": 1,
+      "generic_dissatisfaction_without_topic": 1
+    },
+    "coded_issue_details": "The matching chat contributes one issue, repeated in two client messages: rice fell apart and could not be eaten with chopsticks; the client still described the taste positively. Do not count the repeated messages as separate complaints. A separate brief “not very good lately” message has no theme. Most of the 16 snapshots are numeric rating selections; rating 4 remains negative under current threshold but does not guarantee substantive complaint text.",
+    "history_deduplication": "The chat history matches one of the 16 snapshot chats by date and content; it is not a seventeenth independent chat.",
+    "message_direction_counts": {
+      "outgoing_or_other": 12,
+      "client": 5
+    },
+    "message_date_note": "The linked history spans Feb 9 to Sep 18, 2026. It is historical context, not a 30-day complaint event set."
+  },
+  "positive_themes": {
+    "observed_in_reviews": "Taste/food quality; freshness and ingredient quality; delivery speed/on-time arrival; polite/helpful staff; value, bonuses and promotions; gifts; menu choice/variety; convenient app/site; meals for family and occasions; customers naming repeat choice or recommendation.",
+    "directional_unique_rating_5_text_marker_counts": {
+      "food_or_product_praise": 147,
+      "speed_or_on_time": 75,
+      "staff_or_service_praise": 40,
+      "price_promotions_loyalty": 26,
+      "menu_choice_or_variety": 20,
+      "digital_convenience": 13
+    },
+    "note": "Positive marker counts use rating-5, nonempty text and broad phrase matching; language was spot-checked. They are mentions in public review texts, not customers or orders; mixed feedback can appear under rating 5."
+  },
+  "limitations": [
+    "Public reviews are self-selected and cannot diagnose why non-reviewers reduced or stopped ordering.",
+    "Google dates are mostly Jan 1 placeholders; year/time trends and recency there are unreliable.",
+    "Public review counts are review texts/platform appearances, not unique customers; no identity linkage between Google, Yandex, Revvy chats, WhatsApp, or orders was attempted.",
+    "The internal negative category is filtered by Revvy settings and includes rating 4; score/category is not equivalent to substantive complaint text.",
+    "Do not add public and internal counts: windows, units and selection mechanisms differ.",
+    "order_nonreceipt_report records customer-reported non-receipt or failure to fulfil; final order status is not established by that label. Public row 1 states non-receipt after three hours at review time."
+  ]
+}
