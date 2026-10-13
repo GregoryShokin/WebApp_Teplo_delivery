@@ -1,0 +1,3916 @@
+{
+  "as_of": "2026-10-13",
+  "purpose": "Unified public evidence from the Revvy Google/Yandex Maps export plus the newly captured Yandex Maps/Eda review cards. UI Maps are linked to the previous Yandex Maps export to avoid counting the same card twice; no raw text, author names, phones, or customer IDs are stored.",
+  "sources": {
+    "revvy_public_xlsx": "/private/tmp/revvy-aggregate-export-20261011.xlsx",
+    "previous_manual_codebook": "/private/tmp/teplo-feedback-full-20261013/revvy-all-ratings-coded.json",
+    "yandex_card_capture": "/tmp/teplo-feedback-full-20261013/yandex-ui-reviews-private.json"
+  },
+  "source_totals": {
+    "revvy_xlsx_rows": 259,
+    "revvy_google_maps_rows": 94,
+    "revvy_yandex_maps_rows": 165,
+    "yandex_ui_maps_rows": 140,
+    "yandex_eda_ui_rows": 3,
+    "yandex_ui_placeholders_loaded": true,
+    "maps_ui_card_rating_snapshot": {
+      "average": 5.0,
+      "rating_count": 276,
+      "text_reviews_loaded": 140
+    },
+    "eda_ui_card_rating_snapshot": {
+      "average": 4.8,
+      "rating_count": 17,
+      "text_reviews_loaded": 3,
+      "individual_review_ratings_available": false
+    }
+  },
+  "maps_ui_match_audit": {
+    "match_status_counts": {
+      "probable_same_platform_text_variant": 23,
+      "confirmed_same_platform_exact_text_date_author": 102,
+      "unresolved_possible_same_platform": 12,
+      "possible_same_platform_exact_text_metadata_mismatch": 1,
+      "short_exact_text_metadata_supported": 2
+    },
+    "n_maps_ui_rows": 140,
+    "confirmed_exact_full_text_date_author_matches": 102,
+    "short_exact_text_pairs_resolved_by_date_author": 2,
+    "probable_text_variant_pairs": 23,
+    "unresolved_or_metadata_conflict_rows": 13,
+    "probable_variant_pairs_ui_id_to_revvy_row_id": {
+      "YM-003": 4,
+      "YM-005": 49,
+      "YM-010": 51,
+      "YM-012": 135,
+      "YM-017": 21,
+      "YM-018": 69,
+      "YM-028": 107,
+      "YM-029": 82,
+      "YM-032": 13,
+      "YM-033": 123,
+      "YM-037": 104,
+      "YM-041": 105,
+      "YM-053": 114,
+      "YM-058": 30,
+      "YM-059": 50,
+      "YM-066": 202,
+      "YM-068": 97,
+      "YM-069": 170,
+      "YM-071": 93,
+      "YM-073": 197,
+      "YM-084": 47,
+      "YM-119": 24,
+      "YM-123": 161
+    },
+    "counting_scenarios": {
+      "confirmed_and_probable_dedup_preferred_working_union": {
+        "total_public_opinions": 275,
+        "basis": "Deduplicate 104 metadata-supported exact overlaps and 23 manually checked likely text variants; retain 13 low-confidence/metadata-conflict UI rows as possible additional opinions.",
+        "google_maps_possible_crosspost_dedup_scenario": {
+          "total_public_opinions": 273,
+          "deducted_possible_crosspost_groups": [
+            "X1",
+            "X2"
+          ],
+          "caveat": "Alternate only; each platform record remains counted separately in primary scenario."
+        }
+      },
+      "strict_metadata_supported_exact_only": {
+        "total_public_opinions": 298,
+        "basis": "Only 104 exact-text matches with date and author support are merged; all text variants and conflicts remain separate.",
+        "google_maps_possible_crosspost_dedup_scenario": {
+          "total_public_opinions": 296,
+          "deducted_possible_crosspost_groups": [
+            "X1",
+            "X2"
+          ],
+          "caveat": "Alternate only; each platform record remains counted separately in primary scenario."
+        }
+      },
+      "all_ui_items_overlap_sensitivity": {
+        "total_public_opinions": 262,
+        "basis": "All 140 UI entries map to an existing Yandex Maps opinion, including unresolved candidates; lower bound only, not asserted as proven.",
+        "google_maps_possible_crosspost_dedup_scenario": {
+          "total_public_opinions": 260,
+          "deducted_possible_crosspost_groups": [
+            "X1",
+            "X2"
+          ],
+          "caveat": "Alternate only; each platform record remains counted separately in primary scenario."
+        }
+      }
+    }
+  },
+  "cross_platform_possible_crossposts": [
+    {
+      "group_id": "X1",
+      "rows": [
+        {
+          "revvy_row_id": 3,
+          "platform": "Google Карты",
+          "date_as_exported": "20.09.2026 00:00",
+          "rating": 5
+        },
+        {
+          "revvy_row_id": 4,
+          "platform": "Яндекс Карты",
+          "date_as_exported": "16.09.2026 12:31",
+          "rating": 5
+        }
+      ],
+      "treatment": "possible exact Google–Yandex cross-post; retain both platform records in primary source counts and deduplicate only in alternative scenario",
+      "theme_effect": "No issue-theme count changes because these rows are not coded as substantive complaints."
+    },
+    {
+      "group_id": "X2",
+      "rows": [
+        {
+          "revvy_row_id": 33,
+          "platform": "Google Карты",
+          "date_as_exported": "01.05.2026 00:00",
+          "rating": 5
+        },
+        {
+          "revvy_row_id": 37,
+          "platform": "Яндекс Карты",
+          "date_as_exported": "16.04.2026 13:11",
+          "rating": 5
+        }
+      ],
+      "treatment": "possible exact Google–Yandex cross-post; retain both platform records in primary source counts and deduplicate only in alternative scenario",
+      "theme_effect": "No issue-theme count changes because these rows are not coded as substantive complaints."
+    }
+  ],
+  "theme_counts_atomic": [
+    {
+      "code": "food_quality_taste_texture_or_recipe",
+      "label": "Вкус, текстура, свежесть или состав блюда",
+      "counts_by_platform": {
+        "Яндекс Карты": 20,
+        "Google Карты": 6,
+        "Яндекс Еда": 1
+      },
+      "N_total": 27,
+      "source_ids": [
+        39,
+        58,
+        62,
+        63,
+        92,
+        100,
+        101,
+        103,
+        110,
+        111,
+        112,
+        115,
+        121,
+        122,
+        127,
+        128,
+        137,
+        154,
+        161,
+        165,
+        167,
+        193,
+        195,
+        209,
+        212,
+        214,
+        "YE-003"
+      ]
+    },
+    {
+      "code": "delivery_delay_or_time_mismatch",
+      "label": "Задержка, долгий срок или несоблюдение времени",
+      "counts_by_platform": {
+        "Яндекс Карты": 16,
+        "Google Карты": 10,
+        "Яндекс Еда": 0
+      },
+      "N_total": 26,
+      "source_ids": [
+        5,
+        9,
+        24,
+        39,
+        42,
+        58,
+        121,
+        122,
+        129,
+        150,
+        151,
+        153,
+        157,
+        161,
+        162,
+        179,
+        183,
+        185,
+        187,
+        190,
+        192,
+        199,
+        200,
+        210,
+        240,
+        246
+      ]
+    },
+    {
+      "code": "service_communication_or_recovery",
+      "label": "Информирование, ответ или обработка обращения",
+      "counts_by_platform": {
+        "Яндекс Карты": 10,
+        "Google Карты": 10,
+        "Яндекс Еда": 0
+      },
+      "N_total": 20,
+      "source_ids": [
+        122,
+        129,
+        150,
+        151,
+        153,
+        157,
+        158,
+        168,
+        182,
+        185,
+        186,
+        187,
+        192,
+        210,
+        211,
+        213,
+        232,
+        246,
+        41,
+        5
+      ]
+    },
+    {
+      "code": "cold_or_temperature_problem",
+      "label": "Блюдо остыло / температурный сбой",
+      "counts_by_platform": {
+        "Яндекс Карты": 5,
+        "Google Карты": 6,
+        "Яндекс Еда": 1
+      },
+      "N_total": 12,
+      "source_ids": [
+        5,
+        39,
+        58,
+        121,
+        150,
+        151,
+        185,
+        190,
+        212,
+        213,
+        214,
+        "YE-003"
+      ]
+    },
+    {
+      "code": "order_accuracy_or_paid_item_missing",
+      "label": "Ошибка комплектации / не вложили оплаченное",
+      "counts_by_platform": {
+        "Яндекс Карты": 7,
+        "Google Карты": 3,
+        "Яндекс Еда": 0
+      },
+      "N_total": 10,
+      "source_ids": [
+        17,
+        35,
+        100,
+        110,
+        127,
+        168,
+        183,
+        199,
+        213,
+        251
+      ]
+    },
+    {
+      "code": "portion_or_value",
+      "label": "Размер порции / соотношение объёма и цены",
+      "counts_by_platform": {
+        "Яндекс Карты": 5,
+        "Google Карты": 3,
+        "Яндекс Еда": 0
+      },
+      "N_total": 8,
+      "source_ids": [
+        46,
+        65,
+        110,
+        128,
+        137,
+        154,
+        165,
+        253
+      ]
+    },
+    {
+      "code": "ordering_access_or_payment",
+      "label": "Оформление, доступность точки или оплата",
+      "counts_by_platform": {
+        "Яндекс Карты": 3,
+        "Google Карты": 3,
+        "Яндекс Еда": 0
+      },
+      "N_total": 6,
+      "source_ids": [
+        61,
+        67,
+        71,
+        151,
+        179,
+        232
+      ]
+    },
+    {
+      "code": "packaging_or_presentation",
+      "label": "Повреждение, упаковка или внешний вид",
+      "counts_by_platform": {
+        "Яндекс Карты": 4,
+        "Google Карты": 2,
+        "Яндекс Еда": 0
+      },
+      "N_total": 6,
+      "source_ids": [
+        41,
+        121,
+        153,
+        173,
+        183,
+        251
+      ]
+    },
+    {
+      "code": "order_not_received_by_review_time",
+      "label": "К моменту отзыва заказ ещё не получен",
+      "counts_by_platform": {
+        "Яндекс Карты": 2,
+        "Google Карты": 3,
+        "Яндекс Еда": 0
+      },
+      "N_total": 5,
+      "source_ids": [
+        1,
+        158,
+        182,
+        186,
+        211
+      ]
+    },
+    {
+      "code": "menu_option_unavailable",
+      "label": "Нельзя заказать нужный вариант дополнения",
+      "counts_by_platform": {
+        "Яндекс Карты": 1,
+        "Google Карты": 0,
+        "Яндекс Еда": 0
+      },
+      "N_total": 1,
+      "source_ids": [
+        103
+      ]
+    }
+  ],
+  "specific_issue_bearing_public_reviews": {
+    "revvy_existing_N": 66,
+    "new_yandex_eda_N": 1,
+    "combined_N": 67,
+    "new_issue_ids": [
+      "YE-003"
+    ]
+  },
+  "new_yandex_eda_reviews": [
+    {
+      "public_id": "YE-001",
+      "ui_id": "YE-UI-001",
+      "platform": "Яндекс Еда",
+      "date_label": "5 сентября",
+      "date_normalized": "2026-09-05",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "d9282a9c053a34ea34986ef50b57e6fba0f5bb50e497f37f8f8d9236920df058",
+      "review_status": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "short_verification_excerpt": "сет, обслуживание и доставка понравились",
+      "count_as_new_platform_opinion": true
+    },
+    {
+      "public_id": "YE-002",
+      "ui_id": "YE-UI-002",
+      "platform": "Яндекс Еда",
+      "date_label": "5 августа",
+      "date_normalized": "2026-08-05",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "390ccb7eff9297c1423096349f57c51527ab6d6027dce272d0a0e04197b97cf1",
+      "review_status": "positive_or_no_issue_reported",
+      "issue_codes": [],
+      "short_verification_excerpt": "вкусные роллы, быстрая вежливая доставка",
+      "count_as_new_platform_opinion": true
+    },
+    {
+      "public_id": "YE-003",
+      "ui_id": "YE-UI-131",
+      "platform": "Яндекс Еда",
+      "date_label": "25 сентября",
+      "date_normalized": "2026-09-25",
+      "year_precision": "year inferred as 2026 from card context; year not rendered in source label",
+      "individual_rating": null,
+      "text_present": true,
+      "text_sha256": "7ac4f84dadf6afaa058d1d7cf858ce1a834983c10508f9cf0f174872987bd351",
+      "review_status": "specific_issue_or_dissatisfaction",
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "cold_or_temperature_problem"
+      ],
+      "short_verification_excerpt": "«привкусом гари»; «еле тёплые приехали»",
+      "count_as_new_platform_opinion": true
+    }
+  ],
+  "unresolved_ui_maps_rows_manually_read_no_specific_issue": [
+    {
+      "ui_id": "YM-057",
+      "date_label": "15 августа, 2025",
+      "normalized_text_sha256": "25996e2cbb297aafd6ae24bb2fbcdd7437eb0a0814f9ee24d90283332117bd46",
+      "candidate_revvy_row_ids": [
+        98,
+        56
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-063",
+      "date_label": "10 января",
+      "normalized_text_sha256": "d463989d7e48d5d45a46fb213a260d5e5640f38a724f2509f1a2a47bf5e1e00e",
+      "candidate_revvy_row_ids": [
+        60,
+        87
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-065",
+      "date_label": "19 апреля",
+      "normalized_text_sha256": "d07c7c223acc2d7edb4ac472bcdf477b2728b9d2acdcef43982d986075d1237c",
+      "candidate_revvy_row_ids": [
+        36,
+        79
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-077",
+      "date_label": "13 мая, 2025",
+      "normalized_text_sha256": "961f7692c349fdf6a6389c54388bc8d725fc85aa41390d567aea91c3de55121b",
+      "candidate_revvy_row_ids": [
+        118,
+        86
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-087",
+      "date_label": "12 августа",
+      "normalized_text_sha256": "825e508ab03b38941bf63e5e50894f524e41ea5b1bc6f9ce46be516b10aa7130",
+      "candidate_revvy_row_ids": [
+        14,
+        163
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-090",
+      "date_label": "14 июля, 2025",
+      "normalized_text_sha256": "8c092e87c18b33f28d0fc974b8f83855b03367ffb14ac696af2375d2fc2ec1c0",
+      "candidate_revvy_row_ids": [
+        56,
+        7
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-091",
+      "date_label": "13 апреля, 2025",
+      "normalized_text_sha256": "004e4ebd24fc504d899184a3befecab89c89c75d3e24eb82f73268c12f19b03c",
+      "candidate_revvy_row_ids": [
+        124,
+        79
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-095",
+      "date_label": "23 июля, 2023",
+      "normalized_text_sha256": "9af19e68120cfd6aba49be23ea895f4413b068f10feefdf1203fc81ff3efa1da",
+      "candidate_revvy_row_ids": [
+        208,
+        78
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-098",
+      "date_label": "1 октября, 2025",
+      "normalized_text_sha256": "0af7779bdd8c11fe5e3a4eda2ba2ab19f74dc1aa9080b3c47f6ff22a084debc4",
+      "candidate_revvy_row_ids": [
+        59,
+        70
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-100",
+      "date_label": "2 февраля, 2025",
+      "normalized_text_sha256": "51eec5edcbcee2e351085111f2eda24a316dc4663057cb8047d13562a551da58",
+      "candidate_revvy_row_ids": [
+        133,
+        12
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-102",
+      "date_label": "27 октября, 2023",
+      "normalized_text_sha256": "267d737ba4b20a2448736dc9bcc9195c9b54f5bf426a7dc9e5142a8c6b9534db",
+      "candidate_revvy_row_ids": [
+        198,
+        66
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-105",
+      "date_label": "2 ноября, 2025",
+      "normalized_text_sha256": "470fb576f5002695170f2a4550781169f871d2817dc2c4b1c67254de0ae69ba0",
+      "candidate_revvy_row_ids": [
+        108,
+        70
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    },
+    {
+      "ui_id": "YM-106",
+      "date_label": "24 сентября, 2025",
+      "normalized_text_sha256": "bfb094a2bef00b557f25a1edbb7c900023693def8276802b7b39bb753fb1d41c",
+      "candidate_revvy_row_ids": [
+        66
+      ],
+      "review_status_from_manual_read": "positive_or_no_issue_reported"
+    }
+  ],
+  "review_rows_from_revvy": [
+    {
+      "row_id": 1,
+      "date_as_exported": "26.09.2026 20:50",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_not_received_by_review_time"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 2,
+      "date_as_exported": "23.09.2026 12:48",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 3,
+      "date_as_exported": "20.09.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "qualified_not_complaint",
+      "status_note": "slow delivery acknowledged and planned around",
+      "duplicate_groups": [
+        "X1"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 4,
+      "date_as_exported": "16.09.2026 12:31",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "qualified_not_complaint",
+      "status_note": "same exact cross-post as row 3",
+      "duplicate_groups": [
+        "X1"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 5,
+      "date_as_exported": "15.09.2026 23:01",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 6,
+      "date_as_exported": "15.09.2026 15:34",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 7,
+      "date_as_exported": "06.09.2026 19:31",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 8,
+      "date_as_exported": "04.09.2026 10:33",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 9,
+      "date_as_exported": "01.09.2026 21:24",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 10,
+      "date_as_exported": "01.09.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 11,
+      "date_as_exported": "31.08.2026 15:35",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 12,
+      "date_as_exported": "31.08.2026 08:25",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 13,
+      "date_as_exported": "30.08.2026 12:52",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 14,
+      "date_as_exported": "12.08.2026 22:30",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 15,
+      "date_as_exported": "01.08.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 16,
+      "date_as_exported": "01.08.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 17,
+      "date_as_exported": "29.07.2026 22:33",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "review_status": "specific_issue_positive_recovery",
+      "status_note": "wrong roll/ingredient sent; customer reports fast resolution",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 18,
+      "date_as_exported": "16.07.2026 20:47",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 19,
+      "date_as_exported": "01.07.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 20,
+      "date_as_exported": "27.06.2026 15:38",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 21,
+      "date_as_exported": "27.06.2026 10:21",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 22,
+      "date_as_exported": "25.06.2026 11:08",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 23,
+      "date_as_exported": "24.06.2026 22:48",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 24,
+      "date_as_exported": "04.06.2026 18:28",
+      "platform": "Яндекс Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 25,
+      "date_as_exported": "01.06.2026 15:49",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 26,
+      "date_as_exported": "01.06.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 27,
+      "date_as_exported": "28.05.2026 21:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 28,
+      "date_as_exported": "26.05.2026 20:05",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 29,
+      "date_as_exported": "20.05.2026 16:22",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 30,
+      "date_as_exported": "18.05.2026 21:27",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_change_unspecified",
+      "status_note": "improvement mentioned without naming prior problem",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 31,
+      "date_as_exported": "12.05.2026 18:50",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 32,
+      "date_as_exported": "05.05.2026 20:41",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 33,
+      "date_as_exported": "01.05.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [
+        "X2"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 34,
+      "date_as_exported": "23.04.2026 22:01",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 35,
+      "date_as_exported": "23.04.2026 21:36",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 36,
+      "date_as_exported": "19.04.2026 14:50",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 37,
+      "date_as_exported": "16.04.2026 13:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [
+        "X2"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 38,
+      "date_as_exported": "01.04.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 39,
+      "date_as_exported": "01.04.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 40,
+      "date_as_exported": "29.03.2026 14:48",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 41,
+      "date_as_exported": "27.03.2026 21:46",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "service_communication_or_recovery",
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 42,
+      "date_as_exported": "21.03.2026 20:41",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_delivery_friction_workaround",
+      "status_note": "delivery described as unreliable; customer chooses pickup",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 43,
+      "date_as_exported": "08.03.2026 21:24",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "generic_negative_without_specific_theme",
+      "status_note": "Negative delivery assessment with no concrete event or cause in the text.",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 44,
+      "date_as_exported": "06.03.2026 12:27",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 45,
+      "date_as_exported": "01.03.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "negative_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 46,
+      "date_as_exported": "01.03.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 47,
+      "date_as_exported": "25.02.2026 20:46",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 48,
+      "date_as_exported": "23.02.2026 13:49",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 49,
+      "date_as_exported": "20.02.2026 00:06",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 50,
+      "date_as_exported": "14.02.2026 22:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 51,
+      "date_as_exported": "14.02.2026 18:08",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 52,
+      "date_as_exported": "11.02.2026 18:53",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 53,
+      "date_as_exported": "03.02.2026 08:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "preference_or_suggestion",
+      "status_note": "would prefer more pineapple in shawarma; no other failure reported",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 54,
+      "date_as_exported": "01.02.2026 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 55,
+      "date_as_exported": "31.01.2026 18:07",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 56,
+      "date_as_exported": "28.01.2026 14:04",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 57,
+      "date_as_exported": "22.01.2026 13:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 58,
+      "date_as_exported": "12.01.2026 20:18",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 59,
+      "date_as_exported": "12.01.2026 18:05",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 60,
+      "date_as_exported": "10.01.2026 13:36",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 61,
+      "date_as_exported": "07.01.2026 13:54",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 62,
+      "date_as_exported": "14.12.2025 18:21",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 63,
+      "date_as_exported": "01.12.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 64,
+      "date_as_exported": "01.12.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 65,
+      "date_as_exported": "29.11.2025 16:00",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 66,
+      "date_as_exported": "20.11.2025 18:57",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 67,
+      "date_as_exported": "18.11.2025 18:08",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_ordering_usability_issue",
+      "status_note": "set contents less clear in app than before",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 68,
+      "date_as_exported": "07.11.2025 21:03",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 69,
+      "date_as_exported": "04.11.2025 18:24",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 70,
+      "date_as_exported": "02.11.2025 19:06",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 71,
+      "date_as_exported": "01.11.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 72,
+      "date_as_exported": "29.10.2025 21:01",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 73,
+      "date_as_exported": "29.10.2025 11:19",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 74,
+      "date_as_exported": "15.10.2025 19:29",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "not_a_complaint",
+      "status_note": "price described as high but worth it",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 75,
+      "date_as_exported": "12.10.2025 14:22",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 76,
+      "date_as_exported": "09.10.2025 09:18",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "not_firsthand_complaint",
+      "status_note": "defends service while discussing other customers and competitor",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 77,
+      "date_as_exported": "08.10.2025 20:27",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 78,
+      "date_as_exported": "06.10.2025 22:55",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 79,
+      "date_as_exported": "04.10.2025 22:03",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 80,
+      "date_as_exported": "01.10.2025 21:59",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 81,
+      "date_as_exported": "24.09.2025 07:43",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 82,
+      "date_as_exported": "20.09.2025 22:39",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 83,
+      "date_as_exported": "19.09.2025 13:54",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 84,
+      "date_as_exported": "17.09.2025 10:12",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 85,
+      "date_as_exported": "16.09.2025 18:15",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 86,
+      "date_as_exported": "12.09.2025 22:09",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 87,
+      "date_as_exported": "08.09.2025 20:15",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 88,
+      "date_as_exported": "06.09.2025 22:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 89,
+      "date_as_exported": "05.09.2025 18:35",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 90,
+      "date_as_exported": "03.09.2025 16:03",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 91,
+      "date_as_exported": "01.09.2025 13:35",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 92,
+      "date_as_exported": "31.08.2025 19:48",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [
+        "U1"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 93,
+      "date_as_exported": "30.08.2025 21:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 94,
+      "date_as_exported": "28.08.2025 22:09",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 95,
+      "date_as_exported": "24.08.2025 22:59",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 96,
+      "date_as_exported": "23.08.2025 22:08",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 97,
+      "date_as_exported": "19.08.2025 21:24",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 98,
+      "date_as_exported": "16.08.2025 00:06",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 99,
+      "date_as_exported": "15.08.2025 23:18",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 100,
+      "date_as_exported": "15.08.2025 19:33",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 101,
+      "date_as_exported": "13.08.2025 07:48",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 102,
+      "date_as_exported": "12.08.2025 21:42",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 103,
+      "date_as_exported": "10.08.2025 17:58",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "menu_option_unavailable"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 104,
+      "date_as_exported": "10.08.2025 17:30",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 105,
+      "date_as_exported": "07.08.2025 18:12",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 106,
+      "date_as_exported": "06.08.2025 17:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 107,
+      "date_as_exported": "06.08.2025 07:18",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 108,
+      "date_as_exported": "01.08.2025 19:07",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 109,
+      "date_as_exported": "01.08.2025 17:21",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 110,
+      "date_as_exported": "21.07.2025 22:33",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing",
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 111,
+      "date_as_exported": "20.07.2025 21:15",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 112,
+      "date_as_exported": "15.07.2025 17:35",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_product_quality_issue",
+      "status_note": "says rolls have become worse",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 113,
+      "date_as_exported": "14.07.2025 14:56",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 114,
+      "date_as_exported": "10.07.2025 14:56",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 115,
+      "date_as_exported": "05.07.2025 22:47",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [
+        "U1"
+      ],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 116,
+      "date_as_exported": "25.05.2025 10:06",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 117,
+      "date_as_exported": "25.05.2025 07:24",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 118,
+      "date_as_exported": "14.05.2025 00:12",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 119,
+      "date_as_exported": "07.05.2025 18:21",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 120,
+      "date_as_exported": "27.04.2025 20:18",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 121,
+      "date_as_exported": "27.04.2025 17:39",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe",
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 122,
+      "date_as_exported": "17.04.2025 20:19",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "food_quality_taste_texture_or_recipe",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 123,
+      "date_as_exported": "16.04.2025 20:28",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 124,
+      "date_as_exported": "13.04.2025 15:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 125,
+      "date_as_exported": "10.04.2025 18:04",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 126,
+      "date_as_exported": "06.04.2025 22:17",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 127,
+      "date_as_exported": "02.04.2025 12:07",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 128,
+      "date_as_exported": "22.03.2025 07:42",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 129,
+      "date_as_exported": "09.03.2025 14:10",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 130,
+      "date_as_exported": "15.02.2025 11:42",
+      "platform": "Яндекс Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "negative_score_text_not_manually_thematized",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 131,
+      "date_as_exported": "10.02.2025 15:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 132,
+      "date_as_exported": "05.02.2025 19:31",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 133,
+      "date_as_exported": "02.02.2025 17:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 134,
+      "date_as_exported": "11.01.2025 19:17",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 135,
+      "date_as_exported": "08.01.2025 12:55",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 136,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 137,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 138,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 139,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 140,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 141,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 142,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 143,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 144,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 145,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 146,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 147,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 148,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 149,
+      "date_as_exported": "01.01.2025 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "non_specific_past_issue_recovered",
+      "status_note": "mentions a few minor errors corrected, without details",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 150,
+      "date_as_exported": "16.12.2024 13:20",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 151,
+      "date_as_exported": "13.12.2024 23:22",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "service_communication_or_recovery",
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 152,
+      "date_as_exported": "24.11.2024 18:24",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 153,
+      "date_as_exported": "17.11.2024 12:17",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery",
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 154,
+      "date_as_exported": "13.11.2024 21:30",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 155,
+      "date_as_exported": "21.10.2024 21:00",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 156,
+      "date_as_exported": "08.10.2024 20:22",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 157,
+      "date_as_exported": "11.09.2024 21:42",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 158,
+      "date_as_exported": "07.08.2024 20:13",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_not_received_by_review_time",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": "Customer had to call after two hours; operator explained the courier mixed orders; reviewer explicitly condemns the treatment of customers.",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 159,
+      "date_as_exported": "28.06.2024 22:30",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 160,
+      "date_as_exported": "22.06.2024 22:16",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 161,
+      "date_as_exported": "18.06.2024 07:30",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 162,
+      "date_as_exported": "14.06.2024 21:18",
+      "platform": "Яндекс Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 163,
+      "date_as_exported": "11.06.2024 23:40",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 164,
+      "date_as_exported": "30.05.2024 15:01",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 165,
+      "date_as_exported": "28.05.2024 21:31",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe",
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 166,
+      "date_as_exported": "18.05.2024 08:34",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 167,
+      "date_as_exported": "14.05.2024 17:26",
+      "platform": "Яндекс Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 168,
+      "date_as_exported": "01.05.2024 19:53",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 169,
+      "date_as_exported": "30.04.2024 21:48",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 170,
+      "date_as_exported": "19.04.2024 16:30",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 171,
+      "date_as_exported": "07.04.2024 20:45",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "not_a_complaint",
+      "status_note": "peak-time queue is usually disclosed in advance",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 172,
+      "date_as_exported": "30.03.2024 19:05",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 173,
+      "date_as_exported": "20.03.2024 14:27",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 174,
+      "date_as_exported": "29.02.2024 20:34",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 175,
+      "date_as_exported": "04.02.2024 21:43",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 176,
+      "date_as_exported": "01.02.2024 22:22",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 177,
+      "date_as_exported": "18.01.2024 13:26",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 178,
+      "date_as_exported": "15.01.2024 21:53",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 179,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 180,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 2,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "negative_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 181,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "negative_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 182,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_not_received_by_review_time",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 183,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "order_accuracy_or_paid_item_missing",
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 184,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "not_a_complaint",
+      "status_note": "suggests ordering ahead; reports delivery on time",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 185,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 186,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_not_received_by_review_time",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 187,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 188,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 189,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "negative_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 190,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "cold_or_temperature_problem"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 191,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 192,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 193,
+      "date_as_exported": "01.01.2024 00:00",
+      "platform": "Google Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 194,
+      "date_as_exported": "08.12.2023 15:17",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 195,
+      "date_as_exported": "21.11.2023 14:51",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_product_dissatisfaction_mixed_review",
+      "status_note": "rolls disliked, pizza praised",
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 196,
+      "date_as_exported": "31.10.2023 22:22",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 197,
+      "date_as_exported": "28.10.2023 21:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 198,
+      "date_as_exported": "27.10.2023 20:11",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 199,
+      "date_as_exported": "13.10.2023 21:19",
+      "platform": "Яндекс Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "order_accuracy_or_paid_item_missing"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 200,
+      "date_as_exported": "13.10.2023 18:52",
+      "platform": "Яндекс Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 201,
+      "date_as_exported": "20.09.2023 19:14",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 202,
+      "date_as_exported": "18.08.2023 14:45",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 203,
+      "date_as_exported": "18.08.2023 14:28",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 204,
+      "date_as_exported": "18.08.2023 12:17",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 205,
+      "date_as_exported": "14.08.2023 14:28",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 206,
+      "date_as_exported": "14.08.2023 13:28",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 207,
+      "date_as_exported": "14.08.2023 13:25",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 208,
+      "date_as_exported": "23.07.2023 19:29",
+      "platform": "Яндекс Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 209,
+      "date_as_exported": "12.07.2023 17:55",
+      "platform": "Яндекс Карты",
+      "rating": 3,
+      "text_present": true,
+      "issue_codes": [
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 210,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 211,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "order_not_received_by_review_time",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 212,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 213,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "cold_or_temperature_problem",
+        "order_accuracy_or_paid_item_missing",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 214,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "cold_or_temperature_problem",
+        "food_quality_taste_texture_or_recipe"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 215,
+      "date_as_exported": "01.01.2023 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 216,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 217,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 218,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 219,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 220,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 221,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 222,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 223,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 224,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 225,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 226,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 227,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 228,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 229,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 230,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 231,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 232,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 2,
+      "text_present": true,
+      "issue_codes": [
+        "service_communication_or_recovery",
+        "ordering_access_or_payment"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 233,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 234,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 235,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 236,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 237,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 238,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 239,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 240,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 241,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 242,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 243,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 244,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 245,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 246,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 1,
+      "text_present": true,
+      "issue_codes": [
+        "delivery_delay_or_time_mismatch",
+        "service_communication_or_recovery"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 247,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 248,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 249,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 250,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 251,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "order_accuracy_or_paid_item_missing",
+        "packaging_or_presentation"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 252,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 253,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 4,
+      "text_present": true,
+      "issue_codes": [
+        "portion_or_value"
+      ],
+      "review_status": "specific_issue_or_dissatisfaction",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 254,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 255,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": false,
+      "issue_codes": [],
+      "review_status": "positive_score_no_text",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 256,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 257,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 258,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    },
+    {
+      "row_id": 259,
+      "date_as_exported": "01.01.2022 00:00",
+      "platform": "Google Карты",
+      "rating": 5,
+      "text_present": true,
+      "issue_codes": [],
+      "review_status": "positive_or_no_issue_reported",
+      "status_note": null,
+      "duplicate_groups": [],
+      "raw_text_author_and_contact_excluded": true
+    }
+  ],
+  "interpretation": [
+    "The current Maps card rating 5.0/276 and the 2022–2026 Revvy archive are different snapshots and possibly different populations/formulas; this comparison is not evidence of rating manipulation.",
+    "No individual ratings are present for the three Yandex Eda text reviews; the card-level 4.8/17 is not assigned to individual rows.",
+    "Eda review dated 25 September is coded for taste/quality and temperature as separate observations. The review mentions a courier without a thermal bag, but no causal link to temperature is inferred; it also praises the rolls, so the whole order is not called a failure.",
+    "Counts are public reviews/opinions, not unique people or order-level defect rates. Google–Yandex cross-posts are preserved as possible overlaps and shown in a separate deduplication scenario.",
+    "Google source dates have low day-level precision, documented in the base coded dataset; do not treat historical Google day/month or recency as verified."
+  ],
+  "recent_public_by_source": {
+    "Яндекс Карты": {
+      "window": "2026-07-14 through 2026-10-11 based on Revvy export dates",
+      "issue_rows": [
+        1,
+        5,
+        9,
+        17
+      ],
+      "specific_issue_reviews_N": 4,
+      "note": "Rows 1,5,9,17; row 1 establishes no order after 3 hours only."
+    },
+    "Google Карты": {
+      "window": "same export-date filter, low date precision",
+      "candidate_issue_reviews_N": 0,
+      "note": "Export has 00:00 for all Google timestamps and 79/94 on January 1; absence of confirmed recent cases is not inferred."
+    },
+    "Яндекс Еда": {
+      "candidate_window": "2026-08-05 through 2026-09-25, year inferred from current UI context because year omitted in date labels",
+      "text_reviews_N": 3,
+      "specific_issue_reviews_N": 1,
+      "issue_id": "YE-003",
+      "note": "Conditional recent classification; one review describes mussel taste and temperature separately."
+    }
+  }
+}
