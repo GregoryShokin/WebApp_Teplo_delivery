@@ -1,0 +1,643 @@
+{
+ "2026-08": {
+  "orders_uniq": 1819,
+  "orders_zero_revenue": 12,
+  "orders_paid": 1807,
+  "revenue_net": "3282430.64",
+  "avg_net_check_all": "1804.52",
+  "avg_net_check_paid": "1816.51",
+  "channels_net": {
+   "Starter доставка": "2118335.61",
+   "Телефон/оператор доставка": "515188.40",
+   "Самовывоз (не Starter)": "143030.63",
+   "Starter самовывоз": "434310.00",
+   "Яндекс Еда": "71566.00"
+  },
+  "channels_orders": {
+   "Starter доставка": 1106,
+   "Телефон/оператор доставка": 198,
+   "Самовывоз (не Starter)": 194,
+   "Starter самовывоз": 288,
+   "Яндекс Еда": 33
+  },
+  "courier_orders_iiko": 1327,
+  "units_by_cooking_place": [
+   {
+    "CookingPlace": "Бар",
+    "DishAmountInt": 4006,
+    "DishDiscountSumInt": 57169.05,
+    "DishSumInt": 66292,
+    "ProductCostBase.ProductCost": 24823.776923076923,
+    "UniqOrderId": 1560
+   },
+   {
+    "CookingPlace": "Пицца",
+    "DishAmountInt": 1801,
+    "DishDiscountSumInt": 939360.78,
+    "DishSumInt": 1074317,
+    "ProductCostBase.ProductCost": 253656.78,
+    "UniqOrderId": 877
+   },
+   {
+    "CookingPlace": "Специи, роллы Черникова",
+    "DishAmountInt": 2736,
+    "DishDiscountSumInt": 117218.73,
+    "DishSumInt": 130552,
+    "ProductCostBase.ProductCost": 39975.85,
+    "UniqOrderId": 1055
+   },
+   {
+    "CookingPlace": "Суши",
+    "DishAmountInt": 2577,
+    "DishDiscountSumInt": 1744246.11,
+    "DishSumInt": 2006195,
+    "ProductCostBase.ProductCost": 523844.895,
+    "UniqOrderId": 1283
+   },
+   {
+    "CookingPlace": "Шаурма",
+    "DishAmountInt": 1815,
+    "DishDiscountSumInt": 424435.97,
+    "DishSumInt": 472330,
+    "ProductCostBase.ProductCost": 120338.34166666666,
+    "UniqOrderId": 617
+   }
+  ],
+  "days_by_tier": {
+   "0.035": 27,
+   "0.045": 4
+  },
+  "days_within_10k_below_next": 5,
+  "days_within_5k_below_next": 2,
+  "days_within_10k_above_lower": 1,
+  "theoretical_pool_sum": "121718.66",
+  "percent_paid_sum": "121623.00",
+  "days": [
+   {
+    "date": "2026-08-01",
+    "dow": 6,
+    "revenue": "129747.15",
+    "rate": "0.035",
+    "to_next_threshold": "10252.85",
+    "above_lower_threshold": "79747.15"
+   },
+   {
+    "date": "2026-08-02",
+    "dow": 7,
+    "revenue": "92847.80",
+    "rate": "0.035",
+    "to_next_threshold": "47152.20",
+    "above_lower_threshold": "42847.80"
+   },
+   {
+    "date": "2026-08-03",
+    "dow": 1,
+    "revenue": "98910.40",
+    "rate": "0.035",
+    "to_next_threshold": "41089.60",
+    "above_lower_threshold": "48910.40"
+   },
+   {
+    "date": "2026-08-04",
+    "dow": 2,
+    "revenue": "56668.00",
+    "rate": "0.035",
+    "to_next_threshold": "83332.00",
+    "above_lower_threshold": "6668.00"
+   },
+   {
+    "date": "2026-08-05",
+    "dow": 3,
+    "revenue": "66304.30",
+    "rate": "0.035",
+    "to_next_threshold": "73695.70",
+    "above_lower_threshold": "16304.30"
+   },
+   {
+    "date": "2026-08-06",
+    "dow": 4,
+    "revenue": "65898.00",
+    "rate": "0.035",
+    "to_next_threshold": "74102.00",
+    "above_lower_threshold": "15898.00"
+   },
+   {
+    "date": "2026-08-07",
+    "dow": 5,
+    "revenue": "136962.60",
+    "rate": "0.035",
+    "to_next_threshold": "3037.40",
+    "above_lower_threshold": "86962.60"
+   },
+   {
+    "date": "2026-08-08",
+    "dow": 6,
+    "revenue": "184694.40",
+    "rate": "0.045",
+    "to_next_threshold": "5305.60",
+    "above_lower_threshold": "44694.40"
+   },
+   {
+    "date": "2026-08-09",
+    "dow": 7,
+    "revenue": "81747.00",
+    "rate": "0.035",
+    "to_next_threshold": "58253.00",
+    "above_lower_threshold": "31747.00"
+   },
+   {
+    "date": "2026-08-10",
+    "dow": 1,
+    "revenue": "76445.00",
+    "rate": "0.035",
+    "to_next_threshold": "63555.00",
+    "above_lower_threshold": "26445.00"
+   },
+   {
+    "date": "2026-08-11",
+    "dow": 2,
+    "revenue": "106484.25",
+    "rate": "0.035",
+    "to_next_threshold": "33515.75",
+    "above_lower_threshold": "56484.25"
+   },
+   {
+    "date": "2026-08-12",
+    "dow": 3,
+    "revenue": "130196.00",
+    "rate": "0.035",
+    "to_next_threshold": "9804.00",
+    "above_lower_threshold": "80196.00"
+   },
+   {
+    "date": "2026-08-13",
+    "dow": 4,
+    "revenue": "96537.40",
+    "rate": "0.035",
+    "to_next_threshold": "43462.60",
+    "above_lower_threshold": "46537.40"
+   },
+   {
+    "date": "2026-08-14",
+    "dow": 5,
+    "revenue": "150831.00",
+    "rate": "0.045",
+    "to_next_threshold": "39169.00",
+    "above_lower_threshold": "10831.00"
+   },
+   {
+    "date": "2026-08-15",
+    "dow": 6,
+    "revenue": "175890.20",
+    "rate": "0.045",
+    "to_next_threshold": "14109.80",
+    "above_lower_threshold": "35890.20"
+   },
+   {
+    "date": "2026-08-16",
+    "dow": 7,
+    "revenue": "99755.00",
+    "rate": "0.035",
+    "to_next_threshold": "40245.00",
+    "above_lower_threshold": "49755.00"
+   },
+   {
+    "date": "2026-08-17",
+    "dow": 1,
+    "revenue": "95721.00",
+    "rate": "0.035",
+    "to_next_threshold": "44279.00",
+    "above_lower_threshold": "45721.00"
+   },
+   {
+    "date": "2026-08-18",
+    "dow": 2,
+    "revenue": "61479.83",
+    "rate": "0.035",
+    "to_next_threshold": "78520.17",
+    "above_lower_threshold": "11479.83"
+   },
+   {
+    "date": "2026-08-19",
+    "dow": 3,
+    "revenue": "93336.78",
+    "rate": "0.035",
+    "to_next_threshold": "46663.22",
+    "above_lower_threshold": "43336.78"
+   },
+   {
+    "date": "2026-08-20",
+    "dow": 4,
+    "revenue": "89883.00",
+    "rate": "0.035",
+    "to_next_threshold": "50117.00",
+    "above_lower_threshold": "39883.00"
+   },
+   {
+    "date": "2026-08-21",
+    "dow": 5,
+    "revenue": "126964.24",
+    "rate": "0.035",
+    "to_next_threshold": "13035.76",
+    "above_lower_threshold": "76964.24"
+   },
+   {
+    "date": "2026-08-22",
+    "dow": 6,
+    "revenue": "139389.20",
+    "rate": "0.035",
+    "to_next_threshold": "610.80",
+    "above_lower_threshold": "89389.20"
+   },
+   {
+    "date": "2026-08-23",
+    "dow": 7,
+    "revenue": "113255.75",
+    "rate": "0.035",
+    "to_next_threshold": "26744.25",
+    "above_lower_threshold": "63255.75"
+   },
+   {
+    "date": "2026-08-24",
+    "dow": 1,
+    "revenue": "65935.00",
+    "rate": "0.035",
+    "to_next_threshold": "74065.00",
+    "above_lower_threshold": "15935.00"
+   },
+   {
+    "date": "2026-08-25",
+    "dow": 2,
+    "revenue": "74972.02",
+    "rate": "0.035",
+    "to_next_threshold": "65027.98",
+    "above_lower_threshold": "24972.02"
+   },
+   {
+    "date": "2026-08-26",
+    "dow": 3,
+    "revenue": "105736.15",
+    "rate": "0.035",
+    "to_next_threshold": "34263.85",
+    "above_lower_threshold": "55736.15"
+   },
+   {
+    "date": "2026-08-27",
+    "dow": 4,
+    "revenue": "70321.22",
+    "rate": "0.035",
+    "to_next_threshold": "69678.78",
+    "above_lower_threshold": "20321.22"
+   },
+   {
+    "date": "2026-08-28",
+    "dow": 5,
+    "revenue": "132914.00",
+    "rate": "0.035",
+    "to_next_threshold": "7086.00",
+    "above_lower_threshold": "82914.00"
+   },
+   {
+    "date": "2026-08-29",
+    "dow": 6,
+    "revenue": "171945.00",
+    "rate": "0.045",
+    "to_next_threshold": "18055.00",
+    "above_lower_threshold": "31945.00"
+   },
+   {
+    "date": "2026-08-30",
+    "dow": 7,
+    "revenue": "93846.00",
+    "rate": "0.035",
+    "to_next_threshold": "46154.00",
+    "above_lower_threshold": "43846.00"
+   },
+   {
+    "date": "2026-08-31",
+    "dow": 1,
+    "revenue": "96812.95",
+    "rate": "0.035",
+    "to_next_threshold": "43187.05",
+    "above_lower_threshold": "46812.95"
+   }
+  ]
+ },
+ "2026-09": {
+  "orders_uniq": 1709,
+  "orders_zero_revenue": 15,
+  "orders_paid": 1694,
+  "revenue_net": "3066493.59",
+  "avg_net_check_all": "1794.32",
+  "avg_net_check_paid": "1810.21",
+  "channels_net": {
+   "Starter доставка": "1984128.94",
+   "Телефон/оператор доставка": "393103.02",
+   "Самовывоз (не Starter)": "166654.53",
+   "Starter самовывоз": "440853.10",
+   "Яндекс Еда": "81754.00"
+  },
+  "channels_orders": {
+   "Starter доставка": 1015,
+   "Телефон/оператор доставка": 161,
+   "Самовывоз (не Starter)": 194,
+   "Starter самовывоз": 297,
+   "Яндекс Еда": 42
+  },
+  "courier_orders_iiko": 1211,
+  "units_by_cooking_place": [
+   {
+    "CookingPlace": "Бар",
+    "DishAmountInt": 3545,
+    "DishDiscountSumInt": 41555.25,
+    "DishSumInt": 49235,
+    "ProductCostBase.ProductCost": 19637.15562327189,
+    "UniqOrderId": 1483
+   },
+   {
+    "CookingPlace": "Пицца",
+    "DishAmountInt": 1509,
+    "DishDiscountSumInt": 833919.6,
+    "DishSumInt": 935289,
+    "ProductCostBase.ProductCost": 217964.84,
+    "UniqOrderId": 750
+   },
+   {
+    "CookingPlace": "Специи, роллы Черникова",
+    "DishAmountInt": 2502,
+    "DishDiscountSumInt": 108574.58,
+    "DishSumInt": 121046,
+    "ProductCostBase.ProductCost": 38007.62766025641,
+    "UniqOrderId": 977
+   },
+   {
+    "CookingPlace": "Суши",
+    "DishAmountInt": 2514,
+    "DishDiscountSumInt": 1698669.02,
+    "DishSumInt": 1941279,
+    "ProductCostBase.ProductCost": 498800.8014285714,
+    "UniqOrderId": 1231
+   },
+   {
+    "CookingPlace": "Шаурма",
+    "DishAmountInt": 1556,
+    "DishDiscountSumInt": 383775.14,
+    "DishSumInt": 432015,
+    "ProductCostBase.ProductCost": 111295.37942857142,
+    "UniqOrderId": 582
+   }
+  ],
+  "days_by_tier": {
+   "0.055": 1,
+   "0.035": 25,
+   "0.045": 4
+  },
+  "days_within_10k_below_next": 1,
+  "days_within_5k_below_next": 0,
+  "days_within_10k_above_lower": 4,
+  "theoretical_pool_sum": "119030.32",
+  "percent_paid_sum": "118938.00",
+  "days": [
+   {
+    "date": "2026-09-01",
+    "dow": 2,
+    "revenue": "265040.00",
+    "rate": "0.055",
+    "to_next_threshold": "284960.00",
+    "above_lower_threshold": "75040.00"
+   },
+   {
+    "date": "2026-09-02",
+    "dow": 3,
+    "revenue": "51222.00",
+    "rate": "0.035",
+    "to_next_threshold": "88778.00",
+    "above_lower_threshold": "1222.00"
+   },
+   {
+    "date": "2026-09-03",
+    "dow": 4,
+    "revenue": "53492.82",
+    "rate": "0.035",
+    "to_next_threshold": "86507.18",
+    "above_lower_threshold": "3492.82"
+   },
+   {
+    "date": "2026-09-04",
+    "dow": 5,
+    "revenue": "110601.55",
+    "rate": "0.035",
+    "to_next_threshold": "29398.45",
+    "above_lower_threshold": "60601.55"
+   },
+   {
+    "date": "2026-09-05",
+    "dow": 6,
+    "revenue": "133381.00",
+    "rate": "0.035",
+    "to_next_threshold": "6619.00",
+    "above_lower_threshold": "83381.00"
+   },
+   {
+    "date": "2026-09-06",
+    "dow": 7,
+    "revenue": "107223.84",
+    "rate": "0.035",
+    "to_next_threshold": "32776.16",
+    "above_lower_threshold": "57223.84"
+   },
+   {
+    "date": "2026-09-07",
+    "dow": 1,
+    "revenue": "97102.15",
+    "rate": "0.035",
+    "to_next_threshold": "42897.85",
+    "above_lower_threshold": "47102.15"
+   },
+   {
+    "date": "2026-09-08",
+    "dow": 2,
+    "revenue": "63063.30",
+    "rate": "0.035",
+    "to_next_threshold": "76936.70",
+    "above_lower_threshold": "13063.30"
+   },
+   {
+    "date": "2026-09-09",
+    "dow": 3,
+    "revenue": "73609.00",
+    "rate": "0.035",
+    "to_next_threshold": "66391.00",
+    "above_lower_threshold": "23609.00"
+   },
+   {
+    "date": "2026-09-10",
+    "dow": 4,
+    "revenue": "94769.00",
+    "rate": "0.035",
+    "to_next_threshold": "45231.00",
+    "above_lower_threshold": "44769.00"
+   },
+   {
+    "date": "2026-09-11",
+    "dow": 5,
+    "revenue": "104549.02",
+    "rate": "0.035",
+    "to_next_threshold": "35450.98",
+    "above_lower_threshold": "54549.02"
+   },
+   {
+    "date": "2026-09-12",
+    "dow": 6,
+    "revenue": "154373.20",
+    "rate": "0.045",
+    "to_next_threshold": "35626.80",
+    "above_lower_threshold": "14373.20"
+   },
+   {
+    "date": "2026-09-13",
+    "dow": 7,
+    "revenue": "128993.01",
+    "rate": "0.035",
+    "to_next_threshold": "11006.99",
+    "above_lower_threshold": "78993.01"
+   },
+   {
+    "date": "2026-09-14",
+    "dow": 1,
+    "revenue": "95352.25",
+    "rate": "0.035",
+    "to_next_threshold": "44647.75",
+    "above_lower_threshold": "45352.25"
+   },
+   {
+    "date": "2026-09-15",
+    "dow": 2,
+    "revenue": "103340.00",
+    "rate": "0.035",
+    "to_next_threshold": "36660.00",
+    "above_lower_threshold": "53340.00"
+   },
+   {
+    "date": "2026-09-16",
+    "dow": 3,
+    "revenue": "75343.45",
+    "rate": "0.035",
+    "to_next_threshold": "64656.55",
+    "above_lower_threshold": "25343.45"
+   },
+   {
+    "date": "2026-09-17",
+    "dow": 4,
+    "revenue": "62323.00",
+    "rate": "0.035",
+    "to_next_threshold": "77677.00",
+    "above_lower_threshold": "12323.00"
+   },
+   {
+    "date": "2026-09-18",
+    "dow": 5,
+    "revenue": "129345.15",
+    "rate": "0.035",
+    "to_next_threshold": "10654.85",
+    "above_lower_threshold": "79345.15"
+   },
+   {
+    "date": "2026-09-19",
+    "dow": 6,
+    "revenue": "123102.35",
+    "rate": "0.035",
+    "to_next_threshold": "16897.65",
+    "above_lower_threshold": "73102.35"
+   },
+   {
+    "date": "2026-09-20",
+    "dow": 7,
+    "revenue": "56806.00",
+    "rate": "0.035",
+    "to_next_threshold": "83194.00",
+    "above_lower_threshold": "6806.00"
+   },
+   {
+    "date": "2026-09-21",
+    "dow": 1,
+    "revenue": "70711.90",
+    "rate": "0.035",
+    "to_next_threshold": "69288.10",
+    "above_lower_threshold": "20711.90"
+   },
+   {
+    "date": "2026-09-22",
+    "dow": 2,
+    "revenue": "62786.00",
+    "rate": "0.035",
+    "to_next_threshold": "77214.00",
+    "above_lower_threshold": "12786.00"
+   },
+   {
+    "date": "2026-09-23",
+    "dow": 3,
+    "revenue": "64778.00",
+    "rate": "0.035",
+    "to_next_threshold": "75222.00",
+    "above_lower_threshold": "14778.00"
+   },
+   {
+    "date": "2026-09-24",
+    "dow": 4,
+    "revenue": "63868.00",
+    "rate": "0.035",
+    "to_next_threshold": "76132.00",
+    "above_lower_threshold": "13868.00"
+   },
+   {
+    "date": "2026-09-25",
+    "dow": 5,
+    "revenue": "164633.45",
+    "rate": "0.045",
+    "to_next_threshold": "25366.55",
+    "above_lower_threshold": "24633.45"
+   },
+   {
+    "date": "2026-09-26",
+    "dow": 6,
+    "revenue": "176647.00",
+    "rate": "0.045",
+    "to_next_threshold": "13353.00",
+    "above_lower_threshold": "36647.00"
+   },
+   {
+    "date": "2026-09-27",
+    "dow": 7,
+    "revenue": "144567.00",
+    "rate": "0.045",
+    "to_next_threshold": "45433.00",
+    "above_lower_threshold": "4567.00"
+   },
+   {
+    "date": "2026-09-28",
+    "dow": 1,
+    "revenue": "93546.00",
+    "rate": "0.035",
+    "to_next_threshold": "46454.00",
+    "above_lower_threshold": "43546.00"
+   },
+   {
+    "date": "2026-09-29",
+    "dow": 2,
+    "revenue": "60151.15",
+    "rate": "0.035",
+    "to_next_threshold": "79848.85",
+    "above_lower_threshold": "10151.15"
+   },
+   {
+    "date": "2026-09-30",
+    "dow": 3,
+    "revenue": "81773.00",
+    "rate": "0.035",
+    "to_next_threshold": "58227.00",
+    "above_lower_threshold": "31773.00"
+   }
+  ]
+ }
+}

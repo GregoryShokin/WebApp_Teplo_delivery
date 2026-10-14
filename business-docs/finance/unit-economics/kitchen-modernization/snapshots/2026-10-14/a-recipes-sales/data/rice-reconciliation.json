@@ -1,0 +1,177 @@
+{
+ "units": "кг; рисовый п/ф — готовый (после варки и заправки); сырой рис — Рис Макото",
+ "raw_rice_per_kg_rice_pf": 0.469968982,
+ "batch_yield_kg": 5.3195,
+ "rice_pf_cost": {
+  "priced_material_cost_ex_water_rub": 57.73,
+  "water_l": 0.4418,
+  "unpriced_leaves": [],
+  "status": "complete_ex_water",
+  "leaves": [
+   {
+    "leaf": "Рис Макото",
+    "guid": "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+    "qty": 0.469969,
+    "unit": "кг",
+    "price_rub": 85.0,
+    "price_date": "2026-10-08",
+    "cost_rub": 39.947
+   },
+   {
+    "leaf": "Сахар",
+    "guid": "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+    "qty": 0.112402,
+    "unit": "кг",
+    "price_rub": 77.6,
+    "price_date": "2026-10-12",
+    "cost_rub": 8.722
+   },
+   {
+    "leaf": "Уксус рисовый",
+    "guid": "a3ae9ec9-9bfa-4a87-ad6a-f9c51451dc0c",
+    "qty": 0.093668,
+    "unit": "л",
+    "price_rub": 83.57,
+    "price_date": "2026-10-10",
+    "cost_rub": 7.828
+   },
+   {
+    "leaf": "Комбу",
+    "guid": "967b70a9-ea88-4ef6-ab8d-656980e78eb2",
+    "qty": 0.000749,
+    "unit": "кг",
+    "price_rub": 1260.0,
+    "price_date": "2026-08-06",
+    "cost_rub": 0.944
+   },
+   {
+    "leaf": "Соль",
+    "guid": "15cd4416-d60a-4715-8ea6-7322d91ef043",
+    "qty": 0.009367,
+    "unit": "кг",
+    "price_rub": 31.04,
+    "price_date": "2026-10-12",
+    "cost_rub": 0.291
+   }
+  ]
+ },
+ "monthly": [
+  {
+   "month": "2026-07",
+   "days": 31,
+   "physical_rolls": 8411.0,
+   "rice_pf_kg_theory_rolls": 1083.71,
+   "rice_pf_kg_theory_all_dishes": 1083.71,
+   "rice_pf_g_per_roll_avg": 128.8,
+   "raw_rice_kg_theory_all_dishes": 509.31,
+   "raw_rice_kg_iiko_sales_writeoff": 509.31,
+   "theory_minus_iiko_kg": -0.0,
+   "raw_rice_kg_purchased": 600,
+   "raw_rice_kg_writeoff_acts_total": 21.101,
+   "writeoff_acts_rice_pf_kg": 8.775,
+   "writeoff_acts_raw_rice_kg": 14.12,
+   "raw_rice_kg_inventory_correction_net": -12.983,
+   "batches_theory_sales": 203.7,
+   "batches_per_day_theory_sales": 6.57,
+   "batches_per_day_incl_pf_writeoffs": 6.62
+  },
+  {
+   "month": "2026-08",
+   "days": 31,
+   "physical_rolls": 7659.0,
+   "rice_pf_kg_theory_rolls": 986.48,
+   "rice_pf_kg_theory_all_dishes": 994.93,
+   "rice_pf_g_per_roll_avg": 128.8,
+   "raw_rice_kg_theory_all_dishes": 467.59,
+   "raw_rice_kg_iiko_sales_writeoff": 467.586,
+   "theory_minus_iiko_kg": -0.0,
+   "raw_rice_kg_purchased": 550,
+   "raw_rice_kg_writeoff_acts_total": 14.593,
+   "writeoff_acts_rice_pf_kg": 3.807,
+   "writeoff_acts_raw_rice_kg": 11.46,
+   "raw_rice_kg_inventory_correction_net": -1.729,
+   "batches_theory_sales": 187.0,
+   "batches_per_day_theory_sales": 6.03,
+   "batches_per_day_incl_pf_writeoffs": 6.06
+  },
+  {
+   "month": "2026-09",
+   "days": 30,
+   "physical_rolls": 7315.0,
+   "rice_pf_kg_theory_rolls": 942.48,
+   "rice_pf_kg_theory_all_dishes": 955.61,
+   "rice_pf_g_per_roll_avg": 128.8,
+   "raw_rice_kg_theory_all_dishes": 449.11,
+   "raw_rice_kg_iiko_sales_writeoff": 449.107,
+   "theory_minus_iiko_kg": -0.0,
+   "raw_rice_kg_purchased": 350,
+   "raw_rice_kg_writeoff_acts_total": 13.793,
+   "writeoff_acts_rice_pf_kg": 2.7,
+   "writeoff_acts_raw_rice_kg": 10.94,
+   "raw_rice_kg_inventory_correction_net": -18.262,
+   "batches_theory_sales": 179.6,
+   "batches_per_day_theory_sales": 5.99,
+   "batches_per_day_incl_pf_writeoffs": 6.01
+  },
+  {
+   "month": "2026-10p",
+   "days": 13,
+   "physical_rolls": 3199.0,
+   "rice_pf_kg_theory_rolls": 412.56,
+   "rice_pf_kg_theory_all_dishes": 417.24,
+   "rice_pf_g_per_roll_avg": 129.0,
+   "raw_rice_kg_theory_all_dishes": 196.09,
+   "raw_rice_kg_iiko_sales_writeoff": 196.09,
+   "theory_minus_iiko_kg": -0.0,
+   "raw_rice_kg_purchased": 225,
+   "raw_rice_kg_writeoff_acts_total": 6.921,
+   "writeoff_acts_rice_pf_kg": 8.592,
+   "writeoff_acts_raw_rice_kg": 2.7,
+   "raw_rice_kg_inventory_correction_net": -0.345,
+   "batches_theory_sales": 78.4,
+   "batches_per_day_theory_sales": 6.03,
+   "batches_per_day_incl_pf_writeoffs": 6.16
+  }
+ ],
+ "nori_monthly_sheets": [
+  {
+   "month": "2026-07",
+   "nori_sales_writeoff_sheets": 5925.5,
+   "nori_purchased_sheets": 5700,
+   "nori_writeoff_acts_sheets": 132.5,
+   "nori_inventory_correction_net": 156.0
+  },
+  {
+   "month": "2026-08",
+   "nori_sales_writeoff_sheets": 5363,
+   "nori_purchased_sheets": 6700,
+   "nori_writeoff_acts_sheets": 107,
+   "nori_inventory_correction_net": 35.5
+  },
+  {
+   "month": "2026-09",
+   "nori_sales_writeoff_sheets": 5116.5,
+   "nori_purchased_sheets": 4600,
+   "nori_writeoff_acts_sheets": 132,
+   "nori_inventory_correction_net": -46
+  },
+  {
+   "month": "2026-10p",
+   "nori_sales_writeoff_sheets": 2182,
+   "nori_purchased_sheets": 1900,
+   "nori_writeoff_acts_sheets": 53,
+   "nori_inventory_correction_net": 31
+  }
+ ],
+ "vinegar_sep_l": {
+  "INVENTORY_CORRECTION": 0.007764496000000065,
+  "INVOICE": 80,
+  "WRITEOFF": -0.568564721,
+  "SESSION_WRITEOFF": -89.510070064
+ },
+ "sources": {
+  "theory": "rice-theoretical-monthly.json (продажи × техкарты на дату продажи)",
+  "iiko_flows": "POST /v2/reports/olap TRANSACTIONS, Account.Name=Основной склад Черникова, 2026-07-01..2026-10-13",
+  "writeoff_acts": "GET /v2/documents/writeoff status=PROCESSED 2026-07-01..2026-10-13"
+ }
+}

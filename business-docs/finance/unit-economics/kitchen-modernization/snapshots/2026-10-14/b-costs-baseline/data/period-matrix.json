@@ -1,0 +1,1053 @@
+{
+ "period_close_rows": [],
+ "tax_payroll_ledger": [
+  {
+   "year": 2026,
+   "month": 1,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6500.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 2,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6500.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 3,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6500.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 4,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6500.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 5,
+   "n": 2,
+   "accrued": "39474.00",
+   "ndfl": "4950.00",
+   "contributions": "11842.20",
+   "injury": "78.95",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 6,
+   "n": 1,
+   "accrued": "28571.00",
+   "ndfl": "3532.00",
+   "contributions": "8571.30",
+   "injury": "57.14",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 7,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6318.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  },
+  {
+   "year": 2026,
+   "month": 8,
+   "n": 1,
+   "accrued": "50000.00",
+   "ndfl": "6318.00",
+   "contributions": "13595.93",
+   "injury": "100.00",
+   "contrib_null": 0
+  }
+ ],
+ "depreciation": [
+  {
+   "period_month": "2026-07-01",
+   "n": 146,
+   "amount": "26928.49"
+  },
+  {
+   "period_month": "2026-08-01",
+   "n": 146,
+   "amount": "26928.49"
+  },
+  {
+   "period_month": "2026-09-01",
+   "n": 146,
+   "amount": "26928.49"
+  }
+ ],
+ "inventory_audits": [
+  {
+   "month": "2026-06-01",
+   "status": "applied",
+   "n": 4
+  },
+  {
+   "month": "2026-06-01",
+   "status": "cancelled",
+   "n": 1
+  },
+  {
+   "month": "2026-07-01",
+   "status": "applied",
+   "n": 3
+  },
+  {
+   "month": "2026-08-01",
+   "status": "applied",
+   "n": 4
+  },
+  {
+   "month": "2026-09-01",
+   "status": "applied",
+   "n": 4
+  },
+  {
+   "month": "2026-10-01",
+   "status": "applied",
+   "n": 1
+  }
+ ],
+ "manual_entries": [],
+ "payroll_periods": [
+  {
+   "period_type": "half_month",
+   "start_date": "2026-06-16",
+   "end_date": "2026-06-30",
+   "payroll_date": "2026-07-01",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 7
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-06-16",
+   "end_date": "2026-06-22",
+   "payroll_date": "2026-06-23",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 14
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-06-23",
+   "end_date": "2026-06-29",
+   "payroll_date": "2026-06-30",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-06-30",
+   "end_date": "2026-07-06",
+   "payroll_date": "2026-07-07",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-07-01",
+   "end_date": "2026-07-15",
+   "payroll_date": "2026-07-15",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 8
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-07-07",
+   "end_date": "2026-07-13",
+   "payroll_date": "2026-07-14",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 16
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-07-14",
+   "end_date": "2026-07-20",
+   "payroll_date": "2026-07-21",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-07-16",
+   "end_date": "2026-07-31",
+   "payroll_date": "2026-08-01",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 7
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-07-21",
+   "end_date": "2026-07-27",
+   "payroll_date": "2026-07-28",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 13
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-07-28",
+   "end_date": "2026-08-03",
+   "payroll_date": "2026-08-04",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-08-01",
+   "end_date": "2026-08-15",
+   "payroll_date": "2026-08-15",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 8
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-08-04",
+   "end_date": "2026-08-10",
+   "payroll_date": "2026-08-11",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 14
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-08-11",
+   "end_date": "2026-08-17",
+   "payroll_date": "2026-08-18",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 14
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-08-16",
+   "end_date": "2026-08-31",
+   "payroll_date": "2026-09-01",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 7
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-08-18",
+   "end_date": "2026-08-24",
+   "payroll_date": "2026-08-25",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-08-25",
+   "end_date": "2026-08-31",
+   "payroll_date": "2026-09-01",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-09-01",
+   "end_date": "2026-09-15",
+   "payroll_date": "2026-09-15",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 7
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-09-01",
+   "end_date": "2026-09-07",
+   "payroll_date": "2026-09-08",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-09-08",
+   "end_date": "2026-09-14",
+   "payroll_date": "2026-09-15",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-09-15",
+   "end_date": "2026-09-21",
+   "payroll_date": "2026-09-22",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "half_month",
+   "start_date": "2026-09-16",
+   "end_date": "2026-09-30",
+   "payroll_date": "2026-10-01",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": "admin",
+   "lines": 8
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-09-22",
+   "end_date": "2026-09-28",
+   "payroll_date": "2026-09-29",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 13
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-09-29",
+   "end_date": "2026-10-05",
+   "payroll_date": "2026-10-06",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 15
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-10-06",
+   "end_date": "2026-10-12",
+   "payroll_date": "2026-10-13",
+   "period_status": "finalized",
+   "run_status": "finalized",
+   "is_imported_legacy": false,
+   "run_kind": null,
+   "lines": 14
+  },
+  {
+   "period_type": "week",
+   "start_date": "2026-10-13",
+   "end_date": "2026-10-19",
+   "payroll_date": "2026-10-20",
+   "period_status": "open",
+   "run_status": null,
+   "is_imported_legacy": null,
+   "run_kind": null,
+   "lines": 0
+  }
+ ],
+ "partner_facts": [
+  {
+   "period_month": "2026-07-01",
+   "partner_name": "В гостях у Алисы",
+   "revenue_amount": "204453.00",
+   "commission_rate": "0.200000",
+   "commission_amount": "40890.60"
+  },
+  {
+   "period_month": "2026-08-01",
+   "partner_name": "В гостях у Алисы",
+   "revenue_amount": "207750.00",
+   "commission_rate": "0.200000",
+   "commission_amount": "41550.00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "partner_name": "В гостях у Алисы",
+   "revenue_amount": "150490.00",
+   "commission_rate": "0.200000",
+   "commission_amount": "30098.00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "partner_name": "В гостях у Алисы",
+   "revenue_amount": "91396.00",
+   "commission_rate": "0.200000",
+   "commission_amount": "18279.20"
+  }
+ ],
+ "iiko_facts_total": [
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "aux_goods_invoices",
+   "direction": "total",
+   "amount": "9153.87",
+   "previous_amount": null,
+   "rows_count": 23,
+   "synced_at": "2026-08-10T01:15:07.969241+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "beverage_result",
+   "direction": "total",
+   "amount": "-227.25",
+   "previous_amount": "0.00",
+   "rows_count": 2,
+   "synced_at": "2026-08-10T01:15:07.906491+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "courier_salary",
+   "direction": "total",
+   "amount": "282187.00",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "food_cost",
+   "direction": "rolls",
+   "amount": "614485.17",
+   "previous_amount": "614485.17",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "food_cost",
+   "direction": "total",
+   "amount": "1047255.66",
+   "previous_amount": "1047255.66",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "packaging_result",
+   "direction": "total",
+   "amount": "-28146.04",
+   "previous_amount": "0.00",
+   "rows_count": 27,
+   "synced_at": "2026-08-10T01:15:07.906491+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "partner_commission",
+   "direction": "total",
+   "amount": "40890.60",
+   "previous_amount": null,
+   "rows_count": 3,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "pizza_box_result",
+   "direction": "total",
+   "amount": "7290.59",
+   "previous_amount": "0.00",
+   "rows_count": 3,
+   "synced_at": "2026-08-10T01:15:07.906491+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "revenue_gross",
+   "direction": "rolls",
+   "amount": "2338430.00",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "revenue_gross",
+   "direction": "total",
+   "amount": "4129189.00",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "revenue_net",
+   "direction": "rolls",
+   "amount": "2024620.97",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "revenue_net",
+   "direction": "total",
+   "amount": "3596783.28",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "shop_maintenance_invoices",
+   "direction": "total",
+   "amount": "23466.65",
+   "previous_amount": null,
+   "rows_count": 38,
+   "synced_at": "2026-08-10T01:15:07.969241+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "stock_closing_balance",
+   "direction": "total",
+   "amount": "844041.18",
+   "previous_amount": "934286.30",
+   "rows_count": 302,
+   "synced_at": "2026-08-10T01:15:07.906491+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "stock_consumption",
+   "direction": "total",
+   "amount": "1201129.23",
+   "previous_amount": null,
+   "rows_count": 302,
+   "synced_at": "2026-08-10T01:15:07.906491+00:00"
+  },
+  {
+   "period_month": "2026-07-01",
+   "metric_code": "writeoff_cost",
+   "direction": "total",
+   "amount": "75111.05",
+   "previous_amount": null,
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:06.323180+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "aux_goods_invoices",
+   "direction": "total",
+   "amount": "7605.48",
+   "previous_amount": "7242.52",
+   "rows_count": 26,
+   "synced_at": "2026-09-10T01:15:05.754600+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "beverage_result",
+   "direction": "total",
+   "amount": "-511.95",
+   "previous_amount": "0.00",
+   "rows_count": 4,
+   "synced_at": "2026-09-10T01:15:05.699217+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "courier_salary",
+   "direction": "total",
+   "amount": "263664.00",
+   "previous_amount": "256885.00",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "food_cost",
+   "direction": "rolls",
+   "amount": "563820.75",
+   "previous_amount": "563820.75",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "food_cost",
+   "direction": "total",
+   "amount": "962524.44",
+   "previous_amount": "962524.44",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "packaging_result",
+   "direction": "total",
+   "amount": "-26401.43",
+   "previous_amount": "0.00",
+   "rows_count": 26,
+   "synced_at": "2026-09-10T01:15:05.699217+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "partner_commission",
+   "direction": "total",
+   "amount": "41550.00",
+   "previous_amount": "38674.20",
+   "rows_count": 2,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "pizza_box_result",
+   "direction": "total",
+   "amount": "-9074.23",
+   "previous_amount": "0.00",
+   "rows_count": 4,
+   "synced_at": "2026-09-10T01:15:05.699217+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "revenue_gross",
+   "direction": "rolls",
+   "amount": "2136747.00",
+   "previous_amount": "2070446.00",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "revenue_gross",
+   "direction": "total",
+   "amount": "3749686.00",
+   "previous_amount": "3636024.00",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "revenue_net",
+   "direction": "rolls",
+   "amount": "1861464.84",
+   "previous_amount": "1807135.10",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "revenue_net",
+   "direction": "total",
+   "amount": "3282430.64",
+   "previous_amount": "3185617.69",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "shop_maintenance_invoices",
+   "direction": "total",
+   "amount": "27660.20",
+   "previous_amount": "26922.26",
+   "rows_count": 45,
+   "synced_at": "2026-09-10T01:15:05.754600+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "stock_closing_balance",
+   "direction": "total",
+   "amount": "758210.45",
+   "previous_amount": "763027.76",
+   "rows_count": 302,
+   "synced_at": "2026-09-10T01:15:05.699217+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "stock_consumption",
+   "direction": "total",
+   "amount": "1151087.85",
+   "previous_amount": "1146270.54",
+   "rows_count": 302,
+   "synced_at": "2026-09-10T01:15:05.699217+00:00"
+  },
+  {
+   "period_month": "2026-08-01",
+   "metric_code": "writeoff_cost",
+   "direction": "total",
+   "amount": "83724.37",
+   "previous_amount": "78907.06",
+   "rows_count": 5,
+   "synced_at": "2026-08-07T11:03:02.387369+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "aux_goods_invoices",
+   "direction": "total",
+   "amount": "10753.50",
+   "previous_amount": "9131.05",
+   "rows_count": 35,
+   "synced_at": "2026-10-10T01:15:04.949057+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "beverage_result",
+   "direction": "total",
+   "amount": "-342.62",
+   "previous_amount": "0.00",
+   "rows_count": 3,
+   "synced_at": "2026-10-10T01:15:04.980471+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "courier_salary",
+   "direction": "total",
+   "amount": "243970.00",
+   "previous_amount": "237400.00",
+   "rows_count": 5,
+   "synced_at": "2026-09-01T01:15:00.072576+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "food_cost",
+   "direction": "rolls",
+   "amount": "536808.43",
+   "previous_amount": "536808.43",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "food_cost",
+   "direction": "total",
+   "amount": "885705.80",
+   "previous_amount": "885705.80",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "packaging_result",
+   "direction": "total",
+   "amount": "-32281.08",
+   "previous_amount": "0.00",
+   "rows_count": 27,
+   "synced_at": "2026-10-10T01:15:04.980471+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "partner_commission",
+   "direction": "total",
+   "amount": "30098.00",
+   "previous_amount": "27253.20",
+   "rows_count": 2,
+   "synced_at": "2026-09-01T01:15:00.072576+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "pizza_box_result",
+   "direction": "total",
+   "amount": "2648.40",
+   "previous_amount": "0.00",
+   "rows_count": 4,
+   "synced_at": "2026-10-10T01:15:04.980471+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "revenue_gross",
+   "direction": "rolls",
+   "amount": "2062325.00",
+   "previous_amount": "1996167.00",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "revenue_gross",
+   "direction": "total",
+   "amount": "3478864.00",
+   "previous_amount": "3384543.00",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "revenue_net",
+   "direction": "rolls",
+   "amount": "1807243.60",
+   "previous_amount": "1750785.74",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "revenue_net",
+   "direction": "total",
+   "amount": "3066493.59",
+   "previous_amount": "2984720.59",
+   "rows_count": 5,
+   "synced_at": "2026-09-02T01:15:00.071045+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "shop_maintenance_invoices",
+   "direction": "total",
+   "amount": "34527.07",
+   "previous_amount": "27780.72",
+   "rows_count": 56,
+   "synced_at": "2026-10-10T01:15:04.949057+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "stock_closing_balance",
+   "direction": "total",
+   "amount": "625538.44",
+   "previous_amount": "632061.75",
+   "rows_count": 309,
+   "synced_at": "2026-10-10T01:15:04.980471+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "stock_consumption",
+   "direction": "total",
+   "amount": "1049647.39",
+   "previous_amount": "1043124.08",
+   "rows_count": 309,
+   "synced_at": "2026-10-10T01:15:04.980471+00:00"
+  },
+  {
+   "period_month": "2026-09-01",
+   "metric_code": "writeoff_cost",
+   "direction": "total",
+   "amount": "67349.34",
+   "previous_amount": "60824.51",
+   "rows_count": 5,
+   "synced_at": "2026-09-01T01:15:00.072576+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "aux_goods_invoices",
+   "direction": "total",
+   "amount": "1455.90",
+   "previous_amount": "1188.90",
+   "rows_count": 5,
+   "synced_at": "2026-10-14T01:15:02.797793+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "beverage_result",
+   "direction": "total",
+   "amount": "-713.82",
+   "previous_amount": "0.00",
+   "rows_count": 4,
+   "synced_at": "2026-10-14T01:15:02.733685+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "courier_salary",
+   "direction": "total",
+   "amount": "110216.00",
+   "previous_amount": "101985.00",
+   "rows_count": 5,
+   "synced_at": "2026-10-01T01:15:00.061467+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "food_cost",
+   "direction": "rolls",
+   "amount": "229944.53",
+   "previous_amount": "215927.53",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "food_cost",
+   "direction": "total",
+   "amount": "392917.55",
+   "previous_amount": "370956.94",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "packaging_result",
+   "direction": "total",
+   "amount": "-24952.28",
+   "previous_amount": "0.00",
+   "rows_count": 27,
+   "synced_at": "2026-10-14T01:15:02.733685+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "partner_commission",
+   "direction": "total",
+   "amount": "18279.20",
+   "previous_amount": "17131.80",
+   "rows_count": 3,
+   "synced_at": "2026-10-01T01:15:00.061467+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "pizza_box_result",
+   "direction": "total",
+   "amount": "-1103.89",
+   "previous_amount": "0.00",
+   "rows_count": 4,
+   "synced_at": "2026-10-14T01:15:02.733685+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "revenue_gross",
+   "direction": "rolls",
+   "amount": "894050.00",
+   "previous_amount": "837516.00",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "revenue_gross",
+   "direction": "total",
+   "amount": "1550998.00",
+   "previous_amount": "1464494.00",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "revenue_net",
+   "direction": "rolls",
+   "amount": "800800.18",
+   "previous_amount": "749445.62",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "revenue_net",
+   "direction": "total",
+   "amount": "1376839.82",
+   "previous_amount": "1298742.82",
+   "rows_count": 5,
+   "synced_at": "2026-10-02T01:15:00.057670+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "shop_maintenance_invoices",
+   "direction": "total",
+   "amount": "5522.14",
+   "previous_amount": "407.94",
+   "rows_count": 10,
+   "synced_at": "2026-10-14T01:15:02.797793+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "stock_closing_balance",
+   "direction": "total",
+   "amount": "529428.46",
+   "previous_amount": "546694.53",
+   "rows_count": 310,
+   "synced_at": "2026-10-14T01:15:02.733685+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "stock_consumption",
+   "direction": "total",
+   "amount": "455515.67",
+   "previous_amount": "432777.82",
+   "rows_count": 310,
+   "synced_at": "2026-10-14T01:15:02.733685+00:00"
+  },
+  {
+   "period_month": "2026-10-01",
+   "metric_code": "writeoff_cost",
+   "direction": "total",
+   "amount": "27959.89",
+   "previous_amount": "27181.10",
+   "rows_count": 5,
+   "synced_at": "2026-10-01T01:15:00.061467+00:00"
+  }
+ ],
+ "iiko_control_read_2026_10_14": {
+  "2026-08": {
+   "DishSumInt": "3749686.00",
+   "DishDiscountSumInt": "3282430.64",
+   "DiscountSum": "474615.36",
+   "ProductCostBase.ProductCost": "962639.64"
+  },
+  "2026-09": {
+   "DishSumInt": "3478864.00",
+   "DishDiscountSumInt": "3066493.59",
+   "DiscountSum": "424472.41",
+   "ProductCostBase.ProductCost": "885705.80"
+  }
+ },
+ "utilities_by_kind": {
+  "2026-07": {
+   "waste": 4120.59,
+   "water": 9654.25,
+   "electricity": 112469.0
+  },
+  "2026-08": {
+   "waste": 6957.65,
+   "electricity": 117708.0,
+   "water": 9429.75
+  },
+  "2026-09": {
+   "waste": 9120.59,
+   "water": 12348.49
+  },
+  "2026-10": {
+   "waste": 2000.0
+  }
+ }
+}

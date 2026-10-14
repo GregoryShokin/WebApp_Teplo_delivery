@@ -1,0 +1,391 @@
+{
+  "as_of": "2026-10-14",
+  "base_month": "2026-08",
+  "_rules": "Каждый вход: value + unit + source + status (подтверждено | условно | не определено | физический замер). null = не определено, не 0.",
+  "volume": {
+    "orders_month": {
+      "value": 1819,
+      "unit": "заказов/мес",
+      "source": "Б: iiko UniqOrderId, авг 2026 (orders-and-thresholds.json)",
+      "status": "подтверждено"
+    },
+    "whole_rolls_month": {
+      "value": 7659,
+      "unit": "целых роллов/мес (розница + в сетах + подарки)",
+      "source": "А: розница 1 144 + в сетах 5 996 + подарки 519 (rolls-physical-monthly.json)",
+      "status": "подтверждено"
+    },
+    "rice_cooked_g_per_roll_weighted": {
+      "value": 128.8,
+      "unit": "г готового риса на целый ролл, средневзвешенно по продажам",
+      "source": "А: техкарты 14.10 × продажи авг",
+      "status": "подтверждено по техкарте; фактическую закладку — взвешиванием"
+    },
+    "shift_days_month": {
+      "value": 31,
+      "unit": "рабочих дней цеха/мес",
+      "source": "календарь; сушисты работали все 31 день (Б: sushi-labor-summary)",
+      "status": "подтверждено"
+    }
+  },
+  "prices": {
+    "electricity_rub_per_kwh": {
+      "value": 13.03,
+      "unit": "₽/кВт·ч",
+      "source": "Б: акт авг 117 708 ₽ / 9 036 кВт·ч учёта (тариф 12,00 + потери ~8,6% по тому же тарифу)",
+      "status": "подтверждено"
+    },
+    "cooked_rice_rub_per_kg": {
+      "value": 57.73,
+      "unit": "₽/кг готового риса",
+      "source": "А: техкарта «Рис для роллов пф» × последние закупки до 13.10, без воды",
+      "status": "подтверждено (цены 13.10)"
+    },
+    "roll_material_rub_weighted": {
+      "value": 62.95,
+      "unit": "₽ сырья на целый ролл, средневзвешенно",
+      "source": "А: 56,55 ₽ без нори + ~0,70 листа × 8,9–9,4 ₽; цены 13.10, состав продаж авг",
+      "status": "условно: конфликт цены нори",
+      "range": [
+        62.8,
+        63.1
+      ]
+    }
+  },
+  "tech": {
+    "before": {
+      "batch_cooked_yield_kg": {
+        "value": 5.3195,
+        "unit": "кг готового риса с партии",
+        "source": "А: техкарта партии с 30.06.2026 (2,5 кг риса)",
+        "status": "по техкарте; реальную загрузку рисоварки — замером"
+      },
+      "rice_useful_share": {
+        "value": null,
+        "unit": "доля готового риса, ушедшая в роллы",
+        "source": "взвешивание остатков/выброса",
+        "status": "физический замер"
+      },
+      "active_min_per_batch": {
+        "value": null,
+        "unit": "чел.-мин на партию риса (промывка…заправка, мойка)",
+        "source": "хронометраж",
+        "status": "физический замер"
+      },
+      "active_min_per_roll": {
+        "mat": {
+          "value": null,
+          "unit": "чел.-мин/ролл",
+          "source": "хронометраж",
+          "status": "физический замер"
+        },
+        "fill_and_roll": {
+          "value": null,
+          "unit": "чел.-мин/ролл",
+          "source": "хронометраж",
+          "status": "физический замер"
+        },
+        "cut": {
+          "value": null,
+          "unit": "чел.-мин/ролл",
+          "source": "хронометраж",
+          "status": "физический замер"
+        }
+      },
+      "active_min_per_order_pack": {
+        "value": null,
+        "unit": "чел.-мин/заказ (укладка, маркировка, передача)",
+        "source": "хронометраж",
+        "status": "физический замер"
+      },
+      "rework_share": {
+        "value": null,
+        "unit": "доля роллов с переделкой",
+        "source": "журнал замеров",
+        "status": "физический замер"
+      },
+      "rework_active_min": {
+        "value": null,
+        "unit": "чел.-мин на одну переделку",
+        "source": "хронометраж",
+        "status": "физический замер"
+      },
+      "rework_food_share_of_roll": {
+        "value": null,
+        "unit": "доля сырья ролла, теряемая при переделке",
+        "source": "журнал замеров",
+        "status": "физический замер"
+      },
+      "kwh_per_batch": {
+        "value": null,
+        "unit": "кВт·ч на партию (варка + заправка)",
+        "source": "счётчик на розетке/линии",
+        "status": "физический замер"
+      },
+      "kwh_idle_and_warmup_per_day": {
+        "value": null,
+        "unit": "кВт·ч/день прогрев + простой + дежурный режим всех сравниваемых устройств (рисоварка, М, Р, Б)",
+        "source": "счётчик",
+        "status": "физический замер"
+      },
+      "peak_stages": {
+        "value": [
+          {
+            "stage": "рис (подача готового)",
+            "units": null,
+            "min_per_roll": null
+          },
+          {
+            "stage": "мат",
+            "units": null,
+            "min_per_roll": null
+          },
+          {
+            "stage": "начинка+сворачивание",
+            "units": null,
+            "min_per_roll": null
+          },
+          {
+            "stage": "нарезка",
+            "units": null,
+            "min_per_roll": null
+          },
+          {
+            "stage": "упаковка",
+            "units": null,
+            "min_per_roll": null
+          }
+        ],
+        "unit": "units = людей/машин на этапе в пик; min_per_roll = чел.-мин (или машино-мин) на целый ролл",
+        "source": "хронометраж пика",
+        "status": "физический замер"
+      },
+      "active_min_cleaning_per_day": {
+        "value": null,
+        "unit": "чел.-мин/день мойки устройств цеха (МО)",
+        "source": "хронометраж",
+        "status": "физический замер"
+      },
+      "kwh_per_roll_devices": {
+        "value": null,
+        "unit": "кВт·ч на целый ролл (резак, робот матов; до покупки = 0 только если устройства нет)",
+        "source": "счётчик",
+        "status": "физический замер"
+      }
+    },
+    "after": {
+      "_note": "Те же поля, что before. До замеров на оборудовании — null; паспорт производителя допустим только как помеченный предварительный вход.",
+      "batch_cooked_yield_kg": {
+        "value": null
+      },
+      "rice_useful_share": {
+        "value": null
+      },
+      "active_min_per_batch": {
+        "value": null
+      },
+      "active_min_per_roll": {
+        "mat": {
+          "value": null
+        },
+        "fill_and_roll": {
+          "value": null
+        },
+        "cut": {
+          "value": null
+        }
+      },
+      "active_min_per_order_pack": {
+        "value": null
+      },
+      "rework_share": {
+        "value": null
+      },
+      "rework_active_min": {
+        "value": null
+      },
+      "rework_food_share_of_roll": {
+        "value": null
+      },
+      "kwh_per_batch": {
+        "value": null
+      },
+      "kwh_idle_and_warmup_per_day": {
+        "value": null
+      },
+      "peak_stages": {
+        "value": null
+      },
+      "active_min_cleaning_per_day": {
+        "value": null
+      },
+      "kwh_per_roll_devices": {
+        "value": null
+      }
+    }
+  },
+  "equipment": {
+    "value": null,
+    "_shape": [
+      {
+        "name": "rice_mixer | roll_cutter | rice_sheet_robot",
+        "capex_with_delivery_and_start_rub": null,
+        "useful_life_months": null,
+        "maintenance_rub_month": null,
+        "consumables_rub_month": null
+      }
+    ],
+    "source": "соседняя сессия подбора оборудования + правила ОС",
+    "status": "не определено"
+  },
+  "payroll": {
+    "shift_rate_12h_by_category": {
+      "value": {
+        "category_1": 2800,
+        "category_2": 2400,
+        "category_3": 2200,
+        "intern": 2000
+      },
+      "unit": "₽ за 12 ч сушиста по категориям, действующие на дату",
+      "source": "Б: payroll_rate, effective 01.01.2026, на 14.10",
+      "status": "подтверждено"
+    },
+    "percent_tiers": {
+      "value": [
+        {
+          "min": 50000,
+          "max": 140000,
+          "rate": 0.035
+        },
+        {
+          "min": 140000,
+          "max": 190000,
+          "rate": 0.045
+        },
+        {
+          "min": 190000,
+          "max": 550000,
+          "rate": 0.055
+        },
+        {
+          "min": 550000,
+          "max": null,
+          "rate": 0.065
+        }
+      ],
+      "_shape": [
+        {
+          "min": 50000,
+          "max": 140000,
+          "rate": 0.035
+        }
+      ],
+      "unit": "доля от всей дневной выручки",
+      "source": "Б: revenue_tier, effective 01.01.2026",
+      "status": "подтверждено"
+    },
+    "daily_revenue_base": {
+      "value": [
+        129747.15,
+        92847.8,
+        98910.4,
+        56668.0,
+        66304.3,
+        65898.0,
+        136962.6,
+        184694.4,
+        81747.0,
+        76445.0,
+        106484.25,
+        130196.0,
+        96537.4,
+        150831.0,
+        175890.2,
+        99755.0,
+        95721.0,
+        61479.83,
+        93336.78,
+        89883.0,
+        126964.24,
+        139389.2,
+        113255.75,
+        65935.0,
+        74972.02,
+        105736.15,
+        70321.22,
+        132914.0,
+        171945.0,
+        93846.0,
+        96812.95
+      ],
+      "unit": "₽ DishDiscountSumInt по дням базового месяца",
+      "source": "Б: дневная выручка авг, совпала с отчётом iiko «Выручка по дням» во все дни",
+      "status": "подтверждено"
+    }
+  },
+  "unit": {
+    "contribution_per_order_before_percent_pool": {
+      "value": null,
+      "unit": "₽ на дополнительный заказ после сырья, упаковки, курьера, эквайринга, Starter/канала, налога; без процента кухни",
+      "source": "реестр затрат",
+      "status": "не определено"
+    }
+  },
+  "scenario3": {
+    "removed_shifts_month": {
+      "value": null,
+      "_shape": [
+        {
+          "count": 4,
+          "category": "category_2",
+          "hours": 12,
+          "seniority_allowance": 0,
+          "weekday_premium": 0,
+          "fund_rate": 0
+        }
+      ],
+      "source": "решение владельца/управляющего о графике",
+      "status": "не определено"
+    },
+    "peak_demand_rolls_per_hour": {
+      "value": null,
+      "unit": "целых роллов/ч в пик",
+      "source": "iiko по часу приёма + хронометраж",
+      "status": "не определено"
+    },
+    "peak_capacity_after_removal": {
+      "value": null,
+      "unit": "целых роллов/ч",
+      "source": "расчёт по этапам после снятия смены",
+      "status": "не определено"
+    }
+  },
+  "scenario4": {
+    "extra_orders_month": {
+      "value": null,
+      "unit": "заказов/мес",
+      "source": "гипотеза спроса",
+      "status": "не определено"
+    },
+    "daily_revenue_uplift": {
+      "value": null,
+      "unit": "₽ к каждому дню базового месяца",
+      "source": "сценарий",
+      "status": "не определено"
+    },
+    "extra_shifts_cost_month": {
+      "value": null,
+      "unit": "₽/мес; 0 только при доказанной мощности",
+      "source": "расчёт мощности",
+      "status": "не определено"
+    },
+    "extra_shifts_cost_month_current_tech": {
+      "value": null,
+      "unit": "₽/мес доп. смен, если тот же рост делать на текущей технологии",
+      "source": "расчёт мощности «до»",
+      "status": "не определено"
+    }
+  },
+  "_payback_rule": "cash_payback_months = capex / (Δприбыли + амортизация). Налоговый эффект затрат не учтён: режим налогообложения подтверждает направление Б (при УСН «доходы» расходы базу не уменьшают).",
+  "_base_note": "Август 2026 — незакрытая рабочая база (закрытых месяцев в учёте нет). Сентябрь — для сравнения: нет акта электроэнергии и оборотки налогов на труд."
+}

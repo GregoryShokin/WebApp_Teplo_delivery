@@ -1,0 +1,162 @@
+{
+ "categories": [
+  {
+   "name": "Вспомогательное оборудование",
+   "useful_life_months": 120,
+   "n": 42,
+   "initial_cost": "390500.00",
+   "n_active": 42
+  },
+  {
+   "name": "Кассовое оборудование",
+   "useful_life_months": 60,
+   "n": 4,
+   "initial_cost": "46000.00",
+   "n_active": 4
+  },
+  {
+   "name": "Мебель и предметы интерьера",
+   "useful_life_months": 84,
+   "n": 24,
+   "initial_cost": "90150.00",
+   "n_active": 24
+  },
+  {
+   "name": "Оборудование торговых залов",
+   "useful_life_months": 60,
+   "n": 5,
+   "initial_cost": "72000.00",
+   "n_active": 5
+  },
+  {
+   "name": "Прочий кухонный инвентарь",
+   "useful_life_months": 36,
+   "n": 4,
+   "initial_cost": "18100.00",
+   "n_active": 4
+  },
+  {
+   "name": "Системы кондиционирования",
+   "useful_life_months": 84,
+   "n": 2,
+   "initial_cost": "30000.00",
+   "n_active": 2
+  },
+  {
+   "name": "Тепловое оборудование",
+   "useful_life_months": 84,
+   "n": 28,
+   "initial_cost": "348200.00",
+   "n_active": 28
+  },
+  {
+   "name": "Холодильное/морозильное оборудование",
+   "useful_life_months": 84,
+   "n": 31,
+   "initial_cost": "1144700.00",
+   "n_active": 28
+  },
+  {
+   "name": "Электромеханическое оборудование",
+   "useful_life_months": 84,
+   "n": 8,
+   "initial_cost": "168500.00",
+   "n_active": 8
+  },
+  {
+   "name": "Электроника и оргтехника",
+   "useful_life_months": 36,
+   "n": 1,
+   "initial_cost": "5000.00",
+   "n_active": 1
+  }
+ ],
+ "depr_2026_09": [
+  {
+   "name": "Холодильное/морозильное оборудование",
+   "useful_life_months": 84,
+   "n": 28,
+   "amount": "13484.53"
+  },
+  {
+   "name": "Тепловое оборудование",
+   "useful_life_months": 84,
+   "n": 28,
+   "amount": "4145.24"
+  },
+  {
+   "name": "Вспомогательное оборудование",
+   "useful_life_months": 120,
+   "n": 42,
+   "amount": "3254.13"
+  },
+  {
+   "name": "Электромеханическое оборудование",
+   "useful_life_months": 84,
+   "n": 8,
+   "amount": "2005.93"
+  },
+  {
+   "name": "Оборудование торговых залов",
+   "useful_life_months": 60,
+   "n": 5,
+   "amount": "1200.01"
+  },
+  {
+   "name": "Мебель и предметы интерьера",
+   "useful_life_months": 84,
+   "n": 24,
+   "amount": "1073.18"
+  },
+  {
+   "name": "Кассовое оборудование",
+   "useful_life_months": 60,
+   "n": 4,
+   "amount": "766.67"
+  },
+  {
+   "name": "Прочий кухонный инвентарь",
+   "useful_life_months": 36,
+   "n": 4,
+   "amount": "502.77"
+  },
+  {
+   "name": "Системы кондиционирования",
+   "useful_life_months": 84,
+   "n": 2,
+   "amount": "357.14"
+  },
+  {
+   "name": "Электроника и оргтехника",
+   "useful_life_months": 36,
+   "n": 1,
+   "amount": "138.89"
+  }
+ ],
+ "commissioned_2026": [
+  {
+   "m": "2026-07-01",
+   "n": 149,
+   "s": "2313150.00"
+  }
+ ],
+ "settings": {
+  "fixed_assets.repair_modernization_threshold_ratio": 0.15,
+  "fixed_assets.capitalization_threshold_rub": 10000,
+  "fixed_assets.capital_repair_floor_rub": 5000
+ },
+ "settings_history": [
+  {
+   "key": "fixed_assets.capitalization_threshold_rub",
+   "old_value": null,
+   "new_value": 5000,
+   "changed_at": "2026-06-04T20:00:16.325669+00:00"
+  },
+  {
+   "key": "fixed_assets.repair_modernization_threshold_ratio",
+   "old_value": null,
+   "new_value": 0.15,
+   "changed_at": "2026-06-04T20:00:16.325669+00:00"
+  }
+ ]
+}

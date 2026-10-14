@@ -1,0 +1,225 @@
+{
+ "summary": {
+  "axis": "HourOpen — час ОТКРЫТИЯ заказа в iiko (приём спроса), не час приготовления; предзаказы попадают в час приёма",
+  "date_basis": "OpenDate.Typed (учётный день) 2026-09-01..2026-09-30, Department.Code=2, NOT_DELETED",
+  "orders_all_month": 1709,
+  "orders_with_sushi_month": 1231,
+  "physical_rolls_month_hourly_model": 7315.0,
+  "peak_16_19": {
+   "orders_all": 818,
+   "orders_with_sushi": 634,
+   "physical_rolls": 3805.0,
+   "share_rolls": 0.5202,
+   "share_sushi_orders": 0.515
+  },
+  "sushi_orders_per_day": {
+   "mean": 41.03,
+   "max": 104,
+   "min": 19,
+   "days": 30
+  },
+  "sushi_orders_peak16_19_per_day": {
+   "mean": 21.13,
+   "max": 37
+  },
+  "max_sushi_orders_single_hour": {
+   "orders": 15,
+   "date": "2026-09-01",
+   "hour_open": "16"
+  },
+  "chart_date_for_expansion": "2026-09-15 (версии карт роллов/сетов в сентябре не менялись — проверено по getAll)",
+  "note": "Заказ с суши = заказ, где есть строка с местом приготовления «Суши» (UniqOrderId.OrdersCount в разрезе CookingPlace). Роллы — модель раскрытия сетов."
+ },
+ "by_hour": [
+  {
+   "hour_open": "00",
+   "orders_all": 2,
+   "orders_with_sushi_cookingplace": 2,
+   "physical_rolls_model": 10.0,
+   "rolls_direct": 0,
+   "rolls_via_sets_gifts": 10.0,
+   "share_rolls": 0.0014,
+   "rolls_per_day_avg": 0.33
+  },
+  {
+   "hour_open": "06",
+   "orders_all": 2,
+   "orders_with_sushi_cookingplace": 2,
+   "physical_rolls_model": 13.0,
+   "rolls_direct": 4.0,
+   "rolls_via_sets_gifts": 9.0,
+   "share_rolls": 0.0018,
+   "rolls_per_day_avg": 0.43
+  },
+  {
+   "hour_open": "07",
+   "orders_all": 4,
+   "orders_with_sushi_cookingplace": 3,
+   "physical_rolls_model": 26.0,
+   "rolls_direct": 0,
+   "rolls_via_sets_gifts": 26.0,
+   "share_rolls": 0.0036,
+   "rolls_per_day_avg": 0.87
+  },
+  {
+   "hour_open": "08",
+   "orders_all": 9,
+   "orders_with_sushi_cookingplace": 7,
+   "physical_rolls_model": 64.0,
+   "rolls_direct": 9.0,
+   "rolls_via_sets_gifts": 55.0,
+   "share_rolls": 0.0087,
+   "rolls_per_day_avg": 2.13
+  },
+  {
+   "hour_open": "09",
+   "orders_all": 30,
+   "orders_with_sushi_cookingplace": 20,
+   "physical_rolls_model": 155.0,
+   "rolls_direct": 16.0,
+   "rolls_via_sets_gifts": 139.0,
+   "share_rolls": 0.0212,
+   "rolls_per_day_avg": 5.17
+  },
+  {
+   "hour_open": "10",
+   "orders_all": 91,
+   "orders_with_sushi_cookingplace": 60,
+   "physical_rolls_model": 389.0,
+   "rolls_direct": 54.0,
+   "rolls_via_sets_gifts": 335.0,
+   "share_rolls": 0.0532,
+   "rolls_per_day_avg": 12.97
+  },
+  {
+   "hour_open": "11",
+   "orders_all": 80,
+   "orders_with_sushi_cookingplace": 51,
+   "physical_rolls_model": 300.0,
+   "rolls_direct": 45.0,
+   "rolls_via_sets_gifts": 255.0,
+   "share_rolls": 0.041,
+   "rolls_per_day_avg": 10.0
+  },
+  {
+   "hour_open": "12",
+   "orders_all": 96,
+   "orders_with_sushi_cookingplace": 67,
+   "physical_rolls_model": 376.0,
+   "rolls_direct": 75.0,
+   "rolls_via_sets_gifts": 301.0,
+   "share_rolls": 0.0514,
+   "rolls_per_day_avg": 12.53
+  },
+  {
+   "hour_open": "13",
+   "orders_all": 114,
+   "orders_with_sushi_cookingplace": 75,
+   "physical_rolls_model": 440.0,
+   "rolls_direct": 51.0,
+   "rolls_via_sets_gifts": 389.0,
+   "share_rolls": 0.0602,
+   "rolls_per_day_avg": 14.67
+  },
+  {
+   "hour_open": "14",
+   "orders_all": 104,
+   "orders_with_sushi_cookingplace": 76,
+   "physical_rolls_model": 467.0,
+   "rolls_direct": 73.0,
+   "rolls_via_sets_gifts": 394.0,
+   "share_rolls": 0.0638,
+   "rolls_per_day_avg": 15.57
+  },
+  {
+   "hour_open": "15",
+   "orders_all": 131,
+   "orders_with_sushi_cookingplace": 96,
+   "physical_rolls_model": 560.0,
+   "rolls_direct": 71.0,
+   "rolls_via_sets_gifts": 489.0,
+   "share_rolls": 0.0766,
+   "rolls_per_day_avg": 18.67
+  },
+  {
+   "hour_open": "16",
+   "orders_all": 190,
+   "orders_with_sushi_cookingplace": 147,
+   "physical_rolls_model": 913.0,
+   "rolls_direct": 150.0,
+   "rolls_via_sets_gifts": 763.0,
+   "share_rolls": 0.1248,
+   "rolls_per_day_avg": 30.43
+  },
+  {
+   "hour_open": "17",
+   "orders_all": 222,
+   "orders_with_sushi_cookingplace": 171,
+   "physical_rolls_model": 1006.0,
+   "rolls_direct": 154.0,
+   "rolls_via_sets_gifts": 852.0,
+   "share_rolls": 0.1375,
+   "rolls_per_day_avg": 33.53
+  },
+  {
+   "hour_open": "18",
+   "orders_all": 218,
+   "orders_with_sushi_cookingplace": 181,
+   "physical_rolls_model": 1090.0,
+   "rolls_direct": 136.0,
+   "rolls_via_sets_gifts": 954.0,
+   "share_rolls": 0.149,
+   "rolls_per_day_avg": 36.33
+  },
+  {
+   "hour_open": "19",
+   "orders_all": 188,
+   "orders_with_sushi_cookingplace": 135,
+   "physical_rolls_model": 796.0,
+   "rolls_direct": 131.0,
+   "rolls_via_sets_gifts": 665.0,
+   "share_rolls": 0.1088,
+   "rolls_per_day_avg": 26.53
+  },
+  {
+   "hour_open": "20",
+   "orders_all": 141,
+   "orders_with_sushi_cookingplace": 91,
+   "physical_rolls_model": 458.0,
+   "rolls_direct": 121.0,
+   "rolls_via_sets_gifts": 337.0,
+   "share_rolls": 0.0626,
+   "rolls_per_day_avg": 15.27
+  },
+  {
+   "hour_open": "21",
+   "orders_all": 69,
+   "orders_with_sushi_cookingplace": 39,
+   "physical_rolls_model": 206.0,
+   "rolls_direct": 51.0,
+   "rolls_via_sets_gifts": 155.0,
+   "share_rolls": 0.0282,
+   "rolls_per_day_avg": 6.87
+  },
+  {
+   "hour_open": "22",
+   "orders_all": 16,
+   "orders_with_sushi_cookingplace": 7,
+   "physical_rolls_model": 35.0,
+   "rolls_direct": 4.0,
+   "rolls_via_sets_gifts": 31.0,
+   "share_rolls": 0.0048,
+   "rolls_per_day_avg": 1.17
+  },
+  {
+   "hour_open": "23",
+   "orders_all": 2,
+   "orders_with_sushi_cookingplace": 1,
+   "physical_rolls_model": 11.0,
+   "rolls_direct": 0,
+   "rolls_via_sets_gifts": 11.0,
+   "share_rolls": 0.0015,
+   "rolls_per_day_avg": 0.37
+  }
+ ]
+}

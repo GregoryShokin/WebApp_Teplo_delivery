@@ -1,0 +1,6248 @@
+{
+ "read_utc": "2026-10-14T18:06:01.722002",
+ "db_now": "2026-10-14T18:06:01.791506+00:00",
+ "alembic": [
+  {
+   "version_num": "0277_tax_intake_mail_uid_sha"
+  }
+ ],
+ "today_param": "2026-10-14",
+ "months": {
+  "2026-07-01": {
+   "lines": [
+    {
+     "code": "revenue",
+     "title": "Выручка",
+     "block": "revenue",
+     "kind": "subtotal",
+     "amount": "3555892.68",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0000",
+     "components": []
+    },
+    {
+     "code": "revenue_gross_chernikova",
+     "title": "Выручка без учета скидок Черникова",
+     "block": "revenue",
+     "kind": "memo",
+     "amount": "4129189.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.1612",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "4129189.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "revenue_net_chernikova",
+     "title": "Выручка с учетом скидок Черникова",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "3596783.28",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0115",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "3596783.28",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "partner_commission",
+     "title": "Комиссия партнерам (с -)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "40890.60",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0115",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "40890.60",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "customer_refunds",
+     "title": "Возвраты клиентам (с минусом)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "production_costs",
+     "title": "Производственные расходы",
+     "block": "production",
+     "kind": "subtotal",
+     "amount": "2522914.57",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7095",
+     "components": []
+    },
+    {
+     "code": "variable_costs",
+     "title": "Переменные",
+     "block": "variable",
+     "kind": "subtotal",
+     "amount": "1047255.66",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2945",
+     "components": []
+    },
+    {
+     "code": "food_cost_chernikova",
+     "title": "Расход продуктов (фудкост) Черникова",
+     "block": "variable",
+     "kind": "source",
+     "amount": "1047255.66",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2945",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "1047255.66",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "margin_income",
+     "title": "Маржинальный доход",
+     "block": "margin",
+     "kind": "subtotal",
+     "amount": "2508637.02",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7055",
+     "components": []
+    },
+    {
+     "code": "margin_ratio",
+     "title": "Рентабельность по маржинальному доходу, %",
+     "block": "margin",
+     "kind": "ratio",
+     "amount": "0.7055",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "direct_fixed",
+     "title": "Прямые постоянные",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "496832.08",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1397",
+     "components": []
+    },
+    {
+     "code": "cook_payroll",
+     "title": "Зарплата поваров (оклады и удержания)",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "504122.67",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1418",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "504122.67",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "pizza_box_inventory",
+     "title": "Результаты инвентаризации коробки д/пиццы",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "-7290.59",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "-0.0021",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "-7290.59",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit_by_direction",
+     "title": "Валовая прибыль по направлениям",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "2011804.94",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.5658",
+     "components": []
+    },
+    {
+     "code": "gross_profit_by_direction_ratio",
+     "title": "Рентабельность по направлениям, %",
+     "block": "direct_fixed",
+     "kind": "ratio",
+     "amount": "0.5658",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "overhead",
+     "title": "Общепроизводственные",
+     "block": "overhead",
+     "kind": "subtotal",
+     "amount": "978826.83",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2753",
+     "components": []
+    },
+    {
+     "code": "rent_chernikova",
+     "title": "Аренда торговой точки Черникова",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "104000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0292",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "100000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "4000.00",
+       "status": "ok",
+       "excluded_amount": "156995.59",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "administrator_payroll",
+     "title": "Зарплата администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "177164.84",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0498",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "177164.84",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bonuses",
+     "title": "Премии поваров, шеф-повара, администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "26800.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0075",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "26800.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "writeoffs",
+     "title": "Списание продукции и сырья",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "75111.05",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0211",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "75111.05",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "audit_results",
+     "title": "Результаты ревизий",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "18001.71",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0051",
+     "components": [
+      {
+       "stream": "inventory",
+       "component": "main",
+       "amount": "45256.86",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "-27255.15",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "beverage_inventory",
+     "title": "Результаты инвентаризации напитков (барная ревизия)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "227.25",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0001",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "227.25",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "courier_service",
+     "title": "Траты на курьерскую службу",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "282187.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0794",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "282187.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "acquiring",
+     "title": "Комиссия за эквайринг",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "48907.38",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0138",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "6668.93",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "acquiring",
+       "component": "main",
+       "amount": "42238.45",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "transport",
+     "title": "Транспортные услуги",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "22093.40",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0062",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "20493.40",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1600.00",
+       "status": "ok",
+       "excluded_amount": "20584.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "staff_meals",
+     "title": "Расходы на питание персонала",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "23748.19",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0067",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "23748.19",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "automation",
+     "title": "Оплата систем автоматизации",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "61699.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0174",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "42800.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "18899.00",
+       "status": "ok",
+       "excluded_amount": "39970.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "shop_maintenance",
+     "title": "Содержание торговых точек",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "35879.17",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0101",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "2875.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "9537.52",
+       "status": "ok",
+       "excluded_amount": "30500.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "23466.65",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "equipment_repair",
+     "title": "Ремонт оборудования",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "warehouse_rent",
+     "title": "Аренда склада",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0028",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "10000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "packaging_inventory",
+     "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "28146.04",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0079",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "28146.04",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "aux_goods",
+     "title": "Вспомогательные товары(учет по факту оплаты)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "9153.87",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0026",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "9153.87",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "goods_workup",
+     "title": "Проработка",
+     "block": "overhead",
+     "kind": "memo",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "iiko_workup",
+       "component": "main",
+       "amount": "0.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "payroll_taxes",
+     "title": "Налоги с ЗП",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "20013.93",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0056",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "20013.93",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "accumulation_fund",
+     "title": "Накопительный фонд",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "35694.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0100",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "35694.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit",
+     "title": "Валовая прибыль",
+     "block": "gross",
+     "kind": "subtotal",
+     "amount": "1032978.11",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2905",
+     "components": []
+    },
+    {
+     "code": "gross_profit_ratio",
+     "title": "Рентабельность по валовой прибыли, %",
+     "block": "gross",
+     "kind": "ratio",
+     "amount": "0.2905",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "indirect_costs",
+     "title": "Косвенные расходы",
+     "block": "indirect",
+     "kind": "subtotal",
+     "amount": "641447.66",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1804",
+     "components": []
+    },
+    {
+     "code": "admin_costs",
+     "title": "Административные",
+     "block": "admin",
+     "kind": "subtotal",
+     "amount": "491355.66",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1382",
+     "components": []
+    },
+    {
+     "code": "admin_payroll",
+     "title": "Зарплата администрации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "326500.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0918",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "326500.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "utilities_chernikova",
+     "title": "Коммунальные платежи Черникова",
+     "block": "admin",
+     "kind": "source",
+     "amount": "127243.84",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0358",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "126243.84",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1000.00",
+       "status": "ok",
+       "excluded_amount": "105281.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "office_rent",
+     "title": "Аренда офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_maintenance",
+     "title": "Содержание офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "rko",
+     "title": "РКО",
+     "block": "admin",
+     "kind": "source",
+     "amount": "4378.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0012",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "4378.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bank_fees",
+     "title": "Прочие банковские комиссии",
+     "block": "admin",
+     "kind": "source",
+     "amount": "878.28",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0002",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "878.28",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fd_nk_services",
+     "title": "Услуги ФД и НК",
+     "block": "admin",
+     "kind": "source",
+     "amount": "3000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0008",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "3000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "9000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "staff_expenses",
+     "title": "Расходы на персонал",
+     "block": "admin",
+     "kind": "source",
+     "amount": "10334.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0029",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "10334.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_training",
+     "title": "Обучение персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "telecom",
+     "title": "Телекоммуникации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "14925.54",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0042",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "14925.54",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "10000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "recruiting",
+     "title": "Поиск и найм персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "4096.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0012",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "2596.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1500.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "commercial_costs",
+     "title": "Коммерческие",
+     "block": "commercial",
+     "kind": "subtotal",
+     "amount": "150092.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0422",
+     "components": []
+    },
+    {
+     "code": "aggregator_commission",
+     "title": "Комиссия агрегатору",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "6000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0017",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "6000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "6000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "targeted_ads",
+     "title": "Таргетированная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "outdoor_ads",
+     "title": "Наружная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "yandex_maps_ads",
+     "title": "Реклама на Яндекс-картах",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "context_ads",
+     "title": "Контекстная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "48000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0135",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "48000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "68000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "flyers",
+     "title": "Листовки",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "seo",
+     "title": "SEO - оптимизация",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "13000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0037",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "13000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "13000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "other_marketing",
+     "title": "Прочие маркетинговые услуги",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "website_app",
+     "title": "Сайт и приложение",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "83092.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0234",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "83092.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "80455.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "ebitda",
+     "title": "Операционная прибыль (EBITDA)",
+     "block": "ebitda",
+     "kind": "subtotal",
+     "amount": "391530.45",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1101",
+     "components": []
+    },
+    {
+     "code": "ebitda_ratio",
+     "title": "Рентабельность по операционной прибыли, %",
+     "block": "ebitda",
+     "kind": "ratio",
+     "amount": "0.1101",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "below_income",
+     "title": "Доходы ниже EBITDA",
+     "block": "below_income",
+     "kind": "subtotal",
+     "amount": "7200.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0020",
+     "components": []
+    },
+    {
+     "code": "other_income",
+     "title": "Прочие доходы",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "1200.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0003",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1200.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "unclaimed_deposits_writeoff",
+     "title": "Списание невостребованных депозитов",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "6000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0017",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "6000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "below_expense",
+     "title": "Расходы ниже EBITDA",
+     "block": "below_expense",
+     "kind": "subtotal",
+     "amount": "248523.27",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": "0.0699",
+     "components": []
+    },
+    {
+     "code": "other_expenses",
+     "title": "Прочие расходы",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "1005.28",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0003",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1005.28",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "loan_interest",
+     "title": "Проценты по кредитам",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "taxes",
+     "title": "Налоги",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "220589.50",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0620",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "220589.50",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "overdraft_fee",
+     "title": "Комиссия за овердрафт",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "depreciation",
+     "title": "Амортизация",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "26928.49",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0076",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "26928.49",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "asset_disposal_loss",
+     "title": "Убыток от выбытия ОС",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fines_penalties",
+     "title": "Штрафы и пени",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "net_profit",
+     "title": "Чистая прибыль",
+     "block": "net",
+     "kind": "subtotal",
+     "amount": "150207.18",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": "0.0422",
+     "components": []
+    },
+    {
+     "code": "net_profit_ratio",
+     "title": "Рентабельность по чистой прибыли, %",
+     "block": "net",
+     "kind": "ratio",
+     "amount": "0.0422",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__out_of_pnl__",
+     "title": "Вне ОПиУ",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__unmapped__",
+     "title": "Не разнесено",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__accrual_settled__",
+     "title": "Исключено как расчёт по признанию",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    }
+   ],
+   "warnings": [
+    {
+     "code": "unmapped_cash",
+     "line_code": null,
+     "amount": "10000.00"
+    },
+    {
+     "code": "recognition_unattributed",
+     "line_code": null,
+     "amount": "8768.51"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "rent_chernikova",
+     "amount": "4000.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "transport",
+     "amount": "1600.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "automation",
+     "amount": "18899.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "utilities_chernikova",
+     "amount": "1000.00"
+    }
+   ],
+   "reconciliation": {
+    "cash_out_total": "5183567.52",
+    "cash_in_total": "5061658.86",
+    "by_verdict": {
+     "excluded_out_of_pnl": "9518772.69",
+     "excluded_owned_by_layer": "30500.00",
+     "included": "84749.20",
+     "excluded_accrual_counterparty": "380565.59",
+     "unmapped": "10000.00",
+     "excluded_quality": "91918.90",
+     "excluded_accrual_settlement": "88439.00",
+     "excluded_before_accounting_start": "40281.00"
+    },
+    "unmapped": "10000.00",
+    "unmapped_count": 1,
+    "unmapped_out": "10000.00",
+    "unmapped_in": "0.00",
+    "balanced": false,
+    "drift": "0.00",
+    "missed_count": 0
+   },
+   "quality": {
+    "unattributed": "8768.51",
+    "without_primary": "0.00",
+    "without_location": "249671.04",
+    "recognized_total": "481794.29",
+    "cash_in_pnl": "84749.20"
+   }
+  },
+  "2026-08-01": {
+   "lines": [
+    {
+     "code": "revenue",
+     "title": "Выручка",
+     "block": "revenue",
+     "kind": "subtotal",
+     "amount": "3238717.64",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0000",
+     "components": []
+    },
+    {
+     "code": "revenue_gross_chernikova",
+     "title": "Выручка без учета скидок Черникова",
+     "block": "revenue",
+     "kind": "memo",
+     "amount": "3749686.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.1578",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "3749686.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "revenue_net_chernikova",
+     "title": "Выручка с учетом скидок Черникова",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "3282430.64",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0135",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "3282430.64",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "partner_commission",
+     "title": "Комиссия партнерам (с -)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "41550.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0128",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "41550.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "customer_refunds",
+     "title": "Возвраты клиентам (с минусом)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "2163.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0007",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "2163.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "production_costs",
+     "title": "Производственные расходы",
+     "block": "production",
+     "kind": "subtotal",
+     "amount": "2463832.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7607",
+     "components": []
+    },
+    {
+     "code": "variable_costs",
+     "title": "Переменные",
+     "block": "variable",
+     "kind": "subtotal",
+     "amount": "962524.44",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2972",
+     "components": []
+    },
+    {
+     "code": "food_cost_chernikova",
+     "title": "Расход продуктов (фудкост) Черникова",
+     "block": "variable",
+     "kind": "source",
+     "amount": "962524.44",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2972",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "962524.44",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "margin_income",
+     "title": "Маржинальный доход",
+     "block": "margin",
+     "kind": "subtotal",
+     "amount": "2276193.20",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7028",
+     "components": []
+    },
+    {
+     "code": "margin_ratio",
+     "title": "Рентабельность по маржинальному доходу, %",
+     "block": "margin",
+     "kind": "ratio",
+     "amount": "0.7028",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "direct_fixed",
+     "title": "Прямые постоянные",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "525220.09",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1622",
+     "components": []
+    },
+    {
+     "code": "cook_payroll",
+     "title": "Зарплата поваров (оклады и удержания)",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "516145.86",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1594",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "516145.86",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "pizza_box_inventory",
+     "title": "Результаты инвентаризации коробки д/пиццы",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "9074.23",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0028",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "9074.23",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit_by_direction",
+     "title": "Валовая прибыль по направлениям",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "1750973.11",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.5406",
+     "components": []
+    },
+    {
+     "code": "gross_profit_by_direction_ratio",
+     "title": "Рентабельность по направлениям, %",
+     "block": "direct_fixed",
+     "kind": "ratio",
+     "amount": "0.5406",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "overhead",
+     "title": "Общепроизводственные",
+     "block": "overhead",
+     "kind": "subtotal",
+     "amount": "976088.29",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.3014",
+     "components": []
+    },
+    {
+     "code": "rent_chernikova",
+     "title": "Аренда торговой точки Черникова",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "100000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0309",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "100000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "50000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "administrator_payroll",
+     "title": "Зарплата администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "183364.56",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0566",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "183364.56",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bonuses",
+     "title": "Премии поваров, шеф-повара, администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "22996.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0071",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "22996.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "writeoffs",
+     "title": "Списание продукции и сырья",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "83724.37",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0259",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "83724.37",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "audit_results",
+     "title": "Результаты ревизий",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "30375.89",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0094",
+     "components": [
+      {
+       "stream": "inventory",
+       "component": "main",
+       "amount": "55438.34",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "-25062.45",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "beverage_inventory",
+     "title": "Результаты инвентаризации напитков (барная ревизия)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "511.95",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0002",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "511.95",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "courier_service",
+     "title": "Траты на курьерскую службу",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "263664.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0814",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "263664.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "acquiring",
+     "title": "Комиссия за эквайринг",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "46092.57",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0142",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "6831.26",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "acquiring",
+       "component": "main",
+       "amount": "39261.31",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "transport",
+     "title": "Транспортные услуги",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_meals",
+     "title": "Расходы на питание персонала",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "30479.73",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0094",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "30479.73",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "automation",
+     "title": "Оплата систем автоматизации",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "63099.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0195",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "42800.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "20299.00",
+       "status": "ok",
+       "excluded_amount": "46220.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "shop_maintenance",
+     "title": "Содержание торговых точек",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "55027.38",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0170",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "8947.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "18420.18",
+       "status": "ok",
+       "excluded_amount": "31447.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "27660.20",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "equipment_repair",
+     "title": "Ремонт оборудования",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "warehouse_rent",
+     "title": "Аренда склада",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0031",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "10000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "10000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "packaging_inventory",
+     "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "26401.43",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0082",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "26401.43",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "aux_goods",
+     "title": "Вспомогательные товары(учет по факту оплаты)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "7605.48",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0023",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "7605.48",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "goods_workup",
+     "title": "Проработка",
+     "block": "overhead",
+     "kind": "memo",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "iiko_workup",
+       "component": "main",
+       "amount": "0.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "payroll_taxes",
+     "title": "Налоги с ЗП",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "20013.93",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0062",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "20013.93",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "accumulation_fund",
+     "title": "Накопительный фонд",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "32732.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0101",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "32732.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit",
+     "title": "Валовая прибыль",
+     "block": "gross",
+     "kind": "subtotal",
+     "amount": "774884.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2393",
+     "components": []
+    },
+    {
+     "code": "gross_profit_ratio",
+     "title": "Рентабельность по валовой прибыли, %",
+     "block": "gross",
+     "kind": "ratio",
+     "amount": "0.2393",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "indirect_costs",
+     "title": "Косвенные расходы",
+     "block": "indirect",
+     "kind": "subtotal",
+     "amount": "653386.04",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2017",
+     "components": []
+    },
+    {
+     "code": "admin_costs",
+     "title": "Административные",
+     "block": "admin",
+     "kind": "subtotal",
+     "amount": "495215.04",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1529",
+     "components": []
+    },
+    {
+     "code": "admin_payroll",
+     "title": "Зарплата администрации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "326000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1007",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "326000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "utilities_chernikova",
+     "title": "Коммунальные платежи Черникова",
+     "block": "admin",
+     "kind": "source",
+     "amount": "136095.40",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0420",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "134095.40",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "2000.00",
+       "status": "ok",
+       "excluded_amount": "129080.90",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "office_rent",
+     "title": "Аренда офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_maintenance",
+     "title": "Содержание офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "350.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0001",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "350.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "rko",
+     "title": "РКО",
+     "block": "admin",
+     "kind": "source",
+     "amount": "4289.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0013",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "4289.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bank_fees",
+     "title": "Прочие банковские комиссии",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fd_nk_services",
+     "title": "Услуги ФД и НК",
+     "block": "admin",
+     "kind": "source",
+     "amount": "3000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0009",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "3000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_expenses",
+     "title": "Расходы на персонал",
+     "block": "admin",
+     "kind": "source",
+     "amount": "358.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0001",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "358.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_training",
+     "title": "Обучение персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "telecom",
+     "title": "Телекоммуникации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "14521.64",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0045",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "14521.64",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "13230.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "recruiting",
+     "title": "Поиск и найм персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "10601.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0033",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "5101.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "5500.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "commercial_costs",
+     "title": "Коммерческие",
+     "block": "commercial",
+     "kind": "subtotal",
+     "amount": "158171.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0488",
+     "components": []
+    },
+    {
+     "code": "aggregator_commission",
+     "title": "Комиссия агрегатору",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "targeted_ads",
+     "title": "Таргетированная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "outdoor_ads",
+     "title": "Наружная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "yandex_maps_ads",
+     "title": "Реклама на Яндекс-картах",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "context_ads",
+     "title": "Контекстная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "68000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0210",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "68000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "78000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "flyers",
+     "title": "Листовки",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "seo",
+     "title": "SEO - оптимизация",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "13000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0040",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "13000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "13000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "other_marketing",
+     "title": "Прочие маркетинговые услуги",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "website_app",
+     "title": "Сайт и приложение",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "77171.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0238",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "77171.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "83092.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "ebitda",
+     "title": "Операционная прибыль (EBITDA)",
+     "block": "ebitda",
+     "kind": "subtotal",
+     "amount": "121498.78",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0375",
+     "components": []
+    },
+    {
+     "code": "ebitda_ratio",
+     "title": "Рентабельность по операционной прибыли, %",
+     "block": "ebitda",
+     "kind": "ratio",
+     "amount": "0.0375",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "below_income",
+     "title": "Доходы ниже EBITDA",
+     "block": "below_income",
+     "kind": "subtotal",
+     "amount": "6120.75",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0019",
+     "components": []
+    },
+    {
+     "code": "other_income",
+     "title": "Прочие доходы",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "1400.84",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0004",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1400.84",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "unclaimed_deposits_writeoff",
+     "title": "Списание невостребованных депозитов",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "4719.91",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0015",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "4719.91",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "below_expense",
+     "title": "Расходы ниже EBITDA",
+     "block": "below_expense",
+     "kind": "subtotal",
+     "amount": "228658.79",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": "0.0706",
+     "components": []
+    },
+    {
+     "code": "other_expenses",
+     "title": "Прочие расходы",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "1.96",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1.96",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "loan_interest",
+     "title": "Проценты по кредитам",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "taxes",
+     "title": "Налоги",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "201728.34",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0623",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "201728.34",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "overdraft_fee",
+     "title": "Комиссия за овердрафт",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "depreciation",
+     "title": "Амортизация",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "26928.49",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0083",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "26928.49",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "asset_disposal_loss",
+     "title": "Убыток от выбытия ОС",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fines_penalties",
+     "title": "Штрафы и пени",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "net_profit",
+     "title": "Чистая прибыль",
+     "block": "net",
+     "kind": "subtotal",
+     "amount": "-101039.26",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": "-0.0312",
+     "components": []
+    },
+    {
+     "code": "net_profit_ratio",
+     "title": "Рентабельность по чистой прибыли, %",
+     "block": "net",
+     "kind": "ratio",
+     "amount": "-0.0312",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__out_of_pnl__",
+     "title": "Вне ОПиУ",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__unmapped__",
+     "title": "Не разнесено",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__accrual_settled__",
+     "title": "Исключено как расчёт по признанию",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    }
+   ],
+   "warnings": [
+    {
+     "code": "unmapped_cash",
+     "line_code": null,
+     "amount": "5280.00"
+    },
+    {
+     "code": "recognition_unattributed",
+     "line_code": null,
+     "amount": "12381.21"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "automation",
+     "amount": "20299.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "shop_maintenance",
+     "amount": "17351.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "utilities_chernikova",
+     "amount": "2000.00"
+    }
+   ],
+   "reconciliation": {
+    "cash_out_total": "6505018.51",
+    "cash_in_total": "6717747.72",
+    "by_verdict": {
+     "excluded_out_of_pnl": "12658123.36",
+     "excluded_accrual_counterparty": "431569.90",
+     "included": "105292.97",
+     "excluded_owned_by_layer": "22500.00",
+     "unmapped": "5280.00"
+    },
+    "unmapped": "5280.00",
+    "unmapped_count": 2,
+    "unmapped_out": "3960.00",
+    "unmapped_in": "1320.00",
+    "balanced": false,
+    "drift": "0.00",
+    "missed_count": 0
+   },
+   "quality": {
+    "unattributed": "12381.21",
+    "without_primary": "100.00",
+    "without_location": "251879.50",
+    "recognized_total": "489017.25",
+    "cash_in_pnl": "105292.97"
+   }
+  },
+  "2026-09-01": {
+   "lines": [
+    {
+     "code": "revenue",
+     "title": "Выручка",
+     "block": "revenue",
+     "kind": "subtotal",
+     "amount": "3034895.59",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0000",
+     "components": []
+    },
+    {
+     "code": "revenue_gross_chernikova",
+     "title": "Выручка без учета скидок Черникова",
+     "block": "revenue",
+     "kind": "memo",
+     "amount": "3478864.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.1463",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "3478864.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "revenue_net_chernikova",
+     "title": "Выручка с учетом скидок Черникова",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "3066493.59",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0104",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "3066493.59",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "partner_commission",
+     "title": "Комиссия партнерам (с -)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "30098.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0099",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "30098.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "customer_refunds",
+     "title": "Возвраты клиентам (с минусом)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "1500.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0005",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1500.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "production_costs",
+     "title": "Производственные расходы",
+     "block": "production",
+     "kind": "subtotal",
+     "amount": "2293048.89",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": "0.7556",
+     "components": []
+    },
+    {
+     "code": "variable_costs",
+     "title": "Переменные",
+     "block": "variable",
+     "kind": "subtotal",
+     "amount": "885705.80",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2918",
+     "components": []
+    },
+    {
+     "code": "food_cost_chernikova",
+     "title": "Расход продуктов (фудкост) Черникова",
+     "block": "variable",
+     "kind": "source",
+     "amount": "885705.80",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2918",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "885705.80",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "margin_income",
+     "title": "Маржинальный доход",
+     "block": "margin",
+     "kind": "subtotal",
+     "amount": "2149189.79",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7082",
+     "components": []
+    },
+    {
+     "code": "margin_ratio",
+     "title": "Рентабельность по маржинальному доходу, %",
+     "block": "margin",
+     "kind": "ratio",
+     "amount": "0.7082",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "direct_fixed",
+     "title": "Прямые постоянные",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "470752.77",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1551",
+     "components": []
+    },
+    {
+     "code": "cook_payroll",
+     "title": "Зарплата поваров (оклады и удержания)",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "473401.17",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1560",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "473401.17",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "pizza_box_inventory",
+     "title": "Результаты инвентаризации коробки д/пиццы",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "-2648.40",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "-0.0009",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "-2648.40",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit_by_direction",
+     "title": "Валовая прибыль по направлениям",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "1678437.02",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.5530",
+     "components": []
+    },
+    {
+     "code": "gross_profit_by_direction_ratio",
+     "title": "Рентабельность по направлениям, %",
+     "block": "direct_fixed",
+     "kind": "ratio",
+     "amount": "0.5530",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "overhead",
+     "title": "Общепроизводственные",
+     "block": "overhead",
+     "kind": "subtotal",
+     "amount": "936590.32",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": "0.3086",
+     "components": []
+    },
+    {
+     "code": "rent_chernikova",
+     "title": "Аренда торговой точки Черникова",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "100000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0330",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "100000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "150000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "administrator_payroll",
+     "title": "Зарплата администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "179906.03",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0593",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "179906.03",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bonuses",
+     "title": "Премии поваров, шеф-повара, администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "29396.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0097",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "29396.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "writeoffs",
+     "title": "Списание продукции и сырья",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "67349.34",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0222",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "67349.34",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "audit_results",
+     "title": "Результаты ревизий",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "18815.58",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0062",
+     "components": [
+      {
+       "stream": "inventory",
+       "component": "main",
+       "amount": "57935.29",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "-39119.71",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "beverage_inventory",
+     "title": "Результаты инвентаризации напитков (барная ревизия)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "342.62",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0001",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "342.62",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "courier_service",
+     "title": "Траты на курьерскую службу",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "243970.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0804",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "243970.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "acquiring",
+     "title": "Комиссия за эквайринг",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "42392.06",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0140",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "6456.49",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "acquiring",
+       "component": "main",
+       "amount": "35935.57",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "transport",
+     "title": "Транспортные услуги",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_meals",
+     "title": "Расходы на питание персонала",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "31109.97",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0103",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "31109.97",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "automation",
+     "title": "Оплата систем автоматизации",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "64349.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0212",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "44050.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "20299.00",
+       "status": "ok",
+       "excluded_amount": "41220.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "shop_maintenance",
+     "title": "Содержание торговых точек",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "58609.14",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0193",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "4247.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "19835.07",
+       "status": "ok",
+       "excluded_amount": "33840.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "34527.07",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "equipment_repair",
+     "title": "Ремонт оборудования",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "11100.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0037",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "11100.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "warehouse_rent",
+     "title": "Аренда склада",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0033",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "10000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "10000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "packaging_inventory",
+     "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "32281.08",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0106",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "32281.08",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "aux_goods",
+     "title": "Вспомогательные товары(учет по факту оплаты)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10753.50",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0035",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "10753.50",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "goods_workup",
+     "title": "Проработка",
+     "block": "overhead",
+     "kind": "memo",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "iiko_workup",
+       "component": "main",
+       "amount": "0.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "payroll_taxes",
+     "title": "Налоги с ЗП",
+     "block": "overhead",
+     "kind": "source",
+     "amount": null,
+     "status": "no_data",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": null,
+       "status": "no_data",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "accumulation_fund",
+     "title": "Накопительный фонд",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "36216.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0119",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "36216.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit",
+     "title": "Валовая прибыль",
+     "block": "gross",
+     "kind": "subtotal",
+     "amount": "741846.70",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": "0.2444",
+     "components": []
+    },
+    {
+     "code": "gross_profit_ratio",
+     "title": "Рентабельность по валовой прибыли, %",
+     "block": "gross",
+     "kind": "ratio",
+     "amount": "0.2444",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "indirect_costs",
+     "title": "Косвенные расходы",
+     "block": "indirect",
+     "kind": "subtotal",
+     "amount": "543585.20",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1791",
+     "components": []
+    },
+    {
+     "code": "admin_costs",
+     "title": "Административные",
+     "block": "admin",
+     "kind": "subtotal",
+     "amount": "379479.20",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1250",
+     "components": []
+    },
+    {
+     "code": "admin_payroll",
+     "title": "Зарплата администрации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "326000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1074",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "326000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "utilities_chernikova",
+     "title": "Коммунальные платежи Черникова",
+     "block": "admin",
+     "kind": "source",
+     "amount": "21469.08",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0071",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "21469.08",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "141258.59",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_rent",
+     "title": "Аренда офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_maintenance",
+     "title": "Содержание офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "rko",
+     "title": "РКО",
+     "block": "admin",
+     "kind": "source",
+     "amount": "7505.08",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0025",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "7505.08",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bank_fees",
+     "title": "Прочие банковские комиссии",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fd_nk_services",
+     "title": "Услуги ФД и НК",
+     "block": "admin",
+     "kind": "source",
+     "amount": "3000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0010",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "3000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_expenses",
+     "title": "Расходы на персонал",
+     "block": "admin",
+     "kind": "source",
+     "amount": "1140.96",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0004",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1140.96",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_training",
+     "title": "Обучение персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "telecom",
+     "title": "Телекоммуникации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "14364.08",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0047",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "14364.08",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "18230.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "recruiting",
+     "title": "Поиск и найм персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "6000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0020",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "6000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "commercial_costs",
+     "title": "Коммерческие",
+     "block": "commercial",
+     "kind": "subtotal",
+     "amount": "164106.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0541",
+     "components": []
+    },
+    {
+     "code": "aggregator_commission",
+     "title": "Комиссия агрегатору",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "targeted_ads",
+     "title": "Таргетированная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "outdoor_ads",
+     "title": "Наружная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "yandex_maps_ads",
+     "title": "Реклама на Яндекс-картах",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "context_ads",
+     "title": "Контекстная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "78000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0257",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "78000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "58000.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "overdue_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "flyers",
+     "title": "Листовки",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "seo",
+     "title": "SEO - оптимизация",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "13000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0043",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "13000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "13000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "other_marketing",
+     "title": "Прочие маркетинговые услуги",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "website_app",
+     "title": "Сайт и приложение",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "73106.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0241",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "73106.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "77171.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "ebitda",
+     "title": "Операционная прибыль (EBITDA)",
+     "block": "ebitda",
+     "kind": "subtotal",
+     "amount": "198261.50",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": "0.0653",
+     "components": []
+    },
+    {
+     "code": "ebitda_ratio",
+     "title": "Рентабельность по операционной прибыли, %",
+     "block": "ebitda",
+     "kind": "ratio",
+     "amount": "0.0653",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "below_income",
+     "title": "Доходы ниже EBITDA",
+     "block": "below_income",
+     "kind": "subtotal",
+     "amount": "2550.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0008",
+     "components": []
+    },
+    {
+     "code": "other_income",
+     "title": "Прочие доходы",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "2550.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0008",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "2550.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "unclaimed_deposits_writeoff",
+     "title": "Списание невостребованных депозитов",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "below_expense",
+     "title": "Расходы ниже EBITDA",
+     "block": "below_expense",
+     "kind": "subtotal",
+     "amount": "215702.51",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest"
+     ],
+     "pct_of_revenue": "0.0711",
+     "components": []
+    },
+    {
+     "code": "other_expenses",
+     "title": "Прочие расходы",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "1.90",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1.90",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "loan_interest",
+     "title": "Проценты по кредитам",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "taxes",
+     "title": "Налоги",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "188772.12",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0622",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "188772.12",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "overdraft_fee",
+     "title": "Комиссия за овердрафт",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "depreciation",
+     "title": "Амортизация",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "26928.49",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0089",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "26928.49",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "asset_disposal_loss",
+     "title": "Убыток от выбытия ОС",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fines_penalties",
+     "title": "Штрафы и пени",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "net_profit",
+     "title": "Чистая прибыль",
+     "block": "net",
+     "kind": "subtotal",
+     "amount": "-14891.01",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest",
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": "-0.0049",
+     "components": []
+    },
+    {
+     "code": "net_profit_ratio",
+     "title": "Рентабельность по чистой прибыли, %",
+     "block": "net",
+     "kind": "ratio",
+     "amount": "-0.0049",
+     "status": "incomplete",
+     "missing_lines": [
+      "loan_interest",
+      "payroll_taxes"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__out_of_pnl__",
+     "title": "Вне ОПиУ",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__unmapped__",
+     "title": "Не разнесено",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__accrual_settled__",
+     "title": "Исключено как расчёт по признанию",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    }
+   ],
+   "warnings": [
+    {
+     "code": "overdue_document",
+     "line_code": "context_ads",
+     "amount": "15862.24"
+    },
+    {
+     "code": "unmapped_cash",
+     "line_code": null,
+     "amount": "7935.00"
+    },
+    {
+     "code": "recognition_unattributed",
+     "line_code": null,
+     "amount": "14333.47"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "automation",
+     "amount": "20299.00"
+    },
+    {
+     "code": "cash_alongside_accrual",
+     "line_code": "shop_maintenance",
+     "amount": "9180.00"
+    }
+   ],
+   "reconciliation": {
+    "cash_out_total": "6293343.39",
+    "cash_in_total": "6146032.12",
+    "by_verdict": {
+     "excluded_out_of_pnl": "11775915.45",
+     "excluded_accrual_counterparty": "512719.59",
+     "excluded_owned_by_layer": "30000.00",
+     "included": "107498.47",
+     "excluded_quality": "5307.00",
+     "unmapped": "7935.00"
+    },
+    "unmapped": "7935.00",
+    "unmapped_count": 6,
+    "unmapped_out": "2615.00",
+    "unmapped_in": "5320.00",
+    "balanced": false,
+    "drift": "0.00",
+    "missed_count": 0
+   },
+   "quality": {
+    "unattributed": "14333.47",
+    "without_primary": "0.00",
+    "without_location": "253221.14",
+    "recognized_total": "375569.63",
+    "cash_in_pnl": "107498.47"
+   }
+  },
+  "2026-10-01": {
+   "lines": [
+    {
+     "code": "revenue",
+     "title": "Выручка",
+     "block": "revenue",
+     "kind": "subtotal",
+     "amount": "1356465.62",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0000",
+     "components": []
+    },
+    {
+     "code": "revenue_gross_chernikova",
+     "title": "Выручка без учета скидок Черникова",
+     "block": "revenue",
+     "kind": "memo",
+     "amount": "1550998.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.1434",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "1550998.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "revenue_net_chernikova",
+     "title": "Выручка с учетом скидок Черникова",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "1376839.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "1.0150",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "1376839.82",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "partner_commission",
+     "title": "Комиссия партнерам (с -)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "18279.20",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0135",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "18279.20",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "customer_refunds",
+     "title": "Возвраты клиентам (с минусом)",
+     "block": "revenue",
+     "kind": "source",
+     "amount": "2095.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0015",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "2095.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "production_costs",
+     "title": "Производственные расходы",
+     "block": "production",
+     "kind": "subtotal",
+     "amount": "923868.10",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes",
+      "rent_chernikova"
+     ],
+     "pct_of_revenue": "0.6811",
+     "components": []
+    },
+    {
+     "code": "variable_costs",
+     "title": "Переменные",
+     "block": "variable",
+     "kind": "subtotal",
+     "amount": "392917.55",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2897",
+     "components": []
+    },
+    {
+     "code": "food_cost_chernikova",
+     "title": "Расход продуктов (фудкост) Черникова",
+     "block": "variable",
+     "kind": "source",
+     "amount": "392917.55",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.2897",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "392917.55",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "margin_income",
+     "title": "Маржинальный доход",
+     "block": "margin",
+     "kind": "subtotal",
+     "amount": "963548.07",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.7103",
+     "components": []
+    },
+    {
+     "code": "margin_ratio",
+     "title": "Рентабельность по маржинальному доходу, %",
+     "block": "margin",
+     "kind": "ratio",
+     "amount": "0.7103",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "direct_fixed",
+     "title": "Прямые постоянные",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "198311.27",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1462",
+     "components": []
+    },
+    {
+     "code": "cook_payroll",
+     "title": "Зарплата поваров (оклады и удержания)",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "197207.38",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.1454",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "197207.38",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "pizza_box_inventory",
+     "title": "Результаты инвентаризации коробки д/пиццы",
+     "block": "direct_fixed",
+     "kind": "source",
+     "amount": "1103.89",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0008",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "1103.89",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit_by_direction",
+     "title": "Валовая прибыль по направлениям",
+     "block": "direct_fixed",
+     "kind": "subtotal",
+     "amount": "765236.80",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.5641",
+     "components": []
+    },
+    {
+     "code": "gross_profit_by_direction_ratio",
+     "title": "Рентабельность по направлениям, %",
+     "block": "direct_fixed",
+     "kind": "ratio",
+     "amount": "0.5641",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "overhead",
+     "title": "Общепроизводственные",
+     "block": "overhead",
+     "kind": "subtotal",
+     "amount": "332639.28",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes",
+      "rent_chernikova"
+     ],
+     "pct_of_revenue": "0.2452",
+     "components": []
+    },
+    {
+     "code": "rent_chernikova",
+     "title": "Аренда торговой точки Черникова",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "waiting_document",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "50000.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "administrator_payroll",
+     "title": "Зарплата администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "68949.17",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0508",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "68949.17",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bonuses",
+     "title": "Премии поваров, шеф-повара, администраторов",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "9600.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0071",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "9600.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "writeoffs",
+     "title": "Списание продукции и сырья",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "27959.89",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0206",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "27959.89",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "audit_results",
+     "title": "Результаты ревизий",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "-802.42",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "-0.0006",
+     "components": [
+      {
+       "stream": "inventory",
+       "component": "main",
+       "amount": "5999.43",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "-6801.85",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "beverage_inventory",
+     "title": "Результаты инвентаризации напитков (барная ревизия)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "713.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0005",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "713.82",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "courier_service",
+     "title": "Траты на курьерскую службу",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "110216.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0813",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "110216.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "acquiring",
+     "title": "Комиссия за эквайринг",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "17340.69",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0128",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "478.33",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "acquiring",
+       "component": "main",
+       "amount": "16862.36",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "transport",
+     "title": "Транспортные услуги",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_meals",
+     "title": "Расходы на питание персонала",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "14750.99",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0109",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "14750.99",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "automation",
+     "title": "Оплата систем автоматизации",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "20299.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0150",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "20299.00",
+       "status": "ok",
+       "excluded_amount": "25690.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "shop_maintenance",
+     "title": "Содержание торговых точек",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "17033.96",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0126",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "11511.82",
+       "status": "ok",
+       "excluded_amount": "10375.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "5522.14",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "equipment_repair",
+     "title": "Ремонт оборудования",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "warehouse_rent",
+     "title": "Аренда склада",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0074",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "10000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "packaging_inventory",
+     "title": "Результаты инвентаризации упаковки (кроме коробок для пиццы)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "24952.28",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0184",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "24952.28",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "aux_goods",
+     "title": "Вспомогательные товары(учет по факту оплаты)",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "1455.90",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0011",
+     "components": [
+      {
+       "stream": "iiko",
+       "component": "main",
+       "amount": "1455.90",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "goods_workup",
+     "title": "Проработка",
+     "block": "overhead",
+     "kind": "memo",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "iiko_workup",
+       "component": "main",
+       "amount": "0.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "payroll_taxes",
+     "title": "Налоги с ЗП",
+     "block": "overhead",
+     "kind": "source",
+     "amount": null,
+     "status": "no_data",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": null,
+       "status": "no_data",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "accumulation_fund",
+     "title": "Накопительный фонд",
+     "block": "overhead",
+     "kind": "source",
+     "amount": "10170.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0075",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "14617.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "-4447.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "gross_profit",
+     "title": "Валовая прибыль",
+     "block": "gross",
+     "kind": "subtotal",
+     "amount": "432597.52",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes",
+      "rent_chernikova"
+     ],
+     "pct_of_revenue": "0.3189",
+     "components": []
+    },
+    {
+     "code": "gross_profit_ratio",
+     "title": "Рентабельность по валовой прибыли, %",
+     "block": "gross",
+     "kind": "ratio",
+     "amount": "0.3189",
+     "status": "incomplete",
+     "missing_lines": [
+      "payroll_taxes",
+      "rent_chernikova"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "indirect_costs",
+     "title": "Косвенные расходы",
+     "block": "indirect",
+     "kind": "subtotal",
+     "amount": "24783.82",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "seo"
+     ],
+     "pct_of_revenue": "0.0183",
+     "components": []
+    },
+    {
+     "code": "admin_costs",
+     "title": "Административные",
+     "block": "admin",
+     "kind": "subtotal",
+     "amount": "18783.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0138",
+     "components": []
+    },
+    {
+     "code": "admin_payroll",
+     "title": "Зарплата администрации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "0.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "utilities_chernikova",
+     "title": "Коммунальные платежи Черникова",
+     "block": "admin",
+     "kind": "source",
+     "amount": "2000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0015",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "2000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "14348.49",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_rent",
+     "title": "Аренда офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "office_maintenance",
+     "title": "Содержание офиса",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "rko",
+     "title": "РКО",
+     "block": "admin",
+     "kind": "source",
+     "amount": "637.82",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0005",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "637.82",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "bank_fees",
+     "title": "Прочие банковские комиссии",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fd_nk_services",
+     "title": "Услуги ФД и НК",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_expenses",
+     "title": "Расходы на персонал",
+     "block": "admin",
+     "kind": "source",
+     "amount": "9708.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0072",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "9708.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "staff_training",
+     "title": "Обучение персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "telecom",
+     "title": "Телекоммуникации",
+     "block": "admin",
+     "kind": "source",
+     "amount": "2038.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0015",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "2038.00",
+       "status": "ok",
+       "excluded_amount": "8230.00",
+       "excluded_reason": "accrual"
+      },
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "recruiting",
+     "title": "Поиск и найм персонала",
+     "block": "admin",
+     "kind": "source",
+     "amount": "4400.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0032",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "4400.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "commercial_costs",
+     "title": "Коммерческие",
+     "block": "commercial",
+     "kind": "subtotal",
+     "amount": "6000.00",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "seo"
+     ],
+     "pct_of_revenue": "0.0044",
+     "components": []
+    },
+    {
+     "code": "aggregator_commission",
+     "title": "Комиссия агрегатору",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "6000.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0044",
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "main",
+       "amount": "6000.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      },
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "6000.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "targeted_ads",
+     "title": "Таргетированная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "outdoor_ads",
+     "title": "Наружная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "yandex_maps_ads",
+     "title": "Реклама на Яндекс-картах",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "context_ads",
+     "title": "Контекстная реклама",
+     "block": "commercial",
+     "kind": "source",
+     "amount": null,
+     "status": "waiting_document",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "flyers",
+     "title": "Листовки",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "seo",
+     "title": "SEO - оптимизация",
+     "block": "commercial",
+     "kind": "source",
+     "amount": null,
+     "status": "waiting_document",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "recognition",
+       "component": "waiting",
+       "amount": null,
+       "status": "waiting_document",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "other_marketing",
+     "title": "Прочие маркетинговые услуги",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "website_app",
+     "title": "Сайт и приложение",
+     "block": "commercial",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "73106.00",
+       "excluded_reason": "accrual"
+      }
+     ]
+    },
+    {
+     "code": "ebitda",
+     "title": "Операционная прибыль (EBITDA)",
+     "block": "ebitda",
+     "kind": "subtotal",
+     "amount": "407813.70",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "payroll_taxes",
+      "rent_chernikova",
+      "seo"
+     ],
+     "pct_of_revenue": "0.3006",
+     "components": []
+    },
+    {
+     "code": "ebitda_ratio",
+     "title": "Рентабельность по операционной прибыли, %",
+     "block": "ebitda",
+     "kind": "ratio",
+     "amount": "0.3006",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "payroll_taxes",
+      "rent_chernikova",
+      "seo"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "below_income",
+     "title": "Доходы ниже EBITDA",
+     "block": "below_income",
+     "kind": "subtotal",
+     "amount": "1600.50",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0012",
+     "components": []
+    },
+    {
+     "code": "other_income",
+     "title": "Прочие доходы",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "1600.50",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0012",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "1600.50",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "unclaimed_deposits_writeoff",
+     "title": "Списание невостребованных депозитов",
+     "block": "below_income",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "payroll",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "below_expense",
+     "title": "Расходы ниже EBITDA",
+     "block": "below_expense",
+     "kind": "subtotal",
+     "amount": "87502.89",
+     "status": "incomplete",
+     "missing_lines": [
+      "depreciation",
+      "loan_interest"
+     ],
+     "pct_of_revenue": "0.0645",
+     "components": []
+    },
+    {
+     "code": "other_expenses",
+     "title": "Прочие расходы",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "110.00",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0001",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "110.00",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "loan_interest",
+     "title": "Проценты по кредитам",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "taxes",
+     "title": "Налоги",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "87392.89",
+     "status": "ok",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0644",
+     "components": [
+      {
+       "stream": "taxes",
+       "component": "main",
+       "amount": "87392.89",
+       "status": "ok",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "overdraft_fee",
+     "title": "Комиссия за овердрафт",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "depreciation",
+     "title": "Амортизация",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": null,
+     "status": "no_data",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": null,
+       "status": "no_data",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "asset_disposal_loss",
+     "title": "Убыток от выбытия ОС",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "fixed_assets",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "fines_penalties",
+     "title": "Штрафы и пени",
+     "block": "below_expense",
+     "kind": "source",
+     "amount": "0.00",
+     "status": "zero_confirmed",
+     "missing_lines": [],
+     "pct_of_revenue": "0.0000",
+     "components": [
+      {
+       "stream": "cashflow",
+       "component": "main",
+       "amount": "0.00",
+       "status": "zero_confirmed",
+       "excluded_amount": "0.00",
+       "excluded_reason": null
+      }
+     ]
+    },
+    {
+     "code": "net_profit",
+     "title": "Чистая прибыль",
+     "block": "net",
+     "kind": "subtotal",
+     "amount": "321911.31",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "depreciation",
+      "loan_interest",
+      "payroll_taxes",
+      "rent_chernikova",
+      "seo"
+     ],
+     "pct_of_revenue": "0.2373",
+     "components": []
+    },
+    {
+     "code": "net_profit_ratio",
+     "title": "Рентабельность по чистой прибыли, %",
+     "block": "net",
+     "kind": "ratio",
+     "amount": "0.2373",
+     "status": "incomplete",
+     "missing_lines": [
+      "context_ads",
+      "depreciation",
+      "loan_interest",
+      "payroll_taxes",
+      "rent_chernikova",
+      "seo"
+     ],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__out_of_pnl__",
+     "title": "Вне ОПиУ",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__unmapped__",
+     "title": "Не разнесено",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    },
+    {
+     "code": "__accrual_settled__",
+     "title": "Исключено как расчёт по признанию",
+     "block": "service",
+     "kind": "service",
+     "amount": null,
+     "status": "not_configured",
+     "missing_lines": [],
+     "pct_of_revenue": null,
+     "components": []
+    }
+   ],
+   "warnings": [
+    {
+     "code": "inventory_sparse",
+     "line_code": "audit_results",
+     "amount": null
+    },
+    {
+     "code": "unmapped_cash",
+     "line_code": null,
+     "amount": "2640.00"
+    }
+   ],
+   "reconciliation": {
+    "cash_out_total": "2200443.53",
+    "cash_in_total": "2217812.39",
+    "by_verdict": {
+     "excluded_out_of_pnl": "4150236.48",
+     "excluded_accrual_counterparty": "180249.49",
+     "included": "77629.46",
+     "excluded_quality": "0.49",
+     "unmapped": "2640.00",
+     "excluded_owned_by_layer": "7500.00"
+    },
+    "unmapped": "2640.00",
+    "unmapped_count": 1,
+    "unmapped_out": "2640.00",
+    "unmapped_in": "0.00",
+    "balanced": false,
+    "drift": "0.00",
+    "missed_count": 0
+   },
+   "quality": {
+    "unattributed": "0.00",
+    "without_primary": "0.00",
+    "without_location": "8000.00",
+    "recognized_total": "8000.00",
+    "cash_in_pnl": "77629.46"
+   }
+  }
+ },
+ "payroll_month": {
+  "2026-07-01": {
+   "cook_pay": "510116.67",
+   "cashier_pay": "177164.84",
+   "admin_pay": "326500.00",
+   "bonuses": "26800.00",
+   "fund_accrual": "35694.00",
+   "audit_penalties": "27255.15",
+   "other_penalties": "5994.00",
+   "by_role": {
+    "sushi": "288166.34",
+    "administrator": "177164.84",
+    "pizza": "134958.33",
+    "shawarma": "86992.0",
+    "Посудомойка": "15500.00",
+    "Управляющий": "90000.00",
+    "Старший курьер": "20000.00",
+    "Менеджер": "40000.00",
+    "Уборщица": "15000.00",
+    "Помощник менеджера": "6000.00",
+    "Оклад по востребованию": "140000.00"
+   },
+   "breakdown_sum": {
+    "base_pay": "868032.51",
+    "percent_pay": "135749.00",
+    "vacation_pay": "10000.00",
+    "bonuses": "26800.00",
+    "fund_accrual": "35694.00",
+    "other_penalties": "5994.00",
+    "audit_penalties": "27255.15"
+   },
+   "employees_n": 25
+  },
+  "2026-08-01": {
+   "cook_pay": "524718.86",
+   "cashier_pay": "183364.56",
+   "admin_pay": "326000.00",
+   "bonuses": "22996.00",
+   "fund_accrual": "32732.00",
+   "audit_penalties": "25062.45",
+   "other_penalties": "8573.00",
+   "by_role": {
+    "administrator": "183364.56",
+    "sushi": "280309.22",
+    "shawarma": "80100.0",
+    "pizza": "161909.64",
+    "Посудомойка": "15000.00",
+    "Управляющий": "90000.00",
+    "Старший курьер": "20000.00",
+    "Менеджер": "40000.00",
+    "Уборщица": "15000.00",
+    "Помощник менеджера": "6000.00",
+    "prep": "2400.0",
+    "Оклад по востребованию": "140000.00"
+   },
+   "breakdown_sum": {
+    "base_pay": "882460.42",
+    "percent_pay": "121623.00",
+    "vacation_pay": "30000.00",
+    "bonuses": "22996.00",
+    "fund_accrual": "32732.00",
+    "other_penalties": "8573.00",
+    "audit_penalties": "25062.45"
+   },
+   "employees_n": 25
+  },
+  "2026-09-01": {
+   "cook_pay": "480150.17",
+   "cashier_pay": "179906.03",
+   "admin_pay": "326000.00",
+   "bonuses": "29396.00",
+   "fund_accrual": "36216.00",
+   "audit_penalties": "39119.71",
+   "other_penalties": "6749.00",
+   "by_role": {
+    "Управляющий": "90000.00",
+    "Посудомойка": "15000.00",
+    "Старший курьер": "20000.00",
+    "Менеджер": "40000.00",
+    "Уборщица": "15000.00",
+    "shawarma": "76035.0",
+    "sushi": "267635.81",
+    "pizza": "136479.36",
+    "administrator": "179906.03",
+    "Помощник менеджера": "6000.00",
+    "Оклад по востребованию": "140000.00"
+   },
+   "breakdown_sum": {
+    "base_pay": "841118.20",
+    "percent_pay": "118938.00",
+    "vacation_pay": "26000.00",
+    "bonuses": "29396.00",
+    "fund_accrual": "36216.00",
+    "other_penalties": "6749.00",
+    "audit_penalties": "39119.71"
+   },
+   "employees_n": 24
+  },
+  "2026-10-01": {
+   "cook_pay": "200004.38",
+   "cashier_pay": "68949.17",
+   "admin_pay": "0.00",
+   "bonuses": "9600.00",
+   "fund_accrual": "14617.00",
+   "audit_penalties": "6801.85",
+   "other_penalties": "2797.00",
+   "by_role": {
+    "sushi": "112065.88",
+    "pizza": "51358.0",
+    "administrator": "68949.17",
+    "shawarma": "36580.5"
+   },
+   "breakdown_sum": {
+    "base_pay": "218255.55",
+    "percent_pay": "50698.00",
+    "vacation_pay": "0.00",
+    "bonuses": "9600.00",
+    "fund_accrual": "14617.00",
+    "other_penalties": "2797.00",
+    "audit_penalties": "6801.85"
+   },
+   "employees_n": 15
+  }
+ }
+}

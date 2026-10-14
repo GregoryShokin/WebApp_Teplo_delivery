@@ -1,0 +1,146 @@
+[
+ {
+  "month": "2026-07",
+  "metric": "gross",
+  "sku_detail_total": 4129189.0,
+  "preset_total": 4129189.0,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3478
+ },
+ {
+  "month": "2026-07",
+  "metric": "net",
+  "sku_detail_total": 3596783.28,
+  "preset_total": 3596783.28,
+  "difference": -0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3478
+ },
+ {
+  "month": "2026-07",
+  "metric": "food_cost",
+  "sku_detail_total": 1047240.15,
+  "preset_total": 1047240.15,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3478
+ },
+ {
+  "month": "2026-08",
+  "metric": "gross",
+  "sku_detail_total": 3749686.0,
+  "preset_total": 3749686.0,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3405
+ },
+ {
+  "month": "2026-08",
+  "metric": "net",
+  "sku_detail_total": 3282430.64,
+  "preset_total": 3282430.64,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3405
+ },
+ {
+  "month": "2026-08",
+  "metric": "food_cost",
+  "sku_detail_total": 962639.64,
+  "preset_total": 962639.64,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3405
+ },
+ {
+  "month": "2026-09",
+  "metric": "gross",
+  "sku_detail_total": 3478864.0,
+  "preset_total": 3478864.0,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3126
+ },
+ {
+  "month": "2026-09",
+  "metric": "net",
+  "sku_detail_total": 3066493.59,
+  "preset_total": 3066493.59,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3126
+ },
+ {
+  "month": "2026-09",
+  "metric": "food_cost",
+  "sku_detail_total": 885705.8,
+  "preset_total": 885705.8,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 3126
+ },
+ {
+  "month": "2026-10p",
+  "metric": "gross",
+  "sku_detail_total": 1550998.0,
+  "preset_total": 1550998.0,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 1426
+ },
+ {
+  "month": "2026-10p",
+  "metric": "net",
+  "sku_detail_total": 1376839.82,
+  "preset_total": 1376839.82,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 1426
+ },
+ {
+  "month": "2026-10p",
+  "metric": "food_cost",
+  "sku_detail_total": 392915.49,
+  "preset_total": 392915.49,
+  "difference": 0.0,
+  "status": "matched",
+  "preset_department_codes": [
+   "2"
+  ],
+  "sku_rows": 1426
+ }
+]

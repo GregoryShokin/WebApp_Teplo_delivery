@@ -1,0 +1,151 @@
+{
+ "as_of": "2026-10-14",
+ "rice_pf_guid": "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+ "batch_chart": {
+  "chart_id": "18e9ff7a-3874-417c-8b8e-645af189bb84",
+  "dateFrom": "2026-06-30",
+  "dateTo": null,
+  "assembledAmount": 5.3195,
+  "assembly_unit": "кг",
+  "outputComment": "5,3195",
+  "technologyDescription": "Рис тщательно промываем. Промытый рис заливаем водой в соотношении 2500 гр риса и 2500 гр воды. Варим в рисоварке 45мин. После срабатывания датчика сигнализирующего о готовности риса   необходимо заправить рис мицуканом . Помешиваем рис - каждые 5 мину в течении 30 минут.",
+  "items": [
+   {
+    "guid": "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+    "name": "Рис Макото",
+    "type": "GOODS",
+    "unit": "кг",
+    "amountIn_per_roll": 0.4699689820471849,
+    "amountOut_raw": 2.125,
+    "grams_input_if_kg": 469.969
+   },
+   {
+    "guid": "ce899eb6-6265-4039-b62d-016b7bf66d5d",
+    "name": "Вода",
+    "type": "GOODS",
+    "unit": "л",
+    "amountIn_per_roll": 0.44177084312435383,
+    "amountOut_raw": 2.0445,
+    "grams_input_if_kg": null
+   },
+   {
+    "guid": "a6f59eec-2ff3-4d91-b64c-3b735a3fb44d",
+    "name": "Мицукан",
+    "type": "PREPARED",
+    "unit": "кг",
+    "amountIn_per_roll": 0.21618573174170505,
+    "amountOut_raw": 1.15,
+    "grams_input_if_kg": 216.186
+   }
+  ],
+  "rice_pf_g": 0,
+  "nori_sheets": 0,
+  "sum_direct_inputs_kg_only_g": 686.2,
+  "prepared_check_max_abs_residual": 4.688780353562239e-10,
+  "flat_goods_per_roll": {
+   "Рис Макото": 0.469968982,
+   "Вода": 0.441770843,
+   "Уксус рисовый": 0.093667995,
+   "Сахар": 0.112401594,
+   "Соль": 0.009366799,
+   "Комбу": 0.000749344
+  },
+  "flat_goods_units": {
+   "Рис Макото": "кг",
+   "Вода": "л",
+   "Уксус рисовый": "л",
+   "Сахар": "кг",
+   "Соль": "кг",
+   "Комбу": "кг"
+  }
+ },
+ "nested_prepared": {
+  "Мицукан": {
+   "chart_id": "731ece22-b0ee-4760-9baa-20479d031538",
+   "dateFrom": "2024-08-27",
+   "dateTo": null,
+   "assembledAmount": 11.54,
+   "assembly_unit": "кг",
+   "outputComment": "11,5400",
+   "technologyDescription": "рисовый уксус смешиваем с сахаром и солью,согласно тк. после тщательно перемешиваем в течении 5 минут до полного растворения сахара и соли. после добовляем комбо.",
+   "items": [
+    {
+     "guid": "a3ae9ec9-9bfa-4a87-ad6a-f9c51451dc0c",
+     "name": "Уксус рисовый",
+     "type": "GOODS",
+     "unit": "л",
+     "amountIn_per_roll": 0.43327556325823224,
+     "amountOut_raw": 5,
+     "grams_input_if_kg": null
+    },
+    {
+     "guid": "2760a59c-85ae-4b38-abfe-870bc8fe4ec5",
+     "name": "Сахар",
+     "type": "GOODS",
+     "unit": "кг",
+     "amountIn_per_roll": 0.5199306759098787,
+     "amountOut_raw": 6,
+     "grams_input_if_kg": 519.931
+    },
+    {
+     "guid": "15cd4416-d60a-4715-8ea6-7322d91ef043",
+     "name": "Соль",
+     "type": "GOODS",
+     "unit": "кг",
+     "amountIn_per_roll": 0.043327556325823226,
+     "amountOut_raw": 0.5,
+     "grams_input_if_kg": 43.328
+    },
+    {
+     "guid": "967b70a9-ea88-4ef6-ab8d-656980e78eb2",
+     "name": "Комбу",
+     "type": "GOODS",
+     "unit": "кг",
+     "amountIn_per_roll": 0.003466204506065858,
+     "amountOut_raw": 0.04,
+     "grams_input_if_kg": 3.466
+    }
+   ],
+   "rice_pf_g": 0,
+   "nori_sheets": 0,
+   "sum_direct_inputs_kg_only_g": 566.7,
+   "prepared_check_max_abs_residual": 4.939341418513932e-10,
+   "flat_goods_per_roll": {
+    "Уксус рисовый": 0.433275563,
+    "Сахар": 0.519930676,
+    "Соль": 0.043327556,
+    "Комбу": 0.003466205
+   },
+   "flat_goods_units": {
+    "Уксус рисовый": "л",
+    "Сахар": "кг",
+    "Соль": "кг",
+    "Комбу": "кг"
+   }
+  }
+ },
+ "flat_goods_per_kg_rice_pf": {
+  "Рис Макото": 0.469968982,
+  "Вода": 0.441770843,
+  "Уксус рисовый": 0.093667995,
+  "Сахар": 0.112401594,
+  "Соль": 0.009366799,
+  "Комбу": 0.000749344
+ },
+ "flat_goods_units": {
+  "Рис Макото": "кг",
+  "Вода": "л",
+  "Уксус рисовый": "л",
+  "Сахар": "кг",
+  "Соль": "кг",
+  "Комбу": "кг"
+ },
+ "prepared_api_per_kg": {
+  "Рис Макото": 0.469968982,
+  "Уксус рисовый": 0.093667995,
+  "Сахар": 0.112401594,
+  "Соль": 0.009366799,
+  "Вода": 0.441770843,
+  "Комбу": 0.000749344
+ }
+}

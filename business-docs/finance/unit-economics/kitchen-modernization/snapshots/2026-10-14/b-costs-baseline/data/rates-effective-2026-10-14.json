@@ -1,0 +1,567 @@
+{
+ "payroll_rate": [
+  {
+   "position_group": "Администратор",
+   "category": "category_2",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "2200.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Администратор",
+   "category": "category_3",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "2000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Администратор",
+   "category": "category_4",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "1800.00",
+   "is_active": true,
+   "effective_from": "2026-04-21",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Администратор",
+   "category": "intern",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "1800.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Заготовщик",
+   "category": "category_3",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "2200.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Заготовщик",
+   "category": "intern",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "2200.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Менеджер",
+   "category": "admin",
+   "station": null,
+   "rate_type": "monthly",
+   "amount": "40000.00",
+   "is_active": true,
+   "effective_from": "2026-05-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_1",
+   "station": "pizza",
+   "rate_type": "daily",
+   "amount": "2600.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_2",
+   "station": "pizza",
+   "rate_type": "daily",
+   "amount": "2200.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_3",
+   "station": "pizza",
+   "rate_type": "daily",
+   "amount": "2000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "intern",
+   "station": "pizza",
+   "rate_type": "daily",
+   "amount": "2000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Помощник менеджера",
+   "category": "admin",
+   "station": null,
+   "rate_type": "monthly",
+   "amount": "6000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Старший курьер",
+   "category": "admin",
+   "station": null,
+   "rate_type": "monthly",
+   "amount": "20000.00",
+   "is_active": true,
+   "effective_from": "2026-05-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_1",
+   "station": "sushi",
+   "rate_type": "daily",
+   "amount": "2800.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_2",
+   "station": "sushi",
+   "rate_type": "daily",
+   "amount": "2400.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_3",
+   "station": "sushi",
+   "rate_type": "daily",
+   "amount": "2200.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Сушист",
+   "category": "freelancer",
+   "station": "sushi",
+   "rate_type": "daily",
+   "amount": "3000.00",
+   "is_active": true,
+   "effective_from": "2026-07-02",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Сушист",
+   "category": "intern",
+   "station": "sushi",
+   "rate_type": "daily",
+   "amount": "2000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Уборщица",
+   "category": "admin",
+   "station": null,
+   "rate_type": "monthly",
+   "amount": "15000.00",
+   "is_active": true,
+   "effective_from": "2026-05-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Управляющий",
+   "category": "admin",
+   "station": null,
+   "rate_type": "monthly",
+   "amount": "90000.00",
+   "is_active": true,
+   "effective_from": "2026-05-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "category_3",
+   "station": "shawarma",
+   "rate_type": "daily",
+   "amount": "2000.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "category_4",
+   "station": null,
+   "rate_type": "daily",
+   "amount": "1800.00",
+   "is_active": true,
+   "effective_from": "2026-03-09",
+   "effective_to": null,
+   "personal_override": false
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "intern",
+   "station": "shawarma",
+   "rate_type": "daily",
+   "amount": "1800.00",
+   "is_active": true,
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "personal_override": false
+  }
+ ],
+ "personal_overrides_count": 2,
+ "availability_enabled": [
+  {
+   "position_group": "Администратор",
+   "category": "category_2",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Администратор",
+   "category": "category_3",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Администратор",
+   "category": "category_4",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Администратор",
+   "category": "intern",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Заготовщик",
+   "category": "category_3",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Заготовщик",
+   "category": "freelancer",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Заготовщик",
+   "category": "intern",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_1",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_2",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "category_3",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "freelancer",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Пиццерист",
+   "category": "intern",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_1",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_2",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Сушист",
+   "category": "category_3",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Сушист",
+   "category": "freelancer",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Сушист",
+   "category": "intern",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "category_3",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "category_4",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "freelancer",
+   "is_enabled": true
+  },
+  {
+   "position_group": "Шаурмист",
+   "category": "intern",
+   "is_enabled": true
+  }
+ ],
+ "revenue_tier": [
+  {
+   "min_revenue": "50000.00",
+   "max_revenue": "140000.00",
+   "rate_percent": "0.03500",
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "created_at": "2026-06-04T20:00:16.325669+00:00"
+  },
+  {
+   "min_revenue": "140000.00",
+   "max_revenue": "190000.00",
+   "rate_percent": "0.04500",
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "created_at": "2026-06-04T20:00:16.325669+00:00"
+  },
+  {
+   "min_revenue": "190000.00",
+   "max_revenue": "550000.00",
+   "rate_percent": "0.05500",
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "created_at": "2026-06-04T20:00:16.325669+00:00"
+  },
+  {
+   "min_revenue": "550000.00",
+   "max_revenue": null,
+   "rate_percent": "0.06500",
+   "effective_from": "2026-01-01",
+   "effective_to": null,
+   "created_at": "2026-06-04T20:00:16.325669+00:00"
+  }
+ ],
+ "category_coefficient": [
+  {
+   "category": "category_1",
+   "coefficient": "10.000",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  },
+  {
+   "category": "category_2",
+   "coefficient": "7.500",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  },
+  {
+   "category": "category_3",
+   "coefficient": "5.000",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  },
+  {
+   "category": "category_4",
+   "coefficient": "2.500",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  },
+  {
+   "category": "freelancer",
+   "coefficient": "0.000",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  },
+  {
+   "category": "intern",
+   "coefficient": "0.000",
+   "effective_from": "2026-01-01",
+   "effective_to": null
+  }
+ ],
+ "seniority_premium": [
+  {
+   "position": "Кассир",
+   "role": "deputy_senior",
+   "amount": "300.00",
+   "percent_of_base": null,
+   "effective_from": "2026-06-09",
+   "effective_to": null
+  },
+  {
+   "position": "Кассир",
+   "role": "senior",
+   "amount": "300.00",
+   "percent_of_base": null,
+   "effective_from": "2026-06-09",
+   "effective_to": null
+  },
+  {
+   "position": "Повар",
+   "role": "deputy_senior",
+   "amount": "300.00",
+   "percent_of_base": null,
+   "effective_from": "2026-06-09",
+   "effective_to": null
+  },
+  {
+   "position": "Повар",
+   "role": "senior",
+   "amount": "500.00",
+   "percent_of_base": null,
+   "effective_from": "2026-06-09",
+   "effective_to": null
+  }
+ ],
+ "settings": {
+  "fixed_assets.repair_modernization_threshold_ratio": 0.15,
+  "fixed_assets.capitalization_threshold_rub": 10000,
+  "payroll.weekday_premium": {
+   "amount": 200,
+   "threshold_hours": 8.0
+  },
+  "payroll.fund_rates_by_tenure": [
+   {
+    "rate": 0.0,
+    "min_months": 0
+   },
+   {
+    "rate": 0.05,
+    "min_months": 6
+   },
+   {
+    "rate": 0.1,
+    "min_months": 12
+   },
+   {
+    "rate": 0.15,
+    "min_months": 18
+   }
+  ],
+  "schedule.fot_warning_threshold_pct": 28.0,
+  "vacation.daily_amount": 1000,
+  "payroll.ndfl": {
+   "base": {
+    "premium": true,
+    "base_pay": true,
+    "percent_pay": true,
+    "vacation_pay": true,
+    "manual_bonuses": true,
+    "manual_penalties": false,
+    "seniority_allowance": true
+   },
+   "rate": "0.13",
+   "roles": [],
+   "enabled": false,
+   "categories": [],
+   "employee_ids": [],
+   "excluded_roles": [],
+   "excluded_categories": [],
+   "excluded_employee_ids": [],
+   "default_employee_enabled": false
+  },
+  "payroll.category_rules": {
+   "1": {
+    "coeff": 10,
+    "deposit_target": "20000",
+    "deposit_withholding": "2000"
+   },
+   "2": {
+    "coeff": 7.5,
+    "deposit_target": "15000",
+    "deposit_withholding": "2000"
+   },
+   "3": {
+    "coeff": 5,
+    "deposit_target": "10000",
+    "deposit_withholding": "2000"
+   },
+   "4": {
+    "coeff": 0,
+    "deposit_target": "7000",
+    "deposit_withholding": "2000"
+   },
+   "5": {
+    "coeff": 0,
+    "deposit_target": 7000,
+    "deposit_withholding": 1000
+   },
+   "6": {
+    "coeff": 0,
+    "deposit_target": "0",
+    "deposit_withholding": "0"
+   }
+  },
+  "fixed_assets.capital_repair_floor_rub": 5000,
+  "payroll.dishwasher_shift_rate": 500
+ },
+ "settings_history_fixed_assets": [
+  {
+   "key": "fixed_assets.capitalization_threshold_rub",
+   "old_value": null,
+   "new_value": 5000,
+   "changed_at": "2026-06-04T20:00:16.325669+00:00"
+  },
+  {
+   "key": "fixed_assets.repair_modernization_threshold_ratio",
+   "old_value": null,
+   "new_value": 0.15,
+   "changed_at": "2026-06-04T20:00:16.325669+00:00"
+  }
+ ]
+}

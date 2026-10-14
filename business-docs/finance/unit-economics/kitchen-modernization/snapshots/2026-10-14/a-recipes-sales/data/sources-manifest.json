@@ -1,0 +1,734 @@
+{
+ "read_only": true,
+ "host": "ssh teplo-prod → контейнер teplo-api (/app/apps/api), prod HEAD 8cf57490",
+ "iiko_sessions": [
+  {
+   "phase": "1",
+   "started_at": "2026-10-14T18:06:19.516188+00:00",
+   "finished_at": "2026-10-14T18:06:25.678705+00:00",
+   "tokens_obtained": 1,
+   "logout_statuses": [
+    200
+   ],
+   "preset_token_used": false
+  },
+  {
+   "phase": "2",
+   "started_at": "2026-10-14T18:14:06.810907+00:00",
+   "finished_at": "2026-10-14T18:14:08.630908+00:00",
+   "tokens_obtained": 1,
+   "logout_statuses": [
+    200
+   ],
+   "preset_token_used": false
+  }
+ ],
+ "requests": [
+  {
+   "name": "columns-sales",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/columns",
+   "params": {
+    "reportType": "SALES"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 55472,
+   "sha256": "f0ef3e3a137d7f4cfc9c245f12ea94982227379415b72aa187cc7f9989d8c2d9",
+   "retrieved_at": "2026-10-14T18:06:19.588561+00:00"
+  },
+  {
+   "name": "columns-transactions",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/columns",
+   "params": {
+    "reportType": "TRANSACTIONS"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 23636,
+   "sha256": "f21e4a8ceb6256d759c57ce7b03364983e023bcff54e21535cf9b1139df9a58d",
+   "retrieved_at": "2026-10-14T18:06:19.609487+00:00"
+  },
+  {
+   "name": "presets",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/presets",
+   "params": {},
+   "body": null,
+   "status": 200,
+   "bytes": 22216,
+   "sha256": "0d292a6589c8c5fa0a4e84c8185e091e3d1aec6232ba24a3f019f1b212248e6f",
+   "retrieved_at": "2026-10-14T18:06:19.634486+00:00"
+  },
+  {
+   "name": "departments",
+   "method": "GET",
+   "endpoint": "/corporation/departments",
+   "params": {
+    "includeDeleted": "true"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 1875,
+   "sha256": "423274d3c8a8615b5e6fb9aeda435babde26014edf31e4bc970e28890b8a32da",
+   "retrieved_at": "2026-10-14T18:06:19.699867+00:00"
+  },
+  {
+   "name": "stores",
+   "method": "GET",
+   "endpoint": "/corporation/stores",
+   "params": {
+    "includeDeleted": "true"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 1841,
+   "sha256": "656c4278cf9010c37e0392dcdcbe692ddb4a91ad4caeca682fdb430b495000c7",
+   "retrieved_at": "2026-10-14T18:06:19.727803+00:00"
+  },
+  {
+   "name": "units",
+   "method": "GET",
+   "endpoint": "/v2/entities/list",
+   "params": {
+    "rootType": "MeasureUnit"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 458,
+   "sha256": "87a75f145e646dae8eea0a2f00e99caa03df11474516e1f7996972cc75b1c223",
+   "retrieved_at": "2026-10-14T18:06:19.755109+00:00"
+  },
+  {
+   "name": "products",
+   "method": "GET",
+   "endpoint": "/v2/entities/products/list",
+   "params": {
+    "includeDeleted": "true"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 1729112,
+   "sha256": "ea502d62a051afcab38a89824ac891495ef504b8d16a5f4aa2a49ea82b7f1349",
+   "retrieved_at": "2026-10-14T18:06:19.866854+00:00"
+  },
+  {
+   "name": "groups",
+   "method": "GET",
+   "endpoint": "/v2/entities/products/group/list",
+   "params": {
+    "includeDeleted": "true"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 69325,
+   "sha256": "bc66ed74d4c8b683fdb42d168cc5213cd644df35cfae3451a9bc5e6dde889897",
+   "retrieved_at": "2026-10-14T18:06:19.903918+00:00"
+  },
+  {
+   "name": "charts",
+   "method": "GET",
+   "endpoint": "/v2/assemblyCharts/getAll",
+   "params": {
+    "dateFrom": "2026-07-01",
+    "dateTo": "2026-10-15",
+    "includeDeletedProducts": "true",
+    "includePreparedCharts": "true"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 9489191,
+   "sha256": "d18fd559c55ac4ac7057069d1f20159b980c78c89eb2968dfe81abeaf4342304",
+   "retrieved_at": "2026-10-14T18:06:21.293194+00:00"
+  },
+  {
+   "name": "incoming-invoices",
+   "method": "GET",
+   "endpoint": "/documents/export/incomingInvoice",
+   "params": {
+    "from": "2026-07-01",
+    "to": "2026-10-14"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 1289083,
+   "sha256": "997dd26cc7652e8a502a6e17d83fc41101ede022b3f35ddd22f047e6650d3778",
+   "retrieved_at": "2026-10-14T18:06:21.451620+00:00"
+  },
+  {
+   "name": "writeoffs",
+   "method": "GET",
+   "endpoint": "/v2/documents/writeoff",
+   "params": {
+    "dateFrom": "2026-07-01",
+    "dateTo": "2026-10-13",
+    "status": "PROCESSED"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 484991,
+   "sha256": "c8a9d0b7b20cb37f8fb2e9e06ffd03511618b7b0762c61ca8feae4a645ee4a96",
+   "retrieved_at": "2026-10-14T18:06:21.768295+00:00"
+  },
+  {
+   "name": "sales-2026-07",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "Department.Code",
+     "DishId",
+     "DishName",
+     "SoldWithDish.Id",
+     "SoldWithDish",
+     "DishSize.Id",
+     "DishSize.Name"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "DishAmountInt",
+     "DishSumInt",
+     "DishDiscountSumInt",
+     "ProductCostBase.ProductCost"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-07-01T00:00:00",
+      "to": "2026-08-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 1190510,
+   "sha256": "ea0ddddaa6921a9e405b41f28853c104af2d076171e247bd11f11ede38c18940",
+   "retrieved_at": "2026-10-14T18:06:22.368569+00:00"
+  },
+  {
+   "name": "control-2026-07",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+   "params": {
+    "summary": "false",
+    "dateFrom": "2026-07-01",
+    "dateTo": "2026-08-01"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 947,
+   "sha256": "b0c7b8e726d3a784f51559176030afa0476ac124991fcb2d66de3b8f2974ebc1",
+   "retrieved_at": "2026-10-14T18:06:22.704722+00:00"
+  },
+  {
+   "name": "sales-2026-08",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "Department.Code",
+     "DishId",
+     "DishName",
+     "SoldWithDish.Id",
+     "SoldWithDish",
+     "DishSize.Id",
+     "DishSize.Name"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "DishAmountInt",
+     "DishSumInt",
+     "DishDiscountSumInt",
+     "ProductCostBase.ProductCost"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-08-01T00:00:00",
+      "to": "2026-09-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 1162510,
+   "sha256": "cddda1fedda06789dd874a17ece509ac7d09187d107a82f052a0f43221ec3184",
+   "retrieved_at": "2026-10-14T18:06:23.293107+00:00"
+  },
+  {
+   "name": "control-2026-08",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+   "params": {
+    "summary": "false",
+    "dateFrom": "2026-08-01",
+    "dateTo": "2026-09-01"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 964,
+   "sha256": "a670eac9f174cc932aaca6a3a5f09d9afe29b842880fd7c868317cc63c402b50",
+   "retrieved_at": "2026-10-14T18:06:23.577644+00:00"
+  },
+  {
+   "name": "sales-2026-09",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "Department.Code",
+     "DishId",
+     "DishName",
+     "SoldWithDish.Id",
+     "SoldWithDish",
+     "DishSize.Id",
+     "DishSize.Name"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "DishAmountInt",
+     "DishSumInt",
+     "DishDiscountSumInt",
+     "ProductCostBase.ProductCost"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-09-01T00:00:00",
+      "to": "2026-10-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 1064228,
+   "sha256": "66649438b86d608f836fea074905ffc2ff66bd48585d9b142f0c40d556b9bbee",
+   "retrieved_at": "2026-10-14T18:06:24.121308+00:00"
+  },
+  {
+   "name": "control-2026-09",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+   "params": {
+    "summary": "false",
+    "dateFrom": "2026-09-01",
+    "dateTo": "2026-10-01"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 962,
+   "sha256": "4df26a9a398b083e8b744e78de09e4a0754b9d48bdae109476651502de032c1a",
+   "retrieved_at": "2026-10-14T18:06:24.403569+00:00"
+  },
+  {
+   "name": "sales-2026-10p",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "Department.Code",
+     "DishId",
+     "DishName",
+     "SoldWithDish.Id",
+     "SoldWithDish",
+     "DishSize.Id",
+     "DishSize.Name"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "DishAmountInt",
+     "DishSumInt",
+     "DishDiscountSumInt",
+     "ProductCostBase.ProductCost"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-10-01T00:00:00",
+      "to": "2026-10-14T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 485924,
+   "sha256": "49359e4ca6c5516aec8f2ca4827c0d1e6dd347634b39d6fe9c059b2e0fe0a3b5",
+   "retrieved_at": "2026-10-14T18:06:24.653805+00:00"
+  },
+  {
+   "name": "control-2026-10p",
+   "method": "GET",
+   "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+   "params": {
+    "summary": "false",
+    "dateFrom": "2026-10-01",
+    "dateTo": "2026-10-14"
+   },
+   "body": null,
+   "status": 200,
+   "bytes": 953,
+   "sha256": "1618728cf41323efa59dc916d7211f781d2d9fc95041663c5028c5c62ef6be7c",
+   "retrieved_at": "2026-10-14T18:06:24.791048+00:00"
+  },
+  {
+   "name": "hour-sku-2026-09",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "HourOpen",
+     "DishId",
+     "DishName",
+     "SoldWithDish.Id"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "DishAmountInt",
+     "DishDiscountSumInt"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-09-01T00:00:00",
+      "to": "2026-10-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 386721,
+   "sha256": "cd9b7bf4bd22b78982ad6738bd2247eca3fa314f4233ff209f5980361a1c8287",
+   "retrieved_at": "2026-10-14T18:06:25.125476+00:00"
+  },
+  {
+   "name": "hour-orders-day-2026-09",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "HourOpen"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "UniqOrderId.OrdersCount",
+     "UniqOrderId",
+     "DishDiscountSumInt"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-09-01T00:00:00",
+      "to": "2026-10-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 45445,
+   "sha256": "9e546172ee6177ac7a4bb09fecfc87d55f7f2fa7db7ea362e6ca20ed05afad33",
+   "retrieved_at": "2026-10-14T18:06:25.290676+00:00"
+  },
+  {
+   "name": "hour-orders-cookingplace-day-2026-09",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "SALES",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "OpenDate.Typed",
+     "HourOpen",
+     "CookingPlace"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "UniqOrderId.OrdersCount",
+     "DishAmountInt",
+     "DishDiscountSumInt"
+    ],
+    "filters": {
+     "DeletedWithWriteoff": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OrderDeleted": {
+      "filterType": "IncludeValues",
+      "values": [
+       "NOT_DELETED"
+      ]
+     },
+     "OpenDate.Typed": {
+      "filterType": "DateRange",
+      "from": "2026-09-01T00:00:00",
+      "to": "2026-10-01T00:00:00",
+      "includeLow": true,
+      "includeHigh": false,
+      "periodType": "CUSTOM"
+     },
+     "Department.Code": {
+      "filterType": "IncludeValues",
+      "values": [
+       "2"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 255675,
+   "sha256": "fca0f6d1fd776888e4cbd384212477b68c219d8a1a1214042f06aa4e8ea254fb",
+   "retrieved_at": "2026-10-14T18:06:25.657279+00:00"
+  },
+  {
+   "name": "transactions-rice-nori-2026-07-01_2026-10-13",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "TRANSACTIONS",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "DateTime.Month",
+     "Product.Id",
+     "Product.Name",
+     "TransactionType",
+     "Account.Name",
+     "Store"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "Amount.In",
+     "Amount.Out",
+     "Sum.Incoming",
+     "Sum.Outgoing"
+    ],
+    "filters": {
+     "DateTime.DateTyped": {
+      "filterType": "DateRange",
+      "periodType": "CUSTOM",
+      "from": "2026-07-01T00:00:00.000",
+      "to": "2026-10-14T00:00:00.000",
+      "includeLow": true,
+      "includeHigh": false
+     },
+     "Product.Id": {
+      "filterType": "IncludeValues",
+      "values": [
+       "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+       "0cfbf0d5-7236-47bb-9ac2-047b770e55bb",
+       "402101dc-2501-4341-9c13-d020a38702ab",
+       "a3ae9ec9-9bfa-4a87-ad6a-f9c51451dc0c",
+       "a6f59eec-2ff3-4d91-b64c-3b735a3fb44d"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 36468,
+   "sha256": "738edf4651e7769c9ccbec4669ee2765916984ad0a1e9261022656a7297cadb2",
+   "retrieved_at": "2026-10-14T18:14:08.481780+00:00"
+  },
+  {
+   "name": "transactions-rice-daily-2026-09",
+   "method": "POST",
+   "endpoint": "/v2/reports/olap",
+   "params": null,
+   "body": {
+    "reportType": "TRANSACTIONS",
+    "buildSummary": false,
+    "groupByRowFields": [
+     "DateTime.DateTyped",
+     "Product.Name",
+     "TransactionType",
+     "Store"
+    ],
+    "groupByColFields": [],
+    "aggregateFields": [
+     "Amount.In",
+     "Amount.Out"
+    ],
+    "filters": {
+     "DateTime.DateTyped": {
+      "filterType": "DateRange",
+      "periodType": "CUSTOM",
+      "from": "2026-09-01T00:00:00.000",
+      "to": "2026-10-01T00:00:00.000",
+      "includeLow": true,
+      "includeHigh": false
+     },
+     "Product.Id": {
+      "filterType": "IncludeValues",
+      "values": [
+       "a546bbbc-9930-48e2-b0a7-7d9aa669d7a8",
+       "0cfbf0d5-7236-47bb-9ac2-047b770e55bb"
+      ]
+     }
+    }
+   },
+   "status": 200,
+   "bytes": 14831,
+   "sha256": "42b8236e0668c0151c9d6a374dfc977c9df6283efbeb03858e4a5bb1148a8080",
+   "retrieved_at": "2026-10-14T18:14:08.606886+00:00"
+  }
+ ],
+ "raw_storage": "raw-ответы не в git: scratchpad сессии (временный). Повтор: scripts/iiko_readonly_fetch.py фаза 1 и 2 (тела запросов — в этом манифесте).",
+ "public_site": {
+  "source": "https://teplofood.ru/ (публичная страница, Next.js hydration, queryKey products/list fmteplo … 8ce62895-a28c-422d-abd2-205cd521672c)",
+  "dataUpdatedAt_utc": "2026-10-14T18:11:16Z",
+  "rows_total": 212,
+  "saved": "data/site-rolls-sets-2026-10-14.psv — только роллы/сеты: analyticId|кусочков из описания|заявленный вес, г|цена, ₽|статус",
+  "matched_server_guid": "123 из 124; 79607 (Калифорния с креветкой) без сопоставления"
+ },
+ "compared_with_2026_10_07": {
+  "charts_getAll": "содержимое assemblyCharts/preparedCharts идентично (0 добавленных/удалённых/изменённых карт)",
+  "products_flags": "deleted/defaultIncludedInMenu/name/parent/description/defaultSalePrice — без изменений",
+  "sales_2026_07_08": "sha256 идентичны",
+  "sales_2026_09": "sha256 отличается, суммы gross/net/cost и контроль пресета совпадают"
+ }
+}

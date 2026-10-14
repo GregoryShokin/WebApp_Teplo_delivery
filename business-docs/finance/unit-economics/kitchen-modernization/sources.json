@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "as_of": "2026-10-14",
+  "canonical_readme": "README.md",
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
+  "private_archive_manifest": "archive-manifest.json",
+  "base_month": {
+    "value": "2026-08",
+    "status": "unclosed_working_base",
+    "comparison": "2026-09",
+    "partial": "2026-10-01..2026-10-13"
+  },
+  "point": {
+    "department_code": "2",
+    "name": "Foodmarket Тепло Черникова"
+  },
+  "sources": [
+    {
+      "id": "recipes_sales_rice",
+      "direction": "А",
+      "notes": "snapshots/2026-10-14/a-recipes-sales/notes.md",
+      "manifest": "snapshots/2026-10-14/a-recipes-sales/data/sources-manifest.json",
+      "key_files": [
+        "snapshots/2026-10-14/a-recipes-sales/data/rolls-physical-monthly.json",
+        "snapshots/2026-10-14/a-recipes-sales/data/timing-candidates.json",
+        "snapshots/2026-10-14/a-recipes-sales/data/rice-reconciliation.json",
+        "snapshots/2026-10-14/a-recipes-sales/data/roll-material-costs.json",
+        "snapshots/2026-10-14/a-recipes-sales/data/hourly-sep-2026.json"
+      ],
+      "origin": "iikoServer OLAP SALES (OpenDate.Typed, NOT_DELETED), техкарты, накладные; read-only, logout 200",
+      "raw_relative_to_private_archive": "a-private/"
+    },
+    {
+      "id": "costs_baseline_payroll",
+      "direction": "Б",
+      "notes": "snapshots/2026-10-14/b-costs-baseline/notes.md",
+      "key_files": [
+        "snapshots/2026-10-14/b-costs-baseline/data/period-matrix.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/pnl-snapshots.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/cost-registry.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/sushi-labor-summary.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/rates-effective-2026-10-14.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/electricity.json",
+        "snapshots/2026-10-14/b-costs-baseline/data/fixed-assets.json"
+      ],
+      "origin": "prod DB teplo-api @8cf57490, REPEATABLE READ READ ONLY + rollback; projector.build_report, build_payroll_month; iikoServer read-only",
+      "raw_relative_to_private_archive": "b-private/",
+      "reconciliation": "Σ реестра (авг) = чистая выручка 3 282 430,64 − рабочая прибыль (−113 535,67) = 3 395 966,31; проверено 14.10"
+    },
+    {
+      "id": "measurement_method",
+      "direction": "В",
+      "files": [
+        "snapshots/2026-10-14/c-measurement-method/method.md",
+        "snapshots/2026-10-14/c-measurement-method/measurement-card.md"
+      ],
+      "status": "draft_not_approved",
+      "primary_time_method": "video_3_cameras_frame_markup (method.md §2А), revised 2026-10-14 evening",
+      "layout_owner_2026_10_14": "2 формовщика + 1 отдачник; поднос между Ф1 и отдачей; Ф2 передаёт через Ф1; саламандра 6–7 роллов, фритюр ~10 (оценка владельца); упаковка в пакет и фото — администратор"
+    },
+    {
+      "id": "model",
+      "files": [
+        "model/model_before_after.py",
+        "model/inputs-template.json",
+        "model/inputs-2026-08-base.json"
+      ],
+      "checks": "процентный фонд авг по модели 121 718,68 = расчётный в ведомости 121 718,66 (округление выручки)",
+      "missing_inputs_2026_10_14": 38
+    }
+  ],
+  "previous_work": {
+    "path": "/Users/grigorii/Developer/Projects/Teplo-agent-unit-economics/business-docs/marketing/product-scenarios/2026-10-08/",
+    "branch": "codex/teplo-unit-economics-skill",
+    "merged_to_main": false,
+    "use": "наводка; цифры перепроверены 14.10"
+  }
+}
