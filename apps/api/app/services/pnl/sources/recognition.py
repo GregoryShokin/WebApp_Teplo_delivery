@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
+    Counterparty,
     CounterpartyPayableProfile,
     SupplierExpenseAccrual,
     SupplierInvoice,
@@ -113,6 +114,14 @@ class RecognitionLayer:
     total: Decimal = Decimal("0.00")
     # Расход без статьи ДДС: в отчёт его отнести некуда, и молчать об этом нельзя.
     unattributed: Decimal = Decimal("0.00")
+    #: Тот же расход по контрагентам — и с их названиями. Одной суммы мало: с июля по сентябрь
+    #: 2026 за ней стояли акты Яндекс Еды (8 768,51 / 12 381,21 / 14 333,47 ₽), а отчёт говорил
+    #: только «расход без статьи», и комиссия агрегатора три месяца не доходила до прибыли.
+    #: Статью задают в карточке контрагента — значит, тревога обязана назвать карточку.
+    unattributed_by_counterparty: dict[uuid.UUID | None, Decimal] = field(
+        default_factory=lambda: defaultdict(Decimal)
+    )
+    counterparty_names: dict[uuid.UUID, str] = field(default_factory=dict)
     # Расход, у которого закрывающего документа НЕТ, ХОТЯ ЕГО ЖДУТ. Самоакт по тарифу,
     # аренда по договору и коммуналка по расчёту арендодателя сюда НЕ входят: там документа
     # не ждут по построению, и считать их пробелом значило бы держать вечно красную цифру,
@@ -207,9 +216,20 @@ async def build_recognition_layer(
             )
             if article_id is None:
                 layer.unattributed += share
+                layer.unattributed_by_counterparty[accrual.counterparty_id] += share
             if no_primary:
                 layer.without_primary += share
             if accrual.location_id is None:
                 layer.without_location += share
 
+    named = [cp_id for cp_id in layer.unattributed_by_counterparty if cp_id is not None]
+    if named:
+        layer.counterparty_names = {
+            cp_id: name
+            for cp_id, name in (
+                await session.execute(
+                    select(Counterparty.id, Counterparty.name).where(Counterparty.id.in_(named))
+                )
+            ).all()
+        }
     return layer

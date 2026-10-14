@@ -247,6 +247,9 @@ async def build_report(
         *_stalled_document_warnings(waiting, article_lines, lines),
     ]
     report.warnings.extend(_warnings(lines, cash, recognition, article_lines))
+    unruled = await _unruled_recognition_warning(session, recognition)
+    if unruled is not None:
+        report.warnings.append(unruled)
     report.warnings.extend(_unperiodled_warnings(unperiodled, article_lines, lines))
     report.quality = {
         "unattributed": recognition.unattributed,
@@ -1038,10 +1041,7 @@ def _warnings(
         result.append(
             Warning(
                 code="recognition_unattributed",
-                message=(
-                    f"Признанный расход на {rubles(recognition.unattributed)} ₽ без статьи "
-                    "ДДС: в отчёт он не попал"
-                ),
+                message=_unattributed_message(recognition),
                 amount=recognition.unattributed,
             )
         )
@@ -1128,6 +1128,90 @@ def _unmapped_cash_message(cash: cash_source.CashLayer) -> str:
         f"{head} — расход {rubles(cash.unmapped_out)} ₽ и приход {rubles(cash.unmapped_in)} ₽. "
         "В отчёт не попало ни то, ни другое; на сколько это меняет прибыль, решат статьи, "
         "которые им назначат"
+    )
+
+
+def _unattributed_message(recognition: recognition_source.RecognitionLayer) -> str:
+    """Признание без статьи словами — с карточками, где эту статью задают.
+
+    Голая сумма «без статьи ДДС» висела в отчёте с июля по сентябрь 2026, и за ней стояли
+    акты Яндекс Еды — комиссия агрегатора, которой не было в прибыли. По сумме не понять ни
+    чей это документ, ни что нажать; по названию контрагента — понятно сразу.
+    """
+    parts = sorted(
+        recognition.unattributed_by_counterparty.items(), key=lambda item: item[1], reverse=True
+    )
+    listed = ", ".join(
+        f"{recognition.counterparty_names.get(cp_id) or 'контрагент без названия'} — "
+        f"{rubles(amount)} ₽"
+        for cp_id, amount in parts[:5]
+    )
+    if len(parts) > 5:
+        listed = f"{listed} и ещё {len(parts) - 5}"
+    return (
+        f"Признанный расход на {rubles(recognition.unattributed)} ₽ без статьи ДДС: в отчёт он "
+        f"не попал. {listed}. Статью задают в карточке контрагента — «Статья ДДС по умолчанию»"
+    )
+
+
+async def _unruled_recognition_warning(
+    session: AsyncSession, recognition: recognition_source.RecognitionLayer
+) -> Warning | None:
+    """Признание по статье, у которой нет разметки ОПиУ, — та же потеря, но молчаливая.
+
+    Расход без статьи — тревога ``recognition_unattributed``. А статья, заведённая уже после
+    разметки источников (её получают все статьи каталога, включая «вне ОПиУ»), до этой функции
+    просто выпадала в ``_apply_recognition``: строки для неё нет, и расход исчезал без следа.
+    Касса ту же статью честно называет неразнесённой — признание обязано говорить так же.
+    Статья, явно размеченная «вне ОПиУ» (ОС, товар из iiko, переводы), тревоги не даёт: там
+    отказ — решение, а не пробел.
+    """
+    candidates = {
+        article_id: bucket.amount
+        for article_id, bucket in recognition.by_article.items()
+        if article_id is not None and bucket.amount
+    }
+    if not candidates:
+        return None
+    from app.models import DdsArticle, PnlArticleRule
+
+    ruled = set(
+        (
+            await session.execute(
+                select(PnlArticleRule.article_id).where(
+                    PnlArticleRule.is_active.is_(True),
+                    PnlArticleRule.article_id.in_(candidates),
+                )
+            )
+        ).scalars()
+    )
+    unruled = {
+        article_id: amount for article_id, amount in candidates.items() if article_id not in ruled
+    }
+    if not unruled:
+        return None
+    names = dict(
+        (
+            await session.execute(
+                select(DdsArticle.id, DdsArticle.name).where(DdsArticle.id.in_(unruled))
+            )
+        ).all()
+    )
+    total = sum(unruled.values(), Decimal("0.00"))
+    parts = sorted(unruled.items(), key=lambda item: item[1], reverse=True)
+    listed = ", ".join(
+        f"«{names.get(article_id) or 'статья без названия'}» — {rubles(amount)} ₽"
+        for article_id, amount in parts[:5]
+    )
+    if len(parts) > 5:
+        listed = f"{listed} и ещё {len(parts) - 5}"
+    return Warning(
+        code="recognition_unmapped_article",
+        message=(
+            f"Признанный расход на {rubles(total)} ₽ по статьям ДДС без разметки ОПиУ: в отчёт "
+            f"он не попал. {listed}. Статье нужна строка отчёта либо явное «вне ОПиУ»"
+        ),
+        amount=total,
     )
 
 
