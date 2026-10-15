@@ -1,0 +1,268 @@
+{
+  "as_of": "2026-10-15",
+  "not_historical_rule_snapshot": true,
+  "loyalty": {
+    "clientType": "iiko_cloud",
+    "selfRefill": true,
+    "selfWithdraw": true,
+    "withdrawPercent": 50,
+    "refillPercent": null,
+    "canUseWithPromocode": false,
+    "canBeUsedWithDiscounts": false,
+    "refillFromClean": true,
+    "calculateWithoutDelivery": false,
+    "allowUseBonusesOnWeb": true,
+    "levels": [
+      {
+        "id": "1",
+        "title": {
+          "ru": "Бронза",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "minBound": 0,
+        "maxBound": 10000,
+        "minPurchasesAmount": null,
+        "cardDesign": {
+          "color": "#F8C288",
+          "textColor": "black"
+        },
+        "type": "cashback",
+        "value": 5
+      },
+      {
+        "id": "0.7fsi4i4qw9k",
+        "title": {
+          "ru": "Серебро",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "minBound": 10000,
+        "maxBound": 30000,
+        "minPurchasesAmount": null,
+        "cardDesign": {
+          "color": "#DADFEB",
+          "textColor": "black"
+        },
+        "type": "cashback",
+        "value": 7
+      },
+      {
+        "id": "0.4m7z3359kkn",
+        "title": {
+          "ru": "Золото",
+          "en": null,
+          "ka": null,
+          "kz": null
+        },
+        "minBound": 30000,
+        "maxBound": 60000,
+        "minPurchasesAmount": null,
+        "cardDesign": {
+          "color": "#FCE26B",
+          "textColor": "black"
+        },
+        "type": "cashback",
+        "value": 10
+      }
+    ]
+  },
+  "rules": [
+    {
+      "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+      "name": {
+        "ru": "Самовывоз выгоднее! Скидка 10%",
+        "en": "",
+        "ka": "",
+        "kz": ""
+      },
+      "status": "active",
+      "type": "percent",
+      "value": {
+        "size": 10.0
+      },
+      "minOrderPriceCommon": 0,
+      "settings": {
+        "placeActivation": "all",
+        "fieldToApply": "totalPrice",
+        "sortIndex": 1,
+        "lastApplicable": false,
+        "repeatable": false,
+        "usagesCap": null,
+        "availableCountForUser": null,
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "menuRestrictions": null,
+        "deliveryType": {
+          "choice": "toChosen",
+          "entityIds": [
+            "pickup"
+          ]
+        },
+        "firstOrderOnly": false,
+        "goal": false,
+        "goalDescription": null,
+        "goalPopupTitle": null,
+        "goalPopupDescription": null,
+        "linkedDiscountId": null,
+        "birthdayOptions": null
+      },
+      "isReferral": false
+    },
+    {
+      "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+      "name": {
+        "ru": "Скидка при первом заказе",
+        "en": "",
+        "ka": "",
+        "kz": ""
+      },
+      "status": "active",
+      "type": "percent",
+      "value": {
+        "size": 15.0
+      },
+      "minOrderPriceCommon": 1500,
+      "settings": {
+        "placeActivation": "all",
+        "fieldToApply": "price",
+        "sortIndex": 1,
+        "lastApplicable": true,
+        "repeatable": false,
+        "usagesCap": null,
+        "availableCountForUser": 1,
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": null,
+        "menuRestrictions": null,
+        "deliveryType": null,
+        "firstOrderOnly": true,
+        "goal": false,
+        "goalDescription": null,
+        "goalPopupTitle": null,
+        "goalPopupDescription": null,
+        "linkedDiscountId": null,
+        "birthdayOptions": null
+      },
+      "isReferral": true
+    },
+    {
+      "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+      "name": {
+        "ru": "Удвоение ",
+        "en": "",
+        "ka": "",
+        "kz": ""
+      },
+      "status": "active",
+      "type": "doubleMeal",
+      "value": null,
+      "minOrderPriceCommon": 1199,
+      "settings": {
+        "placeActivation": "all",
+        "fieldToApply": null,
+        "sortIndex": 0,
+        "lastApplicable": true,
+        "repeatable": false,
+        "usagesCap": null,
+        "availableCountForUser": null,
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "all"
+        },
+        "dateTimeRestriction": {
+          "date": null,
+          "time": null,
+          "daysOfWeek": [
+            5,
+            6,
+            7
+          ],
+          "choice": "exceptChosen"
+        },
+        "menuRestrictions": {
+          "meals": {
+            "choice": "toChosen",
+            "entityIds": [
+              "9bfb384a-caa7-400f-8366-755e27f3e81e",
+              "da7d7bc4-b48f-48e9-a76f-bc2f648d82c1",
+              "1302fc3c-269b-4dd8-9160-2bbc3991577b",
+              "f0b9a6cc-8015-4c76-b6c7-4c6ae626ad4a",
+              "20a428a5-8330-43f2-9b18-24177b0f9862",
+              "7872bc00-1553-47ad-b585-ff1997488e3d",
+              "fc089bd8-0a15-451f-8b2f-39aa89edb218",
+              "dc02a91a-d3c8-40d5-9a03-9b34b6ce53a4",
+              "a255637d-b9e4-49d0-8d6f-3aaa18244555",
+              "8206ed1e-63b1-49d1-a5ba-a7b3de8308ea",
+              "fc99309a-cdb3-4e5d-8b79-807758a08227",
+              "5ccb03f6-731b-47cb-b3a1-68a7c4bfd2bc",
+              "d92676f5-8a12-4bcf-bd82-be9d11a57bba",
+              "f3bcd1cc-91b8-479e-88a9-e4cb826ca498"
+            ]
+          },
+          "categories": null,
+          "shops": null
+        },
+        "deliveryType": null,
+        "firstOrderOnly": false,
+        "bulkDiscountMaxUsages": null,
+        "onlyOnePromocodePerDiscount": false,
+        "birthdayOptions": null
+      }
+    },
+    {
+      "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
+      "name": {
+        "ru": "Скидка при первом заказе",
+        "en": "",
+        "ka": "",
+        "kz": ""
+      },
+      "status": "active",
+      "type": "percent",
+      "value": {
+        "size": 20.0
+      },
+      "minOrderPriceCommon": 0,
+      "settings": {
+        "placeActivation": "all",
+        "fieldToApply": "price",
+        "sortIndex": 0,
+        "lastApplicable": true,
+        "repeatable": false,
+        "usagesCap": null,
+        "availableCountForUser": null,
+        "minOrderPriceSettings": {
+          "delivery": 0,
+          "pickup": 0,
+          "indoor": 0,
+          "type": "common",
+          "dependOnMeals": "chosen"
+        },
+        "dateTimeRestriction": null,
+        "menuRestrictions": null,
+        "deliveryType": null,
+        "firstOrderOnly": true,
+        "bulkDiscountMaxUsages": null,
+        "onlyOnePromocodePerDiscount": false,
+        "birthdayOptions": null
+      }
+    }
+  ]
+}

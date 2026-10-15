@@ -1,0 +1,106 @@
+{
+  "as_of": "2026-10-15T17:40:20.547756+00:00",
+  "status": "preliminary_scenario_read_only_evidence",
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure",
+  "model_commit": "b9b4fcb5",
+  "private_files": [
+    {
+      "name": "orders-aug-list-private.json",
+      "bytes": 423197,
+      "sha256": "6720bf8a6f88d289a754e616b2947f2de3b19625421ff77a432297bef331741f"
+    },
+    {
+      "name": "orders-aug-detail-private.jsonl",
+      "bytes": 2423550,
+      "sha256": "a82e232507ad6636d0a08f04b4760eaeb5127354163dcac57087b4ec41dd992a"
+    },
+    {
+      "name": "starter-manifest.json",
+      "bytes": 1055,
+      "sha256": "d6fec84664f92d953590b04a814e045b1880f7bd546ea1cdfd4dcd267088cbf7"
+    },
+    {
+      "name": "iiko-raw.json",
+      "bytes": 565107,
+      "sha256": "c6935ec562c2628c4c93d50cd0573f1033f5f32c50607f2857dce749a95e844a"
+    },
+    {
+      "name": "iiko-orders-private.json",
+      "bytes": 6496075,
+      "sha256": "cffee61e1539d275dce9b9339f00945f75e237ad52dc6cfdc30b311b45e15438"
+    },
+    {
+      "name": "gift-cost-private.json",
+      "bytes": 85013,
+      "sha256": "0195922adfcd510950a60b63ebc1cebb73fa94050ba6df47f5eedbaf466b1a28"
+    },
+    {
+      "name": "openapi.json",
+      "bytes": 1002672,
+      "sha256": "48eaa99a6a5b613b824096f6814ac147e68c8fb0a2d5723b53261c918f1b0752"
+    }
+  ],
+  "aggregate_and_method_files": [
+    {
+      "name": "README.md",
+      "sha256": "a306ca689dac7aef643ba5438e4556535bc055e5e4eb65d7c742ae4dc7d530e1"
+    },
+    {
+      "name": "analysis.json",
+      "sha256": "e82bc1ec901488a2dc7eaf86e733f88f569e04a13a29ec50f4524bbe9321627e"
+    },
+    {
+      "name": "current-settings-safe.json",
+      "sha256": "1cb4e5b8392d74c1d576f39c630bb145f74ab9f97e6ce172a969078a05b2002d"
+    },
+    {
+      "name": "iiko-technical-ranking.json",
+      "sha256": "19f971c4a22baea3865aa8451b54471824f55093d21836b980ac5d6c8001cf72"
+    },
+    {
+      "name": "scripts/discount_analysis.py",
+      "sha256": "2b68a69f44399fef1d011e7ae7faa23d11f2694d81fedc24f84e2024e5cc55a7"
+    },
+    {
+      "name": "scripts/gift_cost_probe.py",
+      "sha256": "39a6f194cc279354b0f6f4cea09bfb7d1abc62cb68c236e6b57544e311a15814"
+    },
+    {
+      "name": "scripts/iiko_discount_read.py",
+      "sha256": "36c4b4b1c76b8c3a33ad5a2a410b0e3d3a23729420abb36ae12bbd9f1b991d34"
+    },
+    {
+      "name": "scripts/iiko_order_join.py",
+      "sha256": "48233902d6aaf18ee4fd6705e814f4c57d0a0ecf620da3dcae9c1674df335a4e"
+    },
+    {
+      "name": "scripts/starter_collect.py",
+      "sha256": "6b197f5be7c1cc8b3ef6f8b1221c98e40be3cad469000501987c3c9d29be6143"
+    },
+    {
+      "name": "scripts/starter_read.py",
+      "sha256": "44d81990f5a90b4d7c28b866bc961af3722bdb29f25be883a78129593d558da3"
+    },
+    {
+      "name": "scripts/starter_settings_read.py",
+      "sha256": "6bb5028cb9edf25078de4a724d2bc1a7a838017bb0a514b9ee69d4726487c24d"
+    },
+    {
+      "name": "scripts/verify_analysis.py",
+      "sha256": "88e0f473b69b0cbd78189b5bd42763644bcb09229d7531c5870a8d14b5d7a8e9"
+    },
+    {
+      "name": "starter-manifest.json",
+      "sha256": "d6fec84664f92d953590b04a814e045b1880f7bd546ea1cdfd4dcd267088cbf7"
+    }
+  ],
+  "privacy": "Financial order IDs and basket data are in private archive; no customer/contact/address/session/API secrets. Public aggregates retain promotion rule IDs only.",
+  "validation": [
+    "1394 Starter list and detail rows; total before/after equal; zero errors",
+    "historical first-order rates 20% regular and 15% referral checked on all 64 applicable orders",
+    "gift coverage 478/484 units (480 rows); six excluded, not priced as zero",
+    "all prior model expenses preserved; no nominal gift revenue recovery",
+    "bonus cap effect explicitly first-month only; earned balance not removed",
+    "baseline still unclosed; remaining tax/Yandex reconciliation recorded"
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "as_of": "2026-10-15T16:21:23.871484+00:00",
+  "scope": "Department.Code=2; NOT_DELETED; OpenDate exclusive upper bound",
+  "requests": [
+    {
+      "name": "columns",
+      "endpoint": "/v2/reports/olap/columns",
+      "method": "GET",
+      "status": 200,
+      "request": {
+        "reportType": "SALES"
+      }
+    },
+    {
+      "name": "control_aug",
+      "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+      "method": "GET",
+      "status": 200,
+      "request": {
+        "summary": "false",
+        "dateFrom": "2026-08-01",
+        "dateTo": "2026-09-01"
+      }
+    },
+    {
+      "name": "discounts_aug",
+      "endpoint": "/v2/reports/olap",
+      "method": "POST",
+      "status": 200,
+      "request": {
+        "reportType": "SALES",
+        "buildSummary": false,
+        "groupByRowFields": [
+          "OpenDate.Typed",
+          "ItemSaleEventDiscountType",
+          "OrderDiscount.Type",
+          "OrderDiscount.Type.IDs",
+          "OrderType"
+        ],
+        "groupByColFields": [],
+        "aggregateFields": [
+          "DishSumInt",
+          "DishDiscountSumInt",
+          "DiscountSum",
+          "UniqOrderId",
+          "UniqOrderId.OrdersCount"
+        ],
+        "filters": {
+          "DeletedWithWriteoff": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "OrderDeleted": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "Department.Code": {
+            "filterType": "IncludeValues",
+            "values": [
+              "2"
+            ]
+          },
+          "OpenDate.Typed": {
+            "filterType": "DateRange",
+            "from": "2026-08-01T00:00:00",
+            "to": "2026-09-01T00:00:00",
+            "includeLow": true,
+            "includeHigh": false,
+            "periodType": "CUSTOM"
+          }
+        }
+      }
+    },
+    {
+      "name": "control_sep",
+      "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+      "method": "GET",
+      "status": 200,
+      "request": {
+        "summary": "false",
+        "dateFrom": "2026-09-01",
+        "dateTo": "2026-10-01"
+      }
+    },
+    {
+      "name": "discounts_sep",
+      "endpoint": "/v2/reports/olap",
+      "method": "POST",
+      "status": 200,
+      "request": {
+        "reportType": "SALES",
+        "buildSummary": false,
+        "groupByRowFields": [
+          "OpenDate.Typed",
+          "ItemSaleEventDiscountType",
+          "OrderDiscount.Type",
+          "OrderDiscount.Type.IDs",
+          "OrderType"
+        ],
+        "groupByColFields": [],
+        "aggregateFields": [
+          "DishSumInt",
+          "DishDiscountSumInt",
+          "DiscountSum",
+          "UniqOrderId",
+          "UniqOrderId.OrdersCount"
+        ],
+        "filters": {
+          "DeletedWithWriteoff": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "OrderDeleted": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "Department.Code": {
+            "filterType": "IncludeValues",
+            "values": [
+              "2"
+            ]
+          },
+          "OpenDate.Typed": {
+            "filterType": "DateRange",
+            "from": "2026-09-01T00:00:00",
+            "to": "2026-10-01T00:00:00",
+            "includeLow": true,
+            "includeHigh": false,
+            "periodType": "CUSTOM"
+          }
+        }
+      }
+    },
+    {
+      "name": "control_oct_1_14",
+      "endpoint": "/v2/reports/olap/byPresetId/73a25778-dafb-4065-a820-1e9c7da6fed6",
+      "method": "GET",
+      "status": 200,
+      "request": {
+        "summary": "false",
+        "dateFrom": "2026-10-01",
+        "dateTo": "2026-10-15"
+      }
+    },
+    {
+      "name": "discounts_oct_1_14",
+      "endpoint": "/v2/reports/olap",
+      "method": "POST",
+      "status": 200,
+      "request": {
+        "reportType": "SALES",
+        "buildSummary": false,
+        "groupByRowFields": [
+          "OpenDate.Typed",
+          "ItemSaleEventDiscountType",
+          "OrderDiscount.Type",
+          "OrderDiscount.Type.IDs",
+          "OrderType"
+        ],
+        "groupByColFields": [],
+        "aggregateFields": [
+          "DishSumInt",
+          "DishDiscountSumInt",
+          "DiscountSum",
+          "UniqOrderId",
+          "UniqOrderId.OrdersCount"
+        ],
+        "filters": {
+          "DeletedWithWriteoff": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "OrderDeleted": {
+            "filterType": "IncludeValues",
+            "values": [
+              "NOT_DELETED"
+            ]
+          },
+          "Department.Code": {
+            "filterType": "IncludeValues",
+            "values": [
+              "2"
+            ]
+          },
+          "OpenDate.Typed": {
+            "filterType": "DateRange",
+            "from": "2026-10-01T00:00:00",
+            "to": "2026-10-15T00:00:00",
+            "includeLow": true,
+            "includeHigh": false,
+            "periodType": "CUSTOM"
+          }
+        }
+      }
+    }
+  ],
+  "logout_done": true,
+  "months": {
+    "aug": [
+      {
+        "technical_type": "(none)",
+        "gross_rub": 782049.0,
+        "net_rub": 782049.0,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 0.0
+      },
+      {
+        "technical_type": "День рождения 15%",
+        "gross_rub": 85664.26,
+        "net_rub": 72753.2,
+        "raw_discount_rub": 12966.9,
+        "gross_minus_net_rub": 12911.06
+      },
+      {
+        "technical_type": "Скидка iikoCard",
+        "gross_rub": 924357.18,
+        "net_rub": 750771.15,
+        "raw_discount_rub": 182034.47,
+        "gross_minus_net_rub": 173586.03
+      },
+      {
+        "technical_type": "Скидка для доставки",
+        "gross_rub": 1293609.52,
+        "net_rub": 1035361.14,
+        "raw_discount_rub": 258452.0,
+        "gross_minus_net_rub": 258248.38
+      },
+      {
+        "technical_type": "iikoCard",
+        "gross_rub": 20320.97,
+        "net_rub": 0.0,
+        "raw_discount_rub": 20339.17,
+        "gross_minus_net_rub": 20320.97
+      },
+      {
+        "technical_type": "Скидка 100% на доставку с сайта",
+        "gross_rub": 811.54,
+        "net_rub": 0.0,
+        "raw_discount_rub": 822.82,
+        "gross_minus_net_rub": 811.54
+      },
+      {
+        "technical_type": "Сервисный сбор",
+        "gross_rub": 642873.53,
+        "net_rub": 641496.15,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 1377.38
+      }
+    ],
+    "sep": [
+      {
+        "technical_type": "(none)",
+        "gross_rub": 568003.0,
+        "net_rub": 568003.0,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 0.0
+      },
+      {
+        "technical_type": "День рождения 15%",
+        "gross_rub": 68581.28,
+        "net_rub": 57835.78,
+        "raw_discount_rub": 10883.25,
+        "gross_minus_net_rub": 10745.5
+      },
+      {
+        "technical_type": "Сервисный сбор",
+        "gross_rub": 772319.2,
+        "net_rub": 770130.45,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 2188.75
+      },
+      {
+        "technical_type": "Скидка iikoCard",
+        "gross_rub": 868691.75,
+        "net_rub": 711179.46,
+        "raw_discount_rub": 171536.35,
+        "gross_minus_net_rub": 157512.29
+      },
+      {
+        "technical_type": "Скидка для доставки",
+        "gross_rub": 1190244.89,
+        "net_rub": 958772.34,
+        "raw_discount_rub": 231580.0,
+        "gross_minus_net_rub": 231472.55
+      },
+      {
+        "technical_type": "Скидка 100% на доставку с сайта",
+        "gross_rub": 562.23,
+        "net_rub": 0.0,
+        "raw_discount_rub": 575.11,
+        "gross_minus_net_rub": 562.23
+      },
+      {
+        "technical_type": "iikoCard",
+        "gross_rub": 9568.0,
+        "net_rub": 0.0,
+        "raw_discount_rub": 9568.0,
+        "gross_minus_net_rub": 9568.0
+      },
+      {
+        "technical_type": "Скидка 30% ДР сотрудников",
+        "gross_rub": 893.65,
+        "net_rub": 572.56,
+        "raw_discount_rub": 329.7,
+        "gross_minus_net_rub": 321.09
+      }
+    ],
+    "oct_1_14": [
+      {
+        "technical_type": "(none)",
+        "gross_rub": 277787.0,
+        "net_rub": 277787.0,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 0.0
+      },
+      {
+        "technical_type": "Сервисный сбор",
+        "gross_rub": 405388.52,
+        "net_rub": 404750.13,
+        "raw_discount_rub": 0.0,
+        "gross_minus_net_rub": 638.39
+      },
+      {
+        "technical_type": "Скидка 100% на доставку с сайта",
+        "gross_rub": 571.09,
+        "net_rub": 0.0,
+        "raw_discount_rub": 587.35,
+        "gross_minus_net_rub": 571.09
+      },
+      {
+        "technical_type": "Скидка iikoCard",
+        "gross_rub": 396617.07,
+        "net_rub": 311609.4,
+        "raw_discount_rub": 91308.4,
+        "gross_minus_net_rub": 85007.67
+      },
+      {
+        "technical_type": "Скидка для доставки",
+        "gross_rub": 559360.32,
+        "net_rub": 464428.13,
+        "raw_discount_rub": 94988.93,
+        "gross_minus_net_rub": 94932.19
+      },
+      {
+        "technical_type": "День рождения 15%",
+        "gross_rub": 31258.0,
+        "net_rub": 26412.16,
+        "raw_discount_rub": 4915.5,
+        "gross_minus_net_rub": 4845.84
+      },
+      {
+        "technical_type": "iikoCard",
+        "gross_rub": 5394.0,
+        "net_rub": 0.0,
+        "raw_discount_rub": 5394.0,
+        "gross_minus_net_rub": 5394.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "started_at": "2026-10-15T16:33:33.915465+00:00",
+  "finished_at": "2026-10-15T16:39:58.214583+00:00",
+  "method": "authenticated read-only Starter API",
+  "query": {
+    "statuses": "done",
+    "date_min": "01.08.2026",
+    "date_max": "31.08.2026",
+    "offset": 0,
+    "limit": 100,
+    "order_by": "-delivery_time"
+  },
+  "total_before": {
+    "total": 1394,
+    "totalSum": 2719111.0
+  },
+  "total_after": {
+    "total": 1394,
+    "totalSum": 2719111.0
+  },
+  "list_rows": 1394,
+  "detail_rows": 1394,
+  "errors": [],
+  "date_format": "DD.MM.YYYY verified; ISO variants returned HTTP500",
+  "coverage": "done orders; August deliveryTime; full accessible tenant, observed shop ids checked separately",
+  "private_projection": "no customer, phone, email, address, payment credentials or free-text note retained",
+  "files_sha256": {
+    "orders-aug-list-private.json": "6720bf8a6f88d289a754e616b2947f2de3b19625421ff77a432297bef331741f",
+    "orders-aug-detail-private.jsonl": "a82e232507ad6636d0a08f04b4760eaeb5127354163dcac57087b4ec41dd992a"
+  }
+}

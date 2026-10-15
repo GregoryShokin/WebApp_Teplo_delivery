@@ -1,0 +1,983 @@
+{
+  "as_of": "2026-10-15",
+  "status": "preliminary_discount_counterfactual_not_live_configuration",
+  "period": "2026-08",
+  "starter_scope": {
+    "done_orders": 1394,
+    "shop_ids": [
+      3
+    ],
+    "complete": true,
+    "bonus_redemption_orders": 553,
+    "bonus_redeemed_rub": 153237.0,
+    "positive_named_discount_rub": 73177.0
+  },
+  "join_checks": {
+    "unique_positive_iiko_order_number_match": 1391,
+    "cash_net_matches": 1272,
+    "bonus_raw_iiko_match": 546,
+    "bonus_total": 553,
+    "caution": "Starter and POS differ for edited orders; no forced full reconciliation. Item code is not iiko SKU. Order number/date and financial fields checked; zero-value duplicate checks not treated as extra clients.",
+    "delivery_local_date_minus_pos_date_days": {
+      "0": 1389,
+      "-1": 1,
+      "1": 1
+    },
+    "bonus_cash_total_unreconciled_orders": 40,
+    "bonus20_recovery_on_unreconciled_cash_orders_rub": 4201.8,
+    "bonus20_recovery_on_cash_reconciled_orders_rub": 29016.8
+  },
+  "gift_ladder_costed_rub": 45671.514833333335,
+  "cash_discount_ranking": [
+    {
+      "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+      "names": [
+        "Самовывоз выгоднее! Скидка 10%"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 175,
+      "sum": 32691.0
+    },
+    {
+      "id": "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0",
+      "names": [
+        "Скидка при первом заказе"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 61,
+      "sum": 28377.0
+    },
+    {
+      "id": "56732553-832f-45d1-b716-07fcafe83eaa",
+      "names": [
+        "Скидка в день рождения"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 24,
+      "sum": 10600.0
+    },
+    {
+      "id": "f8f244ac-69b2-44c9-bbea-5f9cd6036979",
+      "names": [
+        "Скидка при первом заказе"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 3,
+      "sum": 1309.0
+    },
+    {
+      "id": "bae384b9-b6fb-4ebf-88e5-bf98af754ccf",
+      "names": [
+        "Скидка 200р"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 1,
+      "sum": 200.0
+    },
+    {
+      "id": "ab546b22-9e8c-4a08-9cbf-942fae8c701a",
+      "names": [
+        "Шкала подарков от 2999"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 174,
+      "sum": 0.0
+    },
+    {
+      "id": "8ae97238-7c82-4143-9cc7-4c993c7835a6",
+      "names": [
+        "Шкала подарков от 1999"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 19,
+      "sum": 0.0
+    },
+    {
+      "id": "c1a150ec-a665-4d5d-a7ca-11216c79620f",
+      "names": [
+        "Удвоение "
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 58,
+      "sum": 0.0
+    },
+    {
+      "id": "b946f7ba-97f2-48eb-a5fb-7febf14b3aee",
+      "names": [
+        "Шкала подарков от 2699"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 126,
+      "sum": 0.0
+    },
+    {
+      "id": "6c0e2b8d-ac24-47eb-aa88-7cfb10feec42",
+      "names": [
+        "Шкала подарков от 2399"
+      ],
+      "types": [
+        "discount"
+      ],
+      "orders": 54,
+      "sum": 0.0
+    },
+    {
+      "id": "ac1e0285-2812-4bec-b391-640dcef5e8f1",
+      "names": [
+        "Пицца Цыпленок гриль 30см в подарок "
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 14,
+      "sum": 0.0
+    },
+    {
+      "id": "602c4c20-1c3d-45e9-b652-237795c62f98",
+      "names": [
+        "Пицца Пикник 30см  в подарок"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 2,
+      "sum": 0.0
+    },
+    {
+      "id": "f27d4dbf-3e19-44fd-95cd-9ab46492eb4a",
+      "names": [
+        ""
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 3,
+      "sum": 0.0
+    },
+    {
+      "id": "4a631dbb-0057-40e1-8cee-468075bc32ff",
+      "names": [
+        "Динамит"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 1,
+      "sum": 0.0
+    },
+    {
+      "id": "e95c0364-da80-4ccd-be91-6f681222974f",
+      "names": [
+        "Баунти в подарок"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 1,
+      "sum": 0.0
+    },
+    {
+      "id": "a1dd6db0-2e9c-4456-bbf5-77ebcb089502",
+      "names": [
+        "Секретный промокод "
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 1,
+      "sum": 0.0
+    },
+    {
+      "id": "76ba9df9-80eb-42f0-a0a5-e8b60aa29608",
+      "names": [
+        "Пепперони лайт в подарок"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 2,
+      "sum": 0.0
+    },
+    {
+      "id": "a4cbfc17-ba9c-4735-9dd0-a303653444a0",
+      "names": [
+        "Карбонара 30см в подарок"
+      ],
+      "types": [
+        "promocode"
+      ],
+      "orders": 1,
+      "sum": 0.0
+    },
+    {
+      "id": "2620f572-bf51-4778-873a-bb7c38146659",
+      "names": [
+        "fghcf"
+      ],
+      "types": [
+        "increase"
+      ],
+      "orders": 1,
+      "sum": -300.0
+    },
+    {
+      "id": "0b79f15c-dcf7-4070-a49f-a2be93f0c739",
+      "names": [
+        "Сервисный сбор"
+      ],
+      "types": [
+        "increase"
+      ],
+      "orders": 1109,
+      "sum": -11090.0
+    }
+  ],
+  "gift_ingredient_ranking": [
+    {
+      "rule": "Шкала подарков от 2999",
+      "orders": 174,
+      "qty": 174,
+      "costed_qty": 171,
+      "ingredient_cost_rub": 23108.31
+    },
+    {
+      "rule": "Шкала подарков от 1999",
+      "orders": 19,
+      "qty": 19,
+      "costed_qty": 18,
+      "ingredient_cost_rub": 666.16
+    },
+    {
+      "rule": "Удвоение ",
+      "orders": 58,
+      "qty": 89,
+      "costed_qty": 89,
+      "ingredient_cost_rub": 12106.93
+    },
+    {
+      "rule": "Шкала подарков от 2699",
+      "orders": 126,
+      "qty": 126,
+      "costed_qty": 125,
+      "ingredient_cost_rub": 17367.04
+    },
+    {
+      "rule": "Шкала подарков от 2399",
+      "orders": 54,
+      "qty": 54,
+      "costed_qty": 53,
+      "ingredient_cost_rub": 4530.01
+    },
+    {
+      "rule": "Пицца Цыпленок гриль 30см в подарок ",
+      "orders": 14,
+      "qty": 14,
+      "costed_qty": 14,
+      "ingredient_cost_rub": 1826.24
+    },
+    {
+      "rule": "Пицца Пикник 30см  в подарок",
+      "orders": 2,
+      "qty": 2,
+      "costed_qty": 2,
+      "ingredient_cost_rub": 277.06
+    },
+    {
+      "rule": "Динамит",
+      "orders": 1,
+      "qty": 1,
+      "costed_qty": 1,
+      "ingredient_cost_rub": 84.54
+    },
+    {
+      "rule": "Баунти в подарок",
+      "orders": 1,
+      "qty": 1,
+      "costed_qty": 1,
+      "ingredient_cost_rub": 79.77
+    },
+    {
+      "rule": "Секретный промокод ",
+      "orders": 1,
+      "qty": 1,
+      "costed_qty": 1,
+      "ingredient_cost_rub": 52.54
+    },
+    {
+      "rule": "Пепперони лайт в подарок",
+      "orders": 2,
+      "qty": 2,
+      "costed_qty": 2,
+      "ingredient_cost_rub": 235.24
+    },
+    {
+      "rule": "Карбонара 30см в подарок",
+      "orders": 1,
+      "qty": 1,
+      "costed_qty": 1,
+      "ingredient_cost_rub": 187.79
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "unchanged",
+      "label": "Без изменений",
+      "assumptions": {},
+      "observed_month_impact": {
+        "recovery_rub": 0.0,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "affected_cash_orders": 0
+      },
+      "at_1819_orders": {
+        "profit_rub": -130869.41999999993,
+        "incremental_profit_rub": 0.0,
+        "new_revenue_rub": 3282430.64,
+        "gross_revenue_recovered_rub": 0.0,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.29327036747378155,
+        "additional_taxes_fees_rub": 0.0,
+        "additional_daily_pool_rub": 0.0
+      },
+      "current_menu_break_even_orders": 2030,
+      "quality32_budget_break_even_orders": 2360,
+      "all_business_order_loss_to_erase_gain_fraction": 0.0
+    },
+    {
+      "id": "pickup5",
+      "label": "Самовывоз 10% -> 5%",
+      "assumptions": {
+        "pickup_recovery_share": 0.5
+      },
+      "observed_month_impact": {
+        "recovery_rub": 16345.5,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          616.0,
+          416.0,
+          561.5,
+          247.5,
+          367.0,
+          277.0,
+          1284.0,
+          1119.5,
+          276.0,
+          223.0,
+          528.5,
+          748.0,
+          450.0,
+          1193.0,
+          632.5,
+          248.0,
+          248.0,
+          463.5,
+          587.0,
+          372.5,
+          981.5,
+          697.5,
+          436.5,
+          636.0,
+          593.0,
+          115.0,
+          232.5,
+          508.5,
+          689.0,
+          356.5,
+          241.0
+        ],
+        "affected_cash_orders": 175
+      },
+      "at_1819_orders": {
+        "profit_rub": -118233.84139197868,
+        "incremental_profit_rub": 12635.578608021247,
+        "new_revenue_rub": 3298776.14,
+        "gross_revenue_recovered_rub": 16345.5,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.29181720709305237,
+        "additional_taxes_fees_rub": 1700.621891978744,
+        "additional_daily_pool_rub": 2009.2995000000083
+      },
+      "current_menu_break_even_orders": 2000,
+      "quality32_budget_break_even_orders": 2340,
+      "all_business_order_loss_to_erase_gain_fraction": 0.010445299615173154
+    },
+    {
+      "id": "bonus20",
+      "label": "Лимит бонусной оплаты 50% -> 20%",
+      "assumptions": {
+        "bonus_cap": 0.2
+      },
+      "observed_month_impact": {
+        "recovery_rub": 33218.60000000004,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          688.8,
+          1907.6000000000001,
+          628.4,
+          276.4,
+          656.0,
+          559.8,
+          594.8,
+          1169.4,
+          2366.7999999999997,
+          601.8,
+          720.2,
+          777.2,
+          871.0,
+          2359.0,
+          1732.2000000000003,
+          1439.6,
+          1355.0,
+          1300.1999999999998,
+          771.0,
+          263.59999999999997,
+          554.0,
+          966.4,
+          793.2,
+          668.2,
+          226.39999999999998,
+          1057.6,
+          661.6000000000001,
+          1427.6,
+          2533.5999999999995,
+          845.2,
+          2446.0
+        ],
+        "affected_cash_orders": 204
+      },
+      "at_1819_orders": {
+        "profit_rub": -103751.10545228861,
+        "incremental_profit_rub": 27118.31454771132,
+        "new_revenue_rub": 3315649.24,
+        "gross_revenue_recovered_rub": 33218.60000000004,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.29033217035949194,
+        "additional_taxes_fees_rub": 3456.1364522887143,
+        "additional_daily_pool_rub": 2644.149000000005
+      },
+      "current_menu_break_even_orders": 1980,
+      "quality32_budget_break_even_orders": 2310,
+      "all_business_order_loss_to_erase_gain_fraction": 0.020890599230346307
+    },
+    {
+      "id": "bonus20_pickup5",
+      "label": "Лимит бонусов 20% + самовывоз 5%",
+      "assumptions": {
+        "bonus_cap": 0.2,
+        "pickup_recovery_share": 0.5
+      },
+      "observed_month_impact": {
+        "recovery_rub": 49564.099999999984,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          1304.8,
+          2323.6000000000004,
+          1189.9,
+          523.9,
+          1023.0,
+          836.8,
+          1878.8000000000002,
+          2288.9,
+          2642.7999999999997,
+          824.8,
+          1248.7,
+          1525.2,
+          1321.0,
+          3552.0000000000005,
+          2364.7,
+          1687.6,
+          1603.0,
+          1763.7,
+          1358.0,
+          636.0999999999999,
+          1535.5,
+          1663.9,
+          1229.7,
+          1304.2,
+          819.4000000000001,
+          1172.6,
+          894.1000000000001,
+          1936.1,
+          3222.5999999999995,
+          1201.7,
+          2687.0
+        ],
+        "affected_cash_orders": 379
+      },
+      "at_1819_orders": {
+        "profit_rub": -89721.63484426739,
+        "incremental_profit_rub": 41147.78515573253,
+        "new_revenue_rub": 3331994.74,
+        "gross_revenue_recovered_rub": 49564.099999999984,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.2889079110611081,
+        "additional_taxes_fees_rub": 5156.758344267452,
+        "additional_daily_pool_rub": 3259.556500000006
+      },
+      "current_menu_break_even_orders": 1960,
+      "quality32_budget_break_even_orders": 2280,
+      "all_business_order_loss_to_erase_gain_fraction": 0.03133589884551946
+    },
+    {
+      "id": "bonus20_pickup5_first10",
+      "label": "Плюс первый заказ 20% -> 10%; рефералы 15% -> 10%",
+      "assumptions": {
+        "bonus_cap": 0.2,
+        "pickup_recovery_share": 0.5,
+        "first_recovery_shares": {
+          "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0": 0.5,
+          "f8f244ac-69b2-44c9-bbea-5f9cd6036979": 0.3333333333333333
+        }
+      },
+      "observed_month_impact": {
+        "recovery_rub": 64188.93333333327,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          1409.4666666666667,
+          2323.6000000000004,
+          2111.4,
+          729.9,
+          1157.5,
+          1079.8,
+          2958.2999999999997,
+          3071.3999999999996,
+          3305.7999999999993,
+          824.8,
+          1815.7,
+          2049.7000000000003,
+          1923.5,
+          4883.999999999999,
+          2536.7,
+          2478.1,
+          1603.0,
+          1929.7,
+          1779.6666666666665,
+          746.0999999999999,
+          3152.0,
+          1663.9,
+          1361.7,
+          1770.2000000000003,
+          819.4000000000001,
+          2000.1,
+          1225.1000000000001,
+          2872.1,
+          3822.0999999999995,
+          1873.2,
+          2911.0
+        ],
+        "affected_cash_orders": 443
+      },
+      "at_1819_orders": {
+        "profit_rub": -77159.13061233553,
+        "incremental_profit_rub": 53710.289387664394,
+        "new_revenue_rub": 3346619.5733333332,
+        "gross_revenue_recovered_rub": 64188.93333333327,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.28764537435642323,
+        "additional_taxes_fees_rub": 6678.358279002215,
+        "additional_daily_pool_rub": 3800.285666666663
+      },
+      "current_menu_break_even_orders": 1940,
+      "quality32_budget_break_even_orders": 2260,
+      "all_business_order_loss_to_erase_gain_fraction": 0.04013194062671799
+    },
+    {
+      "id": "combined_ladder30",
+      "label": "Плюс себестоимость подарочной шкалы -30%",
+      "assumptions": {
+        "bonus_cap": 0.2,
+        "pickup_recovery_share": 0.5,
+        "first_recovery_shares": {
+          "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0": 0.5,
+          "f8f244ac-69b2-44c9-bbea-5f9cd6036979": 0.3333333333333333
+        },
+        "ladder_food_saving_share": 0.3
+      },
+      "observed_month_impact": {
+        "recovery_rub": 64188.93333333327,
+        "food_saving_rub": 13701.45445,
+        "daily_recovery_rub": [
+          1409.4666666666667,
+          2323.6000000000004,
+          2111.4,
+          729.9,
+          1157.5,
+          1079.8,
+          2958.2999999999997,
+          3071.3999999999996,
+          3305.7999999999993,
+          824.8,
+          1815.7,
+          2049.7000000000003,
+          1923.5,
+          4883.999999999999,
+          2536.7,
+          2478.1,
+          1603.0,
+          1929.7,
+          1779.6666666666665,
+          746.0999999999999,
+          3152.0,
+          1663.9,
+          1361.7,
+          1770.2000000000003,
+          819.4000000000001,
+          2000.1,
+          1225.1000000000001,
+          2872.1,
+          3822.0999999999995,
+          1873.2,
+          2911.0
+        ],
+        "affected_cash_orders": 443
+      },
+      "at_1819_orders": {
+        "profit_rub": -63457.67616233554,
+        "incremental_profit_rub": 67411.74383766438,
+        "new_revenue_rub": 3346619.5733333332,
+        "gross_revenue_recovered_rub": 64188.93333333327,
+        "food_saving_rub": 13701.45445,
+        "new_food_cost_rub": 948938.18555,
+        "new_food_cost_fraction": 0.28355125665055175,
+        "additional_taxes_fees_rub": 6678.358279002215,
+        "additional_daily_pool_rub": 3800.285666666663
+      },
+      "current_menu_break_even_orders": 1910,
+      "quality32_budget_break_even_orders": 2240,
+      "all_business_order_loss_to_erase_gain_fraction": 0.04947773501924135
+    },
+    {
+      "id": "ladder30",
+      "label": "Себестоимость подарочной шкалы -30%",
+      "assumptions": {
+        "ladder_food_saving_share": 0.3
+      },
+      "observed_month_impact": {
+        "recovery_rub": 0.0,
+        "food_saving_rub": 13701.45445,
+        "daily_recovery_rub": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "affected_cash_orders": 0
+      },
+      "at_1819_orders": {
+        "profit_rub": -117167.96554999992,
+        "incremental_profit_rub": 13701.45445,
+        "new_revenue_rub": 3282430.64,
+        "gross_revenue_recovered_rub": 0.0,
+        "food_saving_rub": 13701.45445,
+        "new_food_cost_rub": 948938.18555,
+        "new_food_cost_fraction": 0.2890961880461852,
+        "additional_taxes_fees_rub": 0.0,
+        "additional_daily_pool_rub": 0.0
+      },
+      "current_menu_break_even_orders": 2000,
+      "quality32_budget_break_even_orders": 2340,
+      "all_business_order_loss_to_erase_gain_fraction": 0.009895547003848315
+    },
+    {
+      "id": "ladder30_first10",
+      "label": "Себестоимость шкалы -30% + первый заказ/рефералы 10%",
+      "assumptions": {
+        "first_recovery_shares": {
+          "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0": 0.5,
+          "f8f244ac-69b2-44c9-bbea-5f9cd6036979": 0.3333333333333333
+        },
+        "ladder_food_saving_share": 0.3
+      },
+      "observed_month_impact": {
+        "recovery_rub": 14624.833333333334,
+        "food_saving_rub": 13701.45445,
+        "daily_recovery_rub": [
+          104.66666666666666,
+          0.0,
+          921.5,
+          206.0,
+          134.5,
+          243.0,
+          1079.5,
+          782.5,
+          663.0,
+          0.0,
+          567.0,
+          524.5,
+          602.5,
+          1332.0,
+          172.0,
+          790.5,
+          0.0,
+          166.0,
+          421.66666666666663,
+          110.0,
+          1616.5,
+          0.0,
+          132.0,
+          466.0,
+          0.0,
+          827.5,
+          331.0,
+          936.0,
+          599.5,
+          671.5,
+          224.0
+        ],
+        "affected_cash_orders": 64
+      },
+      "at_1819_orders": {
+        "profit_rub": -104605.46131806803,
+        "incremental_profit_rub": 26263.958681931894,
+        "new_revenue_rub": 3297055.4733333336,
+        "gross_revenue_recovered_rub": 14624.833333333334,
+        "food_saving_rub": 13701.45445,
+        "new_food_cost_rub": 948938.18555,
+        "new_food_cost_fraction": 0.2878138366870183,
+        "additional_taxes_fees_rub": 1521.5999347347672,
+        "additional_daily_pool_rub": 540.7291666666715
+      },
+      "current_menu_break_even_orders": 1980,
+      "quality32_budget_break_even_orders": 2310,
+      "all_business_order_loss_to_erase_gain_fraction": 0.01924134139637168
+    },
+    {
+      "id": "structural_no_bonus_cap",
+      "label": "Без изменения бонусов: самовывоз 5%, первый заказ 10%, себестоимость шкалы -30%",
+      "assumptions": {
+        "pickup_recovery_share": 0.5,
+        "first_recovery_shares": {
+          "ce55c07c-a0eb-4465-bcac-7cc34a64c0f0": 0.5,
+          "f8f244ac-69b2-44c9-bbea-5f9cd6036979": 0.3333333333333333
+        },
+        "ladder_food_saving_share": 0.3
+      },
+      "observed_month_impact": {
+        "recovery_rub": 30970.333333333332,
+        "food_saving_rub": 13701.45445,
+        "daily_recovery_rub": [
+          720.6666666666666,
+          416.0,
+          1483.0,
+          453.5,
+          501.5,
+          520.0,
+          2363.5,
+          1902.0,
+          939.0,
+          223.0,
+          1095.5,
+          1272.5,
+          1052.5,
+          2525.0,
+          804.5,
+          1038.5,
+          248.0,
+          629.5,
+          1008.6666666666666,
+          482.5,
+          2598.0,
+          697.5,
+          568.5,
+          1102.0,
+          593.0,
+          942.5,
+          563.5,
+          1444.5,
+          1288.5,
+          1028.0,
+          465.0
+        ],
+        "affected_cash_orders": 239
+      },
+      "at_1819_orders": {
+        "profit_rub": -91969.88271004678,
+        "incremental_profit_rub": 38899.53728995316,
+        "new_revenue_rub": 3313400.9733333336,
+        "gross_revenue_recovered_rub": 30970.333333333332,
+        "food_saving_rub": 13701.45445,
+        "new_food_cost_rub": 948938.18555,
+        "new_food_cost_fraction": 0.2863940082070276,
+        "additional_taxes_fees_rub": 3222.2218267135113,
+        "additional_daily_pool_rub": 2550.0286666666652
+      },
+      "current_menu_break_even_orders": 1960,
+      "quality32_budget_break_even_orders": 2290,
+      "all_business_order_loss_to_erase_gain_fraction": 0.029686641011544834
+    },
+    {
+      "id": "bonus0_upper_bound",
+      "label": "Без бонусной оплаты: только верхняя граница, не готовое решение",
+      "assumptions": {
+        "bonus_cap": 0
+      },
+      "observed_month_impact": {
+        "recovery_rub": 153237.0,
+        "food_saving_rub": 0.0,
+        "daily_recovery_rub": [
+          4277.0,
+          6587.0,
+          3259.0,
+          2103.0,
+          3896.0,
+          2826.0,
+          3999.0,
+          6302.0,
+          7398.0,
+          3170.0,
+          3328.0,
+          3929.0,
+          4571.0,
+          8695.0,
+          8588.0,
+          5535.0,
+          4922.0,
+          3611.0,
+          3644.0,
+          2816.0,
+          5276.0,
+          7529.0,
+          4565.0,
+          2650.0,
+          2314.0,
+          4724.0,
+          3253.0,
+          6935.0,
+          10179.0,
+          5462.0,
+          6894.0
+        ],
+        "affected_cash_orders": 553
+      },
+      "at_1819_orders": {
+        "profit_rub": -4065.2326502490178,
+        "incremental_profit_rub": 126804.18734975091,
+        "new_revenue_rub": 3435667.64,
+        "gross_revenue_recovered_rub": 153237.0,
+        "food_saving_rub": 0.0,
+        "new_food_cost_rub": 962639.64,
+        "new_food_cost_fraction": 0.2801899778640986,
+        "additional_taxes_fees_rub": 15943.115650249109,
+        "additional_daily_pool_rub": 10489.696999999986
+      },
+      "current_menu_break_even_orders": 1830,
+      "quality32_budget_break_even_orders": 2130,
+      "all_business_order_loss_to_erase_gain_fraction": 0.09125893347993408
+    }
+  ],
+  "method": {
+    "baseline": "All 40 August expenses; original known profit -116175.67. Forecast removes -8573 payroll penalty and -6120.75 other-income benefits: normalized -130869.42 at current volumes. Current-menu cases do not include new equipment/staff; quality32 cases preserve +100000 peak staffing and +10000 equipment from preliminary model.",
+    "financial": "Recipe RUB/order remains fixed when cash discount is reduced. Recoveries are only Starter, so incremental tax6% + Starter3% + historical acquiring mix1.404%; Yandex and partner fees not applied to these recoveries. Shared daily payroll pool recalculated on dated recoveries. Gift changes subtract verified ingredient cost only; no unverified labor/packaging savings.",
+    "pickup_channel": "Cutting pickup discount can shift purchases to delivery and add courier cost. Fixed-channel replay does not estimate this substitution. Do not treat pickup discount as pure waste.",
+    "first_order_rates": "Observed August regular promo 20% (61 orders/28377 RUB); referral 15% (3/1309). Current rule cards confirm both. Recovery to 10% is half regular discount plus one third referral discount, not one common fraction.",
+    "response": "No order loss assumed in the headline. Loss sensitivity scales all-business mix uniformly, not a causal churn forecast. Fixed prices, basket mix, channel shares and existing volume-driver assumptions remain.",
+    "bonus_limit": "Historical first-month replay at unchanged balances/orders. Lower cap postpones redemption, does not cancel balances or prove durable saving. Existing obligations, employee exceptions, bonus replenishment and customer retention need separate design. No promise of recurring monthly benefit.",
+    "gifts": "Iiko cost of matching SKU in the same order divided by quantity times free units. Paid/free units share the within-order cost. Alias Пепперони/Пеперони explicitly inspected; unmatched items excluded, not assumed zero. Gift cost is not menu value.",
+    "new_recipes": "30% cheaper gift ladder is a target budget, not an approved recipe.",
+    "boundaries": "Existing tax/Yandex baseline reconciliation gaps remain. No production prices, settings, coupons or balances changed.",
+    "date_exceptions": "Two one-day exceptions retained after review: one exact cash match; the other has matching original basket plus additional shawarma and delivery in POS. Shared unique monthly receipt number and SKU identity corroborate the link; mismatching totals remain marked, not force-reconciled.",
+    "threshold_rounding": "Scan each integer volume through 6000, check later payroll jumps, round up to 10 orders. Prior offer table rounds up to 50, so 2360 and published 2400 are the same baseline at different presentation precision.",
+    "bonus_uncertainty": "Cap replay includes edited/unreconciled cash totals; see join_checks for amount on reconciled orders and the provisional remainder. Do not claim cent-level accuracy or a permanent benefit."
+  },
+  "private_sources_sha256": {
+    "starter-manifest.json": "d6fec84664f92d953590b04a814e045b1880f7bd546ea1cdfd4dcd267088cbf7",
+    "orders-aug-list-private.json": "6720bf8a6f88d289a754e616b2947f2de3b19625421ff77a432297bef331741f",
+    "orders-aug-detail-private.jsonl": "a82e232507ad6636d0a08f04b4760eaeb5127354163dcac57087b4ec41dd992a",
+    "iiko-raw.json": "c6935ec562c2628c4c93d50cd0573f1033f5f32c50607f2857dce749a95e844a",
+    "iiko-orders-private.json": "cffee61e1539d275dce9b9339f00945f75e237ad52dc6cfdc30b311b45e15438",
+    "gift-cost-private.json": "0195922adfcd510950a60b63ebc1cebb73fa94050ba6df47f5eedbaf466b1a28"
+  },
+  "model_commit": "b9b4fcb5",
+  "model_sources_sha256": {
+    "costs": "c965ff86d4bc581ae8431a6ca6c93c98ac76d067898ea14ba8afc3819d38740e",
+    "reconciliation": "3ed385f1753f956ceda1f43f9d90aa97248c5cd70489a60ca8b026aebe76118b",
+    "orders": "7e0cfbeb3b726253f8a3444f102b19db8f1cb4e41d56dfc7c29a5b2ac023f820",
+    "base_inputs": "512faee6a2a64cdcfaf5d3e11c51a1bb538b27680f6a119ff17711199fad23c2",
+    "timing": "886bc6f1506f4f8a4ac6741f39acb2a9289a5a05ba7f454b1ee048def793c14f",
+    "hour_profile": "0c84fcb39020c98cf768e0e422189f1564e6c11857d801b8815548af2cef7e1f",
+    "calculator": "69a711df18a10faa064fc2b84bef14b185f18c6740238a400a3e267b446094c4",
+    "offer_inputs": "2cc009ded6bf0e0b84ca419109d997617b47b2e5cfa977c45ec3432764527758"
+  }
+}

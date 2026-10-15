@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -181,6 +181,32 @@
       "equipment_monthly_budget_rub": 10000,
       "new_line_scope": "30 percent of orders; 35 percent line food cost is 30.74 percent blended food cost",
       "scope": "All baseline expenses anchored; variable drivers and labor budgets explicit; daily shared payroll tiers recomputed; capacity covers only conditional manual resources."
+    },
+    {
+      "id": "discount_pressure_2026_10_15",
+      "status": "preliminary_first_month_replay_and_structural_scenarios_not_live_changes",
+      "period": "2026-08",
+      "files": [
+        "snapshots/2026-10-15/discount-pressure/README.md",
+        "snapshots/2026-10-15/discount-pressure/analysis.json",
+        "snapshots/2026-10-15/discount-pressure/starter-manifest.json",
+        "snapshots/2026-10-15/discount-pressure/iiko-technical-ranking.json",
+        "snapshots/2026-10-15/discount-pressure/current-settings-safe.json",
+        "snapshots/2026-10-15/discount-pressure/evidence-manifest.json"
+      ],
+      "starter_done_orders": 1394,
+      "all_business_orders": 1819,
+      "gift_units_costed": 478,
+      "gift_units_total": 484,
+      "bonus_redeemed_starter_rub": 153237,
+      "scenario_current_menu_break_even_orders": [
+        2030,
+        1960,
+        1910
+      ],
+      "scope": "Baseline/structural package/structural plus bonus cap. Bonus cap only first-month replay; demand/channel mix fixed; net-to-cost baseline preserved. First offer model unchanged.",
+      "skill_reference": "skills/teplo-unit-economics/references/discount-pressure.md",
+      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure"
     }
   ],
   "previous_work": {
@@ -195,6 +221,11 @@
       "as_of": "2026-10-15",
       "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/gaps",
       "manifest": "snapshots/2026-10-15/gaps/evidence-manifest.json"
+    },
+    {
+      "as_of": "2026-10-15",
+      "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure",
+      "manifest": "snapshots/2026-10-15/discount-pressure/evidence-manifest.json"
     }
   ]
 }
