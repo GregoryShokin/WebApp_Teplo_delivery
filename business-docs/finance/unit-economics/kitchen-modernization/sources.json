@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -226,6 +226,16 @@
       "future_bonus_accrual_saving_quantified": false,
       "production_settings_changed": false,
       "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2"
+    },
+    {
+      "id": "food_cost_35_5_sensitivity",
+      "status": "preliminary_unclosed_august_2026",
+      "notes": "snapshots/2026-10-15/food-cost-35-5/README.md",
+      "key_files": [
+        "snapshots/2026-10-15/food-cost-35-5/calculate.py",
+        "snapshots/2026-10-15/food-cost-35-5/results.json"
+      ],
+      "origin": "Offline sensitivity of the preserved offer_scenarios model; 35.5% whole-business FC, unchanged August prices/promotions, recipe change allocated only to rolls. Separate zero/110k monthly budget cases; no live mutations."
     }
   ],
   "previous_work": {
