@@ -1,0 +1,103 @@
+{
+  "test_id": "video-timing-test-02",
+  "source": {
+    "file": "/Users/grigorii/Downloads/15859969187596.mp4",
+    "bytes": 32050494,
+    "sha256": "cf012ad8ad5c876ef4ba533235e949bd95226350be5cd279c4c8c9a91dee6d8e",
+    "first_pts": 0.066667,
+    "last_pts": 147.563989,
+    "frames": 4427,
+    "max_gap": 0.035000000000003695
+  },
+  "frozen_utc": "2026-10-15T13:14:45.997173+00:00",
+  "status": "BLIND_FROZEN",
+  "timer_readings_seen_by_annotator": false,
+  "time_origin": "actual PTS minus first PTS",
+  "boundaries": [
+    {
+      "id": "video_start",
+      "lower_s": 0,
+      "upper_s": 0,
+      "estimate_s": 0.0,
+      "definition": "Первый кадр"
+    },
+    {
+      "id": "rice_visible",
+      "lower_s": 6.0,
+      "upper_s": 6.498,
+      "estimate_s": 6.249,
+      "definition": "Порция риса впервые видна в руках; получение до этого скрыто"
+    },
+    {
+      "id": "nori_pickup",
+      "lower_s": 11.998,
+      "upper_s": 12.498,
+      "estimate_s": 12.248,
+      "definition": "Взял лист нори"
+    },
+    {
+      "id": "rice_on_nori",
+      "lower_s": 12.998,
+      "upper_s": 13.498,
+      "estimate_s": 13.248,
+      "definition": "Нори и порция риса на макису; далее переукладка листа"
+    },
+    {
+      "id": "mat_ready",
+      "lower_s": 35.495,
+      "upper_s": 35.995,
+      "estimate_s": 35.745,
+      "definition": "Мат перевёрнут, руки уходят за начинкой"
+    },
+    {
+      "id": "first_makisu_lift",
+      "lower_s": 83.488,
+      "upper_s": 83.988,
+      "estimate_s": 83.738,
+      "definition": "Первый подъём макису для сворачивания после правки начинки"
+    },
+    {
+      "id": "coating_reach",
+      "lower_s": 103.485,
+      "upper_s": 103.985,
+      "estimate_s": 103.735,
+      "definition": "Ролл поднят с макису для покрытия"
+    },
+    {
+      "id": "transfer_start",
+      "lower_s": 120.517,
+      "upper_s": 121.017,
+      "estimate_s": 120.767,
+      "definition": "Окончательная формовка закончена, ролл поднимают к отдаче"
+    },
+    {
+      "id": "cut_start",
+      "lower_s": 125.017,
+      "upper_s": 126.017,
+      "estimate_s": 125.517,
+      "definition": "Первое режущее движение ножа, исключая подготовку"
+    },
+    {
+      "id": "cut_end",
+      "lower_s": 135.015,
+      "upper_s": 135.515,
+      "estimate_s": 135.265,
+      "definition": "Завершение последнего реза, до откладывания ножа"
+    },
+    {
+      "id": "container_done",
+      "lower_s": 146.013,
+      "upper_s": 146.513,
+      "estimate_s": 146.263,
+      "definition": "Руки отпущены от порции в открытом контейнере"
+    }
+  ],
+  "observations": [
+    "Один ролл, 8 кусочков.",
+    "Начало получения риса скрыто; первый кадр не равен старту активного труда.",
+    "Ожидание/поиск контейнера после нарезки включён в elapsed, не удалён.",
+    "Шкала времени взята из медиатаймстемпов, а не оценена мысленным счётом секунд.",
+    "Границы по masked кадрам с шагом около0.5с; для первого реза взят интервал1с.",
+    "Предыдущий ролл не используется как ожидаемая длительность."
+  ]
+}

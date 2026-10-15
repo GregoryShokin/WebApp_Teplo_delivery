@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "date": "2026-10-15",
+  "source": {
+    "file": "/Users/grigorii/Downloads/15859969187596.mp4",
+    "bytes": 32050494,
+    "sha256": "cf012ad8ad5c876ef4ba533235e949bd95226350be5cd279c4c8c9a91dee6d8e",
+    "first_pts": 0.066667,
+    "last_pts": 147.563989,
+    "frames": 4427,
+    "max_gap": 0.035000000000003695
+  },
+  "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02",
+  "blind_file_sha256": "800627896b1352e2e5a32f7ead85cb59cc9d5375e609b13e1df31c6a66e81914",
+  "baseline_frozen_before_timer_reveal": true,
+  "comparison_performed_utc": "2026-10-15T13:21:58.241602+00:00",
+  "independent_control": {
+    "video": "/Users/grigorii/Downloads/15859969187596.mp4",
+    "control_scope": "Independent manual stopwatch readings and selected observable event brackets. Root must read only after BLIND_FROZEN. No root blind boundaries were received or used.",
+    "time_base": {
+      "first_video_pts_seconds": 0.066667,
+      "displayed_elapsed_definition": "actual best_effort_timestamp_time minus 0.066667",
+      "frame_count": 4427,
+      "last_video_pts_seconds": 147.563989
+    },
+    "readings": [
+      {
+        "frame_index": 0,
+        "actual_pts_seconds": 0.066667,
+        "elapsed_from_first_pts_seconds": 0.0,
+        "stopwatch_display": "00:00,00",
+        "stopwatch_seconds": 0.0,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-001.png"
+      },
+      {
+        "frame_index": 150,
+        "actual_pts_seconds": 5.066667,
+        "elapsed_from_first_pts_seconds": 5.0,
+        "stopwatch_display": "00:01,29",
+        "stopwatch_seconds": 1.29,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-002.png"
+      },
+      {
+        "frame_index": 600,
+        "actual_pts_seconds": 20.063333,
+        "elapsed_from_first_pts_seconds": 19.996666,
+        "stopwatch_display": "00:16,31",
+        "stopwatch_seconds": 16.31,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-005.png"
+      },
+      {
+        "frame_index": 1800,
+        "actual_pts_seconds": 60.058333,
+        "elapsed_from_first_pts_seconds": 59.991666,
+        "stopwatch_display": "00:56,28",
+        "stopwatch_seconds": 56.28,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-013.png"
+      },
+      {
+        "frame_index": 3000,
+        "actual_pts_seconds": 100.053333,
+        "elapsed_from_first_pts_seconds": 99.986666,
+        "stopwatch_display": "01:36,27",
+        "stopwatch_seconds": 96.27,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-021.png"
+      },
+      {
+        "frame_index": 4201,
+        "actual_pts_seconds": 140.079989,
+        "elapsed_from_first_pts_seconds": 140.013322,
+        "stopwatch_display": "02:16,32",
+        "stopwatch_seconds": 136.32,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-029.png"
+      },
+      {
+        "frame_index": 4351,
+        "actual_pts_seconds": 145.079989,
+        "elapsed_from_first_pts_seconds": 145.013322,
+        "stopwatch_display": "02:21,33",
+        "stopwatch_seconds": 141.33,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-030.png"
+      },
+      {
+        "frame_index": 4426,
+        "actual_pts_seconds": 147.563989,
+        "elapsed_from_first_pts_seconds": 147.497322,
+        "stopwatch_display": "02:23,76",
+        "stopwatch_seconds": 143.76,
+        "reading_confidence": "high",
+        "original_frame": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-five-031.png"
+      }
+    ],
+    "time_scale_control": {
+      "median_pts_minus_stopwatch_seconds": 3.7766669999999998,
+      "implied_stopwatch_zero_in_elapsed_seconds": 3.71,
+      "range_pts_minus_stopwatch_seconds": [
+        3.7499889999999994,
+        3.8039890000000014
+      ],
+      "fitted_timer_seconds_per_pts_second": 0.9999606245744934,
+      "practical_stopwatch_reading_uncertainty_seconds": 0.1,
+      "interpretation": "Well-separated samples are consistent with real-time playback at approximately 1 stopwatch second per 1 PTS second. Stopwatch zero is offset from the first video frame. This sampled check does not prove absence of every possible edit."
+    },
+    "independent_events": [
+      {
+        "event": "First visible rice portion placed on scale",
+        "bracket_actual_pts_seconds": [
+          7.064989,
+          7.564989
+        ],
+        "bracket_elapsed_from_first_pts_seconds": [
+          6.998322,
+          7.498322
+        ],
+        "stopwatch_before_seconds": 3.31,
+        "stopwatch_after_seconds": 3.79,
+        "original_frames": [
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/start-rice/private-003.png",
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/start-rice/private-004.png"
+        ],
+        "notes": "At the earlier frame hands are reaching toward scale; at later frame a portion is visible on scale. The initial retrieval of rice is partly outside frame, so this is not claimed as the absolute start of all work."
+      },
+      {
+        "event": "Rice mat ready after flattening and flipping, hands leave the sheet",
+        "bracket_actual_pts_seconds": [
+          35.561667,
+          36.061667
+        ],
+        "bracket_elapsed_from_first_pts_seconds": [
+          35.495,
+          35.995
+        ],
+        "stopwatch_before_seconds": 31.82,
+        "stopwatch_after_seconds": 32.3,
+        "original_frames": [
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/mat-ready/private-008.png",
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/mat-ready/private-009.png"
+        ],
+        "notes": "Earlier hands are completing adjustment of the flipped rice/nori sheet; later hands have moved to ingredient preparation. This defines readiness of the rice/nori base, before fillings."
+      },
+      {
+        "event": "Finished pieces released into open takeout container",
+        "bracket_actual_pts_seconds": [
+          146.079989,
+          146.579989
+        ],
+        "bracket_elapsed_from_first_pts_seconds": [
+          146.013322,
+          146.513322
+        ],
+        "stopwatch_before_seconds": 142.3,
+        "stopwatch_after_seconds": 142.79,
+        "original_frames": [
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-pack/private-025.png",
+          "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-pack/private-026.png"
+        ],
+        "notes": "At earlier frame hands are arranging pieces inside container; at later frame hands are withdrawn and pieces remain. End of placement, not package closure."
+      }
+    ],
+    "limits": [
+      "Hundredths visible on stopwatch are a display readout, not hundredth-second accuracy of event boundaries.",
+      "Event brackets are sampled at approximately 0.5 seconds.",
+      "Start of retrieving rice is partly offscreen.",
+      "Container remains open at end."
+    ],
+    "control_images": [
+      "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-readings.jpg",
+      "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-event-readings.jpg"
+    ]
+  },
+  "comparison": {
+    "anchor_video_s": 5.0,
+    "anchor_stopwatch_s": 1.29,
+    "offset_s": 3.71,
+    "time_scale_checks": [
+      {
+        "video_elapsed_s": 19.996666,
+        "stopwatch_s": 16.31,
+        "prediction_from_anchor_s": 16.286666,
+        "difference_s": -0.02333399999999841
+      },
+      {
+        "video_elapsed_s": 59.991666,
+        "stopwatch_s": 56.28,
+        "prediction_from_anchor_s": 56.281666,
+        "difference_s": 0.0016660000000001673
+      },
+      {
+        "video_elapsed_s": 99.986666,
+        "stopwatch_s": 96.27,
+        "prediction_from_anchor_s": 96.276666,
+        "difference_s": 0.006666000000009831
+      },
+      {
+        "video_elapsed_s": 140.013322,
+        "stopwatch_s": 136.32,
+        "prediction_from_anchor_s": 136.30332199999998,
+        "difference_s": -0.01667800000001307
+      },
+      {
+        "video_elapsed_s": 145.013322,
+        "stopwatch_s": 141.33,
+        "prediction_from_anchor_s": 141.30332199999998,
+        "difference_s": -0.026678000000032398
+      },
+      {
+        "video_elapsed_s": 147.497322,
+        "stopwatch_s": 143.76,
+        "prediction_from_anchor_s": 143.787322,
+        "difference_s": 0.02732199999999807
+      }
+    ],
+    "maximum_absolute_sample_difference_s": 0.02732199999999807,
+    "mat_to_container": {
+      "blind_estimate_s": 110.518,
+      "independent_timer_midpoint_duration_s": 110.48500000000001,
+      "difference_s": 0.03299999999998704,
+      "blind_duration_interval_s": [
+        110.018,
+        111.018
+      ],
+      "timer_duration_interval_s": [
+        110.00000000000001,
+        110.97
+      ]
+    },
+    "container_end": {
+      "blind_elapsed_s": 146.263,
+      "mapped_to_timer_s": 142.553,
+      "observed_timer_interval_s": [
+        142.3,
+        142.79
+      ]
+    },
+    "cutting": {
+      "blind_duration_s": 9.74799999999999,
+      "blind_duration_interval_s": [
+        8.99799999999999,
+        10.49799999999999
+      ],
+      "independent_pts_midpoint_s": 10.198334000000017,
+      "independent_timer_midpoint_s": 10.225000000000001,
+      "independent_timer_interval_s": [
+        10.009999999999991,
+        10.440000000000012
+      ],
+      "difference_vs_timer_midpoint_s": -0.47700000000001097,
+      "difference_vs_pts_midpoint_s": -0.45033400000002644,
+      "relative_difference_vs_timer_midpoint_pct": -4.665036674816733,
+      "start_boundary_midpoint_difference_s": 0.30033399999999233,
+      "end_boundary_midpoint_difference_s": -0.15000000000000568
+    }
+  },
+  "cut_control": {
+    "video": "/Users/grigorii/Downloads/15859969187596.mp4",
+    "independence": "Root blind-baseline-v1.json was not read. Boundary inspection was performed independently after BLIND_FROZEN using original extracted video frames.",
+    "first_pts_seconds": 0.066667,
+    "inspection_sampling_seconds": 0.1,
+    "first_cut": {
+      "event": "Start of first cutting stroke, excluding bringing knife to roll",
+      "actual_pts_bracket_seconds": [
+        125.183333,
+        125.383333
+      ],
+      "elapsed_from_first_pts_bracket_seconds": [
+        125.116666,
+        125.316666
+      ],
+      "stopwatch_readings_at_bracket_frames": [
+        {
+          "actual_pts_seconds": 125.183333,
+          "display": "02:01,36",
+          "seconds": 121.36
+        },
+        {
+          "actual_pts_seconds": 125.383333,
+          "display": "02:01,62",
+          "seconds": 121.62
+        }
+      ],
+      "evidence_frames": [
+        "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-first-fine/private-001.png",
+        "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-first-fine/private-003.png"
+      ],
+      "visual_notes": "At PTS 125.183333 the blade is visibly clear above the roll. At PTS 125.283333 the edge reaches the roll. By PTS 125.383333 the blade has moved down and along the roll, with the first cutting stroke clearly underway. The true first cutting contact is bracketed conservatively by 125.183333–125.383333; this does not count taking/preparing the knife."
+    },
+    "last_cut": {
+      "event": "Completion of last cutting stroke, excluding putting knife down",
+      "actual_pts_bracket_seconds": [
+        135.381667,
+        135.581667
+      ],
+      "elapsed_from_first_pts_bracket_seconds": [
+        135.315,
+        135.515
+      ],
+      "stopwatch_readings_at_bracket_frames": [
+        {
+          "actual_pts_seconds": 135.381667,
+          "display": "02:11,63",
+          "seconds": 131.63
+        },
+        {
+          "actual_pts_seconds": 135.581667,
+          "display": "02:11,80",
+          "seconds": 131.8
+        }
+      ],
+      "evidence_frames": [
+        "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-last-fine/private-003.png",
+        "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-last-fine/private-005.png"
+      ],
+      "visual_notes": "At PTS 135.381667 and 135.481667 the blade is near the board, completing its final draw through the paired rolls. At PTS 135.581667 the blade has lifted away and the cutting action has ended. Exact board contact is partly obscured by the stabilizing hand, so final completion is conservatively bracketed 135.381667–135.581667. Knife lowering onto the board later is excluded."
+    },
+    "cutting_duration_seconds": {
+      "pts_based_min": 9.998334,
+      "pts_based_max": 10.398334000000006,
+      "pts_based_midpoint": 10.198334000000017,
+      "stopwatch_based_min": 10.009999999999991,
+      "stopwatch_based_max": 10.440000000000012
+    },
+    "precision_notes": [
+      "PTS values identify sampled source frames; they do not make a partly occluded operation boundary precise to microseconds.",
+      "Practical boundary uncertainty is approximately 0.1–0.2 s; the interval is intentionally conservative.",
+      "Stopwatch display refresh and video exposure account for small differences between displayed hundredths and PTS interval.",
+      "The interval includes pauses/repositioning between cuts within the continuous slicing operation."
+    ],
+    "review_images": [
+      "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-first-fine/private-hands.jpg",
+      "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/cut-last-fine/private-hands.jpg",
+      "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/timer-test-02/private-cut-timer-readings.jpg"
+    ]
+  },
+  "scope": [
+    "Проверка метода на новом ролле допустима: таймер скрыт до фиксации разметки этого же нового видео. Длительности разных роллов не сравниваются как ошибка замера.",
+    "Временная шкала — actual video PTS, не субъективный счёт секунд моделью.",
+    "Ноль секундомера отличается от первого кадра; смещение3.71с определено по раннему контрольному кадру5с, а остальные точки проверены без подгонки наклона.",
+    "Наблюдаемая разница шкал до0.028с не является доказательством точности распознавания операций до сотых секунды.",
+    "Независимые разметчики использовали один видеоряд; это контроль повторяемости смысловых границ, не внешний аппаратный датчик движения.",
+    "Интервалы границ не статистические доверительные интервалы.",
+    "Один удачный ролик не валидирует все ракурсы, перекрытия и операции; производственная норма и финансовая модель не изменены."
+  ]
+}
