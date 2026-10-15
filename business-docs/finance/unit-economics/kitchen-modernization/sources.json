@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "as_of": "2026-10-16",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -294,5 +294,20 @@
       "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2",
       "manifest": "snapshots/2026-10-15/owner-offer-v2/evidence-manifest.json"
     }
-  ]
+  ],
+  "selected_scenario": {
+    "owner_decision_as_of": "2026-10-16",
+    "source_id": "food_cost_35_5_simple_offers_2026_10_16",
+    "mode": "fixed_recipe_improvement_budget",
+    "extra_staff_budget_rub": 100000,
+    "extra_equipment_monthly_budget_rub": 10000,
+    "blended_food_cost": 0.3353881555365124,
+    "baseline_month": "2026-08",
+    "baseline_orders": 1819,
+    "break_even_orders": 2450,
+    "additional_orders_to_break_even": 631,
+    "profit500k_orders": 3300,
+    "investment_budget_status": "not_calculated; requires capex, working capital, rollout/growth and cash flow",
+    "production_settings_changed": false
+  }
 }
