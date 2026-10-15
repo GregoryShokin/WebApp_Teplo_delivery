@@ -72,6 +72,21 @@ class PreliminaryScenarioTests(unittest.TestCase):
         self.assertEqual(len(result["source_manifest"]), 3)
         self.assertTrue(all(len(row["sha256"]) == 64 for row in result["source_manifest"]))
 
+    def test_peak_aggregates_shared_resource_and_keeps_other_operations(self):
+        working = self.run_model()["profiles"][1]["manual_peak_scenario"]
+        self.assertEqual(working["before"]["load_person_seconds_per_roll"]["forming"], 122)
+        self.assertAlmostEqual(working["after"]["load_person_seconds_per_roll"]["forming"], 106)
+        self.assertAlmostEqual(working["after"]["load_person_seconds_per_roll"]["dispatch"], 62)
+        self.assertAlmostEqual(working["before"]["partial_manual_limit_rolls_hour"], 46.3636363636)
+        self.assertAlmostEqual(working["after"]["partial_manual_limit_rolls_hour"], 49.3548387097)
+        self.assertEqual(working["after"]["limiting_manual_resource"], "dispatch")
+
+    def test_contribution_volume_tradeoff_is_not_percentage_point_change(self):
+        rows = self.run_model()["financial_handoff"]["contribution_volume_tradeoffs"]
+        self.assertAlmostEqual(rows[0]["order_growth_fraction"], 1 / 9)
+        self.assertAlmostEqual(rows[2]["order_growth_fraction"], 0.25)
+        self.assertEqual(rows[2]["required_orders_month_rounded_up"], 2274)
+
 
 if __name__ == "__main__":
     unittest.main()

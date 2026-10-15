@@ -2,6 +2,17 @@
   "as_of": "2026-10-15",
   "base_month": "2026-08",
   "mode": "preliminary_parameters_owner_authorized",
+  "primary_objective": {
+    "source": "Прямое уточнение владельца 15.10.2026",
+    "priority": "Мощность для пиков и стандартизация качества, затем рост заказов при меньшем рублёвом вкладе с заказа. Экономия ФОТ не главный эффект.",
+    "hypothesis_chain": [
+      "стандартизированное качество",
+      "рост ретеншена/повторных заказов",
+      "рост количества заказов"
+    ],
+    "parallel_offer_hypothesis": "Снижение цены и улучшение продукта могут увеличить спрос; это проверяемая гипотеза, не гарантированный эффект.",
+    "payroll_policy": "Сохраняем исходный график и ФОТ как базовый сценарий; освобождение труда используется как ресурс качества и роста."
+  },
   "baseline_status": "unclosed_working_base",
   "baseline_known_profit_rub": -116175.67,
   "whole_rolls_month": 7659,
@@ -25,7 +36,154 @@
       "net_person_hours_released": 18.661333333333335,
       "payroll_savings_rub_same_schedule": 0,
       "whole_roll_elapsed_seconds_after": null,
-      "kitchen_peak_capacity_rolls_hour": null
+      "kitchen_peak_capacity_rolls_hour": null,
+      "manual_peak_scenario": {
+        "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+        "dispatch_other_seconds": 55,
+        "before": {
+          "load_person_seconds_per_roll": {
+            "forming": 122,
+            "dispatch": 66
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 50.16393442622951,
+            "dispatch": 46.36363636363637
+          },
+          "partial_manual_limit_rolls_hour": 46.36363636363637,
+          "limiting_manual_resource": "dispatch"
+        },
+        "after": {
+          "load_person_seconds_per_roll": {
+            "forming": 112.4,
+            "dispatch": 64.4
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 54.44839857651245,
+            "dispatch": 47.515527950310556
+          },
+          "partial_manual_limit_rolls_hour": 47.515527950310556,
+          "limiting_manual_resource": "dispatch"
+        },
+        "relative_partial_capacity_change": 0.024844720496894235
+      },
+      "dispatch_workload_sensitivity": [
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 20,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 31
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 98.70967741935483
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 112.4,
+              "dispatch": 29.4
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 54.44839857651245,
+              "dispatch": 104.08163265306123
+            },
+            "partial_manual_limit_rolls_hour": 54.44839857651245,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.08540925266903909
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 40,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 51
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 60.0
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 112.4,
+              "dispatch": 49.4
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 54.44839857651245,
+              "dispatch": 61.94331983805668
+            },
+            "partial_manual_limit_rolls_hour": 54.44839857651245,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.08540925266903909
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 60,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 71
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 43.098591549295776
+            },
+            "partial_manual_limit_rolls_hour": 43.098591549295776,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 112.4,
+              "dispatch": 69.4
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 54.44839857651245,
+              "dispatch": 44.092219020172905
+            },
+            "partial_manual_limit_rolls_hour": 44.092219020172905,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.023054755043227404
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 80,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 91
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 33.62637362637363
+            },
+            "partial_manual_limit_rolls_hour": 33.62637362637363,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 112.4,
+              "dispatch": 89.4
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 54.44839857651245,
+              "dispatch": 34.22818791946308
+            },
+            "partial_manual_limit_rolls_hour": 34.22818791946308,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.017897091722594904
+        }
+      ]
     },
     {
       "id": "working",
@@ -40,7 +198,154 @@
       "net_person_hours_released": 37.38333333333335,
       "payroll_savings_rub_same_schedule": 0,
       "whole_roll_elapsed_seconds_after": null,
-      "kitchen_peak_capacity_rolls_hour": null
+      "kitchen_peak_capacity_rolls_hour": null,
+      "manual_peak_scenario": {
+        "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+        "dispatch_other_seconds": 55,
+        "before": {
+          "load_person_seconds_per_roll": {
+            "forming": 122,
+            "dispatch": 66
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 50.16393442622951,
+            "dispatch": 46.36363636363637
+          },
+          "partial_manual_limit_rolls_hour": 46.36363636363637,
+          "limiting_manual_resource": "dispatch"
+        },
+        "after": {
+          "load_person_seconds_per_roll": {
+            "forming": 106.0,
+            "dispatch": 62.0
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 57.735849056603776,
+            "dispatch": 49.354838709677416
+          },
+          "partial_manual_limit_rolls_hour": 49.354838709677416,
+          "limiting_manual_resource": "dispatch"
+        },
+        "relative_partial_capacity_change": 0.06451612903225801
+      },
+      "dispatch_workload_sensitivity": [
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 20,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 31
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 98.70967741935483
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 106.0,
+              "dispatch": 27.0
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 57.735849056603776,
+              "dispatch": 113.33333333333333
+            },
+            "partial_manual_limit_rolls_hour": 57.735849056603776,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.15094339622641506
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 40,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 51
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 60.0
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 106.0,
+              "dispatch": 47.0
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 57.735849056603776,
+              "dispatch": 65.1063829787234
+            },
+            "partial_manual_limit_rolls_hour": 57.735849056603776,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.15094339622641506
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 60,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 71
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 43.098591549295776
+            },
+            "partial_manual_limit_rolls_hour": 43.098591549295776,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 106.0,
+              "dispatch": 67.0
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 57.735849056603776,
+              "dispatch": 45.67164179104478
+            },
+            "partial_manual_limit_rolls_hour": 45.67164179104478,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.05970149253731338
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 80,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 91
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 33.62637362637363
+            },
+            "partial_manual_limit_rolls_hour": 33.62637362637363,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 106.0,
+              "dispatch": 87.0
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 57.735849056603776,
+              "dispatch": 35.172413793103445
+            },
+            "partial_manual_limit_rolls_hour": 35.172413793103445,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.04597701149425282
+        }
+      ]
     },
     {
       "id": "optimistic",
@@ -55,7 +360,154 @@
       "net_person_hours_released": 49.29733333333334,
       "payroll_savings_rub_same_schedule": 0,
       "whole_roll_elapsed_seconds_after": null,
-      "kitchen_peak_capacity_rolls_hour": null
+      "kitchen_peak_capacity_rolls_hour": null,
+      "manual_peak_scenario": {
+        "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+        "dispatch_other_seconds": 55,
+        "before": {
+          "load_person_seconds_per_roll": {
+            "forming": 122,
+            "dispatch": 66
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 50.16393442622951,
+            "dispatch": 46.36363636363637
+          },
+          "partial_manual_limit_rolls_hour": 46.36363636363637,
+          "limiting_manual_resource": "dispatch"
+        },
+        "after": {
+          "load_person_seconds_per_roll": {
+            "forming": 102.8,
+            "dispatch": 59.6
+          },
+          "resource_limits_rolls_hour": {
+            "forming": 59.53307392996109,
+            "dispatch": 51.34228187919463
+          },
+          "partial_manual_limit_rolls_hour": 51.34228187919463,
+          "limiting_manual_resource": "dispatch"
+        },
+        "relative_partial_capacity_change": 0.10738255033557031
+      },
+      "dispatch_workload_sensitivity": [
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 20,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 31
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 98.70967741935483
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 102.8,
+              "dispatch": 24.6
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 59.53307392996109,
+              "dispatch": 124.39024390243901
+            },
+            "partial_manual_limit_rolls_hour": 59.53307392996109,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.1867704280155642
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 40,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 51
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 60.0
+            },
+            "partial_manual_limit_rolls_hour": 50.16393442622951,
+            "limiting_manual_resource": "forming"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 102.8,
+              "dispatch": 44.6
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 59.53307392996109,
+              "dispatch": 68.60986547085201
+            },
+            "partial_manual_limit_rolls_hour": 59.53307392996109,
+            "limiting_manual_resource": "forming"
+          },
+          "relative_partial_capacity_change": 0.1867704280155642
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 60,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 71
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 43.098591549295776
+            },
+            "partial_manual_limit_rolls_hour": 43.098591549295776,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 102.8,
+              "dispatch": 64.6
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 59.53307392996109,
+              "dispatch": 47.36842105263158
+            },
+            "partial_manual_limit_rolls_hour": 47.36842105263158,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.09907120743034059
+        },
+        {
+          "status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+          "dispatch_other_seconds": 80,
+          "before": {
+            "load_person_seconds_per_roll": {
+              "forming": 122,
+              "dispatch": 91
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 50.16393442622951,
+              "dispatch": 33.62637362637363
+            },
+            "partial_manual_limit_rolls_hour": 33.62637362637363,
+            "limiting_manual_resource": "dispatch"
+          },
+          "after": {
+            "load_person_seconds_per_roll": {
+              "forming": 102.8,
+              "dispatch": 84.6
+            },
+            "resource_limits_rolls_hour": {
+              "forming": 59.53307392996109,
+              "dispatch": 36.17021276595745
+            },
+            "partial_manual_limit_rolls_hour": 36.17021276595745,
+            "limiting_manual_resource": "dispatch"
+          },
+          "relative_partial_capacity_change": 0.0756501182033098
+        }
+      ]
     }
   ],
   "financial_handoff": {
@@ -93,7 +545,31 @@
         "additional_operating_gain_to_cover_equipment_rub": 15000,
         "gap_to_target_rub": 631175.6699999999
       }
-    ]
+    ],
+    "contribution_volume_tradeoffs": [
+      {
+        "contribution_rub_per_order_remaining_factor": 0.9,
+        "order_volume_multiplier_to_preserve_total_contribution": 1.1111111111111112,
+        "order_growth_fraction": 0.11111111111111116,
+        "required_orders_month_rounded_up": 2022,
+        "status": "same_fixed_costs_same_basket_not_a_demand_forecast_or_target_profit_plan"
+      },
+      {
+        "contribution_rub_per_order_remaining_factor": 0.85,
+        "order_volume_multiplier_to_preserve_total_contribution": 1.1764705882352942,
+        "order_growth_fraction": 0.17647058823529416,
+        "required_orders_month_rounded_up": 2140,
+        "status": "same_fixed_costs_same_basket_not_a_demand_forecast_or_target_profit_plan"
+      },
+      {
+        "contribution_rub_per_order_remaining_factor": 0.8,
+        "order_volume_multiplier_to_preserve_total_contribution": 1.25,
+        "order_growth_fraction": 0.25,
+        "required_orders_month_rounded_up": 2274,
+        "status": "same_fixed_costs_same_basket_not_a_demand_forecast_or_target_profit_plan"
+      }
+    ],
+    "target_profit_condition": "N_new * contribution_new - N_base * contribution_base >= target_profit - baseline_profit + incremental_fixed_costs"
   },
   "limitations": [
     "32/11 секунд до автоматизации — допущения об активном труде по двум видео, не производственная норма.",
@@ -101,6 +577,9 @@
     "Время нарезки после включает долю загрузки/выгрузки и самого реза на фактический ролл партии.",
     "Доля подходящих роллов и обслуживание машин — заменяемые допущения.",
     "Полный цикл, пик и возможность снять смены не выводятся из суммы человеко-секунд.",
+    "Отдельный пик рассчитан только для общих ручных ресурсов при заданном ассортименте и допущениях; тепловая техника, сами машины, рис, администратор и доставка пока не покрыты.",
+    "Месячный рост заказов не равен росту спроса в пик: требуется распределение по времени и состав заказа.",
+    "Ретеншен, новый спрос от цены и финансовый эффект стабильного качества пока не измерены и не добавляются автоматически.",
     "0 экономии ФОТ/роста спроса/потерь — условия этого сценария, не доказанное отсутствие будущего эффекта.",
     "Бюджет оборудования включает энергию, сервис, расходники и амортизацию; не прибавлять их повторно.",
     "Бюджетная сетка независима от скоростей; неизвестные комплектующие расходов не заменены нулями.",
@@ -109,7 +588,7 @@
   "source_manifest": [
     {
       "file": "inputs-preliminary-2026-10-15.json",
-      "sha256": "52af1de176c30b069ed332845dfb28f22e938e6bdbe35956c27ec52a5319e2ed"
+      "sha256": "886bc6f1506f4f8a4ac6741f39acb2a9289a5a05ba7f454b1ee048def793c14f"
     },
     {
       "file": "inputs-2026-08-base-updated-2026-10-15.json",

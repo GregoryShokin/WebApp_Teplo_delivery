@@ -26,6 +26,39 @@ def number(cell, name, *, minimum=None, maximum=None, allow_none=False):
     return value
 
 
+def manual_peak_limits(config, before_mat, before_cut, after_mat, after_cut,
+                       mat_share, cut_share, dispatch_other_override=None):
+    """One shared resource per role, not an independent worker for each operation.
+
+    Conditional manual-station limits only; thermal devices, machines, rice supply,
+    administration and delivery can impose a lower actual capacity.
+    """
+    peak = config["peak_assumptions"]
+    formers = number(peak["forming_people"], "forming_people", minimum=0.001)
+    dispatch = number(peak["dispatch_people"], "dispatch_people", minimum=0.001)
+    availability = number(peak["available_fraction"], "available_fraction", minimum=0.001, maximum=1)
+    forming_other = number(peak["forming_other_person_seconds_per_roll"], "forming_other", minimum=0.001)
+    dispatch_other = number(peak["dispatch_other_person_seconds_per_roll"] if dispatch_other_override is None else dispatch_other_override,
+                            "dispatch_other", minimum=0.001)
+
+    def state(mat, cut):
+        loads = {"forming": mat + forming_other, "dispatch": cut + dispatch_other}
+        capacities = {"forming": formers * 3600 * availability / loads["forming"],
+                      "dispatch": dispatch * 3600 * availability / loads["dispatch"]}
+        limit = min(capacities, key=capacities.get)
+        return {"load_person_seconds_per_roll": loads,
+                "resource_limits_rolls_hour": capacities,
+                "partial_manual_limit_rolls_hour": capacities[limit],
+                "limiting_manual_resource": limit}
+
+    before = state(before_mat, before_cut)
+    after = state(before_mat * (1 - mat_share) + after_mat * mat_share,
+                  before_cut * (1 - cut_share) + after_cut * cut_share)
+    return {"status": "assumed_two_manual_resources_not_complete_kitchen_capacity",
+            "dispatch_other_seconds": dispatch_other, "before": before, "after": after,
+            "relative_partial_capacity_change": after["partial_manual_limit_rolls_hour"] / before["partial_manual_limit_rolls_hour"] - 1}
+
+
 def calculate(config, base, reconciliation):
     if base["base_month"] != reconciliation["period"]:
         raise ValueError("Период выручки/объёма не совпадает с периодом прибыли")
@@ -67,6 +100,9 @@ def calculate(config, base, reconciliation):
             "payroll_savings_rub_same_schedule": 0,
             "whole_roll_elapsed_seconds_after": None,
             "kitchen_peak_capacity_rolls_hour": None,
+            "manual_peak_scenario": manual_peak_limits(config, before_mat, before_cut, after_mat, after_cut, mat_share, cut_share),
+            "dispatch_workload_sensitivity": [manual_peak_limits(config, before_mat, before_cut, after_mat, after_cut, mat_share, cut_share, other)
+                                              for other in config["peak_assumptions"]["dispatch_other_sensitivity_seconds"]],
         })
 
     target = number(config["financial"]["target_net_profit_rub_month"], "target", minimum=0)
@@ -96,9 +132,20 @@ def calculate(config, base, reconciliation):
             "additional_operating_gain_to_cover_equipment_rub": budget,
             "gap_to_target_rub": max(0, target - profit),
         })
+    volume_tradeoffs = []
+    for factor in config["financial"]["contribution_per_order_remaining_factors"]:
+        factor = number(factor, "contribution_remaining_factor", minimum=0.001, maximum=1)
+        volume_tradeoffs.append({
+            "contribution_rub_per_order_remaining_factor": factor,
+            "order_volume_multiplier_to_preserve_total_contribution": 1 / factor,
+            "order_growth_fraction": 1 / factor - 1,
+            "required_orders_month_rounded_up": math.ceil(orders / factor),
+            "status": "same_fixed_costs_same_basket_not_a_demand_forecast_or_target_profit_plan",
+        })
     return {
         "as_of": config["as_of"], "base_month": base["base_month"],
         "mode": "preliminary_parameters_owner_authorized",
+        "primary_objective": config["primary_objective"],
         "baseline_status": reconciliation["status"],
         "baseline_known_profit_rub": baseline_profit,
         "whole_rolls_month": rolls, "orders_month": orders,
@@ -113,6 +160,8 @@ def calculate(config, base, reconciliation):
             "profit_same_orders_from_components_rub": None if equipment_cost is None else baseline_profit - equipment_cost,
             "missing_equipment_cost_inputs": missing,
             "budget_sensitivities": sensitivities,
+            "contribution_volume_tradeoffs": volume_tradeoffs,
+            "target_profit_condition": "N_new * contribution_new - N_base * contribution_base >= target_profit - baseline_profit + incremental_fixed_costs",
         },
         "limitations": [
             f"{before_mat:g}/{before_cut:g} секунд до автоматизации — допущения об активном труде по двум видео, не производственная норма.",
@@ -120,6 +169,9 @@ def calculate(config, base, reconciliation):
             "Время нарезки после включает долю загрузки/выгрузки и самого реза на фактический ролл партии.",
             "Доля подходящих роллов и обслуживание машин — заменяемые допущения.",
             "Полный цикл, пик и возможность снять смены не выводятся из суммы человеко-секунд.",
+            "Отдельный пик рассчитан только для общих ручных ресурсов при заданном ассортименте и допущениях; тепловая техника, сами машины, рис, администратор и доставка пока не покрыты.",
+            "Месячный рост заказов не равен росту спроса в пик: требуется распределение по времени и состав заказа.",
+            "Ретеншен, новый спрос от цены и финансовый эффект стабильного качества пока не измерены и не добавляются автоматически.",
             "0 экономии ФОТ/роста спроса/потерь — условия этого сценария, не доказанное отсутствие будущего эффекта.",
             "Бюджет оборудования включает энергию, сервис, расходники и амортизацию; не прибавлять их повторно.",
             "Бюджетная сетка независима от скоростей; неизвестные комплектующие расходов не заменены нулями.",
@@ -154,7 +206,18 @@ def main():
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return
-    print("Предварительные сценарии, не норматив труда. Полный цикл после не измерен.")
+    print("Приоритет: мощность в пик и стабильность качества для роста заказов при меньшем вкладе с заказа.")
+    print("Условные пределы двух ручных участков. Это НЕ подтверждённая мощность всей кухни.")
+    print("| Вариант | До, роллов/ч | После, роллов/ч | Изменение | Ограничивающий ручной участок |")
+    print("|---|---:|---:|---:|---|")
+    for item in result["profiles"]:
+        peak = item["manual_peak_scenario"]
+        print(f"| {item['label']} | {peak['before']['partial_manual_limit_rolls_hour']:.1f} | {peak['after']['partial_manual_limit_rolls_hour']:.1f} | {peak['relative_partial_capacity_change']:.1%} | {peak['after']['limiting_manual_resource']} |")
+    print("\nСнижение рублёвого вклада с заказа и необходимый объём при прежних постоянных расходах:")
+    for row in result["financial_handoff"]["contribution_volume_tradeoffs"]:
+        print(f"Вклад -{1-row['contribution_rub_per_order_remaining_factor']:.0%} -> заказов +{row['order_growth_fraction']:.1%}")
+    print("Это сохранение прежнего суммарного вклада, не достижение целевой прибыли. Расходы оборудования отдельно.")
+    print("\nДополнительный показатель: высвобождение человеко-часов, не автоматическая экономия зарплаты.")
     print("| Вариант | Мат: чел.-с | Нарезка: чел.-с/ролл | Высвобождено чел.-ч/мес с обслуживанием | Экономия ФОТ при прежнем графике |")
     print("|---|---:|---:|---:|---:|")
     for item in result["profiles"]:

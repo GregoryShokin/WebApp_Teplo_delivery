@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -148,7 +148,10 @@
       ],
       "working_net_released_person_hours_month": 37.38333333333335,
       "payroll_savings_same_schedule_rub": 0,
-      "scope": "Mat and cutter labor proxy; mixer benefit uncredited; financial equipment budget sensitivity independent of speed; replace inputs and rerun."
+      "scope": "Mat and cutter labor proxy; mixer benefit uncredited; financial equipment budget sensitivity independent of speed; replace inputs and rerun.",
+      "primary_objective": "Peak capacity and standardized quality -> retention/orders; payroll reduction secondary.",
+      "capacity_scope": "Conditional limits of 2 shared manual resources, not complete kitchen/order throughput; 90/55 seconds and 85% availability are assumptions.",
+      "contribution_volume_scope": "Relative RUB contribution per order after all variable costs; volume multipliers preserve prior contribution only, before new fixed costs/target profit."
     }
   ],
   "previous_work": {
