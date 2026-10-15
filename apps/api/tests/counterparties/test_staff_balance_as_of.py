@@ -30,6 +30,7 @@ from decimal import Decimal
 import pytest
 from cp_helpers import admin_headers, make_wallet
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import (
@@ -44,6 +45,7 @@ from app.models import (
     PayrollPayment,
     PayrollPayoutBooking,
     PayrollPeriod,
+    PayrollRate,
     PayrollRun,
     SalaryAdvance,
 )
@@ -795,3 +797,95 @@ async def test_payment_without_a_ledger_booking_falls_back_and_is_flagged(
         assert row.salary == Decimal("20000.00")
         # И честно сказано, что 30 000 восстановлены не по леджеру.
         assert snapshot.approximate_payments == Decimal("30000.00")
+
+
+async def _make_demoted_senior_courier(session: AsyncSession, *, name: str) -> Employee:
+    """Старший курьер до 05.10.2026 (оклад 20 000), с 06.10 — обычный курьер."""
+    courier = await _make_employee(session, name=name, position="Старший курьер")
+    senior = await session.scalar(
+        select(EmployeePositionAssignment).where(
+            EmployeePositionAssignment.employee_id == courier.id
+        )
+    )
+    senior.effective_to = date(2026, 10, 5)
+    session.add(
+        EmployeePositionAssignment(
+            id=uuid.uuid4(),
+            employee_id=courier.id,
+            position="Курьер",
+            effective_from=date(2026, 10, 6),
+            effective_to=None,
+        )
+    )
+    session.add(
+        PayrollRate(
+            id=uuid.uuid4(),
+            employee_id=None,
+            position_group="Старший курьер",
+            category="admin",
+            station=None,
+            rate_type="monthly",
+            amount=Decimal("20000"),
+            is_active=True,
+            effective_from=date(2026, 1, 1),
+        )
+    )
+    await session.flush()
+    return courier
+
+
+async def test_oklad_days_before_demotion_to_courier_stay_in_the_debt(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Снят со старшего курьера 05.10, с 06.10 — курьер: оклад за 1–5.10 остаётся долгом.
+
+    Ведомость администрации 1–15.10 этот оклад заплатит (оклад по дням в должности), но срез
+    выбирал контур по должности НА ДАТУ: обычный курьер в зарплатный контур не входит, и
+    сотрудник выпадал из среза целиком — вместе с деньгами, которые ему уже должны
+    (Дудников, октябрь 2026).
+    """
+    async with async_session_factory() as session:
+        courier = await _make_demoted_senior_courier(session, name="Курьер Понижённый")
+        await session.commit()
+
+        snapshot = await build_staff_balance_as_of(session, as_of=date(2026, 10, 10))
+        row = _row(snapshot, courier.id)
+        assert row is not None, (
+            "сотрудник выпал из среза: на 10.10 он курьер, но оклад за 1–5.10 ему уже должны"
+        )
+        # ½ оклада 10 000 × 5/15 — дни старшим курьером.
+        assert row.salary == Decimal("3333.33")
+
+
+async def test_oklad_before_demotion_moves_to_the_tail_without_doubling(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ведомость 1–15.10 закрыта 15.10: оклад за 1–5.10 несёт её хвост, а не второе слагаемое."""
+    async with async_session_factory() as session:
+        courier = await _make_demoted_senior_courier(session, name="Курьер С Хвостом")
+        period = PayrollPeriod(
+            id=uuid.uuid4(),
+            period_type="half_month",
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 15),
+            payroll_date=date(2026, 10, 15),
+            status="finalized",
+            finalized_at=datetime(2026, 10, 15, 12, tzinfo=UTC),
+        )
+        session.add(period)
+        await session.flush()
+        run = await _make_run(session, period)
+        await _make_line(
+            session, run=run, employee=courier, total_payable="3333.33", role="Старший курьер"
+        )
+        await session.commit()
+
+        before = _row(
+            await build_staff_balance_as_of(session, as_of=date(2026, 10, 14)), courier.id
+        )
+        after = _row(await build_staff_balance_as_of(session, as_of=date(2026, 10, 15)), courier.id)
+        assert before is not None and before.salary == Decimal("3333.33")
+        assert after is not None
+        assert after.salary == Decimal("3333.33"), (
+            f"на 15.10 в долге {after.salary}: оклад посчитан и хвостом, и заработанным"
+        )

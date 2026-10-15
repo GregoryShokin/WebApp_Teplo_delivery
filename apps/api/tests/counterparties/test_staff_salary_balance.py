@@ -674,3 +674,78 @@ def test_fund_payable_mirrors_the_fund_page_scope(
     assert rows[str(cook_id)]["fund_prior_years_payable"] == 0.0
     assert rows.get(str(manager_id), {}).get("fund_payable", 0.0) == 0.0
     assert rows.get(str(dismissed_id), {}).get("fund_payable", 0.0) == 0.0
+
+
+
+async def test_demoted_senior_courier_keeps_oklad_days_in_salary_balance(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch,
+) -> None:
+    """Старший курьер до 05.10, с 06.10 — курьер: на 10.10 оклад за 1–5.10 — зарплатный долг.
+
+    Обычный курьер в зарплатный контур витрины не входит, и сотрудник показывался одним
+    курьерским депозитом — без оклада, который ведомость администрации ему заплатит. С
+    зарплатным долгом он стоит среди сотрудников: курьерская таблица колонку «Зарплата» не
+    показывает.
+
+    Витрина считает «на сегодня», поэтому обработчик зовётся напрямую с подменённым днём:
+    через ``TestClient`` подмена ``date`` в модуле роутов ломает FastAPI-схемы параметров.
+    """
+    from app.api.v1.routes import accounting_suppliers
+
+    class _October10(date):
+        @classmethod
+        def today(cls) -> date:
+            return date(2026, 10, 10)
+
+    monkeypatch.setattr(accounting_suppliers, "date", _October10)
+
+    async with async_session_factory() as session:
+        courier = _employee("Курьер Понижённый", position="Курьер")
+        session.add(courier)
+        await session.flush()
+        session.add_all(
+            [
+                EmployeePositionAssignment(
+                    id=uuid.uuid4(),
+                    employee_id=courier.id,
+                    position="Старший курьер",
+                    effective_from=date(2026, 1, 1),
+                    effective_to=date(2026, 10, 5),
+                ),
+                EmployeePositionAssignment(
+                    id=uuid.uuid4(),
+                    employee_id=courier.id,
+                    position="Курьер",
+                    effective_from=date(2026, 10, 6),
+                ),
+                PayrollRate(
+                    id=uuid.uuid4(),
+                    employee_id=None,
+                    position_group="Старший курьер",
+                    category="admin",
+                    station=None,
+                    rate_type="monthly",
+                    amount=Decimal("20000"),
+                    is_active=True,
+                    effective_from=date(2026, 1, 1),
+                ),
+                CourierDepositAccount(
+                    employee_id=courier.id,
+                    target_amount_cents=500_000,
+                    opening_balance_cents=300_000,
+                    opening_date=date(2026, 1, 1),
+                ),
+            ]
+        )
+        await session.commit()
+
+        payable = await accounting_suppliers.list_staff_payable(session)
+
+    row = next(item for item in payable.items if item.employee_id == courier.id)
+    # ½ оклада 10 000 × 5/15 — дни старшим курьером.
+    assert row.salary_payable == 3333.33
+    assert row.earned_to_date == 3333.33
+    assert row.basis == "okladnik"
+    assert row.staff_group == "staff"
+    assert row.courier_deposit_payable == 3000.0

@@ -66,12 +66,16 @@ from app.services.accumulation_fund_service import (
     fund_outstanding,
 )
 from app.services.couriers.deposit_service import is_senior_courier
+from app.services.employee_effective_events import get_position_on_date
 from app.services.payroll_admin import (
     compute_on_demand_debt,
     list_on_demand_employees,
     on_demand_accrued_months,
 )
-from app.services.payroll_advance_availability import available_to_advance
+from app.services.payroll_advance_availability import (
+    admin_oklad_outside_basis,
+    available_to_advance,
+)
 from app.services.position_registry import (
     eligible_for_personal_report,
     production_payroll_positions,
@@ -2290,11 +2294,25 @@ async def list_staff_payable(
                 employee.id, frozenset()
             ):
                 earned = Decimal("0.00")
+            # Оклад за дни в окладной должности, из которой сотрудник ушёл посреди полупериода
+            # (менеджер → кассир): в аванс не входит, но ведомость администрации его заплатит.
+            earned += periods.money(availability.admin_oklad_outside_basis)
 
         else:
             basis = "courier_deposit" if employee.id in courier_deposit_by_emp else "none"
             earned = Decimal("0.00")
             vacation = Decimal("0.00")
+            if employee.id in salary_employee_ids:
+                # Снятый со старшего курьера курьер в зарплатный контур не входит, но оклад за
+                # дни старшим курьером ему должны до финализации ведомости администрации.
+                position = await get_position_on_date(session, employee.id, as_of)
+                earned = periods.money(
+                    await admin_oklad_outside_basis(
+                        session, employee, position or employee.position or "", as_of
+                    )
+                )
+                if earned > 0:
+                    basis = "okladnik"
             if employee.id not in salary_employee_ids:
                 tail = Decimal("0.00")
                 on_demand_accrued = Decimal("0.00")
@@ -2329,9 +2347,14 @@ async def list_staff_payable(
                 employee_id=employee.id,
                 full_name=employee.full_name,
                 position=employee.position,
+                # Курьерская таблица колонки «Зарплата» не показывает, поэтому курьер с
+                # зарплатным долгом (оклад старшим курьером до понижения) стоит среди
+                # сотрудников — как старший курьер.
                 staff_group=(
                     "courier"
-                    if employee.id in courier_balance_cents and not is_senior_courier(employee)
+                    if employee.id in courier_balance_cents
+                    and not is_senior_courier(employee)
+                    and salary_payable <= 0
                     else "staff"
                 ),
                 basis=("on_demand" if employee.id in current_on_demand_ids else basis),

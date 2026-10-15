@@ -72,7 +72,11 @@ from app.services.payroll_admin import (
     PAYOUT_MODE_ON_DEMAND,
     _load_okladnik_payout_modes,
 )
-from app.services.payroll_advance_availability import _finalized_by, earned_as_of
+from app.services.payroll_advance_availability import (
+    _finalized_by,
+    admin_oklad_outside_basis,
+    earned_as_of,
+)
 from app.services.payroll_payouts import DDS_ARTICLE_DEPOSIT_PAYOUT
 from app.services.position_registry import eligible_for_personal_report
 
@@ -422,22 +426,26 @@ async def _earned_in_open_period(
     for employee in await _employees_for_earned(session, as_of):
         position = await get_position_on_date(session, employee.id, as_of)
         position = position or employee.position or ""
-        if not eligible_for_personal_report(
+        # Ушедший из окладной должности посреди полупериода (старший курьер → курьер 06.10):
+        # оклад за дни в ней заплатит ведомость администрации, и до её финализации это долг —
+        # даже если новая должность в зарплатный контур не входит вовсе.
+        value = await admin_oklad_outside_basis(session, employee, position, as_of)
+        vacation = _ZERO
+        withheld = _ZERO
+        if eligible_for_personal_report(
             position, admin_payroll_excluded=employee.admin_payroll_excluded
         ):
-            continue
-        snapshot = await earned_as_of(session, employee, as_of)
-        if snapshot.period_finalized:
-            continue
-        value = _money(snapshot.earned)
-        vacation = _money(snapshot.vacation_lump)
+            snapshot = await earned_as_of(session, employee, as_of)
+            if not snapshot.period_finalized:
+                value += _money(snapshot.earned)
+                vacation = _money(snapshot.vacation_lump)
+                withheld = _money(snapshot.deposit_withholding)
         if month_key in on_demand_months.get(employee.id, frozenset()):
             # Обнуляем ИМЕННО прорейт: отпускной транш этот месяц начислением не несёт,
             # и вместе с прорейтом он пропал бы из среза ни за что.
             value = _ZERO
         if value or vacation:
             earned[employee.id] = (value, vacation)
-        withheld = _money(snapshot.deposit_withholding)
         if withheld:
             provisional_deposit[employee.id] = withheld
     return earned, provisional_deposit

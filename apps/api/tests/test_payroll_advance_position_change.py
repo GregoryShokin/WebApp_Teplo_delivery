@@ -141,3 +141,33 @@ async def test_advance_before_mid_half_promotion_ignores_future_position(
         availability = await available_to_advance(session, employee, AS_OF)
         # 15000 × 12/15 — дни будущей должности в «заработано на дату» не попадают.
         assert availability.earned_to_date == Decimal("12000.00")
+
+
+async def test_advance_after_demotion_to_courier_names_oklad_but_keeps_it_out(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Старший курьер до 05.05, с 06.05 — курьер: оклад за 1–5 мая в аванс не входит.
+
+    Решение владельца 15.10.2026: аванс — только из контура текущей должности. Аванс с ролью
+    курьера удержала бы недельная ведомость, а строки курьера в ней нет. Оклад за дни старшим
+    курьером уйдёт ведомостью администрации — это и говорит подсказка вместо «нет периода».
+    """
+    async with async_session_factory() as session:
+        employee = await _make_employee_with_positions(
+            session,
+            [
+                ("Старший курьер", date(2026, 1, 1), date(2026, 5, 5)),
+                ("Курьер", date(2026, 5, 6), None),
+            ],
+        )
+        await _set_oklad(session, position="Старший курьер", amount=Decimal("20000"))
+        await session.commit()
+
+        availability = await available_to_advance(session, employee, AS_OF)
+        assert availability.available == Decimal("0.00")
+        # ½ оклада 10000 × 5/15 — долг, который заплатит ведомость 1–15 мая.
+        assert availability.admin_oklad_outside_basis == Decimal("3333.33")
+        assert availability.note == (
+            "Оклад за дни в окладной должности 3\u00a0333,33\u00a0₽ выплатится "
+            "ведомостью администрации и в аванс не входит"
+        )

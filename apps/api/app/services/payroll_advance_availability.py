@@ -62,7 +62,11 @@ from app.services.payroll_admin import (
     okladnik_earned_to_date,
 )
 from app.services.payroll_calculator import calculate_payroll_lines, decimal
-from app.services.position_registry import dishwasher_positions, okladnik_positions
+from app.services.position_registry import (
+    admin_payroll_positions,
+    dishwasher_positions,
+    okladnik_positions,
+)
 
 _CENTS = Decimal("0.01")
 
@@ -81,6 +85,10 @@ class AdvanceAvailability:
     # входят (аванс — только за отработанное), но ведомость их платит, поэтому «Учёт
     # ДЗ/КЗ» складывает их в долг перед сотрудником.
     vacation_payout_lump: Decimal = Decimal("0.00")
+    # Оклад за дни полупериода в окладной должности, если на дату сотрудник уже в другом
+    # контуре (`admin_oklad_outside_basis`). Как и отпускной транш: в аванс не входит, но
+    # ведомость администрации его заплатит — «Учёт ДЗ/КЗ» складывает его в долг.
+    admin_oklad_outside_basis: Decimal = Decimal("0.00")
     note: str | None = None
     # True в день выплаты периода: заработанное уходит с ведомостью, аванс за этот
     # период уже недоступен (available обнулён).
@@ -189,42 +197,122 @@ async def _open_weekly_period(session: AsyncSession, as_of: date) -> PayrollPeri
     )
 
 
-async def _okladnik_earned(
-    session: AsyncSession,
-    employee: Employee,
-    position: str,
-    as_of: date,
-) -> tuple[Decimal, date, date]:
+def _half_month_period(as_of: date) -> PayrollPeriod:
+    """Полумесячный период, содержащий `as_of`, — по календарю, без записи в БД."""
     start, end = _half_month_bounds(as_of)
-    period = PayrollPeriod(
+    return PayrollPeriod(
         period_type="half_month",
         start_date=start,
         end_date=end,
         payroll_date=end,
         status="open",
     )
-    # Должность — по дням полупериода, как в ведомости: повышенному до старшего курьера 08-го
-    # оклад капает с 08-го, а не с 1-го; при смене окладной должности каждая часть идёт своим
-    # окладом. Без админ-назначений в периоде — весь период по должности на дату, как раньше.
+
+
+async def _half_month_record(session: AsyncSession, start: date, end: date) -> PayrollPeriod | None:
+    """Реальная запись полумесячного периода с этими границами — только она знает о финализации."""
+    return await session.scalar(
+        select(PayrollPeriod).where(
+            PayrollPeriod.period_type == "half_month",
+            PayrollPeriod.start_date == start,
+            PayrollPeriod.end_date == end,
+        )
+    )
+
+
+async def _oklad_parts(
+    session: AsyncSession, employee: Employee, period: PayrollPeriod
+) -> list[tuple[str, _PositionSegment | None]]:
+    """Окладные отрезки полупериода — те же дни в должности, по которым платит ведомость."""
     segments = (await _load_admin_position_segments(session, [employee.id], period)).get(
         employee.id, []
     )
-    parts: list[tuple[str, _PositionSegment | None]] = [
+    return [
         (segment.position, segment)
         for segment in segments
         if segment.position not in dishwasher_positions()
-    ] or [(position, None)]
+    ]
+
+
+async def _oklad_parts_earned(
+    session: AsyncSession,
+    employee: Employee,
+    period: PayrollPeriod,
+    as_of: date,
+    parts: list[tuple[str, _PositionSegment | None]],
+) -> Decimal:
+    """Заработано на дату по окладным частям: каждая — своим окладом и режимом выплаты."""
     modes = await _load_okladnik_payout_modes(session)
     earned = Decimal("0.00")
     for part_position, segment in parts:
-        oklad = await load_admin_oklad(
-            session, employee.id, part_position, segment.end if segment is not None else end
-        )
+        oklad_as_of = segment.end if segment is not None else period.end_date
+        oklad = await load_admin_oklad(session, employee.id, part_position, oklad_as_of)
         if oklad is None:
             continue
         mode = _okladnik_payout_mode(modes, part_position)
         earned += okladnik_earned_to_date(oklad, mode, employee, period, as_of, segment=segment)
-    return earned, start, end
+    return earned
+
+
+async def _okladnik_earned(
+    session: AsyncSession,
+    employee: Employee,
+    position: str,
+    as_of: date,
+) -> tuple[Decimal, date, date]:
+    period = _half_month_period(as_of)
+    # Должность — по дням полупериода, как в ведомости: повышенному до старшего курьера 08-го
+    # оклад капает с 08-го, а не с 1-го; при смене окладной должности каждая часть идёт своим
+    # окладом. Без админ-назначений в периоде — весь период по должности на дату, как раньше.
+    parts = await _oklad_parts(session, employee, period) or [(position, None)]
+    earned = await _oklad_parts_earned(session, employee, period, as_of, parts)
+    return earned, period.start_date, period.end_date
+
+
+async def admin_oklad_outside_basis(
+    session: AsyncSession,
+    employee: Employee,
+    position: str,
+    as_of: date,
+) -> Decimal:
+    """Оклад за дни полупериода в окладной должности у того, кто на дату уже в другом контуре.
+
+    Снятому со старшего курьера 05.10 (с 06.10 — курьер) ведомость администрации 1–15.10
+    заплатит оклад за 1–5.10, но на 10.10 его базис — контур курьера, и этих денег не видит
+    ни аванс, ни долг перед сотрудником. В потолок аванса они не входят (решение владельца
+    15.10.2026: аванс — только из контура текущей должности; аванс с ролью курьера удержала бы
+    недельная ведомость, а строки курьера в ней нет). Но до финализации ведомости полупериода
+    это долг, и витрина со срезом складывают его в зарплату — как отпускной транш.
+
+    Должность на дату из админ-контура — ноль: окладника его базис уже считает по дням в
+    должности, а мойщице ведомость платит сменами. «Не платить» — тоже ноль: такого
+    сотрудника ведомость администрации не берёт вовсе.
+    """
+    if position in admin_payroll_positions() or employee.admin_payroll_excluded:
+        return Decimal("0.00")
+    period = _half_month_period(as_of)
+    parts = await _oklad_parts(session, employee, period)
+    if not parts:
+        return Decimal("0.00")
+    record = await _half_month_record(session, period.start_date, period.end_date)
+    if _finalized_by(record, as_of):
+        # Ведомость полупериода закрыта — эти деньги несёт её хвост.
+        return Decimal("0.00")
+    earned = await _oklad_parts_earned(session, employee, period, as_of, parts)
+    return earned.quantize(_CENTS)
+
+
+def _join_notes(*notes: str | None) -> str | None:
+    return "; ".join(note for note in notes if note) or None
+
+
+def _oklad_outside_basis_note(amount: Decimal) -> str | None:
+    if amount <= 0:
+        return None
+    return (
+        f"Оклад за дни в окладной должности {_money(amount)} ₽ выплатится "
+        "ведомостью администрации и в аванс не входит"
+    )
 
 
 async def _dishwasher_earned(
@@ -564,6 +652,8 @@ async def available_to_advance(
     earned, start, end, note, lump = await _basis_earned(
         session, employee, position, basis, earned_as_of
     )
+    oklad_outside = await admin_oklad_outside_basis(session, employee, position, as_of)
+    oklad_note = _oklad_outside_basis_note(oklad_outside)
 
     if start is None or end is None:
         return AdvanceAvailability(
@@ -576,7 +666,10 @@ async def available_to_advance(
             already_advanced=Decimal("0.00"),
             available=Decimal("0.00"),
             vacation_payout_lump=Decimal("0.00"),
-            note=note,
+            admin_oklad_outside_basis=oklad_outside,
+            # Ушедшему из окладной должности («Нет открытого недельного периода» про чужой ему
+            # контур) объясняем, где его деньги.
+            note=oklad_note or note,
         )
 
     already = await _already_advanced_in_period(session, employee.id, start, end)
@@ -591,9 +684,11 @@ async def available_to_advance(
             already_advanced=already,
             available=Decimal("0.00"),
             vacation_payout_lump=lump,
-            note=(
+            admin_oklad_outside_basis=oklad_outside,
+            note=_join_notes(
                 f"Наступил день выплаты ({as_of.strftime('%d.%m.%Y')}) — "
-                "заработанное уходит с ведомостью, аванс за этот период уже недоступен"
+                "заработанное уходит с ведомостью, аванс за этот период уже недоступен",
+                oklad_note,
             ),
             payout_reached=True,
         )
@@ -609,7 +704,8 @@ async def available_to_advance(
         already_advanced=already,
         available=available,
         vacation_payout_lump=lump,
-        note=note,
+        admin_oklad_outside_basis=oklad_outside,
+        note=_join_notes(note, oklad_note),
         payout_reached=False,
     )
 
@@ -721,13 +817,7 @@ async def earned_as_of(session: AsyncSession, employee: Employee, as_of: date) -
         start, end = _half_month_bounds(as_of)
         # Полумесячный период строится по календарю, но узнать о его финализации можно только
         # у реальной записи с теми же границами.
-        real = await session.scalar(
-            select(PayrollPeriod).where(
-                PayrollPeriod.period_type == "half_month",
-                PayrollPeriod.start_date == start,
-                PayrollPeriod.end_date == end,
-            )
-        )
+        real = await _half_month_record(session, start, end)
         if _finalized_by(real, as_of):
             return EarnedAsOf(
                 employee_id=employee.id,
