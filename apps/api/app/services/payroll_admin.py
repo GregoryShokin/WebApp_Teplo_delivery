@@ -16,9 +16,9 @@ from __future__ import annotations
 import calendar
 import uuid
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import desc, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ from app.models import (
     DishwasherShift,
     Employee,
     EmployeePayout,
+    EmployeePositionAssignment,
     PayrollLine,
     PayrollPeriod,
     PayrollRate,
@@ -325,6 +326,9 @@ async def calculate_admin_payroll_lines(
     shift_counts = await _load_dishwasher_shift_counts(
         session, employee_ids, period.start_date, period.end_date
     )
+    # Должность основных админов — по дням полупериода, а не на одну дату: смена должности
+    # посреди периода (снят со старшего курьера 05.10) делит оклад по дням в должности.
+    position_segments = await _load_admin_position_segments(session, primary_ids, period)
 
     lines: list[PayrollLine] = []
     blocking_issues: list[dict[str, Any]] = []
@@ -337,24 +341,33 @@ async def calculate_admin_payroll_lines(
         # назначение на 1-е число попало в ведомость, которая 1-го и выплачивается. Основные
         # админы — по концу периода (их должность/оклад привязаны к отработанному периоду).
         as_of = period.payroll_date if forced_position is not None else period.end_date
+        # Окладные части строки: (должность, дни в должности или None = весь период, дата оклада).
+        oklad_parts: list[tuple[str, _PositionSegment | None, date]]
         if forced_position is not None:
             # «Исполняющий» — считаем по назначенной окладной должности (не по основной).
             position = forced_position
+            oklad_parts = [(position, None, as_of)]
         else:
-            position = await get_position_on_date(session, employee.id, as_of)
-            position = position or employee.position
-            if position not in admin_payroll_positions():
-                # На дату периода сотрудник был на другой (неадминской) должности — например
+            segments = position_segments.get(employee.id)
+            if not segments:
+                # Весь период сотрудник был на другой (неадминской) должности — например
                 # повар, позже повышенный в управляющие. За этот период он считается по своей
                 # тогдашней должности (производственная ведомость), не здесь.
+                period_position = await get_position_on_date(session, employee.id, as_of)
                 skipped_wrong_position.append(
                     {
                         "employee_id": str(employee.id),
                         "employee_name": employee.full_name,
-                        "period_position": position,
+                        "period_position": period_position or employee.position,
                     }
                 )
                 continue
+            position = segments[-1].position
+            oklad_parts = [
+                (segment.position, segment, segment.end)
+                for segment in segments
+                if segment.position not in dishwasher_positions()
+            ]
 
         premium, penalty, bonus_items, penalty_items = _sum_adjustments(
             adjustments_by_employee.get(employee.id, [])
@@ -375,8 +388,19 @@ async def calculate_admin_payroll_lines(
                 "adjustments": {"bonuses": bonus_items, "penalties": penalty_items},
             }
         else:
-            oklad = await load_admin_oklad(session, employee.id, position, as_of)
-            if oklad is None:
+            parts: list[tuple[str, Decimal, str, Decimal, dict[str, Any]]] = []
+            for part_position, segment, oklad_as_of in oklad_parts:
+                part_oklad = await load_admin_oklad(
+                    session, employee.id, part_position, oklad_as_of
+                )
+                if part_oklad is None:
+                    continue
+                part_mode = _okladnik_payout_mode(payout_modes, part_position)
+                part_base, part_proration = _okladnik_base_pay(
+                    part_oklad, part_mode, employee, period, segment=segment
+                )
+                parts.append((part_position, part_oklad, part_mode, part_base, part_proration))
+            if not parts:
                 # Нет применимого оклада (ни дефолта должности, ни персонального) —
                 # сотрудник просто не попадает в ведомость. Не ошибка (системные/AI-аккаунты,
                 # собственники без оклада), показываем информационным списком.
@@ -388,8 +412,25 @@ async def calculate_admin_payroll_lines(
                     }
                 )
                 continue
-            mode = _okladnik_payout_mode(payout_modes, position)
-            base_pay, proration = _okladnik_base_pay(oklad, mode, employee, period)
+            # Одна строка на сотрудника — по последней окладной должности периода; если их было
+            # несколько (менеджер → управляющий), база складывается, разбивка — в segments.
+            position, oklad, mode, _, proration = parts[-1]
+            base_pay = sum((part[3] for part in parts), Decimal("0.00"))
+            if len(parts) > 1:
+                proration = {
+                    **proration,
+                    "segments": [
+                        {
+                            "position": part_position,
+                            "monthly_oklad": money_string(part_oklad),
+                            "base_pay": money_string(part_base),
+                            "worked_days": part_proration.get("worked_days"),
+                            "position_from": part_proration.get("position_from"),
+                            "position_to": part_proration.get("position_to"),
+                        }
+                        for part_position, part_oklad, _, part_base, part_proration in parts
+                    ],
+                }
             if base_pay <= 0 and not has_adjustments and mode != PAYOUT_MODE_ON_DEMAND:
                 # Этот полупериод оклад не выплачивается (режим «всё на другую дату»).
                 continue
@@ -653,15 +694,98 @@ async def _load_admin_employees(
     session: AsyncSession,
     period: PayrollPeriod,
 ) -> list[Employee]:
+    # Кандидат — тот, у кого админ-должность хоть как-то задевает полупериод, а не только
+    # «сегодняшняя» должность: снятый со старшего курьера 05.10 сегодня уже курьер, но за
+    # 1–5.10 оклад ему положен. Точные дни в должности считает _load_admin_position_segments.
+    held_admin_position = (
+        select(EmployeePositionAssignment.id)
+        .where(
+            EmployeePositionAssignment.employee_id == Employee.id,
+            EmployeePositionAssignment.position.in_(admin_payroll_positions()),
+            or_(
+                EmployeePositionAssignment.effective_to.is_(None),
+                EmployeePositionAssignment.effective_to >= period.start_date,
+            ),
+        )
+        .exists()
+    )
     result = await session.scalars(
         select(Employee).where(
-            Employee.position.in_(admin_payroll_positions()),
+            held_admin_position,
             Employee.admin_payroll_excluded.is_(False),
             or_(Employee.hire_date.is_(None), Employee.hire_date <= period.end_date),
             or_(Employee.fire_date.is_(None), Employee.fire_date >= period.start_date),
         )
     )
     return list(result.all())
+
+
+class _PositionSegment(NamedTuple):
+    position: str
+    start: date
+    end: date
+
+
+async def _load_admin_position_segments(
+    session: AsyncSession,
+    employee_ids: Iterable[uuid.UUID],
+    period: PayrollPeriod,
+) -> dict[uuid.UUID, list[_PositionSegment]]:
+    """Отрезки полупериода, в которые сотрудник занимал админ-должность (по порядку дат).
+
+    Должность на каждый день — как у ``position_at``: из назначений, покрывающих день, берётся
+    начавшееся позже всех. Дни ДО самого первого назначения считаются по нему же: первая
+    запись часто бэкфилл позже даты приёма, и отрезать по ней дни нельзя (так же раньше
+    работал запасной ``employee.position``). Сотрудника без админ-дней в периоде в ответе нет.
+    """
+    ids = list(employee_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(
+            EmployeePositionAssignment.employee_id,
+            EmployeePositionAssignment.position,
+            EmployeePositionAssignment.effective_from,
+            EmployeePositionAssignment.effective_to,
+        )
+        .where(EmployeePositionAssignment.employee_id.in_(ids))
+        .order_by(EmployeePositionAssignment.effective_from)
+    )
+    assignments: dict[uuid.UUID, list[tuple[str, date, date | None]]] = {}
+    for employee_id, position, effective_from, effective_to in rows.all():
+        assignments.setdefault(employee_id, []).append((position, effective_from, effective_to))
+
+    admin_positions = set(admin_payroll_positions())
+    result: dict[uuid.UUID, list[_PositionSegment]] = {}
+    for employee_id, items in assignments.items():
+        segments: list[_PositionSegment] = []
+        day = period.start_date
+        while day <= period.end_date:
+            covering = [
+                position
+                for position, start, end in items
+                if start <= day and (end is None or end >= day)
+            ]
+            if covering:
+                position_on_day: str | None = covering[-1]
+            elif day < items[0][1]:
+                position_on_day = items[0][0]
+            else:
+                position_on_day = None
+            if position_on_day is not None and position_on_day in admin_positions:
+                last = segments[-1] if segments else None
+                if (
+                    last is not None
+                    and last.position == position_on_day
+                    and last.end == day - timedelta(days=1)
+                ):
+                    segments[-1] = last._replace(end=day)
+                else:
+                    segments.append(_PositionSegment(position_on_day, day, day))
+            day += timedelta(days=1)
+        if segments:
+            result[employee_id] = segments
+    return result
 
 
 async def _load_acting_admin_employees(
@@ -776,10 +900,12 @@ def _prorated_amount(
     period: PayrollPeriod,
     *,
     as_of: date | None = None,
+    segment: _PositionSegment | None = None,
 ) -> tuple[Decimal, dict[str, Any]]:
     """Прорейт суммы по календарным дням полупериода.
 
-    Учитывает найм/увольнение внутри периода. При переданном `as_of` дополнительно
+    Учитывает найм/увольнение внутри периода и `segment` — дни в должности, если должность
+    сменилась внутри полупериода. При переданном `as_of` дополнительно
     усекает «отработанный» хвост до этой даты — это «заработано на дату X» для
     расчёта доступного аванса (окладнику капает ровно по календарю).
     """
@@ -790,6 +916,9 @@ def _prorated_amount(
     worked_end = period.end_date
     if fire is not None and fire < worked_end:
         worked_end = fire
+    if segment is not None:
+        worked_start = max(worked_start, segment.start)
+        worked_end = min(worked_end, segment.end)
     if as_of is not None and as_of < worked_end:
         worked_end = as_of
     if worked_start == period.start_date and worked_end == period.end_date:
@@ -801,7 +930,7 @@ def _prorated_amount(
 
     worked_days = max((worked_end - worked_start).days + 1, 0)
     base = (amount * Decimal(worked_days) / Decimal(total_days)).quantize(_CENTS)
-    return base, {
+    details: dict[str, Any] = {
         "applied": True,
         "total_days": total_days,
         "worked_days": worked_days,
@@ -809,6 +938,10 @@ def _prorated_amount(
         "fire_date": fire.isoformat() if fire is not None else None,
         "as_of": as_of.isoformat() if as_of is not None else None,
     }
+    if segment is not None and (segment.start > period.start_date or segment.end < period.end_date):
+        details["position_from"] = segment.start.isoformat()
+        details["position_to"] = segment.end.isoformat()
+    return base, details
 
 
 def _okladnik_payout_mode(modes: dict[str, str], position: str) -> str:
@@ -842,11 +975,12 @@ def _okladnik_base_pay(
     period: PayrollPeriod,
     *,
     as_of: date | None = None,
+    segment: _PositionSegment | None = None,
 ) -> tuple[Decimal, dict[str, Any]]:
     """База оклада за полупериод с учётом режима выплаты и прорейта.
 
     `as_of` усекает прорейт до даты (заработано на дату X для аванса); без него —
-    полная база полупериода (как в расчёте ведомости).
+    полная база полупериода (как в расчёте ведомости). `segment` — дни в должности.
     """
     is_first_half = period.start_date.day == 1
 
@@ -855,7 +989,7 @@ def _okladnik_base_pay(
         # его на КАЖДОЙ ведомости месяца (и 1–15, и 16–конец), чтобы текущая ведомость всегда
         # отражала сумму, а в остатке считаем оклад ОДИН раз на месяц (дедуп по period_month).
         # К выплате по ведомости автоматически 0 — сумму включает вручную «Включить в выплату».
-        base, proration = _prorated_amount(oklad, employee, period, as_of=as_of)
+        base, proration = _prorated_amount(oklad, employee, period, as_of=as_of, segment=segment)
         proration["payout_mode"] = mode
         proration["is_first_half"] = is_first_half
         proration["on_demand"] = True
@@ -879,7 +1013,7 @@ def _okladnik_base_pay(
             "skipped_this_period": True,
         }
 
-    base, proration = _prorated_amount(amount, employee, period, as_of=as_of)
+    base, proration = _prorated_amount(amount, employee, period, as_of=as_of, segment=segment)
     proration["payout_mode"] = mode
     proration["is_first_half"] = is_first_half
     return base, proration

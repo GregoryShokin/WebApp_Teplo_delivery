@@ -519,6 +519,163 @@ async def test_admin_run_prorates_on_mid_period_hire(
         assert lines[0].total_payable == Decimal("16000.00")
 
 
+async def _make_employee_with_positions(
+    session: AsyncSession,
+    positions: list[tuple[str, date, date | None]],
+    *,
+    hire_date: date | None = None,
+) -> Employee:
+    """Сотрудник с историей назначений ``(должность, с, по)`` — смена должности в периоде."""
+    employee = await _make_admin_employee(session, hire_date=hire_date)
+    for assignment in await session.scalars(
+        select(EmployeePositionAssignment).where(
+            EmployeePositionAssignment.employee_id == employee.id
+        )
+    ):
+        await session.delete(assignment)
+    await session.flush()
+    for position, effective_from, effective_to in positions:
+        session.add(
+            EmployeePositionAssignment(
+                id=uuid.uuid4(),
+                employee_id=employee.id,
+                position=position,
+                effective_from=effective_from,
+                effective_to=effective_to,
+            )
+        )
+    await session.flush()
+    return employee
+
+
+async def test_admin_run_prorates_mid_period_demotion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Снят со старшего курьера 05.05, с 06.05 — курьер: оклад за 1–5 мая всё равно положен.
+
+    Регрессия 15.10.2026 (Дудников): ведомость отбирала по должности «на сегодня» и на конец
+    периода — оба раза «Курьер», и сотрудник выпадал из ведомости молча, вместе с 5 днями оклада.
+    """
+    async with async_session_factory() as session:
+        employee = await _make_employee_with_positions(
+            session,
+            [
+                ("Старший курьер", date(2026, 1, 1), date(2026, 5, 5)),
+                ("Курьер", date(2026, 5, 6), None),
+            ],
+        )
+        await _set_oklad(session, position="Старший курьер", amount=Decimal("20000"))
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        lines = await _lines(session, run.id)
+        assert [line.employee_id for line in lines] == [employee.id]
+        line = lines[0]
+        assert line.role == "Старший курьер"
+        # ½ оклада 10000 × 5/15 дней в должности.
+        assert line.base_pay == Decimal("3333.33")
+        proration = line.components["proration"]
+        assert proration["worked_days"] == 5
+        assert proration["position_from"] == "2026-05-01"
+        assert proration["position_to"] == "2026-05-05"
+
+
+async def test_admin_run_skips_half_after_demotion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вторая половина после понижения — ни строки, ни лишних дней."""
+    async with async_session_factory() as session:
+        await _make_employee_with_positions(
+            session,
+            [
+                ("Старший курьер", date(2026, 1, 1), date(2026, 5, 5)),
+                ("Курьер", date(2026, 5, 6), None),
+            ],
+        )
+        await _set_oklad(session, position="Старший курьер", amount=Decimal("20000"))
+        period = await _make_second_half_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        assert await _lines(session, run.id) == []
+
+
+async def test_admin_run_prorates_mid_period_promotion(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Повышен до старшего курьера 08.05 — оклад только за 8–15 мая, а не за весь полупериод."""
+    async with async_session_factory() as session:
+        await _make_employee_with_positions(
+            session,
+            [
+                ("Курьер", date(2026, 1, 1), date(2026, 5, 7)),
+                ("Старший курьер", date(2026, 5, 8), None),
+            ],
+        )
+        await _set_oklad(session, position="Старший курьер", amount=Decimal("40000"))
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        # 20000 × 8/15
+        assert lines[0].base_pay == Decimal("10666.67")
+        assert lines[0].components["proration"]["position_from"] == "2026-05-08"
+
+
+async def test_admin_run_sums_two_oklad_positions_in_one_half(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Менеджер 1–10, управляющий 11–15: одна строка, база по каждой должности своим окладом."""
+    async with async_session_factory() as session:
+        employee = await _make_employee_with_positions(
+            session,
+            [
+                ("Менеджер", date(2026, 1, 1), date(2026, 5, 10)),
+                ("Управляющий", date(2026, 5, 11), None),
+            ],
+        )
+        await _set_oklad(session, position="Менеджер", amount=Decimal("30000"))
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        lines = await _lines(session, run.id)
+        assert [line.employee_id for line in lines] == [employee.id]
+        line = lines[0]
+        assert line.role == "Управляющий"
+        # 15000 × 10/15 + 30000 × 5/15 = 10000 + 10000
+        assert line.base_pay == Decimal("20000.00")
+        segments = line.components["proration"]["segments"]
+        assert [(item["position"], item["base_pay"]) for item in segments] == [
+            ("Менеджер", "10000.00"),
+            ("Управляющий", "10000.00"),
+        ]
+
+
+async def test_admin_run_first_assignment_backfill_does_not_cut_days(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Первая запись должности позже даты приёма (бэкфилл) не режет полупериод."""
+    async with async_session_factory() as session:
+        await _make_employee_with_positions(
+            session,
+            [("Управляющий", date(2026, 5, 8), None)],
+            hire_date=date(2026, 4, 1),
+        )
+        await _set_oklad(session, position="Управляющий", amount=Decimal("60000"))
+        period = await _make_period(session)
+        await session.commit()
+
+        run = await run_admin_payroll(session, period.id)
+        lines = await _lines(session, run.id)
+        assert len(lines) == 1
+        assert lines[0].base_pay == Decimal("30000.00")
+
+
 async def test_admin_run_includes_admin_adjustments_but_not_production(
     async_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
