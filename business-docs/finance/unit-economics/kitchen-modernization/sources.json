@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -108,6 +108,20 @@
       "inventory_units": 59,
       "rated_power_groups": 24,
       "mode_or_daily_energy_only_groups": 3
+    },
+    {
+      "id": "video_timing_blind_test_01_2026_10_15",
+      "files": [
+        "snapshots/2026-10-15/video-timing-test-01/README.md",
+        "snapshots/2026-10-15/video-timing-test-01/timing-baseline.json",
+        "snapshots/2026-10-15/video-timing-test-01/events.csv"
+      ],
+      "status": "single_cycle_blind_baseline_external_accuracy_not_validated",
+      "source_sha256": "ff806a4baaeb8cdeacc8a91a04e0df607a49948d87300518556b1c97020e4134",
+      "rolls_observed": 1,
+      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/blind-test-01",
+      "comparison_pending": "same_take_timer_control",
+      "used_as_financial_model_input": false
     }
   ],
   "previous_work": {

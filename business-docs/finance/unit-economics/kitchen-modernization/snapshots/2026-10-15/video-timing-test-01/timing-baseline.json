@@ -1,0 +1,529 @@
+{
+  "version": 1,
+  "analysis_date": "2026-10-15",
+  "frozen_before_timer_control": true,
+  "created_utc": "2026-10-15T13:00:42.535345+00:00",
+  "status": "single_cycle_blind_baseline_external_accuracy_not_validated",
+  "source": {
+    "original_path": "/Users/grigorii/Downloads/15859896180492.mp4",
+    "private_copy": "/Users/grigorii/Documents/Teplo/Unit Economics/video/2026-10-15/blind-test-01/15859896180492.mp4",
+    "bytes": 51385002,
+    "sha256": "ff806a4baaeb8cdeacc8a91a04e0df607a49948d87300518556b1c97020e4134",
+    "video_codec": "h264",
+    "width": 720,
+    "height": 1280,
+    "nominal_fps": 30,
+    "frames": 5021,
+    "format_duration_s": 167.47,
+    "first_frame_pts_s": 0.066667,
+    "last_frame_pts_s": 167.446667,
+    "max_adjacent_pts_gap_s": 0.035,
+    "time_basis": "best_effort_timestamp_time минус first_frame_pts_s; не время настенных часов",
+    "real_time_speed_independently_verified": false
+  },
+  "rolls": 1,
+  "pieces": 8,
+  "sku": null,
+  "recipe_verified": false,
+  "rice_cooking_included": false,
+  "sealed_order_included": false,
+  "boundaries": [
+    {
+      "id": "recording_start",
+      "lower_seconds": 0,
+      "upper_seconds": 0,
+      "estimate_seconds": 0.0,
+      "definition": "Первый отображаемый кадр; не начало приготовления риса.",
+      "evidence": "source-frames.json"
+    },
+    {
+      "id": "rice_reach",
+      "lower_seconds": 5.466666,
+      "upper_seconds": 5.966666,
+      "estimate_seconds": 5.716666,
+      "definition": "Первое различимое движение за порцией риса; получение частично вне кадра.",
+      "evidence": "early-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "rice_spread",
+      "lower_seconds": 15.965,
+      "upper_seconds": 16.465,
+      "estimate_seconds": 16.215,
+      "definition": "Нори уложен, начинается распределение риса по листу.",
+      "evidence": "early-boundaries/contact-2.jpg"
+    },
+    {
+      "id": "rice_spread_end",
+      "lower_seconds": 32.461333,
+      "upper_seconds": 32.961333,
+      "estimate_seconds": 32.711333,
+      "definition": "Заканчивается непосредственная раскладка риса; начинается работа с краями/макису.",
+      "evidence": "mat-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "mat_ready",
+      "lower_seconds": 38.461333,
+      "upper_seconds": 38.961333,
+      "estimate_seconds": 38.711333,
+      "definition": "Рисовый мат перевёрнут нори вверх, руки переходят к начинке.",
+      "evidence": "mat-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "first_filling_on_roll",
+      "lower_seconds": 54.465333,
+      "upper_seconds": 54.965333,
+      "estimate_seconds": 54.715333,
+      "definition": "Первая взвешенная часть начинки переносится на мат.",
+      "evidence": "filling-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "vegetable_reach",
+      "lower_seconds": 59.935,
+      "upper_seconds": 60.435,
+      "estimate_seconds": 60.185,
+      "definition": "После выкладки первой части рука направляется за следующей частью начинки.",
+      "evidence": "filling-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "piping_bag_reach",
+      "lower_seconds": 77.946333,
+      "upper_seconds": 78.446333,
+      "estimate_seconds": 78.196333,
+      "definition": "Последняя правка овощной части, переход к кондитерскому пакету.",
+      "evidence": "vegetable-boundaries/contact-1.jpg"
+    },
+    {
+      "id": "piping_start",
+      "lower_seconds": 80.515,
+      "upper_seconds": 81.015,
+      "estimate_seconds": 80.765,
+      "definition": "Пакет направлен на начинку, начинается нанесение содержимого.",
+      "evidence": "agent-second-half/filling-rolling-01.jpg"
+    },
+    {
+      "id": "piping_end",
+      "lower_seconds": 84.517,
+      "upper_seconds": 85.017,
+      "estimate_seconds": 84.767,
+      "definition": "Нанесение содержимого пакета заканчивается.",
+      "evidence": "agent-second-half/filling-rolling-02.jpg"
+    },
+    {
+      "id": "filling_adjust",
+      "lower_seconds": 86.252,
+      "upper_seconds": 86.485,
+      "estimate_seconds": 86.3685,
+      "definition": "Пакет убран, руки вернулись для поправки начинки.",
+      "evidence": "agent-second-half/roll-boundary-01.jpg"
+    },
+    {
+      "id": "rolling_start",
+      "lower_seconds": 90.487,
+      "upper_seconds": 91.488,
+      "estimate_seconds": 90.9875,
+      "definition": "Первый подъём макису для сворачивания, не предшествующая правка начинки.",
+      "evidence": "agent-second-half/roll-boundary-02.jpg; agent-second-half/rollstart-01.jpg"
+    },
+    {
+      "id": "coating_reach",
+      "lower_seconds": 113.502,
+      "upper_seconds": 114.002,
+      "estimate_seconds": 113.752,
+      "definition": "После первоначального обжатия ролл забирают с макису к ёмкости покрытия.",
+      "evidence": "agent-second-half/coating-transfer-01.jpg"
+    },
+    {
+      "id": "coating_contact",
+      "lower_seconds": 114.002,
+      "upper_seconds": 114.502,
+      "estimate_seconds": 114.252,
+      "definition": "Ролл в ёмкости красного наружного покрытия.",
+      "evidence": "agent-second-half/coating-transfer-01.jpg"
+    },
+    {
+      "id": "coating_end",
+      "lower_seconds": 121.507,
+      "upper_seconds": 122.007,
+      "estimate_seconds": 121.757,
+      "definition": "Ролл возвращается на макису для повторного обжатия.",
+      "evidence": "agent-second-half/coating-transfer-02.jpg"
+    },
+    {
+      "id": "forming_end",
+      "lower_seconds": 134.015,
+      "upper_seconds": 134.515,
+      "estimate_seconds": 134.265,
+      "definition": "Завершено повторное обжатие/правка торцов, начинается перенос на поднос.",
+      "evidence": "agent-second-half/coating-transfer-04.jpg"
+    },
+    {
+      "id": "tray_release",
+      "lower_seconds": 136.517,
+      "upper_seconds": 137.017,
+      "estimate_seconds": 136.767,
+      "definition": "Формовщик отпустил ролл на подносе.",
+      "evidence": "agent-second-half/coating-transfer-05.jpg"
+    },
+    {
+      "id": "tray_pickup",
+      "lower_seconds": 140.485,
+      "upper_seconds": 140.985,
+      "estimate_seconds": 140.735,
+      "definition": "Второй сотрудник забирает ролл с подноса.",
+      "evidence": "agent-second-half/coating-transfer-06.jpg"
+    },
+    {
+      "id": "cut_start",
+      "lower_seconds": 145.488,
+      "upper_seconds": 145.755,
+      "estimate_seconds": 145.6215,
+      "definition": "Нож начинает первый рез; перенос на доску и подготовка ножа уже выполнены.",
+      "evidence": "agent-second-half/cutstart-01.jpg"
+    },
+    {
+      "id": "cut_end",
+      "lower_seconds": 157.497,
+      "upper_seconds": 157.763,
+      "estimate_seconds": 157.63,
+      "definition": "Закончен последний рез; откладывание ножа и перекладывание далее.",
+      "evidence": "agent-second-half/cutend-01.jpg"
+    },
+    {
+      "id": "container_done",
+      "lower_seconds": 166.002,
+      "upper_seconds": 166.502,
+      "estimate_seconds": 166.252,
+      "definition": "Руки перестали поправлять восемь кусочков в открытом контейнере.",
+      "evidence": "agent-second-half/cut-pack-03.jpg"
+    }
+  ],
+  "events": [
+    {
+      "id": "E01",
+      "operation": "Начальные подготовительные движения/паузы",
+      "role": "Ф1",
+      "kind": "mixed_initial",
+      "start_boundary": "recording_start",
+      "end_boundary": "rice_reach",
+      "start_s": 0.0,
+      "end_s": 5.716666,
+      "duration_s": 5.716666,
+      "duration_lower_s": 5.466666,
+      "duration_upper_s": 5.966666
+    },
+    {
+      "id": "E02",
+      "operation": "Получение, взвешивание и формирование порции риса, нори",
+      "role": "Ф1",
+      "kind": "handling_with_partial_occlusion",
+      "start_boundary": "rice_reach",
+      "end_boundary": "rice_spread",
+      "start_s": 5.716666,
+      "end_s": 16.215,
+      "duration_s": 10.498334,
+      "duration_lower_s": 9.998334,
+      "duration_upper_s": 10.998334
+    },
+    {
+      "id": "E03",
+      "operation": "Распределение риса по нори",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "rice_spread",
+      "end_boundary": "rice_spread_end",
+      "start_s": 16.215,
+      "end_s": 32.711333,
+      "duration_s": 16.496333,
+      "duration_lower_s": 15.996333,
+      "duration_upper_s": 16.996333
+    },
+    {
+      "id": "E04",
+      "operation": "Выравнивание, работа макису и переворот мата",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "rice_spread_end",
+      "end_boundary": "mat_ready",
+      "start_s": 32.711333,
+      "end_s": 38.711333,
+      "duration_s": 6.0,
+      "duration_lower_s": 5.5,
+      "duration_upper_s": 6.5
+    },
+    {
+      "id": "E05",
+      "operation": "Набор и взвешивание первой части начинки",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "mat_ready",
+      "end_boundary": "first_filling_on_roll",
+      "start_s": 38.711333,
+      "end_s": 54.715333,
+      "duration_s": 16.004,
+      "duration_lower_s": 15.504,
+      "duration_upper_s": 16.504
+    },
+    {
+      "id": "E06",
+      "operation": "Выкладка первой части начинки",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "first_filling_on_roll",
+      "end_boundary": "vegetable_reach",
+      "start_s": 54.715333,
+      "end_s": 60.185,
+      "duration_s": 5.469667,
+      "duration_lower_s": 4.969667,
+      "duration_upper_s": 5.969667
+    },
+    {
+      "id": "E07",
+      "operation": "Набор, взвешивание и выкладка овощной части",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "vegetable_reach",
+      "end_boundary": "piping_bag_reach",
+      "start_s": 60.185,
+      "end_s": 78.196333,
+      "duration_s": 18.011333,
+      "duration_lower_s": 17.511333,
+      "duration_upper_s": 18.511333
+    },
+    {
+      "id": "E08",
+      "operation": "Получение кондитерского пакета",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "piping_bag_reach",
+      "end_boundary": "piping_start",
+      "start_s": 78.196333,
+      "end_s": 80.765,
+      "duration_s": 2.568667,
+      "duration_lower_s": 2.068667,
+      "duration_upper_s": 3.068667
+    },
+    {
+      "id": "E09",
+      "operation": "Нанесение содержимого пакета",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "piping_start",
+      "end_boundary": "piping_end",
+      "start_s": 80.765,
+      "end_s": 84.767,
+      "duration_s": 4.002,
+      "duration_lower_s": 3.502,
+      "duration_upper_s": 4.502
+    },
+    {
+      "id": "E10",
+      "operation": "Убрать пакет и вернуть руки к роллу",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "piping_end",
+      "end_boundary": "filling_adjust",
+      "start_s": 84.767,
+      "end_s": 86.3685,
+      "duration_s": 1.6015,
+      "duration_lower_s": 1.235,
+      "duration_upper_s": 1.968
+    },
+    {
+      "id": "E11",
+      "operation": "Поправка начинки до подъёма макису",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "filling_adjust",
+      "end_boundary": "rolling_start",
+      "start_s": 86.3685,
+      "end_s": 90.9875,
+      "duration_s": 4.619,
+      "duration_lower_s": 4.002,
+      "duration_upper_s": 5.236
+    },
+    {
+      "id": "E12",
+      "operation": "Сворачивание и первоначальное уплотнение",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "rolling_start",
+      "end_boundary": "coating_reach",
+      "start_s": 90.9875,
+      "end_s": 113.752,
+      "duration_s": 22.7645,
+      "duration_lower_s": 22.014,
+      "duration_upper_s": 23.515
+    },
+    {
+      "id": "E13",
+      "operation": "Перенос к наружному покрытию",
+      "role": "Ф1",
+      "kind": "transfer",
+      "start_boundary": "coating_reach",
+      "end_boundary": "coating_contact",
+      "start_s": 113.752,
+      "end_s": 114.252,
+      "duration_s": 0.5,
+      "duration_lower_s": 0.0,
+      "duration_upper_s": 1.0
+    },
+    {
+      "id": "E14",
+      "operation": "Нанесение наружного покрытия",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "coating_contact",
+      "end_boundary": "coating_end",
+      "start_s": 114.252,
+      "end_s": 121.757,
+      "duration_s": 7.505,
+      "duration_lower_s": 7.005,
+      "duration_upper_s": 8.005
+    },
+    {
+      "id": "E15",
+      "operation": "Возврат на макису, повторное обжатие и торцы",
+      "role": "Ф1",
+      "kind": "manual",
+      "start_boundary": "coating_end",
+      "end_boundary": "forming_end",
+      "start_s": 121.757,
+      "end_s": 134.265,
+      "duration_s": 12.508,
+      "duration_lower_s": 12.008,
+      "duration_upper_s": 13.008
+    },
+    {
+      "id": "E16",
+      "operation": "Передача ролла на поднос",
+      "role": "Ф1",
+      "kind": "transfer",
+      "start_boundary": "forming_end",
+      "end_boundary": "tray_release",
+      "start_s": 134.265,
+      "end_s": 136.767,
+      "duration_s": 2.502,
+      "duration_lower_s": 2.002,
+      "duration_upper_s": 3.002
+    },
+    {
+      "id": "E17",
+      "operation": "Ожидание ролла на подносе",
+      "role": "product",
+      "kind": "product_wait",
+      "start_boundary": "tray_release",
+      "end_boundary": "tray_pickup",
+      "start_s": 136.767,
+      "end_s": 140.735,
+      "duration_s": 3.968,
+      "duration_lower_s": 3.468,
+      "duration_upper_s": 4.468
+    },
+    {
+      "id": "E18",
+      "operation": "Перенос на доску и подготовка ножа",
+      "role": "О1",
+      "kind": "manual",
+      "start_boundary": "tray_pickup",
+      "end_boundary": "cut_start",
+      "start_s": 140.735,
+      "end_s": 145.6215,
+      "duration_s": 4.8865,
+      "duration_lower_s": 4.503,
+      "duration_upper_s": 5.27
+    },
+    {
+      "id": "E19",
+      "operation": "Непосредственная нарезка с перестановкой частей",
+      "role": "О1",
+      "kind": "manual",
+      "start_boundary": "cut_start",
+      "end_boundary": "cut_end",
+      "start_s": 145.6215,
+      "end_s": 157.63,
+      "duration_s": 12.0085,
+      "duration_lower_s": 11.742,
+      "duration_upper_s": 12.275
+    },
+    {
+      "id": "E20",
+      "operation": "Отложить нож и уложить кусочки в контейнер",
+      "role": "О1",
+      "kind": "manual_with_partial_occlusion",
+      "start_boundary": "cut_end",
+      "end_boundary": "container_done",
+      "start_s": 157.63,
+      "end_s": 166.252,
+      "duration_s": 8.622,
+      "duration_lower_s": 8.239,
+      "duration_upper_s": 9.005
+    }
+  ],
+  "rounded_summary": [
+    {
+      "operation": "Подготовка, порция риса и нори",
+      "start_s_rounded": 0,
+      "end_s_rounded": 16,
+      "duration_s_rounded": 16
+    },
+    {
+      "operation": "Рисовый мат: раскладка, выравнивание, переворот",
+      "start_s_rounded": 16,
+      "end_s_rounded": 39,
+      "duration_s_rounded": 23
+    },
+    {
+      "operation": "Набор, взвешивание и выкладка начинки",
+      "start_s_rounded": 39,
+      "end_s_rounded": 91,
+      "duration_s_rounded": 52
+    },
+    {
+      "operation": "Сворачивание и уплотнение",
+      "start_s_rounded": 91,
+      "end_s_rounded": 114,
+      "duration_s_rounded": 23
+    },
+    {
+      "operation": "Наружное покрытие и окончательная формовка",
+      "start_s_rounded": 114,
+      "end_s_rounded": 134,
+      "duration_s_rounded": 20
+    },
+    {
+      "operation": "Передача, ожидание и подготовка к нарезке",
+      "start_s_rounded": 134,
+      "end_s_rounded": 146,
+      "duration_s_rounded": 12
+    },
+    {
+      "operation": "Нарезка",
+      "start_s_rounded": 146,
+      "end_s_rounded": 158,
+      "duration_s_rounded": 12
+    },
+    {
+      "operation": "Укладка в открытый контейнер",
+      "start_s_rounded": 158,
+      "end_s_rounded": 166,
+      "duration_s_rounded": 8
+    }
+  ],
+  "notes": [
+    "Интервалы границ — наблюдательная неопределённость между просмотренными кадрами, не статистические доверительные интервалы и не доказанная погрешность.",
+    "Три знака после запятой отражают временную шкалу видео; точность распознавания операций существенно грубее.",
+    "Первые примерно 6 секунд — подготовительные движения/паузы; из них нельзя вывести чистое активное время или причину ожидания.",
+    "Ожидание продукта на подносе не означает простой сотрудника.",
+    "Активные человеко-секунды отдельно не подтверждены: таблица размечает длительность этапов одного изделия.",
+    "Краткие перекрытия руками/корпусом и перенос камеры; состав ингредиентов и массы не угадывать.",
+    "Отсутствие длинных разрывов PTS не доказывает отсутствие монтажа или изменения скорости.",
+    "Не переносить этот единственный цикл в производственную норму, ФОТ или прогноз экономии."
+  ],
+  "comparison_protocol": [
+    "Сохранить этот baseline без перезаписи; контроль и исправления — отдельной версией.",
+    "Для оценки точности нужен тот же дубль с таймером либо независимые контрольные отметки тех же событий. Другой ролл/дубль — новое наблюдение, а не контроль точности этого.",
+    "Сопоставить смысловые границы операций, привести таймер и первый кадр к единому нулю.",
+    "По каждой границе и длительности показать исходную оценку, контроль, абсолютную разницу в секундах; для длительностей также относительную разницу.",
+    "Спорную трактовку начала операции отделять от ошибки временной шкалы."
+  ]
+}

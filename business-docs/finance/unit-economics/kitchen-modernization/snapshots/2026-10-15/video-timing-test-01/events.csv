@@ -1,0 +1,21 @@
+id,operation,role,kind,start_boundary,end_boundary,start_s,end_s,duration_s,duration_lower_s,duration_upper_s
+E01,Начальные подготовительные движения/паузы,Ф1,mixed_initial,recording_start,rice_reach,0.0,5.716666,5.716666,5.466666,5.966666
+E02,"Получение, взвешивание и формирование порции риса, нори",Ф1,handling_with_partial_occlusion,rice_reach,rice_spread,5.716666,16.215,10.498334,9.998334,10.998334
+E03,Распределение риса по нори,Ф1,manual,rice_spread,rice_spread_end,16.215,32.711333,16.496333,15.996333,16.996333
+E04,"Выравнивание, работа макису и переворот мата",Ф1,manual,rice_spread_end,mat_ready,32.711333,38.711333,6.0,5.5,6.5
+E05,Набор и взвешивание первой части начинки,Ф1,manual,mat_ready,first_filling_on_roll,38.711333,54.715333,16.004,15.504,16.504
+E06,Выкладка первой части начинки,Ф1,manual,first_filling_on_roll,vegetable_reach,54.715333,60.185,5.469667,4.969667,5.969667
+E07,"Набор, взвешивание и выкладка овощной части",Ф1,manual,vegetable_reach,piping_bag_reach,60.185,78.196333,18.011333,17.511333,18.511333
+E08,Получение кондитерского пакета,Ф1,manual,piping_bag_reach,piping_start,78.196333,80.765,2.568667,2.068667,3.068667
+E09,Нанесение содержимого пакета,Ф1,manual,piping_start,piping_end,80.765,84.767,4.002,3.502,4.502
+E10,Убрать пакет и вернуть руки к роллу,Ф1,manual,piping_end,filling_adjust,84.767,86.3685,1.6015,1.235,1.968
+E11,Поправка начинки до подъёма макису,Ф1,manual,filling_adjust,rolling_start,86.3685,90.9875,4.619,4.002,5.236
+E12,Сворачивание и первоначальное уплотнение,Ф1,manual,rolling_start,coating_reach,90.9875,113.752,22.7645,22.014,23.515
+E13,Перенос к наружному покрытию,Ф1,transfer,coating_reach,coating_contact,113.752,114.252,0.5,0.0,1.0
+E14,Нанесение наружного покрытия,Ф1,manual,coating_contact,coating_end,114.252,121.757,7.505,7.005,8.005
+E15,"Возврат на макису, повторное обжатие и торцы",Ф1,manual,coating_end,forming_end,121.757,134.265,12.508,12.008,13.008
+E16,Передача ролла на поднос,Ф1,transfer,forming_end,tray_release,134.265,136.767,2.502,2.002,3.002
+E17,Ожидание ролла на подносе,product,product_wait,tray_release,tray_pickup,136.767,140.735,3.968,3.468,4.468
+E18,Перенос на доску и подготовка ножа,О1,manual,tray_pickup,cut_start,140.735,145.6215,4.8865,4.503,5.27
+E19,Непосредственная нарезка с перестановкой частей,О1,manual,cut_start,cut_end,145.6215,157.63,12.0085,11.742,12.275
+E20,Отложить нож и уложить кусочки в контейнер,О1,manual_with_partial_occlusion,cut_end,container_done,157.63,166.252,8.622,8.239,9.005
