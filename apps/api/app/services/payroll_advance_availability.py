@@ -4,7 +4,8 @@
 «сколько сотрудник заработал бы, если бы текущий открытый период закончился сегодня»:
 
 - Окладник (админ-должности): оклад × прошло_дней / дней_в_полупериоде — чистая
-  формула без данных (см. `okladnik_earned_to_date`).
+  формула без данных (см. `okladnik_earned_to_date`). Дни — в окладной должности: смена
+  должности внутри полупериода режет оклад так же, как в ведомости администрации.
 - Мойщица: смены ≤ as_of × ставку-из-пула.
 - Производственный (повар/кассир): провизорный прогон реального недельного
   калькулятора с `period.end = as_of` по УЖЕ загруженным явкам ≤ as_of (решение:
@@ -50,10 +51,12 @@ from app.services.payroll_admin import (
     PAYOUT_MODE_ON_DEMAND,
     PAYOUT_MODE_SECOND_HALF,
     _first_half,
+    _load_admin_position_segments,
     _load_dishwasher_shift_counts,
     _load_dishwasher_shift_rate,
     _load_okladnik_payout_modes,
     _okladnik_payout_mode,
+    _PositionSegment,
     _second_half,
     load_admin_oklad,
     okladnik_earned_to_date,
@@ -200,12 +203,27 @@ async def _okladnik_earned(
         payroll_date=end,
         status="open",
     )
-    oklad = await load_admin_oklad(session, employee.id, position, end)
-    if oklad is None:
-        return Decimal("0.00"), start, end
+    # Должность — по дням полупериода, как в ведомости: повышенному до старшего курьера 08-го
+    # оклад капает с 08-го, а не с 1-го; при смене окладной должности каждая часть идёт своим
+    # окладом. Без админ-назначений в периоде — весь период по должности на дату, как раньше.
+    segments = (await _load_admin_position_segments(session, [employee.id], period)).get(
+        employee.id, []
+    )
+    parts: list[tuple[str, _PositionSegment | None]] = [
+        (segment.position, segment)
+        for segment in segments
+        if segment.position not in dishwasher_positions()
+    ] or [(position, None)]
     modes = await _load_okladnik_payout_modes(session)
-    mode = _okladnik_payout_mode(modes, position)
-    earned = okladnik_earned_to_date(oklad, mode, employee, period, as_of)
+    earned = Decimal("0.00")
+    for part_position, segment in parts:
+        oklad = await load_admin_oklad(
+            session, employee.id, part_position, segment.end if segment is not None else end
+        )
+        if oklad is None:
+            continue
+        mode = _okladnik_payout_mode(modes, part_position)
+        earned += okladnik_earned_to_date(oklad, mode, employee, period, as_of, segment=segment)
     return earned, start, end
 
 

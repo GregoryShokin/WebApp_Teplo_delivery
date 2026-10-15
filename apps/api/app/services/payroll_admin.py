@@ -1025,13 +1025,18 @@ def okladnik_earned_to_date(
     employee: Employee,
     period: PayrollPeriod,
     as_of: date,
+    *,
+    segment: _PositionSegment | None = None,
 ) -> Decimal:
     """Заработанная часть оклада на дату `as_of` внутри полупериода (для аванса).
 
     Возвращает база-оклада, пропорциональную календарным дням от начала периода до
     `as_of`. Это «в пределах заработанного» — потолок аванса (право A) для окладника.
+    `segment` — дни в должности, если должность сменилась внутри полупериода.
     """
-    base, proration = _okladnik_base_pay(oklad, mode, employee, period, as_of=as_of)
+    base, proration = _okladnik_base_pay(
+        oklad, mode, employee, period, as_of=as_of, segment=segment
+    )
     if proration.get("on_demand"):
         # on_demand: к выплате база = 0, но ЗАРАБОТАНО = прорейт-начисление (в долг).
         # Это потолок «в пределах заработанного» для аванса — иначе он схлопнулся бы в 0.
