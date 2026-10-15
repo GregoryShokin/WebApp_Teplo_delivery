@@ -1,0 +1,123 @@
+{
+  "as_of": "2026-10-15",
+  "base_month": "2026-08",
+  "mode": "preliminary_parameters_owner_authorized",
+  "baseline_status": "unclosed_working_base",
+  "baseline_known_profit_rub": -116175.67,
+  "whole_rolls_month": 7659,
+  "orders_month": 1819,
+  "theoretical_rice_batches_month_not_measured": 185.44585017388854,
+  "observed_full_cycle_seconds": [
+    166.252,
+    146.263
+  ],
+  "profiles": [
+    {
+      "id": "cautious",
+      "label": "Осторожный",
+      "status": "assumption_not_measured_machine_performance",
+      "mat_active_seconds_after": 20,
+      "cut_active_seconds_per_roll_after": 9,
+      "forming_person_hours_released": 20.424000000000003,
+      "dispatch_person_hours_released": 3.4040000000000004,
+      "mixer_person_hours_credited": 0.0,
+      "extra_service_person_hours": 5.166666666666667,
+      "net_person_hours_released": 18.661333333333335,
+      "payroll_savings_rub_same_schedule": 0,
+      "whole_roll_elapsed_seconds_after": null,
+      "kitchen_peak_capacity_rolls_hour": null
+    },
+    {
+      "id": "working",
+      "label": "Рабочий",
+      "status": "assumption_not_measured_machine_performance",
+      "mat_active_seconds_after": 12,
+      "cut_active_seconds_per_roll_after": 6,
+      "forming_person_hours_released": 34.040000000000006,
+      "dispatch_person_hours_released": 8.510000000000002,
+      "mixer_person_hours_credited": 0.0,
+      "extra_service_person_hours": 5.166666666666667,
+      "net_person_hours_released": 37.38333333333335,
+      "payroll_savings_rub_same_schedule": 0,
+      "whole_roll_elapsed_seconds_after": null,
+      "kitchen_peak_capacity_rolls_hour": null
+    },
+    {
+      "id": "optimistic",
+      "label": "Оптимистичный",
+      "status": "assumption_not_measured_machine_performance",
+      "mat_active_seconds_after": 8,
+      "cut_active_seconds_per_roll_after": 3,
+      "forming_person_hours_released": 40.848000000000006,
+      "dispatch_person_hours_released": 13.616000000000001,
+      "mixer_person_hours_credited": 0.0,
+      "extra_service_person_hours": 5.166666666666667,
+      "net_person_hours_released": 49.29733333333334,
+      "payroll_savings_rub_same_schedule": 0,
+      "whole_roll_elapsed_seconds_after": null,
+      "kitchen_peak_capacity_rolls_hour": null
+    }
+  ],
+  "financial_handoff": {
+    "payroll_delta_same_schedule_rub": 0,
+    "sales_growth_assumed_orders": 0,
+    "quality_or_food_loss_savings_credited_rub": 0,
+    "equipment_cost_rub_month_from_components": null,
+    "profit_same_orders_from_components_rub": null,
+    "missing_equipment_cost_inputs": [
+      "incremental_kwh_month",
+      "maintenance_rub_month",
+      "consumables_rub_month",
+      "capex_landed_rub",
+      "useful_life_months"
+    ],
+    "budget_sensitivities": [
+      {
+        "all_in_incremental_equipment_cost_rub_month": 5000,
+        "status": "budget_sensitivity_not_vendor_quote_or_forecast",
+        "profit_same_orders_same_schedule_rub": -121175.67,
+        "additional_operating_gain_to_cover_equipment_rub": 5000,
+        "gap_to_target_rub": 621175.67
+      },
+      {
+        "all_in_incremental_equipment_cost_rub_month": 10000,
+        "status": "budget_sensitivity_not_vendor_quote_or_forecast",
+        "profit_same_orders_same_schedule_rub": -126175.67,
+        "additional_operating_gain_to_cover_equipment_rub": 10000,
+        "gap_to_target_rub": 626175.67
+      },
+      {
+        "all_in_incremental_equipment_cost_rub_month": 15000,
+        "status": "budget_sensitivity_not_vendor_quote_or_forecast",
+        "profit_same_orders_same_schedule_rub": -131175.66999999998,
+        "additional_operating_gain_to_cover_equipment_rub": 15000,
+        "gap_to_target_rub": 631175.6699999999
+      }
+    ]
+  },
+  "limitations": [
+    "32/11 секунд до автоматизации — допущения об активном труде по двум видео, не производственная норма.",
+    "До: только ручная нарезка; после: загрузка+рез+выгрузка на ролл. Подготовка ножа не вычтена — границы предстоит уточнить.",
+    "Время нарезки после включает долю загрузки/выгрузки и самого реза на фактический ролл партии.",
+    "Доля подходящих роллов и обслуживание машин — заменяемые допущения.",
+    "Полный цикл, пик и возможность снять смены не выводятся из суммы человеко-секунд.",
+    "0 экономии ФОТ/роста спроса/потерь — условия этого сценария, не доказанное отсутствие будущего эффекта.",
+    "Бюджет оборудования включает энергию, сервис, расходники и амортизацию; не прибавлять их повторно.",
+    "Бюджетная сетка независима от скоростей; неизвестные комплектующие расходов не заменены нулями.",
+    "Месячная прибыль унаследовала незакрытый статус августовской базы; прочие цеха/расходы уже в ней."
+  ],
+  "source_manifest": [
+    {
+      "file": "inputs-preliminary-2026-10-15.json",
+      "sha256": "52af1de176c30b069ed332845dfb28f22e938e6bdbe35956c27ec52a5319e2ed"
+    },
+    {
+      "file": "inputs-2026-08-base-updated-2026-10-15.json",
+      "sha256": "512faee6a2a64cdcfaf5d3e11c51a1bb538b27680f6a119ff17711199fad23c2"
+    },
+    {
+      "file": "baseline-reconciliation.json",
+      "sha256": "3ed385f1753f956ceda1f43f9d90aa97248c5cd70489a60ca8b026aebe76118b"
+    }
+  ]
+}
