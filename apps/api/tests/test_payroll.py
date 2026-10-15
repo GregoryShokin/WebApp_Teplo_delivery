@@ -1887,12 +1887,29 @@ class ShiftLedgerAttendanceScalarResult:
 
 
 class PayrollLineRouteFakeSession:
-    def __init__(self, payout_rows: list[tuple[uuid.UUID, Decimal]]) -> None:
+    """Фейк для GET /runs/{id}/lines: выплаты из леджера депозитов и проводки выплат.
+
+    Маршрут делает три запроса: выплаты из леджера депозитов (``deposit_transaction``),
+    проводки выплат по статье депозита (``payroll_payout_booking``, три колонки) и легаси-
+    кандидатов полной выплаты (``payroll_line`` × ``payroll_payment``). Каждому — свой ответ.
+    """
+
+    def __init__(
+        self,
+        payout_rows: list[tuple[uuid.UUID, Decimal]],
+        booking_rows: list[tuple[uuid.UUID, int, Decimal]] | None = None,
+    ) -> None:
         self.payout_rows = payout_rows
+        self.booking_rows = booking_rows or []
         self.statements: list[Any] = []
 
     async def execute(self, stmt: Any) -> Any:
         self.statements.append(stmt)
+        sql = str(stmt)
+        if "FROM payroll_payout_booking" in sql:
+            return PayrollLineExecuteResult(self.booking_rows)
+        if "FROM payroll_line" in sql:
+            return PayrollLineExecuteResult([])
         return PayrollLineExecuteResult(self.payout_rows)
 
 
@@ -5424,7 +5441,10 @@ def test_get_lines_response_enriches_deposit_fields(monkeypatch: pytest.MonkeyPa
         ndfl_withheld=Decimal("130.00"),
         components={"days": [], "deposit_withholding": "750.25", "adjustments": {}},
     )
-    session = PayrollLineRouteFakeSession([(employee_id, Decimal("1250.50"))])
+    session = PayrollLineRouteFakeSession(
+        [(employee_id, Decimal("1250.50"))],
+        booking_rows=[(employee_id, 1, Decimal("400.00"))],
+    )
 
     async def override_session():
         yield session
@@ -5448,9 +5468,12 @@ def test_get_lines_response_enriches_deposit_fields(monkeypatch: pytest.MonkeyPa
     payload = response.json()
     assert payload[0]["deposit_withholding"] == 750.25
     assert payload[0]["deposit_payout"] == 1250.5
+    # Выплаченный депозит по проводкам — отдельное поле, не путать с леджером депозитов.
+    assert payload[0]["deposit_paid_amount"] == 400
     assert payload[0]["ndfl_withheld"] == 130
     assert payload[0]["ndfl_deduction"] == 130
-    assert len(session.statements) == 1
+    # Леджер депозитов, проводки выплат и легаси-кандидаты полной выплаты.
+    assert len(session.statements) == 3
 
 
 def test_get_lines_response_defaults_deposit_payout_and_ndfl(

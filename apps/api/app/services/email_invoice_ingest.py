@@ -856,7 +856,12 @@ async def confirm_intake_with_review(
         if inv is not None:
             if document_kind and _doc_kind_from_recognition(document_kind) != inv.doc_kind:
                 raise ValueError("Тип уже созданного документа нельзя менять при повторном разборе")
-            if inv.draft_id is not None or inv.payment_status != "unpaid":
+            # Ушедший в банк документ и оплаченный счёт заморожены: правка разошлась бы с
+            # платёжкой. Закрывающий без банк-черновика править можно и после зачёта аванса —
+            # его зачёты пересобирает _resync_closing_after_edit (рост суммы → остаток в КЗ).
+            if inv.draft_id is not None or (
+                inv.doc_kind != "closing" and inv.payment_status != "unpaid"
+            ):
                 changed = (
                     (amount is not None and Decimal(amount) != inv.amount)
                     or (
