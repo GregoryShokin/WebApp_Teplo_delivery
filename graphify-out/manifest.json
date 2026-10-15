@@ -2910,9 +2910,9 @@
     "semantic_hash": "cf3a9f89c33ec0964712166d861b7cb7"
   },
   "apps/api/app/services/email_invoice_ingest.py": {
-    "mtime": 1791754056.265085,
-    "ast_hash": "3177b9a35041c6476209ad5244d3ebdd",
-    "semantic_hash": ""
+    "mtime": 1792069476.2132752,
+    "ast_hash": "48e91d2ddb3db3255f9488780164c238",
+    "semantic_hash": "48e91d2ddb3db3255f9488780164c238"
   },
   "apps/api/app/services/employee_assignments.py": {
     "mtime": 1780926254.528712,
@@ -4885,9 +4885,9 @@
     "semantic_hash": "b6334b2c1361d286daae34de60530e79"
   },
   "apps/api/tests/test_payroll.py": {
-    "mtime": 1791278428.3517327,
-    "ast_hash": "1d2884251fb3816834cbd04b86f45aa9",
-    "semantic_hash": ""
+    "mtime": 1792069476.2900555,
+    "ast_hash": "d13870157f3e0dcace8c9365d20c1ccc",
+    "semantic_hash": "d13870157f3e0dcace8c9365d20c1ccc"
   },
   "apps/api/tests/test_payroll_admin.py": {
     "mtime": 1792058555.2233794,
