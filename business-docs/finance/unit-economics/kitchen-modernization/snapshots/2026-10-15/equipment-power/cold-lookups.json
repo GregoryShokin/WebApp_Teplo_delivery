@@ -1,0 +1,208 @@
+{
+  "as_of": "2026-10-15",
+  "scope": "Черникова: холодильное оборудование по моделям, переданным родительским агентом",
+  "method": "Веб-проверка первичных карточек и документов производителей. Документ производителя на стороннем хостинге отделён от карточки дилера. Текущий каталог не подтверждает ревизию установленного старого прибора; шильдик конкретного экземпляра имеет приоритет. Дополнительно визуально прочитаны исходные HEIC шильдиков трёх AUCMA, двух частей COOLEQ и HICOLD; они имеют приоритет над каталогами. HEIC декодированы heif-convert, копии в /tmp только для просмотра, исходники не изменялись.",
+  "general_caveat": "кВт — электрическая мощность, кВт·ч — энергия. Для компрессорного оборудования не умножать паспортные кВт на 24 часа как фактический расход: компрессор цикличен, расход зависит от температуры, загрузки, открывания дверей и оттайки. Паспортные кВт·ч/сутки — лабораторный ориентир, не замер Тепла. Не переводить номинальный ток в активные кВт без коэффициента мощности.",
+  "items": [
+    {
+      "model": "POLAIR TM2GN-G",
+      "quantity": 2,
+      "kw": 0.3,
+      "kw_semantics": "Потребляемая мощность, не более, текущая модель 1050419d, R290",
+      "kwh_day": 2.7,
+      "kwh_day_semantics": "Расход электроэнергии в сутки, не более, паспортный показатель",
+      "source_type": "manufacturer_product_page",
+      "url": "https://www.polair.com/products/stoly-kholodilnye/tm2gn-g/",
+      "source_fields": [
+        "Потребляемая мощность, Вт, не более: 300",
+        "Расход электроэнергии в сутки, кВт/ч, не более: 2,7"
+      ],
+      "status": "model_spec_verified_installed_revision_unverified",
+      "note": "Не путать с TM2GN-G гранит (350 Вт), TM2GN-33-G и прошлыми ревизиями. В старом руководстве POLAIR на хостинге дилера TM2GN-G указан с R134a и 350 Вт; сверить хладагент/артикул/шильдик фактических столов.",
+      "revision_conflict_url": "https://www.whitegoods.ru/upload/iblock/8e0/o4puceg8mrttunaj026gc00xckasmfc0.pdf"
+    },
+    {
+      "model": "POLAIR TM3GN-G",
+      "quantity": 2,
+      "kw": 0.32,
+      "kw_semantics": "Потребляемая мощность, не более, текущая модель 1050420d, R290",
+      "kwh_day": null,
+      "source_type": "manufacturer_product_page",
+      "url": "https://www.polair.com/products/stoly-kholodilnye/tm3gn-g/",
+      "source_fields": [
+        "Потребляемая мощность, Вт, не более: 320"
+      ],
+      "status": "model_spec_verified_installed_revision_unverified",
+      "note": "Официальная карточка не содержит кВт·ч/сутки. В старой документации POLAIR на стороннем хостинге — 350 Вт и R134a; текущий каталог не переносить автоматически на старую ревизию.",
+      "revision_conflict_url": "https://www.whitegoods.ru/upload/iblock/8e0/o4puceg8mrttunaj026gc00xckasmfc0.pdf"
+    },
+    {
+      "model": "CARBOMA A40 SM 1,2 0430 / VT2-G",
+      "quantity": 2,
+      "kw": 0.2,
+      "kw_semantics": "Потребляемая мощность серии A40 SM 1,2 по руководству изготовителя",
+      "kwh_day": 3.0,
+      "kwh_day_semantics": "Не более, по руководству; не измеренный расход",
+      "source_type": "manufacturer_manual_on_dealer_host",
+      "url": "https://www.trapeza.kg/files/29977EC0.pdf",
+      "source_fields": [
+        "РЭ ОАО Компания Полюс, серия A40, таблица1, печатная страница3: A40 SM 1,2 — 0,2кВт; 3,0кВт·ч/сут"
+      ],
+      "status": "manufacturer_document_verified_installed_revision_unverified",
+      "note": "Руководство содержит адрес otk@carboma.com и декларацию2023–2028. Исполнения с крышкой и стеклом в этой таблице также0,2кВт. Связка номера0430/VT2-G с конкретным экземпляром требует шильдика; у дилеров встречается0,12кВт, не считать его подтверждённым. Автоматическую оттайку/циклы учесть; паспортная энергия не равна0,2×24.",
+      "manufacturer_family_catalog_url": "https://www.polair.com/upload/iblock/e8d/03ebkouk9oit93o7umbjt2fjsy8x3mxb/Katalog-Polair-2026_03_web.pdf"
+    },
+    {
+      "model": "CARBOMA A40 SM 1,6 0430 / VT3-G",
+      "quantity": 1,
+      "kw": 0.2,
+      "kw_semantics": "Потребляемая мощность серии A40 SM 1,6 по руководству изготовителя",
+      "kwh_day": 3.2,
+      "kwh_day_semantics": "Не более, по руководству; не измеренный расход",
+      "source_type": "manufacturer_manual_on_dealer_host",
+      "url": "https://www.trapeza.kg/files/29977EC0.pdf",
+      "source_fields": [
+        "РЭ ОАО Компания Полюс, серия A40, таблица1, печатная страница4: A40 SM 1,6 — 0,2кВт; 3,2кВт·ч/сут"
+      ],
+      "status": "manufacturer_document_verified_installed_revision_unverified",
+      "note": "В таблице размер1630×400; та же мощность для варианта с крышкой и стеклом. Суффикс0430/VT3-G и год установленного экземпляра сверить. Суточный расход паспортный, не измеренный."
+    },
+    {
+      "model": "HICOLD / Промтехоснащение SLE1-111GN (1/3)",
+      "quantity": 1,
+      "inventory_kw": 0.22,
+      "kw": 0.22,
+      "kw_semantics": "Потр. мощн.220Вт на шильдике конкретного прибора",
+      "kwh_day": null,
+      "source_type": "local_manufacturer_nameplate_photo",
+      "catalog_url": "https://hicold.ru/assets/catalog/hicold_catalog_2025.pdf",
+      "source_fields": [
+        "SLE1-111GN (1/3)",
+        "Потр.мощн.220Вт",
+        "Сер.номер0800000404613",
+        "Дата12.10.2020"
+      ],
+      "status": "installed_nameplate_verified_inventory_model_typo",
+      "note": "По первичному фото модель SLE1-111GN, а не SLE1-11GN: в описи пропущена единица. Сохраняем0,22кВт. Номер в описи0404643 также отличается от прочитанного0404613. Веб-карточка прежнего поля URL относится к ошибочной модели; каталог2025 подтверждает220Вт для фактической111GN. Суточная энергия на шильдике не указана.",
+      "inventory_model": "HICOLD SLE1-11GN (1/3)",
+      "source_paths": [
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1025.HEIC"
+      ],
+      "incorrect_model_url": "https://hicold.ru/katalog/069654_holodilnoe-oborudovanie/000088_stoli-holodilnie-dlya-salatov/281716_stol-ohlajdaemiy-dlya-salatov-%28saladetta%29-hicold-sle1-11gn.html",
+      "url": "https://hicold.ru/assets/catalog/hicold_catalog_2025.pdf"
+    },
+    {
+      "model": "COOLEQ PZ2610TN-VRX380 (комплект стол + витрина)",
+      "quantity": 1,
+      "inventory_kw": 0.5,
+      "kw": 0.388,
+      "kwh_day": null,
+      "source_type": "local_manufacturer_nameplate_photos",
+      "url": "https://www.rp.ru/pdf/cooleq/cooleq.pdf",
+      "source_fields": [
+        "IMG_1006: Мощность180Вт; S/N D2206R622VRX2038F393; R600a/38g",
+        "IMG_1007: Мощность208Вт; S/N D2206R603PZ261T063; R290/108g"
+      ],
+      "candidate_specs": [
+        {
+          "kw": 0.5,
+          "url": "https://www.rp.ru/pdf/cooleq/cooleq.pdf",
+          "note": "Каталог с обозначением бренда и www.cooleq.ru, размещён rp.ru. Совпадает с описью; старый выпуск."
+        },
+        {
+          "kw": 0.208,
+          "url": "https://www.rp.ru/pdf/cooleq/COOLEQ_catalog_2025.pdf",
+          "note": "Каталог2025, печатнаястр34: составная модель PZ2610TN-VRX380,0,208кВт; возможная новая ревизия/ошибка каталога, не объяснено."
+        }
+      ],
+      "status": "both_installed_component_nameplates_verified",
+      "note": "Опись0,50кВт — каталожное значение, не фактические шильдики. Установленный комплект:0,180+0,208=0,388кВт. Каталог2025 с0,208кВт отражает только нижний стол, а не оба потребителя. Для расчёта лучше две строки с разным циклом компрессора; комплект не считать вторично.",
+      "kw_semantics": "Сумма двух шильдиков комплектующих: стол208Вт + витрина180Вт",
+      "source_paths": [
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1006.HEIC",
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1007.HEIC"
+      ],
+      "components": [
+        {
+          "name": "Витрина",
+          "kw": 0.18,
+          "source_path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1006.HEIC"
+        },
+        {
+          "name": "Нижний стол",
+          "kw": 0.208,
+          "source_path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1007.HEIC"
+        }
+      ]
+    },
+    {
+      "model": "AUCMA BD-560",
+      "quantity": 3,
+      "inventory_kw": 0.305,
+      "kw": 0.305,
+      "kwh_day": 2.8,
+      "source_type": "local_manufacturer_nameplate_photos",
+      "url": "https://gkth.ru/catalog/aucma/lar_morozilnyy_aucma_bd_560.php",
+      "source_fields": [
+        "Rated Power Input305W",
+        "Energy Consumption2.80kW·h/24h"
+      ],
+      "status": "three_installed_nameplates_verified",
+      "note": "Все три единицы прочитаны:18.03.2021,15.06.2021,18.06.2021. Для3шт номинальная мощность0,915кВт; паспортная энергия8,4кВт·ч/сут. Первый шильдикR134a/205g, два июньскихR290/100g, в отличие от общегоR290вописи.2,8кВт·ч/сут нельзя считать2,8кВт. Фактический расход зависит от режима. Интернет-дилерское значение теперь лишь дополнительный источник, первичны локальные фото.",
+      "kw_semantics": "Rated Power Input305W на каждом из трёх шильдиков",
+      "kwh_day_semantics": "Energy Consumption2.80kW·h/24h на каждом из трёх шильдиков, номинальный суточный показатель",
+      "source_paths": [
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1030.HEIC",
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1082.HEIC",
+        "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/IMG_1083.HEIC"
+      ]
+    },
+    {
+      "model": "МХМ Капри 0,7М",
+      "quantity": 1,
+      "kw": null,
+      "kwh_day": 4.7,
+      "kwh_day_semantics": "Потребление электроэнергии за сутки, не более, паспортный показатель производителя",
+      "source_type": "manufacturer_product_page",
+      "url": "https://www.mariholod.com/product/holodilnyj-shkaf-kapri-07m/",
+      "source_fields": [
+        "Потребление электроэнергии за сутки (не более), кВт*ч:4,7",
+        "Номинальная мощность ламп, Вт:2,4"
+      ],
+      "status": "daily_energy_verified_total_input_kw_not_published",
+      "note": "2,4Вт — ТОЛЬКО подсветка. Полная электрическая мощность холодильника на странице не указана. Номинальный ток2,1А не переводить в активные Вт без cosφ. Суточные4,7кВт·ч пригодны только как паспортный ориентир."
+    },
+    {
+      "model": "POZIS FH-250-1",
+      "quantity": 1,
+      "kw": null,
+      "kwh_day": 0.93,
+      "kwh_day_semantics": "Не более, при окружающей температуре25°C, лабораторные условия",
+      "source_type": "manufacturer_manual_on_third_party_host",
+      "url": "https://wwwpozis.ru/files/37_file_to_250-1255-1256-1258-1.pdf",
+      "source_fields": [
+        "Руководство POZIS Professional, печатнаястр4: FH250-1; суточный расход при25°C0,93кВт·ч"
+      ],
+      "status": "manufacturer_document_daily_energy_verified_host_not_manufacturer_confirmed",
+      "note": "Документ изготовителя, но доменwwwpozis.ru не удостоверен как домен изготовителя. В таблице FH250 (стекло)1,21кВт·ч/сут, FH250-1(глухая крышка)0,93 — не путать. Электрические кВт не указаны; ток0,86А не даёт активную мощность без cosφ."
+    },
+    {
+      "model": "POLAIR двухдверный шкаф (предположительно CM114-S или аналог)",
+      "kw": null,
+      "kwh_day": null,
+      "url": null,
+      "source_type": "unidentified_model",
+      "status": "nameplate_required",
+      "note": "Предположение модели не подтверждено: характеристикиCM114-S не переносить на этот актив."
+    },
+    {
+      "model": "POLAIR однодверные шкафы (предположительно CM105-S/CM107-S)",
+      "kw": null,
+      "kwh_day": null,
+      "url": null,
+      "source_type": "unidentified_model",
+      "status": "nameplate_required",
+      "note": "Модели не подтверждены: характеристикиCM105-S/CM107-S не переносить на эти активы."
+    }
+  ]
+}

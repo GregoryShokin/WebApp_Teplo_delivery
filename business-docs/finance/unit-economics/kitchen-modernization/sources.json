@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "as_of": "2026-10-14",
+  "version": 2,
+  "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
   "private_archive_manifest": "archive-manifest.json",
@@ -63,10 +63,51 @@
       "files": [
         "model/model_before_after.py",
         "model/inputs-template.json",
-        "model/inputs-2026-08-base.json"
+        "model/inputs-2026-08-base.json",
+        "model/inputs-2026-08-base-updated-2026-10-15.json"
       ],
       "checks": "процентный фонд авг по модели 121 718,68 = расчётный в ведомости 121 718,66 (округление выручки)",
       "missing_inputs_2026_10_14": 38
+    },
+    {
+      "id": "owner_updates_2026_10_15",
+      "status": "direct_owner_input",
+      "files": [
+        "snapshots/2026-10-15/owner-updates.json",
+        "snapshots/2026-10-15/energy-and-quality-method.md"
+      ],
+      "gas_august_rub": 0,
+      "sales_vat_august_rub": 0,
+      "credit_overdraft_interest_august_rub": 0
+    },
+    {
+      "id": "august_gap_audit_2026_10_15",
+      "files": [
+        "snapshots/2026-10-15/gaps/notes.md",
+        "snapshots/2026-10-15/gaps/gap-table.json",
+        "snapshots/2026-10-15/cost-registry-august-updated.json",
+        "snapshots/2026-10-15/baseline-reconciliation.json",
+        "snapshots/2026-10-15/gaps/evidence-manifest.json"
+      ],
+      "status": "see_dated_audit_not_closed_pnl",
+      "owner_closures": "Газ, НДС с продаж, проценты по кредитам/овердрафту августа = 0, прямое подтверждение 15.10.2026."
+    },
+    {
+      "id": "equipment_power_2026_10_15",
+      "files": [
+        "snapshots/2026-10-15/equipment-power/README.md",
+        "snapshots/2026-10-15/equipment-power/equipment-power.csv",
+        "snapshots/2026-10-15/equipment-power/equipment-power.json",
+        "snapshots/2026-10-15/equipment-power/manifest.json",
+        "snapshots/2026-10-15/equipment-power/scope-exclusions.json",
+        "snapshots/2026-10-15/equipment-power/cold-lookups.json"
+      ],
+      "status": "rated_power_sources_not_measured_energy",
+      "inventory_date": "2026-07-30",
+      "groups": 43,
+      "inventory_units": 59,
+      "rated_power_groups": 24,
+      "mode_or_daily_energy_only_groups": 3
     }
   ],
   "previous_work": {
@@ -74,5 +115,13 @@
     "branch": "codex/teplo-unit-economics-skill",
     "merged_to_main": false,
     "use": "наводка; цифры перепроверены 14.10"
-  }
+  },
+  "base_snapshot_as_of": "2026-10-14",
+  "private_archive_additions": [
+    {
+      "as_of": "2026-10-15",
+      "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/gaps",
+      "manifest": "snapshots/2026-10-15/gaps/evidence-manifest.json"
+    }
+  ]
 }

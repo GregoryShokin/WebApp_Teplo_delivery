@@ -1,0 +1,207 @@
+{
+  "as_of": "2026-10-15",
+  "baseline_month": "2026-08",
+  "rows": [
+    {
+      "item": "Газ за август 2026",
+      "known_amount": "0.00 RUB",
+      "included_or_not": "Было неизвестно; теперь аналитический ноль по подтверждению владельца 15.10.2026.",
+      "unknown": null,
+      "action_to_close": "Поставить подтверждённый ноль в аналитическом снимке. Сентябрь/отопительный сезон автоматически не обнулять.",
+      "source": [
+        "Сообщение владельца 15.10.2026"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed"
+    },
+    {
+      "item": "НДФЛ, взносы работников и травматизм за август",
+      "known_amount": "20013.93 RUB",
+      "included_or_not": "Уже включены в P&L: 6 318 + 13 595,93 + 100 = 20 013,93 ₽.",
+      "unknown": null,
+      "action_to_close": "Не добавлять второй раз и не обозначать как отсутствующий налог.",
+      "source": [
+        "live-gaps-private.json:tax_months",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/pnl-snapshots.json:2026-08-01 payroll_taxes",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/apps/api/app/services/pnl/sources/taxes.py:30-66"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed"
+    },
+    {
+      "item": "УСН и фиксированный взнос ИП в месячном P&L",
+      "known_amount": "201728.34 RUB",
+      "included_or_not": "Уже включены: 6% от 3 282 430,64 ₽ плюс 57 390 / 12 ₽.",
+      "unknown": null,
+      "action_to_close": "Снять формулировку «режим неизвестен»: в коде записано подтверждение УСН «доходы» владельцем 03.08.2026. Сверка допвзноса и вычета описана отдельно.",
+      "source": [
+        "taxes.py:11-23,90-120",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/apps/api/app/services/taxes/engine.py:88-150",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/pnl-snapshots.json"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed_as_implemented_model"
+    },
+    {
+      "item": "Дополнительный взнос ИП 1% и уменьшение УСН на взносы",
+      "known_amount": {
+        "august_extra_accrual_candidate_rub": "32824.31",
+        "q1_2026_actual_payment_rub": "116360.00",
+        "q2_2026_actual_payment_rub": "105628.00"
+      },
+      "included_or_not": "Допвзнос 1% и уменьшение УСН на взносы отсутствуют в месячном P&L.",
+      "unknown": "Нет зафиксированного налогового расчёта tax_period_close. Налоговый регистр выручки содержит январь–июнь; июль–август есть в P&L. Нет сверенного месячного распределения вычетов.",
+      "action_to_close": "Агенту свести кумулятивную базу из имеющихся данных. Сверить с расчётом бухгалтера по УСН и 1% за 9 месяцев с базой и вычетами либо с данными на конец июля/августа. Платежи q1 и h1 — отдельные реальные переводы за I и II кварталы 2026, а не начисление августа. Оценку 32 824,31 ₽ не применять без парной сверки вычета.",
+      "source": [
+        "live-gaps-private.json:tax_close,tax_revenue_months,tax_payments",
+        "live-tax-payments-private.json:extra_payments",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/apps/api/app/services/pnl/sources/taxes.py:19-23,114-120",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/apps/api/app/services/taxes/repository.py:169-220"
+      ],
+      "needs_owner_answer": true,
+      "scope": "August baseline",
+      "status": "amount_reconciliation_needed"
+    },
+    {
+      "item": "НДС на собственную реализацию",
+      "known_amount": "0.00 RUB",
+      "included_or_not": "Отдельный НДС с продаж августа не начисляется по подтверждению владельца.",
+      "unknown": null,
+      "action_to_close": "Закрыто для рабочей экономики августа по прямому ответу владельца «ндс нет». На будущие периоды автоматически не переносить.",
+      "source": [
+        "owner-updates.json:august_sales_vat, прямой ответ 15.10.2026"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed_owner_confirmed"
+    },
+    {
+      "item": "Бензин 27.08.2026",
+      "known_amount": {
+        "expense_rub": "3960.00",
+        "reimbursement_rub": "1320.00",
+        "net_expense_rub": "2640.00"
+      },
+      "included_or_not": "Оба движения отсутствуют в исходном P&L: у статей нет активного правила разнесения.",
+      "unknown": null,
+      "action_to_close": "Добавить в аналитический слой расход 3 960 ₽ и компенсацию −1 320 ₽ отдельными строками согласно текущей классификации. БД и исходный P&L не менять.",
+      "source": [
+        "live-gaps-private.json:unmapped",
+        "cashflow_transaction out5af74aa9-f068-4db3-ba9d-8750573b7739 / in12d049ff-54c1-4306-9a99-e044a15d5031"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed_for_analytical_layer"
+    },
+    {
+      "item": "Проценты и комиссия по кредитам/овердрафту августа",
+      "known_amount": "0.00 RUB",
+      "included_or_not": "Владелец подтвердил отсутствие процентов за август; в проверенном банке начисления/списания не обнаружены; overdraft_fee уже zero_confirmed.",
+      "unknown": null,
+      "action_to_close": "Зафиксирован ноль августа в аналитическом реестре.",
+      "source": [
+        "live-gaps-private.json:loan_cash_details,loan_bank",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/pnl-snapshots.json:loan_interest,overdraft_fee",
+        "owner-updates.json:august_credit_interest, прямой ответ 15.10.2026"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed_owner_confirmed"
+    },
+    {
+      "item": "Сентябрьский овердрафт",
+      "known_amount": "9 970,79 ₽ получено 04.09 и полностью погашено 06–07.09.",
+      "included_or_not": "Тело долга, не расход августа и не проценты.",
+      "unknown": null,
+      "action_to_close": "Исправить прежнее утверждение об отсутствии кредитных движений в июле–сентябре. Не добавлять тело долга в P&L.",
+      "source": [
+        "live-gaps-private.json:loan_cash_details,loan_bank"
+      ],
+      "needs_owner_answer": false,
+      "scope": "September reference",
+      "status": "closed"
+    },
+    {
+      "item": "Яндекс Еда: акт за август",
+      "known_amount": "12 381,21 ₽, включая НДС 2 232,68 ₽.",
+      "included_or_not": "Уже включён в аналитическую прибыль −113 535,67 ₽; исходный P&L пропускает из-за отсутствующей статьи.",
+      "unknown": null,
+      "action_to_close": "Не вычитать акт повторно. Техническое исправление разнесения — отдельная учётная задача.",
+      "source": [
+        "s6_yandex.json:BFA-A0036079423,2026-08-31",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/notes.md:исходныйОПиУ ислойпоправок"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "closed_for_analytical_layer"
+    },
+    {
+      "item": "Яндекс Еда: полнота комиссии/удержаний",
+      "known_amount": {
+        "iiko_channel_sales_rub": "71566.00",
+        "act_to_sales_ratio_pct": "17.30",
+        "owner_rate_pct": "25",
+        "bank_receipts_aug_rub": "53666.23"
+      },
+      "included_or_not": "Подтверждён акт 12 381,21 ₽; разницу до 25% автоматически не начислять.",
+      "unknown": "17,3% — отношение суммы акта к продажам iiko, не проверенный тариф. Месячные поступления банка имеют другую временную границу.",
+      "action_to_close": "Получить отчёт взаиморасчётов/реализации Яндекс Еды за август: база комиссии, скидки и компенсации, доставка и прочие удержания, начальный и конечный остаток. Сверить с УПД, заказами и банком. Тариф новых заказов зафиксировать отдельно.",
+      "source": [
+        "s6_yandex.json",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/channel-fees.json",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/orders-and-thresholds.json"
+      ],
+      "needs_owner_answer": false,
+      "scope": "August baseline",
+      "status": "specific_reconciliation_needed"
+    },
+    {
+      "item": "Упаковка",
+      "known_amount": "35 987,61 ₽ отдельных строк плюс часть упаковки в техкартах.",
+      "included_or_not": "В августовской базе расходы учтены; полной нормы на новый заказ нет.",
+      "unknown": "Расход упаковки на конкретный SKU/сет/заказ. Это не отсутствующий августовский счёт.",
+      "action_to_close": "Разложить упаковку по SKU и заказам, отмечая уже включённое в техкарты. Не прибавлять повторно к food cost.",
+      "source": [
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/cost-registry.json:Упаковка"
+      ],
+      "needs_owner_answer": false,
+      "scope": "Product/scenario parameters",
+      "status": "baseline_included_scenario_missing"
+    },
+    {
+      "item": "Эквайринг и Starter",
+      "known_amount": {
+        "acquiring_rub": "46092.57",
+        "starter_rub": "77171.00"
+      },
+      "included_or_not": "Суммы августа включены в базу.",
+      "unknown": "Для нового заказа нужны тариф эквайринга, минимальный платёж и точная база 3% Starter.",
+      "action_to_close": "Для базового месяца использовать фактические суммы; для сценария сверить договор и детализацию.",
+      "source": [
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/channel-fees.json",
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/cost-registry.json"
+      ],
+      "needs_owner_answer": false,
+      "scope": "Order/scenario parameters",
+      "status": "baseline_included_scenario_missing"
+    },
+    {
+      "item": "Энергия, хронометраж, новое оборудование",
+      "known_amount": "Электричество августа: 117 708 ₽, уже включено.",
+      "included_or_not": "Нет распределения по операциям и подтверждённого эффекта оборудования.",
+      "unknown": "Трудоминуты, режимы нагрузки, кВт·ч на операцию, изменение оплаченных смен, capex и обслуживание.",
+      "action_to_close": "Хронометраж и таблица мощности с учётом цикличности, прогрева и простоя. Эти параметры относятся к модернизации, а не отсутствию общего счёта августа.",
+      "source": [
+        "/Users/grigorii/Developer/Projects/Teplo-agent-kitchenecon/business-docs/finance/unit-economics/kitchen-modernization/snapshots/2026-10-14/b-costs-baseline/data/electricity.json"
+      ],
+      "needs_owner_answer": false,
+      "scope": "Modernization scenario",
+      "status": "baseline_included_scenario_missing"
+    }
+  ],
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/gaps/",
+  "private_archive_status": "Первичные данные и SQL-скрипты сохранены в закрытом локальном архиве; расположение и SHA-256 указаны в evidence-manifest.json."
+}

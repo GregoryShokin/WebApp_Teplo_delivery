@@ -1,0 +1,16 @@
+{
+  "as_of": "2026-10-15",
+  "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/gaps",
+  "public_files": {
+    "notes.md": "d4fdeaf675de63703b59d8ebe5e4985679f90b8609f0290d2cb438e65f0e041f",
+    "gap-table.json": "2729967a770b5898d6f0edf15015f1fecd4b0adc0b2adcbae04bfb806dcdbda9"
+  },
+  "private_files": {
+    "live-gaps-private.json": "cc5ceac9ebbdd25bb19855164e58a49cfc2dbbd03257a1b3532f5a3602b65af0",
+    "live-tax-payments-private.json": "d1cb32d218583c92e47012f397cdde7af0cbc6431a77985f5e64c50d571bb305",
+    "read_gaps.py": "62c9ffcbc76041260c11342cf5bca078f81589391df7970a16d0a1a90f80fe14",
+    "read_tax_payments.py": "b79a1fe8f8cc6eb939436c3ff1894f6f1ce66ea0084290a21883555ab1416bc6",
+    "notes.md": "c24b755d901cf69f7131d2b6f0128fc121c3be81ec1c6767e22f6613c583f59a"
+  },
+  "access": "Private directory 0700; files 0600. Raw data and scripts are not tracked in git."
+}

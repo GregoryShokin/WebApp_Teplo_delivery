@@ -1,0 +1,44 @@
+{
+  "as_of": "2026-10-15",
+  "period": "2026-08",
+  "status": "unclosed_working_base",
+  "net_revenue_rub": "3282430.64",
+  "known_costs_rub": "3398606.31",
+  "known_profit_rub": "-116175.67",
+  "known_ebitda_rub": "106362.37",
+  "prior_known_profit_rub": "-113535.67",
+  "new_adjustments": [
+    {
+      "item": "Gas",
+      "effect_on_profit_rub": "0.00",
+      "status": "owner_confirmed_zero"
+    },
+    {
+      "item": "Fuel expense",
+      "effect_on_profit_rub": "-3960.00"
+    },
+    {
+      "item": "Courier fuel reimbursement",
+      "effect_on_profit_rub": "1320.00"
+    }
+  ],
+  "excluded_pending_reconciliation": [
+    "Additional entrepreneur 1% contribution together with USN deduction",
+    "Yandex Eda settlement completeness"
+  ],
+  "not_missing_monthly_costs": [
+    "Payroll tax 20013.93 included",
+    "USN and fixed entrepreneur contribution 201728.34 included as model",
+    "Electricity 117708 included",
+    "Starter 77171 included",
+    "Acquiring 46092.57 included",
+    "Separate packaging 35987.61 plus recipe packaging included"
+  ],
+  "model_after_still_unmeasured": true,
+  "revenue_basis": "iiko revenue_net после скидок, до вычета партнёра и возвратов; партнёр и возвраты уже включены в реестр расходов. Не смешивать с уменьшенной строкой выручки P&L 3 238 717,64 ₽.",
+  "owner_confirmed_zero_august": [
+    "gas",
+    "VAT on own sales",
+    "credit and overdraft interest"
+  ]
+}

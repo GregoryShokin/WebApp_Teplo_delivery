@@ -1,0 +1,65 @@
+{
+  "as_of": "2026-10-15",
+  "inventory_observation_date": "2026-07-30",
+  "location": "Черникова",
+  "inventory_files": [
+    {
+      "path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова/Опись_ОС_ТК_Черникова_уточненная.xlsx",
+      "sha256": "430157949a83441393f35b1a050b3a5876a322d60f3326b78cf12edea3610014"
+    },
+    {
+      "path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Реестр_ОС_и_амортизация_2026-07-01.xlsx",
+      "sha256": "80d940b9a309b5a91d47d5f2543c84df1aff9b86e5f71e68eda657b3326109bb"
+    },
+    {
+      "path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Сверка_ОС_фото_vs_реестр_2026-07-29.xlsx",
+      "sha256": "9f8c430714526f0dbf7fc749697ef533ae1d86afc230f326e988637ea5e820ec"
+    },
+    {
+      "path": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Акт_списания_ОС_2026-07-30.xlsx",
+      "sha256": "69015a1bd282498a8c4a1c793800997046757b29eb6d6f47f9026db0c2a9ea3c"
+    }
+  ],
+  "new_equipment_included": false,
+  "tariff_rub_kwh": null,
+  "actual_kwh_per_product": null,
+  "missing_outside_registry": [
+    "мощность и количество двигателей вытяжки (зонты не двигатели)",
+    "освещение помещений, роутеры/сетевое оборудование и иные некапитализированные потребители при наличии",
+    "возможные изменения состава после июльской инвентаризации"
+  ],
+  "owner_decisions": [
+    {
+      "date": "2026-10-15",
+      "statement": "Газ за август 2026 = 0: летом не используется; не является пробелом электротаблицы."
+    }
+  ],
+  "outputs": [
+    "equipment-power.csv",
+    "equipment-power.json",
+    "scope-exclusions.json",
+    "cold-lookups.json",
+    "README.md"
+  ],
+  "photo_verifications": [
+    "IMG_1058.HEIC",
+    "IMG_1067.HEIC",
+    "IMG_1079.HEIC",
+    "IMG_1106.HEIC",
+    "IMG_1110.HEIC",
+    "IMG_1025.HEIC",
+    "IMG_1006.HEIC",
+    "IMG_1007.HEIC",
+    "IMG_1030.HEIC",
+    "IMG_1082.HEIC",
+    "IMG_1083.HEIC"
+  ],
+  "photo_root": "/Users/grigorii/Developer/Projects/Teplo-all-for-business/Фото ТК Черникова",
+  "output_sha256": {
+    "equipment-power.csv": "5fc97569a6896e2f237ed26483c4a5929086534af22e8dbe046c7a0d8b70e651",
+    "equipment-power.json": "6548b9c736e4632759065a52b1b5bb1442fbfff8f4a1894fc5ca389d6bf27cca",
+    "scope-exclusions.json": "2fb9080fbd61248dd97dfe9bf3a646bf96a90c29a1f61453867004e9df761644",
+    "cold-lookups.json": "84c67692cc1127c7d667f8f2de650bf9250aa7cc8494c88c2c0011679124c8b1",
+    "README.md": "eea7e763cdb9fdfdcbd67f6cb46e465a9a96ecf105bb75d532ef74f23ed02829"
+  }
+}
