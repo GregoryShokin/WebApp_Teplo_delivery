@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -180,7 +180,8 @@
       ],
       "equipment_monthly_budget_rub": 10000,
       "new_line_scope": "30 percent of orders; 35 percent line food cost is 30.74 percent blended food cost",
-      "scope": "All baseline expenses anchored; variable drivers and labor budgets explicit; daily shared payroll tiers recomputed; capacity covers only conditional manual resources."
+      "scope": "All baseline expenses anchored; variable drivers and labor budgets explicit; daily shared payroll tiers recomputed; capacity covers only conditional manual resources.",
+      "later_scope_correction": "32% whole-business food cost is historical; current owner scope rolls only, see owner_offer_v2_roll_scope_2026_10_15."
     },
     {
       "id": "discount_pressure_2026_10_15",
@@ -206,7 +207,25 @@
       ],
       "scope": "Baseline/structural package/structural plus bonus cap. Bonus cap only first-month replay; demand/channel mix fixed; net-to-cost baseline preserved. First offer model unchanged.",
       "skill_reference": "skills/teplo-unit-economics/references/discount-pressure.md",
-      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure"
+      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure",
+      "later_scope_correction": "32% whole-business food cost is historical; current owner scope rolls only, see owner_offer_v2_roll_scope_2026_10_15."
+    },
+    {
+      "id": "owner_offer_v2_roll_scope_2026_10_15",
+      "status": "preliminary_owner_proposal_read_only",
+      "files": [
+        "snapshots/2026-10-15/owner-offer-v2/README.md",
+        "snapshots/2026-10-15/owner-offer-v2/results.json",
+        "snapshots/2026-10-15/owner-offer-v2/owner-decisions.json",
+        "snapshots/2026-10-15/owner-offer-v2/technical-findings.json",
+        "snapshots/2026-10-15/owner-offer-v2/evidence-manifest.json"
+      ],
+      "recipe_scope": "rolls_only; mixed bundles split; other recipes unchanged",
+      "rolls_food_extra_to32_rub": 37080.03916527855,
+      "combined_business_fc": 0.304566886191776,
+      "future_bonus_accrual_saving_quantified": false,
+      "production_settings_changed": false,
+      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2"
     }
   ],
   "previous_work": {
@@ -226,6 +245,11 @@
       "as_of": "2026-10-15",
       "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure",
       "manifest": "snapshots/2026-10-15/discount-pressure/evidence-manifest.json"
+    },
+    {
+      "as_of": "2026-10-15",
+      "root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2",
+      "manifest": "snapshots/2026-10-15/owner-offer-v2/evidence-manifest.json"
     }
   ]
 }

@@ -1,0 +1,1525 @@
+{
+  "as_of": "2026-10-15",
+  "status": "preliminary_owner_proposal_not_live_configuration",
+  "roll_scope": {
+    "roll_revenue_allocated_rub": 1748559.2005164956,
+    "roll_food_rub": 522458.905,
+    "roll_fc_base": 0.2987939469511094,
+    "other_food_rub": 440180.735,
+    "extra_food_for_rolls32_rub": 37080.03916527855,
+    "blended_fc_with_rolls32": 0.304566886191776,
+    "allocation": "Recipe-confirmed roll/roll-set IDs. Mixed parent bundle revenue split proportionally to observed component food cost; zero parent cost not zero bundle cost. No double-counting child food. Sauce/bar/pizza/other recipes unchanged. Allocation is explicit analytic assumption."
+  },
+  "roll_sku_allocation": [
+    {
+      "sku": "21d94743-32f2-460b-8f09-10c9f6e71c80",
+      "name": "Акционный набор №2",
+      "roll_revenue_rub": 57613.78298686455,
+      "roll_food_rub": 19226.74,
+      "mixed_bundle": true,
+      "all_component_food_rub": 26589.890000000003
+    },
+    {
+      "sku": "01b93539-32e2-4d85-914b-c3c4c3f64cc3",
+      "name": "Горячий с копченым лососем",
+      "roll_revenue_rub": 5819.9,
+      "roll_food_rub": 1377.68,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1377.68
+    },
+    {
+      "sku": "0c8078b0-d1e3-48dc-924b-3d649bbc7621",
+      "name": "Лава краб",
+      "roll_revenue_rub": 3389.82,
+      "roll_food_rub": 589.23,
+      "mixed_bundle": false,
+      "all_component_food_rub": 589.23
+    },
+    {
+      "sku": "0c8b04a3-c581-465d-9046-2e518c3eeb6e",
+      "name": "Вайт чикен",
+      "roll_revenue_rub": 3054.36,
+      "roll_food_rub": 447.29,
+      "mixed_bundle": false,
+      "all_component_food_rub": 447.29
+    },
+    {
+      "sku": "10268e42-3a41-4adc-b33a-293016aa4849",
+      "name": "Нагасаки",
+      "roll_revenue_rub": 3002.55,
+      "roll_food_rub": 627.72,
+      "mixed_bundle": false,
+      "all_component_food_rub": 627.72
+    },
+    {
+      "sku": "10365a6d-ee10-451f-898e-c9a8dbd5c1af",
+      "name": "Мидии темпура",
+      "roll_revenue_rub": 1679.2,
+      "roll_food_rub": 382.56,
+      "mixed_bundle": false,
+      "all_component_food_rub": 382.56
+    },
+    {
+      "sku": "11ebea4c-f445-4d91-9978-681d25146531",
+      "name": "Классический с креветкой",
+      "roll_revenue_rub": 8650.03,
+      "roll_food_rub": 3036.57,
+      "mixed_bundle": false,
+      "all_component_food_rub": 3036.57
+    },
+    {
+      "sku": "122bccb8-0d3c-4e84-85c9-4a010ced2755",
+      "name": "Лава угорь",
+      "roll_revenue_rub": 796.4,
+      "roll_food_rub": 202.74,
+      "mixed_bundle": false,
+      "all_component_food_rub": 202.74
+    },
+    {
+      "sku": "13a4678c-f370-418a-b4ae-dfa74f708d4d",
+      "name": "Сет \"Саламандра BIG\" ",
+      "roll_revenue_rub": 11264.72,
+      "roll_food_rub": 2974.21,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2974.21
+    },
+    {
+      "sku": "17c84a76-d53f-429f-8f9d-59001b012a42",
+      "name": "Пикантная креветка",
+      "roll_revenue_rub": 2856.93,
+      "roll_food_rub": 901.8,
+      "mixed_bundle": false,
+      "all_component_food_rub": 901.8
+    },
+    {
+      "sku": "1836e266-bbee-41f7-a67d-69f08b81d81a",
+      "name": "Филадельфия с копченым лососем",
+      "roll_revenue_rub": 10718.29,
+      "roll_food_rub": 2956.23,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2956.23
+    },
+    {
+      "sku": "18c85c8e-e8ad-4db9-9ffd-bc82f76bb7e4",
+      "name": "Акционный набор №3",
+      "roll_revenue_rub": 62577.40565312404,
+      "roll_food_rub": 19248.07,
+      "mixed_bundle": true,
+      "all_component_food_rub": 26916.02
+    },
+    {
+      "sku": "195c504f-dc68-4593-bccb-509db307ae99",
+      "name": "Широкий с креветкой",
+      "roll_revenue_rub": 8702.86,
+      "roll_food_rub": 2455.37,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2455.37
+    },
+    {
+      "sku": "1e4d827e-e228-41f1-af37-e27d4fe8709c",
+      "name": "Яки краб",
+      "roll_revenue_rub": 4294.04,
+      "roll_food_rub": 1284.49,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1284.49
+    },
+    {
+      "sku": "1ef276ad-1877-4eba-a062-f4dc61ebb483",
+      "name": "Горячий с лососем",
+      "roll_revenue_rub": 8891.31,
+      "roll_food_rub": 2515.05,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2515.05
+    },
+    {
+      "sku": "1ef80392-1c82-4a96-a0cf-320f62b767dd",
+      "name": "Калифорния с креветкой",
+      "roll_revenue_rub": 11783.6,
+      "roll_food_rub": 3547.78,
+      "mixed_bundle": false,
+      "all_component_food_rub": 3547.78
+    },
+    {
+      "sku": "21dcca5c-7337-4c61-a332-bd6f492108dc",
+      "name": "Классический с тунцом",
+      "roll_revenue_rub": 2620.19,
+      "roll_food_rub": 839.76,
+      "mixed_bundle": false,
+      "all_component_food_rub": 839.76
+    },
+    {
+      "sku": "223e7fce-5570-4d97-b44c-0c870e6c774d",
+      "name": "Сет\" Холостяк\"",
+      "roll_revenue_rub": 10649.92,
+      "roll_food_rub": 2769.45,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2769.45
+    },
+    {
+      "sku": "2455f8e1-2c98-4f94-9803-ad76637bfbeb",
+      "name": " Динамит",
+      "roll_revenue_rub": 4677.67,
+      "roll_food_rub": 930.3,
+      "mixed_bundle": false,
+      "all_component_food_rub": 930.3
+    },
+    {
+      "sku": "2a3f7463-db4c-48bd-a384-a20e3238a72d",
+      "name": "Фиеста",
+      "roll_revenue_rub": 10484.67,
+      "roll_food_rub": 3011.59,
+      "mixed_bundle": false,
+      "all_component_food_rub": 3011.59
+    },
+    {
+      "sku": "2b272900-571f-425f-b69a-694e808eb026",
+      "name": "Сицилийский",
+      "roll_revenue_rub": 2744.26,
+      "roll_food_rub": 683.94,
+      "mixed_bundle": false,
+      "all_component_food_rub": 683.94
+    },
+    {
+      "sku": "2d8dc533-0d16-4aac-83ae-28ea1b1fd20a",
+      "name": "Калифорния с лососем терияки",
+      "roll_revenue_rub": 751.31,
+      "roll_food_rub": 188.87,
+      "mixed_bundle": false,
+      "all_component_food_rub": 188.87
+    },
+    {
+      "sku": "2edfbbd1-102d-45e4-ac5f-25e632322b9d",
+      "name": "Чикен чиз ",
+      "roll_revenue_rub": 2574.82,
+      "roll_food_rub": 494.02,
+      "mixed_bundle": false,
+      "all_component_food_rub": 494.02
+    },
+    {
+      "sku": "2efcdc79-3cf6-4226-b724-270741010955",
+      "name": "Сет \"Сенатор\" ",
+      "roll_revenue_rub": 22870.77,
+      "roll_food_rub": 7293.42,
+      "mixed_bundle": false,
+      "all_component_food_rub": 7293.42
+    },
+    {
+      "sku": "2f3792af-99b1-44fc-9fed-b97126e532ea",
+      "name": "Сет\" Жареный\"",
+      "roll_revenue_rub": 43542.73,
+      "roll_food_rub": 9780.23,
+      "mixed_bundle": false,
+      "all_component_food_rub": 9780.23
+    },
+    {
+      "sku": "32432f97-7003-4754-a4a4-9a54c2a801f0",
+      "name": "Сет\" Киото\"",
+      "roll_revenue_rub": 3969.86,
+      "roll_food_rub": 1167.76,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1167.76
+    },
+    {
+      "sku": "34509955-b370-46b9-bc91-f8a230aa31dd",
+      "name": "Сет \"Детский\" ",
+      "roll_revenue_rub": 14563.58,
+      "roll_food_rub": 3898.39,
+      "mixed_bundle": false,
+      "all_component_food_rub": 3898.39
+    },
+    {
+      "sku": "353acbce-e045-4d01-9855-cff83e69f9a1",
+      "name": "Аляска",
+      "roll_revenue_rub": 4817.37,
+      "roll_food_rub": 1144.4,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1144.4
+    },
+    {
+      "sku": "366e1914-a0ed-4642-a7d1-aff42e4a0868",
+      "name": "Мидии бекон",
+      "roll_revenue_rub": 4287.5,
+      "roll_food_rub": 1086.51,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1086.51
+    },
+    {
+      "sku": "390696fb-1a8b-412d-afce-b0527af7e00c",
+      "name": "Гринвич",
+      "roll_revenue_rub": 1845.05,
+      "roll_food_rub": 515.36,
+      "mixed_bundle": false,
+      "all_component_food_rub": 515.36
+    },
+    {
+      "sku": "3bdd5936-3ebd-410c-855a-6b129dab928d",
+      "name": "Акита",
+      "roll_revenue_rub": 522.46,
+      "roll_food_rub": 154.16,
+      "mixed_bundle": false,
+      "all_component_food_rub": 154.16
+    },
+    {
+      "sku": "42a3db52-c490-44a5-9fd0-b94095565e3d",
+      "name": "Кацу",
+      "roll_revenue_rub": 501.94,
+      "roll_food_rub": 154.47,
+      "mixed_bundle": false,
+      "all_component_food_rub": 154.47
+    },
+    {
+      "sku": "471cad46-c880-4782-aa84-cc3718aeab66",
+      "name": "Сет \"Аристократ\"",
+      "roll_revenue_rub": 54164.95,
+      "roll_food_rub": 16802.26,
+      "mixed_bundle": false,
+      "all_component_food_rub": 16802.26
+    },
+    {
+      "sku": "4bc271c0-59dd-4a5a-9c99-2dfd329776ab",
+      "name": "Широкий с угрем",
+      "roll_revenue_rub": 334.99,
+      "roll_food_rub": 116.37,
+      "mixed_bundle": false,
+      "all_component_food_rub": 116.37
+    },
+    {
+      "sku": "4c5658c3-f279-4ac0-9853-94cf7a959aab",
+      "name": "Жареная калифорния",
+      "roll_revenue_rub": 7512.69,
+      "roll_food_rub": 1110.02,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1110.02
+    },
+    {
+      "sku": "4e270850-4c16-4759-8657-5928331b350d",
+      "name": "Запеченная Филадельфия",
+      "roll_revenue_rub": 4689.21,
+      "roll_food_rub": 1521.07,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1521.07
+    },
+    {
+      "sku": "4eb046e2-3214-4ea5-a388-396fd777351d",
+      "name": "Лава с лососем",
+      "roll_revenue_rub": 3393.49,
+      "roll_food_rub": 1126.62,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1126.62
+    },
+    {
+      "sku": "5188e2e9-fae1-4f98-beb5-0d96327cdd9b",
+      "name": "Тори Яки",
+      "roll_revenue_rub": 1181.12,
+      "roll_food_rub": 339.98,
+      "mixed_bundle": false,
+      "all_component_food_rub": 339.98
+    },
+    {
+      "sku": "554b2b7e-1ac5-4336-866e-17587d68e535",
+      "name": "Сет \"Все и сразу\"",
+      "roll_revenue_rub": 13079.71,
+      "roll_food_rub": 3667.1,
+      "mixed_bundle": false,
+      "all_component_food_rub": 3667.1
+    },
+    {
+      "sku": "57ec7653-49b0-4d70-a375-60f56184a150",
+      "name": "Филадельфия классик",
+      "roll_revenue_rub": 12904.36,
+      "roll_food_rub": 4967.19,
+      "mixed_bundle": false,
+      "all_component_food_rub": 4967.19
+    },
+    {
+      "sku": "59b096dd-daa8-4157-b609-ab410d37850e",
+      "name": "Классический с крабом",
+      "roll_revenue_rub": 702.11,
+      "roll_food_rub": 166.56,
+      "mixed_bundle": false,
+      "all_component_food_rub": 166.56
+    },
+    {
+      "sku": "5a3666de-29dd-440b-a776-cf9145fee95d",
+      "name": "Сет \"Фестиваль\" ",
+      "roll_revenue_rub": 36579.92,
+      "roll_food_rub": 11055.96,
+      "mixed_bundle": false,
+      "all_component_food_rub": 11055.96
+    },
+    {
+      "sku": "5c51784b-e334-43f7-86c6-3b2f3074c0b3",
+      "name": "Сет \"Саламандра\" ",
+      "roll_revenue_rub": 24260.58,
+      "roll_food_rub": 6118.59,
+      "mixed_bundle": false,
+      "all_component_food_rub": 6118.59
+    },
+    {
+      "sku": "5fa161fa-53a2-4bb1-853b-4c611db941b2",
+      "name": "Фарерский",
+      "roll_revenue_rub": 2726.22,
+      "roll_food_rub": 752.13,
+      "mixed_bundle": false,
+      "all_component_food_rub": 752.13
+    },
+    {
+      "sku": "5fae58ec-f04b-4227-afbd-6c11c090f010",
+      "name": "Сет \"Манхэттен\"",
+      "roll_revenue_rub": 73731.59,
+      "roll_food_rub": 21556.04,
+      "mixed_bundle": false,
+      "all_component_food_rub": 21556.04
+    },
+    {
+      "sku": "625a6ea2-af09-41de-aacd-4dbd41a9ec78",
+      "name": "Филадельфия темпура",
+      "roll_revenue_rub": 6093.14,
+      "roll_food_rub": 1616.32,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1616.32
+    },
+    {
+      "sku": "64f274a9-96b6-4b89-9e1c-a0ca2dba9756",
+      "name": "Сет \"Дядя Сэм\" ",
+      "roll_revenue_rub": 28518.62,
+      "roll_food_rub": 8053.06,
+      "mixed_bundle": false,
+      "all_component_food_rub": 8053.06
+    },
+    {
+      "sku": "689f77f4-029b-4519-a710-c3461dfa187d",
+      "name": "Нежный том ям ",
+      "roll_revenue_rub": 4140.06,
+      "roll_food_rub": 897.37,
+      "mixed_bundle": false,
+      "all_component_food_rub": 897.37
+    },
+    {
+      "sku": "6aea3708-198b-48a1-89b2-9d30023d7e01",
+      "name": "Сет \"Пятница\" ",
+      "roll_revenue_rub": 68382.63,
+      "roll_food_rub": 17992.07,
+      "mixed_bundle": false,
+      "all_component_food_rub": 17992.07
+    },
+    {
+      "sku": "6b2c8ead-cca4-46fb-b595-e1e053258b5f",
+      "name": "Калифорния с угрём",
+      "roll_revenue_rub": 1532.49,
+      "roll_food_rub": 567.9,
+      "mixed_bundle": false,
+      "all_component_food_rub": 567.9
+    },
+    {
+      "sku": "6cbaa016-c383-41a0-9fb1-0449569d9fcf",
+      "name": "Сет \"Нейросет\"",
+      "roll_revenue_rub": 74858.9,
+      "roll_food_rub": 19824.44,
+      "mixed_bundle": false,
+      "all_component_food_rub": 19824.44
+    },
+    {
+      "sku": "6d53314d-4f7a-4da4-b0ad-8d7c188ce16d",
+      "name": "Честер",
+      "roll_revenue_rub": 6410.39,
+      "roll_food_rub": 1217.17,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1217.17
+    },
+    {
+      "sku": "6fee7d56-2bf3-41ad-8efd-36ca5f85b662",
+      "name": "Хоккайдо",
+      "roll_revenue_rub": 2102.76,
+      "roll_food_rub": 800.11,
+      "mixed_bundle": false,
+      "all_component_food_rub": 800.11
+    },
+    {
+      "sku": "704c0ccc-9a40-43c1-9bc8-e48dce390bd7",
+      "name": "Лава с креветкой",
+      "roll_revenue_rub": 25967.14,
+      "roll_food_rub": 7977.11,
+      "mixed_bundle": false,
+      "all_component_food_rub": 7977.11
+    },
+    {
+      "sku": "7445953b-52d5-4c7e-99be-bd3d49d36e7e",
+      "name": "Кабуки",
+      "roll_revenue_rub": 1047.28,
+      "roll_food_rub": 358.31,
+      "mixed_bundle": false,
+      "all_component_food_rub": 358.31
+    },
+    {
+      "sku": "74df4ba7-e3b8-4f8a-ac52-41ce8161a51e",
+      "name": "Небраска",
+      "roll_revenue_rub": 2578.57,
+      "roll_food_rub": 789.96,
+      "mixed_bundle": false,
+      "all_component_food_rub": 789.96
+    },
+    {
+      "sku": "76f254ce-9e02-445d-bc32-ca218686d88f",
+      "name": "Салмон",
+      "roll_revenue_rub": 375,
+      "roll_food_rub": 90.16,
+      "mixed_bundle": false,
+      "all_component_food_rub": 90.16
+    },
+    {
+      "sku": "78a03fd0-983f-418e-a445-fecfea4e049f",
+      "name": "Классический с чукой",
+      "roll_revenue_rub": 2260.76,
+      "roll_food_rub": 488.42,
+      "mixed_bundle": false,
+      "all_component_food_rub": 488.42
+    },
+    {
+      "sku": "7a36e4a5-8640-4711-b172-79305b3d59da",
+      "name": "Сет \"Токио\"",
+      "roll_revenue_rub": 103579.53,
+      "roll_food_rub": 29779.04,
+      "mixed_bundle": false,
+      "all_component_food_rub": 29779.04
+    },
+    {
+      "sku": "82e8b180-a3c3-4d02-a75c-8f5dfb8b6d74",
+      "name": "Хокусан",
+      "roll_revenue_rub": 1757.98,
+      "roll_food_rub": 581.81,
+      "mixed_bundle": false,
+      "all_component_food_rub": 581.81
+    },
+    {
+      "sku": "82fd608e-0b87-4d42-9e90-f67d4b7ee20e",
+      "name": "Акционный набор №1",
+      "roll_revenue_rub": 53852.05187650724,
+      "roll_food_rub": 15004.04,
+      "mixed_bundle": true,
+      "all_component_food_rub": 21317.850000000002
+    },
+    {
+      "sku": "855ddaa8-bf25-491e-b4fd-ecd3d1749daa",
+      "name": "Классический с угрем",
+      "roll_revenue_rub": 1014.67,
+      "roll_food_rub": 304.655,
+      "mixed_bundle": false,
+      "all_component_food_rub": 304.655
+    },
+    {
+      "sku": "89b6e6ba-0ac7-4792-b217-8e207067d494",
+      "name": "Калифорния с крабом",
+      "roll_revenue_rub": 7762.13,
+      "roll_food_rub": 1436.42,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1436.42
+    },
+    {
+      "sku": "8eef640b-253b-4498-b4f6-72a13429382f",
+      "name": "Сет\"Эдо\" ",
+      "roll_revenue_rub": 43916.33,
+      "roll_food_rub": 11727.11,
+      "mixed_bundle": false,
+      "all_component_food_rub": 11727.11
+    },
+    {
+      "sku": "9039dc4b-73fe-463e-ba12-9a1a73017c0f",
+      "name": "Краб грув",
+      "roll_revenue_rub": 3783.75,
+      "roll_food_rub": 628.78,
+      "mixed_bundle": false,
+      "all_component_food_rub": 628.78
+    },
+    {
+      "sku": "960ad600-15ac-458c-bdd0-e1a672217558",
+      "name": "Микадо",
+      "roll_revenue_rub": 1200.57,
+      "roll_food_rub": 283.02,
+      "mixed_bundle": false,
+      "all_component_food_rub": 283.02
+    },
+    {
+      "sku": "9702a631-e0ef-48b7-936a-4b4a128d720a",
+      "name": "Сет \"Денег нет\" ",
+      "roll_revenue_rub": 0,
+      "roll_food_rub": 23377.03,
+      "mixed_bundle": false,
+      "all_component_food_rub": 23377.03
+    },
+    {
+      "sku": "a4a35376-ca6f-4c0e-9e60-2f6bbb9ed0a9",
+      "name": "Филадельфия тар-тар",
+      "roll_revenue_rub": 1784.83,
+      "roll_food_rub": 530.84,
+      "mixed_bundle": false,
+      "all_component_food_rub": 530.84
+    },
+    {
+      "sku": "a4f2defc-b68e-4541-a922-b7cd18fa5fc8",
+      "name": "Флори",
+      "roll_revenue_rub": 1223.38,
+      "roll_food_rub": 287.06,
+      "mixed_bundle": false,
+      "all_component_food_rub": 287.06
+    },
+    {
+      "sku": "a57fae4e-fc22-4873-a1cb-1e7df4fdcb27",
+      "name": "Сет \"Сушимания\"",
+      "roll_revenue_rub": 28105.53,
+      "roll_food_rub": 8022.77,
+      "mixed_bundle": false,
+      "all_component_food_rub": 8022.77
+    },
+    {
+      "sku": "a792d828-e14f-4c29-ab6b-5958a0c9e1ae",
+      "name": "Сакура",
+      "roll_revenue_rub": 2297.37,
+      "roll_food_rub": 357.42,
+      "mixed_bundle": false,
+      "all_component_food_rub": 357.42
+    },
+    {
+      "sku": "a7e22597-5a62-40be-9d57-c8714c09e71e",
+      "name": "Прайм эсколар",
+      "roll_revenue_rub": 1317.53,
+      "roll_food_rub": 346.32,
+      "mixed_bundle": false,
+      "all_component_food_rub": 346.32
+    },
+    {
+      "sku": "abc08e07-0ec6-47a6-b047-85bb0af63e26",
+      "name": "Мидии том ям ",
+      "roll_revenue_rub": 431.91,
+      "roll_food_rub": 117.53,
+      "mixed_bundle": false,
+      "all_component_food_rub": 117.53
+    },
+    {
+      "sku": "ac00f3e4-8aea-452f-80c6-6b4925d36903",
+      "name": "Филадельфия лайт",
+      "roll_revenue_rub": 16619.87,
+      "roll_food_rub": 6064.73,
+      "mixed_bundle": false,
+      "all_component_food_rub": 6064.73
+    },
+    {
+      "sku": "ac59a6ed-5558-4efe-960c-d297c1ba579a",
+      "name": "Классический с огурцом",
+      "roll_revenue_rub": 5259.89,
+      "roll_food_rub": 977.29,
+      "mixed_bundle": false,
+      "all_component_food_rub": 977.29
+    },
+    {
+      "sku": "ae939c9b-dcb1-4cb4-8999-d90471ad9337",
+      "name": "Сет \"Лотос\"",
+      "roll_revenue_rub": 33472.41,
+      "roll_food_rub": 9304.12,
+      "mixed_bundle": false,
+      "all_component_food_rub": 9304.12
+    },
+    {
+      "sku": "b5193a9f-205e-4f27-b157-0e40bb95ee41",
+      "name": "Изуми эсколар",
+      "roll_revenue_rub": 2109.51,
+      "roll_food_rub": 486.01,
+      "mixed_bundle": false,
+      "all_component_food_rub": 486.01
+    },
+    {
+      "sku": "b870a5ec-24d7-45f4-bacf-be85efc42eb6",
+      "name": "Бонито",
+      "roll_revenue_rub": 1202.52,
+      "roll_food_rub": 274.41,
+      "mixed_bundle": false,
+      "all_component_food_rub": 274.41
+    },
+    {
+      "sku": "b8a0c821-0d35-4211-909e-bc770c20771c",
+      "name": "Калифорния с лососем",
+      "roll_revenue_rub": 6759.06,
+      "roll_food_rub": 2279.12,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2279.12
+    },
+    {
+      "sku": "bb389d9d-a36c-4c58-8c0b-cb5068cf6e7d",
+      "name": "Айдахо",
+      "roll_revenue_rub": 3091.37,
+      "roll_food_rub": 915.02,
+      "mixed_bundle": false,
+      "all_component_food_rub": 915.02
+    },
+    {
+      "sku": "bb5a375e-d25f-4272-9b53-0b8f6deec64e",
+      "name": "Острый с крабом",
+      "roll_revenue_rub": 909.19,
+      "roll_food_rub": 170.52,
+      "mixed_bundle": false,
+      "all_component_food_rub": 170.52
+    },
+    {
+      "sku": "bc257c1c-8b62-4881-8c34-e7b9c9c1f864",
+      "name": "Итодори",
+      "roll_revenue_rub": 3260.88,
+      "roll_food_rub": 780.89,
+      "mixed_bundle": false,
+      "all_component_food_rub": 780.89
+    },
+    {
+      "sku": "bc2c94e3-0e03-432f-8c36-ce2667b81059",
+      "name": "Сет \"Соломон\"",
+      "roll_revenue_rub": 204166.85,
+      "roll_food_rub": 65429.93,
+      "mixed_bundle": false,
+      "all_component_food_rub": 65429.93
+    },
+    {
+      "sku": "bc91dc42-1246-44b7-a490-35cd268b6fdb",
+      "name": "Креветка манго",
+      "roll_revenue_rub": 2367.38,
+      "roll_food_rub": 647.29,
+      "mixed_bundle": false,
+      "all_component_food_rub": 647.29
+    },
+    {
+      "sku": "bd1e0a8b-febb-40fc-a7c3-9690f012dae6",
+      "name": "Якудза",
+      "roll_revenue_rub": 2362.72,
+      "roll_food_rub": 518.37,
+      "mixed_bundle": false,
+      "all_component_food_rub": 518.37
+    },
+    {
+      "sku": "bdcc40c7-6d51-4730-93eb-5014bb33edf6",
+      "name": "Цезарь",
+      "roll_revenue_rub": 7673.76,
+      "roll_food_rub": 1177.52,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1177.52
+    },
+    {
+      "sku": "c13d3f53-e621-4467-b78f-b0c7f54c4251",
+      "name": "Сет \"Биг бэн\"",
+      "roll_revenue_rub": 158534.23,
+      "roll_food_rub": 47965.61,
+      "mixed_bundle": false,
+      "all_component_food_rub": 47965.61
+    },
+    {
+      "sku": "c6653e79-2458-4df5-9ad8-47cfe21e9fed",
+      "name": "Яритэ",
+      "roll_revenue_rub": 2702.9,
+      "roll_food_rub": 1103.11,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1103.11
+    },
+    {
+      "sku": "c6f7b951-284c-44f2-8f18-8fa9d8e884b3",
+      "name": "Эби том-ям",
+      "roll_revenue_rub": 3442.6,
+      "roll_food_rub": 930.5,
+      "mixed_bundle": false,
+      "all_component_food_rub": 930.5
+    },
+    {
+      "sku": "c80e1f8e-1607-44e0-a712-b39361c1dc96",
+      "name": "Камчатский",
+      "roll_revenue_rub": 7502.83,
+      "roll_food_rub": 967.34,
+      "mixed_bundle": false,
+      "all_component_food_rub": 967.34
+    },
+    {
+      "sku": "cae0e338-a4e0-437c-8990-49caa257bcb4",
+      "name": "Хаккода",
+      "roll_revenue_rub": 4417.94,
+      "roll_food_rub": 880.56,
+      "mixed_bundle": false,
+      "all_component_food_rub": 880.56
+    },
+    {
+      "sku": "cc88bb9d-1bf1-449f-b244-d860e4894813",
+      "name": "Мидии с крабом ",
+      "roll_revenue_rub": 425,
+      "roll_food_rub": 69.43,
+      "mixed_bundle": false,
+      "all_component_food_rub": 69.43
+    },
+    {
+      "sku": "cd0ffb39-f935-404f-8917-bae3f8744045",
+      "name": "Бархат",
+      "roll_revenue_rub": 2939.32,
+      "roll_food_rub": 783.32,
+      "mixed_bundle": false,
+      "all_component_food_rub": 783.32
+    },
+    {
+      "sku": "d00fde50-dad9-446d-aa57-5d52504ae90e",
+      "name": "Классический с лососем",
+      "roll_revenue_rub": 4133.43,
+      "roll_food_rub": 1360.75,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1360.75
+    },
+    {
+      "sku": "d19abef8-0911-4663-ac36-55f5db3a30dd",
+      "name": "Акацуки",
+      "roll_revenue_rub": 1141.9,
+      "roll_food_rub": 335.27,
+      "mixed_bundle": false,
+      "all_component_food_rub": 335.27
+    },
+    {
+      "sku": "d264e747-e54f-45e3-b0a6-62054b452418",
+      "name": "Атакама",
+      "roll_revenue_rub": 2851.11,
+      "roll_food_rub": 715.55,
+      "mixed_bundle": false,
+      "all_component_food_rub": 715.55
+    },
+    {
+      "sku": "d2e09ef8-891f-4f30-a577-429027fbcaf1",
+      "name": "Унаги Чиз ",
+      "roll_revenue_rub": 3552.44,
+      "roll_food_rub": 886.18,
+      "mixed_bundle": false,
+      "all_component_food_rub": 886.18
+    },
+    {
+      "sku": "d4b21d6d-9f7c-43b4-9f8c-1c4197221d9e",
+      "name": "Сет\"Большой Куш\"",
+      "roll_revenue_rub": 71032.77,
+      "roll_food_rub": 19240.46,
+      "mixed_bundle": false,
+      "all_component_food_rub": 19240.46
+    },
+    {
+      "sku": "d4f8b7da-140d-468a-a18b-e02d844f1a8c",
+      "name": "Уратама",
+      "roll_revenue_rub": 765.45,
+      "roll_food_rub": 210.76,
+      "mixed_bundle": false,
+      "all_component_food_rub": 210.76
+    },
+    {
+      "sku": "d62d9af5-5096-4eec-8a22-59a2208176bd",
+      "name": "Сет \"Студент\"",
+      "roll_revenue_rub": 9698.52,
+      "roll_food_rub": 2550.17,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2550.17
+    },
+    {
+      "sku": "dae76216-97c9-46d7-aa87-8b57e15da53b",
+      "name": "Мидии Яки",
+      "roll_revenue_rub": 1819.69,
+      "roll_food_rub": 420.66,
+      "mixed_bundle": false,
+      "all_component_food_rub": 420.66
+    },
+    {
+      "sku": "db1eb197-fd48-434a-8a0f-098e9bafca32",
+      "name": "Фукуока",
+      "roll_revenue_rub": 961.76,
+      "roll_food_rub": 246.65,
+      "mixed_bundle": false,
+      "all_component_food_rub": 246.65
+    },
+    {
+      "sku": "dc706015-d701-45a0-8d22-65a981b93f44",
+      "name": "Хикару",
+      "roll_revenue_rub": 851.74,
+      "roll_food_rub": 188.32,
+      "mixed_bundle": false,
+      "all_component_food_rub": 188.32
+    },
+    {
+      "sku": "ddbde351-3b86-40c5-a7ab-d49bc30b6ba8",
+      "name": "Чикен",
+      "roll_revenue_rub": 4407.24,
+      "roll_food_rub": 812.63,
+      "mixed_bundle": false,
+      "all_component_food_rub": 812.63
+    },
+    {
+      "sku": "dfd88e21-6a77-41c2-b3fe-74ee0234246c",
+      "name": "Якимото",
+      "roll_revenue_rub": 1157.51,
+      "roll_food_rub": 266.54,
+      "mixed_bundle": false,
+      "all_component_food_rub": 266.54
+    },
+    {
+      "sku": "e189067c-dc72-42f1-b5e6-4b12ce845fdc",
+      "name": "Калифорния с цыпленком",
+      "roll_revenue_rub": 796.44,
+      "roll_food_rub": 229.02,
+      "mixed_bundle": false,
+      "all_component_food_rub": 229.02
+    },
+    {
+      "sku": "e1df51ec-facd-4535-8f57-22302212c90e",
+      "name": "Хиросима",
+      "roll_revenue_rub": 4372.81,
+      "roll_food_rub": 1080.38,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1080.38
+    },
+    {
+      "sku": "e2f43a3e-a0f1-4395-8017-fd26ad6bb03f",
+      "name": "Унагияма",
+      "roll_revenue_rub": 3938.93,
+      "roll_food_rub": 800.21,
+      "mixed_bundle": false,
+      "all_component_food_rub": 800.21
+    },
+    {
+      "sku": "e98d7eec-f112-4392-96af-b27d196d64a8",
+      "name": "Тайская креветка ",
+      "roll_revenue_rub": 3182.76,
+      "roll_food_rub": 740.85,
+      "mixed_bundle": false,
+      "all_component_food_rub": 740.85
+    },
+    {
+      "sku": "eea20dae-d5af-4acd-82d6-f37755c1ddd5",
+      "name": "Сет \"Всё включено\"",
+      "roll_revenue_rub": 37027.94,
+      "roll_food_rub": 10289.26,
+      "mixed_bundle": false,
+      "all_component_food_rub": 10289.26
+    },
+    {
+      "sku": "efc93f40-ac88-4480-b37d-0964c6a2f073",
+      "name": "Жареный с креветкой",
+      "roll_revenue_rub": 11614.72,
+      "roll_food_rub": 2686.18,
+      "mixed_bundle": false,
+      "all_component_food_rub": 2686.18
+    },
+    {
+      "sku": "f00160cc-80c2-4cf1-9d37-04f8546c835b",
+      "name": "Мидии лосось",
+      "roll_revenue_rub": 875.37,
+      "roll_food_rub": 241.26,
+      "mixed_bundle": false,
+      "all_component_food_rub": 241.26
+    },
+    {
+      "sku": "f1c9c2f4-59f1-45bd-8a57-533ff8bd0da8",
+      "name": "Фукусима",
+      "roll_revenue_rub": 2856.86,
+      "roll_food_rub": 689.56,
+      "mixed_bundle": false,
+      "all_component_food_rub": 689.56
+    },
+    {
+      "sku": "f1d1137b-23a7-4521-bee6-c7b811a7d860",
+      "name": "Запеченная Калифорния",
+      "roll_revenue_rub": 7444.16,
+      "roll_food_rub": 1970.45,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1970.45
+    },
+    {
+      "sku": "f355e6e5-9b8b-4782-b35d-e3ca439df2ad",
+      "name": "Креветка с угрем ",
+      "roll_revenue_rub": 3906.88,
+      "roll_food_rub": 918.75,
+      "mixed_bundle": false,
+      "all_component_food_rub": 918.75
+    },
+    {
+      "sku": "f3f3a963-a440-47f4-9b47-0eeeb2f129bd",
+      "name": "Запеченный с угрем ",
+      "roll_revenue_rub": 3052.29,
+      "roll_food_rub": 684.97,
+      "mixed_bundle": false,
+      "all_component_food_rub": 684.97
+    },
+    {
+      "sku": "f89c6975-c5c6-4b40-b019-6cc796b05aea",
+      "name": "Фурай",
+      "roll_revenue_rub": 1125.73,
+      "roll_food_rub": 288.39,
+      "mixed_bundle": false,
+      "all_component_food_rub": 288.39
+    },
+    {
+      "sku": "f91fcaaa-2977-4c80-9563-0f71cec9c87c",
+      "name": "Сет \"Для двоих\"",
+      "roll_revenue_rub": 36044.38,
+      "roll_food_rub": 10702.47,
+      "mixed_bundle": false,
+      "all_component_food_rub": 10702.47
+    },
+    {
+      "sku": "fa650f53-ddb9-474f-853f-0059ad9f4304",
+      "name": "Огненный жемчуг ",
+      "roll_revenue_rub": 2351.69,
+      "roll_food_rub": 638.12,
+      "mixed_bundle": false,
+      "all_component_food_rub": 638.12
+    },
+    {
+      "sku": "fafc92a9-bca0-4847-887d-704e329df9a5",
+      "name": "Фудзивара",
+      "roll_revenue_rub": 2449.12,
+      "roll_food_rub": 792.3,
+      "mixed_bundle": false,
+      "all_component_food_rub": 792.3
+    },
+    {
+      "sku": "fbe43bfc-106e-41e4-8a1b-c280adc23a38",
+      "name": "Кензо",
+      "roll_revenue_rub": 1025.34,
+      "roll_food_rub": 234.01,
+      "mixed_bundle": false,
+      "all_component_food_rub": 234.01
+    },
+    {
+      "sku": "ffcc5574-6e86-4d15-b006-840d4bfdcc22",
+      "name": "Эбияма",
+      "roll_revenue_rub": 6824.45,
+      "roll_food_rub": 1871.4,
+      "mixed_bundle": false,
+      "all_component_food_rub": 1871.4
+    }
+  ],
+  "bulk_histogram": {
+    "10": {
+      "orders": 152,
+      "basket_rub": 541024.0,
+      "discount_rub": 54102.4
+    },
+    "15": {
+      "orders": 23,
+      "basket_rub": 128971.0,
+      "discount_rub": 19345.649999999998
+    },
+    "20": {
+      "orders": 6,
+      "basket_rub": 50171.0,
+      "discount_rub": 10034.2
+    }
+  },
+  "exclusion_items": [
+    {
+      "name": "2 пиццы 30см",
+      "qty": 33.0,
+      "sales_before_order_discount_rub": 42867.0,
+      "orders": 33
+    },
+    {
+      "name": "Акционный набор №1",
+      "qty": 48.0,
+      "sales_before_order_discount_rub": 81552.0,
+      "orders": 48
+    },
+    {
+      "name": "3 пиццы 30см",
+      "qty": 22.0,
+      "sales_before_order_discount_rub": 39578.0,
+      "orders": 22
+    },
+    {
+      "name": "3 пиццы за 1499р",
+      "qty": 32.0,
+      "sales_before_order_discount_rub": 47968.0,
+      "orders": 32
+    },
+    {
+      "name": "Акционный набор №2",
+      "qty": 42.0,
+      "sales_before_order_discount_rub": 83958.0,
+      "orders": 42
+    },
+    {
+      "name": "Акционный набор №3",
+      "qty": 28.0,
+      "sales_before_order_discount_rub": 89572.0,
+      "orders": 28
+    },
+    {
+      "name": "Легкое комбо",
+      "qty": 20.0,
+      "sales_before_order_discount_rub": 21980.0,
+      "orders": 20
+    },
+    {
+      "name": "3 пиццы 40см",
+      "qty": 8.0,
+      "sales_before_order_discount_rub": 21592.0,
+      "orders": 8
+    },
+    {
+      "name": "2 пиццы 40см",
+      "qty": 6.0,
+      "sales_before_order_discount_rub": 11394.0,
+      "orders": 6
+    }
+  ],
+  "exclusion_bonus_cap_recovery_rub": 15980.0,
+  "basket_checks": {
+    "equal_reported_subtotal": 907,
+    "all_orders": 1394,
+    "basis": "Sum totalPrice of positive Starter food lines before order-level discounts; excludes historical free dishes, delivery and service fee. price is sometimes line-total after POS edits, so never multiply price*quantity blindly. Parent combo represented once in saved DTO. Edited POS baskets may differ."
+  },
+  "scenarios": [
+    {
+      "id": "current",
+      "label": "Текущая экономика",
+      "daily_revenue_delta": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "gift_cost_saving_rub": 0,
+      "changed_orders": 0,
+      "best_benefit_choices": {
+        "bonus": 553,
+        "existing": 841
+      },
+      "old_benefit_rub": 226414.0,
+      "new_benefit_rub": 226414.0,
+      "at_1819": {
+        "profit_rub": -130869.41999999993,
+        "delta_vs_same_recipe_base_rub": 0.0,
+        "revenue_change_rub": 0.0,
+        "food_saving_rub": 0.0,
+        "daily_pool_delta_rub": 0.0,
+        "tax_fee_delta_rub": 0.0
+      },
+      "at_1819_rolls32": {
+        "profit_rub": -282344.50164406985,
+        "delta_vs_same_recipe_base_rub": 0.0,
+        "revenue_change_rub": 0.0,
+        "food_saving_rub": 0.0,
+        "daily_pool_delta_rub": 0.0,
+        "tax_fee_delta_rub": 0.0
+      },
+      "thresholds_current_recipes": {
+        "0": 2030,
+        "500000": 2770
+      },
+      "thresholds_rolls32_with_110k_budget": {
+        "0": 2260,
+        "500000": 3030
+      }
+    },
+    {
+      "id": "remove_gifts_first15",
+      "label": "Без подарочной шкалы + обычный первый15%",
+      "daily_revenue_delta": [
+        0.0,
+        0.0,
+        460.75,
+        103.0,
+        67.25,
+        121.5,
+        539.75,
+        391.25,
+        331.5,
+        0.0,
+        283.5,
+        262.25,
+        301.25,
+        666.0,
+        86.0,
+        395.25,
+        0.0,
+        83.0,
+        100.0,
+        0.0,
+        808.25,
+        0.0,
+        66.0,
+        233.0,
+        0.0,
+        413.75,
+        165.5,
+        468.0,
+        299.75,
+        335.75,
+        112.0
+      ],
+      "gift_cost_saving_rub": 45671.514833333335,
+      "changed_orders": 61,
+      "best_benefit_choices": {
+        "bonus": 553,
+        "existing": 841
+      },
+      "old_benefit_rub": 226414.0,
+      "new_benefit_rub": 219319.75,
+      "at_1819": {
+        "profit_rub": -79104.48534257404,
+        "delta_vs_same_recipe_base_rub": 51764.934657425874,
+        "revenue_change_rub": 7094.25,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": 262.7287500000093,
+        "tax_fee_delta_rub": 738.1014259074489
+      },
+      "at_1819_rolls32": {
+        "profit_rub": -230579.56698664397,
+        "delta_vs_same_recipe_base_rub": 51764.934657425874,
+        "revenue_change_rub": 7094.25,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": 262.7287500000093,
+        "tax_fee_delta_rub": 738.1014259074489
+      },
+      "thresholds_current_recipes": {
+        "0": 1940,
+        "500000": 2650
+      },
+      "thresholds_rolls32_with_110k_budget": {
+        "0": 2160,
+        "500000": 2910
+      }
+    },
+    {
+      "id": "plus_bulk",
+      "label": "Плюс большая корзина 10/15/20%; одна лучшая выгода",
+      "daily_revenue_delta": [
+        -3766.9,
+        -3290.6000000000004,
+        -2611.4000000000005,
+        -239.70000000000005,
+        -626.35,
+        -253.5,
+        -2677.45,
+        -5214.85,
+        -863.25,
+        -1762.9,
+        -893.05,
+        -1793.9500000000003,
+        -1346.1000000000001,
+        -422.30000000000007,
+        -3323.1500000000005,
+        -1439.4500000000003,
+        -632.4000000000001,
+        -2190.1000000000004,
+        -1084.85,
+        -1559.6000000000001,
+        -207.65000000000015,
+        -1415.0000000000002,
+        -1470.2,
+        -228.8,
+        -823.3000000000001,
+        -2580.8500000000004,
+        -139.7,
+        -1712.15,
+        -2010.5500000000002,
+        -958.95,
+        -1292.7000000000003
+      ],
+      "gift_cost_saving_rub": 45671.514833333335,
+      "changed_orders": 204,
+      "best_benefit_choices": {
+        "bonus": 541,
+        "existing": 707,
+        "large": 146
+      },
+      "old_benefit_rub": 226414.0,
+      "new_benefit_rub": 275245.7,
+      "at_1819": {
+        "profit_rub": -127130.22933469215,
+        "delta_vs_same_recipe_base_rub": 3739.190665307782,
+        "revenue_change_rub": -48831.700000000004,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -1818.8179999999993,
+        "tax_fee_delta_rub": -5080.5578319744545
+      },
+      "at_1819_rolls32": {
+        "profit_rub": -278605.31097876205,
+        "delta_vs_same_recipe_base_rub": 3739.190665307782,
+        "revenue_change_rub": -48831.700000000004,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -1818.8179999999993,
+        "tax_fee_delta_rub": -5080.5578319744545
+      },
+      "thresholds_current_recipes": {
+        "0": 2020,
+        "500000": 2760
+      },
+      "thresholds_rolls32_with_110k_budget": {
+        "0": 2250,
+        "500000": 3020
+      }
+    },
+    {
+      "id": "plus_exclusions",
+      "label": "Плюс исключение акционных наборов и пицца-комбо из списания",
+      "daily_revenue_delta": [
+        -3208.9,
+        -2965.6000000000004,
+        -2384.4000000000005,
+        -65.70000000000005,
+        -310.35,
+        197.5,
+        -2556.95,
+        -3135.3500000000004,
+        -374.1500000000001,
+        -1101.9,
+        -732.05,
+        -1396.45,
+        -1028.1,
+        49.69999999999993,
+        -2984.1500000000005,
+        -937.85,
+        -632.4000000000001,
+        -1302.0,
+        -805.85,
+        -1061.6000000000001,
+        109.44999999999987,
+        -1293.1000000000004,
+        -1116.1,
+        -228.8,
+        -186.30000000000007,
+        -2097.9500000000003,
+        214.3,
+        -1339.15,
+        -667.55,
+        -662.95,
+        -202.70000000000016
+      ],
+      "gift_cost_saving_rub": 45671.514833333335,
+      "changed_orders": 259,
+      "best_benefit_choices": {
+        "bonus": 530,
+        "existing": 716,
+        "large": 148
+      },
+      "old_benefit_rub": 226414.0,
+      "new_benefit_rub": 260621.39999999994,
+      "at_1819": {
+        "profit_rub": -114581.65928024994,
+        "delta_vs_same_recipe_base_rub": 16287.760719749996,
+        "revenue_change_rub": -34207.4,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -1264.6324999999924,
+        "tax_fee_delta_rub": -3559.013386416671
+      },
+      "at_1819_rolls32": {
+        "profit_rub": -266056.74092431983,
+        "delta_vs_same_recipe_base_rub": 16287.760719749996,
+        "revenue_change_rub": -34207.4,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -1264.6324999999924,
+        "tax_fee_delta_rub": -3559.013386416671
+      },
+      "thresholds_current_recipes": {
+        "0": 1990,
+        "500000": 2730
+      },
+      "thresholds_rolls32_with_110k_budget": {
+        "0": 2220,
+        "500000": 2990
+      }
+    },
+    {
+      "id": "soft_bulk",
+      "label": "Альтернатива для сравнения: 5/7/10% вместо10/15/20%",
+      "daily_revenue_delta": [
+        -1220.8200000000002,
+        -1298.5,
+        -608.5500000000002,
+        105.64999999999998,
+        36.44999999999999,
+        385.0,
+        -869.4200000000001,
+        -113.18000000000029,
+        312.95,
+        -145.06000000000006,
+        -104.23000000000005,
+        -357.6000000000001,
+        -168.42000000000007,
+        593.85,
+        -1019.5400000000002,
+        58.49999999999997,
+        -316.20000000000005,
+        -138.9700000000001,
+        -69.85000000000002,
+        -220.80000000000007,
+        623.15,
+        -107.55000000000007,
+        -317.89,
+        2.0999999999999943,
+        234.65,
+        -354.95000000000005,
+        366.9,
+        -220.74000000000007,
+        513.3799999999999,
+        -15.100000000000023,
+        536.5499999999998
+      ],
+      "gift_cost_saving_rub": 45671.514833333335,
+      "changed_orders": 236,
+      "best_benefit_choices": {
+        "bonus": 535,
+        "existing": 737,
+        "large": 122
+      },
+      "old_benefit_rub": 226414.0,
+      "new_benefit_rub": 230312.24000000002,
+      "at_1819": {
+        "profit_rub": -88553.87037425663,
+        "delta_vs_same_recipe_base_rub": 42315.549625743304,
+        "revenue_change_rub": -3898.240000000002,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -136.693299999999,
+        "tax_fee_delta_rub": -405.5814924099736
+      },
+      "at_1819_rolls32": {
+        "profit_rub": -240028.95201832656,
+        "delta_vs_same_recipe_base_rub": 42315.549625743304,
+        "revenue_change_rub": -3898.240000000002,
+        "food_saving_rub": 45671.514833333335,
+        "daily_pool_delta_rub": -136.693299999999,
+        "tax_fee_delta_rub": -405.5814924099736
+      },
+      "thresholds_current_recipes": {
+        "0": 1950,
+        "500000": 2670
+      },
+      "thresholds_rolls32_with_110k_budget": {
+        "0": 2180,
+        "500000": 2930
+      }
+    }
+  ],
+  "pickup_before_after": [
+    {
+      "label": "before",
+      "from_inclusive": "2026-02-24",
+      "to_exclusive": "2026-03-24",
+      "observed_days": 28,
+      "channels": {
+        "Доставка Курьер Стартер": {
+          "orders": 1319,
+          "net_rub": 2511788.27
+        },
+        "Доставка курьером": {
+          "orders": 191,
+          "net_rub": 481131.15
+        },
+        "Самовывоз": {
+          "orders": 216,
+          "net_rub": 203016.15
+        },
+        "Самовывоз Стартер": {
+          "orders": 283,
+          "net_rub": 444138.28
+        }
+      },
+      "all_orders": 2009,
+      "all_pickup_orders": 499,
+      "pickup_share": 0.24838227974116475,
+      "starter_pickup_share": 0.1766541822721598
+    },
+    {
+      "label": "after",
+      "from_inclusive": "2026-03-24",
+      "to_exclusive": "2026-04-21",
+      "observed_days": 28,
+      "channels": {
+        "Доставка Курьер Стартер": {
+          "orders": 1157,
+          "net_rub": 2174104.85
+        },
+        "Доставка курьером": {
+          "orders": 174,
+          "net_rub": 426825.9
+        },
+        "Самовывоз": {
+          "orders": 199,
+          "net_rub": 165931.85
+        },
+        "Самовывоз Стартер": {
+          "orders": 270,
+          "net_rub": 357961.10000000003
+        }
+      },
+      "all_orders": 1800,
+      "all_pickup_orders": 469,
+      "pickup_share": 0.26055555555555554,
+      "starter_pickup_share": 0.18920812894183603
+    },
+    {
+      "label": "after2",
+      "from_inclusive": "2026-04-21",
+      "to_exclusive": "2026-05-19",
+      "observed_days": 28,
+      "channels": {
+        "Доставка Курьер Стартер": {
+          "orders": 1180,
+          "net_rub": 2218373.04
+        },
+        "Доставка курьером": {
+          "orders": 200,
+          "net_rub": 505840.79000000004
+        },
+        "Самовывоз": {
+          "orders": 248,
+          "net_rub": 203329.82
+        },
+        "Самовывоз Стартер": {
+          "orders": 288,
+          "net_rub": 392781.15
+        }
+      },
+      "all_orders": 1916,
+      "all_pickup_orders": 536,
+      "pickup_share": 0.2797494780793319,
+      "starter_pickup_share": 0.19618528610354224
+    }
+  ],
+  "limits": [
+    "August unclosed base. Preserve all baseline costs; no final net-profit claim.",
+    "Only recipes of roll products change. Order-level promotions are modeled across Starter baskets, not solely roll lines.",
+    "Future cashback issuance 0/3/5/7 not included as immediate cash/profit saving; historical customer tier and bonus ledger required.",
+    "Best single monetary benefit used: current protected birthday/pickup/other amounts (ordinary first order reduced to15) or large-order discount or observed bonus spending with eligibility cap. If product exclusions reduce previously used bonuses on pickup, retained pickup10% is offered as fallback. Other unobserved eligible coupons/balances and full product priority engine are not reconstructed.",
+    "Referral first orders retain15 via ordinary offer; no invented1310 saving. Referrer rewards/other referral machinery not silently cancelled.",
+    "Double promotion removed as label at normalized per-unit price: same food quantity and paid amount gives no automatic12107 saving. Post-removal product prices/quantities still to design.",
+    "Product exclusions inferred from explicit observed names and pizza-line combos; exact current Starter meal IDs/categories and end-to-end mixed-basket restriction need verification before deployment.",
+    "Bonus cap replay uses historical spending, not all available balances. Deferred redemption is not permanent saving.",
+    "Monetary discount ladder can change basket size and timing; static replay does not estimate demand or customers topping up to threshold.",
+    "Pickup first observed use24Mar is not proved creation date; history API has0 rows. Disabled predecessor ID found, with no done shop3 orders returned for first/last lookup. Before/after has calendar and channel confounding, not causal proof.",
+    "Quality scenario adds100k staffing and10k equipment; existing model cost drivers and constant order mix inherited. Other workshops keep per-unit recipes, not frozen monthly sales when total orders grow.",
+    "Conditional thresholds search to6000, round10; whole kitchen capacity not validated."
+  ],
+  "source_sha256": {
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure/orders-aug-detail-private.jsonl": "a82e232507ad6636d0a08f04b4760eaeb5127354163dcac57087b4ec41dd992a",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure/gift-cost-private.json": "0195922adfcd510950a60b63ebc1cebb73fa94050ba6df47f5eedbaf466b1a28",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2/iiko-workshop-pickup.json": "53546f2a2cbb6efa060c230939b8fc082a84f47482f398105536acfedfc9a1f7"
+  }
+}

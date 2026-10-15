@@ -1,0 +1,70 @@
+{
+  "as_of": "2026-10-15T18:07:53.907450+00:00",
+  "bonus_restriction": {
+    "restrictAward": false,
+    "restrictRedeem": false,
+    "meals": [],
+    "categories": []
+  },
+  "bonus_restriction_read_status": 200,
+  "unavailable_catalog_gets": [
+    {
+      "path": "/api/v1/frontend/catalog/combo",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/frontend/catalog/combo/settings",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/frontend/catalog/combo/categories",
+      "status": 404
+    },
+    {
+      "path": "/api/v1/frontend/catalog/combo/slot-targets",
+      "status": 404
+    }
+  ],
+  "pickup_history_total": 0,
+  "first_current_pickup": {
+    "deliveryTime": "2026-03-24T16:21:36.249000+00:00",
+    "discounts": [
+      {
+        "id": "9631fb04-b855-4116-ab5a-700b9a4a6853",
+        "name": "Самовывоз выгоднее! Скидка 10%",
+        "sum": 65.0,
+        "type": "discount",
+        "promocode": null,
+        "meal": null
+      }
+    ],
+    "price": 645.0,
+    "totalPrice": 580.0
+  },
+  "predecessor": {
+    "old_first": {
+      "empty": true
+    },
+    "old_last": {
+      "empty": true
+    },
+    "shop3_first": {
+      "query": {
+        "statuses": "done",
+        "shop_ids": [
+          "3"
+        ],
+        "order_by": "delivery_time",
+        "limit": 1,
+        "offset": 0
+      },
+      "result": {
+        "deliveryTime": "2023-05-10T11:06:09.716000+00:00",
+        "discounts": [],
+        "price": 2029.0,
+        "totalPrice": 2119.0
+      }
+    }
+  },
+  "read_only": true
+}

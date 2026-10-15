@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-15",
+  "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2",
+  "prior_order_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure",
+  "source_sha256": {
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure/orders-aug-detail-private.jsonl": "a82e232507ad6636d0a08f04b4760eaeb5127354163dcac57087b4ec41dd992a",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/discount-pressure/gift-cost-private.json": "0195922adfcd510950a60b63ebc1cebb73fa94050ba6df47f5eedbaf466b1a28",
+    "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2/iiko-workshop-pickup.json": "53546f2a2cbb6efa060c230939b8fc082a84f47482f398105536acfedfc9a1f7"
+  },
+  "private_files": [
+    {
+      "name": "first-pickup-detail-safe.json",
+      "sha256": "d9881af597e0865bdfe61f9e86865ba8098526ab067ae8c9ca7ff367f75cc18e"
+    },
+    {
+      "name": "iiko-workshop-pickup.json",
+      "sha256": "53546f2a2cbb6efa060c230939b8fc082a84f47482f398105536acfedfc9a1f7"
+    },
+    {
+      "name": "pickup-first-observed.json",
+      "sha256": "8afc288339c828d370522d9c0d78087955c23f540edc14ad3686a9575a6dd130"
+    },
+    {
+      "name": "pickup-predecessor-safe.json",
+      "sha256": "347560e432e829f241696cc1d67dc2ae0a1ec8c718c2966bbeb18df7afaa2035"
+    }
+  ],
+  "public_files": [
+    {
+      "name": "README.md",
+      "sha256": "c9421207f61fed0a7858bfc0909b7ca733d6d9ddca6161d284f029e6b0d2e62c"
+    },
+    {
+      "name": "owner-decisions.json",
+      "sha256": "8fcf900a007e24598e87f0a184a1004e0443092e834a6b2c0b3ea54accf1ea47"
+    },
+    {
+      "name": "results.json",
+      "sha256": "6d9dd0e243bb44f4a602a69845463bf19d727fd813c8c377f56aa1a50119bc55"
+    },
+    {
+      "name": "scripts/calculate.py",
+      "sha256": "d9a78211768df437144a85866af18b952274e71aa7750f6b5ce612e7c4aaa648"
+    },
+    {
+      "name": "scripts/iiko_workshop_pickup.py",
+      "sha256": "269486709881c5979bd19bda125a6bdc62c7db8041e960b78b00f7ea1c2eaa79"
+    },
+    {
+      "name": "scripts/verify.py",
+      "sha256": "c8d4da758efc08a48d761442e66e3dd8e1ef4650788a3ba3c5070dd803ad042d"
+    },
+    {
+      "name": "technical-findings.json",
+      "sha256": "d4dfa8316534e320073db73db2dd41fa7587b3092a4e310eefc715a44638fdd8"
+    }
+  ],
+  "status": "owner_proposal_and_offline_counterfactual_no_live_settings_changed",
+  "verified": "iiko whole-point totals reconcile; recipe-based component allocation preserves revenue/food; birthday retained; no double-promo automatic saving; cashback issuance unquantified; sources contain no customer identity or credentials."
+}

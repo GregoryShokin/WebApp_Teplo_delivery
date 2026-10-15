@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-15",
+  "source": "direct_owner_messages_and_explicit_answers_in_this_thread",
+  "production_applied": false,
+  "recipe_scope": {
+    "change": [
+      "rolls"
+    ],
+    "unchanged_recipe": [
+      "pizza",
+      "shawarma",
+      "other_hot_dishes"
+    ],
+    "mixed_sets": "change roll components only; split revenue explicitly; no duplicate food or fixed expense"
+  },
+  "double_promotion": {
+    "desired": "remove",
+    "owner_price_context": "unit promotion price approximately doubled; compare equal portion count at normalized price",
+    "automatic_gift_cost_saving_credited": false
+  },
+  "birthday": "protected_unchanged",
+  "first_order": {
+    "ordinary_percent": 15,
+    "separate_referral_first_order_discount": "remove as separate mechanism; newcomer may use ordinary15",
+    "referrer_rewards": "no separate instruction to cancel"
+  },
+  "pickup": "keep10 pending evaluation",
+  "gift_ladder": "remove",
+  "large_basket_candidate": {
+    "tiers": [
+      {
+        "from_rub": 3000,
+        "rate": 0.1
+      },
+      {
+        "from_rub": 5000,
+        "rate": 0.15
+      },
+      {
+        "from_rub": 7000,
+        "rate": 0.2
+      }
+    ],
+    "not_final_economic_approval": true,
+    "bonus_compatibility": "one benefit of choice, never stack",
+    "replay_assumption": "best monetary benefit against existing protected/retained offers; food subtotal before order-level discounts"
+  },
+  "bonuses": {
+    "redemption_cap_kept": 0.5,
+    "no_accrual_or_redemption_categories": [
+      "promotional bundles",
+      "pizza combo bundles"
+    ],
+    "other_sets_not_automatically_excluded": true,
+    "accrual_tiers": [
+      {
+        "from": 0,
+        "to_exclusive": 5000,
+        "rate": 0
+      },
+      {
+        "from": 5000,
+        "to_exclusive": 15000,
+        "rate": 0.03
+      },
+      {
+        "from": 15000,
+        "to_exclusive": 35000,
+        "rate": 0.05
+      },
+      {
+        "from": 35000,
+        "to_exclusive": null,
+        "rate": 0.07
+      }
+    ],
+    "tier_basis_assumption": "accumulated purchase RUB; period and exact counted amount not yet specified",
+    "existing_balances": "not cancelled",
+    "future_accrual_profit_effect": "not quantified without historical tier/ledger/cohort"
+  }
+}
