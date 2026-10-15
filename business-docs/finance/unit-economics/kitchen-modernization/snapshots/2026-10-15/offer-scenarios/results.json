@@ -1,0 +1,526 @@
+{
+  "status": "conditional_scenario_on_unclosed_august_2026_base",
+  "base_orders": 1819,
+  "base_check": 1804.5248158328752,
+  "base_food_cost": 0.29327036747378155,
+  "base_profit_rub": -116175.67,
+  "gross_check": 2061.3996701484334,
+  "aggregate_gross_to_net_markdown": 0.12461186350003717,
+  "source_sha256": {
+    "costs": "c965ff86d4bc581ae8431a6ca6c93c98ac76d067898ea14ba8afc3819d38740e",
+    "reconciliation": "3ed385f1753f956ceda1f43f9d90aa97248c5cd70489a60ca8b026aebe76118b",
+    "orders": "7e0cfbeb3b726253f8a3444f102b19db8f1cb4e41d56dfc7c29a5b2ac023f820",
+    "base_inputs": "512faee6a2a64cdcfaf5d3e11c51a1bb538b27680f6a119ff17711199fad23c2",
+    "timing": "886bc6f1506f4f8a4ac6741f39acb2a9289a5a05ba7f454b1ee048def793c14f",
+    "hour_profile": "0c84fcb39020c98cf768e0e422189f1564e6c11857d801b8815548af2cef7e1f"
+  },
+  "scenarios": [
+    {
+      "id": "quality_same_prices",
+      "label": "Качество выше, цены прежние",
+      "paid_check_rub": 1804.5248158328752,
+      "basket_food_cost": 0.32,
+      "food_budget_per_order_rub": 577.4479410665201,
+      "additional_staff_budget_rub": 100000,
+      "peak_manual_crew": [
+        3,
+        2
+      ],
+      "unchanged_order_count": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3282430.64,
+        "costs_rub": 3621437.700366582,
+        "profit_rub": -339007.06036658154,
+        "profit_delta_vs_working_base_rub": -222831.39036658156,
+        "cost_deltas_rub": {
+          "food": 87738.16480000003,
+          "writeoffs_and_inventory": 10399.475566581552,
+          "additional_packaging": 0.0,
+          "consumables": 0.0,
+          "couriers_including_shift_guarantees": 0.0,
+          "existing_electricity_and_water": 0.0,
+          "acquiring": 0.0,
+          "starter": 0.0,
+          "yandex": 0.0,
+          "partner_and_refunds": 0.0,
+          "business_tax": 0.0,
+          "shared_daily_production_pool": 0.0,
+          "additional_peak_staff_all_in_budget": 100000,
+          "new_equipment_all_in_monthly_budget": 10000,
+          "remove_prior_penalty_and_other_income_gains": 14693.75
+        }
+      },
+      "targets": {
+        "0": {
+          "orders": 2400,
+          "orders_per_day": 77.41935483870968,
+          "revenue_rub": 4330859.5579989,
+          "costs_rub": 4305781.331175314,
+          "profit_rub": 25078.226823586505,
+          "profit_delta_vs_working_base_rub": 141253.8968235865,
+          "cost_deltas_rub": {
+            "food": 423235.4185596482,
+            "writeoffs_and_inventory": 50165.47136877169,
+            "additional_packaging": 11494.668174821329,
+            "consumables": 10002.664007696536,
+            "couriers_including_shift_guarantees": 84215.93402968663,
+            "existing_electricity_and_water": 20304.29707256734,
+            "acquiring": 14722.255728422208,
+            "starter": 24459.93017168773,
+            "yandex": 5714.657229246837,
+            "partner_and_refunds": 13962.206157229244,
+            "business_tax": 62905.735079934006,
+            "shared_daily_production_pool": 61298.03359560197,
+            "additional_peak_staff_all_in_budget": 100000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 48.57079217577896,
+            "stress_hour_rolls": 63.142029828512655,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 0.7290909762333705,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 58.28495061093476,
+            "stress_hour_rolls": 75.77043579421519,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 0.8749091714800445,
+            "whole_kitchen_verified": false
+          }
+        },
+        "500000": {
+          "orders": 3200,
+          "orders_per_day": 103.2258064516129,
+          "revenue_rub": 5774479.410665201,
+          "costs_rub": 5259065.837020979,
+          "profit_rub": 515413.57364422176,
+          "profit_delta_vs_working_base_rub": 631589.2436442218,
+          "cost_deltas_rub": {
+            "food": 885193.7714128644,
+            "writeoffs_and_inventory": 104920.71515836226,
+            "additional_packaging": 27322.094233095104,
+            "consumables": 23775.69534359538,
+            "couriers_including_shift_guarantees": 200175.91203958218,
+            "existing_electricity_and_water": 48262.021096756456,
+            "acquiring": 34993.86430456294,
+            "starter": 58139.69632891699,
+            "yandex": 13583.376305662454,
+            "partner_and_refunds": 33187.27487630566,
+            "business_tax": 149522.92623991205,
+            "shared_daily_production_pool": 156688.42968136337,
+            "additional_peak_staff_all_in_budget": 100000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 64.76105623437195,
+            "stress_hour_rolls": 84.18937310468354,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 0.972121301644494,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 77.71326748124635,
+            "stress_hour_rolls": 101.02724772562026,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 1.1665455619733929,
+            "whole_kitchen_verified": false
+          }
+        }
+      },
+      "no_extra_staff_budget_counterfactual_not_capacity_proof": {
+        "0": {
+          "orders": 2250,
+          "orders_per_day": 72.58064516129032,
+          "revenue_rub": 4060180.8356239693,
+          "costs_rub": 4030304.797156629,
+          "profit_rub": 29876.038467340055,
+          "profit_delta_vs_working_base_rub": 146051.70846734004,
+          "cost_deltas_rub": {
+            "food": 336618.22739967017,
+            "writeoffs_and_inventory": 39898.86315822345,
+            "additional_packaging": 8527.025788894996,
+            "consumables": 7420.2206322155025,
+            "couriers_including_shift_guarantees": 62473.438152831215,
+            "existing_electricity_and_water": 15062.223818031884,
+            "acquiring": 10921.32912039582,
+            "starter": 18144.974017207256,
+            "yandex": 4239.272402418911,
+            "partner_and_refunds": 10357.505772402417,
+            "business_tax": 46665.01173743815,
+            "shared_daily_production_pool": 46676.64515689941,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        },
+        "500000": {
+          "orders": 3050,
+          "orders_per_day": 98.38709677419355,
+          "revenue_rub": 5503800.688290269,
+          "costs_rub": 4981890.658483328,
+          "profit_rub": 521910.0298069413,
+          "profit_delta_vs_working_base_rub": 638085.6998069413,
+          "cost_deltas_rub": {
+            "food": 798576.5802528862,
+            "writeoffs_and_inventory": 94654.106947814,
+            "additional_packaging": 24354.451847168773,
+            "consumables": 21193.251968114346,
+            "couriers_including_shift_guarantees": 178433.41616272676,
+            "existing_electricity_and_water": 43019.947842220994,
+            "acquiring": 31192.937696536555,
+            "starter": 51824.74017443649,
+            "yandex": 12107.991478834523,
+            "partner_and_refunds": 29582.574491478834,
+            "business_tax": 133282.20289741614,
+            "shared_daily_production_pool": 140368.3967236943,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        }
+      }
+    },
+    {
+      "id": "reprice_and_promotions",
+      "label": "Качество выше, цены меню -10%, пересмотр акций",
+      "paid_check_rub": 1762.4967179769105,
+      "basket_food_cost": 0.32,
+      "food_budget_per_order_rub": 563.9989497526113,
+      "additional_staff_budget_rub": 100000,
+      "peak_manual_crew": [
+        3,
+        2
+      ],
+      "unchanged_order_count": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3205981.5300000003,
+        "costs_rub": 3582360.6429089536,
+        "profit_rub": -376379.1129089532,
+        "profit_delta_vs_working_base_rub": -260203.44290895324,
+        "cost_deltas_rub": {
+          "food": 63274.44960000005,
+          "writeoffs_and_inventory": 7499.827402408754,
+          "additional_packaging": 0.0,
+          "consumables": 0.0,
+          "couriers_including_shift_guarantees": 0.0,
+          "existing_electricity_and_water": 0.0,
+          "acquiring": -1073.514215707141,
+          "starter": -1783.5638260119345,
+          "yandex": -416.70012304205085,
+          "partner_and_refunds": -1018.0930876973503,
+          "business_tax": -4586.946599999992,
+          "shared_daily_production_pool": -2834.8762409968767,
+          "additional_peak_staff_all_in_budget": 100000,
+          "new_equipment_all_in_monthly_budget": 10000,
+          "remove_prior_penalty_and_other_income_gains": 14693.75
+        }
+      },
+      "targets": {
+        "0": {
+          "orders": 2450,
+          "orders_per_day": 79.03225806451613,
+          "revenue_rub": 4318116.959043431,
+          "costs_rub": 4310046.854008103,
+          "profit_rub": 8070.105035327841,
+          "profit_delta_vs_working_base_rub": 124245.77503532784,
+          "cost_deltas_rub": {
+            "food": 419157.78689389804,
+            "writeoffs_and_inventory": 49682.15568768637,
+            "additional_packaging": 12483.882303463442,
+            "consumables": 10863.478466190216,
+            "couriers_including_shift_guarantees": 91463.43265530512,
+            "existing_electricity_and_water": 22051.654824079167,
+            "acquiring": 14543.321518151462,
+            "starter": 24162.644323018565,
+            "yandex": 5645.201318607465,
+            "partner_and_refunds": 13792.509585014566,
+            "business_tax": 62141.179142605855,
+            "shared_daily_production_pool": 60759.54729008293,
+            "additional_peak_staff_all_in_budget": 100000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 49.582683679441026,
+            "stress_hour_rolls": 64.45748878327333,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 0.7442803715715657,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 59.499220415329226,
+            "stress_hour_rolls": 77.34898653992799,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 0.8931364458858787,
+            "whole_kitchen_verified": false
+          }
+        },
+        "500000": {
+          "orders": 3300,
+          "orders_per_day": 106.45161290322581,
+          "revenue_rub": 5816239.169323805,
+          "costs_rub": 5302566.007984125,
+          "profit_rub": 513673.16133967973,
+          "profit_delta_vs_working_base_rub": 629848.8313396798,
+          "cost_deltas_rub": {
+            "food": 898556.8941836177,
+            "writeoffs_and_inventory": 106504.6264364755,
+            "additional_packaging": 29300.52249037933,
+            "consumables": 25497.32426058274,
+            "couriers_including_shift_guarantees": 214670.90929081914,
+            "existing_electricity_and_water": 51756.7365997801,
+            "acquiring": 35580.263473428495,
+            "starter": 59113.95482488214,
+            "yandex": 13810.995653634543,
+            "partner_and_refunds": 33743.400665529814,
+            "business_tax": 152028.51175942828,
+            "shared_daily_production_pool": 158701.80834556723,
+            "additional_peak_staff_all_in_budget": 100000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 66.78483924169606,
+            "stress_hour_rolls": 86.82029101420488,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 1.0025000923208842,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 80.14180709003529,
+            "stress_hour_rolls": 104.18434921704588,
+            "partial_manual_capacity_rolls_hour": 86.60377358490567,
+            "stress_to_partial_capacity": 1.2030001107850612,
+            "whole_kitchen_verified": false
+          }
+        }
+      },
+      "no_extra_staff_budget_counterfactual_not_capacity_proof": {
+        "0": {
+          "orders": 2300,
+          "orders_per_day": 74.19354838709677,
+          "revenue_rub": 4053742.4513468943,
+          "costs_rub": 4036431.7224234254,
+          "profit_rub": 17310.728923468967,
+          "profit_delta_vs_working_base_rub": 133486.39892346895,
+          "cost_deltas_rub": {
+            "food": 334557.9444310061,
+            "writeoffs_and_inventory": 39654.66084966472,
+            "additional_packaging": 9516.23991753711,
+            "consumables": 8281.035090709182,
+            "couriers_including_shift_guarantees": 69720.9367784497,
+            "existing_electricity_and_water": 16809.58156954371,
+            "acquiring": 10830.919996631976,
+            "starter": 17994.76599916028,
+            "yandex": 4204.178788896803,
+            "partner_and_refunds": 10271.764100217748,
+            "business_tax": 46278.708680813645,
+            "shared_daily_production_pool": 45010.926220794325,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        },
+        "500000": {
+          "orders": 3150,
+          "orders_per_day": 101.61290322580645,
+          "revenue_rub": 5551864.661627268,
+          "costs_rub": 5030570.452543467,
+          "profit_rub": 521294.20908380114,
+          "profit_delta_vs_working_base_rub": 637469.8790838012,
+          "cost_deltas_rub": {
+            "food": 813957.051720726,
+            "writeoffs_and_inventory": 96477.1315984539,
+            "additional_packaging": 26332.880104453,
+            "consumables": 22914.880885101706,
+            "couriers_including_shift_guarantees": 192928.41341396375,
+            "existing_electricity_and_water": 46514.66334524465,
+            "acquiring": 31867.861951909017,
+            "starter": 52946.07650102387,
+            "yandex": 12369.973123923883,
+            "partner_and_refunds": 30222.655180733007,
+            "business_tax": 136166.04129763608,
+            "shared_daily_production_pool": 144572.76342029843,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        }
+      }
+    },
+    {
+      "id": "affordable_line_30pct",
+      "label": "Новая доступная линейка: 30% заказов",
+      "paid_check_rub": 1683.1673710830125,
+      "basket_food_cost": 0.3074260872615772,
+      "food_budget_per_order_rub": 517.4495590984058,
+      "additional_staff_budget_rub": 150000,
+      "peak_manual_crew": [
+        4,
+        2
+      ],
+      "unchanged_order_count": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3061681.448,
+        "costs_rub": 3515541.131402939,
+        "profit_rub": -453859.6834029393,
+        "profit_delta_vs_working_base_rub": -337684.0134029393,
+        "cost_deltas_rub": {
+          "food": -21398.891999999993,
+          "writeoffs_and_inventory": -2536.379180179941,
+          "additional_packaging": 0.0,
+          "consumables": 0.0,
+          "couriers_including_shift_guarantees": 0.0,
+          "existing_electricity_and_water": 0.0,
+          "acquiring": -3099.805814846845,
+          "starter": -5150.096233593357,
+          "yandex": -1203.2346153909912,
+          "partner_and_refunds": -2939.77557737397,
+          "business_tax": -13244.951520000015,
+          "shared_daily_production_pool": -8185.793655675807,
+          "additional_peak_staff_all_in_budget": 150000,
+          "new_equipment_all_in_monthly_budget": 10000,
+          "remove_prior_penalty_and_other_income_gains": 14693.75
+        }
+      },
+      "targets": {
+        "0": {
+          "orders": 2600,
+          "orders_per_day": 83.87096774193549,
+          "revenue_rub": 4376235.164815833,
+          "costs_rub": 4362450.681611113,
+          "profit_rub": 13784.483204719494,
+          "profit_delta_vs_working_base_rub": 129960.15320471949,
+          "cost_deltas_rub": {
+            "food": 382729.2136558549,
+            "writeoffs_and_inventory": 45364.330506614715,
+            "additional_packaging": 15451.524689389775,
+            "consumables": 13445.921841671248,
+            "couriers_including_shift_guarantees": 113205.92853216053,
+            "existing_electricity_and_water": 27293.728078614622,
+            "acquiring": 15359.429385045745,
+            "starter": 25518.546693214554,
+            "yandex": 5961.985431546688,
+            "partner_and_refunds": 14566.48515603501,
+            "business_tax": 65628.27148894996,
+            "shared_daily_production_pool": 64625.25615201556,
+            "additional_peak_staff_all_in_budget": 150000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 52.61835819042721,
+            "stress_hour_rolls": 68.40386564755538,
+            "partial_manual_capacity_rolls_hour": 98.70967741935483,
+            "stress_to_partial_capacity": 0.692980338259548,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 63.142029828512655,
+            "stress_hour_rolls": 82.08463877706646,
+            "partial_manual_capacity_rolls_hour": 98.70967741935483,
+            "stress_to_partial_capacity": 0.8315764059114577,
+            "whole_kitchen_verified": false
+          }
+        },
+        "500000": {
+          "orders": 3450,
+          "orders_per_day": 111.29032258064517,
+          "revenue_rub": 5806927.430236394,
+          "costs_rub": 5298567.048330112,
+          "profit_rub": 508360.3819062812,
+          "profit_delta_vs_working_base_rub": 624536.0519062813,
+          "cost_deltas_rub": {
+            "food": 822561.3388894998,
+            "writeoffs_and_inventory": 97496.98509531566,
+            "additional_packaging": 32268.164876305666,
+            "consumables": 28079.767636063774,
+            "couriers_including_shift_guarantees": 236413.40516767456,
+            "existing_electricity_and_water": 56998.809854315565,
+            "acquiring": 35449.50610707993,
+            "starter": 58896.711210227004,
+            "yandex": 13760.240284167721,
+            "partner_and_refunds": 33619.39376473876,
+            "business_tax": 151469.8074141836,
+            "shared_daily_production_pool": 158252.85803054032,
+            "additional_peak_staff_all_in_budget": 150000,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          },
+          "load": {
+            "mean_busiest_arrival_hour_rolls": 69.82051375268227,
+            "stress_hour_rolls": 90.76666787848696,
+            "partial_manual_capacity_rolls_hour": 98.70967741935483,
+            "stress_to_partial_capacity": 0.9195316026905542,
+            "whole_kitchen_verified": false
+          },
+          "load_with_20pct_more_rolls_per_order": {
+            "mean_busiest_arrival_hour_rolls": 83.7846165032187,
+            "stress_hour_rolls": 108.92000145418432,
+            "partial_manual_capacity_rolls_hour": 98.70967741935483,
+            "stress_to_partial_capacity": 1.1034379232286646,
+            "whole_kitchen_verified": false
+          }
+        }
+      },
+      "no_extra_staff_budget_counterfactual_not_capacity_proof": {
+        "0": {
+          "orders": 2350,
+          "orders_per_day": 75.80645161290323,
+          "revenue_rub": 3955443.3220450794,
+          "costs_rub": 3941002.515245772,
+          "profit_rub": 14440.80679930735,
+          "profit_delta_vs_working_base_rub": 130616.47679930735,
+          "cost_deltas_rub": {
+            "food": 253366.82388125348,
+            "writeoffs_and_inventory": 30031.196804055595,
+            "additional_packaging": 10505.454046179224,
+            "consumables": 9141.849549202861,
+            "couriers_including_shift_guarantees": 76968.4354040682,
+            "existing_electricity_and_water": 18556.93932105553,
+            "acquiring": 9450.583290329803,
+            "starter": 15701.439482328535,
+            "yandex": 3668.3810631287356,
+            "partner_and_refunds": 8962.688506416254,
+            "business_tax": 40380.76092270476,
+            "shared_daily_production_pool": 40967.902975049044,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        },
+        "500000": {
+          "orders": 3200,
+          "orders_per_day": 103.2258064516129,
+          "revenue_rub": 5386135.58746564,
+          "costs_rub": 4877288.645403138,
+          "profit_rub": 508846.9420625018,
+          "profit_delta_vs_working_base_rub": 625022.6120625018,
+          "cost_deltas_rub": {
+            "food": 693198.9491148983,
+            "writeoffs_and_inventory": 82163.85139275654,
+            "additional_packaging": 27322.094233095104,
+            "consumables": 23775.69534359538,
+            "couriers_including_shift_guarantees": 200175.91203958218,
+            "existing_electricity_and_water": 48262.021096756456,
+            "acquiring": 29540.660012363984,
+            "starter": 49079.60399934099,
+            "yandex": 11466.635915749768,
+            "partner_and_refunds": 28015.597115120003,
+            "business_tax": 126222.2968479384,
+            "shared_daily_production_pool": 134765.2682919412,
+            "additional_peak_staff_all_in_budget": 0,
+            "new_equipment_all_in_monthly_budget": 10000,
+            "remove_prior_penalty_and_other_income_gains": 14693.75
+          }
+        }
+      }
+    }
+  ]
+}

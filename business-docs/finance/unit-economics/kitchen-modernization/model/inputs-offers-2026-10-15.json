@@ -1,0 +1,39 @@
+{
+  "as_of": "2026-10-15",
+  "status": "owner_authorized_replaceable_scenarios_not_approved_prices_or_demand_forecast",
+  "sources": {
+    "costs": "snapshots/2026-10-15/cost-registry-august-updated.json",
+    "reconciliation": "snapshots/2026-10-15/baseline-reconciliation.json",
+    "orders": "snapshots/2026-10-14/b-costs-baseline/data/orders-and-thresholds.json",
+    "base_inputs": "model/inputs-2026-08-base-updated-2026-10-15.json",
+    "timing": "model/inputs-preliminary-2026-10-15.json",
+    "hour_profile": "snapshots/2026-10-14/a-recipes-sales/data/hourly-sep-2026.json"
+  },
+  "assumptions": {
+    "consumables_variable_share": 0.5,
+    "utilities_variable_share": 0.5,
+    "starter_rate": 0.03,
+    "yandex_marginal_rate": 0.25,
+    "USN_rate": 0.06,
+    "equipment_all_in_monthly_budget": 10000,
+    "busy_day_stress_multiplier": 1.3,
+    "search_max_orders": 8000
+  },
+  "method": {
+    "anchoring": "All 40 original expenses stay in the base. Add revenue and cost deltas. Remove 8573 penalties and 6120.75 other income favorable to baseline from forecasts. Known base is unclosed; no final net-profit guarantee.",
+    "physical_costs": "Same dish counts and physical rolls per all-business order. Additional packaging scales with orders. 50% of consumables and existing electricity/water scale with orders; 50% fixed. Losses scale with food budget, no quality savings credited. Replace these unmeasured drivers.",
+    "couriers": "Scale the full historical courier budget with delivered order count at constant delivery share, including proportional growth in guarantees. This is a conservative budget assumption, NOT the per-delivery tariff and NOT a customer delivery charge.",
+    "fees": "Baseline expenses retained. Incremental Starter 3% only its revenue share, Yandex 25% only its share. Acquiring, partner and refunds proportional revenue. Same channel mix. No second subtraction of discounts or gift cost.",
+    "payroll": "Full actual base retained. Recompute only change in the single daily theoretical pool from all-revenue tiers and normalized August daily shape. Actual floor residual stays in base. No fund on revenue percentage and no second pool per added worker. Other extra labor/taxes/meals/fund are provisional all-in budgets, not payroll calculations.",
+    "tax": "6% incremental business tax using confirmed baseline regime. Baseline fixed IP contribution and payroll taxes retained; VAT and loan interest zero per owner for August. Future regime not independently certified. IP additional contribution and deductions, and Yandex settlement completeness remain baseline reconciliation gaps.",
+    "equipment": "10000 RUB monthly combined allowance for new equipment depreciation, energy, service and consumables. It is not a quote or capex estimate. Existing equipment depreciation remains in base. No payroll saving, retention uplift or loss reduction credited.",
+    "capacity": "Only shared manual forming and dispatch resources, working timing profile. Arrival-hour September shape applied to August rolls/order; 1.3 busy-day stress is a hypothesis, not measured percentile. Machine concurrency, rice, fryer, salamander, pizza, packing/admin/couriers and physical workspace unverified. Extra helpers assumed effective at peak; no guaranteed linear production scalability.",
+    "price_scope": "FC is food budget / revenue AFTER all discounts. Scenario A and B FC apply to total business basket. C is a revenue-weighted mix of 30% new-line baskets and 70% current baskets, so 35% line FC is not 35% whole business. New-line share includes any cannibalization; order totals are required thresholds, not forecasts.",
+    "rounding": "Required orders rounded upward to 50 and tested against later tier drops through 8000 orders. Precision is illustrative, not a safety buffer. Month has 31 days. Twelve zero-revenue orders remain in the base population."
+  },
+  "scenarios": [
+    {"id":"quality_same_prices", "label":"Качество выше, цены прежние", "kind":"same_prices", "food_cost":0.32, "additional_peak_staff_all_in_budget":100000, "peak_manual_crew":[3,2]},
+    {"id":"reprice_and_promotions", "label":"Качество выше, цены меню -10%, пересмотр акций", "kind":"reprice", "list_price_multiplier":0.9, "aggregate_markdown":0.05, "food_cost":0.32, "additional_peak_staff_all_in_budget":100000, "peak_manual_crew":[3,2]},
+    {"id":"affordable_line_30pct", "label":"Новая доступная линейка: 30% заказов", "kind":"new_line_mix", "new_line_order_share":0.3, "new_line_check":1400, "new_line_food_cost":0.35, "additional_peak_staff_all_in_budget":150000, "peak_manual_crew":[4,2]}
+  ]
+}

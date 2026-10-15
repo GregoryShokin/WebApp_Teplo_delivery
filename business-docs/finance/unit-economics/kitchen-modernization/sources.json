@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "as_of": "2026-10-15",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -152,6 +152,35 @@
       "primary_objective": "Peak capacity and standardized quality -> retention/orders; payroll reduction secondary.",
       "capacity_scope": "Conditional limits of 2 shared manual resources, not complete kitchen/order throughput; 90/55 seconds and 85% availability are assumptions.",
       "contribution_volume_scope": "Relative RUB contribution per order after all variable costs; volume multipliers preserve prior contribution only, before new fixed costs/target profit."
+    },
+    {
+      "id": "offer_economics_three_options_2026_10_15",
+      "status": "conditional_model_unclosed_base_not_demand_or_capacity_confirmation",
+      "files": [
+        "model/offer_scenarios.py",
+        "model/inputs-offers-2026-10-15.json",
+        "model/test_offer_scenarios.py",
+        "snapshots/2026-10-15/offer-scenarios/README.md",
+        "snapshots/2026-10-15/offer-scenarios/results.json"
+      ],
+      "break_even_orders": [
+        2400,
+        2450,
+        2600
+      ],
+      "orders_for_500k_target": [
+        3200,
+        3300,
+        3450
+      ],
+      "extra_staff_budgets_rub": [
+        100000,
+        100000,
+        150000
+      ],
+      "equipment_monthly_budget_rub": 10000,
+      "new_line_scope": "30 percent of orders; 35 percent line food cost is 30.74 percent blended food cost",
+      "scope": "All baseline expenses anchored; variable drivers and labor budgets explicit; daily shared payroll tiers recomputed; capacity covers only conditional manual resources."
     }
   ],
   "previous_work": {
