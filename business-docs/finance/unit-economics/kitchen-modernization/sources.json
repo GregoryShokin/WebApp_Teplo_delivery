@@ -1,6 +1,6 @@
 {
-  "version": 10,
-  "as_of": "2026-10-15",
+  "version": 11,
+  "as_of": "2026-10-16",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
   "private_archive_manifest": "archive-manifest.json",
@@ -236,6 +236,16 @@
         "snapshots/2026-10-15/food-cost-35-5/results.json"
       ],
       "origin": "Offline sensitivity of the preserved offer_scenarios model; 35.5% whole-business FC, unchanged August prices/promotions, recipe change allocated only to rolls. Separate zero/110k monthly budget cases; no live mutations."
+    },
+    {
+      "id": "food_cost_35_5_owner_offers",
+      "status": "preliminary_first_month_replay",
+      "notes": "snapshots/2026-10-16/food-cost-35-5-owner-offers/README.md",
+      "key_files": [
+        "snapshots/2026-10-16/food-cost-35-5-owner-offers/calculate.py",
+        "snapshots/2026-10-16/food-cost-35-5-owner-offers/results.json"
+      ],
+      "origin": "Saved August Starter order replay plus full cost model. Distinguishes final 35.5% FC after new offers from fixed ruble recipe-improvement budget; no speculative future bonus-accrual saving."
     }
   ],
   "previous_work": {

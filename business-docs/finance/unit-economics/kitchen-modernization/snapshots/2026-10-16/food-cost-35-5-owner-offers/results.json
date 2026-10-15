@@ -1,0 +1,430 @@
+{
+  "as_of": "2026-10-16",
+  "status": "preliminary_first_month_replay_on_unclosed_august_2026",
+  "primary_interpretation": "35.5% is final food divided by revenue after the new offers. Compare separately with keeping the previous recipe-improvement ruble budget and subtracting confirmed historical gift food.",
+  "baseline_orders": 1819,
+  "days": 31,
+  "old_net_check_rub": 1804.5248158328752,
+  "new_net_check_rub": 1785.7192083562397,
+  "policy": {
+    "date": "2026-10-15",
+    "source": "direct_owner_messages_and_explicit_answers_in_this_thread",
+    "production_applied": false,
+    "recipe_scope": {
+      "change": [
+        "rolls"
+      ],
+      "unchanged_recipe": [
+        "pizza",
+        "shawarma",
+        "other_hot_dishes"
+      ],
+      "mixed_sets": "change roll components only; split revenue explicitly; no duplicate food or fixed expense"
+    },
+    "double_promotion": {
+      "desired": "remove",
+      "owner_price_context": "unit promotion price approximately doubled; compare equal portion count at normalized price",
+      "automatic_gift_cost_saving_credited": false
+    },
+    "birthday": "protected_unchanged",
+    "first_order": {
+      "ordinary_percent": 15,
+      "separate_referral_first_order_discount": "remove as separate mechanism; newcomer may use ordinary15",
+      "referrer_rewards": "no separate instruction to cancel"
+    },
+    "pickup": "keep10 pending evaluation",
+    "gift_ladder": "remove",
+    "large_basket_candidate": {
+      "tiers": [
+        {
+          "from_rub": 3000,
+          "rate": 0.1
+        },
+        {
+          "from_rub": 5000,
+          "rate": 0.15
+        },
+        {
+          "from_rub": 7000,
+          "rate": 0.2
+        }
+      ],
+      "not_final_economic_approval": true,
+      "bonus_compatibility": "one benefit of choice, never stack",
+      "replay_assumption": "best monetary benefit against existing protected/retained offers; food subtotal before order-level discounts"
+    },
+    "bonuses": {
+      "redemption_cap_kept": 0.5,
+      "no_accrual_or_redemption_categories": [
+        "promotional bundles",
+        "pizza combo bundles"
+      ],
+      "other_sets_not_automatically_excluded": true,
+      "accrual_tiers": [
+        {
+          "from": 0,
+          "to_exclusive": 5000,
+          "rate": 0
+        },
+        {
+          "from": 5000,
+          "to_exclusive": 15000,
+          "rate": 0.03
+        },
+        {
+          "from": 15000,
+          "to_exclusive": 35000,
+          "rate": 0.05
+        },
+        {
+          "from": 35000,
+          "to_exclusive": null,
+          "rate": 0.07
+        }
+      ],
+      "tier_basis_assumption": "accumulated purchase RUB; period and exact counted amount not yet specified",
+      "existing_balances": "not cancelled",
+      "future_accrual_profit_effect": "not quantified without historical tier/ledger/cohort"
+    }
+  },
+  "bridge_at_baseline_volume": {
+    "gift_food_saved_rub": 45671.514833333335,
+    "ordinary_first15_revenue_rub": 7094.25,
+    "large_basket_revenue_rub": -55925.950000000004,
+    "bonus_product_exclusions_revenue_rub": 14624.300000000003,
+    "net_revenue_change_rub": -34207.4,
+    "tax_fee_saving_rub": 3559.013386416671,
+    "daily_payroll_pool_saving_rub": 1264.6324999999924,
+    "assumed_writeoffs_inventory_saving_rub": 5413.377447325138,
+    "fixed_recipe_improvement_budget_profit_gain_rub": 21701.138167075136,
+    "food_cost_after_gift_removal": 0.3446780838766077,
+    "extra_food_budget_to_return_to_355_rub": 33527.887833333574
+  },
+  "future_bonus_accrual": {
+    "new_rates": [
+      0,
+      0.03,
+      0.05,
+      0.07
+    ],
+    "new_purchase_thresholds_rub": [
+      0,
+      5000,
+      15000,
+      35000
+    ],
+    "future_redemption_saving_rub": null,
+    "profit_credit_rub": 0,
+    "why": "Need dated customer tiers and accrual/redemption/expiry/balance ledger. Preserve earned balances. Zero credited is not a conclusion of zero future benefit."
+  },
+  "scenarios": [
+    {
+      "mode": "old_offers",
+      "extra_staff_budget_rub": 0,
+      "extra_equipment_budget_rub": 0,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3282430.64,
+        "costs_rub": 3639939.9313441766,
+        "profit_rub": -357509.2913441763,
+        "food_rub": 1165262.8772,
+        "food_cost": 0.355,
+        "net_check_rub": 1804.5248158328752,
+        "promotion_revenue_delta_rub": 0,
+        "promotion_tax_fee_delta_rub": 0.0,
+        "promotion_daily_payroll_pool_delta_rub": 0
+      },
+      "targets": {
+        "0": {
+          "orders": 2500,
+          "orders_per_day": 80.64516129032258,
+          "revenue_rub": 4511312.039582188,
+          "costs_rub": 4490623.841362584,
+          "profit_rub": 20688.19821960386,
+          "food_rub": 1601515.7740516767,
+          "food_cost": 0.355,
+          "net_check_rub": 1804.5248158328752,
+          "promotion_revenue_delta_rub": 0,
+          "promotion_tax_fee_delta_rub": 0.0,
+          "promotion_daily_payroll_pool_delta_rub": 0
+        },
+        "500000": {
+          "orders": 3400,
+          "orders_per_day": 109.6774193548387,
+          "revenue_rub": 6135384.373831776,
+          "costs_rub": 5627927.855776965,
+          "profit_rub": 507456.5180548113,
+          "food_rub": 2178061.45271028,
+          "food_cost": 0.355,
+          "net_check_rub": 1804.5248158328752,
+          "promotion_revenue_delta_rub": 0,
+          "promotion_tax_fee_delta_rub": 0.0,
+          "promotion_daily_payroll_pool_delta_rub": 0
+        }
+      }
+    },
+    {
+      "mode": "old_offers",
+      "extra_staff_budget_rub": 100000,
+      "extra_equipment_budget_rub": 10000,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3282430.64,
+        "costs_rub": 3749939.9313441766,
+        "profit_rub": -467509.2913441763,
+        "food_rub": 1165262.8772,
+        "food_cost": 0.355,
+        "net_check_rub": 1804.5248158328752,
+        "promotion_revenue_delta_rub": 0,
+        "promotion_tax_fee_delta_rub": 0.0,
+        "promotion_daily_payroll_pool_delta_rub": 0
+      },
+      "targets": {
+        "0": {
+          "orders": 2700,
+          "orders_per_day": 87.09677419354838,
+          "revenue_rub": 4872217.002748763,
+          "costs_rub": 4859851.082741823,
+          "profit_rub": 12365.920006940141,
+          "food_rub": 1729637.0359758108,
+          "food_cost": 0.355,
+          "net_check_rub": 1804.5248158328752,
+          "promotion_revenue_delta_rub": 0,
+          "promotion_tax_fee_delta_rub": 0.0,
+          "promotion_daily_payroll_pool_delta_rub": 0
+        },
+        "500000": {
+          "orders": 3600,
+          "orders_per_day": 116.12903225806451,
+          "revenue_rub": 6496289.336998351,
+          "costs_rub": 5992088.956683416,
+          "profit_rub": 504200.38031493453,
+          "food_rub": 2306182.7146344148,
+          "food_cost": 0.35500000000000004,
+          "net_check_rub": 1804.5248158328752,
+          "promotion_revenue_delta_rub": 0,
+          "promotion_tax_fee_delta_rub": 0.0,
+          "promotion_daily_payroll_pool_delta_rub": 0
+        }
+      }
+    },
+    {
+      "mode": "fixed_recipe_improvement_budget",
+      "extra_staff_budget_rub": 0,
+      "extra_equipment_budget_rub": 0,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3248223.24,
+        "costs_rub": 3584031.3931771014,
+        "profit_rub": -335808.15317710105,
+        "food_rub": 1119591.3623666666,
+        "food_cost": 0.3446780838766077,
+        "net_check_rub": 1785.7192083562397,
+        "promotion_revenue_delta_rub": -34207.4,
+        "promotion_tax_fee_delta_rub": -3559.013386416671,
+        "promotion_daily_payroll_pool_delta_rub": -1264.6324999999924
+      },
+      "targets": {
+        "0": {
+          "orders": 2450,
+          "orders_per_day": 79.03225806451613,
+          "revenue_rub": 4375012.060472787,
+          "costs_rub": 4350742.477466739,
+          "profit_rub": 24269.583006048604,
+          "food_rub": 1507970.7739408098,
+          "food_cost": 0.3446780838766077,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -46073.738317757015,
+          "promotion_tax_fee_delta_rub": -4793.613412160992,
+          "promotion_daily_payroll_pool_delta_rub": -3373.5651456844353
+        },
+        "500000": {
+          "orders": 3350,
+          "orders_per_day": 108.06451612903226,
+          "revenue_rub": 5982159.347993403,
+          "costs_rub": 5459743.663285536,
+          "profit_rub": 522415.6847078677,
+          "food_rub": 2061919.2215109032,
+          "food_cost": 0.34467808387660775,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -62998.785046728975,
+          "promotion_tax_fee_delta_rub": -6554.53262479156,
+          "promotion_daily_payroll_pool_delta_rub": -4566.674326553009
+        }
+      }
+    },
+    {
+      "mode": "fixed_recipe_improvement_budget",
+      "extra_staff_budget_rub": 100000,
+      "extra_equipment_budget_rub": 10000,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3248223.24,
+        "costs_rub": 3694031.3931771014,
+        "profit_rub": -445808.15317710105,
+        "food_rub": 1119591.3623666666,
+        "food_cost": 0.3446780838766077,
+        "net_check_rub": 1785.7192083562397,
+        "promotion_revenue_delta_rub": -34207.4,
+        "promotion_tax_fee_delta_rub": -3559.013386416671,
+        "promotion_daily_payroll_pool_delta_rub": -1264.6324999999924
+      },
+      "targets": {
+        "0": {
+          "orders": 2650,
+          "orders_per_day": 85.48387096774194,
+          "revenue_rub": 4732155.902144035,
+          "costs_rub": 4710078.944940857,
+          "profit_rub": 22076.95720317843,
+          "food_rub": 1631070.4289563862,
+          "food_cost": 0.34467808387660775,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -49834.85981308412,
+          "promotion_tax_fee_delta_rub": -5184.9287927455625,
+          "promotion_daily_payroll_pool_delta_rub": -3672.462218251778
+        },
+        "500000": {
+          "orders": 3550,
+          "orders_per_day": 114.51612903225806,
+          "revenue_rub": 6339303.189664651,
+          "costs_rub": 5814641.63201034,
+          "profit_rub": 524661.5576543108,
+          "food_rub": 2185018.8765264796,
+          "food_cost": 0.34467808387660775,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -66759.90654205608,
+          "promotion_tax_fee_delta_rub": -6945.8480053761305,
+          "promotion_daily_payroll_pool_delta_rub": -5321.195313359029
+        }
+      }
+    },
+    {
+      "mode": "final_fc_355",
+      "extra_staff_budget_rub": 0,
+      "extra_equipment_budget_rub": 0,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3248223.24,
+        "costs_rub": 3621533.29221886,
+        "profit_rub": -373310.05221885967,
+        "food_rub": 1153119.2502000001,
+        "food_cost": 0.35500000000000004,
+        "net_check_rub": 1785.7192083562397,
+        "promotion_revenue_delta_rub": -34207.4,
+        "promotion_tax_fee_delta_rub": -3559.013386416671,
+        "promotion_daily_payroll_pool_delta_rub": -1264.6324999999924
+      },
+      "targets": {
+        "0": {
+          "orders": 2500,
+          "orders_per_day": 80.64516129032258,
+          "revenue_rub": 4464298.020890599,
+          "costs_rub": 4463130.415544393,
+          "profit_rub": 1167.6053462073323,
+          "food_rub": 1584825.797416163,
+          "food_cost": 0.35500000000000004,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -47014.01869158879,
+          "promotion_tax_fee_delta_rub": -4891.442257307134,
+          "promotion_daily_payroll_pool_delta_rub": -3933.7685541506507
+        },
+        "500000": {
+          "orders": 3450,
+          "orders_per_day": 111.29032258064517,
+          "revenue_rub": 6160731.268829027,
+          "costs_rub": 5653738.664699377,
+          "profit_rub": 506992.60412965046,
+          "food_rub": 2187059.6004343047,
+          "food_cost": 0.355,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -64879.34579439253,
+          "promotion_tax_fee_delta_rub": -6750.190315083846,
+          "promotion_daily_payroll_pool_delta_rub": -3277.534139637195
+        }
+      }
+    },
+    {
+      "mode": "final_fc_355",
+      "extra_staff_budget_rub": 100000,
+      "extra_equipment_budget_rub": 10000,
+      "current_volume": {
+        "orders": 1819,
+        "orders_per_day": 58.67741935483871,
+        "revenue_rub": 3248223.24,
+        "costs_rub": 3731533.29221886,
+        "profit_rub": -483310.0522188596,
+        "food_rub": 1153119.2502000001,
+        "food_cost": 0.35500000000000004,
+        "net_check_rub": 1785.7192083562397,
+        "promotion_revenue_delta_rub": -34207.4,
+        "promotion_tax_fee_delta_rub": -3559.013386416671,
+        "promotion_daily_payroll_pool_delta_rub": -1264.6324999999924
+      },
+      "targets": {
+        "0": {
+          "orders": 2750,
+          "orders_per_day": 88.70967741935483,
+          "revenue_rub": 4910727.82297966,
+          "costs_rub": 4896129.575057705,
+          "profit_rub": 14598.247921954782,
+          "food_rub": 1743308.3771577792,
+          "food_cost": 0.355,
+          "net_check_rub": 1785.71920835624,
+          "promotion_revenue_delta_rub": -51715.42056074767,
+          "promotion_tax_fee_delta_rub": -5380.586483037848,
+          "promotion_daily_payroll_pool_delta_rub": -5269.445684442006
+        },
+        "500000": {
+          "orders": 3700,
+          "orders_per_day": 119.35483870967742,
+          "revenue_rub": 6607161.070918087,
+          "costs_rub": 6080398.801103837,
+          "profit_rub": 526762.2698142492,
+          "food_rub": 2345542.1801759214,
+          "food_cost": 0.3550000000000001,
+          "net_check_rub": 1785.7192083562397,
+          "promotion_revenue_delta_rub": -69580.74766355142,
+          "promotion_tax_fee_delta_rub": -7239.33454081456,
+          "promotion_daily_payroll_pool_delta_rub": -5525.0611050027655
+        }
+      }
+    }
+  ],
+  "source_sha256": {
+    "snapshots/2026-10-15/cost-registry-august-updated.json": "c965ff86d4bc581ae8431a6ca6c93c98ac76d067898ea14ba8afc3819d38740e",
+    "snapshots/2026-10-15/baseline-reconciliation.json": "3ed385f1753f956ceda1f43f9d90aa97248c5cd70489a60ca8b026aebe76118b",
+    "snapshots/2026-10-14/b-costs-baseline/data/orders-and-thresholds.json": "7e0cfbeb3b726253f8a3444f102b19db8f1cb4e41d56dfc7c29a5b2ac023f820",
+    "model/inputs-2026-08-base-updated-2026-10-15.json": "512faee6a2a64cdcfaf5d3e11c51a1bb538b27680f6a119ff17711199fad23c2",
+    "model/inputs-preliminary-2026-10-15.json": "886bc6f1506f4f8a4ac6741f39acb2a9289a5a05ba7f454b1ee048def793c14f",
+    "snapshots/2026-10-14/a-recipes-sales/data/hourly-sep-2026.json": "0c84fcb39020c98cf768e0e422189f1564e6c11857d801b8815548af2cef7e1f",
+    "model/offer_scenarios.py": "69a711df18a10faa064fc2b84bef14b185f18c6740238a400a3e267b446094c4",
+    "model/inputs-offers-2026-10-15.json": "2cc009ded6bf0e0b84ca419109d997617b47b2e5cfa977c45ec3432764527758",
+    "snapshots/2026-10-15/owner-offer-v2/results.json": "6d9dd0e243bb44f4a602a69845463bf19d727fd813c8c377f56aa1a50119bc55",
+    "snapshots/2026-10-15/owner-offer-v2/owner-decisions.json": "8fcf900a007e24598e87f0a184a1004e0443092e834a6b2c0b3ea54accf1ea47",
+    "snapshots/2026-10-15/food-cost-35-5/results.json": "963d8706044ae7b948d7c572d9b73317daef624ede187fc456beaa818cc25a0c"
+  },
+  "validation": {
+    "pnl_identities": true,
+    "old_355_thresholds_reproduced": true,
+    "offer_bridge_reconciled": true,
+    "gift_not_double_counted": true,
+    "daily_pool_and_channel_fees_recomputed": true
+  },
+  "limits": [
+    "Owner policy applied through saved August order-level replay (1394 Starter orders); preserve its incomplete counterfactual coupon eligibility and mixed-basket limitations.",
+    "The large-basket 10/15/20 discounts can replace existing offers; choose one best observed monetary benefit. Birthday retained, pickup10 retained pending analysis, ordinary first15, bonus redemption cap50.",
+    "Gift saving uses confirmed cost for367/373 gifts. No cost for6 missing gifts treated as zero value; their potential saving is unquantified. No assumed inflation of gift recipes before cancellation.",
+    "Pizza gift Piknik is removed along with roll gifts; unchanged recipe of other workshops means unchanged unit recipe, not unchanged number of free gifts. Additional recipe-improvement budget remains assigned to rolls.",
+    "Removed doubling yields no automatic material saving at normalized per-unit price. No lower future bonus accrual saving credited without ledger.",
+    "Same order count/basket/channel shares as replay; no estimated demand, retention, basket top-ups, pickup shift or bonus spending redistribution.",
+    "Compared with owner-offer-v2, gift removal now also decreases the assumed writeoff/inventory budget under the existing proportional-food driver. The extra5413 RUB baseline saving is an assumption, not observed quality improvement.",
+    "All40 base expense lines retained; USN6, Starter3 only own channel, acquiring historical effective rate, single daily payroll pool with tier discontinuities. Courier budget scales with delivery volume; fixed110k additional budget is provisional.",
+    "FinalFC355 explicitly reallocates33528 RUB into food compared with fixed improvement budget at1819 orders; do not mistake this for automatic recipe cost caused by a discount change.",
+    "Unclosed baseline, IP contribution/deduction and Yandex settlement gaps; future tax eligibility and whole-kitchen capacity unverified. Targets are conditional, not guaranteed net profit."
+  ]
+}
