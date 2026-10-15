@@ -1820,9 +1820,9 @@
     "semantic_hash": "c463d33adca80df9d531d809b44bc0ca"
   },
   "apps/api/app/api/v1/routes/accounting_suppliers.py": {
-    "mtime": 1790362087.0863116,
-    "ast_hash": "f6c4283bfcd6068cad56003384760a2e",
-    "semantic_hash": "f6c4283bfcd6068cad56003384760a2e"
+    "mtime": 1792065216.0539043,
+    "ast_hash": "9bd604e2846e493ac1caa016b385a360",
+    "semantic_hash": "9bd604e2846e493ac1caa016b385a360"
   },
   "apps/api/app/api/v1/routes/accumulation_fund.py": {
     "mtime": 1784800873.6600778,
@@ -3140,14 +3140,14 @@
     "semantic_hash": "e2de8aa69fa032594c66531320603415"
   },
   "apps/api/app/services/payroll_admin.py": {
-    "mtime": 1792058783.613324,
-    "ast_hash": "c487792eb0b4644ceabc69421bc46246",
-    "semantic_hash": "c487792eb0b4644ceabc69421bc46246"
+    "mtime": 1792065216.1759453,
+    "ast_hash": "2bcf6fbdf2b80b115e1c7b94c7aa11bc",
+    "semantic_hash": "2bcf6fbdf2b80b115e1c7b94c7aa11bc"
   },
   "apps/api/app/services/payroll_advance_availability.py": {
-    "mtime": 1786188800.4970813,
-    "ast_hash": "8ca4d8d8e1bb06dc9fe45512fa21e025",
-    "semantic_hash": "8ca4d8d8e1bb06dc9fe45512fa21e025"
+    "mtime": 1792065216.1762118,
+    "ast_hash": "524beff0995c05d61653f3fde39709f2",
+    "semantic_hash": "524beff0995c05d61653f3fde39709f2"
   },
   "apps/api/app/services/payroll_advance_recovery.py": {
     "mtime": 1788252778.8294554,
@@ -3440,9 +3440,9 @@
     "semantic_hash": "6df3b92a0748f145c2bb251eb9af28d3"
   },
   "apps/api/app/services/staff_balance_as_of.py": {
-    "mtime": 1786188800.4997513,
-    "ast_hash": "624040448978cee626993f058268ab59",
-    "semantic_hash": "624040448978cee626993f058268ab59"
+    "mtime": 1792065216.19062,
+    "ast_hash": "aa927fd208afc4af4ded07d5a871d7d5",
+    "semantic_hash": "aa927fd208afc4af4ded07d5a871d7d5"
   },
   "apps/api/app/services/staff_taxonomy.py": {
     "mtime": 1783327453.754782,
@@ -4290,9 +4290,9 @@
     "semantic_hash": "411dbd04565bb7b9fa3f4a30e5ec4ccd"
   },
   "apps/api/tests/counterparties/test_staff_balance_as_of.py": {
-    "mtime": 1786188800.5013196,
-    "ast_hash": "a3510851dd9ac8261226409ad151b6aa",
-    "semantic_hash": "a3510851dd9ac8261226409ad151b6aa"
+    "mtime": 1792065216.2475455,
+    "ast_hash": "9dd7d21aa51807cc522bc95ddf52c5f3",
+    "semantic_hash": "9dd7d21aa51807cc522bc95ddf52c5f3"
   },
   "apps/api/tests/counterparties/test_staff_payable_vacation.py": {
     "mtime": 1785665783.6437275,
@@ -4300,9 +4300,9 @@
     "semantic_hash": "27cb15670710e0501aa8c676f14681ea"
   },
   "apps/api/tests/counterparties/test_staff_salary_balance.py": {
-    "mtime": 1785788474.0869648,
-    "ast_hash": "62dda7ca0c23fc02e3220e4970805dd2",
-    "semantic_hash": "62dda7ca0c23fc02e3220e4970805dd2"
+    "mtime": 1792065216.2481678,
+    "ast_hash": "3782e8511efbba33921c6b503a86bcc9",
+    "semantic_hash": "3782e8511efbba33921c6b503a86bcc9"
   },
   "apps/api/tests/counterparties/test_subscription_accruals.py": {
     "mtime": 1786099613.585146,
@@ -8268,5 +8268,10 @@
     "mtime": 1791765109.0420446,
     "ast_hash": "77829d87956f88cd0ddc93fe4e7da757",
     "semantic_hash": ""
+  },
+  "apps/api/tests/test_payroll_advance_position_change.py": {
+    "mtime": 1792065216.283453,
+    "ast_hash": "eb214c0bdff34899b11888bb58fef0a7",
+    "semantic_hash": "eb214c0bdff34899b11888bb58fef0a7"
   }
 }
