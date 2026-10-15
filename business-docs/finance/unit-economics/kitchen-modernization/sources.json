@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "as_of": "2026-10-16",
   "canonical_readme": "README.md",
   "private_archive_root": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-14",
@@ -225,7 +225,8 @@
       "combined_business_fc": 0.304566886191776,
       "future_bonus_accrual_saving_quantified": false,
       "production_settings_changed": false,
-      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2"
+      "private_archive": "/Users/grigorii/Documents/Teplo/Unit Economics/2026-10-15/owner-offer-v2",
+      "later_policy_correction": "Superseded offer policy by food_cost_35_5_simple_offers_2026_10_16; historical results retained."
     },
     {
       "id": "food_cost_35_5_sensitivity",
@@ -245,7 +246,29 @@
         "snapshots/2026-10-16/food-cost-35-5-owner-offers/calculate.py",
         "snapshots/2026-10-16/food-cost-35-5-owner-offers/results.json"
       ],
-      "origin": "Saved August Starter order replay plus full cost model. Distinguishes final 35.5% FC after new offers from fixed ruble recipe-improvement budget; no speculative future bonus-accrual saving."
+      "origin": "Saved August Starter order replay plus full cost model. Distinguishes final 35.5% FC after new offers from fixed ruble recipe-improvement budget; no speculative future bonus-accrual saving.",
+      "later_policy_correction": "Superseded offer policy by food_cost_35_5_simple_offers_2026_10_16; historical results retained."
+    },
+    {
+      "id": "food_cost_35_5_simple_offers_2026_10_16",
+      "status": "preliminary_owner_policy_not_live_configuration",
+      "notes": "snapshots/2026-10-16/food-cost-35-5-simple-offers/README.md",
+      "key_files": [
+        "snapshots/2026-10-16/food-cost-35-5-simple-offers/calculate.py",
+        "snapshots/2026-10-16/food-cost-35-5-simple-offers/results.json"
+      ],
+      "origin": "1394 saved August Starter orders plus full dated cost model. Remove gift ladder/pickup10/referral; no bulk ladder; ordinary first15 and protected birthday; original loyalty5/7/10, redemption-only exclusions for promotional sets and pizza combos.",
+      "final_fc355_with_110k_budget_targets": {
+        "break_even_orders": 2650,
+        "profit500k_orders": 3550
+      },
+      "fixed_recipe_budget_targets": {
+        "food_cost": 0.3353881555365124,
+        "break_even_orders": 2450,
+        "profit500k_orders": 3300
+      },
+      "skill_reference": "skills/teplo-unit-economics/references/owner-offer-policy-2026-10-16.md",
+      "production_settings_changed": false
     }
   ],
   "previous_work": {
